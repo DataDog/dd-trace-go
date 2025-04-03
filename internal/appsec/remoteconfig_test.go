@@ -468,7 +468,7 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 		{
 			name:      "appsec-enabled/default-RulesManager",
 			env:       map[string]string{config.EnvEnabled: "1"},
-			expectedC: blockingCapabilities[:],
+			expectedC: append(asmRemoteConfigCapabilities[:], blockingCapabilities[:]...),
 			expectedP: []string{rc.ProductASM, rc.ProductASMData, rc.ProductASMDD},
 		},
 		{
@@ -495,6 +495,54 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 				found, err := remoteconfig.HasCapability(cap)
 				require.NoError(t, err)
 				require.True(t, found)
+			}
+			for _, p := range tc.expectedP {
+				found, err := remoteconfig.HasProduct(p)
+				require.NoError(t, err)
+				require.True(t, found)
+			}
+		})
+	}
+}
+
+func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		expectedC []remoteconfig.Capability
+		excludedC []remoteconfig.Capability
+		expectedP []string
+	}{
+		{
+			name:      "appsec-enabled/default-RulesManager",
+			env:       map[string]string{config.EnvEnabled: "1"},
+			expectedC: asmRemoteConfigCapabilities[:],
+			excludedC: blockingCapabilities[:],
+			expectedP: []string{rc.ProductASM, rc.ProductASMData, rc.ProductASMDD},
+		},
+	} {
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(config.EnvEnabled, "")
+			os.Unsetenv(config.EnvEnabled)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()), config.WithBlockingUnavailable(true))
+			defer Stop()
+			if !Enabled() && activeAppSec == nil {
+				t.Skip()
+			}
+
+			for _, cap := range tc.expectedC {
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.True(t, found)
+			}
+			for _, cap := range tc.excludedC {
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.False(t, found)
 			}
 			for _, p := range tc.expectedP {
 				found, err := remoteconfig.HasProduct(p)

@@ -240,6 +240,12 @@ func Start(opts ...StartOption) error {
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
+
+	// TODO: Add support to configure the tracer via a public interface
+	if globalinternal.BoolEnv("_DD_APPSEC_BLOCKING_UNAVAILABLE", false) {
+		appsecopts = append(appsecopts, appsecConfig.WithBlockingUnavailable(true))
+	}
+
 	appsec.Start(appsecopts...)
 
 	// start instrumentation telemetry unless it is disabled through the
