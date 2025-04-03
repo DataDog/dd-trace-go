@@ -29,7 +29,6 @@ var (
 		"x-real-ip",
 		"true-client-ip",
 		"x-client-ip",
-		"x-forwarded",
 		"forwarded-for",
 		"x-cluster-client-ip",
 		"fastly-client-ip",
@@ -59,6 +58,7 @@ var (
 		"akamai-user-risk",
 		"x-sigsci-requestid",
 		"x-sigsci-tags",
+		"x-forwarded", // Not used for IP resolution, still collected.
 	}, defaultIPHeaders...)
 
 	// collectedHeadersLookupMap is a helper lookup map of HTTP headers to
