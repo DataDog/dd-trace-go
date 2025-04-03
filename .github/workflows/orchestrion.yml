@@ -279,7 +279,7 @@ jobs:
           repository: 'DataDog/dd-trace-go'
           ref: 'main'
       - name: Upload the results to Datadog CI App
-        if: always()
+        if: ${{ secrets.DD_CI_API_KEY != '' }}
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
