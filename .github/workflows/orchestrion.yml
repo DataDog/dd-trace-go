@@ -279,7 +279,9 @@ jobs:
           repository: 'DataDog/dd-trace-go'
           ref: 'main'
       - name: Upload the results to Datadog CI App
-        if: ${{ secrets.DD_CI_API_KEY != '' }}
+        env:
+          DD_CI_API_KEY_EXISTS: ${{ secrets.DD_CI_API_KEY != '' }}
+        if: ${{ env.DD_CI_API_KEY_EXISTS == 'true' }}
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
