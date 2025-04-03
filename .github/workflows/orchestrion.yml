@@ -193,6 +193,14 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo sysctl vm.overcommit_memory=1
 
+      # When enabling GitHub Actions debug logging, we'll also enable debug logging for orchestrion.
+      # See: https://docs.github.com/fr/actions/monitoring-and-troubleshooting-workflows/troubleshooting-workflows/enabling-debug-logging
+      - name: Enable debug logging
+        if: vars.ACTIONS_RUNNER_DEBUG == 'true' || vars.ACTIONS_STEP_DEBUG == 'true' || env.ACTIONS_STEP_DEBUG == 'true' || env.ACTIONS_STEP_DEBUG == 'true'
+        run: |-
+          echo "ORCHESTRION_LOG_LEVEL=trace"                             >> "${GITHUB_ENV}"
+          echo "ORCHESTRION_LOG_FILE=${{ runner.temp }}/orchestrion.log" >> "${GITHUB_ENV}"
+
       # Finally, we run the test suite!
       # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
       # failure tests as real failures in the backend.
@@ -247,6 +255,13 @@ jobs:
           path: |-
             ${{ runner.temp }}/go-build*/*.stdout.log
             ${{ runner.temp }}/go-build*/*.stderr.log
+
+      - name: Upload orchestrion.log
+        if: (vars.ACTIONS_RUNNER_DEBUG == 'true' || vars.ACTIONS_STEP_DEBUG == 'true' || env.ACTIONS_STEP_DEBUG == 'true' || env.ACTIONS_STEP_DEBUG == 'true') && !cancelled()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: orchestrion-${{ matrix.runs-on }}-${{ matrix.go-version }}${{ matrix.mode }}.log
+          path: ${{ runner.temp }}/orchestrion.log
 
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
