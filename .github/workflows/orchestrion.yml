@@ -304,13 +304,15 @@ jobs:
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests
-    needs: integration-test
+    needs:
+      - generate
+      - integration-test
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.integration-test.result == 'success'
+        if: needs.integration-test.result == 'success' && needs.generate.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.integration-test.result != 'success'
+        if: needs.integration-test.result != 'success' || needs.generate.result != 'success'
         run: echo "Failure!" && exit 1
