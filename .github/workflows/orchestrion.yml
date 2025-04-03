@@ -193,13 +193,6 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo sysctl vm.overcommit_memory=1
 
-      # When enabling GitHub Actions debug logging, we'll also enable debug logging for orchestrion.
-      # See: https://docs.github.com/fr/actions/monitoring-and-troubleshooting-workflows/troubleshooting-workflows/enabling-debug-logging
-      - name: Enable debug logging
-        run: |-
-          echo "ORCHESTRION_LOG_LEVEL=trace"                             >> "${GITHUB_ENV}"
-          echo "ORCHESTRION_LOG_FILE=${{ runner.temp }}/orchestrion.log" >> "${GITHUB_ENV}"
-
       # Finally, we run the test suite!
       # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
       # failure tests as real failures in the backend.
@@ -213,18 +206,18 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on -work $PACKAGE_NAMES
+            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
             orchestrion go test -json -shuffle=on ./civisibility
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' -work $PACKAGE_NAMES
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
             go test -shuffle=on -toolexec='orchestrion toolexec' ./civisibility
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -work $PACKAGE_NAMES
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on $PACKAGE_NAMES
             go test -shuffle=on ./civisibility
             ;;
           *)
@@ -234,7 +227,6 @@ jobs:
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           MODE: ${{ matrix.mode }}
-          GOTMPDIR: ${{ runner.temp }}
           # The "buildtag" tag is used in //dd:span integration tests
           GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
           # Prevent auto-respawn, which is problematic with installs from commit SHA
@@ -243,24 +235,6 @@ jobs:
           TESTCONTAINERS_RYUK_DISABLED: true
           # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
           XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
-
-      - name: Upload jobserver output files
-        if: failure() && !cancelled()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
-        with:
-          name: jobserver-logs-${{ matrix.runs-on }}-${{ matrix.go-version }}-${{ matrix.mode }}
-          if-no-files-found: ignore # DRIVER mode won't have those files, for example...
-          include-hidden-files: true
-          path: |-
-            ${{ runner.temp }}/go-build*/*.stdout.log
-            ${{ runner.temp }}/go-build*/*.stderr.log
-
-      - name: Upload orchestrion.log
-        if: '!cancelled()'
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
-        with:
-          name: orchestrion-${{ matrix.runs-on }}-${{ matrix.go-version }}${{ matrix.mode }}.log
-          path: ${{ runner.temp }}/orchestrion.log
 
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
