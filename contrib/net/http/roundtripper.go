@@ -72,10 +72,10 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
 	}
-	r2 := req.Clone(ctx)
 	for k, v := range baggage.All(ctx) {
 		span.SetBaggageItem(k, v)
 	}
+	r2 := req.Clone(ctx)
 	if rt.cfg.propagation {
 		// inject the span context into the http request copy
 		err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))
