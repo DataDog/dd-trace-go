@@ -467,6 +467,35 @@ func TestIgnoreRequestFunc(t *testing.T) {
 	assert.Len(spans, 0)
 }
 
+func TestIgnoreResponseFunc(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var called bool
+
+	// setup
+	ignoreResponseFunc := func(c echo.Context) bool {
+		return true
+	}
+	router := echo.New()
+	router.Use(Middleware(WithIgnoreResponse(ignoreResponseFunc)))
+
+	// a handler with an error and make the requests
+	router.GET("/err", func(c echo.Context) error {
+		called = true
+		return nil
+	})
+	r := httptest.NewRequest("GET", "/err", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	// verify the error is correct and the stacktrace is disabled
+	assert.True(called)
+
+	spans := mt.FinishedSpans()
+	assert.Len(spans, 0)
+}
+
 type testCustomError struct {
 	TestCode int
 }
