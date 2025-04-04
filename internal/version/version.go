@@ -28,16 +28,21 @@ var (
 )
 
 func init() {
+	Major, Minor, Patch, RC = parseVersion(Tag)
+}
+
+func parseVersion(version string) (int, int, int, int) {
 	// This regexp matches the version format we use and captures major/minor/patch/rc in different groups
 	r := regexp.MustCompile(`v(?P<ma>\d+)\.(?P<mi>\d+)\.(?P<pa>\d+)(-rc\.(?P<rc>\d+))?`)
 	names := r.SubexpNames()
 	captures := map[string]string{}
 	// Associate each capture group match with the capture group's name to easily retrieve major/minor/patch/rc
-	for k, v := range r.FindAllStringSubmatch(Tag, -1)[0] {
+	for k, v := range r.FindAllStringSubmatch(version, -1)[0] {
 		captures[names[k]] = v
 	}
-	Major, _ = strconv.Atoi(captures["ma"])
-	Minor, _ = strconv.Atoi(captures["mi"])
-	Patch, _ = strconv.Atoi(captures["pa"])
-	RC, _ = strconv.Atoi(captures["rc"])
+	major, _ := strconv.Atoi(captures["ma"])
+	minor, _ := strconv.Atoi(captures["mi"])
+	patch, _ := strconv.Atoi(captures["pa"])
+	rc, _ := strconv.Atoi(captures["rc"])
+	return major, minor, patch, rc
 }

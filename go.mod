@@ -15,6 +15,7 @@ require (
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
+	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db

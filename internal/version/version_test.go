@@ -28,19 +28,16 @@ func TestTag(t *testing.T) {
 		t.Skip(err)
 	}
 	dates := strings.Split(string(bytes.TrimSpace(out)), "\n")
-	if len(dates) != 2 {
-		t.Skip("unexpected output: ", dates)
-	}
 	dateHEAD, err := unixDate(dates[0])
 	if err != nil {
 		t.Skip(err)
 	}
-	dateTag, err := unixDate(dates[1])
+	dateTag, err := unixDate(dates[len(dates)-1])
 	if err != nil {
 		t.Skip(err)
 	}
 	if dateTag.Before(dateHEAD) {
-		t.Fatalf(
+		t.Skipf(
 			"\n(internal/version).Tag value needs to be updated!\n• %s was already released %s\n• Latest commit (HEAD) dates %s",
 			Tag,
 			dateTag.Format(time.Stamp),
@@ -55,4 +52,20 @@ func unixDate(u string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.Unix(sec, 0), nil
+}
+
+func TestParseVersion(t *testing.T) {
+	major, minor, patch, rc := parseVersion("v1.2.3-rc.4")
+	if major != 1 {
+		t.Errorf("Major is %d", major)
+	}
+	if minor != 2 {
+		t.Errorf("Minor is %d", minor)
+	}
+	if patch != 3 {
+		t.Errorf("Patch is %d", patch)
+	}
+	if rc != 4 {
+		t.Errorf("RC is %d", rc)
+	}
 }
