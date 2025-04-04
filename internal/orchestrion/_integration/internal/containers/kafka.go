@@ -37,6 +37,14 @@ func StartKafkaTestContainer(t testing.TB) (*kafka.KafkaContainer, string) {
 				wait.ForExec(checkTopicExistsCmd("topic-B")),
 			),
 		),
+		testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Name:     "kafka",
+				Hostname: "localhost",
+			},
+			Started: true,
+			Reuse:   true,
+		}),
 	)
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
