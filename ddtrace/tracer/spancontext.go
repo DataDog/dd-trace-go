@@ -192,12 +192,14 @@ func (c *spanContext) SpanLinks() []ddtrace.SpanLink {
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+	fmt.Println("MTOFF: in ForEachBaggageItem")
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for k, v := range c.baggage {
+		fmt.Println("MTOFF: baggage key ", k, " val ", v)
 		if !handler(k, v) {
 			break
 		}
@@ -229,6 +231,7 @@ func (c *spanContext) setBaggageItem(key, val string) {
 		atomic.StoreUint32(&c.hasBaggage, 1)
 		c.baggage = make(map[string]string, 1)
 	}
+	fmt.Println("MTOFF: Setting on c.baggage")
 	c.baggage[key] = val
 }
 

@@ -467,6 +467,7 @@ func (p *propagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 }
 
 func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, error) {
+	fmt.Println("MTOFF: In extractTextMap")
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
@@ -495,7 +496,9 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		case traceTagsHeader:
 			unmarshalPropagatingTags(&ctx, v)
 		default:
+			fmt.Println("MTOFF: EXTRACTING FROM THIS KEY: ", key)
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
+				fmt.Println("MTOFF: BAGGAGE key is being set")
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
 			}
 		}

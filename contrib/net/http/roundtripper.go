@@ -81,7 +81,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	}
 	r2 := req.Clone(ctx)
 
-	for key, values := range req.Header {
+	for key, values := range r2.Header {
 		fmt.Println("MTOFF: IN ROUNDTRIP, r2 HEADER: ", key)
 		for _, value := range values {
 			fmt.Println("MTOFF: value is", value)
