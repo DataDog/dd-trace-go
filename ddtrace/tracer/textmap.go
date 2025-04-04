@@ -28,6 +28,7 @@ var _ TextMapReader = (*HTTPHeadersCarrier)(nil)
 
 // Set implements TextMapWriter.
 func (c HTTPHeadersCarrier) Set(key, val string) {
+	fmt.Println("MTOFF: IN SET for key ", key, " and val ", val)
 	http.Header(c).Set(key, val)
 }
 
@@ -405,6 +406,7 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		writer.Set(originHeader, ctx.origin)
 	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
+		fmt.Println("MTOFF: Settgin baggage item: ", k, v)
 		// Propagate OpenTracing baggage.
 		writer.Set(p.cfg.BaggagePrefix+k, v)
 		return true
