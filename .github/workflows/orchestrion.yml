@@ -11,6 +11,9 @@ on:
         type: boolean
         default: false
         required: false
+    secrets:
+      DD_API_KEY:
+        required: false
   pull_request:
   merge_group:
   push:
@@ -263,14 +266,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
-          repository: ${{ github.repository }}
-          ref: ${{ github.ref }}
+          repository: 'DataDog/dd-trace-go'
+          ref: 'main'
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ secrets.DD_API_KEY }}
           files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
