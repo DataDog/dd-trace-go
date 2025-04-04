@@ -20,6 +20,8 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v3"
+
+	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/stretchr/testify/assert"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
@@ -33,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/stretchr/testify/mock"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
@@ -476,20 +479,27 @@ func TestAPISecurity(t *testing.T) {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
 	mux := httptrace.NewServeMux()
-	mux.HandleFunc("/apisec", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/apisec/{id}", func(w http.ResponseWriter, r *http.Request) {
 		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
 		w.Write([]byte("Hello World!\n"))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
-	req, err := http.NewRequest("POST", srv.URL+"/apisec?vin=AAAAAAAAAAAAAAAAA", nil)
+	req, err := http.NewRequest("POST", srv.URL+"/apisec/1337?vin=AAAAAAAAAAAAAAAAA", nil)
 	require.NoError(t, err)
 
 	t.Run("enabled", func(t *testing.T) {
+		var sampler mockSampler
+		samplingKey := apisec.SamplingKey{
+			Method:     "POST",
+			Route:      "/apisec/{id}",
+			StatusCode: 200,
+		}
+		sampler.On("DecisionFor", samplingKey).Return(true).Once()
+
 		t.Setenv(internal.EnvAPISecEnabled, "true")
-		t.Setenv(internal.EnvAPISecSampleRate, "1.0")
-		testutils.StartAppSec(t)
+		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -502,15 +512,39 @@ func TestAPISecurity(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 
+		// Verify we did make a sampling decision as expected...
+		sampler.AssertCalled(t, "DecisionFor", samplingKey)
+
 		// Make sure the addresses that are present are getting extracted as schemas
-		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
-		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
-		require.NotNil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+		assert.NotNil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
+		assert.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+		assert.NotNil(t, spans[0].Tag("_dd.appsec.s.req.body"))
+
+		t.Run("sampler-drops-second-request", func(t *testing.T) {
+			sampler.On("DecisionFor", samplingKey).Return(false).Once()
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2) // Includes the span from the first request...
+
+			// Verify we did make a sampling decision as expected...
+			sampler.AssertCalled(t, "DecisionFor", samplingKey)
+
+			// Make sure that the schema has NOT been extracted
+			assert.Nil(t, spans[1].Tag("_dd.appsec.s.req.headers"))
+			assert.Nil(t, spans[1].Tag("_dd.appsec.s.req.query"))
+			assert.Nil(t, spans[1].Tag("_dd.appsec.s.req.body"))
+		})
 	})
 
 	t.Run("disabled", func(t *testing.T) {
+		var sampler mockSampler
+
 		t.Setenv(internal.EnvAPISecEnabled, "false")
-		testutils.StartAppSec(t)
+		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -522,6 +556,9 @@ func TestAPISecurity(t *testing.T) {
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
+
+		// Make sure the sampler was never called
+		sampler.AssertNotCalled(t, "DecisionFor")
 
 		// Make sure the addresses that are present are not getting extracted as schemas
 		require.Nil(t, spans[0].Tag("_dd.appsec.s.req.headers"))
@@ -847,6 +884,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 	}
 
 	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	require.NoError(b, err)
 	for i := 0; i < b.N; i++ {
 		ctx, err := handle.NewContext()
 		if err != nil || ctx == nil {
@@ -982,6 +1020,15 @@ func TestAttackerFingerprinting(t *testing.T) {
 		})
 
 	}
+}
+
+type mockSampler struct {
+	mock.Mock
+}
+
+func (m *mockSampler) DecisionFor(key apisec.SamplingKey) bool {
+	ret := m.Called(key)
+	return ret.Bool(0)
 }
 
 func init() {

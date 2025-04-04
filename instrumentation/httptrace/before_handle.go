@@ -11,12 +11,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
 type ServeConfig struct {
+	// Framework is the name of the framework or library being used (optional).
+	Framework string
 	// Service specifies the service name to use. If left blank, the global service name
 	// will be inherited.
 	Service string
@@ -68,7 +71,17 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	afterHandle := closeSpan
 	handled := false
 	if appsec.Enabled() {
-		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, cfg.RouteParams, nil)
+		appsecConfig := &httpsec.Config{
+			Framework: cfg.Framework,
+			RouteForRequest: func(r *http.Request) string {
+				if cfg.Route != "" {
+					return cfg.Route
+				}
+				return pattern.Route(r.Pattern)
+			},
+		}
+
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, cfg.RouteParams, appsecConfig)
 		afterHandle = func() {
 			secAfterHandle()
 			closeSpan()

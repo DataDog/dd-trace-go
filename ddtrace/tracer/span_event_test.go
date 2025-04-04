@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSpanAddEvent(t *testing.T) {
+func Test_spanAddEvent(t *testing.T) {
 	type customType struct {
 		Field1 string `json:"field_1"`
 		Field2 int    `json:"field_2"`

@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -66,8 +67,8 @@ func SetGlobalHeaderTags(t *testing.T, headers ...string) {
 	setValue(headers)
 }
 
-func StartAppSec(t *testing.T) {
-	appsec.Start()
+func StartAppSec(t *testing.T, opts ...config.StartOption) {
+	appsec.Start(opts...)
 	t.Cleanup(appsec.Stop)
 }
 

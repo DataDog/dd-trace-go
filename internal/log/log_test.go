@@ -278,3 +278,11 @@ func containsMessage(lvl, m string, lines []string) bool {
 	}
 	return false
 }
+
+func BenchmarkLog(b *testing.B) {
+	UseLogger(DiscardLogger{})
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		Warn("test")
+	}
+}

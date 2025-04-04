@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // HandlerOperation type representing an HTTP operation. It must be created with
@@ -33,18 +34,27 @@ type (
 
 		// wafContextOwner indicates if the waf.ContextOperation was started by us or not and if we need to close it.
 		wafContextOwner bool
+
+		// framework is the name of the framework or library that started the operation.
+		framework string
+		// method is the HTTP method for the current handler operation.
+		method string
+		// route is the HTTP route for the current handler operation (or the URL if no route is available).
+		route string
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
 	HandlerOperationArgs struct {
-		Method      string
-		RequestURI  string
-		Host        string
-		RemoteAddr  string
-		Headers     map[string][]string
-		Cookies     map[string][]string
-		QueryParams map[string][]string
-		PathParams  map[string]string
+		Framework    string // Optional: name of the framework or library being used
+		Method       string
+		RequestURI   string
+		RequestRoute string // the HTTP route for the current handler operation, if available
+		Host         string
+		RemoteAddr   string
+		Headers      map[string][]string
+		Cookies      map[string][]string
+		QueryParams  map[string][]string
+		PathParams   map[string]string
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -67,6 +77,14 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		Operation:        dyngo.NewOperation(wafOp),
 		ContextOperation: wafOp,
 		wafContextOwner:  !found, // If we started the parent operation, we finish it, otherwise we don't
+		framework:        args.Framework,
+		method:           args.Method,
+		route:            args.RequestRoute,
+	}
+	if op.route == "" {
+		// If there is no route, use the request URI instead
+		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + args.Framework}).Submit(1)
+		op.route = args.RequestURI
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -76,6 +94,21 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 	})
 
 	return op, &action, dyngo.StartAndRegisterOperation(ctx, op, args)
+}
+
+// Framework returns the name of the framework or library that started the operation.
+func (op *HandlerOperation) Framework() string {
+	return op.framework
+}
+
+// Method returns the HTTP method for the current handler operation.
+func (op *HandlerOperation) Method() string {
+	return op.method
+}
+
+// Route returns the HTTP route for the current handler operation.
+func (op *HandlerOperation) Route() string {
+	return op.route
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
@@ -129,19 +162,25 @@ func BeforeHandle(
 ) (http.ResponseWriter, *http.Request, func(), bool) {
 	if opts == nil {
 		opts = defaultWrapHandlerConfig
-	} else if opts.ResponseHeaderCopier == nil {
+	}
+	if opts.ResponseHeaderCopier == nil {
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
+	}
+	if opts.RouteForRequest == nil {
+		opts.RouteForRequest = defaultWrapHandlerConfig.RouteForRequest
 	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
-		Method:      r.Method,
-		RequestURI:  r.RequestURI,
-		Host:        r.Host,
-		RemoteAddr:  r.RemoteAddr,
-		Headers:     r.Header,
-		Cookies:     makeCookies(r.Cookies()),
-		QueryParams: r.URL.Query(),
-		PathParams:  pathParams,
+		Framework:    opts.Framework,
+		Method:       r.Method,
+		RequestURI:   r.RequestURI,
+		RequestRoute: opts.RouteForRequest(r),
+		Host:         r.Host,
+		RemoteAddr:   r.RemoteAddr,
+		Headers:      r.Header,
+		Cookies:      makeCookies(r.Cookies()),
+		QueryParams:  r.URL.Query(),
+		PathParams:   pathParams,
 	}, span)
 	tr := r.WithContext(ctx)
 

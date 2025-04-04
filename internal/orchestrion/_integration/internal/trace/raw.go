@@ -16,7 +16,7 @@ import (
 // together in a trace hierarchically, instead they have an `ID` and `ParentID`
 // field that can be used to reconstruct the hierarchy.
 type RawSpan struct {
-	ParentID SpanID `json:"parent_id"`
+	ParentID ID `json:"parent_id"`
 	Trace
 }
 
@@ -29,13 +29,13 @@ func ParseRaw(data []byte, traces *[]*Trace) error {
 	}
 
 	// First pass: make the spans ID-addressable
-	spans := make(map[SpanID]*RawSpan)
+	spans := make(map[ID]*RawSpan)
 	for _, rawSpans := range rawSpanGroups {
 		for _, span := range rawSpans {
-			if span.ID == 0 {
+			if span.SpanID == 0 {
 				return errors.New("invalid span (span_id is 0)")
 			}
-			spans[span.ID] = span
+			spans[span.SpanID] = span
 		}
 	}
 
@@ -51,7 +51,7 @@ func ParseRaw(data []byte, traces *[]*Trace) error {
 		// This is a child span
 		parent, found := spans[span.ParentID]
 		if !found {
-			return fmt.Errorf("span %d has unknown parent %d", span.ID, span.ParentID)
+			return fmt.Errorf("span %d has unknown parent %d", span.SpanID, span.ParentID)
 		}
 		parent.Children = append(parent.Children, &span.Trace)
 	}
@@ -62,7 +62,7 @@ func ParseRaw(data []byte, traces *[]*Trace) error {
 }
 
 func (span *RawSpan) UnmarshalJSON(data []byte) error {
-	span.ID = 0
+	span.SpanID = 0
 	span.ParentID = 0
 	span.Trace = Trace{Tags: make(map[string]any)}
 
@@ -75,9 +75,9 @@ func (span *RawSpan) UnmarshalJSON(data []byte) error {
 		var err error
 		switch key {
 		case "span_id":
-			err = json.Unmarshal(value, &span.ID)
+			err = json.Unmarshal(value, &span.SpanID)
 			if err == nil {
-				span.Tags["span_id"] = json.Number(fmt.Sprintf("%d", span.ID))
+				span.Tags["span_id"] = json.Number(fmt.Sprintf("%d", span.SpanID))
 			}
 		case "parent_id":
 			err = json.Unmarshal(value, &span.ParentID)

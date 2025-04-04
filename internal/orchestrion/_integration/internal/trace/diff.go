@@ -43,8 +43,8 @@ func (tr *Trace) matchesAny(others []*Trace, diff treeprint.Tree) (*Trace, Diff)
 
 	for idx, other := range others {
 		id := fmt.Sprintf("Trace at index %d", idx)
-		if other.ID != 0 {
-			id = fmt.Sprintf("Span ID %d", other.ID)
+		if other.SpanID != 0 {
+			id = fmt.Sprintf("Span ID %d", other.SpanID)
 		}
 		branch := diff.AddMetaBranch(markerChanged, id)
 		if tr.matches(other, branch) {
@@ -124,8 +124,8 @@ func (tr *Trace) matches(other *Trace, diff treeprint.Tree) (matches bool) {
 		}
 
 		if span, childDiff := child.matchesAny(other.Children, treeprint.New()); span != nil {
-			if span.ID != 0 {
-				nodeName = fmt.Sprintf("Span #%d", span.ID)
+			if span.SpanID != 0 {
+				nodeName = fmt.Sprintf("Span #%d", span.SpanID)
 			}
 			child.into(childrenNode.AddMetaBranch(markerEqual, nodeName))
 		} else {

@@ -5,9 +5,15 @@
 
 package httpsec
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
+)
 
 type Config struct {
+	// Framework is the name of the framework or library being used (optional).
+	Framework string
 	// OnBlock is a list of callbacks to be invoked when a block decision is made.
 	OnBlock []func()
 	// ResponseHeaderCopier provides a way to access response headers for reading
@@ -15,10 +21,12 @@ type Config struct {
 	// apply synchronization if they allow http.ResponseWriter objects to be
 	// accessed by multiple goroutines.
 	ResponseHeaderCopier func(http.ResponseWriter) http.Header
+	// RouteForRequest returns the route string for the given request, or blank if
+	// no route information can be determined.
+	RouteForRequest func(*http.Request) string
 }
 
 var defaultWrapHandlerConfig = &Config{
-	ResponseHeaderCopier: func(w http.ResponseWriter) http.Header {
-		return w.Header()
-	},
+	ResponseHeaderCopier: func(w http.ResponseWriter) http.Header { return w.Header() },
+	RouteForRequest:      func(r *http.Request) string { return pattern.Route(r.Pattern) },
 }

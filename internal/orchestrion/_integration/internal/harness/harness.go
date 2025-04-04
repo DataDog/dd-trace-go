@@ -9,7 +9,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
+	agent "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
@@ -48,9 +48,7 @@ func Run(t *testing.T, tc TestCase) {
 	t.Helper()
 	require.True(t, built.WithOrchestrion, "this test suite must be run with orchestrion enabled")
 
-	mockAgent, err := agent.New(t)
-	require.NoError(t, err, "failed to start mock agent")
-	defer mockAgent.Close()
+	mockAgent := agent.New(t)
 
 	ctx := context.Background()
 	if deadline, ok := t.Deadline(); ok {
@@ -61,24 +59,12 @@ func Run(t *testing.T, tc TestCase) {
 
 	t.Log("Running setup")
 	tc.Setup(ctx, t)
-
-	sess, err := mockAgent.NewSession(t)
-	require.NoError(t, err, "failed to create a new mock agent session")
+	mockAgent.Start(t)
 
 	t.Log("Running test")
 	tc.Run(ctx, t)
 
-	checkTraces(t, tc, sess)
-}
-
-func checkTraces(t testing.TB, tc TestCase, sess *agent.Session) {
-	t.Helper()
-
-	jsonTraces, err := sess.Close(t)
-	require.NoError(t, err)
-
-	var got trace.Traces
-	require.NoError(t, trace.ParseRaw(jsonTraces, &got))
+	got := mockAgent.Traces(t)
 	t.Logf("Received %d traces", len(got))
 	for i, tr := range got {
 		t.Logf("[%d] Trace contains a total of %d spans:\n%v", i, tr.NumSpans(), tr)
