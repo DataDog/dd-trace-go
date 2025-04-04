@@ -103,8 +103,8 @@ func (t *tagsMap) getTestImpactInfo() []*fileWithBitmap {
 		return result
 	}
 
-	sourceFileStartLine := sourceFileStartLineAny.(int)
-	sourceFileEndLine := sourceFileEndLineAny.(int)
+	sourceFileStartLine := int(sourceFileStartLineAny.(float64))
+	sourceFileEndLine := int(sourceFileEndLineAny.(float64))
 	if sourceFileStartLine == 0 || sourceFileEndLine == 0 {
 		return result
 	}

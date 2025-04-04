@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -43,6 +44,8 @@ func TestMain(m *testing.M) {
 		runEarlyFlakyTestDetectionTests(m)
 	} else if internal.BoolEnv(scenarios[2], false) {
 		fmt.Printf("Scenario %s started.\n", scenarios[2])
+		os.Setenv("GITHUB_BASE_REF", "e5cfb7b3dd02d4116b9dd3dd2dd4e39d11e0b61d")
+		os.Setenv("GITHUB_SHA", utils.GetCITags()[constants.GitCommitSHA])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m)
 	} else if internal.BoolEnv(scenarios[3], false) {
 		fmt.Printf("Scenario %s started.\n", scenarios[3])
@@ -58,6 +61,7 @@ func TestMain(m *testing.M) {
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=true", v))
 			fmt.Printf("Running scenario: %s:\n", v)
+			fmt.Println(cmd.Env)
 			err := cmd.Run()
 			fmt.Printf("Done.\n\n")
 			if err != nil {
@@ -90,7 +94,8 @@ func runFlakyTestRetriesTests(m *testing.M) {
 		},
 	},
 		false, nil,
-		false, nil)
+		false, nil,
+		false)
 	defer server.Close()
 
 	// set a custom retry count
@@ -193,7 +198,8 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		},
 	},
 		false, nil,
-		false, nil)
+		false, nil,
+		false)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -310,7 +316,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M) {
 		},
 	},
 		false, nil,
-		false, nil)
+		false, nil,
+		true)
 	defer server.Close()
 
 	// set a custom retry count
@@ -425,7 +432,8 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 			Name:  "TestNormalPassingAfterRetryAlwaysFail",
 		},
 	},
-		false, nil)
+		false, nil,
+		false)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -561,7 +569,8 @@ func runTestManagementTests(m *testing.M) {
 					},
 				},
 			},
-		})
+		},
+		false)
 
 	defer server.Close()
 
@@ -766,7 +775,8 @@ func setUpHTTPServer(
 	itrEnabled bool,
 	itrData []net.SkippableResponseDataAttributes,
 	testManagement bool,
-	testManagementData *net.TestManagementTestsResponseDataModules) *httptest.Server {
+	testManagementData *net.TestManagementTestsResponseDataModules,
+	impactedTests bool) *httptest.Server {
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -791,6 +801,7 @@ func setUpHTTPServer(
 				ItrEnabled:              itrEnabled,
 				TestsSkipping:           itrEnabled,
 				KnownTestsEnabled:       enableKnownTests,
+				ImpactedTestsEnabled:    impactedTests,
 			}
 
 			response.Data.Attributes.TestManagement.Enabled = testManagement
@@ -860,6 +871,28 @@ func setUpHTTPServer(
 			}{}
 			response.Data.Type = "ci_app_libraries_tests"
 			response.Data.Attributes = *testManagementData
+			fmt.Printf("MockApi sending response: %v\n", response)
+			json.NewEncoder(w).Encode(&response)
+		} else if r.URL.Path == "/api/v2/ci/tests/diffs" {
+			body, _ := io.ReadAll(r.Body)
+			fmt.Printf("MockApi received body: %s\n", body)
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string                             `json:"id"`
+					Type       string                             `json:"type"`
+					Attributes net.ImpactedTestsDetectionResponse `json:"attributes"`
+				} `json:"data,omitempty"`
+			}{}
+			response.Data.Type = "ci_app_libraries_tests"
+			/*
+				response.Data.Attributes = net.ImpactedTestsDetectionResponse{
+					BaseSha: "e5cfb7b3dd02d4116b9dd3dd2dd4e39d11e0b61d",
+					Files: []string{
+						"internal/civisibility/integrations/gotesting/testing_test.go",
+					},
+				}
+			*/
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
 		} else {
