@@ -6,13 +6,17 @@
 package net
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -94,6 +98,65 @@ func mockRateLimitHandler(w http.ResponseWriter, _ *http.Request) {
 	// Set the rate limit reset time to 2 seconds
 	w.Header().Set(HeaderRateLimitReset, "2")
 	http.Error(w, "Too Many Requests", HTTPStatusTooManyRequests)
+}
+
+// pipeServer acts like an http server with a pipe-based transport
+type pipeServer struct {
+	handler http.Handler
+	conns   chan connPair
+	done    chan struct{}
+}
+
+type connPair struct {
+	client, server net.Conn
+}
+
+func newPipeServer(h http.HandlerFunc) *pipeServer {
+	ph := &pipeServer{
+		handler: h,
+		conns:   make(chan connPair),
+		done:    make(chan struct{}),
+	}
+	go ph.serve()
+	return ph
+}
+
+func (ph *pipeServer) serve() {
+	for {
+		select {
+		case <-ph.done:
+			return
+		case pair := <-ph.conns:
+			go ph.handleConn(pair.server)
+		}
+	}
+}
+
+func (ph *pipeServer) handleConn(conn net.Conn) {
+	defer conn.Close()
+	// Convert the connection into a response writer and request
+	req, err := http.ReadRequest(bufio.NewReader(conn))
+	if err != nil {
+		return
+	}
+	w := httptest.NewRecorder()
+	ph.handler.ServeHTTP(w, req)
+	w.Result().Write(conn)
+}
+
+func (ph *pipeServer) close() {
+	close(ph.done)
+}
+
+// Transport returns an http.Transport that dials through pipes to this handler
+func (ph *pipeServer) Transport() *http.Transport {
+	return &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			client, server := net.Pipe()
+			ph.conns <- connPair{client: client, server: server}
+			return client, nil
+		},
+	}
 }
 
 // Test Suite
@@ -421,26 +484,32 @@ func TestSendRequestWithCustomHeaders(t *testing.T) {
 }
 
 func TestSendRequestWithTimeout(t *testing.T) {
-	// Mock server that delays response
-	mockSlowHandler := func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(5 * time.Second) // Delay longer than the client timeout
-		w.WriteHeader(http.StatusOK)
-	}
+	synctest.Run(func() {
+		// Mock server that delays response
+		slowHandler := func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(5 * time.Second)
+			w.WriteHeader(http.StatusOK)
+		}
 
-	server := httptest.NewServer(http.HandlerFunc(mockSlowHandler))
-	defer server.Close()
+		// pipe based server allowing us to simulate an http server
+		// and leverage the synctest feature.
+		ph := newPipeServer(slowHandler)
+		defer ph.close()
 
-	handler := NewRequestHandler()
-	handler.Client.Timeout = 2 * time.Second // Set client timeout to 2 seconds
+		handler := NewRequestHandler()
+		handler.Client.Transport = ph.Transport()
+		handler.Client.Timeout = 2 * time.Second
 
-	config := RequestConfig{
-		Method: "GET",
-		URL:    server.URL,
-	}
+		config := RequestConfig{
+			Method: "GET",
+			URL:    "http://test-server",
+		}
 
-	response, err := handler.SendRequest(config)
-	assert.Error(t, err)
-	assert.Nil(t, response)
+		response, err := handler.SendRequest(config)
+		synctest.Wait()
+		assert.Error(t, err)
+		assert.Nil(t, response)
+	})
 }
 
 func TestSendRequestWithMaxRetriesExceeded(t *testing.T) {
