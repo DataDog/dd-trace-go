@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -13,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	llog "log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2695,4 +2697,30 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	assert.Equal(t, tracedSpan.Meta["go_execution_traced"], "yes")
 	assert.Equal(t, partialSpan.Meta["go_execution_traced"], "partial")
 	assert.NotContains(t, untracedSpan.Meta, "go_execution_traced")
+}
+
+func TestNoopTracerStartSpan(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
+
+	undo := log.UseLogger(customLogger{l: llog.New(w, "", llog.LstdFlags)})
+	defer undo()
+
+	StartSpan("abcd")
+
+	w.Close()
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+
+	log := buf.String()
+	expected := "Tracer must be started before starting a span"
+	assert.Contains(t, log, expected)
+}
+
+type customLogger struct{ l *llog.Logger }
+
+func (c customLogger) Log(msg string) {
+	c.l.Print(msg)
 }
