@@ -7,6 +7,9 @@
 package logrus
 
 import (
+	"strconv"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
@@ -26,16 +29,25 @@ type DDContextLogHook struct{}
 
 // Levels implements logrus.Hook interface, this hook applies to all defined levels
 func (d *DDContextLogHook) Levels() []logrus.Level {
-	return []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel, logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel}
+	return []logrus.Level{
+		logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel,
+		logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel,
+	}
 }
 
 // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
 func (d *DDContextLogHook) Fire(e *logrus.Entry) error {
 	span, found := tracer.SpanFromContext(e.Context)
-	if !found {
+	if !found || span == nil || span.Context() == nil {
 		return nil
 	}
-	e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
-	e.Data[ext.LogKeySpanID] = span.Context().SpanID()
+	var traceID string
+	if s, _ := span.Context().(ddtrace.SpanContextW3C); s != nil {
+		traceID = s.TraceID128()
+	} else {
+		traceID = strconv.FormatUint(span.Context().TraceID(), 10)
+	}
+	e.Data[ext.LogKeyTraceID] = traceID
+	e.Data[ext.LogKeySpanID] = strconv.FormatUint(span.Context().SpanID(), 10)
 	return nil
 }
