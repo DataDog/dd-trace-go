@@ -257,9 +257,15 @@ func flushLocked() {
 }
 
 func printMsg(lvl, format string, a ...interface{}) {
-	msg := fmt.Sprintf("%s %s: %s", prefixMsg, lvl, fmt.Sprintf(format, a...))
+	var b strings.Builder
+	b.Grow(len(prefixMsg) + 1 + len(lvl) + 2 + len(format))
+	b.WriteString(prefixMsg)
+	b.WriteString(" ")
+	b.WriteString(lvl)
+	b.WriteString(": ")
+	b.WriteString(fmt.Sprintf(format, a...))
 	mu.RLock()
-	logger.Log(msg)
+	logger.Log(b.String())
 	mu.RUnlock()
 }
 
