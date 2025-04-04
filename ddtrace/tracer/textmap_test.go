@@ -2750,10 +2750,7 @@ func TestExtractBaggagePropagatorDecoding(t *testing.T) {
 
 func TestInjectBaggageMaxItems(t *testing.T) {
 	assert := assert.New(t)
-
-	propagator := NewPropagator(&PropagatorConfig{
-		BaggageHeader: "baggage",
-	})
+	propagator := NewPropagator(nil)
 	tracer := newTracer(WithPropagator(propagator))
 	defer tracer.Stop()
 
@@ -2779,10 +2776,7 @@ func TestInjectBaggageMaxItems(t *testing.T) {
 
 func TestInjectBaggageMaxBytes(t *testing.T) {
 	assert := assert.New(t)
-
-	propagator := NewPropagator(&PropagatorConfig{
-		BaggageHeader: "baggage",
-	})
+	propagator := NewPropagator(nil)
 	tracer := newTracer(WithPropagator(propagator))
 	defer tracer.Stop()
 

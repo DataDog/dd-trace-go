@@ -863,3 +863,44 @@ func TestRoundTripperWithBaggage(t *testing.T) {
 
 	assert.NotEmpty(t, capturedHeaders.Get("baggage"), "should have baggage header")
 }
+
+func TestRoundTripperWithBaggageMaxInjection(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+
+	var capturedHeaders http.Header
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Hello with Baggage!"))
+	}))
+	defer s.Close()
+
+	rt := WrapRoundTripper(http.DefaultTransport).(*roundTripper)
+
+	ctx := context.Background()
+	ctx = baggage.Set(ctx, "foo", "bar")
+	ctx = baggage.Set(ctx, "baz", "qux")
+	// Add more baggage to exceed the max injection limit
+	for i := 0; i < 66; i++ {
+		ctx = baggage.Set(ctx, fmt.Sprintf("extra-%d", i), fmt.Sprintf("value-%d", i))
+	}
+
+	// Build the HTTP request with that context.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL+"/baggage", nil)
+	assert.NoError(t, err)
+
+	resp, err := rt.RoundTrip(req)
+	assert.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.NotEmpty(t, capturedHeaders.Get("baggage"), "should have baggage header")
+	baggageList := capturedHeaders.Get("baggage")
+	// split the baggageitems based on ,
+	baggageItems := strings.Split(baggageList, ",")
+	print(len(baggageItems))
+
+	assert.Len(t, strings.Split(capturedHeaders.Get("baggage"), ","), 64,
+		"should only inject up to the max limit of baggage items (64), got: %s", capturedHeaders.Get("baggage"))
+}
