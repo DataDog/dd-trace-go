@@ -14,7 +14,6 @@ import (
 	"io"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
@@ -22,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	testelasticsearch "github.com/testcontainers/testcontainers-go/modules/elasticsearch"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 type esClient interface {
@@ -42,7 +40,6 @@ func (b *base) Setup(ctx context.Context, t *testing.T, image string, newClient 
 		image,
 		testcontainers.WithLogger(testcontainers.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
-		testcontainers.WithWaitStrategyAndDeadline(time.Minute, wait.ForLog(`.*("message":\s?"started(\s|")?.*|]\sstarted\n)`).AsRegexp()),
 	)
 	containers.AssertTestContainersError(t, err)
 	containers.RegisterContainerCleanup(t, b.container)
