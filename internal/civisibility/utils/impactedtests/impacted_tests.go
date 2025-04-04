@@ -163,6 +163,10 @@ func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
 		}
 	}
 
+	if modifiedFiles == nil {
+		return nil, fmt.Errorf("civisibility.ImpactedTests: no modified files found")
+	}
+
 	return &ImpactedTestAnalyzer{
 		modifiedFiles:    modifiedFiles,
 		currentCommitSha: currentCommitSha,
@@ -172,6 +176,10 @@ func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
 
 // ProcessImpactedTest processes the impacted test based on the provided span.
 func (a *ImpactedTestAnalyzer) ProcessImpactedTest(span TestSpan) {
+	if len(a.modifiedFiles) == 0 {
+		return
+	}
+
 	tags := &tagsMap{
 		tags: span.AsMap(),
 		span: span,
