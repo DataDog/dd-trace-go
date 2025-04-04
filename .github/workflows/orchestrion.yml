@@ -278,13 +278,10 @@ jobs:
           repository: 'DataDog/dd-trace-go'
           ref: 'main'
       - name: Upload the results to Datadog CI App
-        env:
-          DD_CI_API_KEY_EXISTS: ${{ secrets.DD_CI_API_KEY != '' }}
-        if: ${{ env.DD_CI_API_KEY_EXISTS == 'true' }}
+        if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ inputs.dd-api-key || secrets.DD_CI_API_KEY }}
           files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
