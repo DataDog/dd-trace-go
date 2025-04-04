@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
@@ -28,6 +29,7 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	fmt.Println("MTOFF: IN ROUNDTRIP")
 	if rt.cfg.ignoreRequest(req) {
 		return rt.base.RoundTrip(req)
 	}
@@ -71,7 +73,23 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	if rt.cfg.before != nil {
 		rt.cfg.before(req, span)
 	}
+	for key, values := range req.Header {
+		fmt.Println("MTOFF: IN ROUNDTRIP, REQ HEADER: ", key)
+		for _, value := range values {
+			fmt.Println("MTOFF: value is", value)
+		}
+	}
 	r2 := req.Clone(ctx)
+
+	for key, values := range req.Header {
+		fmt.Println("MTOFF: IN ROUNDTRIP, r2 HEADER: ", key)
+		for _, value := range values {
+			fmt.Println("MTOFF: value is", value)
+		}
+	}
+	for k, v := range baggage.All(ctx) {
+		span.SetBaggageItem(k, v)
+	}
 	if rt.cfg.propagation {
 		// inject the span context into the http request copy
 		err = tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(r2.Header))

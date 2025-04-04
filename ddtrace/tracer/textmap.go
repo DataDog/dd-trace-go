@@ -385,6 +385,7 @@ func (p *propagator) Inject(spanCtx ddtrace.SpanContext, carrier interface{}) er
 }
 
 func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+	fmt.Println("MTOFF: In injectTextMap")
 	ctx, ok := spanCtx.(*spanContext)
 	if !ok || ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
