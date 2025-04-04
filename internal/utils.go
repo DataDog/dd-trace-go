@@ -77,30 +77,59 @@ func (l *LockMap) Get(k string) string {
 // Implementation and related tests were taken/inspired by felixge/countermap
 // https://github.com/felixge/countermap/pull/2
 type XSyncMapCounterMap struct {
-	counts *xsync.MapOf[string, *xsync.Counter]
+	counts  [2]*xsync.MapOf[string, *xsync.Counter]
+	mu, muD sync.Mutex
+	index   int
 }
 
 func NewXSyncMapCounterMap() *XSyncMapCounterMap {
-	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
+	return &XSyncMapCounterMap{
+		counts: [2]*xsync.MapOf[string, *xsync.Counter]{
+			xsync.NewMapOf[string, *xsync.Counter](),
+			xsync.NewMapOf[string, *xsync.Counter](),
+		},
+	}
 }
 
+// Inc takes a key and increases the value of that key by 1. If the key does not already
+// exist in the map, it initializes a new counter and sets its value to 1.
 func (cm *XSyncMapCounterMap) Inc(key string) {
-	val, ok := cm.counts.Load(key)
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	i := cm.index
+	val, ok := cm.counts[i].Load(key)
 	if !ok {
-		val, _ = cm.counts.LoadOrStore(key, xsync.NewCounter())
+		val, _ = cm.counts[i].LoadAndStore(key, xsync.NewCounter())
 	}
 	val.Inc()
 }
 
+// swap switches the value of index between 0 and 1. This allows Inc() and GetAndReset()
+// to access different maps to prevent race conditions. It returns the old value of index
+// to be used.
+func (cm *XSyncMapCounterMap) swap() int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	old := cm.index
+	cm.index = cm.index ^ 1
+	return old
+}
+
+// GetAndReset() returns a map representation of the current values in the XSyncMapCounterMap,
+// then deletes all key value pairs from the map.
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
+	cm.muD.Lock()
+	defer cm.muD.Unlock()
 	ret := map[string]int64{}
-	cm.counts.Range(func(key string, _ *xsync.Counter) bool {
-		v, ok := cm.counts.LoadAndDelete(key)
+	i := cm.swap()
+	cm.counts[i].Range(func(key string, _ *xsync.Counter) bool {
+		v, ok := cm.counts[i].Load(key)
 		if ok {
 			ret[key] = v.Value()
 		}
 		return true
 	})
+	cm.counts[i].Clear()
 	return ret
 }
 
