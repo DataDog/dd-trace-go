@@ -276,15 +276,6 @@ func multiCommand(cmds []command) command {
 	}
 }
 
-func firstError(s []valkey.ValkeyResult) error {
-	for _, result := range s {
-		if err := result.Error(); err != nil && !valkey.IsValkeyNil(err) {
-			return err
-		}
-	}
-	return nil
-}
-
 func setClientCacheTags(s *tracer.Span, result valkey.ValkeyResult) {
 	s.SetTag(ext.ValkeyClientCacheHit, result.IsCacheHit())
 	s.SetTag(ext.ValkeyClientCacheTTL, result.CacheTTL())

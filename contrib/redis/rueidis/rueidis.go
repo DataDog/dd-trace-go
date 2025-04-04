@@ -274,15 +274,6 @@ func multiCommand(cmds []command) command {
 	}
 }
 
-func firstError(s []rueidis.RedisResult) error {
-	for _, result := range s {
-		if err := result.Error(); err != nil && !rueidis.IsRedisNil(err) {
-			return err
-		}
-	}
-	return nil
-}
-
 func setClientCacheTags(s *tracer.Span, result rueidis.RedisResult) {
 	s.SetTag(ext.RedisClientCacheHit, result.IsCacheHit())
 	s.SetTag(ext.RedisClientCacheTTL, result.CacheTTL())
