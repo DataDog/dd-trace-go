@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	topicA        = "segmentio_kafka_topic-A"
-	topicB        = "segmentio_kafka_topic-B"
-	consumerGroup = "segmentio_kafka_group-A"
+	topicA        = "segmentio_kafka_topic_A"
+	topicB        = "segmentio_kafka_topic_B"
+	consumerGroup = "segmentio_kafka_group_A"
 )
 
 type TestCase struct {
@@ -38,7 +38,7 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
-	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t)
+	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t, []string{topicA, topicB})
 }
 
 func (tc *TestCase) newReader(topic string) *kafka.Reader {
@@ -89,9 +89,10 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 			if !errors.Is(err, kafka.UnknownTopicOrPartition) {
 				return backoff.Permanent(err)
 			}
+			t.Logf("failed to produce messages (retrying...): %v", err)
 			return err
 		},
-		backoff.NewExponentialBackOff(),
+		backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(30*time.Second)),
 	)
 	require.NoError(t, err)
 }

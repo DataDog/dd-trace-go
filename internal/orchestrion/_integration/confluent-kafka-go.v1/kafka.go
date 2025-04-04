@@ -34,7 +34,7 @@ type TestCase struct {
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
-	container, addr := containers.StartKafkaTestContainer(t)
+	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
 	tc.container = container
 	tc.addr = []string{addr}
 }
