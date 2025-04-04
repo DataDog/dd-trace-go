@@ -13,20 +13,20 @@ meta:
 aspects:
   - id: New
     join-point:
-      function-call: log/slog.New
+      all-of:
+        - import-path: log/slog
+        - function-body:
+            function:
+              - name: New
     advice:
-      # We are injecting around use of a standard library package, so we are
-      # being extra careful to avoid creating a new compile-time dependency arc,
-      # as it would be very easy for a dependency of dd-trace-go to suddenly
-      # create a cycle.
       - inject-declarations:
-          imports:
-            slog: log/slog
+          # We need to use go:linkname to refer to a number of declarations in order to avoid creating
+          # circular dependencies, as these features have transitive dependencies on `log/slog`...
           links:
             - github.com/DataDog/dd-trace-go/contrib/log/slog/v2
           template: |-
             //go:linkname __dd_slogtrace_WrapHandler github.com/DataDog/dd-trace-go/contrib/log/slog/v2.WrapHandler
-            func __dd_slogtrace_WrapHandler(slog.Handler) slog.Handler
-      - wrap-expression:
+            func __dd_slogtrace_WrapHandler(Handler) Handler
+      - prepend-statements:
           template: |-
-            {{ .AST.Fun }}(__dd_slogtrace_WrapHandler({{ index .AST.Args 0 }}))
+            {{ .Function.Argument 0 }} = __dd_slogtrace_WrapHandler({{ .Function.Argument 0 }})
