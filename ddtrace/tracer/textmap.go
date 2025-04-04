@@ -496,7 +496,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 		case traceTagsHeader:
 			unmarshalPropagatingTags(&ctx, v)
 		default:
-			fmt.Println("MTOFF: EXTRACTING FROM THIS KEY: ", key)
+			fmt.Println("MTOFF: EXTRACTING FROM THIS KEY: ", key, ", but looking for baggage prefix ", p.cfg.BaggagePrefix)
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
 				fmt.Println("MTOFF: BAGGAGE key is being set")
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
