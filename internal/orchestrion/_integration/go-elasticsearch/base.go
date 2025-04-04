@@ -14,14 +14,10 @@ import (
 	"io"
 	"net/http"
 	"testing"
-	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	testelasticsearch "github.com/testcontainers/testcontainers-go/modules/elasticsearch"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -32,23 +28,6 @@ type esClient interface {
 type base struct {
 	container *testelasticsearch.ElasticsearchContainer
 	client    esClient
-}
-
-func (b *base) Setup(ctx context.Context, t *testing.T, image string, newClient func(addr string, caCert []byte) (esClient, error)) {
-	containers.SkipIfProviderIsNotHealthy(t)
-
-	var err error
-	b.container, err = testelasticsearch.Run(ctx,
-		image,
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
-		containers.WithTestLogConsumer(t),
-		testcontainers.WithWaitStrategyAndDeadline(time.Minute, wait.ForLog(`.*("message":\s?"started(\s|")?.*|]\sstarted\n)`).AsRegexp()),
-	)
-	containers.AssertTestContainersError(t, err)
-	containers.RegisterContainerCleanup(t, b.container)
-
-	b.client, err = newClient(b.container.Settings.Address, b.container.Settings.CACert)
-	require.NoError(t, err)
 }
 
 func (b *base) Run(ctx context.Context, t *testing.T, doRequest func(t *testing.T, client esClient, body io.Reader)) {
