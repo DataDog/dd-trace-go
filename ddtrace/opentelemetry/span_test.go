@@ -17,10 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
@@ -171,7 +170,8 @@ func TestSpanLink(t *testing.T) {
 	assert.Len(payload, 1)    // only one trace
 	assert.Len(payload[0], 1) // only one span
 
-	var spanLinks []ddtrace.SpanLink
+	// Convert the span_links field from type []map[string]interface{} to a struct
+	var spanLinks []tracer.SpanLink
 	spanLinkBytes, _ := json.Marshal(payload[0][0]["span_links"])
 	json.Unmarshal(spanLinkBytes, &spanLinks)
 	assert.Len(spanLinks, 1) // only one span link
@@ -313,12 +313,12 @@ func TestSpanSetStatus(t *testing.T) {
 }
 
 func TestSpanAddEvent(t *testing.T) {
-	assert := assert.New(t)
 	_, _, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
 	t.Run("event with attributes", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "span_event")
 		// When no timestamp option is provided, otel will generate a timestamp for the event
 		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
@@ -340,7 +340,7 @@ func TestSpanAddEvent(t *testing.T) {
 		e := dd.events[0]
 		assert.Equal(e.name, "My event!")
 
-		cfg := ddtrace.SpanEventConfig{}
+		cfg := tracer.SpanEventConfig{}
 		for _, opt := range e.options {
 			opt(&cfg)
 		}
@@ -360,6 +360,7 @@ func TestSpanAddEvent(t *testing.T) {
 		}
 	})
 	t.Run("event with timestamp", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "span_event")
 		// generate micro and nano second timestamps
 		now := time.Now()
@@ -372,7 +373,7 @@ func TestSpanAddEvent(t *testing.T) {
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
 
-		cfg := ddtrace.SpanEventConfig{}
+		cfg := tracer.SpanEventConfig{}
 		for _, opt := range e.options {
 			opt(&cfg)
 		}
@@ -380,6 +381,7 @@ func TestSpanAddEvent(t *testing.T) {
 		assert.Equal(timeMicro*1000, cfg.Time.UnixNano())
 	})
 	t.Run("mulitple events", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "sp")
 		now := time.Now()
 		sp.AddEvent("evt1", oteltrace.WithTimestamp(now))

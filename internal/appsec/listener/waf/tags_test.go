@@ -6,18 +6,24 @@
 package waf
 
 import (
+	"maps"
+	"slices"
 	"testing"
+	"time"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 )
 
 const (
-	wafDurationTag    = "_dd.appsec.waf.duration"
-	wafDurationExtTag = "_dd.appsec.waf.duration_ext"
-	wafTimeoutTag     = "_dd.appsec.waf.timeouts"
+	wafDurationTag     = "_dd.appsec.waf.duration"
+	wafDurationExtTag  = "_dd.appsec.waf.duration_ext"
+	raspDurationTag    = "_dd.appsec.rasp.duration"
+	raspDurationExtTag = "_dd.appsec.rasp.duration_ext"
 )
 
 // Test that internal functions used to set span tags use the correct types
@@ -34,23 +40,40 @@ func TestTagsTypes(t *testing.T) {
 
 	AddRulesMonitoringTags(&th, wafDiags)
 
-	stats := map[string]any{
-		"waf.duration":          10,
-		"rasp.duration":         10,
-		"waf.duration_ext":      20,
-		"rasp.duration_ext":     20,
-		"waf.timeouts":          0,
-		"waf.truncations.depth": []int{1, 2, 3},
-		"waf.run":               12000,
-	}
-
-	AddWAFMonitoringTags(&th, "1.2.3", stats)
+	AddWAFMonitoringTags(&th, &emitter.ContextMetrics{}, "1.2.3", waf.Stats{
+		Timers: map[string]time.Duration{
+			"waf.duration":      10 * time.Microsecond,
+			"rasp.duration":     10 * time.Microsecond,
+			"waf.duration_ext":  20 * time.Microsecond,
+			"rasp.duration_ext": 20 * time.Microsecond,
+		},
+		TimeoutCount:     0,
+		TimeoutRASPCount: 2,
+		Truncations: map[waf.TruncationReason][]int{
+			waf.ObjectTooDeep: {1, 2, 3},
+		},
+	})
 
 	tags := th.Tags()
 	_, ok := tags[eventRulesErrorsTag].(string)
 	require.True(t, ok)
 
-	for _, tag := range []string{eventRulesLoadedTag, eventRulesFailedTag, wafDurationTag, wafDurationExtTag, wafVersionTag, wafTimeoutTag} {
-		require.Contains(t, tags, tag)
+	var expectedTags = []string{
+		eventRulesLoadedTag,
+		eventRulesFailedTag,
+		eventRulesErrorsTag,
+		eventRulesVersionTag,
+		wafDurationTag,
+		wafDurationExtTag,
+		raspDurationTag,
+		raspDurationExtTag,
+		wafVersionTag,
+		raspTimeoutTag,
+		truncationTagPrefix + waf.ObjectTooDeep.String(),
+		ext.ManualKeep,
 	}
+
+	slices.Sort(expectedTags)
+
+	require.Equal(t, expectedTags, slices.Sorted(maps.Keys(tags)))
 }

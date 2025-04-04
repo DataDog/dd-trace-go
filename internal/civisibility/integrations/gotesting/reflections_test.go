@@ -128,7 +128,7 @@ func TestGetBenchmarkPrivateFields(t *testing.T) {
 	// Set values to the private fields
 	*benchFields.name = "BenchmarkTest"
 	*benchFields.level = 1
-	*benchFields.benchFunc = func(b *testing.B) {}
+	*benchFields.benchFunc = func(_ *testing.B) {}
 	*benchFields.result = testing.BenchmarkResult{}
 
 	// Check that the private fields have the expected values

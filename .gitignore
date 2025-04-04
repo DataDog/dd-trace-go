@@ -1,6 +1,8 @@
 # go
 bin/
 go.work*
+!/go.work
+!/go.work.sum
 
 # profiling
 *.test
@@ -17,4 +19,11 @@ vendor
 
 /contrib_coverage.txt
 /core_coverage.txt
-/gotestsum-report.xml
+gotestsum-report*.xml
+contrib_coverage.*
+/internal/apps/unit-of-work/unit-of-work
+static-analysis.datadog.yml
+.vscode/settings.json
+
+# Cursor
+/.cursor

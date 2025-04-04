@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers/graphql-go
+  name: github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2
   description: |-
     The goal of this project is to provide full support of the [October 2021 GraphQL specification](https://spec.graphql.org/October2021/) with a set of idiomatic, easy to use Go packages.
 
@@ -21,5 +21,5 @@ aspects:
           values:
             - imports:
                 graphql: github.com/graph-gophers/graphql-go
-                graphqltrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-gophers/graphql-go
+                graphqltrace: github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2
               template: graphql.Tracer(graphqltrace.NewTracer())

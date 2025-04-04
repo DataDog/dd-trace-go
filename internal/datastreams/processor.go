@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/mapping"
@@ -317,16 +317,16 @@ func (p *Processor) flushInput() {
 func (p *Processor) run(tick <-chan time.Time) {
 	for {
 		select {
+		case <-p.stop:
+			// drop in flight payloads on the input channel
+			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
+			return
 		case now := <-tick:
 			p.sendToAgent(p.flush(now))
 		case done := <-p.flushRequest:
 			p.flushInput()
 			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
 			close(done)
-		case <-p.stop:
-			// drop in flight payloads on the input channel
-			p.sendToAgent(p.flush(time.Now().Add(bucketDuration * 10)))
-			return
 		default:
 			s := p.in.pop()
 			if s == nil {

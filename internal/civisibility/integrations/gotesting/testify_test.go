@@ -32,8 +32,8 @@ func TestTestifyLikeTest(t *testing.T) {
 			if test.suiteName != "testify_test.go/MySuite" {
 				t.Errorf("Expected suite name to be testify_test.go/MySuite, got %s", test.suiteName)
 			}
-			if test.moduleName != "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting" {
-				t.Errorf("Expected module name to be gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting, got %s", test.moduleName)
+			if test.moduleName != "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting" {
+				t.Errorf("Expected module name to be github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting, got %s", test.moduleName)
 			}
 		} else {
 			t.Errorf("Expected the parent T to be registered, got %v", reflect.ValueOf(tParent).UnsafePointer())
@@ -44,6 +44,6 @@ func TestTestifyLikeTest(t *testing.T) {
 func (s *MySuite) TestMySuite() {
 	t := (*T)(s.T)
 	t.Log("This is a test")
-	t.Run("sub01", func(t *testing.T) {
+	t.Run("sub01", func(_ *testing.T) {
 	})
 }

@@ -8,9 +8,9 @@ package pgx
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,7 +36,7 @@ const (
 )
 
 type tracedBatchQuery struct {
-	span tracer.Span
+	span *tracer.Span
 	data pgx.TraceBatchQueryData
 }
 
@@ -269,12 +269,12 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 	finishSpan(ctx, data.Err)
 }
 
-func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
-	opts := []ddtrace.StartSpanOption{
+func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageJackcPGXV5),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(tagOperation, string(op)),
 	}

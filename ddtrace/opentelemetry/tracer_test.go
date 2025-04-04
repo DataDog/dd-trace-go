@@ -7,18 +7,17 @@ package opentelemetry
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
@@ -32,10 +31,9 @@ func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
 	tp := NewTracerProvider()
 	tr := tp.Tracer("ot")
-	dd := internal.GetGlobalTracer()
 	ott, ok := tr.(*oteltracer)
 	assert.True(ok)
-	assert.Equal(ott.DD, dd)
+	assert.NotNil(ott.DD)
 }
 
 func TestGetTracerMultiple(t *testing.T) {
@@ -71,8 +69,10 @@ func TestSpanWithNewRoot(t *testing.T) {
 	assert.True(ok)
 	assert.Equal(got, child.(*span).DD)
 
-	var parentBytes oteltrace.TraceID
-	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
+	// Convert string TraceID to bytes for comparison
+	parentTraceID := noopParent.Context().TraceID()
+	parentBytes := make([]byte, 16)
+	hex.Decode(parentBytes, []byte(parentTraceID))
 	assert.NotEqual(parentBytes, child.SpanContext().TraceID())
 }
 
@@ -83,8 +83,7 @@ func TestSpanWithoutNewRoot(t *testing.T) {
 
 	parent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 	_, child := tr.Start(ddCtx, "otel.child")
-	parentCtxW3C := parent.Context().(ddtrace.SpanContextW3C)
-	assert.Equal(parentCtxW3C.TraceID128Bytes(), [16]byte(child.SpanContext().TraceID()))
+	assert.Equal(parent.Context().TraceID(), child.SpanContext().TraceID().String())
 }
 
 func TestTracerOptions(t *testing.T) {
@@ -123,7 +122,6 @@ func TestSpanContext(t *testing.T) {
 }
 
 func TestForceFlush(t *testing.T) {
-	assert := assert.New(t)
 	const (
 		UNSET = iota
 		ERROR
@@ -141,6 +139,7 @@ func TestForceFlush(t *testing.T) {
 	}
 	for _, tc := range testData {
 		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
+			assert := assert.New(t)
 			tp, payloads, cleanup := mockTracerProvider(t)
 			defer cleanup()
 
@@ -168,13 +167,14 @@ func TestForceFlush(t *testing.T) {
 	}
 
 	t.Run("Flush after shutdown", func(t *testing.T) {
+		assert := assert.New(t)
 		tp := NewTracerProvider()
 		otel.SetTracerProvider(tp)
 		testLog := new(log.RecordLogger)
 		defer log.UseLogger(testLog)()
 
 		tp.stopped = 1
-		tp.ForceFlush(time.Second, func(ok bool) {})
+		tp.ForceFlush(time.Second, func(_ bool) {})
 
 		logs := testLog.Logs()
 		assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
@@ -218,7 +218,7 @@ func TestConcurrentSetAttributes(_ *testing.T) {
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		i := i
-		go func(val int) {
+		go func(_ int) {
 			defer wg.Done()
 			span.SetAttributes(attribute.Float64("workerID", float64(i)))
 		}(i)

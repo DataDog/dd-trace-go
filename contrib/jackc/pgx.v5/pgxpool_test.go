@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -50,7 +50,7 @@ func TestPoolWithPoolStats(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	statsd := new(statsdtest.TestStatsdClient)
+	statsd := testutils.NewMockStatsdClient()
 	conn, err := NewPool(ctx, postgresDSN, withStatsdClient(statsd), WithPoolStats())
 	require.NoError(t, err)
 	defer conn.Close()
@@ -66,7 +66,7 @@ func TestPoolWithPoolStats(t *testing.T) {
 	}
 }
 
-func withStatsdClient(s internal.StatsdClient) Option {
+func withStatsdClient(s instrumentation.StatsdClient) Option {
 	return func(c *config) {
 		c.statsdClient = s
 	}

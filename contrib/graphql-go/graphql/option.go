@@ -8,9 +8,8 @@ package graphql
 import (
 	"math"
 
-	internalgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/graphql"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 )
 
 const defaultServiceName = "graphql.server"
@@ -21,20 +20,26 @@ type config struct {
 	errExtensions []string
 }
 
-type Option func(*config)
+// Option describes options for the GraphQL integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewSchema.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	if internal.BoolEnv("DD_TRACE_GRAPHQL_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-	cfg.errExtensions = internalgraphql.ErrorExtensionsFromEnv()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.errExtensions = instrgraphql.ErrorExtensionsFromEnv()
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -46,7 +51,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -56,16 +61,16 @@ func WithAnalyticsRate(rate float64) Option {
 	}
 }
 
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the client.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithErrorExtensions allows to configure the error extensions to include in the error span events.
-func WithErrorExtensions(errExtensions ...string) Option {
+func WithErrorExtensions(errExtensions ...string) OptionFn {
 	return func(cfg *config) {
-		cfg.errExtensions = internalgraphql.ParseErrorExtensions(errExtensions)
+		cfg.errExtensions = instrgraphql.ParseErrorExtensions(errExtensions)
 	}
 }

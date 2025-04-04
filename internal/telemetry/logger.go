@@ -12,8 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/puzpuzpuz/xsync/v3"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 // WithTags returns a LogOption that sets the tags for the telemetry log message. Tags are key-value pairs that are then
@@ -55,7 +56,7 @@ type loggerValue struct {
 }
 
 type logger struct {
-	store internal.SyncMap[loggerKey, *loggerValue]
+	store *xsync.MapOf[loggerKey, *loggerValue]
 
 	distinctLogs       atomic.Int32
 	maxDistinctLogs    int32
@@ -84,21 +85,22 @@ func (logger *logger) add(level LogLevel, text string, opts ...LogOption) {
 		opt(&key, nil)
 	}
 
-	value, loaded := logger.store.LoadOrStore(key, &loggerValue{})
-	if !loaded {
-		// If we were the first to store the value, we need to set the time and apply the options
-		value.time = time.Now().Unix()
+	value, _ := logger.store.LoadOrCompute(key, func() *loggerValue {
+		value := &loggerValue{
+			time: time.Now().Unix(),
+		}
 		for _, opt := range opts {
 			opt(nil, value)
 		}
 		logger.distinctLogs.Add(1)
-	}
+		return value
+	})
 
 	value.count.Add(1)
 }
 
 func (logger *logger) Payload() transport.Payload {
-	logs := make([]transport.LogMessage, 0, logger.store.Len()+1)
+	logs := make([]transport.LogMessage, 0, logger.store.Size()+1)
 	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
 		logger.store.Delete(key)
 		logger.distinctLogs.Add(-1)

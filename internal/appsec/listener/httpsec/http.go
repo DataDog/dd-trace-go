@@ -6,17 +6,18 @@
 package httpsec
 
 import (
-	"math/rand"
+	"strings"
 
+	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/DataDog/appsec-internal-go/appsec"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 type Feature struct {
@@ -82,15 +83,29 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 		WithResponseHeadersNoCookies(headers).
 		WithResponseStatus(resp.StatusCode)
 
-	if feature.canExtractSchemas() {
+	if feature.shouldExtractShema(op, resp.StatusCode) {
 		builder = builder.ExtractSchema()
 	}
 
 	op.Run(op, builder.Build())
+
+	metric := "no_schema"
+	for k := range op.Derivatives() {
+		if strings.HasPrefix(k, "_dd.appsec.s.") {
+			metric = "schema"
+			break
+		}
+	}
+	telemetry.Count(telemetry.NamespaceAppSec, "api_security.request."+metric, []string{"framework:" + op.Framework()}).Submit(1)
 }
 
-// canExtractSchemas checks that API Security is enabled and that sampling rate
+// shouldExtractShema checks that API Security is enabled and that sampling rate
 // allows extracting schemas
-func (feature *Feature) canExtractSchemas() bool {
-	return feature.APISec.Enabled && feature.APISec.SampleRate >= rand.Float64()
+func (feature *Feature) shouldExtractShema(op *httpsec.HandlerOperation, statusCode int) bool {
+	return feature.APISec.Enabled &&
+		feature.APISec.Sampler.DecisionFor(apisec.SamplingKey{
+			Method:     op.Method(),
+			Route:      op.Route(),
+			StatusCode: statusCode,
+		})
 }

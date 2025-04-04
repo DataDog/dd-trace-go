@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws
+  name: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
   description: The official AWS SDK for Go
 
 aspects:
@@ -17,7 +17,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            awstrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
             aws: github.com/aws/aws-sdk-go-v2/aws
           template: |-
             func(cfg aws.Config) (aws.Config) {
@@ -35,7 +35,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            awstrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go-v2/aws
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
             aws: github.com/aws/aws-sdk-go-v2/aws
           template: |-
             func(cfg *aws.Config) (*aws.Config) {

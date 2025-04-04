@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package go_control_plane
+package gocontrolplane
 
 import (
 	"context"
@@ -16,9 +16,9 @@ import (
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 
-	ddgrpc "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	ddgrpc "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/stretchr/testify/require"
@@ -27,14 +27,13 @@ import (
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -98,21 +97,20 @@ func TestAppSec(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 }
 
 func TestBlockingWithUserRulesFile(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -152,9 +150,9 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
 	t.Run("blocking-event-on-request-on-query", func(t *testing.T) {
@@ -191,8 +189,8 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
 	t.Run("blocking-event-on-request-on-cookies", func(t *testing.T) {
@@ -229,14 +227,14 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 }
 
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -273,6 +271,7 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
+		require.Equal(t, "envoyproxy/go-control-plane", span.Tag("component"))
 	})
 
 	t.Run("span-with-injected-context", func(t *testing.T) {
@@ -308,23 +307,23 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
+		require.Equal(t, "envoyproxy/go-control-plane", span.Tag("component"))
 
 		// Check for trace context
-		require.Equal(t, uint64(12345), span.Context().TraceID())
+		require.Equal(t, "00000000000000000000000000003039", span.Context().TraceID())
 		require.Equal(t, uint64(67890), span.ParentID())
 	})
 }
 
 func TestXForwardedForHeaderClientIp(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -360,7 +359,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
 
 		// Appsec
-		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 	})
 
 	t.Run("blocking-client-ip", func(t *testing.T) {
@@ -399,21 +398,20 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 		// Check for tags
 		span := finished[0]
 		require.Equal(t, "1.2.3.4", span.Tag("http.client_ip"))
-		require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
-		require.Equal(t, true, span.Tag("appsec.event"))
-		require.Equal(t, true, span.Tag("appsec.blocked"))
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 }
 
 func TestMalformedEnvoyProcessing(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false)
+		rig, err := newEnvoyAppsecRig(t, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -452,15 +450,63 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(t *testing.T, traceClient bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+func TestAppSecAsGCPServiceExtension(t *testing.T) {
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, false, true)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("gcp-se-component-monitoring-event-on-request", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "dd-test-scanner-log"}, map[string]string{}, false)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"ua0-600-55x": 1})
+
+		// Check for component tag
+		span := finished[0]
+		require.Equal(t, "gcp-service-extension", span.Tag("component"))
+	})
+}
+
+func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
 	t.Helper()
 
-	interceptorOpts = append([]ddgrpc.InterceptorOption{ddgrpc.WithServiceName("grpc")}, interceptorOpts...)
+	interceptorOpts = append([]ddgrpc.Option{ddgrpc.WithService("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer()
-
 	fixtureServer := new(envoyFixtureServer)
-	appsecSrv := AppsecEnvoyExternalProcessorServer(fixtureServer)
+
+	var appsecSrv envoyextproc.ExternalProcessorServer
+	if isGCPServiceExtension {
+		appsecSrv = AppsecEnvoyExternalProcessorServerGCPServiceExtension(fixtureServer)
+	} else {
+		appsecSrv = AppsecEnvoyExternalProcessorServer(fixtureServer)
+	}
+
 	envoyextproc.RegisterExternalProcessorServer(server, appsecSrv)
 
 	li, err := net.Listen("tcp", "127.0.0.1:0")
@@ -599,7 +645,7 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	require.Equal(t, io.EOF, err)
 }
 
-func checkForAppsecEvent(t *testing.T, finished []mocktracer.Span, expectedRuleIDs map[string]int) {
+func checkForAppsecEvent(t *testing.T, finished []*mocktracer.Span, expectedRuleIDs map[string]int) {
 	t.Helper()
 
 	// The request should have the attack attempts

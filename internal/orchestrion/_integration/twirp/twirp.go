@@ -17,7 +17,7 @@ import (
 	"github.com/twitchtv/twirp"
 	"github.com/twitchtv/twirp/example"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {

@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/os
+  name: github.com/DataDog/dd-trace-go/v2/contrib/os
   description: |-
     Protection from Local File Inclusion (LFI) Attacks
 
@@ -27,9 +27,9 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            ossec: gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec
-            dyngo: gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo
-            events: gopkg.in/DataDog/dd-trace-go.v1/appsec/events
+            ossec: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec
+            dyngo: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+            events: github.com/DataDog/dd-trace-go/v2/appsec/events
           template: |-
             __dd_parent_op, _ := dyngo.FromContext(nil)
             if __dd_parent_op != nil {

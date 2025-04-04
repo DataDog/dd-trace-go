@@ -37,10 +37,11 @@ func TestGet(t *testing.T) {
 				res, err := Get(ctx, validURL)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
-
+	//nolint:bodyclose
 	t.Run("invalid URL", func(t *testing.T) {
 		withMockDefaultClient(
 			func(*http.Request) (*http.Response, error) {
@@ -71,10 +72,12 @@ func TestHead(t *testing.T) {
 				res, err := Head(ctx, validURL)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
 
+	//nolint:bodyclose
 	t.Run("invalid URL", func(t *testing.T) {
 		withMockDefaultClient(
 			func(*http.Request) (*http.Response, error) {
@@ -112,10 +115,12 @@ func TestPost(t *testing.T) {
 				res, err := Post(ctx, validURL, contentType, bytes.NewReader(body))
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
 
+	//nolint:bodyclose
 	t.Run("invalid URL", func(t *testing.T) {
 		withMockDefaultClient(
 			func(*http.Request) (*http.Response, error) {
@@ -155,10 +160,12 @@ func TestPostForm(t *testing.T) {
 				res, err := PostForm(ctx, validURL, values)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
+				res.Body.Close()
 			},
 		)
 	})
 
+	//nolint:bodyclose
 	t.Run("invalid URL", func(t *testing.T) {
 		withMockDefaultClient(
 			func(*http.Request) (*http.Response, error) {

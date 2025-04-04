@@ -44,15 +44,12 @@ func main() {
 			continue
 		}
 
-		log.Printf("Looking for test cases in %s...\n", file.Name())
 		testDir := filepath.Join(rootDir, file.Name())
 		testData := parseCode(testDir)
 		if len(testData.Cases) == 0 {
-			log.Println("... none found!")
 			continue
 		}
 
-		log.Printf("... %d test cases found!\n", len(testData.Cases))
 		if err := testData.generate(filepath.Join(testDir, genTestName)); err != nil {
 			log.Fatalln(err)
 		}
