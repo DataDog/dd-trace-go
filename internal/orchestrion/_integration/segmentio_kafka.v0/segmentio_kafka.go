@@ -25,9 +25,9 @@ import (
 )
 
 const (
-	topicA        = "topic-A"
-	topicB        = "topic-B"
-	consumerGroup = "group-A"
+	topicA        = "segmentio_kafka_topic_A"
+	topicB        = "segmentio_kafka_topic_B"
+	consumerGroup = "segmentio_kafka_group_A"
 )
 
 type TestCase struct {
@@ -38,7 +38,7 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
-	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t)
+	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t, []string{topicA, topicB})
 }
 
 func (tc *TestCase) newReader(topic string) *kafka.Reader {
@@ -89,9 +89,10 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 			if !errors.Is(err, kafka.UnknownTopicOrPartition) {
 				return backoff.Permanent(err)
 			}
+			t.Logf("failed to produce messages (retrying...): %v", err)
 			return err
 		},
-		backoff.NewExponentialBackOff(),
+		backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(30*time.Second)),
 	)
 	require.NoError(t, err)
 }
@@ -143,7 +144,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic topic-A",
+						"resource": "Produce Topic " + topicA,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
@@ -155,7 +156,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"name":     "kafka.consume",
 								"type":     "queue",
 								"service":  "kafka",
-								"resource": "Consume Topic topic-A",
+								"resource": "Consume Topic " + topicA,
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
@@ -169,7 +170,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic topic-B",
+						"resource": "Produce Topic " + topicB,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
@@ -181,7 +182,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"name":     "kafka.consume",
 								"type":     "queue",
 								"service":  "kafka",
-								"resource": "Consume Topic topic-B",
+								"resource": "Consume Topic " + topicB,
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
@@ -195,7 +196,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic topic-B",
+						"resource": "Produce Topic " + topicB,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",

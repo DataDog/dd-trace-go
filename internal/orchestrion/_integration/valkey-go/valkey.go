@@ -9,15 +9,14 @@ package valkey
 
 import (
 	"context"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"github.com/valkey-io/valkey-go"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
-	"github.com/stretchr/testify/require"
-	testvalkey "github.com/testcontainers/testcontainers-go/modules/valkey"
-	"github.com/valkey-io/valkey-go"
 )
 
 type TestCase struct {
@@ -26,16 +25,12 @@ type TestCase struct {
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
-	valkeyContainer, err := testvalkey.Run(ctx, "valkey/valkey:8-alpine")
-	require.NoError(t, err)
-	require.NoError(t, valkeyContainer.Start(ctx), "failed to start a valkey container")
-	endpoint, err := valkeyContainer.Endpoint(ctx, "http")
-	require.NoError(t, err)
+	_, addr := containers.StartValkeyTestContainer(t)
+	var err error
 	tc.client, err = valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{strings.TrimPrefix(endpoint, "http://")},
+		InitAddress: []string{addr},
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, valkeyContainer.Terminate(context.Background())) })
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
