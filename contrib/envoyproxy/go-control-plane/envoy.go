@@ -38,19 +38,22 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane)
 }
 
+type AppsecEnvoyConfig struct {
+	IsGCPServiceExtension bool
+	BlockingUnavailable   bool
+}
+
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
 type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
-	isGCPServiceExtension bool
+	config AppsecEnvoyConfig
 }
 
-// AppsecEnvoyExternalProcessorServer creates and returns a new instance of appsecEnvoyExternalProcessorServer.
-func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
-	return &appsecEnvoyExternalProcessorServer{userImplementation, false}
-}
-
-func AppsecEnvoyExternalProcessorServerGCPServiceExtension(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
-	return &appsecEnvoyExternalProcessorServer{userImplementation, true}
+func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer, config AppsecEnvoyConfig) envoyextproc.ExternalProcessorServer {
+	return &appsecEnvoyExternalProcessorServer{
+		ExternalProcessorServer: userImplementation,
+		config:                  config,
+	}
 }
 
 type currentRequest struct {
@@ -123,9 +126,9 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 		switch v := processingRequest.Request.(type) {
 		case *envoyextproc.ProcessingRequest_RequestHeaders:
-			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v, s.isGCPServiceExtension)
+			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v, s.config)
 		case *envoyextproc.ProcessingRequest_ResponseHeaders:
-			processingResponse, err = processResponseHeaders(v, currentRequest)
+			processingResponse, err = processResponseHeaders(v, currentRequest, s.config)
 			currentRequest = nil // Request is done, reset the current request
 		}
 
@@ -199,7 +202,7 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 	}
 }
 
-func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders, isGCPServiceExtension bool) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
+func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders, config AppsecEnvoyConfig) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
 	instr.Logger().Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
 
 	request, err := newRequest(ctx, req)
@@ -208,7 +211,7 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 	}
 
 	var spanComponentName string
-	if isGCPServiceExtension {
+	if config.IsGCPServiceExtension {
 		spanComponentName = componentNameGCPServiceExtension
 	} else {
 		spanComponentName = componentNameEnvoy
@@ -226,7 +229,7 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 	}, fakeResponseWriter, request)
 
 	// Block handling: If triggered, we need to block the request, return an immediate response
-	if blocked {
+	if !config.BlockingUnavailable && blocked {
 		afterHandle()
 		return doBlockResponse(fakeResponseWriter), nil, true, nil
 	}
@@ -284,7 +287,7 @@ func propagationRequestHeaderMutation(span *tracer.Span) (*envoyextproc.Processi
 	}, nil
 }
 
-func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *currentRequest) (*envoyextproc.ProcessingResponse, error) {
+func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *currentRequest, config AppsecEnvoyConfig) (*envoyextproc.ProcessingResponse, error) {
 	instr.Logger().Debug("external_processing: received response headers: %v\n", res.ResponseHeaders)
 
 	if currentRequest == nil {
@@ -302,19 +305,21 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 	var blocked bool
 
 	// Now we need to know if the request has been blocked, but we don't have any other way than to look for the operation and bind a blocking data listener to it
-	op, ok := dyngo.FromContext(currentRequest.ctx)
-	if ok {
-		dyngo.OnData(op, func(_ *actions.BlockHTTP) {
-			// We already wrote over the response writer, we need to reset it so the blocking handler can write to it
-			httptrace.ResetStatusCode(currentRequest.wrappedResponseWriter)
-			currentRequest.fakeResponseWriter.Reset()
-			blocked = true
-		})
+	if !config.BlockingUnavailable {
+		op, ok := dyngo.FromContext(currentRequest.ctx)
+		if ok {
+			dyngo.OnData(op, func(_ *actions.BlockHTTP) {
+				// We already wrote over the response writer, we need to reset it so the blocking handler can write to it
+				httptrace.ResetStatusCode(currentRequest.wrappedResponseWriter)
+				currentRequest.fakeResponseWriter.Reset()
+				blocked = true
+			})
+		}
 	}
 
 	currentRequest.afterHandle()
 
-	if blocked {
+	if !config.BlockingUnavailable && blocked {
 		response := doBlockResponse(currentRequest.fakeResponseWriter)
 		return response, nil
 	}
