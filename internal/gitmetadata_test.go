@@ -110,7 +110,9 @@ func TestGetTagsFromBinary(t *testing.T) {
 
 func BenchmarkGetGitMetadataTags(b *testing.B) {
 	b.Setenv(EnvGitMetadataEnabledFlag, "true")
-	for i := 0; i < b.N; i++ {
-		GetGitMetadataTags()
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			GetGitMetadataTags()
+		}
+	})
 }

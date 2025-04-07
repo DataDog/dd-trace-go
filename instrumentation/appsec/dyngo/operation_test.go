@@ -729,19 +729,24 @@ func BenchmarkEvents(b *testing.B) {
 				defer dyngo.FinishOperation(root, MyOperationRes{})
 
 				op := root
-				for i := 0; i < length-1; i++ {
-					op = startOperation(MyOperationArgs{}, op)
-					defer dyngo.FinishOperation(op, MyOperationRes{})
-				}
+
+				b.RunParallel(func(pb *testing.PB) {
+					for pb.Next() {
+						op = startOperation(MyOperationArgs{}, op)
+						defer dyngo.FinishOperation(op, MyOperationRes{})
+					}
+				})
 
 				b.Run("start event", func(b *testing.B) {
 					dyngo.On(root, func(operation, MyOperationArgs) {})
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
-						startOperation(MyOperationArgs{}, op)
-					}
+					b.RunParallel(func(pb *testing.PB) {
+						for pb.Next() {
+							startOperation(MyOperationArgs{}, op)
+						}
+					})
 				})
 
 				b.Run("start + finish events", func(b *testing.B) {
@@ -749,10 +754,12 @@ func BenchmarkEvents(b *testing.B) {
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
-						leafOp := startOperation(MyOperationArgs{}, op)
-						dyngo.FinishOperation(leafOp, MyOperationRes{})
-					}
+					b.RunParallel(func(pb *testing.PB) {
+						for pb.Next() {
+							leafOp := startOperation(MyOperationArgs{}, op)
+							dyngo.FinishOperation(leafOp, MyOperationRes{})
+						}
+					})
 				})
 			})
 		}
@@ -764,16 +771,20 @@ func BenchmarkEvents(b *testing.B) {
 
 		b.Run("start event", func(b *testing.B) {
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
-				dyngo.On(op, func(operation, MyOperationArgs) {})
-			}
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					dyngo.On(op, func(operation, MyOperationArgs) {})
+				}
+			})
 		})
 
 		b.Run("finish event", func(b *testing.B) {
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
-				dyngo.OnFinish(op, func(operation, MyOperationRes) {})
-			}
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					dyngo.OnFinish(op, func(operation, MyOperationRes) {})
+				}
+			})
 		})
 	})
 }
@@ -805,9 +816,13 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
-				_ = m[keys[n%len(keys)]]
-			}
+			b.RunParallel(func(pb *testing.PB) {
+				n := 0
+				for pb.Next() {
+					_ = m[keys[n%len(keys)]]
+					n += 1
+				}
+			})
 		})
 
 		getType := func(i int) reflect.Type {
@@ -835,22 +850,25 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
-				var k string
-				switch n % 5 {
-				case 0:
-					k = reflect.TypeOf(testS0{}).Name()
-				case 1:
-					k = reflect.TypeOf(testS1{}).Name()
-				case 2:
-					k = reflect.TypeOf(testS2{}).Name()
-				case 3:
-					k = reflect.TypeOf(testS3{}).Name()
-				case 4:
-					k = reflect.TypeOf(testS4{}).Name()
+			b.RunParallel(func(pb *testing.PB) {
+				n := 0
+				for pb.Next() {
+					var k string
+					switch n % 5 {
+					case 0:
+						k = reflect.TypeOf(testS0{}).Name()
+					case 1:
+						k = reflect.TypeOf(testS1{}).Name()
+					case 2:
+						k = reflect.TypeOf(testS2{}).Name()
+					case 3:
+						k = reflect.TypeOf(testS3{}).Name()
+					case 4:
+						k = reflect.TypeOf(testS4{}).Name()
+					}
+					_ = m[k]
 				}
-				_ = m[k]
-			}
+			})
 		})
 
 		b.Run("reflect.Type keys", func(b *testing.B) {
@@ -861,22 +879,25 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
-				var k reflect.Type
-				switch n % 5 {
-				case 0:
-					k = reflect.TypeOf(testS0{})
-				case 1:
-					k = reflect.TypeOf(testS1{})
-				case 2:
-					k = reflect.TypeOf(testS2{})
-				case 3:
-					k = reflect.TypeOf(testS3{})
-				case 4:
-					k = reflect.TypeOf(testS4{})
+			b.RunParallel(func(pb *testing.PB) {
+				n := 0
+				for pb.Next() {
+					var k reflect.Type
+					switch n % 5 {
+					case 0:
+						k = reflect.TypeOf(testS0{})
+					case 1:
+						k = reflect.TypeOf(testS1{})
+					case 2:
+						k = reflect.TypeOf(testS2{})
+					case 3:
+						k = reflect.TypeOf(testS3{})
+					case 4:
+						k = reflect.TypeOf(testS4{})
+					}
+					_ = m[k]
 				}
-				_ = m[k]
-			}
+			})
 		})
 
 		b.Run("custom type struct keys", func(b *testing.B) {
@@ -891,22 +912,25 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
-				var k reflect.Type
-				switch n % 5 {
-				case 0:
-					k = reflect.TypeOf(testS0{})
-				case 1:
-					k = reflect.TypeOf(testS1{})
-				case 2:
-					k = reflect.TypeOf(testS2{})
-				case 3:
-					k = reflect.TypeOf(testS3{})
-				case 4:
-					k = reflect.TypeOf(testS4{})
+			b.RunParallel(func(pb *testing.PB) {
+				n := 0
+				for pb.Next() {
+					var k reflect.Type
+					switch n % 5 {
+					case 0:
+						k = reflect.TypeOf(testS0{})
+					case 1:
+						k = reflect.TypeOf(testS1{})
+					case 2:
+						k = reflect.TypeOf(testS2{})
+					case 3:
+						k = reflect.TypeOf(testS3{})
+					case 4:
+						k = reflect.TypeOf(testS4{})
+					}
+					_ = m[typeDesc{k.PkgPath(), k.Name()}]
 				}
-				_ = m[typeDesc{k.PkgPath(), k.Name()}]
-			}
+			})
 		})
 	})
 }

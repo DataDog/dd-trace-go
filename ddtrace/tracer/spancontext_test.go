@@ -850,20 +850,24 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 
 func BenchmarkBaggageItemPresent(b *testing.B) {
 	ctx := SpanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
-	for n := 0; n < b.N; n++ {
-		ctx.ForeachBaggageItem(func(_, _ string) bool {
-			return true
-		})
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			ctx.ForeachBaggageItem(func(_, _ string) bool {
+				return true
+			})
+		}
+	})
 }
 
 func BenchmarkBaggageItemEmpty(b *testing.B) {
 	ctx := SpanContext{}
-	for n := 0; n < b.N; n++ {
-		ctx.ForeachBaggageItem(func(_, _ string) bool {
-			return true
-		})
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			ctx.ForeachBaggageItem(func(_, _ string) bool {
+				return true
+			})
+		}
+	})
 }
 
 func TestSetSamplingPriorityLocked(t *testing.T) {
@@ -936,15 +940,19 @@ func TestSpanIDHexEncoded(t *testing.T) {
 }
 
 func BenchmarkSpanIDHexEncoded(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		_ = spanIDHexEncoded(32, 16)
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = spanIDHexEncoded(32, 16)
+		}
+	})
 }
 
 func BenchmarkSpanIDSprintf(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		_ = fmt.Sprintf("%016x", 32)
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = fmt.Sprintf("%016x", 32)
+		}
+	})
 }
 
 func FuzzSpanIDHexEncoded(f *testing.F) {

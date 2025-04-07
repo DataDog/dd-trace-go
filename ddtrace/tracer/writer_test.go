@@ -463,9 +463,11 @@ func BenchmarkJsonEncodeSpan(b *testing.B) {
 }
 
 func BenchmarkJsonEncodeFloat(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		var ba = make([]byte, 25)
-		bs := ba[:0]
-		encodeFloat(bs, float64(1e-9))
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			var ba = make([]byte, 25)
+			bs := ba[:0]
+			encodeFloat(bs, float64(1e-9))
+		}
+	})
 }

@@ -294,11 +294,11 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, withStatsdClient(&tg))
 	assert.Nil(b, err)
 	defer stop()
-	for n := 0; n < b.N; n++ {
-		for range n {
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
 			go tracer.StartSpan("operation").Finish()
 		}
-	}
+	})
 }
 
 func assertSpanMetricCountsAreZero(t *testing.T, metric globalinternal.XSyncMapCounterMap) {
