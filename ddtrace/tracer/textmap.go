@@ -446,18 +446,22 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if ctx.origin != "" {
 		writer.Set(originHeader, ctx.origin)
 	}
-	var baggageItems []string
+	var baggageBuilder strings.Builder
+	var ctr int
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		// Propagate OpenTracing baggage.
-		writer.Set(p.cfg.BaggagePrefix+k, v)
-		encodedKey := encodeKey(k)
-		encodedValue := encodeValue(v)
-		baggageItems = append(baggageItems, fmt.Sprintf("%s=%s", encodedKey, encodedValue))
+		writer.Set(p.cfg.BaggagePrefix+k, v) // TODO: Do we want to be setting these headers twice?
+		if ctr > 0 {
+			baggageBuilder.WriteRune(',')
+		}
+		baggageBuilder.WriteString(encodeKey(k))
+		baggageBuilder.WriteRune('=')
+		baggageBuilder.WriteString(encodeValue(v))
 		return true
 	})
-
-	if len(baggageItems) > 0 {
-		writer.Set(p.cfg.BaggageHeader, strings.Join(baggageItems, ","))
+	b := baggageBuilder.String()
+	if len(b) > 0 {
+		writer.Set(p.cfg.BaggageHeader, b)
 	}
 	if p.cfg.MaxTagsHeaderLen <= 0 {
 		return nil
@@ -542,22 +546,24 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			if ctx.baggage == nil {
 				ctx.baggage = make(map[string]string)
 			}
-			baggageHeader := v
-			pairs := strings.Split(baggageHeader, ",")
-			for _, pair := range pairs {
-				pair = strings.TrimSpace(pair)
-				if !strings.Contains(pair, "=") {
-					return fmt.Errorf("Invalid baggage item: %s", pair)
+			keyVals := strings.Split(v, ",")
+			for _, kv := range keyVals {
+				// How do we handle `a=b=c`? Cut separates at the first instance i.e, `a: b=c`. Returns false if "=" not found in kv.
+				key, val, ok := strings.Cut(kv, "=")
+				if !ok {
+					return fmt.Errorf("invalid baggage item: %s", kv)
 				}
-				keyValue := strings.SplitN(pair, "=", 2)
-				rawKey := strings.TrimSpace(keyValue[0])
-				rawValue := strings.TrimSpace(keyValue[1])
-				decKey, errKey := url.QueryUnescape(rawKey)
-				decVal, errVal := url.QueryUnescape(rawValue)
+				key = strings.TrimSpace(key)
+				val = strings.TrimSpace(val)
+				if key == "" || val == "" {
+					return fmt.Errorf("invalid baggage item: '%s'", kv)
+				}
+				key, errKey := url.QueryUnescape(key)
+				val, errVal := url.QueryUnescape(val)
 				if errKey != nil || errVal != nil {
-					return fmt.Errorf("Invalid baggage item: %s", pair)
+					return fmt.Errorf("failed to encode baggage item: %s, dropping", kv)
 				}
-				ctx.baggage[decKey] = decVal
+				ctx.setBaggageItem(key, val)
 			}
 		case originHeader:
 			ctx.origin = v
@@ -565,6 +571,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 			unmarshalPropagatingTags(&ctx, v)
 		default:
 			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
+				// TODO: Do we want to trim this? We need a way to differentiate ot-baggage- headers, which we will continue to set in individual headers, from datadog headers, whose key-vals we join under a single "baggage" header
 				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
 			}
 		}
