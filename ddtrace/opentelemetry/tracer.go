@@ -128,7 +128,7 @@ func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
 				if err == nil {
 					otelBag = b
 				} else {
-					log.Debug("Error adding baggage member with key", key, "; dropping")
+					log.Debug("Error adding baggage member with key %s; dropping", key)
 				}
 			}
 		}

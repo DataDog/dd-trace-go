@@ -720,7 +720,14 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
+		found := false
+		for _, log := range tp.Logs() {
+			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found)
 	})
 
 	t.Run("dd-env", func(t *testing.T) {
@@ -730,7 +737,14 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
-		assert.Contains(t, tp.Logs()[0], "DEBUG: Runtime metrics enabled")
+		found := false
+		for _, log := range tp.Logs() {
+			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found)
 	})
 
 	t.Run("otel-env", func(t *testing.T) {

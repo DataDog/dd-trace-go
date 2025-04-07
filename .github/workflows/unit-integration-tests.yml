@@ -26,27 +26,21 @@ permissions:
 
 jobs:
   copyright:
-    name: Verify files have the copyright header
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go 
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
       - name: Setup go
         uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
-          go-version: stable
+          go-version: ${{ inputs.go-version }}
       - name: Copyright
         run: |
           go run ./scripts/checkcopyright.go
 
   generate:
-    name: Verify generated files are up-to-date
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -67,7 +61,6 @@ jobs:
         run: git diff --exit-code
 
   check-modules:
-    name: Verify modules are go mod tidy'ed and have correct replaces
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -85,7 +78,6 @@ jobs:
         run: git diff --exit-code
 
   lint:
-    name: Run linters
     runs-on:
       group: "APM Larger Runners"
     steps:
@@ -120,7 +112,6 @@ jobs:
           workdir: internal/orchestrion/_integration
 
   test-contrib:
-    name: Run contrib package tests
     runs-on:
       group: "APM Larger Runners"
     env:
@@ -333,7 +324,6 @@ jobs:
               go test -v ./...
 
   test-core:
-    name: Run core package tests (excluding ./contrib)
     runs-on:
       group: "APM Larger Runners"
     env:

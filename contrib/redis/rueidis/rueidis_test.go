@@ -6,6 +6,7 @@ package rueidis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -243,6 +244,102 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value", span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test SET command with canceled context and custom error check",
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return err != nil && !rueidis.IsRedisNil(err) && !errors.Is(err, context.Canceled)
+				}),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				ctx, cancel := context.WithCancel(ctx)
+				cancel()
+				require.Error(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Nil(t, span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test redis nil not attached to span",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				require.Error(t, client.Do(ctx, client.B().Get().Key("404").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "GET 404", span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test SET command with canceled context and custom error check",
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return err != nil && !rueidis.IsRedisNil(err) && !errors.Is(err, context.Canceled)
+				}),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				ctx, cancel := context.WithCancel(ctx)
+				cancel()
+				require.Error(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Nil(t, span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test redis nil not attached to span",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				require.Error(t, client.Do(ctx, client.B().Get().Key("404").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "GET 404", span.Tag(ext.RedisRawCommand))
 				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
 				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
 				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))

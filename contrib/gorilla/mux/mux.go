@@ -108,6 +108,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
+		Framework:     "github.com/gorilla/mux",
 		Service:       r.config.serviceName,
 		Resource:      resource,
 		FinishOpts:    r.config.finishOpts,
