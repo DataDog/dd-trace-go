@@ -20,23 +20,33 @@ import (
 )
 
 // StartKafkaTestContainer starts a new Kafka test container and returns the connection string.
-func StartKafkaTestContainer(t testing.TB) (*kafka.KafkaContainer, string) {
+func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContainer, string) {
 	ctx := context.Background()
 	exposedPort := "9093/tcp"
+
+	waitStrategies := []wait.Strategy{
+		wait.ForListeningPort(nat.Port(exposedPort)),
+	}
+	for _, topic := range topics {
+		waitStrategies = append(waitStrategies, wait.ForExec(createTopicCmd(topic)))
+	}
+	for _, topic := range topics {
+		waitStrategies = append(waitStrategies, wait.ForExec(checkTopicExistsCmd(topic)))
+	}
 
 	container, err := kafka.Run(ctx,
 		"confluentinc/confluent-local:7.5.0", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 		kafka.WithClusterID("test-cluster"),
 		WithTestLogConsumer(t),
-		testcontainers.WithWaitStrategy(
-			wait.ForAll(
-				wait.ForListeningPort(nat.Port(exposedPort)),
-				wait.ForExec(createTopicCmd("topic-A")),
-				wait.ForExec(createTopicCmd("topic-B")),
-				wait.ForExec(checkTopicExistsCmd("topic-A")),
-				wait.ForExec(checkTopicExistsCmd("topic-B")),
-			),
-		),
+		testcontainers.WithWaitStrategy(wait.ForAll(waitStrategies...)),
+		testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Name:     "kafka",
+				Hostname: "localhost",
+			},
+			Started: true,
+			Reuse:   true,
+		}),
 	)
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
