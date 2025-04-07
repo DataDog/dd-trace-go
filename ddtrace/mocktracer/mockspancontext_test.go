@@ -46,7 +46,7 @@ func TestSpanContextIterator(t *testing.T) {
 
 	t.Run("some", func(t *testing.T) {
 		var seen int
-		sc.ForeachBaggageItem(func(k, v string) bool {
+		sc.ForeachBaggageItem(func(_, _ string) bool {
 			seen++
 			return false
 		})

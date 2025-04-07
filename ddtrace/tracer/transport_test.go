@@ -19,38 +19,38 @@ import (
 	"testing"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
 )
 
 // getTestSpan returns a Span with different fields set
-func getTestSpan() *span {
-	return &span{
-		TraceID:    42,
-		SpanID:     52,
-		ParentID:   42,
-		Type:       "web",
-		Service:    "high.throughput",
-		Name:       "sending.events",
-		Resource:   "SEND /data",
-		Start:      1481215590883401105,
-		Duration:   1000000000,
-		Meta:       map[string]string{"http.host": "192.168.0.1"},
-		MetaStruct: map[string]any{"_dd.appsec.json": map[string]any{"triggers": []any{map[string]any{"id": "1"}}}},
-		Metrics:    map[string]float64{"http.monitor": 41.99},
+func getTestSpan() *Span {
+	return &Span{
+		traceID:    42,
+		spanID:     52,
+		parentID:   42,
+		spanType:   "web",
+		service:    "high.throughput",
+		name:       "sending.events",
+		resource:   "SEND /data",
+		start:      1481215590883401105,
+		duration:   1000000000,
+		meta:       map[string]string{"http.host": "192.168.0.1"},
+		metaStruct: map[string]any{"_dd.appsec.json": map[string]any{"triggers": []any{map[string]any{"id": "1"}}}},
+		metrics:    map[string]float64{"http.monitor": 41.99},
 	}
 }
 
 // getTestTrace returns a list of traces that is composed by “traceN“ number
 // of traces, each one composed by “size“ number of spans.
-func getTestTrace(traceN, size int) [][]*span {
-	var traces [][]*span
+func getTestTrace(traceN, size int) [][]*Span {
+	var traces [][]*Span
 
 	for i := 0; i < traceN; i++ {
-		trace := []*span{}
+		trace := []*Span{}
 		for j := 0; j < size; j++ {
 			trace = append(trace, getTestSpan())
 		}
@@ -66,7 +66,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	assert := assert.New(t)
 
 	testCases := []struct {
-		payload [][]*span
+		payload [][]*Span
 	}{
 		{getTestTrace(1, 1)},
 		{getTestTrace(10, 1)},
@@ -145,7 +145,7 @@ func TestTransportResponse(t *testing.T) {
 			assert := assert.New(t)
 			ln, err := net.Listen("tcp4", "localhost:0")
 			assert.Nil(err)
-			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				w.Write([]byte(tt.body))
 			}))
@@ -170,7 +170,7 @@ func TestTraceCountHeader(t *testing.T) {
 	assert := assert.New(t)
 
 	testCases := []struct {
-		payload [][]*span
+		payload [][]*Span
 	}{
 		{getTestTrace(1, 1)},
 		{getTestTrace(10, 1)},
@@ -178,7 +178,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}
 
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits++
 		if r.URL.Path == "/info" {
 			return
@@ -226,7 +226,7 @@ func TestCustomTransport(t *testing.T) {
 	assert := assert.New(t)
 
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		hits++
 	}))
 	defer srv.Close()
@@ -246,19 +246,19 @@ func TestCustomTransport(t *testing.T) {
 
 type ErrTransport struct{}
 
-func (t *ErrTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *ErrTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("error in RoundTripper")
 }
 
 type ErrResponseTransport struct{}
 
-func (t *ErrResponseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *ErrResponseTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 400}, nil
 }
 
 type OkTransport struct{}
 
-func (t *OkTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *OkTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200}, nil
 }
 
@@ -269,8 +269,9 @@ func TestApiErrorsMetric(t *testing.T) {
 			Transport: &ErrTransport{},
 		}
 		var tg statsdtest.TestStatsdClient
-		trc := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
-		traceinternal.SetGlobalTracer(trc)
+		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		assert.NoError(err)
+		SetGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -291,8 +292,9 @@ func TestApiErrorsMetric(t *testing.T) {
 			Transport: &ErrResponseTransport{},
 		}
 		var tg statsdtest.TestStatsdClient
-		trc := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
-		traceinternal.SetGlobalTracer(trc)
+		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		assert.NoError(err)
+		SetGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -312,8 +314,9 @@ func TestApiErrorsMetric(t *testing.T) {
 		c := &http.Client{
 			Transport: &OkTransport{},
 		}
-		trc := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
-		traceinternal.SetGlobalTracer(trc)
+		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		assert.NoError(err)
+		SetGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -335,11 +338,6 @@ func TestWithHTTPClient(t *testing.T) {
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits++
-		if r.Method == http.MethodGet {
-			return
-		}
-		cl := r.Header.Get("Content-Length")
-		assert.NotZero(cl)
 	}))
 	defer srv.Close()
 
@@ -347,8 +345,9 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.NoError(err)
 	c := &http.Client{}
 	rt := wrapRecordingRoundTripper(c)
-	trc := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	trc, err := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
 	defer trc.Stop()
+	assert.NoError(err)
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
@@ -357,7 +356,6 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.Len(rt.reqs, 2)
 	assert.Contains(rt.reqs[0].URL.Path, "/info")
 	assert.Contains(rt.reqs[1].URL.Path, "/traces")
-	assert.NotZero(rt.reqs[1].ContentLength)
 	assert.Equal(hits, 2)
 }
 
@@ -377,15 +375,16 @@ func TestWithUDS(t *testing.T) {
 		t.Fatal(err)
 	}
 	var hits int
-	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		hits++
 	})}
 	go srv.Serve(unixListener)
 	defer srv.Close()
 
-	trc := newTracer(WithUDS(udsPath))
+	trc, err := newTracer(WithUDS(udsPath))
 	rt := wrapRecordingRoundTripper(trc.config.httpClient)
 	defer trc.Stop()
+	assert.NoError(err)
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
@@ -415,7 +414,8 @@ func TestExternalEnvironment(t *testing.T) {
 	u, err := url.Parse(srv.URL)
 	assert.NoError(err)
 	c := &http.Client{}
-	trc := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	trc, err := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	assert.NoError(err)
 	defer trc.Stop()
 
 	p, err := encode(getTestTrace(1, 1))
@@ -442,7 +442,8 @@ func TestDefaultHeaders(t *testing.T) {
 	u, err := url.Parse(srv.URL)
 	assert.NoError(err)
 	c := &http.Client{}
-	trc := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	trc, err := newTracer(WithAgentTimeout(2), WithAgentAddr(u.Host), WithHTTPClient(c))
+	assert.NoError(err)
 	defer trc.Stop()
 
 	// Test traces endpoint

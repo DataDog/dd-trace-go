@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql
+  name: github.com/DataDog/dd-trace-go/contrib/database/sql/v2
   description: A generic interface around SQL (or SQL-like) databases.
 
 aspects:
@@ -15,7 +15,7 @@ aspects:
     advice:
       - wrap-expression:
           imports:
-            sqltrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql
+            sqltrace: github.com/DataDog/dd-trace-go/contrib/database/sql/v2
             sql: database/sql
             driver: database/sql/driver
           template: |-
@@ -28,10 +28,10 @@ aspects:
     join-point:
       function-call: database/sql.Open
     advice:
-      - replace-function: gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql.Open
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/database/sql/v2.Open
 
   - id: sql.OpenDB
     join-point:
       function-call: database/sql.OpenDB
     advice:
-      - replace-function: gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql.OpenDB
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/database/sql/v2.OpenDB

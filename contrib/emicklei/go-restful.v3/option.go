@@ -8,45 +8,44 @@ package restful
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "go-restful"
 
 type config struct {
 	serviceName   string
 	analyticsRate float64
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 }
 
 func newConfig() *config {
-	rate := globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
-	serviceName := namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
 	return &config{
-		serviceName:   serviceName,
-		analyticsRate: rate,
-		headerTags:    globalconfig.HeaderTagMap(),
+		serviceName:   instr.ServiceName(instrumentation.ComponentServer, nil),
+		analyticsRate: instr.AnalyticsRate(true),
+		headerTags:    instr.HTTPHeadersAsTags(),
 	}
 }
 
-// Option specifies instrumentation configuration options.
-type Option func(*config)
+// Option describes options for the go-restful integration.
+type Option interface {
+	apply(*config)
+}
 
-// WithServiceName sets the service name to by used by the filter.
-func WithServiceName(name string) Option {
+// OptionFn represents options applicable to FilterFunc.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
+
+// WithService sets the service name to by used by the filter.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -58,7 +57,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -72,9 +71,8 @@ func WithAnalyticsRate(rate float64) Option {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
+func WithHeaderTags(headers []string) OptionFn {
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }

@@ -7,20 +7,20 @@ package pgx
 
 import (
 	"context"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
 )
 
 const (
-	componentName      = "jackc/pgx.v5"
 	defaultServiceName = "postgres.db"
 )
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/jackc/pgx.v5")
+	instr = instrumentation.Load(instrumentation.PackageJackcPGXV5)
 }
 
 // Deprecated: this type is unused internally so it will be removed in a future release, please use pgx.Batch instead.

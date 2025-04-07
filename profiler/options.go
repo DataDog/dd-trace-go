@@ -20,13 +20,13 @@ import (
 	"time"
 	"unicode"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -227,11 +227,9 @@ func defaultConfig() (*config, error) {
 		WithUploadTimeout(d)(&c)
 	}
 	if v := os.Getenv("DD_API_KEY"); v != "" {
-		WithAPIKey(v)(&c)
+		c.apiKey = v
 	}
-	if internal.BoolEnv("DD_PROFILING_AGENTLESS", false) {
-		WithAgentlessUpload()(&c)
-	}
+	c.agentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
 	if v := os.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
 	}
@@ -298,29 +296,6 @@ type Option func(*config)
 func WithAgentAddr(hostport string) Option {
 	return func(cfg *config) {
 		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
-	}
-}
-
-// WithAPIKey sets the Datadog API Key and takes precedence over the DD_API_KEY
-// env variable. Historically this option was used to enable agentless
-// uploading, but as of dd-trace-go v1.30.0 the behavior has changed to always
-// default to agent based uploading which doesn't require an API key. So if you
-// currently don't have an agent running on the default localhost:8126 hostport
-// you need to set it up, or use WithAgentAddr to specify the hostport location
-// of the agent. See WithAgentlessUpload for more information.
-func WithAPIKey(key string) Option {
-	return func(cfg *config) {
-		cfg.apiKey = key
-	}
-}
-
-// WithAgentlessUpload is currently for internal usage only and not officially
-// supported. You should not enable it unless somebody at Datadog instructed
-// you to do so. It allows to skip the agent and talk to the Datadog API
-// directly using the provided API key.
-func WithAgentlessUpload() Option {
-	return func(cfg *config) {
-		cfg.agentless = true
 	}
 }
 

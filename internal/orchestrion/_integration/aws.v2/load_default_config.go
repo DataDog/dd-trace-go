@@ -9,11 +9,9 @@ package awsv2
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
-	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/stretchr/testify/require"
@@ -31,7 +29,6 @@ func (tc *TestCaseLoadDefaultConfig) Setup(ctx context.Context, t *testing.T) {
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("NOTANACCESSKEY", "NOTASECRETKEY", "")),
 	)
 	require.NoError(t, err)
-	cfg.BaseEndpoint = aws.String(fmt.Sprintf("http://%s:%s", tc.host, tc.port))
 	tc.cfg = cfg
 }
 

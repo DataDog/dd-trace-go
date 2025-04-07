@@ -10,8 +10,8 @@ import (
 	"io"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 )
 
 func TestNewCoverageWriter(t *testing.T) {

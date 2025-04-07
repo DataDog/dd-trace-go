@@ -11,6 +11,9 @@ on:
         type: boolean
         default: false
         required: false
+    secrets:
+      DD_API_KEY:
+        required: false
   pull_request:
   merge_group:
   push:
@@ -43,7 +46,8 @@ jobs:
           cache: true
           cache-dependency-path: '**/go.mod'
       - name: Run generator
-        run: go generate ./internal/orchestrion/...
+        run: |-
+          ./scripts/generate.sh
       - name: Check for changes
         run: git diff --exit-code
 
@@ -70,10 +74,29 @@ jobs:
           echo -n "json="                      >> "${GITHUB_OUTPUT}"
           go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
 
+  service-containers:
+    name: Service containers
+    runs-on: ubuntu-latest
+    outputs:
+      services_json: ${{ steps.set-services.outputs.services_json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      - name: Define Services JSON
+        id: set-services
+        run: |
+          echo "SERVICES_JSON=$(jq -c . ./internal/orchestrion/_integration/ci-services.json)" >> "${GITHUB_OUTPUT}"
+
   integration-test:
+    services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
     env:
       REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
-    needs: [go-versions-matrix]
+    needs:
+      - go-versions-matrix
+      - service-containers
     strategy:
       fail-fast: false
       matrix:
@@ -120,16 +143,6 @@ jobs:
             ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
             ${{ github.workspace }}/orchestrion/go.mod
 
-      # ddapm-test-agent is used to observe side effects from the tracer during integration tests.
-      - name: Set up Python
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
-        with:
-          python-version: 3.x
-          cache: pip
-          cache-dependency-path: '${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/internal/agent/requirements-dev.txt'
-      - name: Install ddapm-test-agent
-        run: pip install -r ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/internal/agent/requirements-dev.txt
-
       - name: Set up orchestrion
         if: inputs.orchestrion-version != ''
         run: |-
@@ -175,22 +188,8 @@ jobs:
           # AWS DynamoDB Local is used to have a pretend AWS API endpoint
           docker pull amazon/dynamodb-local:latest
 
-          # ElasticSearch images
-          docker pull docker.elastic.co/elasticsearch/elasticsearch:6.8.23
-          docker pull docker.elastic.co/elasticsearch/elasticsearch:7.17.24
-          docker pull docker.elastic.co/elasticsearch/elasticsearch:8.15.3
-
-          # Kafka service
-          docker pull confluentinc/confluent-local:7.5.0
-
           # PostgreSQL service
           docker pull docker.io/postgres:16-alpine
-
-          # Redis service
-          docker pull redis:7-alpine
-
-          # Valkey service
-          docker pull valkey/valkey:8-alpine
 
           # Vault service
           docker pull vault:1.7.3
@@ -272,27 +271,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
-          repository: ${{ github.repository }}
-          ref: ${{ github.ref }}
+          repository: 'DataDog/dd-trace-go'
+          ref: 'main'
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ secrets.DD_API_KEY }}
           files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests
-    needs: integration-test
+    needs:
+      - generate
+      - integration-test
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.integration-test.result == 'success'
+        if: needs.integration-test.result == 'success' && needs.generate.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.integration-test.result != 'success'
+        if: needs.integration-test.result != 'success' || needs.generate.result != 'success'
         run: echo "Failure!" && exit 1

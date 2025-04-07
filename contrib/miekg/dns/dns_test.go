@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	dnstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/miekg/dns"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	dnstrace "github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
 	"github.com/miekg/dns"
 	"github.com/stretchr/testify/assert"
@@ -185,7 +185,7 @@ func newTracedClient() *dnstrace.Client {
 	return &dnstrace.Client{Client: newClient()}
 }
 
-func assertClientSpan(t *testing.T, s mocktracer.Span) {
+func assertClientSpan(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, "dns.request", s.OperationName())
 	assert.Equal(t, "dns", s.Tag(ext.SpanType))
 	assert.Equal(t, "dns", s.Tag(ext.ServiceName))

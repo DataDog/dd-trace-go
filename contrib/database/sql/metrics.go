@@ -3,15 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
+package sql // import "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 
 import (
 	"database/sql"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const tracerPrefix = "datadog.tracer."
@@ -33,14 +31,14 @@ var interval = 10 * time.Second
 
 // pollDBStats calls (*DB).Stats on the db at a predetermined interval. It pushes the DBStats off to the statsd client.
 // the caller should always ensure that db & statsd are non-nil
-func pollDBStats(statsd internal.StatsdClient, db *sql.DB, stop chan struct{}) {
-	log.Debug("DB stats will be gathered and sent every %v.", interval)
+func pollDBStats(statsd instrumentation.StatsdClient, db *sql.DB, stop chan struct{}) {
+	instr.Logger().Debug("DB stats will be gathered and sent every %v.", interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			log.Debug("Reporting DB.Stats metrics...")
+			instr.Logger().Debug("Reporting DB.Stats metrics...")
 			stat := db.Stats()
 			statsd.Gauge(MaxOpenConnections, float64(stat.MaxOpenConnections), []string{}, 1)
 			statsd.Gauge(OpenConnections, float64(stat.OpenConnections), []string{}, 1)
@@ -57,8 +55,8 @@ func pollDBStats(statsd internal.StatsdClient, db *sql.DB, stop chan struct{}) {
 	}
 }
 
-func statsTags(c *config) []string {
-	tags := globalconfig.StatsTags()
+func (c *config) statsdExtraTags() []string {
+	var tags []string
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}

@@ -13,9 +13,9 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func init() {
@@ -55,6 +55,8 @@ type StartConfig struct {
 	EnablementMode func() (EnablementMode, Origin, error)
 	// MetaStructAvailable is true if meta struct is supported by the trace agent.
 	MetaStructAvailable bool
+
+	APISecOptions []internal.APISecOption
 }
 
 type EnablementMode int8
@@ -123,6 +125,12 @@ func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 func WithMetaStructAvailable(available bool) StartOption {
 	return func(c *StartConfig) {
 		c.MetaStructAvailable = available
+	}
+}
+
+func WithAPISecOptions(opts ...internal.APISecOption) StartOption {
+	return func(c *StartConfig) {
+		c.APISecOptions = append(c.APISecOptions, opts...)
 	}
 }
 
@@ -210,7 +218,7 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		WAFTimeout:          internal.WAFTimeoutFromEnv(),
 		TraceRateLimit:      int64(internal.RateLimitFromEnv()),
 		Obfuscator:          internal.NewObfuscatorConfig(),
-		APISec:              internal.NewAPISecConfig(),
+		APISec:              internal.NewAPISecConfig(c.APISecOptions...),
 		RASP:                internal.RASPEnabled(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,

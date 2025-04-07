@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/wrap"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
 )
 
 func WrapHandler(handler http.Handler) http.Handler {

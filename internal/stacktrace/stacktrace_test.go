@@ -28,7 +28,7 @@ func TestStackTraceCurrentFrame(t *testing.T) {
 	frame := stack[0]
 	require.EqualValues(t, 0, frame.Index)
 	require.Contains(t, frame.File, "stacktrace_test.go")
-	require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace", frame.Namespace)
+	require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/stacktrace", frame.Namespace)
 	require.Equal(t, "", frame.ClassName)
 	require.Equal(t, "TestStackTraceCurrentFrame", frame.Function)
 }
@@ -46,7 +46,7 @@ func TestStackMethodReceiver(t *testing.T) {
 
 	frame := stack[0]
 	require.EqualValues(t, 0, frame.Index)
-	require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace", frame.Namespace)
+	require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/stacktrace", frame.Namespace)
 	require.Equal(t, "*Test", frame.ClassName)
 	require.Equal(t, "Method", frame.Function)
 	require.Contains(t, frame.File, "stacktrace_test.go")
@@ -68,7 +68,7 @@ func TestTruncatedStack(t *testing.T) {
 	lambdaFrame := stack[0]
 	require.EqualValues(t, 0, lambdaFrame.Index)
 	require.Contains(t, lambdaFrame.File, "stacktrace_test.go")
-	require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace", lambdaFrame.Namespace)
+	require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/stacktrace", lambdaFrame.Namespace)
 	require.Equal(t, "", lambdaFrame.ClassName)
 	require.Equal(t, "recursive", lambdaFrame.Function)
 
@@ -76,7 +76,7 @@ func TestTruncatedStack(t *testing.T) {
 		require.EqualValues(t, i, stack[i].Index)
 		require.Equal(t, "recursive", stack[i].Function)
 		require.Contains(t, stack[i].File, "stacktrace_test.go")
-		require.Equal(t, "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace", stack[i].Namespace)
+		require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/stacktrace", stack[i].Namespace)
 		require.Equal(t, "", stack[i].ClassName)
 	}
 
@@ -97,23 +97,23 @@ func TestParseSymbol(t *testing.T) {
 		name, symbol string
 		expected     symbol
 	}{
-		{"method-receiver-pointer", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Test).Method", symbol{
-			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+		{"method-receiver-pointer", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Test).Method", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"*Test",
 			"Method",
 		}},
-		{"method-receiver", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(Test).Method", symbol{
-			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+		{"method-receiver", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(Test).Method", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"Test",
 			"Method",
 		}},
-		{"sample", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetPackageFromSymbol", symbol{
-			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+		{"sample", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestGetPackageFromSymbol", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"",
 			"TestGetPackageFromSymbol",
 		}},
-		{"lambda", "gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.TestGetPackageFromSymbol.func1", symbol{
-			"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace",
+		{"lambda", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestGetPackageFromSymbol.func1", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"",
 			"TestGetPackageFromSymbol.func1",
 		}},

@@ -14,9 +14,9 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
-	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // This is a port of https://github.com/DataDog/dd-trace-dotnet/blob/v2.53.0/tracer/src/Datadog.Trace/Ci/CodeOwners.cs

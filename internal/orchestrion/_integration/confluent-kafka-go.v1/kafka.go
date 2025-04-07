@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/stretchr/testify/require"
@@ -22,8 +22,8 @@ import (
 )
 
 var (
-	topic         = "gotest"
-	consumerGroup = "gotest"
+	topic         = "confluent_kafka_v1_default_test"
+	consumerGroup = "confluent_kafka_v1_default_test"
 	partition     = int32(0)
 )
 
@@ -34,7 +34,7 @@ type TestCase struct {
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
-	container, addr := containers.StartKafkaTestContainer(t)
+	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
 	tc.container = container
 	tc.addr = []string{addr}
 }
@@ -114,7 +114,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"name":     "kafka.produce",
 				"type":     "queue",
 				"service":  "kafka",
-				"resource": "Produce Topic gotest",
+				"resource": "Produce Topic " + topic,
 			},
 			Meta: map[string]string{
 				"span.kind":        "producer",
@@ -127,7 +127,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.consume",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Consume Topic gotest",
+						"resource": "Consume Topic " + topic,
 					},
 					Meta: map[string]string{
 						"span.kind":                         "consumer",

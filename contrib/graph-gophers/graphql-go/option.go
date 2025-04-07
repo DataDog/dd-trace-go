@@ -8,9 +8,8 @@ package graphql
 import (
 	"math"
 
-	internalgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/graphql"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 )
 
 const defaultServiceName = "graphql.server"
@@ -24,30 +23,34 @@ type config struct {
 	errExtensions  []string
 }
 
-// Option represents an option that can be used customize the Tracer.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.querySpanName = namingschema.OpName(namingschema.GraphqlServer)
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GRAPHQL_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-	cfg.errExtensions = internalgraphql.ErrorExtensionsFromEnv()
+// Option describes options for the GraphQL-Go integration.
+type Option interface {
+	apply(*config)
 }
 
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) Option {
+// OptionFn represents options applicable to NewTracer.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
+
+func defaults(cfg *config) {
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.querySpanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.errExtensions = instrgraphql.ErrorExtensionsFromEnv()
+}
+
+// WithService sets the given service name for the client.
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -59,7 +62,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -71,7 +74,7 @@ func WithAnalyticsRate(rate float64) Option {
 
 // WithOmitTrivial enables omission of graphql fields marked as trivial. This
 // also opts trivial fields out of Threat Detection (and blocking).
-func WithOmitTrivial() Option {
+func WithOmitTrivial() OptionFn {
 	return func(cfg *config) {
 		cfg.omitTrivial = true
 	}
@@ -79,15 +82,15 @@ func WithOmitTrivial() Option {
 
 // WithTraceVariables enables tracing of variables passed into GraphQL queries
 // and resolvers.
-func WithTraceVariables() Option {
+func WithTraceVariables() OptionFn {
 	return func(cfg *config) {
 		cfg.traceVariables = true
 	}
 }
 
 // WithErrorExtensions allows to configure the error extensions to include in the error span events.
-func WithErrorExtensions(errExtensions ...string) Option {
+func WithErrorExtensions(errExtensions ...string) OptionFn {
 	return func(cfg *config) {
-		cfg.errExtensions = internalgraphql.ParseErrorExtensions(errExtensions)
+		cfg.errExtensions = instrgraphql.ParseErrorExtensions(errExtensions)
 	}
 }

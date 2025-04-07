@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm.v1
+  name: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
   description: The fantastic ORM library for Golang.
 
 aspects:
@@ -16,7 +16,7 @@ aspects:
       - wrap-expression:
           imports:
             gorm: gorm.io/gorm
-            gormtrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm.v1
+            gormtrace: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
           template: |-
             func() (*gorm.DB, error) {
               db, err := {{ . }}

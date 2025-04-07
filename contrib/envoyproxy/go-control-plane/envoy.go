@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package go_control_plane
+package gocontrolplane
 
 import (
 	"context"
@@ -14,14 +14,12 @@ import (
 	"path"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -31,25 +29,32 @@ import (
 	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 )
 
-const componentName = "envoyproxy/go-control-plane"
+const componentNameEnvoy = "envoyproxy/go-control-plane"
+const componentNameGCPServiceExtension = "gcp-service-extension"
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/envoyproxy/go-control-plane")
+	instr = instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane)
 }
 
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
 type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
+	isGCPServiceExtension bool
 }
 
 // AppsecEnvoyExternalProcessorServer creates and returns a new instance of appsecEnvoyExternalProcessorServer.
 func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
-	return &appsecEnvoyExternalProcessorServer{userImplementation}
+	return &appsecEnvoyExternalProcessorServer{userImplementation, false}
+}
+
+func AppsecEnvoyExternalProcessorServerGCPServiceExtension(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
+	return &appsecEnvoyExternalProcessorServer{userImplementation, true}
 }
 
 type currentRequest struct {
-	span                  tracer.Span
+	span                  *tracer.Span
 	afterHandle           func()
 	ctx                   context.Context
 	fakeResponseWriter    *fakeResponseWriter
@@ -81,7 +86,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return
 		}
 
-		log.Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
+		instr.Logger().Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
 		currentRequest.span.Finish()
 		currentRequest = nil
 	}()
@@ -106,37 +111,37 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 				return nil
 			}
 
-			log.Warn("external_processing: error receiving request/response: %v\n", err)
+			instr.Logger().Warn("external_processing: error receiving request/response: %v\n", err)
 			return status.Errorf(codes.Unknown, "Error receiving request/response: %v", err)
 		}
 
 		processingResponse, err = envoyExternalProcessingRequestTypeAssert(&processingRequest)
 		if err != nil {
-			log.Error("external_processing: error asserting request type: %v\n", err)
+			instr.Logger().Error("external_processing: error asserting request type: %v\n", err)
 			return status.Errorf(codes.Unknown, "Error asserting request type: %v", err)
 		}
 
 		switch v := processingRequest.Request.(type) {
 		case *envoyextproc.ProcessingRequest_RequestHeaders:
-			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v)
+			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v, s.isGCPServiceExtension)
 		case *envoyextproc.ProcessingRequest_ResponseHeaders:
 			processingResponse, err = processResponseHeaders(v, currentRequest)
 			currentRequest = nil // Request is done, reset the current request
 		}
 
 		if err != nil {
-			log.Error("external_processing: error processing request: %v\n", err)
+			instr.Logger().Error("external_processing: error processing request: %v\n", err)
 			return err
 		}
 
 		// End of stream reached, no more data to process
 		if processingResponse == nil {
-			log.Debug("external_processing: end of stream reached")
+			instr.Logger().Debug("external_processing: end of stream reached")
 			return nil
 		}
 
 		if err := processServer.SendMsg(processingResponse); err != nil {
-			log.Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
+			instr.Logger().Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
 			return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 		}
 
@@ -144,7 +149,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			continue
 		}
 
-		log.Debug("external_processing: request blocked, end the stream")
+		instr.Logger().Debug("external_processing: request blocked, end the stream")
 		currentRequest = nil
 		return nil
 	}
@@ -194,21 +199,29 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 	}
 }
 
-func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
-	log.Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
+func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders, isGCPServiceExtension bool) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
+	instr.Logger().Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
 
 	request, err := newRequest(ctx, req)
 	if err != nil {
 		return nil, nil, false, status.Errorf(codes.InvalidArgument, "Error processing request headers from ext_proc: %v", err)
 	}
 
+	var spanComponentName string
+	if isGCPServiceExtension {
+		spanComponentName = componentNameGCPServiceExtension
+	} else {
+		spanComponentName = componentNameEnvoy
+	}
+
 	var blocked bool
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, request, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
-		Resource: request.Method + " " + path.Clean(request.URL.Path),
-		SpanOpts: []ddtrace.StartSpanOption{
+		Framework: "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3",
+		Resource:  request.Method + " " + path.Clean(request.URL.Path),
+		SpanOpts: []tracer.StartSpanOption{
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.Component, spanComponentName),
 		},
 	}, fakeResponseWriter, request)
 
@@ -237,14 +250,14 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 	}, false, nil
 }
 
-func propagationRequestHeaderMutation(span ddtrace.Span) (*envoyextproc.ProcessingResponse, error) {
+func propagationRequestHeaderMutation(span *tracer.Span) (*envoyextproc.ProcessingResponse, error) {
 	newHeaders := make(http.Header)
 	if err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(newHeaders)); err != nil {
 		return nil, status.Errorf(codes.Unknown, "Error injecting headers: %v", err)
 	}
 
 	if len(newHeaders) > 0 {
-		log.Debug("external_processing: injecting propagation headers: %v\n", newHeaders)
+		instr.Logger().Debug("external_processing: injecting propagation headers: %v\n", newHeaders)
 	}
 
 	headerValueOptions := make([]*envoycore.HeaderValueOption, 0, len(newHeaders))
@@ -272,12 +285,12 @@ func propagationRequestHeaderMutation(span ddtrace.Span) (*envoyextproc.Processi
 }
 
 func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *currentRequest) (*envoyextproc.ProcessingResponse, error) {
-	log.Debug("external_processing: received response headers: %v\n", res.ResponseHeaders)
+	instr.Logger().Debug("external_processing: received response headers: %v\n", res.ResponseHeaders)
 
 	if currentRequest == nil {
 		// Can happen when a malformed request is sent to Envoy (with no header), the request is never sent to the External Processor and directly passed to the server
 		// However the response of the server (which is valid) is sent to the External Processor and fail to be processed
-		log.Warn("external_processing: can't process the response: envoy never sent the beginning of the request, this is a known issue" +
+		instr.Logger().Warn("external_processing: can't process the response: envoy never sent the beginning of the request, this is a known issue" +
 			" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
 		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 	}
@@ -306,7 +319,7 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 		return response, nil
 	}
 
-	log.Debug("external_processing: finishing request with status code: %v\n", currentRequest.fakeResponseWriter.status)
+	instr.Logger().Debug("external_processing: finishing request with status code: %v\n", currentRequest.fakeResponseWriter.status)
 
 	// Note: (cf. comment in the stream error handling)
 	// The end of stream bool value is not reliable
@@ -336,7 +349,7 @@ func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingRespons
 		})
 	}
 
-	var int32StatusCode int32 = 0
+	var int32StatusCode int32
 	if writer.status > 0 && writer.status <= math.MaxInt32 {
 		int32StatusCode = int32(writer.status)
 	}

@@ -10,8 +10,8 @@ import (
 )
 
 // WithResourceNamer populates the name of a resource based on a custom function.
-func WithResourceNamer(namer func(req *http.Request) string) Option {
-	return func(cfg *Config) {
+func WithResourceNamer(namer func(req *http.Request) string) OptionFn {
+	return func(cfg *CommonConfig) {
 		cfg.ResourceNamer = namer
 	}
 }

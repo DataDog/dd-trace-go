@@ -10,16 +10,18 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/xlab/treeprint"
 )
 
-type SpanID uint64
+type ID uint64
 
 // Trace represents the root span of a trace, which is hierarchically organized
 // via the Children property.
 type Trace struct {
-	ID       SpanID `json:"span_id"`
+	SpanID   ID `json:"span_id"`
+	ParentID ID `json:"parent_id"`
 	Meta     map[string]string
 	Metrics  map[string]float64
 	Tags     map[string]any
@@ -58,9 +60,14 @@ func (tr *Trace) UnmarshalJSON(data []byte) error {
 		case "metrics":
 			err = json.Unmarshal(value, &tr.Metrics)
 		case "span_id":
-			err = json.Unmarshal(value, &tr.ID)
+			err = json.Unmarshal(value, &tr.SpanID)
 			if err == nil {
-				tr.Tags["span_id"] = json.Number(fmt.Sprintf("%d", tr.ID))
+				tr.Tags["span_id"] = json.Number(fmt.Sprintf("%d", tr.SpanID))
+			}
+		case "parent_id":
+			err = json.Unmarshal(value, &tr.ParentID)
+			if err == nil {
+				tr.Tags["parent_id"] = json.Number(fmt.Sprintf("%d", tr.ParentID))
 			}
 		default:
 			var val any
@@ -92,7 +99,7 @@ func (tr *Trace) into(tree treeprint.Tree) {
 	}
 	sort.Strings(keys)
 	for _, tag := range keys {
-		tree.AddNode(fmt.Sprintf("%-*s = %q", maxLen, tag, tr.Tags[tag]))
+		tree.AddNode(fmt.Sprintf("%-*s = %s", maxLen, tag, printableSpanAttribute(tr.Tags, tag)))
 	}
 
 	addMapBranch(tree, tr.Meta, "meta")
@@ -130,4 +137,25 @@ func addMapBranch[T string | float64](tree treeprint.Tree, m map[string]T, name 
 			br.AddNode(fmt.Sprintf("%-*s = %s", maxLen, key, printVal))
 		}
 	}
+}
+
+func printableSpanAttribute(attrs map[string]any, key string) string {
+	val := attrs[key]
+
+	switch t := val.(type) {
+	case string:
+		return fmt.Sprintf("%q", t)
+	case float64:
+		switch key {
+		case "duration":
+			d := time.Duration(int64(t)) * time.Nanosecond
+			return fmt.Sprintf("%s", d)
+		case "start":
+			tm := time.Unix(0, int64(t))
+			return tm.Format(time.RFC3339Nano)
+		default:
+			return strconv.FormatFloat(t, 'f', -1, 64)
+		}
+	}
+	return fmt.Sprintf("%+v", val)
 }

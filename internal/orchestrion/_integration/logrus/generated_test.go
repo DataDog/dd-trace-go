@@ -10,7 +10,7 @@ package logrus
 import (
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/harness"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
 func TestGlobalLogger(t *testing.T) {

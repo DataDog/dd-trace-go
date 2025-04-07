@@ -3,22 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+package http // import "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/wrap"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
-
-func init() {
-	telemetry.LoadIntegration(config.ComponentName)
-	tracer.MarkIntegrationImported(config.ComponentName)
-}
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
 type ServeConfig = httptrace.ServeConfig

@@ -13,16 +13,17 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	testelasticsearch "github.com/testcontainers/testcontainers-go/modules/elasticsearch"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 type esClient interface {
@@ -37,12 +38,30 @@ type base struct {
 func (b *base) Setup(ctx context.Context, t *testing.T, image string, newClient func(addr string, caCert []byte) (esClient, error)) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
+	parts := strings.Split(image, ":")
+	require.Len(t, parts, 2)
+	version := parts[1]
+	major := strings.Split(version, ".")[0]
+	containerName := "elasticsearch" + major
+
 	var err error
 	b.container, err = testelasticsearch.Run(ctx,
 		image,
+		testcontainers.WithEnv(map[string]string{
+			"xpack.security.enabled": "false",
+		}),
 		testcontainers.WithLogger(testcontainers.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategyAndDeadline(time.Minute, wait.ForLog(`.*("message":\s?"started(\s|")?.*|]\sstarted\n)`).AsRegexp()),
+		// attempt to reuse this container
+		testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+			ContainerRequest: testcontainers.ContainerRequest{
+				Name:     containerName,
+				Hostname: "localhost",
+			},
+			Started: true,
+			Reuse:   true,
+		}),
 	)
 	containers.AssertTestContainersError(t, err)
 	containers.RegisterContainerCleanup(t, b.container)

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -24,12 +24,13 @@ type TestCase struct {
 
 func (tc *TestCase) Setup(context.Context, *testing.T) {
 	tc.logs = new(bytes.Buffer)
-	tc.logger = slog.New(
-		slog.NewTextHandler(
-			tc.logs,
-			&slog.HandlerOptions{Level: slog.LevelDebug},
-		),
+	handler := slog.NewTextHandler(
+		tc.logs,
+		&slog.HandlerOptions{Level: slog.LevelDebug},
 	)
+	tc.logger = slog.New(handler)
+	// call slog.New again to trigger possible errors in the aspect
+	slog.New(handler)
 }
 
 //dd:span

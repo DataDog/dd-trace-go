@@ -4,26 +4,24 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package kubernetes provides functions to trace k8s.io/client-go (https://github.com/kubernetes/client-go).
-package kubernetes // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
+package kubernetes // import "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
+
+var instr *instrumentation.Instrumentation
 
 const componentName = "k8s.io/client-go/kubernetes"
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageK8SClientGo)
 }
 
 const (
@@ -50,20 +48,19 @@ func WrapRoundTripper(rt http.RoundTripper) http.RoundTripper {
 func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTripperOption) http.RoundTripper {
 	localOpts := make([]httptrace.RoundTripperOption, len(opts))
 	copy(localOpts, opts) // make a copy of the opts, to avoid data races and side effects.
-	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+	localOpts = append(localOpts, httptrace.WithBefore(func(req *http.Request, span *tracer.Span) {
 		span.SetTag(ext.ResourceName, RequestToResource(req.Method, req.URL.Path))
 		span.SetTag(ext.Component, componentName)
 		span.SetTag(ext.SpanKind, ext.SpanKindClient)
 		traceID := span.Context().TraceID()
-		if traceID == 0 {
+		if traceID == tracer.TraceIDZero {
 			// tracer is not running
 			return
 		}
-		kubeAuditID := strconv.FormatUint(traceID, 10)
-		req.Header.Set("Audit-Id", kubeAuditID)
-		span.SetTag("kubernetes.audit_id", kubeAuditID)
+		req.Header.Set("Audit-Id", traceID)
+		span.SetTag("kubernetes.audit_id", traceID)
 	}))
-	log.Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
+	instr.Logger().Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
 	return httptrace.WrapRoundTripper(rt, localOpts...)
 }
 
