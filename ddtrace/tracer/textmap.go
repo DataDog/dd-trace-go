@@ -455,6 +455,10 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		baggageItems = append(baggageItems, fmt.Sprintf("%s=%s", encodedKey, encodedValue))
 		return true
 	})
+
+	if len(baggageItems) > 0 {
+		writer.Set(p.cfg.BaggageHeader, strings.Join(baggageItems, ","))
+	}
 	if p.cfg.MaxTagsHeaderLen <= 0 {
 		return nil
 	}
