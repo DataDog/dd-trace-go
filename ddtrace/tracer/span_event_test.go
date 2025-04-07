@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
 func Test_spanAddEvent(t *testing.T) {
@@ -95,25 +93,25 @@ func Test_spanAddEvent(t *testing.T) {
 	t.Run("with native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
 		s.supportsEvents = true
-		s.AddEvent("test-event-1", ddtrace.WithSpanEventTimestamp(ts), ddtrace.WithSpanEventAttributes(attrs))
-		s.AddEvent("test-event-2", ddtrace.WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-3")
 		s.Finish()
 
-		require.Len(t, s.SpanEvents, 3)
-		evt := s.SpanEvents[0]
+		require.Len(t, s.spanEvents, 3)
+		evt := s.spanEvents[0]
 		assert.Equal(t, "test-event-1", evt.Name)
 		assert.EqualValues(t, ts.UnixNano(), evt.TimeUnixNano)
 		assert.Equal(t, wantAttrs, evt.Attributes)
 		assert.Nil(t, evt.RawAttributes)
 
-		evt = s.SpanEvents[1]
+		evt = s.spanEvents[1]
 		assert.Equal(t, "test-event-2", evt.Name)
 		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
 		assert.Equal(t, wantAttrs, evt.Attributes)
 		assert.Nil(t, evt.RawAttributes)
 
-		evt = s.SpanEvents[2]
+		evt = s.spanEvents[2]
 		assert.Equal(t, "test-event-3", evt.Name)
 		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
 		assert.Nil(t, evt.Attributes)
@@ -123,16 +121,16 @@ func Test_spanAddEvent(t *testing.T) {
 	t.Run("without native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
 		s.supportsEvents = false
-		s.AddEvent("test-event-1", ddtrace.WithSpanEventTimestamp(ts), ddtrace.WithSpanEventAttributes(attrs))
-		s.AddEvent("test-event-2", ddtrace.WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
+		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-3")
 		s.Finish()
 
-		require.Empty(t, s.SpanEvents)
-		assert.NotEmpty(t, s.Meta["events"])
+		require.Empty(t, s.spanEvents)
+		assert.NotEmpty(t, s.meta["events"])
 
 		var spanEvents []spanEvent
-		err := json.Unmarshal([]byte(s.Meta["events"]), &spanEvents)
+		err := json.Unmarshal([]byte(s.meta["events"]), &spanEvents)
 		require.NoError(t, err)
 
 		require.Len(t, spanEvents, 3)

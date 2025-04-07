@@ -8,7 +8,7 @@ package immutable_test
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/immutable"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
 
 	"github.com/stretchr/testify/assert"
 )

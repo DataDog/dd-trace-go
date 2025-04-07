@@ -9,15 +9,15 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/grpcsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/grpcsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 )
 
 func applyAction(blockAtomic *atomic.Pointer[actions.BlockGRPC], err *error) bool {
@@ -36,7 +36,7 @@ func applyAction(blockAtomic *atomic.Pointer[actions.BlockGRPC], err *error) boo
 }
 
 // UnaryHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
+func appsecUnaryHandlerMiddleware(method string, span *tracer.Span, handler grpc.UnaryHandler) grpc.UnaryHandler {
 	return func(ctx context.Context, req any) (res any, rpcErr error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		var remoteAddr string
@@ -80,7 +80,7 @@ func appsecUnaryHandlerMiddleware(method string, span ddtrace.Span, handler grpc
 }
 
 // StreamHandler wrapper to use when AppSec is enabled to monitor its execution.
-func appsecStreamHandlerMiddleware(method string, span ddtrace.Span, handler grpc.StreamHandler) grpc.StreamHandler {
+func appsecStreamHandlerMiddleware(method string, span *tracer.Span, handler grpc.StreamHandler) grpc.StreamHandler {
 	return func(srv any, stream grpc.ServerStream) (rpcErr error) {
 		ctx := stream.Context()
 		md, _ := metadata.FromIncomingContext(ctx)

@@ -12,18 +12,16 @@ import (
 	"context"
 	"os"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
 )
 
-const componentName = "os"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("os")
+	instr = instrumentation.Load(instrumentation.PackageOS)
 }
 
 // OpenFile is a [context.Context]-aware version of [os.OpenFile], that allows

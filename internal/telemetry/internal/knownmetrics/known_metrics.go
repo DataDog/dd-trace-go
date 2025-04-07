@@ -3,8 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-//go:generate go run gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/knownmetrics/generator
-
 package knownmetrics
 
 import (
@@ -12,8 +10,8 @@ import (
 	"encoding/json"
 	"slices"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 //go:embed common_metrics.json
@@ -53,6 +51,29 @@ func IsKnownMetric(namespace transport.Namespace, typ transport.MetricType, name
 func IsCommonMetric(namespace transport.Namespace, typ transport.MetricType, name string) bool {
 	decl := Declaration{Namespace: namespace, Type: typ, Name: name}
 	return slices.Contains(commonMetrics, decl)
+}
+
+// Size returns the total number of known metrics, including common and golang metrics
+func Size() int {
+	return len(commonMetrics) + len(golangMetrics)
+}
+
+// SizeWithFilter returns the total number of known metrics, including common and golang metrics, that pass the given filter
+func SizeWithFilter(filter func(Declaration) bool) int {
+	size := 0
+	for _, decl := range commonMetrics {
+		if filter(decl) {
+			size++
+		}
+	}
+
+	for _, decl := range golangMetrics {
+		if filter(decl) {
+			size++
+		}
+	}
+
+	return size
 }
 
 // IsLanguageMetric returns true if the given metric name is a known Go language metric by the backend

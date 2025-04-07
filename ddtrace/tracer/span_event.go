@@ -8,7 +8,7 @@ package tracer
 import (
 	"golang.org/x/exp/constraints"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 //go:generate msgp -unexported -marshal=false -o=span_event_msgp.go -tests=false

@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 // NewDefaultMapper returns a Mapper that transforms payloads into a MessageBatch and adds a heartbeat message.

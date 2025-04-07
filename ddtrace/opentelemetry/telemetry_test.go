@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -22,7 +22,7 @@ func TestTelemetry(t *testing.T) {
 		expectedExtract string
 	}{
 		{
-			// if nothing is set, DD_TRACE_PROPAGATION_STYLE will be set to datadog,tracecontext
+			// if nothing is set, DD_TRACE_PROPAGATION_STYLE will be set to datadog,tracecontext,baggage
 			expectedInject:  "datadog,tracecontext,baggage",
 			expectedExtract: "datadog,tracecontext,baggage",
 		},
@@ -54,7 +54,7 @@ func TestTelemetry(t *testing.T) {
 				"DD_PROPAGATION_STYLE_INJECT":        "tracecontext",
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "",
 			},
-			expectedInject:  "tracecontext",
+			expectedInject:  "datadog,tracecontext,baggage", // default value
 			expectedExtract: "datadog,tracecontext,baggage",
 		},
 		{
@@ -63,7 +63,7 @@ func TestTelemetry(t *testing.T) {
 				"DD_PROPAGATION_STYLE_INJECT":        "datadog,tracecontext",
 				"DD_TRACE_PROPAGATION_STYLE_EXTRACT": "b3",
 			},
-			expectedInject:  "datadog,tracecontext",
+			expectedInject:  "datadog,tracecontext,baggage", // default value
 			expectedExtract: "b3",
 		},
 	}

@@ -3,16 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package redis // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis"
+package redis // import "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2"
 
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "redis.client"
 
 type clientConfig struct {
 	serviceName   string
@@ -20,29 +17,33 @@ type clientConfig struct {
 	analyticsRate float64
 }
 
-// ClientOption represents an option that can be used to create or wrap a client.
-type ClientOption func(*clientConfig)
-
-func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.RedisOutbound)
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_REDIS_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+// ClientOption describes options for the Redis integration.
+type ClientOption interface {
+	apply(*clientConfig)
 }
 
-// WithServiceName sets the given service name for the client.
-func WithServiceName(name string) ClientOption {
+// ClientOptionFn represents options applicable to NewClient and WrapClient.
+type ClientOptionFn func(*clientConfig)
+
+func (fn ClientOptionFn) apply(cfg *clientConfig) {
+	fn(cfg)
+}
+
+func defaults(cfg *clientConfig) {
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
+}
+
+// WithService sets the given service name for the client.
+func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) ClientOption {
+func WithAnalytics(on bool) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -54,7 +55,7 @@ func WithAnalytics(on bool) ClientOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) ClientOption {
+func WithAnalyticsRate(rate float64) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate

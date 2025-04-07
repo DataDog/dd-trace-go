@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http.Server
+  name: github.com/DataDog/dd-trace-go/contrib/net/http/v2.Server
   description: HTTP server implementation.
 
 aspects:
@@ -20,9 +20,9 @@ aspects:
           # We need to use go:linkname to refer to a number of declarations in order to avoid creating
           # circular dependencies, as these features have transitive dependencies on `net/http`...
           links:
-            - gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http
+            - github.com/DataDog/dd-trace-go/contrib/net/http/v2
           template: |-
-            //go:linkname __dd_contrib_net_http_internal_orchestrion_WrapHandler gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/orchestrion.WrapHandler
+            //go:linkname __dd_contrib_net_http_internal_orchestrion_WrapHandler github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/orchestrion.WrapHandler
             func __dd_contrib_net_http_internal_orchestrion_WrapHandler(Handler) Handler
       - prepend-statements:
           template: |-

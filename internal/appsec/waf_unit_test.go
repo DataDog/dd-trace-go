@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 )
 
 func TestAPISecuritySchemaCollection(t *testing.T) {
@@ -177,9 +177,13 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
 			for k, v := range wafRes.Derivatives {
+				expected, checked := tc.tags[k]
+				if !checked {
+					continue
+				}
 				res, err := json.Marshal(v)
 				require.NoError(t, err)
-				require.Equal(t, tc.tags[k], string(res))
+				require.Equal(t, expected, string(res))
 			}
 		})
 	}

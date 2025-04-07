@@ -14,19 +14,16 @@ import (
 	"time"
 
 	"github.com/redis/rueidis"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const (
-	componentName      = "redis/rueidis"
-	defaultServiceName = "redis.client"
-)
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/redis/rueidis")
+	instr = instrumentation.Load(instrumentation.PackageRedisRueidis)
 }
 
 var (
@@ -74,14 +71,14 @@ type command struct {
 	raw       string
 }
 
-func (c *client) startSpan(ctx context.Context, cmd command) (tracer.Span, context.Context) {
+func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, context.Context) {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(cmd.statement),
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.Tag(ext.TargetHost, c.host),
 		tracer.Tag(ext.TargetPort, c.port),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageRedisRueidis),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		tracer.Tag(ext.TargetDB, c.dbIndex),
@@ -101,7 +98,7 @@ func (c *client) startSpan(ctx context.Context, cmd command) (tracer.Span, conte
 	return tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 }
 
-func (c *client) finishSpan(span tracer.Span, err error) {
+func (c *client) finishSpan(span *tracer.Span, err error) {
 	var opts []tracer.FinishOption
 	if c.cfg.errCheck(err) {
 		opts = append(opts, tracer.WithError(err))
@@ -277,7 +274,7 @@ func multiCommand(cmds []command) command {
 	}
 }
 
-func setClientCacheTags(s tracer.Span, result rueidis.RedisResult) {
+func setClientCacheTags(s *tracer.Span, result rueidis.RedisResult) {
 	s.SetTag(ext.RedisClientCacheHit, result.IsCacheHit())
 	s.SetTag(ext.RedisClientCacheTTL, result.CacheTTL())
 	s.SetTag(ext.RedisClientCachePTTL, result.CachePTTL())

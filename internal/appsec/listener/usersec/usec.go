@@ -6,12 +6,12 @@
 package usersec
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/usersec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/usersec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 )
 
 type Feature struct{}
@@ -39,7 +39,11 @@ func NewUserSecFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Fea
 }
 
 func (*Feature) OnFinish(op *usersec.UserLoginOperation, res usersec.UserLoginOperationRes) {
-	builder := addresses.NewAddressesBuilder()
+	builder := addresses.NewAddressesBuilder().
+		WithUserID(res.UserID).
+		WithUserLogin(res.UserLogin).
+		WithUserOrg(res.UserOrg).
+		WithUserSessionID(res.SessionID)
 
 	switch op.EventType {
 	case usersec.UserLoginSuccess:

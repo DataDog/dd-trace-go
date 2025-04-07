@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/profiler
+  name: github.com/DataDog/dd-trace-go/v2/profiler
   description: The entry point of a Go program.
 
 aspects:
@@ -21,7 +21,7 @@ aspects:
     advice:
       - inject-declarations:
           imports:
-            profiler: gopkg.in/DataDog/dd-trace-go.v1/profiler
+            profiler: github.com/DataDog/dd-trace-go/v2/profiler
             log: log
             os: os
           # Note: it is valid to have multiple func init() in a single compile unit (e.g, `.go` file), in which case
@@ -60,7 +60,7 @@ aspects:
       # We need to stop the profiler at the end of `main` to ensure profiles are complete.
       - prepend-statements:
           imports:
-            profiler: gopkg.in/DataDog/dd-trace-go.v1/profiler
-            tracer: gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer
+            profiler: github.com/DataDog/dd-trace-go/v2/profiler
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             defer profiler.Stop()

@@ -10,10 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	_ "unsafe" // required for go:linkname
+	_ "unsafe"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	logger "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 type (

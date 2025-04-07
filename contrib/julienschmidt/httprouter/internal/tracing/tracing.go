@@ -9,17 +9,17 @@ import (
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
+
+var instr *instrumentation.Instrumentation
 
 const componentName = "julienschmidt/httprouter"
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/julienschmidt/httprouter")
+	instr = instrumentation.Load(instrumentation.PackageJulienschmidtHTTPRouter)
 }
 
 type Router interface {
@@ -48,14 +48,16 @@ func BeforeHandle[T any, WT Router](
 	}
 
 	resource := req.Method + " " + route
-	spanOpts := options.Copy(cfg.spanOpts...) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
+	spanOpts := make([]tracer.StartSpanOption, len(cfg.spanOpts))
+	copy(spanOpts, cfg.spanOpts) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
 	spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 
 	serveCfg := &httptrace.ServeConfig{
-		Service:  cfg.serviceName,
-		Resource: resource,
-		SpanOpts: spanOpts,
-		Route:    route,
+		Framework: "github.com/julienschmidt/httprouter",
+		Service:   cfg.serviceName,
+		Resource:  resource,
+		SpanOpts:  spanOpts,
+		Route:     route,
 	}
 	return httptrace.BeforeHandle(serveCfg, w, req)
 }

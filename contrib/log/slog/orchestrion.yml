@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog
+  name: github.com/DataDog/dd-trace-go/contrib/log/slog/v2
   description: |-
     Package slog provides structured logging, in which log records include a message, a severity level, and various
     other attributes expressed as key-value pairs.
@@ -13,10 +13,20 @@ meta:
 aspects:
   - id: New
     join-point:
-      function-call: log/slog.New
+      all-of:
+        - import-path: log/slog
+        - function-body:
+            function:
+              - name: New
     advice:
-      - wrap-expression:
-          imports:
-            slogtrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog
+      - inject-declarations:
+          # We need to use go:linkname to refer to a number of declarations in order to avoid creating
+          # circular dependencies, as these features have transitive dependencies on `log/slog`...
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/log/slog/v2
           template: |-
-            {{ .AST.Fun }}(slogtrace.WrapHandler({{ index .AST.Args 0 }}))
+            //go:linkname __dd_slogtrace_WrapHandler github.com/DataDog/dd-trace-go/contrib/log/slog/v2.WrapHandler
+            func __dd_slogtrace_WrapHandler(Handler) Handler
+      - prepend-statements:
+          template: |-
+            {{ .Function.Argument 0 }} = __dd_slogtrace_WrapHandler({{ .Function.Argument 0 }})

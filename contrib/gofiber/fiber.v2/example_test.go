@@ -6,8 +6,8 @@
 package fiber_test
 
 import (
-	fibertrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	fibertrace "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -41,7 +41,7 @@ func Example_withServiceName() {
 	router := fiber.New()
 
 	// Use the tracer middleware with your desired service name.
-	router.Use(fibertrace.Middleware(fibertrace.WithServiceName("fiber")))
+	router.Use(fibertrace.Middleware(fibertrace.WithService("fiber")))
 
 	// Set up some endpoints.
 	router.Get("/", func(c *fiber.Ctx) error {

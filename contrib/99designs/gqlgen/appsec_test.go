@@ -18,12 +18,12 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestAppSec(t *testing.T) {
@@ -107,7 +107,7 @@ func TestAppSec(t *testing.T) {
 
 				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
 				span := spans[len(spans)-1]
-				require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+				require.Equal(t, float64(1), span.Tag("_dd.appsec.enabled"))
 
 				type ddAppsecJSON struct {
 					Triggers []struct {
@@ -271,12 +271,11 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	t.Setenv("DD_APPSEC_ENABLED", "1")
 	t.Setenv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	testutils.StartAppSec(t)
 	cleanup := func() {
-		appsec.Stop()
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		cleanup()
 		t.Skip("could not enable appsec: this platform is likely not supported")
 	}
@@ -302,7 +301,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 					Field:  field,
 					Args:   field.ArgumentMap(op.Variables),
 				})
-				fieldVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+				fieldVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 					switch field.Name {
 					case "topLevel":
 						arg := field.Arguments.ForName("id")
@@ -337,7 +336,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 							Field:  nested,
 							Args:   nested.ArgumentMap(op.Variables),
 						})
-						nestedVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+						nestedVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 							switch nested.Name {
 							case "nested":
 								arg := nested.Arguments.ForName("id")

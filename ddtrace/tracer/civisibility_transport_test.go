@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 )
 
 func TestCiVisibilityTransport(t *testing.T) {
@@ -29,7 +29,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	assert := assert.New(t)
 
 	testCases := []struct {
-		payload [][]*span
+		payload [][]*Span
 	}{
 		{getTestTrace(1, 1)},
 		{getTestTrace(10, 1)},
@@ -38,7 +38,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 
 	remainingEvents := 1000 + 10 + 1
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits++
 		metaLang := r.Header.Get("Datadog-Meta-Lang")
 		assert.NotNil(metaLang)

@@ -13,16 +13,17 @@ import (
 	"github.com/DataDog/appsec-internal-go/limiter"
 	wafv3 "github.com/DataDog/go-libddwaf/v3"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/actions"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 type Feature struct {
@@ -31,6 +32,8 @@ type Feature struct {
 	handle          *wafv3.Handle
 	supportedAddrs  config.AddressSet
 	reportRulesTags sync.Once
+
+	telemetryMetrics waf.HandleMetrics
 
 	// Determine if we can use [internal.MetaStructValue] to delegate the WAF events serialization to the trace writer
 	// or if we have to use the [SerializableTag] method to serialize the events
@@ -46,10 +49,11 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 			return nil, fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
+		telemetrylog.Warn("appsec: non-critical error while loading libddwaf: %v", err, telemetry.WithTags([]string{"product:appsec"}))
 	}
 
 	newHandle, err := wafv3.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
+	telemetryMetrics := waf.NewMetricsInstance(newHandle, err)
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +68,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		timeout:             cfg.WAFTimeout,
 		limiter:             tokenTicker,
 		supportedAddrs:      cfg.SupportedAddresses,
+		telemetryMetrics:    telemetryMetrics,
 		metaStructAvailable: cfg.MetaStructAvailable,
 	}
 
@@ -86,6 +91,7 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	op.SwapContext(ctx)
 	op.SetLimiter(waf.limiter)
 	op.SetSupportedAddresses(waf.supportedAddrs)
+	op.SetMetricsInstance(waf.telemetryMetrics.NewContextMetrics())
 
 	// Run the WAF with the given address data
 	dyngo.OnData(op, op.OnEvent)
@@ -97,7 +103,7 @@ func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	// Set the blocking tag on the operation when a blocking event is received
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
 		log.Debug("appsec: blocking event detected")
-		op.SetTag(BlockedRequestTag, true)
+		op.SetTag(blockedRequestTag, true)
 	})
 
 	// Register the stacktrace if one is requested by a WAF action
@@ -120,7 +126,11 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	ctx.Close()
 
-	AddWAFMonitoringTags(op, waf.handle.Diagnostics().Version, ctx.Stats().Metrics())
+	stats := ctx.Stats()
+	metrics := op.GetMetricsInstance()
+	AddWAFMonitoringTags(op, metrics, waf.handle.Diagnostics().Version, stats)
+	metrics.RegisterStats(stats)
+
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
 		tagValue := map[string][]any{"triggers": wafEvents}
 		if waf.metaStructAvailable {
@@ -129,6 +139,7 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 			op.SetSerializableTag("_dd.appsec.json", tagValue)
 		}
 	}
+
 	op.SetSerializableTags(op.Derivatives())
 	if stacks := op.StackTraces(); len(stacks) > 0 {
 		op.SetTag(stacktrace.SpanKey, stacktrace.GetSpanValue(stacks...))

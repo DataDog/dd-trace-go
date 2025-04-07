@@ -8,12 +8,7 @@ package memcache
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-)
-
-const (
-	defaultServiceName = "memcached"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type clientConfig struct {
@@ -22,30 +17,33 @@ type clientConfig struct {
 	analyticsRate float64
 }
 
-// ClientOption represents an option that can be passed to Dial.
-type ClientOption func(*clientConfig)
-
-func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.operationName = namingschema.OpName(namingschema.MemcachedOutbound)
-
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_MEMCACHE_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
+// ClientOption describes options for the Memcache integration.
+type ClientOption interface {
+	apply(*clientConfig)
 }
 
-// WithServiceName sets the given service name for the dialled connection.
-func WithServiceName(name string) ClientOption {
+// ClientOptionFn represents options applicable to WrapClient.
+type ClientOptionFn func(*clientConfig)
+
+func (fn ClientOptionFn) apply(cfg *clientConfig) {
+	fn(cfg)
+}
+
+func defaults(cfg *clientConfig) {
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.analyticsRate = instr.AnalyticsRate(false)
+}
+
+// WithService sets the given service name for the dialled connection.
+func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) ClientOption {
+func WithAnalytics(on bool) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -57,7 +55,7 @@ func WithAnalytics(on bool) ClientOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) ClientOption {
+func WithAnalyticsRate(rate float64) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
