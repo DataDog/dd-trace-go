@@ -446,9 +446,13 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 	if ctx.origin != "" {
 		writer.Set(originHeader, ctx.origin)
 	}
+	var baggageItems []string
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		// Propagate OpenTracing baggage.
 		writer.Set(p.cfg.BaggagePrefix+k, v)
+		encodedKey := encodeKey(k)
+		encodedValue := encodeValue(v)
+		baggageItems = append(baggageItems, fmt.Sprintf("%s=%s", encodedKey, encodedValue))
 		return true
 	})
 	if p.cfg.MaxTagsHeaderLen <= 0 {
@@ -530,6 +534,27 @@ func (p *propagator) extractTextMap(reader TextMapReader) (ddtrace.SpanContext, 
 				return ErrSpanContextCorrupted
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
+		case p.cfg.BaggageHeader:
+			if ctx.baggage == nil {
+				ctx.baggage = make(map[string]string)
+			}
+			baggageHeader := v
+			pairs := strings.Split(baggageHeader, ",")
+			for _, pair := range pairs {
+				pair = strings.TrimSpace(pair)
+				if !strings.Contains(pair, "=") {
+					return fmt.Errorf("Invalid baggage item: %s", pair)
+				}
+				keyValue := strings.SplitN(pair, "=", 2)
+				rawKey := strings.TrimSpace(keyValue[0])
+				rawValue := strings.TrimSpace(keyValue[1])
+				decKey, errKey := url.QueryUnescape(rawKey)
+				decVal, errVal := url.QueryUnescape(rawValue)
+				if errKey != nil || errVal != nil {
+					return fmt.Errorf("Invalid baggage item: %s", pair)
+				}
+				ctx.baggage[decKey] = decVal
+			}
 		case originHeader:
 			ctx.origin = v
 		case traceTagsHeader:
