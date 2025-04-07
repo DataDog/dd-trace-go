@@ -2133,22 +2133,24 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	defer stop()
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		wg := sync.WaitGroup{}
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
-				defer parent.Finish()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			wg := sync.WaitGroup{}
+			for i := 0; i < 100; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+					defer parent.Finish()
 
-				for i := 0; i < 10; i++ {
-					tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
-				}
-			}()
+					for i := 0; i < 10; i++ {
+						tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
+					}
+				}()
+			}
+			wg.Wait()
 		}
-		wg.Wait()
-	}
+	})
 }
 
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
@@ -2226,10 +2228,16 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	defer stop()
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
-		span.Finish()
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+			span.Finish()
+		}
+	})
+	// for n := 0; n < b.N; n++ {
+	// 	span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+	// 	span.Finish()
+	// }
 }
 
 func BenchmarkStartSpan(b *testing.B) {
@@ -2241,13 +2249,15 @@ func BenchmarkStartSpan(b *testing.B) {
 	ctx := ContextWithSpan(context.TODO(), root)
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		s, ok := SpanFromContext(ctx)
-		if !ok {
-			b.Fatal("no span")
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			s, ok := SpanFromContext(ctx)
+			if !ok {
+				b.Fatal("no span")
+			}
+			StartSpan("op", ChildOf(s.Context()))
 		}
-		StartSpan("op", ChildOf(s.Context()))
-	}
+	})
 }
 
 func BenchmarkStartSpanConcurrent(b *testing.B) {
@@ -2267,14 +2277,16 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 			ctx := ContextWithSpan(context.TODO(), root)
 			wgready.Done()
 			<-start
-			for n := 0; n < b.N; n++ {
-				s, ok := SpanFromContext(ctx)
-				if !ok {
-					b.Error("no span")
-					return
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					s, ok := SpanFromContext(ctx)
+					if !ok {
+						b.Error("no span")
+						return
+					}
+					StartSpan("op", ChildOf(s.Context()))
 				}
-				StartSpan("op", ChildOf(s.Context()))
-			}
+			})
 		}()
 	}
 	wgready.Wait()
@@ -2285,9 +2297,11 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 
 func BenchmarkGenSpanID(b *testing.B) {
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		generateSpanID(0)
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			generateSpanID(0)
+		}
+	})
 }
 
 // startTestTracer returns a Tracer with a DummyTransport
@@ -2585,10 +2599,13 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
-	for n := 0; n < b.N; n++ {
-		span := tracer.StartSpan("test")
-		span.Finish(StackFrames(64, 0))
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			span := tracer.StartSpan("test")
+			span.Finish(StackFrames(64, 0))
+		}
+
+	})
 }
 
 func BenchmarkSingleSpanRetention(b *testing.B) {
@@ -2603,14 +2620,16 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			span := tracer.StartSpan("name_1")
-			for i := 0; i < 100; i++ {
-				child := tracer.StartSpan("name_2", ChildOf(span.context))
-				child.Finish()
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				span := tracer.StartSpan("name_1")
+				for i := 0; i < 100; i++ {
+					child := tracer.StartSpan("name_2", ChildOf(span.context))
+					child.Finish()
+				}
+				span.Finish()
 			}
-			span.Finish()
-		}
+		})
 	})
 
 	b.Run("with-rules/match-half", func(b *testing.B) {

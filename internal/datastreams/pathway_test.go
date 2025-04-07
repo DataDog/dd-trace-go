@@ -182,7 +182,9 @@ func BenchmarkNodeHash(b *testing.B) {
 	service := "benchmark-runner"
 	env := "test"
 	edgeTags := []string{"event_type:dog", "exchange:local", "group:all", "topic:off", "type:writer"}
-	for i := 0; i < b.N; i++ {
-		nodeHash(service, env, edgeTags)
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			nodeHash(service, env, edgeTags)
+		}
+	})
 }

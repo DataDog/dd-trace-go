@@ -252,9 +252,11 @@ func TestSetLoggingRate(t *testing.T) {
 
 func BenchmarkError(b *testing.B) {
 	Error("k %s", "a") // warm up cache
-	for i := 0; i < b.N; i++ {
-		Error("k %s", "a")
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			Error("k %s", "a")
+		}
+	})
 }
 
 func hasMsg(lvl, m string, lines []string) bool {

@@ -2299,9 +2299,11 @@ func BenchmarkExtractDatadog(b *testing.B) {
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
 	})
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		propagator.Extract(carrier)
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			propagator.Extract(carrier)
+		}
+	})
 }
 
 func BenchmarkExtractW3C(b *testing.B) {
@@ -2312,9 +2314,11 @@ func BenchmarkExtractW3C(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		propagator.Extract(carrier)
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			propagator.Extract(carrier)
+		}
+	})
 }
 
 func FuzzMarshalPropagatingTags(f *testing.F) {
@@ -2543,9 +2547,14 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
 	ctx.isRemote = false
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
+		}
+	})
+	// for i := 0; i < b.N; i++ {
+	// 	composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
+	// }
 }
 
 func TestStringMutator(t *testing.T) {

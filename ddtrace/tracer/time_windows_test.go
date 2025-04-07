@@ -12,15 +12,19 @@ import (
 )
 
 func BenchmarkNormalTimeNow(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		lowPrecisionNow()
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			lowPrecisionNow()
+		}
+	})
 }
 
 func BenchmarkHighPrecisionTime(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		highPrecisionNow()
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			highPrecisionNow()
+		}
+	})
 }
 
 func TestHighPrecisionTimerIsMoreAccurate(t *testing.T) {

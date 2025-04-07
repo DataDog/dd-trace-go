@@ -174,9 +174,11 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("%v", depth), func(b *testing.B) {
 			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
-			for n := 0; n < b.N; n++ {
-				runtime.KeepAlive(recursiveBench(depth, depth, b))
-			}
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					runtime.KeepAlive(recursiveBench(depth, depth, b))
+				}
+			})
 		})
 	}
 }
