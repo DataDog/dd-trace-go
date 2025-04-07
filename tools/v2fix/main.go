@@ -6,17 +6,17 @@
 package main
 
 import (
-	"github.com/DataDog/dd-trace-go/tools/v2check/v2check"
+	"github.com/DataDog/dd-trace-go/tools/v2fix/v2fix"
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 func main() {
-	c := v2check.NewChecker(
-		&v2check.V1ImportURL{},
-		&v2check.DDTraceTypes{},
-		&v2check.TracerStructs{},
-		&v2check.TraceIDString{},
-		&v2check.WithServiceName{},
+	c := v2fix.NewChecker(
+		&v2fix.V1ImportURL{},
+		&v2fix.DDTraceTypes{},
+		&v2fix.TracerStructs{},
+		&v2fix.TraceIDString{},
+		&v2fix.WithServiceName{},
 	)
 	c.Run(singlechecker.Main)
 }

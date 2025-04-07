@@ -16,9 +16,9 @@ For other necessary fixes, refer to [our documentation](../../MIGRATING.md) for 
 Use the migration tool by running:
 
 ```
-go install github.com/DataDog/dd-trace-go/tools/v2check
+go install github.com/DataDog/dd-trace-go/tools/v2fix
 # In your repository's directory
-v2check .
+v2fix .
 ```
 
 ## Further Reading
