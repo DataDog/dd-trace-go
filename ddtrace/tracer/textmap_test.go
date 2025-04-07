@@ -2693,7 +2693,9 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 
 	root := tracer.StartSpan("web.request").(*span)
 	ctx := root.Context()
-	ctx.(*spanContext).baggage = map[string]string{"userId": "Amélie", "serverNode": "DF 28"}
+	root.SetBaggageItem("userId", "Amélie")
+	root.SetBaggageItem("serverNode", "DF 28")
+
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
@@ -2718,7 +2720,7 @@ func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
 
 	root := tracer.StartSpan("web.request").(*span)
 	ctx := root.Context()
-	ctx.(*spanContext).baggage = map[string]string{",;\\()/:<=>?@[]{}": ",;\\"}
+	root.SetBaggageItem(",;\\()/:<=>?@[]{}", ",;\\")
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
@@ -2759,13 +2761,14 @@ func TestInjectBaggageMaxItems(t *testing.T) {
 
 	root := tracer.StartSpan("web.request").(*span)
 	ctx := root.Context()
+	sctx, ok := ctx.(*spanContext)
+	assert.True(ok)
 
-	baggageItems := make(map[string]string)
 	for i := 0; i < baggageMaxItems+2; i++ {
-		baggageItems[fmt.Sprintf("key%d", i)] = fmt.Sprintf("val%d", i)
+		iString := strconv.Itoa(i)
+		sctx.setBaggageItem("key"+iString, "val"+iString)
 	}
 
-	ctx.(*spanContext).baggage = baggageItems
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
