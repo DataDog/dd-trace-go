@@ -9,10 +9,7 @@ package go_elasticsearch
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"io"
-	"net/http"
 	"testing"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -27,20 +24,8 @@ type TestCaseV8 struct {
 func (tc *TestCaseV8) Setup(ctx context.Context, t *testing.T) {
 	// Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
 	tc.base.Setup(ctx, t, "docker.elastic.co/elasticsearch/elasticsearch:8.15.3", func(addr string, caCert []byte) (esClient, error) {
-		// from v8, there's a certificate configured by default.
-		// we cannot configure directly in the elasticsearch.Config type as it makes a type assertion on the underlying
-		// transport type, which fails for the *elastictrace.roundTripper type from our instrumentation package.
-		// https://github.com/elastic/elastic-transport-go/blob/main/elastictransport/elastictransport.go#L188-L191
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-
 		return elasticsearch.NewClient(elasticsearch.Config{
 			Addresses: []string{addr},
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					RootCAs: caCertPool,
-				},
-			},
 		})
 	})
 }
