@@ -33,26 +33,27 @@ var mTracer mocktracer.Tracer
 func TestMain(m *testing.M) {
 	log.SetLevel(log.LevelDebug)
 
+	const scenarioStarted = "Scenario %s started.\n"
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests"}
 
 	if internal.BoolEnv(scenarios[0], false) {
-		fmt.Printf("Scenario %s started.\n", scenarios[0])
+		fmt.Printf(scenarioStarted, scenarios[0])
 		runFlakyTestRetriesTests(m)
 	} else if internal.BoolEnv(scenarios[1], false) {
-		fmt.Printf("Scenario %s started.\n", scenarios[1])
+		fmt.Printf(scenarioStarted, scenarios[1])
 		runEarlyFlakyTestDetectionTests(m)
 	} else if internal.BoolEnv(scenarios[2], false) {
-		fmt.Printf("Scenario %s started.\n", scenarios[2])
+		fmt.Printf(scenarioStarted, scenarios[2])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m, false)
 	} else if internal.BoolEnv(scenarios[3], false) {
-		fmt.Printf("Scenario %s started.\n", scenarios[3])
+		fmt.Printf(scenarioStarted, scenarios[3])
 		runIntelligentTestRunnerTests(m)
 	} else if internal.BoolEnv(scenarios[4], false) {
-		fmt.Printf("Scenario %s started.\n", scenarios[4])
+		fmt.Printf(scenarioStarted, scenarios[4])
 		runTestManagementTests(m)
 	} else if internal.BoolEnv(scenarios[5], false) {
-		fmt.Printf("Scenario %s started.\n", scenarios[5])
+		fmt.Printf(scenarioStarted, scenarios[5])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m, true)
 	} else {
 		fmt.Println("Starting tests...")

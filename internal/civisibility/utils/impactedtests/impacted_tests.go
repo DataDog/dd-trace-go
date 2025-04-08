@@ -67,34 +67,38 @@ func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
 
 	// Extract the modified files
 	var modifiedFiles []fileWithBitmap
+
+	// Check if the base commit SHA is available
 	if len(baseCommitSha) > 0 {
 		logger.Debug("civisibility.ImpactedTests: PR detected. Retrieving diff lines from Git CLI from BaseCommit %s", baseCommitSha)
-		// Milestone 1.5 : Retrieve diff files and lines from Git Diff CLI
-		output, err := utils.GetGitDiff(baseCommitSha, currentCommitSha)
-		if err != nil {
-			logger.Debug("civisibility.ImpactedTests: Failed to get diff files from Git CLI: %s", err)
-		} else if output != "" {
-			modifiedFiles = parseGitDiffOutput(output)
-		} else {
-			logger.Debug("civisibility.ImpactedTests: No diff files found from Git CLI")
-		}
-	} else {
-		logger.Debug("civisibility.ImpactedTests: no PR detected. Cannot do anything locally")
+		modifiedFiles = getGitDiffFrom(baseCommitSha, currentCommitSha)
 	}
 
 	if modifiedFiles == nil && client != nil {
 		// Milestone 1 : Retrieve diff files from Backend
 		if impactedTestData, err := client.GetImpactedTests(); err == nil && impactedTestData != nil {
-			logger.Debug("civisibility.ImpactedTests: Found %d files from CI", len(impactedTestData.Files))
-			for _, file := range impactedTestData.Files {
-				if file == "" {
-					continue
-				}
-				modifiedFiles = append(modifiedFiles, fileWithBitmap{file: file})
-			}
+			// set the new base commit SHA
 			baseCommitSha = impactedTestData.BaseSha
+
+			// First we try to use the base commit SHA from the backend for the diff
+			if len(impactedTestData.BaseSha) > 0 {
+				logger.Debug("civisibility.ImpactedTests: Retrieving diff lines from Git CLI from BaseCommit %s", baseCommitSha)
+				modifiedFiles = getGitDiffFrom(baseCommitSha, currentCommitSha)
+			}
+
+			// If we don't have any modified files, we use the ones from the backend
+			if modifiedFiles == nil {
+				logger.Debug("civisibility.ImpactedTests: Found %d files from CI", len(impactedTestData.Files))
+				for _, file := range impactedTestData.Files {
+					if file == "" {
+						continue
+					}
+					modifiedFiles = append(modifiedFiles, fileWithBitmap{file: file})
+				}
+			}
+
 		} else {
-			logger.Debug("civisibility.ImpactedTests: Failed to get impacted test data from CI")
+			logger.Debug("civisibility.ImpactedTests: Failed to get impacted test data from backend: %s", err)
 		}
 	}
 
@@ -157,6 +161,22 @@ func (a *ImpactedTestAnalyzer) IsImpacted(testName string, sourceFile string, st
 	}
 
 	return modified
+}
+
+// getGitDiffFrom retrieves the diff files and lines from the Git CLI.
+func getGitDiffFrom(baseCommitSha string, currentCommitSha string) []fileWithBitmap {
+	var modifiedFiles []fileWithBitmap
+
+	// Milestone 1.5 : Retrieve diff files and lines from Git Diff CLI
+	output, err := utils.GetGitDiff(baseCommitSha, currentCommitSha)
+	if err != nil {
+		logger.Debug("civisibility.ImpactedTests: Failed to get diff files from Git CLI: %s", err)
+	} else if output != "" {
+		modifiedFiles = parseGitDiffOutput(output)
+	} else {
+		logger.Debug("civisibility.ImpactedTests: No diff files found from Git CLI")
+	}
+	return modifiedFiles
 }
 
 // getTestImpactInfo returns the test impact information based on the tags.
