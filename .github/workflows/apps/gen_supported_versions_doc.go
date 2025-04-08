@@ -303,15 +303,27 @@ func writeMarkdownFile(modules []ModuleVersion, filePath string) error {
 	return nil
 }
 
+var deprecatedPackages = map[instrumentation.Package]bool{
+	instrumentation.PackageEmickleiGoRestful: true,
+	instrumentation.PackageGaryburdRedigo:    true,
+	instrumentation.PackageGopkgJinZhuGormV1: true,
+	instrumentation.PackageGojiV1Web:         true,
+	instrumentation.PackageJinzhuGorm:        true,
+	instrumentation.PackageLabstackEcho:      true,
+}
+
 func processPackages() ([]ModuleVersion, error) {
 	var modules []ModuleVersion
 	for integrationName, mod := range instrumentation.GetPackages() {
+		if deprecatedPackages[integrationName] {
+			continue
+		}
 		modName := mod.TracedPackage
 		module, err := getCurrentVersion(string(integrationName), modName)
 		if err != nil {
 			return nil, err
 		}
-		modules = append(modules, modName)
+		modules = append(modules, module)
 	}
 	return modules, nil
 
