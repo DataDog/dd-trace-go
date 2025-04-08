@@ -1367,6 +1367,7 @@ func (p *propagatorBaggage) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 // Each key and value pair is encoded and added to the existing baggage header in <key>=<value> format,
 // joined together by commas,
 func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWriter) error {
+	fmt.Println("MTOFF: In baggage.injectTextMap")
 	ctx, _ := spanCtx.(*spanContext)
 	if ctx == nil {
 		return nil
@@ -1415,6 +1416,7 @@ func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer Text
 	}
 
 	if len(baggageItems) > 0 {
+		fmt.Println("MTOFF: setting baggage items: ", strings.Join(baggageItems, ","))
 		writer.Set("baggage", strings.Join(baggageItems, ","))
 	}
 

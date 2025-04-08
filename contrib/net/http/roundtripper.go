@@ -84,6 +84,9 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
 		}
 	}
+	for k, v := range r2.Header {
+		fmt.Println("MTOFF: R2 header", k, ", value ", v)
+	}
 
 	if appsec.RASPEnabled() {
 		if err := httpsec.ProtectRoundTrip(ctx, r2.URL.String()); err != nil {
