@@ -1191,10 +1191,6 @@ func BenchmarkSetTagMetric(b *testing.B) {
 			i++
 		}
 	})
-	// for i := 0; i < b.N; i++ {
-	// 	k := keys[i%len(keys)]
-	// 	span.SetTag(k, float64(12.34))
-	// }
 }
 
 func BenchmarkSetTagString(b *testing.B) {
@@ -1202,18 +1198,10 @@ func BenchmarkSetTagString(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 
 	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			k := string(keys[i%len(keys)])
-			span.SetTag(k, "some text")
-			i++
-		}
-	})
-	// for i := 0; i < b.N; i++ {
-	// 	k := string(keys[i%len(keys)])
-	// 	span.SetTag(k, "some text")
-	// }
+	for i := 0; i < b.N; i++ {
+		k := string(keys[i%len(keys)])
+		span.SetTag(k, "some text")
+	}
 }
 
 func BenchmarkSetTagStringPtr(b *testing.B) {
@@ -1222,18 +1210,10 @@ func BenchmarkSetTagStringPtr(b *testing.B) {
 	v := makePointer("some text")
 
 	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			k := string(keys[i%len(keys)])
-			span.SetTag(k, v)
-			i++
-		}
-	})
-	// for i := 0; i < b.N; i++ {
-	// 	k := keys[i%len(keys)]
-	// 	span.SetTag(k, v)
-	// }
+	for i := 0; i < b.N; i++ {
+		k := keys[i%len(keys)]
+		span.SetTag(k, v)
+	}
 }
 
 func BenchmarkSetTagStringer(b *testing.B) {
@@ -1249,10 +1229,6 @@ func BenchmarkSetTagStringer(b *testing.B) {
 			i++
 		}
 	})
-	// for i := 0; i < b.N; i++ {
-	// 	k := keys[i%len(keys)]
-	// 	span.SetTag(k, value)
-	// }
 }
 
 func BenchmarkSetTagField(b *testing.B) {
@@ -1268,10 +1244,6 @@ func BenchmarkSetTagField(b *testing.B) {
 			i++
 		}
 	})
-	// for i := 0; i < b.N; i++ {
-	// 	k := keys[i%len(keys)]
-	// 	span.SetTag(k, "some text")
-	// }
 }
 
 func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {

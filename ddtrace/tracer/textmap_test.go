@@ -2552,9 +2552,6 @@ func BenchmarkComposeTracestate(b *testing.B) {
 			composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
 		}
 	})
-	// for i := 0; i < b.N; i++ {
-	// 	composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
-	// }
 }
 
 func TestStringMutator(t *testing.T) {
