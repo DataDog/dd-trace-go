@@ -547,11 +547,11 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 	isDisabled := testManagementData.Disabled
 
 	// Check if the test is marked as "attempt to fix"
-	isAttempToFix := testManagementData.AttemptToFix
-	attempToFixRetries := settings.TestManagement.AttemptToFixRetries
+	isAttemptToFix := testManagementData.AttemptToFix
+	attemptToFixRetries := settings.TestManagement.AttemptToFixRetries
 
 	// If the test is neither disabled nor quarantined, then no additional test management features apply.
-	if !isQuarantined && !isDisabled {
+	if !isQuarantined && !isDisabled && !isAttemptToFix {
 		return targetFunc, false
 	}
 
@@ -564,8 +564,8 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 		// Determine the number of retries: for "attempt to fix" tests use attempToFixRetries,
 		// otherwise, no retry is allowed.
 		var retryCount int64
-		if isAttempToFix {
-			retryCount = int64(attempToFixRetries)
+		if isAttemptToFix {
+			retryCount = int64(attemptToFixRetries)
 		} else {
 			retryCount = 0
 		}
@@ -596,7 +596,7 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 
 				// For attempt-to-fix tests, allow retries while remainingRetries > 0.
 				// Otherwise (non-attempt-to-fix), do not retry.
-				if isAttempToFix {
+				if isAttemptToFix {
 					return remainingRetries > 0
 				}
 				return false
@@ -621,7 +621,7 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 				}
 
 				if retryCount > 0 {
-					t.Logf("Attemp to fix retry: %d/%d [%s]", executionIndex+1, retryCount, status)
+					t.Logf("Attempt to fix retry: %d/%d [%s]", executionIndex+1, retryCount, status)
 				}
 			},
 			onRetryEnd: func(t *testing.T, _ int, _ *testing.T) {
@@ -638,7 +638,7 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 				// Propagate the test management flags.
 				execMeta.isQuarantined = isQuarantined
 				execMeta.isDisabled = isDisabled
-				execMeta.isAttemptToFix = isAttempToFix
+				execMeta.isAttemptToFix = isAttemptToFix
 				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
 				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
 
