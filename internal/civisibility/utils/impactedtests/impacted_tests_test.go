@@ -93,21 +93,11 @@ func TestSplitLines(t *testing.T) {
 // TestGetTestImpactInfo tests the getTestImpactInfo method of tagsMap.
 func TestGetTestImpactInfo(t *testing.T) {
 	// Create a tagsMap with the necessary tags.
-	tags := make(map[string]interface{})
 	testFile := "testfile.go"
 	startLine := 5
 	endLine := 10
-	tags[constants.TestSourceFile] = testFile
-	tags[constants.TestSourceStartLine] = startLine
-	tags[constants.TestSourceEndLine] = endLine
 
-	tm := &tagsMap{
-		tags: tags,
-		// The span is not used in getTestImpactInfo so podemos pasar un dummy.
-		span: newDummyTestSpan(),
-	}
-
-	files := tm.getTestImpactInfo()
+	files := getTestImpactInfo(testFile, startLine, endLine)
 	if len(files) != 1 {
 		t.Fatalf("Expected 1 file from getTestImpactInfo, got %d", len(files))
 	}
@@ -146,16 +136,10 @@ func TestProcessImpactedTest(t *testing.T) {
 	}
 
 	// Process the impacted test.
-	analyzer.ProcessImpactedTest("test", span)
+	isImpacted := analyzer.IsImpacted("test", testFile, startLine, endLine)
 
-	// Verify that the TestIsModified tag has been set to "true".
-	val, exists := span.tags[constants.TestIsModified]
-	if !exists {
-		t.Errorf("Expected tag %s to be set", constants.TestIsModified)
-	} else {
-		modifiedStr, ok := val.(string)
-		if !ok || modifiedStr != "true" {
-			t.Errorf("Expected tag %s to be 'true', got %v", constants.TestIsModified, val)
-		}
+	// Verify that the test is marked as impacted.
+	if !isImpacted {
+		t.Error("Expected to be impacted")
 	}
 }

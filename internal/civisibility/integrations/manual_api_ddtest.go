@@ -290,7 +290,11 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 
 		// if impacted tests analyzer was loaded, we run it
 		if analyzer := GetImpactedTestsAnalyzer(); analyzer != nil {
-			analyzer.ProcessImpactedTest(t.Name(), t.span)
+			if analyzer.IsImpacted(t.Name(), file, startLine, endLine) {
+				t.SetTag(constants.TestIsModified, "true")
+				telemetry.ImpactedTestsModified()
+				t.ctx = context.WithValue(t.ctx, constants.TestIsModified, true)
+			}
 		}
 	}
 

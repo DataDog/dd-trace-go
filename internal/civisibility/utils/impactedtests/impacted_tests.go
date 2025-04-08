@@ -11,13 +11,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -35,19 +33,6 @@ type (
 		baseCommitSha    string
 	}
 
-	// tagsMap is a struct that holds a map of tags and a span.
-	tagsMap struct {
-		tags  map[string]any
-		span  TestSpan
-		mutex sync.RWMutex
-	}
-
-	// TestSpan is an interface that represents a span with methods to manipulate tags.
-	TestSpan interface {
-		AsMap() map[string]interface{}
-		SetTag(key string, value any)
-	}
-
 	// lineRange represents a tuple of start and end line numbers.
 	lineRange struct {
 		start int
@@ -63,68 +48,6 @@ var diffHeaderRegex = regexp.MustCompile(`^diff --git a\/(?P<fileA>.+) b\/(?P<fi
 // Example: @@ -1,2 +3,4 @@
 // This regex captures "start" and "count" (if available) from the new file's diff.
 var lineChangeRegex = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@`)
-
-// getTag retrieves the value of a tag by its key.
-func (t *tagsMap) getTag(key string) any {
-	t.mutex.RLock()
-	defer t.mutex.RUnlock()
-	return t.tags[key]
-}
-
-// SetTag sets the value of a tag by its key.
-func (t *tagsMap) setTag(key string, value any) {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	t.tags[key] = value
-	t.span.SetTag(key, value)
-}
-
-// getTestImpactInfo returns the test impact information based on the tags.
-func (t *tagsMap) getTestImpactInfo() []*fileWithBitmap {
-	result := make([]*fileWithBitmap, 0)
-	sourceFileAny := t.getTag(constants.TestSourceFile)
-	if sourceFileAny == nil {
-		return result
-	}
-
-	sourceFile := sourceFileAny.(string)
-	if sourceFile == "" {
-		return result
-	}
-
-	// Milestone 1: Return only the test definition file
-	file := &fileWithBitmap{file: sourceFile}
-	result = append(result, file)
-
-	// Milestone 1.5: Return the test definition lines
-	sourceFileStartLineAny := t.getTag(constants.TestSourceStartLine)
-	sourceFileEndLineAny := t.getTag(constants.TestSourceEndLine)
-	if sourceFileStartLineAny == nil || sourceFileEndLineAny == nil {
-		return result
-	}
-
-	var sourceFileStartLine int
-	if val, ok := sourceFileStartLineAny.(float64); ok {
-		sourceFileStartLine = int(val)
-	} else {
-		sourceFileStartLine = sourceFileStartLineAny.(int)
-	}
-
-	var sourceFileEndLine int
-	if val, ok := sourceFileEndLineAny.(float64); ok {
-		sourceFileEndLine = int(val)
-	} else {
-		sourceFileEndLine = sourceFileEndLineAny.(int)
-	}
-
-	if sourceFileStartLine == 0 || sourceFileEndLine == 0 {
-		return result
-	}
-	bitmap := filebitmap.FromActiveRange(sourceFileStartLine, sourceFileEndLine)
-	file.bitmap = bitmap.GetBuffer()
-
-	return result
-}
 
 // NewImpactedTestAnalyzer creates a new instance of ImpactedTestAnalyzer.
 func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
@@ -187,24 +110,19 @@ func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
 	}, nil
 }
 
-// ProcessImpactedTest processes the impacted test based on the provided span.
-func (a *ImpactedTestAnalyzer) ProcessImpactedTest(name string, span TestSpan) {
+// IsImpacted checks if a test is impacted based on the modified files and their line ranges.
+func (a *ImpactedTestAnalyzer) IsImpacted(testName string, sourceFile string, startLine int, endLine int) bool {
 	if len(a.modifiedFiles) == 0 {
-		return
-	}
-
-	tags := &tagsMap{
-		tags: span.AsMap(),
-		span: span,
+		return false
 	}
 
 	// Has the test been modified?
 	modified := false
 
 	// Get the test impact information
-	testFiles := tags.getTestImpactInfo()
+	testFiles := getTestImpactInfo(sourceFile, startLine, endLine)
 	if len(testFiles) == 0 {
-		return
+		return false
 	}
 
 	for _, testFile := range testFiles {
@@ -231,17 +149,36 @@ func (a *ImpactedTestAnalyzer) ProcessImpactedTest(name string, span TestSpan) {
 			modifiedFileBitmap := filebitmap.NewFileBitmapFromBytes(modifiedFile.bitmap)
 
 			if testFileBitmap.IntersectsWith(modifiedFileBitmap) {
-				logger.Debug("civisibility.ImpactedTests: Intersecting lines. Marking test %s as modified.", name)
+				logger.Debug("civisibility.ImpactedTests: Intersecting lines. Marking test %s as modified.", testName)
 				modified = true
 				break
 			}
 		}
 	}
 
-	if modified {
-		span.SetTag(constants.TestIsModified, "true")
-		telemetry.ImpactedTestsModified()
+	return modified
+}
+
+// getTestImpactInfo returns the test impact information based on the tags.
+func getTestImpactInfo(sourceFile string, startLine int, endLine int) []*fileWithBitmap {
+	result := make([]*fileWithBitmap, 0)
+	if sourceFile == "" {
+		return result
 	}
+
+	// Milestone 1: Return only the test definition file
+	file := &fileWithBitmap{file: sourceFile}
+	result = append(result, file)
+
+	// Milestone 1.5: Return the test definition lines
+	if startLine == 0 || endLine == 0 {
+		return result
+	}
+
+	bitmap := filebitmap.FromActiveRange(startLine, endLine)
+	file.bitmap = bitmap.GetBuffer()
+
+	return result
 }
 
 // parseGitDiffOutput parses the git diff output to extract modified files and their changed lines.
