@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/tools/v2check/_stage
+module github.com/DataDog/dd-trace-go/tools/v2fix/_stage
 
 go 1.23.0
 

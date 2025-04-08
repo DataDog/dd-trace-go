@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package v2check
+package v2fix
 
 import (
 	"errors"
@@ -21,7 +21,7 @@ type Checker struct {
 
 func (c Checker) Run(handler func(*analysis.Analyzer)) {
 	analyzer := &analysis.Analyzer{
-		Name:     "v2check",
+		Name:     "v2fix",
 		Doc:      "Migration tool to assist with the dd-trace-go v2 upgrade",
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 		Run:      c.runner(),
@@ -33,7 +33,7 @@ func (c Checker) Run(handler func(*analysis.Analyzer)) {
 }
 
 func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
-	log.Printf("Running v2check with %d known changes", len(c.knownChanges))
+	log.Printf("Running v2fix with %d known changes", len(c.knownChanges))
 	knownChanges := c.knownChanges
 
 	return func(pass *analysis.Pass) (interface{}, error) {
