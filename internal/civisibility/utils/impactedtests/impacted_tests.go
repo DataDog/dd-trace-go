@@ -63,7 +63,10 @@ func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
 	}
 
 	// Get the base commit SHA
-	baseCommitSha := ciTags[constants.GitPrBaseBranch]
+	baseCommitSha := ciTags[constants.GitPrBaseCommit]
+	if baseCommitSha == "" {
+		baseCommitSha = ciTags[constants.GitPrBaseBranch]
+	}
 
 	// Extract the modified files
 	var modifiedFiles []fileWithBitmap

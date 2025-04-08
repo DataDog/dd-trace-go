@@ -109,6 +109,9 @@ func ensureSettingsInitialization(serviceName string) {
 			} else if ciSettings != nil {
 				ciVisibilitySettings = *ciSettings
 			}
+		} else if ciVisibilitySettings.ImpactedTestsEnabled {
+			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
+			<-uploadChannel
 		} else {
 			log.Debug("civisibility: no need to wait for the git upload to finish")
 			// Enqueue a close action to wait for the upload to finish before finishing the process

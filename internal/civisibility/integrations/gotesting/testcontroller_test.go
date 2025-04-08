@@ -327,9 +327,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 	// set impacted tests variables
 	if impactedTests {
-		os.Setenv("GITHUB_BASE_REF", "e5cfb7b3dd02d4116b9dd3dd2dd4e39d11e0b61d") // old known sha.
-		os.Setenv("GITHUB_SHA", utils.GetCITags()[constants.GitCommitSHA])
-		utils.ResetCITags()
+		utils.AddCITags(constants.GitPrBaseCommit, "e5cfb7b3dd02d4116b9dd3dd2dd4e39d11e0b61d")
+		utils.AddCITags(constants.GitPrBaseBranch, "main")
 	}
 
 	// initialize the mock tracer for doing assertions on the finished spans
