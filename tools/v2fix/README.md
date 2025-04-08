@@ -21,6 +21,12 @@ go install github.com/DataDog/dd-trace-go/tools/v2fix
 v2fix .
 ```
 
+In order to apply all suggested fixes, run:
+
+```
+v2fix -fix .
+```
+
 ## Further Reading
 For more information about migrating to `v2`, go to:
 
