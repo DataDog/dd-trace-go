@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 
 go 1.23.8
 
-toolchain go1.24.1
-
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
 	github.com/Shopify/sarama v1.38.1

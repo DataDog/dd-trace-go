@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/tools/v2fix/_stage
 
 go 1.23.8
 
-toolchain go1.24.1
-
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
 	gopkg.in/DataDog/dd-trace-go.v1 v1.71.1

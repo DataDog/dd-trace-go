@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/
 
 go 1.23.8
 
-toolchain go1.24.1
-
 require (
 	cloud.google.com/go/pubsub v1.37.0
 	github.com/99designs/gqlgen v0.17.36

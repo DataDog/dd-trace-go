@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest
 
 go 1.23.8
 
-toolchain go1.24.1
-
 require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.1.0-dev

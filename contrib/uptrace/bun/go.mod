@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2
 
 go 1.23.8
 
-toolchain go1.24.1
-
 godebug x509negativeserial=1
 
 require (
