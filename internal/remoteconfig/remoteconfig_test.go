@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +36,7 @@ func TestRCClient(t *testing.T) {
 
 	t.Run("registerCallback", func(t *testing.T) {
 		client.callbacks = []Callback{}
-		nilCallback := func(map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+		nilCallback := func(map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
 		defer func() { client.callbacks = []Callback{} }()
 		require.Equal(t, 0, len(client.callbacks))
 		err = RegisterCallback(nilCallback)
@@ -51,16 +51,16 @@ func TestRCClient(t *testing.T) {
 	t.Run("apply-update", func(t *testing.T) {
 		client.callbacks = []Callback{}
 		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
-		err = RegisterProduct(rc.ProductASMFeatures)
+		err = RegisterProduct(state.ProductASMFeatures)
 		require.NoError(t, err)
-		err = RegisterCallback(func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus {
-			statuses := map[string]rc.ApplyStatus{}
+		err = RegisterCallback(func(updates map[string]ProductUpdate) map[string]state.ApplyStatus {
+			statuses := map[string]state.ApplyStatus{}
 			for p, u := range updates {
-				if p == rc.ProductASMFeatures {
+				if p == state.ProductASMFeatures {
 					require.NotNil(t, u)
 					require.NotNil(t, u[cfgPath])
 					require.Equal(t, string(u[cfgPath]), "test")
-					statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+					statuses[cfgPath] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 				}
 			}
 			return statuses
@@ -77,13 +77,13 @@ func TestRCClient(t *testing.T) {
 		require.NoError(t, err)
 
 		cfgPath := "datadog/2/APM_TRACING/foo/bar"
-		err = Subscribe(rc.ProductAPMTracing, func(u ProductUpdate) map[string]rc.ApplyStatus {
-			statuses := map[string]rc.ApplyStatus{}
+		err = Subscribe(state.ProductAPMTracing, func(u ProductUpdate) map[string]state.ApplyStatus {
+			statuses := map[string]state.ApplyStatus{}
 			require.NotNil(t, u)
 			require.Len(t, u, 1)
 			require.NotNil(t, u[cfgPath])
 			require.Equal(t, string(u[cfgPath]), "test")
-			statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+			statuses[cfgPath] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 			return statuses
 		})
 		require.NoError(t, err)
@@ -259,19 +259,19 @@ func TestConfig(t *testing.T) {
 	})
 }
 
-func dummyCallback1(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+func dummyCallback1(map[string]ProductUpdate) map[string]state.ApplyStatus {
 	return nil
 }
-func dummyCallback2(map[string]ProductUpdate) map[string]rc.ApplyStatus {
-	return map[string]rc.ApplyStatus{}
+func dummyCallback2(map[string]ProductUpdate) map[string]state.ApplyStatus {
+	return map[string]state.ApplyStatus{}
 }
 
-func dummyCallback3(map[string]ProductUpdate) map[string]rc.ApplyStatus {
-	return map[string]rc.ApplyStatus{}
+func dummyCallback3(map[string]ProductUpdate) map[string]state.ApplyStatus {
+	return map[string]state.ApplyStatus{}
 }
 
-func dummyCallback4(map[string]ProductUpdate) map[string]rc.ApplyStatus {
-	return map[string]rc.ApplyStatus{}
+func dummyCallback4(map[string]ProductUpdate) map[string]state.ApplyStatus {
+	return map[string]state.ApplyStatus{}
 }
 
 func TestRegistration(t *testing.T) {
@@ -318,8 +318,8 @@ func TestSubscribe(t *testing.T) {
 	client, err = newClient(DefaultClientConfig())
 	require.NoError(t, err)
 
-	var callback Callback = func(_ map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
-	var pCallback ProductCallback = func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	var callback Callback = func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
+	var pCallback ProductCallback = func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 
 	err = Subscribe("my-product", pCallback)
 	require.NoError(t, err)
@@ -360,7 +360,7 @@ func TestNewUpdateRequest(t *testing.T) {
 	require.NoError(t, err)
 	err = RegisterCapability(ASMActivation)
 	require.NoError(t, err)
-	err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }, APMTracingSampleRate)
+	err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }, APMTracingSampleRate)
 	require.NoError(t, err)
 
 	b, err := client.newUpdateRequest()
@@ -393,7 +393,7 @@ func TestAsync(t *testing.T) {
 		capability := Capability(rand.Uint32() % 10)
 		wg.Add(1)
 		go func() {
-			callback := func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }
+			callback := func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 			Subscribe(product, callback, capability)
 			wg.Done()
 		}()
@@ -432,7 +432,7 @@ func TestAsync(t *testing.T) {
 	}
 
 	// Callbacks
-	callback := func(_ map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	callback := func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
 	for i := 0; i < iterations; i++ {
 		wg.Add(1)
 		go func() {

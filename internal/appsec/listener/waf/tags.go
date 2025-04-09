@@ -6,25 +6,19 @@
 package waf
 
 import (
-	"encoding/json"
 	"time"
-
-	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 const (
 	wafSpanTagPrefix     = "_dd.appsec."
 	eventRulesVersionTag = wafSpanTagPrefix + "event_rules.version"
-	eventRulesErrorsTag  = wafSpanTagPrefix + "event_rules.errors"
-	eventRulesLoadedTag  = wafSpanTagPrefix + "event_rules.loaded"
-	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
 	wafVersionTag        = wafSpanTagPrefix + "waf.version"
 	wafErrorTag          = wafSpanTagPrefix + "waf.error"
 	wafTimeoutTag        = wafSpanTagPrefix + "waf.timeouts"
@@ -37,27 +31,13 @@ const (
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
-func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
-	rInfo := wafDiags.Rules
-	if rInfo == nil {
-		return
-	}
-
-	var rulesetErrors []byte
-	var err error
-	rulesetErrors, err = json.Marshal(wafDiags.Rules.Errors)
-	if err != nil {
-		log.Error("appsec: could not marshal the waf ruleset info errors to json")
-	}
-	th.SetTag(eventRulesErrorsTag, string(rulesetErrors))
-	th.SetTag(eventRulesLoadedTag, len(rInfo.Loaded))
-	th.SetTag(eventRulesFailedTag, len(rInfo.Failed))
-	th.SetTag(wafVersionTag, waf.Version())
+func AddRulesMonitoringTags(th trace.TagSetter) {
+	th.SetTag(wafVersionTag, libddwaf.Version())
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
 }
 
 // AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
-func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, stats waf.Stats) {
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, stats libddwaf.Stats) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
@@ -90,13 +70,13 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 }
 
 // addTruncationTags adds the span tags related to the truncations
-func addTruncationTags(th trace.TagSetter, stats waf.Stats) {
+func addTruncationTags(th trace.TagSetter, stats libddwaf.Stats) {
 	wafMaxTruncationsMapSize := max(len(stats.Truncations), len(stats.TruncationsRASP))
 	if wafMaxTruncationsMapSize == 0 {
 		return
 	}
 
-	wafMaxTruncationsMap := make(map[waf.TruncationReason]int, wafMaxTruncationsMapSize)
+	wafMaxTruncationsMap := make(map[libddwaf.TruncationReason]int, wafMaxTruncationsMapSize)
 	for reason, list := range stats.Truncations {
 		wafMaxTruncationsMap[reason] = max(0, len(list))
 	}

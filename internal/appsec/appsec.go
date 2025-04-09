@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -71,7 +71,7 @@ func Start(opts ...config.StartOption) {
 	}
 
 	// Check whether libddwaf - required for Threats Detection - is ok or not
-	if ok, err := waf.Health(); !ok {
+	if ok, err := libddwaf.Usable(); !ok {
 		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
 		if mode == config.ForcedOn {
 			// DD_APPSEC_ENABLED is explicitly set so we log an error
@@ -158,7 +158,7 @@ func newAppSec(cfg *config.Config) *appsec {
 // Start AppSec by registering its security protections according to the configured the security rules.
 func (a *appsec) start(telemetry *appsecTelemetry) error {
 	// Load the waf to catch early errors if any
-	if ok, err := waf.Load(); err != nil {
+	if ok, err := libddwaf.Load(); err != nil {
 		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
 		// Note that we assume here that the test for the unsupported target has been done before calling
 		// this method, so it is now considered an error for this method
@@ -205,9 +205,8 @@ func (a *appsec) stop() {
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)
 
-	// Reset rules edits received from the remote configuration
-	// We skip the error because we can't do anything about and it was already logged in config.NewRulesManager
-	a.cfg.RulesManager, _ = config.NewRulesManager(nil)
+	// Close the WAF manager to release all resources associated with it
+	a.cfg.WAFManager.Reset()
 
 	// TODO: block until no more requests are using dyngo operations
 

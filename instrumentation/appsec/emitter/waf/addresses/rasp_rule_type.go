@@ -6,7 +6,7 @@
 package addresses
 
 import (
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 type RASPRuleType string
@@ -28,8 +28,8 @@ func RASPRuleTypes() []RASPRuleType {
 }
 
 // RASPRuleTypeFromAddressSet returns the RASPRuleType for the given address set if it has a RASP address.
-func RASPRuleTypeFromAddressSet(addressSet waf.RunAddressData) (RASPRuleType, bool) {
-	if addressSet.Scope != waf.RASPScope {
+func RASPRuleTypeFromAddressSet(addressSet libddwaf.RunAddressData) (RASPRuleType, bool) {
+	if addressSet.Scope != libddwaf.RASPScope {
 		return "", false
 	}
 

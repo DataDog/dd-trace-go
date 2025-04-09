@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -13,9 +14,9 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 func init() {
@@ -136,19 +137,17 @@ func WithAPISecOptions(opts ...internal.APISecOption) StartOption {
 
 // Config is the AppSec configuration.
 type Config struct {
-	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used
-	// and live-updated with remote configuration.
-	RulesManager *RulesManager
-	// Maximum WAF execution time
+	*WAFManager
+
+	// WAFTimeout is the maximum WAF execution time
 	WAFTimeout time.Duration
-	// AppSec trace rate limit (traces per second).
+	// TraceRateLimit is the AppSec trace rate limit (traces per second).
 	TraceRateLimit int64
-	// Obfuscator configuration
-	Obfuscator internal.ObfuscatorConfig
 	// APISec configuration
 	APISec internal.APISecConfig
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
-	RC   *remoteconfig.ClientConfig
+	RC *remoteconfig.ClientConfig
+	// RASP determines whether RASP features are enabled or not.
 	RASP bool
 	// SupportedAddresses are the addresses that the AppSec listener will bind to.
 	SupportedAddresses AddressSet
@@ -203,21 +202,32 @@ func parseBoolEnvVar(env string) (enabled bool, set bool, err error) {
 
 // NewConfig returns a fresh appsec configuration read from the env
 func (c *StartConfig) NewConfig() (*Config, error) {
-	rules, err := internal.RulesFromEnv()
-	if err != nil {
-		return nil, err
+	var rules any
+	if path, ok := os.LookupEnv(internal.EnvRules); ok {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading WAF rules from "+internal.EnvRules+"=%s: %w", path, err)
+		}
+		if err := json.Unmarshal(data, &rules); err != nil {
+			return nil, fmt.Errorf("parsing WAF rules from "+internal.EnvRules+"=%s: %w", path, err)
+		}
+	} else {
+		var err error
+		rules, err = internal.DefaultRulesetMap()
+		if err != nil {
+			return nil, fmt.Errorf("loading default ruleset: %w", err)
+		}
 	}
 
-	r, err := NewRulesManager(rules)
+	manager, err := NewWAFManager(internal.NewObfuscatorConfig(), rules)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Config{
-		RulesManager:        r,
+		WAFManager:          manager,
 		WAFTimeout:          internal.WAFTimeoutFromEnv(),
 		TraceRateLimit:      int64(internal.RateLimitFromEnv()),
-		Obfuscator:          internal.NewObfuscatorConfig(),
 		APISec:              internal.NewAPISecConfig(c.APISecOptions...),
 		RASP:                internal.RASPEnabled(),
 		RC:                  c.RC,
