@@ -52,11 +52,11 @@ type (
 		targetFunc func(t *testing.T) // target function to retry
 		t          *testing.T         // test to be executed
 
-		// function to decide whether we are in the last retry (first callback executed if we are in a retry execution)
-		preIsLastRetry func(executionIndex int, remainingRetries int64) bool
-
-		// function to modify the execution metadata before each execution (second callback executed). It's also called before postOnRetryEnd to do a final sync
+		// function to modify the execution metadata before each execution (first callback executed). It's also called before postOnRetryEnd to do a final sync
 		preExecMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int)
+
+		// function to decide whether we are in the last retry (second callback executed if we are in a retry execution)
+		preIsLastRetry func(execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool
 
 		// adjust retry count function depending on the duration of the first execution (first callback executed post test execution only in the first execution of the test)
 		postAdjustRetryCount func(execMeta *testExecutionMetadata, duration time.Duration) int64
@@ -220,6 +220,13 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	// get the pointer to use the reference in the wrapper
 	ptrMeta := &meta
 
+	// function to detect if we should be in an efd execution
+	isAnEfdExecution := func(execMeta *testExecutionMetadata) bool {
+		efdOnNewTest := execMeta.isEFDExecution && execMeta.isANewTest
+		efdOnModifiedTest := execMeta.isEFDExecution && execMeta.isAModifiedTest && !execMeta.isAttemptToFix
+		return efdOnNewTest || efdOnModifiedTest
+	}
+
 	// Create a unified wrapper that will use a single runTestWithRetry call.
 	wrapper := func(t *testing.T) {
 		t.Helper()
@@ -234,19 +241,6 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 		runTestWithRetry(&runTestWithRetryOptions{
 			targetFunc: f,
 			t:          t,
-			preIsLastRetry: func(executionIndex int, remainingRetries int64) bool {
-				if ptrMeta.isAttemptToFix || (ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew) {
-					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
-					return remainingRetries == 1
-				}
-
-				// FlakyTestRetries also considers the global remaining retry count.
-				if ptrMeta.isFlakyTestRetriesEnabled {
-					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 1
-				}
-
-				return false
-			},
 			preExecMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
 				// Synchronize the test execution metadata with the original test execution metadata.
 
@@ -271,6 +265,21 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				ptrMeta.isNew = execMeta.isANewTest
 				ptrMeta.isModified = execMeta.isAModifiedTest
 			},
+			preIsLastRetry: func(execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool {
+				efdOnNewTest := execMeta.isEFDExecution && execMeta.isANewTest
+				efdOnModifiedTest := execMeta.isEFDExecution && execMeta.isAModifiedTest && !execMeta.isAttemptToFix
+				if execMeta.isAttemptToFix || efdOnNewTest || efdOnModifiedTest {
+					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
+					return remainingRetries == 1
+				}
+
+				// FlakyTestRetries also considers the global remaining retry count.
+				if execMeta.isATRExecution {
+					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 1
+				}
+
+				return false
+			},
 			postAdjustRetryCount: func(execMeta *testExecutionMetadata, duration time.Duration) int64 {
 				// adjust retry count only runs after the first run
 
@@ -280,7 +289,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				}
 
 				// Early Flake Detection adjusts the retry count based on test duration.
-				if execMeta.isEFDExecution && execMeta.isANewTest {
+				if isAnEfdExecution(execMeta) {
 					slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
 					secs := duration.Seconds()
 					if secs < 5 {
@@ -322,7 +331,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 					return
 				}
 
-				if execMeta.isEFDExecution {
+				if isAnEfdExecution(execMeta) {
 					if ptrToLocalT.Failed() {
 						testFailCount++
 					} else if ptrToLocalT.Skipped() {
@@ -346,7 +355,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 					return remainingRetries > 0
 				}
 
-				if execMeta.isEFDExecution && execMeta.isANewTest {
+				if isAnEfdExecution(execMeta) {
 					// For EFD, retry if remaining retries >= 0.
 					return remainingRetries >= 0
 				}
@@ -364,6 +373,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				// if the test is disabled or quarantined, skip the test result to the testing framework
 				if ptrMeta.isDisabled || ptrMeta.isQuarantined {
 					t.SkipNow()
+					return
 				}
 
 				// get the test common privates
@@ -373,7 +383,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				}
 
 				// if early flake detection is enabled, we need to set the test status
-				if ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew {
+				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew
+				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified && !ptrMeta.isAttemptToFix
+				if efdOnNewTest || efdOnModifiedTest {
 					status := "passed"
 					if testPassCount == 0 {
 						if testSkipCount > 0 {
@@ -393,6 +405,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 					if executionIndex > 0 {
 						fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
 					}
+					return
 				}
 
 				// if the test is a flaky test retries test, we need to set the test status
@@ -418,6 +431,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 							fmt.Println("    the maximum number of total retries was exceeded.")
 						}
 					}
+					return
 				}
 			},
 		})
@@ -480,14 +494,16 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
 
 		// If we are in a retry execution, set the `isARetry` flag
-		if executionIndex > 0 {
-			execMeta.isARetry = true
-			execMeta.isLastRetry = options.preIsLastRetry(executionIndex, retryCount)
-		}
+		execMeta.isARetry = executionIndex > 0
 
 		// Adjust execution metadata
 		if options.preExecMetaAdjust != nil {
 			options.preExecMetaAdjust(execMeta, executionIndex)
+		}
+
+		// Set if we are in the last retry
+		if execMeta.isARetry {
+			execMeta.isLastRetry = options.preIsLastRetry(execMeta, executionIndex, retryCount)
 		}
 
 		// Run original func similar to how it gets run internally in tRunner

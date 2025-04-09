@@ -184,22 +184,31 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 		// If the execution is for a modified test
 		execMeta.isAModifiedTest = execMeta.isAModifiedTest || test.Context().Value(constants.TestIsModified) == true
+		if execMeta.isAModifiedTest {
+			if execMeta.isDisabled || execMeta.isQuarantined {
+				// automatic attempt to fix if a disabled or quarantined test is modified
+				execMeta.isAttemptToFix = true
+			}
+		}
 
 		// If the execution is a retry we tag the test event
 		if execMeta.isARetry {
 			// Set the retry tag
 			test.SetTag(constants.TestIsRetry, "true")
 
-			// If the execution is an EFD execution we tag the test event reason
-			if execMeta.isEFDExecution {
-				// Set the EFD as the retry reason
-				test.SetTag(constants.TestRetryReason, "efd")
-			} else if execMeta.isATRExecution {
-				// Set the ATR as the retry reason
-				test.SetTag(constants.TestRetryReason, "atr")
-			} else if execMeta.isAttemptToFix {
-				// Set the attempt to fix as the retry reason
+			// let's set the retry reason
+			if execMeta.isAttemptToFix {
+				// Set attempt_to_fix as the retry reason
 				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
+			} else if execMeta.isEFDExecution {
+				// Set early_flake_detection as the retry reason
+				test.SetTag(constants.TestRetryReason, "early_flake_detection")
+			} else if execMeta.isATRExecution {
+				// Set auto_test_retry as the retry reason
+				test.SetTag(constants.TestRetryReason, "auto_test_retry")
+			} else {
+				// Set the unknown reason
+				test.SetTag(constants.TestRetryReason, "unknown")
 			}
 		}
 
