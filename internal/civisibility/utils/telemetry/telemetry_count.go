@@ -268,3 +268,20 @@ func TestManagementTestsRequest(requestCompressed RequestCompressedType) {
 func TestManagementTestsRequestErrors(errorType ErrorType) {
 	telemetry.Count(telemetry.NamespaceCIVisibility, "test_management_tests.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
 }
+
+// ImpactedTestsRequest the number of requests sent to the impacted tests endpoint, tagged by the request compressed type.
+func ImpactedTestsRequest(requestCompressed RequestCompressedType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.request", removeEmptyStrings([]string{
+		string(requestCompressed),
+	})).Submit(1.0)
+}
+
+// ImpactedTestsRequestErrors the number of requests sent to the impacted tests endpoint that errored, tagged by the error type.
+func ImpactedTestsRequestErrors(errorType ErrorType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
+}
+
+// ImpactedTestsModified the number of impacted tests that were modified by CI Visibility.
+func ImpactedTestsModified() {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.is_modified", nil).Submit(1.0)
+}
