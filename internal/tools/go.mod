@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2/internal/tools
 
-go 1.23.0
+go 1.23.8
 
 require github.com/tinylib/msgp v1.2.5
 
