@@ -18,7 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 type (
@@ -166,85 +165,196 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	// ensure that the additional features are initialized
 	_ = integrations.GetKnownTests()
 
-	// Check if we have something to do, if not we bail out
-	if !settings.TestManagement.Enabled && !settings.FlakyTestRetriesEnabled && !settings.EarlyFlakeDetection.Enabled {
+	// If none of the additional features are enabled, return the original function.
+	if !settings.TestManagement.Enabled && !settings.EarlyFlakeDetection.Enabled && !settings.FlakyTestRetriesEnabled {
 		return f
 	}
 
-	// Target function
-	targetFunc := f
-
-	// Test management features
-	var testManagementApplied bool
-	if settings.TestManagement.Enabled {
-		// apply test management features
-		targetFunc, testManagementApplied = applyTestManagementTestsFeature(testInfo, targetFunc, settings)
+	var meta struct {
+		isTestManagementEnabled      bool
+		isEarlyFlakeDetectionEnabled bool
+		isFlakyTestRetriesEnabled    bool
+		isQuarantined                bool
+		isDisabled                   bool
+		isAttemptToFix               bool
+		isNew                        bool
+		isModified                   bool
 	}
 
-	if !testManagementApplied {
-		// Early flake detection
-		var earlyFlakeDetectionApplied bool
-		if settings.EarlyFlakeDetection.Enabled {
-			targetFunc, earlyFlakeDetectionApplied = applyEarlyFlakeDetectionAdditionalFeature(testInfo, targetFunc, settings)
-		}
+	// init metadata
+	meta.isTestManagementEnabled = settings.TestManagement.Enabled
+	meta.isEarlyFlakeDetectionEnabled = settings.EarlyFlakeDetection.Enabled
+	meta.isFlakyTestRetriesEnabled = settings.FlakyTestRetriesEnabled
+	meta.isQuarantined = false
+	meta.isDisabled = false
+	meta.isAttemptToFix = false
+	meta.isNew = false
+	meta.isModified = false
 
-		// Flaky test retries (only if EFD was not applied and if the feature is enabled)
-		if !earlyFlakeDetectionApplied && settings.FlakyTestRetriesEnabled {
-			targetFunc, _ = applyFlakyTestRetriesAdditionalFeature(targetFunc)
+	// Test Management feature
+	if meta.isTestManagementEnabled {
+		if data, ok := getTestManagementData(testInfo); ok && data != nil {
+			meta.isQuarantined = data.Quarantined
+			meta.isDisabled = data.Disabled
+			meta.isAttemptToFix = data.AttemptToFix
 		}
 	}
 
-	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
-	setInstrumentationMetadata(runtime.FuncForPC(reflect.ValueOf(targetFunc).Pointer()), &instrumentationMetadata{IsInternal: true})
-	return targetFunc
-}
+	// Early Flake Detection feature
+	if meta.isEarlyFlakeDetectionEnabled {
+		isKnown, hasKnownData := isKnownTest(testInfo)
+		meta.isNew = hasKnownData && !isKnown
+	}
 
-// applyFlakyTestRetriesAdditionalFeature applies the flaky test retries feature as a wrapper of a func(*testing.T)
-func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*testing.T), bool) {
-	flakyRetrySettings := integrations.GetFlakyRetriesSettings()
+	// get the pointer to use the reference in the wrapper
+	ptrMeta := &meta
 
-	// If the retry count per test is > 1 and if we still have remaining total retry count
-	if flakyRetrySettings.RetryCount > 1 && flakyRetrySettings.RemainingTotalRetryCount > 0 {
-		return func(t *testing.T) {
-			// Set this func as a helper func of t
-			t.Helper()
-			allRetriesFailed := int32(1)
-			runTestWithRetry(&runTestWithRetryOptions{
-				targetFunc:        targetFunc,
-				t:                 t,
-				initialRetryCount: flakyRetrySettings.RetryCount,
-				adjustRetryCount:  nil, // No adjustRetryCount
-				isLastRetry: func(_ int, remainingRetries int64) bool {
-					t.Helper()
-					return remainingRetries == 1 || atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) == 1
-				},
-				shouldRetry: func(ptrToLocalT *testing.T, _ int, remainingRetries int64) bool {
-					ptrToLocalT.Helper()
-					t.Helper()
-					// Decide whether to retry
-					return ptrToLocalT.Failed() && remainingRetries >= 0 && atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) >= 0
-				},
-				perExecution: func(ptrToLocalT *testing.T, executionIndex int, _ time.Duration) {
-					ptrToLocalT.Helper()
-					t.Helper()
+	// Create a unified wrapper that will use a single runTestWithRetry call.
+	wrapper := func(t *testing.T) {
+		t.Helper()
+		originalExecMeta := getTestMetadata(t)
+
+		// For Early Flake Detection: counters used to collect test results.
+		var testPassCount, testSkipCount, testFailCount int
+		// For Test Management and auto retries.
+		var allAttemptsPassed int32 = 1
+		var allRetriesFailed int32 = 1
+
+		runTestWithRetry(&runTestWithRetryOptions{
+			targetFunc: f,
+			t:          t,
+			adjustRetryCount: func(duration time.Duration) int64 {
+				// adjust retry count only runs after the first run
+
+				// Attempt To Fix retries are always set to the configured value.
+				if ptrMeta.isAttemptToFix {
+					return int64(settings.TestManagement.AttemptToFixRetries)
+				}
+
+				// Early Flake Detection adjusts the retry count based on test duration.
+				if ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew {
+					slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
+					secs := duration.Seconds()
+					if secs < 5 {
+						return int64(slowTestRetries.FiveS)
+					} else if secs < 10 {
+						return int64(slowTestRetries.TenS)
+					} else if secs < 30 {
+						return int64(slowTestRetries.ThirtyS)
+					} else if duration.Minutes() < 5 {
+						return int64(slowTestRetries.FiveM)
+					}
+				}
+
+				// Automatic flaky tests retries are set to the configured value.
+				if ptrMeta.isFlakyTestRetriesEnabled {
+					return integrations.GetFlakyRetriesSettings().RetryCount
+				}
+
+				// No retries
+				return 0
+			},
+			isLastRetry: func(executionIndex int, remainingRetries int64) bool {
+				if ptrMeta.isAttemptToFix || (ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew) {
+					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
+					return remainingRetries == 1
+				}
+
+				// FlakyTestRetries also considers the global remaining retry count.
+				if ptrMeta.isFlakyTestRetriesEnabled {
+					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 1
+				}
+
+				return false
+			},
+			shouldRetry: func(ptrToLocalT *testing.T, executionIndex int, remainingRetries int64) bool {
+				if ptrMeta.isAttemptToFix {
+					// For attempt-to-fix tests, retry if remaining retries > 0.
+					return remainingRetries > 0
+				}
+
+				if ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew {
+					// For EFD, retry if remaining retries >= 0.
+					return remainingRetries >= 0
+				}
+
+				if ptrMeta.isFlakyTestRetriesEnabled {
+					// For flaky test retries, retry if the test failed and remaining retries >= 0.
+					return ptrToLocalT.Failed() && remainingRetries >= 0 &&
+						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) >= 0
+				}
+
+				// No retries for other cases.
+				return false
+			},
+			perExecution: func(ptrToLocalT *testing.T, executionIndex int, duration time.Duration) {
+				if ptrToLocalT.Failed() || ptrToLocalT.Skipped() {
+					atomic.StoreInt32(&allAttemptsPassed, 0)
+				}
+				if !ptrToLocalT.Failed() {
+					atomic.StoreInt32(&allRetriesFailed, 0)
+				}
+
+				status := "PASS"
+				if ptrToLocalT.Failed() {
+					status = "FAIL"
+					testFailCount++
+				} else if ptrToLocalT.Skipped() {
+					status = "SKIP"
+					testSkipCount++
+				} else {
+					testPassCount++
+				}
+
+				if ptrMeta.isAttemptToFix {
+					ptrToLocalT.Logf("Attempt to fix retry: %d [%s]", executionIndex+1, status)
+				}
+
+				if ptrMeta.isFlakyTestRetriesEnabled {
 					if executionIndex > 0 {
-						atomic.AddInt64(&flakyRetrySettings.RemainingTotalRetryCount, -1)
+						atomic.AddInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount, -1)
 					}
-					if !ptrToLocalT.Failed() {
-						atomic.StoreInt32(&allRetriesFailed, 0)
+				}
+			},
+			onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
+				// if the test is disabled or quarantined, skip the test result to the testing framework
+				if ptrMeta.isDisabled || ptrMeta.isQuarantined {
+					t.SkipNow()
+				}
+
+				// get the test common privates
+				tCommonPrivates := getTestPrivateFields(t)
+				if tCommonPrivates == nil {
+					panic("getting test private fields failed")
+				}
+
+				// if early flake detection is enabled, we need to set the test status
+				if ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew {
+					status := "passed"
+					if testPassCount == 0 {
+						if testSkipCount > 0 {
+							status = "skipped"
+							tCommonPrivates.SetSkipped(true)
+						}
+						if testFailCount > 0 {
+							status = "failed"
+							tCommonPrivates.SetFailed(true)
+							tParentCommonPrivates := getTestParentPrivateFields(t)
+							if tParentCommonPrivates == nil {
+								panic("getting test parent private fields failed")
+							}
+							tParentCommonPrivates.SetFailed(true)
+						}
 					}
-				},
-				onRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
-					t.Helper()
-					// Update original `t` with results from last execution
-					tCommonPrivates := getTestPrivateFields(t)
-					if tCommonPrivates == nil {
-						panic("getting test private fields failed")
+					if executionIndex > 0 {
+						fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
 					}
+				}
+
+				// if the test is a flaky test retries test, we need to set the test status
+				if ptrMeta.isFlakyTestRetriesEnabled {
 					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
 					tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
-
-					// Update parent status if failed
 					if lastPtrToLocalT.Failed() {
 						tParentCommonPrivates := getTestParentPrivateFields(t)
 						if tParentCommonPrivates == nil {
@@ -252,8 +362,6 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 						}
 						tParentCommonPrivates.SetFailed(true)
 					}
-
-					// Print summary after retries
 					if executionIndex > 0 {
 						status := "passed"
 						if t.Failed() {
@@ -261,123 +369,42 @@ func applyFlakyTestRetriesAdditionalFeature(targetFunc func(*testing.T)) (func(*
 						} else if t.Skipped() {
 							status = "skipped"
 						}
-
 						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
-
-						// Check if total retry count was exceeded
-						if atomic.LoadInt64(&flakyRetrySettings.RemainingTotalRetryCount) < 1 {
+						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 1 {
 							fmt.Println("    the maximum number of total retries was exceeded.")
 						}
 					}
-				},
-				execMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
-					t.Helper()
-					execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
-					// Set the flag ATR execution to true
-					execMeta.isATRExecution = true
-				},
-			})
-		}, true
-	}
-	return targetFunc, false
-}
-
-// applyEarlyFlakeDetectionAdditionalFeature applies the early flake detection feature as a wrapper of a func(*testing.T)
-func applyEarlyFlakeDetectionAdditionalFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) (func(*testing.T), bool) {
-	isKnown, hasKnownData := isKnownTest(testInfo)
-	if !hasKnownData || isKnown {
-		return targetFunc, false
-	}
-
-	// If it's a new test, then we apply the EFD wrapper
-	return func(t *testing.T) {
-		// Set this func as a helper func of t
-		t.Helper()
-		allRetriesFailed := int32(1)
-		var testPassCount, testSkipCount, testFailCount int
-
-		runTestWithRetry(&runTestWithRetryOptions{
-			targetFunc:        targetFunc,
-			t:                 t,
-			initialRetryCount: 0,
-			adjustRetryCount: func(duration time.Duration) int64 {
-				t.Helper()
-				slowTestRetriesSettings := settings.EarlyFlakeDetection.SlowTestRetries
-				durationSecs := duration.Seconds()
-				if durationSecs < 5 {
-					return int64(slowTestRetriesSettings.FiveS)
-				} else if durationSecs < 10 {
-					return int64(slowTestRetriesSettings.TenS)
-				} else if durationSecs < 30 {
-					return int64(slowTestRetriesSettings.ThirtyS)
-				} else if duration.Minutes() < 5 {
-					return int64(slowTestRetriesSettings.FiveM)
-				}
-				return 0
-			},
-			isLastRetry: func(_ int, remainingRetries int64) bool {
-				t.Helper()
-				return remainingRetries == 1
-			},
-			shouldRetry: func(ptrToLocalT *testing.T, _ int, remainingRetries int64) bool {
-				ptrToLocalT.Helper()
-				t.Helper()
-				return remainingRetries >= 0
-			},
-			perExecution: func(ptrToLocalT *testing.T, _ int, _ time.Duration) {
-				ptrToLocalT.Helper()
-				t.Helper()
-				if !ptrToLocalT.Failed() {
-					atomic.StoreInt32(&allRetriesFailed, 0)
-				}
-				// Collect test results
-				if ptrToLocalT.Failed() {
-					testFailCount++
-				} else if ptrToLocalT.Skipped() {
-					testSkipCount++
-				} else {
-					testPassCount++
 				}
 			},
-			onRetryEnd: func(t *testing.T, executionIndex int, _ *testing.T) {
-				t.Helper()
-				// Update test status based on collected counts
-				tCommonPrivates := getTestPrivateFields(t)
-				if tCommonPrivates == nil {
-					panic("getting test private fields failed")
-				}
-				status := "passed"
-				if testPassCount == 0 {
-					if testSkipCount > 0 {
-						status = "skipped"
-						tCommonPrivates.SetSkipped(true)
-					}
-					if testFailCount > 0 {
-						status = "failed"
-						tCommonPrivates.SetFailed(true)
-						tParentCommonPrivates := getTestParentPrivateFields(t)
-						if tParentCommonPrivates == nil {
-							panic("getting test parent private fields failed")
-						}
-						tParentCommonPrivates.SetFailed(true)
-					}
-				}
-
-				// Print summary after retries
-				if executionIndex > 0 {
-					fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
-				}
-			},
-			execMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
-				t.Helper()
+			execMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+				execMeta.hasAdditionalFeatureWrapper = true
+				execMeta.isQuarantined = execMeta.isQuarantined || ptrMeta.isQuarantined
+				execMeta.isDisabled = execMeta.isDisabled || ptrMeta.isDisabled
+				execMeta.isAttemptToFix = execMeta.isAttemptToFix || ptrMeta.isAttemptToFix
+				execMeta.isEFDExecution = execMeta.isEFDExecution || ptrMeta.isEarlyFlakeDetectionEnabled
+				execMeta.isATRExecution = execMeta.isATRExecution || ptrMeta.isFlakyTestRetriesEnabled
+				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
 				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
-				// Set the flag new test to true
-				execMeta.isANewTest = true
-				// Set the flag EFD execution to true
-				execMeta.isEFDExecution = true
+				execMeta.isANewTest = execMeta.isANewTest || ptrMeta.isNew
+				execMeta.isAModifiedTest = execMeta.isAModifiedTest || ptrMeta.isModified
+
+				// Propagate flags from the original test metadata.
+				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
+
+				ptrMeta.isQuarantined = execMeta.isQuarantined
+				ptrMeta.isDisabled = execMeta.isDisabled
+				ptrMeta.isAttemptToFix = execMeta.isAttemptToFix
+				ptrMeta.isEarlyFlakeDetectionEnabled = execMeta.isEFDExecution
+				ptrMeta.isFlakyTestRetriesEnabled = execMeta.isATRExecution
+				ptrMeta.isNew = execMeta.isANewTest
+				ptrMeta.isModified = execMeta.isAModifiedTest
 			},
 		})
-	}, true
+	}
+
+	// Mark the wrapper as instrumented.
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.ValueOf(wrapper).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return wrapper
 }
 
 // runTestWithRetry encapsulates the common retry logic for test functions.
@@ -524,124 +551,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	}
 }
 
-// applyTestManagementTestsFeature applies the quarantined and disabled tests feature as a wrapper of a func(*testing.T)
-// using runTestWithRetry to drive retries for attempt-to-fix tests.
-func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*testing.T), settings *net.SettingsResponseData) (func(*testing.T), bool) {
-	// Get test management data
-	testManagementData, hasTestManagementData := getTestManagementData(testInfo)
-
-	// If we don't need to apply the feature, bail out.
-	if !hasTestManagementData || testManagementData == nil {
-		return targetFunc, false
-	}
-
-	// Check if the test is quarantined or disabled.
-	isQuarantined := testManagementData.Quarantined
-	isDisabled := testManagementData.Disabled
-
-	// Check if the test is marked as "attempt to fix"
-	isAttemptToFix := testManagementData.AttemptToFix
-	attemptToFixRetries := settings.TestManagement.AttemptToFixRetries
-
-	// If the test is neither disabled nor quarantined, then no additional test management features apply.
-	if !isQuarantined && !isDisabled && !isAttemptToFix {
-		return targetFunc, false
-	}
-
-	// Return a wrapped function that uses runTestWithRetry.
-	return func(t *testing.T) {
-		t.Helper()
-		// Capture the original test metadata to propagate any already-set tags.
-		originalExecMeta := getTestMetadata(t)
-
-		// Determine the number of retries: for "attempt to fix" tests use attempToFixRetries,
-		// otherwise, no retry is allowed.
-		var retryCount int64
-		if isAttemptToFix {
-			retryCount = int64(attemptToFixRetries)
-		} else {
-			retryCount = 0
-		}
-
-		// Variable to track whether all test executions passed or failed.
-		allAttemptsPassed := int32(1)
-		allRetriesFailed := int32(1)
-
-		if isDisabled {
-			t.Log("Flaky test is disabled by Datadog")
-		} else if isQuarantined {
-			t.Log("Flaky test is quarantined by Datadog")
-		}
-
-		runTestWithRetry(&runTestWithRetryOptions{
-			targetFunc:        targetFunc,
-			t:                 t,
-			initialRetryCount: retryCount,
-			adjustRetryCount:  nil, // No adjustment based on duration.
-			isLastRetry: func(_ int, remainingRetries int64) bool {
-				t.Helper()
-				// When no retries remain, we're on the last attempt.
-				return remainingRetries == 1
-			},
-			shouldRetry: func(ptrToLocalT *testing.T, _ int, remainingRetries int64) bool {
-				ptrToLocalT.Helper()
-				t.Helper()
-
-				// For attempt-to-fix tests, allow retries while remainingRetries > 0.
-				// Otherwise (non-attempt-to-fix), do not retry.
-				if isAttemptToFix {
-					return remainingRetries > 0
-				}
-				return false
-			},
-			perExecution: func(ptrToLocalT *testing.T, executionIndex int, _ time.Duration) {
-				ptrToLocalT.Helper()
-				t.Helper()
-
-				// If any execution fails or is skipped, then not all attempts passed.
-				if ptrToLocalT.Failed() || ptrToLocalT.Skipped() {
-					atomic.StoreInt32(&allAttemptsPassed, 0)
-				}
-				if !ptrToLocalT.Failed() {
-					atomic.StoreInt32(&allRetriesFailed, 0)
-				}
-
-				status := "PASS"
-				if ptrToLocalT.Failed() {
-					status = "FAIL"
-				} else if ptrToLocalT.Skipped() {
-					status = "SKIP"
-				}
-
-				if retryCount > 0 {
-					t.Logf("Attempt to fix retry: %d/%d [%s]", executionIndex+1, retryCount, status)
-				}
-			},
-			onRetryEnd: func(t *testing.T, _ int, _ *testing.T) {
-				t.Helper()
-				if isDisabled || isQuarantined {
-					t.SkipNow()
-				}
-			},
-			execMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
-				t.Helper()
-
-				// Mark that this test execution used an additional feature wrapper.
-				execMeta.hasAdditionalFeatureWrapper = true
-				// Propagate the test management flags.
-				execMeta.isQuarantined = isQuarantined
-				execMeta.isDisabled = isDisabled
-				execMeta.isAttemptToFix = isAttemptToFix
-				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
-				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
-
-				// Propagate any flags set in the original test metadata.
-				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
-			},
-		})
-	}, true
-}
-
+// propagateTestExecutionMetadataFlags propagates the test execution metadata flags from the original test execution metadata to the current one.
 func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, originalExecMeta *testExecutionMetadata) {
 	if execMeta == nil || originalExecMeta == nil {
 		return

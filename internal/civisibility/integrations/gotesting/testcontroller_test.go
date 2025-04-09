@@ -115,6 +115,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
 
 	// 1 session span
 	// 1 module span
@@ -216,6 +217,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
 
 	// 1 session span
 	// 1 module span
@@ -354,6 +356,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
 
 	// 1 session span
 	// 1 module span
@@ -478,6 +481,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 
 	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
 
 	// 1 session span
 	// 1 module span
@@ -619,6 +623,7 @@ func runTestManagementTests(m *testing.M) {
 
 	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
 
 	// Disabled test with an attempt to fix with 10 executions
 	testGetInternalTestArray := checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalTestArray", 10)
@@ -689,7 +694,6 @@ func checkSpansByType(finishedSpans []*mocktracer.Span,
 	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
 	calculatedSessionSpans := len(sessionSpans)
 	fmt.Printf("Number of sessions received: %d\n", calculatedSessionSpans)
-	showResourcesNameFromSpans(sessionSpans)
 	if calculatedSessionSpans != sessionSpansCount {
 		panic(fmt.Sprintf("expected exactly %d session span, got %d", sessionSpansCount, calculatedSessionSpans))
 	}
@@ -697,7 +701,6 @@ func checkSpansByType(finishedSpans []*mocktracer.Span,
 	moduleSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestModule)
 	calculatedModuleSpans := len(moduleSpans)
 	fmt.Printf("Number of modules received: %d\n", calculatedModuleSpans)
-	showResourcesNameFromSpans(moduleSpans)
 	if calculatedModuleSpans != moduleSpansCount {
 		panic(fmt.Sprintf("expected exactly %d module span, got %d", moduleSpansCount, calculatedModuleSpans))
 	}
@@ -705,7 +708,6 @@ func checkSpansByType(finishedSpans []*mocktracer.Span,
 	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
 	calculatedSuiteSpans := len(suiteSpans)
 	fmt.Printf("Number of suites received: %d\n", calculatedSuiteSpans)
-	showResourcesNameFromSpans(suiteSpans)
 	if calculatedSuiteSpans != suiteSpansCount {
 		panic(fmt.Sprintf("expected exactly %d suite spans, got %d", suiteSpansCount, calculatedSuiteSpans))
 	}
@@ -713,7 +715,6 @@ func checkSpansByType(finishedSpans []*mocktracer.Span,
 	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
 	calculatedTestSpans := len(testSpans)
 	fmt.Printf("Number of tests received: %d\n", calculatedTestSpans)
-	showResourcesNameFromSpans(testSpans)
 	if calculatedTestSpans != testSpansCount {
 		panic(fmt.Sprintf("expected exactly %d test spans, got %d", testSpansCount, calculatedTestSpans))
 	}
@@ -721,7 +722,6 @@ func checkSpansByType(finishedSpans []*mocktracer.Span,
 	normalSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
 	calculatedNormalSpans := len(normalSpans)
 	fmt.Printf("Number of http spans received: %d\n", calculatedNormalSpans)
-	showResourcesNameFromSpans(normalSpans)
 	if calculatedNormalSpans != normalSpansCount {
 		panic(fmt.Sprintf("expected exactly %d normal spans, got %d", normalSpansCount, calculatedNormalSpans))
 	}
