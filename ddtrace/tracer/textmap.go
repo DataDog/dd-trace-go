@@ -1376,7 +1376,9 @@ func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer Text
 	// Copy the baggage map under the read lock to avoid data races.
 	ctx.mu.RLock()
 	baggageCopy := make(map[string]string, len(ctx.baggage))
+	fmt.Println("MTOFF: Length of baggage; should not be 0", len(ctx.baggage))
 	for k, v := range ctx.baggage {
+		fmt.Println("MTOFF: WE EXPECT BAGGAGE ITEMS HERE:", k, v)
 		baggageCopy[k] = v
 	}
 	ctx.mu.RUnlock()
@@ -1416,7 +1418,7 @@ func (*propagatorBaggage) injectTextMap(spanCtx ddtrace.SpanContext, writer Text
 	}
 
 	if len(baggageItems) > 0 {
-		fmt.Println("MTOFF: setting baggage items: ", strings.Join(baggageItems, ","))
+		fmt.Println("MTOFF: In here we expect to set baggage items on the header. If you see this log in your terminal, then baggage is working: ", strings.Join(baggageItems, ","))
 		writer.Set("baggage", strings.Join(baggageItems, ","))
 	}
 

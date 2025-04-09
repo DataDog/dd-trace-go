@@ -29,6 +29,7 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	fmt.Println("MTOFF: In RoundTrip")
 	if rt.cfg.ignoreRequest(req) {
 		return rt.base.RoundTrip(req)
 	}
@@ -74,6 +75,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 	}
 	r2 := req.Clone(ctx)
 	for k, v := range baggage.All(ctx) {
+		fmt.Println("MTOFF: ctx baggage item", k, v)
 		span.SetBaggageItem(k, v)
 	}
 	if rt.cfg.propagation {
@@ -85,7 +87,7 @@ func (rt *roundTripper) RoundTrip(req *http.Request) (res *http.Response, err er
 		}
 	}
 	for k, v := range r2.Header {
-		fmt.Println("MTOFF: R2 header", k, ", value ", v)
+		fmt.Println("MTOFF: WE EXPECT BAGGAGE HEADER HERE. If you see this log in your terminal, then baggage is working. KEY: ", k, ", value ", v)
 	}
 
 	if appsec.RASPEnabled() {
