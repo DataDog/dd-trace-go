@@ -363,6 +363,44 @@ func UnshallowGitRepository() (bool, error) {
 	return true, nil
 }
 
+// GetGitDiff retrieves the diff between two Git commits using the `git diff` command.
+func GetGitDiff(baseCommit, headCommit string) (string, error) {
+	// git diff -U0 --word-diff=porcelain {baseCommit} {headCommit}
+	if len(baseCommit) != 40 {
+		// not a commit sha
+		var re = regexp.MustCompile(`(?i)^[a-f0-9]{40}$`)
+		if !re.MatchString(baseCommit) {
+			// first let's get the remote
+			remoteOut, err := execGitString(telemetry.GetRemoteCommandsType, "remote", "show")
+			if err != nil {
+				log.Debug("civisibility.git: error on git remote show origin: %v | %s", err, remoteOut)
+			}
+			if remoteOut == "" {
+				remoteOut = "origin"
+			}
+
+			// let's ensure we have all the branch names from the remote
+			fetchOut, err := execGitString(telemetry.GetHeadCommandsType, "fetch", remoteOut, baseCommit, "--depth=1")
+			if err != nil {
+				log.Debug("civisibility.git: error fetching %s/%s: %v | %s", remoteOut, baseCommit, err, fetchOut)
+			}
+
+			// then let's get the remote branch name
+			baseCommit = fmt.Sprintf("%s/%s", remoteOut, baseCommit)
+		}
+	}
+
+	log.Debug("civisibility.git: getting the diff between %s and %s", baseCommit, headCommit)
+	out, err := execGitString(telemetry.Diff, "diff", "-U0", "--word-diff=porcelain", baseCommit, headCommit)
+	if err != nil {
+		return "", fmt.Errorf("civisibility.git: error getting the diff from %s to %s: %s | %s", baseCommit, headCommit, err.Error(), out)
+	}
+	if out == "" {
+		return "", fmt.Errorf("civisibility.git: error getting the diff from %s to %s: empty output", baseCommit, headCommit)
+	}
+	return out, nil
+}
+
 // filterSensitiveInfo removes sensitive information from a given URL using a regular expression.
 // It replaces the user credentials part of the URL (if present) with an empty string.
 //
