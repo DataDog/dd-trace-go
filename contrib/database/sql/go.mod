@@ -1,6 +1,8 @@
 module github.com/DataDog/dd-trace-go/contrib/database/sql/v2
 
-go 1.23.0
+go 1.23.8
+
+toolchain go1.24.1
 
 godebug x509negativeserial=1
 

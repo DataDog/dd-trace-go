@@ -1,6 +1,8 @@
 module github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
 
-go 1.23.0
+go 1.23.8
+
+toolchain go1.24.1
 
 require (
 	github.com/99designs/gqlgen v0.17.36
