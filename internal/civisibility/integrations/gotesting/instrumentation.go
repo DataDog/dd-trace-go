@@ -28,23 +28,23 @@ type (
 
 	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
-		test                        integrations.Test // internal CI Visibility test event
-		error                       atomic.Int32      // flag to check if the test event has error data already
-		skipped                     atomic.Int32      // flag to check if the test event has skipped data already
-		panicData                   any               // panic data recovered from an internal test execution when using an additional feature wrapper
-		panicStacktrace             string            // stacktrace from the panic recovered from an internal test
-		isARetry                    bool              // flag to tag if a current test execution is a retry
-		isANewTest                  bool              // flag to tag if a current test a new test
-		isAModifiedTest             bool              // flag to tag if a current test a modified test
-		isEFDExecution              bool              // flag to tag if a current test execution is part of an EFD execution
-		isATRExecution              bool              // flag to tag if a current test execution is part of an ATR execution
-		isQuarantined               bool              // flag to check if the test is quarantined
-		isDisabled                  bool              // flag to check if the test is disabled
-		isAttemptToFix              bool              // flag to check if the test is marked as attempt to fix
-		isLastRetry                 bool              // flag to check if the current execution is the last retry
-		allAttemptsPassed           bool              // flag to check if all attempts passed for a test marked as attempt to fix
-		allRetriesFailed            bool              // flag to check if all retries failed for a test
-		hasAdditionalFeatureWrapper bool              // flag to check if the current execution is part of an additional feature wrapper
+		test                         integrations.Test // internal CI Visibility test event
+		error                        atomic.Int32      // flag to check if the test event has error data already
+		skipped                      atomic.Int32      // flag to check if the test event has skipped data already
+		panicData                    any               // panic data recovered from an internal test execution when using an additional feature wrapper
+		panicStacktrace              string            // stacktrace from the panic recovered from an internal test
+		isARetry                     bool              // flag to tag if a current test execution is a retry
+		isANewTest                   bool              // flag to tag if a current test a new test
+		isAModifiedTest              bool              // flag to tag if a current test a modified test
+		isEarlyFlakeDetectionEnabled bool              // flag to tag if Early Flake Detection is enabled for this execution
+		isFlakyTestRetriesEnabled    bool              // flag to tag if Flaky Test Retries is enabled for this execution
+		isQuarantined                bool              // flag to check if the test is quarantined
+		isDisabled                   bool              // flag to check if the test is disabled
+		isAttemptToFix               bool              // flag to check if the test is marked as attempt to fix
+		isLastRetry                  bool              // flag to check if the current execution is the last retry
+		allAttemptsPassed            bool              // flag to check if all attempts passed for a test marked as attempt to fix
+		allRetriesFailed             bool              // flag to check if all retries failed for a test
+		hasAdditionalFeatureWrapper  bool              // flag to check if the current execution is part of an additional feature wrapper
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -222,9 +222,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 
 	// function to detect if we should be in an efd execution
 	isAnEfdExecution := func(execMeta *testExecutionMetadata) bool {
-		efdOnNewTest := execMeta.isEFDExecution && execMeta.isANewTest
-		efdOnModifiedTest := execMeta.isEFDExecution && execMeta.isAModifiedTest && !execMeta.isAttemptToFix
-		return efdOnNewTest || efdOnModifiedTest
+		isANewTest := execMeta.isANewTest
+		isAModifiedTest := execMeta.isAModifiedTest && !execMeta.isAttemptToFix
+		return execMeta.isEarlyFlakeDetectionEnabled && (isANewTest || isAModifiedTest)
 	}
 
 	// Create a unified wrapper that will use a single runTestWithRetry call.
@@ -247,8 +247,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				execMeta.isQuarantined = execMeta.isQuarantined || ptrMeta.isQuarantined
 				execMeta.isDisabled = execMeta.isDisabled || ptrMeta.isDisabled
 				execMeta.isAttemptToFix = execMeta.isAttemptToFix || ptrMeta.isAttemptToFix
-				execMeta.isEFDExecution = execMeta.isEFDExecution || ptrMeta.isEarlyFlakeDetectionEnabled
-				execMeta.isATRExecution = execMeta.isATRExecution || ptrMeta.isFlakyTestRetriesEnabled
+				execMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled || ptrMeta.isEarlyFlakeDetectionEnabled
+				execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || ptrMeta.isFlakyTestRetriesEnabled
 				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
 				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
 				execMeta.isANewTest = execMeta.isANewTest || ptrMeta.isNew
@@ -260,21 +260,19 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				ptrMeta.isQuarantined = execMeta.isQuarantined
 				ptrMeta.isDisabled = execMeta.isDisabled
 				ptrMeta.isAttemptToFix = execMeta.isAttemptToFix
-				ptrMeta.isEarlyFlakeDetectionEnabled = execMeta.isEFDExecution
-				ptrMeta.isFlakyTestRetriesEnabled = execMeta.isATRExecution
+				ptrMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled
+				ptrMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled
 				ptrMeta.isNew = execMeta.isANewTest
 				ptrMeta.isModified = execMeta.isAModifiedTest
 			},
 			preIsLastRetry: func(execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool {
-				efdOnNewTest := execMeta.isEFDExecution && execMeta.isANewTest
-				efdOnModifiedTest := execMeta.isEFDExecution && execMeta.isAModifiedTest && !execMeta.isAttemptToFix
-				if execMeta.isAttemptToFix || efdOnNewTest || efdOnModifiedTest {
+				if execMeta.isAttemptToFix || isAnEfdExecution(execMeta) {
 					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
 					return remainingRetries == 1
 				}
 
 				// FlakyTestRetries also considers the global remaining retry count.
-				if execMeta.isATRExecution {
+				if execMeta.isFlakyTestRetriesEnabled {
 					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 1
 				}
 
@@ -304,7 +302,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				}
 
 				// Automatic flaky tests retries are set to the configured value.
-				if execMeta.isATRExecution {
+				if execMeta.isFlakyTestRetriesEnabled {
 					return integrations.GetFlakyRetriesSettings().RetryCount
 				}
 
@@ -327,7 +325,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 						status = "SKIP"
 					}
 
-					ptrToLocalT.Logf("Attempt to fix retry: %d [%s]", executionIndex+1, status)
+					ptrToLocalT.Logf("  [attempt to fix retry: %d (%s)]", executionIndex+1, status)
 					return
 				}
 
@@ -342,7 +340,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 					return
 				}
 
-				if execMeta.isATRExecution {
+				if execMeta.isFlakyTestRetriesEnabled {
 					if executionIndex > 0 {
 						atomic.AddInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount, -1)
 					}
@@ -360,7 +358,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 					return remainingRetries >= 0
 				}
 
-				if execMeta.isATRExecution {
+				if execMeta.isFlakyTestRetriesEnabled {
 					// For flaky test retries, retry if the test failed and remaining retries >= 0.
 					return ptrToLocalT.Failed() && remainingRetries >= 0 &&
 						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) >= 0
@@ -605,8 +603,8 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 	execMeta.isANewTest = execMeta.isANewTest || originalExecMeta.isANewTest
 	execMeta.isAModifiedTest = execMeta.isAModifiedTest || originalExecMeta.isAModifiedTest
 	execMeta.isARetry = execMeta.isARetry || originalExecMeta.isARetry
-	execMeta.isEFDExecution = execMeta.isEFDExecution || originalExecMeta.isEFDExecution
-	execMeta.isATRExecution = execMeta.isATRExecution || originalExecMeta.isATRExecution
+	execMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled || originalExecMeta.isEarlyFlakeDetectionEnabled
+	execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || originalExecMeta.isFlakyTestRetriesEnabled
 	execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
 	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
 	execMeta.isAttemptToFix = execMeta.isAttemptToFix || originalExecMeta.isAttemptToFix

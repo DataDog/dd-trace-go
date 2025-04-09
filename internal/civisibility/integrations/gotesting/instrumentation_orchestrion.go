@@ -173,58 +173,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			propagateTestExecutionMetadataFlags(execMeta, parentExecMeta)
 		}
 
-		// Set the CI visibility test.
-		execMeta.test = test
-
-		// If the execution is for a new test we tag the test event from early flake detection
-		if execMeta.isANewTest {
-			// Set the is new test tag
-			test.SetTag(constants.TestIsNew, "true")
-		}
-
-		// If the execution is for a modified test
-		execMeta.isAModifiedTest = execMeta.isAModifiedTest || test.Context().Value(constants.TestIsModified) == true
-		if execMeta.isAModifiedTest {
-			if execMeta.isDisabled || execMeta.isQuarantined {
-				// automatic attempt to fix if a disabled or quarantined test is modified
-				execMeta.isAttemptToFix = true
-			}
-		}
-
-		// If the execution is a retry we tag the test event
-		if execMeta.isARetry {
-			// Set the retry tag
-			test.SetTag(constants.TestIsRetry, "true")
-
-			// let's set the retry reason
-			if execMeta.isAttemptToFix {
-				// Set attempt_to_fix as the retry reason
-				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
-			} else if execMeta.isEFDExecution {
-				// Set early_flake_detection as the retry reason
-				test.SetTag(constants.TestRetryReason, "early_flake_detection")
-			} else if execMeta.isATRExecution {
-				// Set auto_test_retry as the retry reason
-				test.SetTag(constants.TestRetryReason, "auto_test_retry")
-			} else {
-				// Set the unknown reason
-				test.SetTag(constants.TestRetryReason, "unknown")
-			}
-		}
-
-		// If the test is an attempt to fix we tag the test event
-		if execMeta.isAttemptToFix {
-			test.SetTag(constants.TestIsAttempToFix, "true")
-		}
-
-		// If the test is quarantined we tag the test event
-		if execMeta.isQuarantined {
-			test.SetTag(constants.TestIsQuarantined, "true")
-		}
-
-		// If the test is disabled we tag the test event
-		if execMeta.isDisabled {
-			test.SetTag(constants.TestIsDisabled, "true")
+		// Set some required tags from the execution metadata
+		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
+		if cancelExecution {
+			checkModuleAndSuite(module, suite)
+			return
 		}
 
 		defer func() {
@@ -262,7 +215,6 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				test.Close(integrations.ResultStatusPass)
 			}
 			checkModuleAndSuite(module, suite)
-
 		}()
 
 		// Execute the original test function.
