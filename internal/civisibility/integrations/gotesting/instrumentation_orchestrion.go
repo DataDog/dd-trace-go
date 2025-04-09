@@ -170,15 +170,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		testPrivateFields := getTestPrivateFields(t)
 		if testPrivateFields != nil && testPrivateFields.parent != nil {
 			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
-			if parentExecMeta != nil {
-				execMeta.isANewTest = execMeta.isANewTest || parentExecMeta.isANewTest
-				execMeta.isARetry = execMeta.isARetry || parentExecMeta.isARetry
-				execMeta.isEFDExecution = execMeta.isEFDExecution || parentExecMeta.isEFDExecution
-				execMeta.isATRExecution = execMeta.isATRExecution || parentExecMeta.isATRExecution
-				execMeta.isQuarantined = execMeta.isQuarantined || parentExecMeta.isQuarantined
-				execMeta.isDisabled = execMeta.isDisabled || parentExecMeta.isDisabled
-				execMeta.isAttemptToFix = execMeta.isAttemptToFix || parentExecMeta.isAttemptToFix
-			}
+			propagateTestExecutionMetadataFlags(execMeta, parentExecMeta)
 		}
 
 		// Set the CI visibility test.
@@ -235,7 +227,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
 				// so for this case we avoid closing CI Visibility, but we don't stop the panic from happening.
 				// it will be handled by `t.Run`
-				if checkIfCIVisibilityExitIsRequiredByPanic() {
+				if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
 					integrations.ExitCiVisibility()
 				}
 				panic(r)

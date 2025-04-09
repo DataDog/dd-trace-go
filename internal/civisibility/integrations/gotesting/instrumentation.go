@@ -427,15 +427,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		execMeta.hasAdditionalFeatureWrapper = true
 
 		// Propagate set tags from a parent wrapper
-		if originalExecMeta != nil {
-			execMeta.isANewTest = execMeta.isANewTest || originalExecMeta.isANewTest
-			execMeta.isARetry = execMeta.isARetry || originalExecMeta.isARetry
-			execMeta.isEFDExecution = execMeta.isEFDExecution || originalExecMeta.isEFDExecution
-			execMeta.isATRExecution = execMeta.isATRExecution || originalExecMeta.isATRExecution
-			execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
-			execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
-			execMeta.isAttemptToFix = execMeta.isAttemptToFix || originalExecMeta.isAttemptToFix
-		}
+		propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
 
 		// If we are in a retry execution, set the `isARetry` flag
 		if executionIndex > 0 {
@@ -643,18 +635,25 @@ func applyTestManagementTestsFeature(testInfo *commonInfo, targetFunc func(*test
 				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
 
 				// Propagate any flags set in the original test metadata.
-				if originalExecMeta != nil {
-					execMeta.isANewTest = execMeta.isANewTest || originalExecMeta.isANewTest
-					execMeta.isARetry = execMeta.isARetry || originalExecMeta.isARetry
-					execMeta.isEFDExecution = execMeta.isEFDExecution || originalExecMeta.isEFDExecution
-					execMeta.isATRExecution = execMeta.isATRExecution || originalExecMeta.isATRExecution
-					execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
-					execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
-					execMeta.isAttemptToFix = execMeta.isAttemptToFix || originalExecMeta.isAttemptToFix
-				}
+				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
 			},
 		})
 	}, true
+}
+
+func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, originalExecMeta *testExecutionMetadata) {
+	if execMeta == nil || originalExecMeta == nil {
+		return
+	}
+
+	// Propagate the test execution metadata
+	execMeta.isANewTest = execMeta.isANewTest || originalExecMeta.isANewTest
+	execMeta.isARetry = execMeta.isARetry || originalExecMeta.isARetry
+	execMeta.isEFDExecution = execMeta.isEFDExecution || originalExecMeta.isEFDExecution
+	execMeta.isATRExecution = execMeta.isATRExecution || originalExecMeta.isATRExecution
+	execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
+	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
+	execMeta.isAttemptToFix = execMeta.isAttemptToFix || originalExecMeta.isAttemptToFix
 }
 
 //go:linkname testingTRunCleanup testing.(*common).runCleanup
