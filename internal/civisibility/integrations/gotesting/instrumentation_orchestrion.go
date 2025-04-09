@@ -182,6 +182,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			test.SetTag(constants.TestIsNew, "true")
 		}
 
+		// If the execution is for a modified test
+		execMeta.isAModifiedTest = execMeta.isAModifiedTest || test.Context().Value(constants.TestIsModified) == true
+
 		// If the execution is a retry we tag the test event
 		if execMeta.isARetry {
 			// Set the retry tag

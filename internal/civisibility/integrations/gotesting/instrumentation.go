@@ -35,7 +35,8 @@ type (
 		panicData                   any               // panic data recovered from an internal test execution when using an additional feature wrapper
 		panicStacktrace             string            // stacktrace from the panic recovered from an internal test
 		isARetry                    bool              // flag to tag if a current test execution is a retry
-		isANewTest                  bool              // flag to tag if a current test execution is part of a new test
+		isANewTest                  bool              // flag to tag if a current test a new test
+		isAModifiedTest             bool              // flag to tag if a current test a modified test
 		isEFDExecution              bool              // flag to tag if a current test execution is part of an EFD execution
 		isATRExecution              bool              // flag to tag if a current test execution is part of an ATR execution
 		isQuarantined               bool              // flag to check if the test is quarantined
@@ -648,6 +649,7 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 
 	// Propagate the test execution metadata
 	execMeta.isANewTest = execMeta.isANewTest || originalExecMeta.isANewTest
+	execMeta.isAModifiedTest = execMeta.isAModifiedTest || originalExecMeta.isAModifiedTest
 	execMeta.isARetry = execMeta.isARetry || originalExecMeta.isARetry
 	execMeta.isEFDExecution = execMeta.isEFDExecution || originalExecMeta.isEFDExecution
 	execMeta.isATRExecution = execMeta.isATRExecution || originalExecMeta.isATRExecution

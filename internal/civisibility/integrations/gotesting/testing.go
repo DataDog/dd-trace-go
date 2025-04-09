@@ -169,6 +169,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	// Get the settings response for this session
 	settings := integrations.GetSettings()
 	coverageEnabled := settings.CodeCoverage
+	impactedTestsEnabled := settings.ImpactedTestsEnabled
 	testSkippedByITR := false
 	testIsNew := true
 
@@ -223,6 +224,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			test.SetTag(constants.TestIsNew, "true")
 		}
 
+		// If the execution is for a modified test
+		execMeta.isAModifiedTest = execMeta.isAModifiedTest || (impactedTestsEnabled && test.Context().Value(constants.TestIsModified) == true)
+
 		// If the execution is a retry we tag the test event
 		if execMeta.isARetry {
 			// Set the retry tag
@@ -260,8 +264,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}
 
-		// Check if the test needs to be skipped by ITR
-		if testSkippedByITR {
+		// Check if the test needs to be skipped by ITR (attempt to fix is excluded)
+		if testSkippedByITR && !execMeta.isAttemptToFix {
 			// check if the test was marked as unskippable
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
