@@ -223,7 +223,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		}
 
 		// Check if the test needs to be skipped by ITR (attempt to fix is excluded)
-		if testSkippedByITR && !execMeta.isAttemptToFix {
+		if testSkippedByITR && !execMeta.isAttemptToFix && !execMeta.isAModifiedTest {
 			// check if the test was marked as unskippable
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
