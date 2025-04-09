@@ -328,11 +328,18 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	// set impacted tests variables
 	if impactedTests {
 		// set the commit sha to a known value to always have the same git diff
+		base := "b97e7cbb464aef26da8cb5c07a225f7a144f26a4"
+		head := "3808532bc719ca418b938afb680246109768f343"
 		// 3808532bc719ca418b938afb680246109768f343 (feat) internal/civisibility: impacted tests (#3389)
 		// ...
 		// b97e7cbb464aef26da8cb5c07a225f7a144f26a4 v2.0.0 (#2427)
-		utils.AddCITags(constants.GitPrBaseCommit, "b97e7cbb464aef26da8cb5c07a225f7a144f26a4")
-		utils.AddCITags(constants.GitHeadCommit, "3808532bc719ca418b938afb680246109768f343")
+
+		// let's make sure we have both shas available
+		_ = exec.Command("git", "fetch", "origin", base).Run()
+		_ = exec.Command("git", "fetch", "origin", head).Run()
+
+		utils.AddCITags(constants.GitPrBaseCommit, base)
+		utils.AddCITags(constants.GitHeadCommit, head)
 	}
 
 	// initialize the mock tracer for doing assertions on the finished spans
