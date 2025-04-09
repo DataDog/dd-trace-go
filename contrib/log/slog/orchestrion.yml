@@ -29,4 +29,4 @@ aspects:
             func __dd_slogtrace_WrapHandler(Handler) Handler
       - prepend-statements:
           template: |-
-            {{ .Function.Argument 0 }} = __dd_slogtrace_WrapHandler({{ .Function.Argument 0 }})
+            {{ .Function.Argument 1 }} = __dd_slogtrace_WrapHandler({{ .Function.Argument 0 }})
