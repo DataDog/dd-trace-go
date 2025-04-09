@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -457,4 +458,27 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 //go:linkname instrumentTestifySuiteRun
 func instrumentTestifySuiteRun(t *testing.T, suite any) {
 	registerTestifySuite(t, suite)
+}
+
+// getTestOptimizationContext helper function to get the context of the test
+//
+//go:linkname getTestOptimizationContext
+func getTestOptimizationContext(tb testing.TB) context.Context {
+	if iTest := getTestOptimizationTest(tb); iTest != nil {
+		return iTest.Context()
+	}
+
+	return context.Background()
+}
+
+// getTestOptimizationTest helper function to get the test optimization test of the testing.TB
+//
+//go:linkname getTestOptimizationTest
+func getTestOptimizationTest(tb testing.TB) integrations.Test {
+	ciTestItem := getTestMetadata(tb)
+	if ciTestItem != nil && ciTestItem.test != nil {
+		return ciTestItem.test
+	}
+
+	return nil
 }
