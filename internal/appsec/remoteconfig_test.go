@@ -87,7 +87,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 			defer a.stop()
 			require.NotNil(t, a)
 			if tc.startBefore {
-				a.start(nil)
+				a.start()
 			}
 			require.Equal(t, tc.startBefore, a.started)
 			a.handleASMFeatures(tc.update)
