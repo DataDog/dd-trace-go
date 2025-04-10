@@ -126,7 +126,7 @@ func logStartup(t *tracer) {
 		Service:                     t.config.serviceName,
 		AgentURL:                    agentURL,
 		Debug:                       t.config.debug,
-		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
+		AnalyticsEnabled:            !math.IsNaN(t.config.globalConf.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
 		SampleRateLimit:             "disabled",
 		TraceSamplingRules:          t.config.traceRules,

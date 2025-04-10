@@ -13,17 +13,16 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-
 	"github.com/google/uuid"
 )
 
-var cfg = &config{
+var cfg = &Config{
 	analyticsRate: math.NaN(),
 	runtimeID:     uuid.New().String(),
 	headersAsTags: internal.NewLockMap(map[string]string{}),
 }
 
-type config struct {
+type Config struct {
 	mu            sync.RWMutex
 	analyticsRate float64
 	serviceName   string
@@ -33,17 +32,26 @@ type config struct {
 	statsTags     []string
 }
 
+func InitGlobalConfig() *Config {
+	return &Config{
+		analyticsRate: math.NaN(),
+		runtimeID:     uuid.New().String(),
+		headersAsTags: internal.NewLockMap(map[string]string{}),
+	}
+
+}
+
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
 // synchronizing mechanisms, meaning that for optimal performance it's best to read it
 // once and store it.
-func AnalyticsRate() float64 {
+func (cfg *Config) AnalyticsRate() float64 {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.analyticsRate
 }
 
 // SetAnalyticsRate sets the given event sampling rate globally.
-func SetAnalyticsRate(rate float64) {
+func (cfg *Config) SetAnalyticsRate(rate float64) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
 	cfg.analyticsRate = rate

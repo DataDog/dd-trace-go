@@ -469,35 +469,45 @@ func TestTracerOptionsDefaults(t *testing.T) {
 
 	t.Run("analytics", func(t *testing.T) {
 		t.Run("option", func(t *testing.T) {
-			defer globalconfig.SetAnalyticsRate(math.NaN())
 			assert := assert.New(t)
-			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
-			tracer, err := newTracer(WithAnalyticsRate(0.5))
-			defer tracer.Stop()
+			tracer, err := newTracer()
 			assert.NoError(err)
-			assert.Equal(0.5, globalconfig.AnalyticsRate())
+			defer tracer.Stop()
+
+			assert.True(math.IsNaN(tracer.config.globalConf.AnalyticsRate()))
+
+			tracer, err = newTracer(WithAnalyticsRate(0.5))
+			assert.NoError(err)
+			defer tracer.Stop()
+			assert.Equal(0.5, tracer.config.globalConf.AnalyticsRate())
+
 			tracer, err = newTracer(WithAnalytics(false))
 			assert.NoError(err)
 			defer tracer.Stop()
-			assert.True(math.IsNaN(globalconfig.AnalyticsRate()))
+			assert.True(math.IsNaN(tracer.config.globalConf.AnalyticsRate()))
+
 			tracer, err = newTracer(WithAnalytics(true))
 			defer tracer.Stop()
 			assert.NoError(err)
-			assert.Equal(1., globalconfig.AnalyticsRate())
+			assert.Equal(1., tracer.config.globalConf.AnalyticsRate())
 		})
 
 		t.Run("env/on", func(t *testing.T) {
+			c, err := newConfig()
+			assert.NoError(t, err)
 			t.Setenv("DD_TRACE_ANALYTICS_ENABLED", "true")
-			defer globalconfig.SetAnalyticsRate(math.NaN())
-			newConfig()
-			assert.Equal(t, 1.0, globalconfig.AnalyticsRate())
+			defer c.globalConf.SetAnalyticsRate(math.NaN())
+			c, _ = newConfig()
+			assert.Equal(t, 1.0, c.globalConf.AnalyticsRate())
 		})
 
 		t.Run("env/off", func(t *testing.T) {
+			c, err := newConfig()
+			assert.NoError(t, err)
 			t.Setenv("DD_TRACE_ANALYTICS_ENABLED", "kj12")
-			defer globalconfig.SetAnalyticsRate(math.NaN())
-			newConfig()
-			assert.True(t, math.IsNaN(globalconfig.AnalyticsRate()))
+			defer c.globalConf.SetAnalyticsRate(math.NaN())
+			c, _ = newConfig()
+			assert.True(t, math.IsNaN(c.globalConf.AnalyticsRate()))
 		})
 	})
 

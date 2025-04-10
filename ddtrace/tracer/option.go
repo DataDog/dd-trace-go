@@ -179,6 +179,9 @@ type config struct {
 	// all spans.
 	globalTags dynamicConfig[map[string]interface{}]
 
+	// globalConf holds the configuration that should be shared between the tracer and all integrations.
+	globalConf globalconfig.Config
+
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
 
@@ -343,6 +346,7 @@ const partialFlushMinSpansDefault = 1000
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
+	c.globalConf = *globalconfig.InitGlobalConfig()
 	c.sampler = NewAllSampler()
 	sampleRate := math.NaN()
 	if r := getDDorOtelConfig("sampleRate"); r != "" {
@@ -379,7 +383,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
-		globalconfig.SetAnalyticsRate(1.0)
+		c.globalConf.SetAnalyticsRate(1.0)
 	}
 	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
@@ -1121,22 +1125,22 @@ func WithUDS(socketPath string) StartOption {
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.
 func WithAnalytics(on bool) StartOption {
-	return func(_ *config) {
+	return func(c *config) {
 		if on {
-			globalconfig.SetAnalyticsRate(1.0)
+			c.globalConf.SetAnalyticsRate(1.0)
 		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
+			c.globalConf.SetAnalyticsRate(math.NaN())
 		}
 	}
 }
 
 // WithAnalyticsRate sets the global sampling rate for sampling APM events.
 func WithAnalyticsRate(rate float64) StartOption {
-	return func(_ *config) {
+	return func(c *config) {
 		if rate >= 0.0 && rate <= 1.0 {
-			globalconfig.SetAnalyticsRate(rate)
+			c.globalConf.SetAnalyticsRate(rate)
 		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
+			c.globalConf.SetAnalyticsRate(math.NaN())
 		}
 	}
 }
