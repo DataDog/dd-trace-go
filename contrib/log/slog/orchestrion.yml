@@ -13,10 +13,20 @@ meta:
 aspects:
   - id: New
     join-point:
-      function-call: log/slog.New
+      all-of:
+        - import-path: log/slog
+        - function-body:
+            function:
+              - name: New
     advice:
-      - wrap-expression:
-          imports:
-            slogtrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog
+      - inject-declarations:
+          # We need to use go:linkname to refer to a number of declarations in order to avoid creating
+          # circular dependencies, as these features have transitive dependencies on `log/slog`...
+          links:
+            - gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog
           template: |-
-            {{ .AST.Fun }}(slogtrace.WrapHandler({{ index .AST.Args 0 }}))
+            //go:linkname __dd_slogtrace_WrapHandlerV1 gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog.WrapHandler
+            func __dd_slogtrace_WrapHandlerV1(Handler) Handler
+      - prepend-statements:
+          template: |-
+            {{ .Function.Argument 0 }} = __dd_slogtrace_WrapHandlerV1({{ .Function.Argument 0 }})
