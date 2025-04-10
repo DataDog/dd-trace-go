@@ -38,7 +38,7 @@ func (r RASPRuleType) String() string {
 	case RASPRuleTypeCMDI:
 		return "command_injection"
 	}
-	return ""
+	return "unknown()"
 }
 
 // RASPRuleTypeFromAddressSet returns the RASPRuleType for the given address set if it has a RASP address.
