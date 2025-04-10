@@ -18,13 +18,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/appsec-internal-go/apisec"
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v3"
-
-	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/stretchr/testify/assert"
-
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
@@ -39,8 +38,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestCustomRules(t *testing.T) {
