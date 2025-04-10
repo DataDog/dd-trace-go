@@ -253,7 +253,6 @@ func testExec(cfg *Config) func(*testing.T) {
 		if cfg.DriverName == "sqlserver" {
 			//The mssql driver doesn't support non-prepared exec so there are 2 extra spans for the exec:
 			//prepare, exec, and then a close
-			assert.Len(spans, 7)
 			span := spans[2]
 			cfg.ExpectTags["sql.query_type"] = "Prepare"
 			assert.Equal(cfg.ExpectName, span.OperationName())
@@ -267,7 +266,7 @@ func testExec(cfg *Config) func(*testing.T) {
 				assert.Equal(v, span.Tag(k), "Value mismatch on tag %s", k)
 			}
 		} else {
-			assert.Len(spans, 5)
+			assert.Len(spans, 4)
 		}
 
 		var span mocktracer.Span

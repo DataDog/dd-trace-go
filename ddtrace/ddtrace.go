@@ -17,7 +17,7 @@ import (
 	"context"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // SpanContextW3C represents a SpanContext with an additional method to allow
@@ -103,6 +103,9 @@ type SpanContext interface {
 	ForeachBaggageItem(handler func(k, v string) bool)
 }
 
+// SpanLink represents a reference to a span that exists outside of the trace.
+type SpanLink = v2.SpanLink
+
 // StartSpanOption is a configuration option that can be used with a Tracer's StartSpan method.
 type StartSpanOption func(cfg *StartSpanConfig)
 
@@ -166,5 +169,5 @@ type Logger interface {
 
 // UseLogger sets l as the logger for all tracer and profiler logs.
 func UseLogger(l Logger) {
-	log.UseLogger(l)
+	v2.UseLogger(l)
 }

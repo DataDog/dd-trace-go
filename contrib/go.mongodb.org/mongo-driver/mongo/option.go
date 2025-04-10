@@ -6,62 +6,26 @@
 package mongo
 
 import (
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-const defaultServiceName = "mongo"
-
-type config struct {
-	serviceName   string
-	spanName      string
-	analyticsRate float64
-}
-
 // Option represents an option that can be passed to Dial.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.MongoDBOutbound)
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_MONGO_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-}
+type Option = v2.Option
 
 // WithServiceName sets the given service name for the dialled connection.
 // When the service name is not explicitly set it will be inferred based on the
 // request to AWS.
 func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }

@@ -12,15 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -55,7 +53,7 @@ func TestClient(t *testing.T) {
 	assert.Equal("2", span.Tag("redis.args_length"))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("gomodule/redigo", span.Integration())
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
@@ -73,7 +71,7 @@ func TestCommandError(t *testing.T) {
 	assert.Len(spans, 1)
 	span := spans[0]
 
-	assert.Equal(err, span.Tag(ext.Error).(error))
+	assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 	assert.Equal("redis.command", span.OperationName())
 	assert.Equal("my-service", span.Tag(ext.ServiceName))
 	assert.Equal("NOT_A_COMMAND", span.Tag(ext.ResourceName))
@@ -82,7 +80,7 @@ func TestCommandError(t *testing.T) {
 	assert.Equal("NOT_A_COMMAND", span.Tag("redis.raw_command"))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("gomodule/redigo", span.Integration())
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
@@ -128,7 +126,7 @@ func TestInheritance(t *testing.T) {
 	assert.Equal(child.Tag(ext.TargetPort), "6379")
 	assert.Equal(ext.SpanKindClient, child.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", child.Tag(ext.Component))
-	assert.Equal(componentName, child.Integration())
+	assert.Equal("gomodule/redigo", child.Integration())
 	assert.Equal("redis", child.Tag(ext.DBSystem))
 }
 
@@ -158,7 +156,7 @@ func TestCommandsToSring(t *testing.T) {
 	assert.Equal("SADD testSet a 0 1 2 [57, 8]", span.Tag("redis.raw_command"))
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("gomodule/redigo", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("gomodule/redigo", span.Integration())
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 }
 
@@ -239,9 +237,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -264,9 +260,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -275,9 +269,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, nil, WithAnalyticsRate(1.23))
 	})
@@ -416,23 +408,4 @@ func TestDoContext(t *testing.T) {
 		spans := mt.FinishedSpans()
 		assert.True(len(spans) > 0)
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []interface{}
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		c, err := Dial("tcp", "127.0.0.1:6379", opts...)
-		require.NoError(t, err)
-		_, err = c.Do("SET", "test_key", "test_value")
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewRedisTest(genSpans, "redis.conn")(t)
 }

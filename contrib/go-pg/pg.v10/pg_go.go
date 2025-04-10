@@ -6,66 +6,12 @@
 package pg
 
 import (
-	"context"
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	v2 "github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2"
 
 	"github.com/go-pg/pg/v10"
 )
 
-const componentName = "go-pg/pg.v10"
-
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/go-pg/pg/v10")
-}
-
 // Wrap augments the given DB with tracing.
 func Wrap(db *pg.DB, opts ...Option) {
-	cfg := new(config)
-	defaults(cfg)
-	for _, opt := range opts {
-		opt(cfg)
-	}
-	log.Debug("contrib/go-pg/pg.v10: Wrapping Database")
-	db.AddQueryHook(&queryHook{cfg: cfg})
-}
-
-type queryHook struct {
-	cfg *config
-}
-
-// BeforeQuery implements pg.QueryHook.
-func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context.Context, error) {
-	query, err := qe.UnformattedQuery()
-	if err != nil {
-		query = []byte("unknown")
-	}
-
-	opts := []ddtrace.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeSQL),
-		tracer.ResourceName(string(query)),
-		tracer.ServiceName(h.cfg.serviceName),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
-	}
-	if !math.IsNaN(h.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
-	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "go-pg", opts...)
-	return ctx, qe.Err
-}
-
-// AfterQuery implements pg.QueryHook
-func (h *queryHook) AfterQuery(ctx context.Context, qe *pg.QueryEvent) error {
-	if span, ok := tracer.SpanFromContext(ctx); ok {
-		span.Finish(tracer.WithError(qe.Err))
-	}
-
-	return qe.Err
+	v2.Wrap(db, opts...)
 }

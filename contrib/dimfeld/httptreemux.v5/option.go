@@ -9,46 +9,28 @@ package httptreemux
 import (
 	"net/http"
 
+	v2 "github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/dimfeld/httptreemux/v5"
 )
 
-const defaultServiceName = "http.router"
-
-type routerConfig struct {
-	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption
-	resourceNamer func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string
-}
-
 // RouterOption represents an option that can be passed to New.
-type RouterOption func(*routerConfig)
-
-func defaults(cfg *routerConfig) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.resourceNamer = defaultResourceNamer
-}
+type RouterOption = v2.RouterOption
 
 // WithServiceName sets the given service name for the returned router.
 func WithServiceName(name string) RouterOption {
-	return func(cfg *routerConfig) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithSpanOptions applies the given set of options to the span started by the router.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
-	return func(cfg *routerConfig) {
-		cfg.spanOpts = opts
-	}
+	return v2.WithSpanOptions(tracer.ApplyV1Options(opts...))
 }
 
 // WithResourceNamer specifies a function which will be used to obtain the
 // resource name for a given request.
 func WithResourceNamer(namer func(router *httptreemux.TreeMux, w http.ResponseWriter, req *http.Request) string) RouterOption {
-	return func(cfg *routerConfig) {
-		cfg.resourceNamer = namer
-	}
+	return v2.WithResourceNamer(namer)
 }

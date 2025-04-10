@@ -6,64 +6,23 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
-	"sync/atomic"
-
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
-
-var (
-	// globalTracer stores the current tracer as *ddtrace.Tracer (pointer to interface). The
-	// atomic.Value type requires types to be consistent, which requires using *ddtrace.Tracer.
-	globalTracer atomic.Value
-)
-
-func init() {
-	var tracer ddtrace.Tracer = &NoopTracer{}
-	globalTracer.Store(&tracer)
-}
 
 // SetGlobalTracer sets the global tracer to t.
 func SetGlobalTracer(t ddtrace.Tracer) {
-	old := *globalTracer.Swap(&t).(*ddtrace.Tracer)
-	if !Testing {
-		old.Stop()
-	}
+	rt := t.(TracerV2Adapter)
+	v2.SetGlobalTracer(rt.Tracer)
 }
 
 // GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() ddtrace.Tracer {
-	return *globalTracer.Load().(*ddtrace.Tracer)
+	tr := v2.GetGlobalTracer()
+	return TracerV2Adapter{Tracer: tr}
 }
 
-// Testing is set to true when the mock tracer is active. It usually signifies that we are in a test
-// environment. This value is used by tracer.Start to prevent overriding the GlobalTracer in tests.
-var Testing = false
-
-var _ ddtrace.Tracer = (*NoopTracer)(nil)
-
-// NoopTracer is an implementation of ddtrace.Tracer that is a no-op.
-type NoopTracer struct{}
-
-// StartSpan implements ddtrace.Tracer.
-func (NoopTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
-	log.Warn("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
-	return NoopSpan{}
-}
-
-// SetServiceInfo implements ddtrace.Tracer.
-func (NoopTracer) SetServiceInfo(_, _, _ string) {}
-
-// Extract implements ddtrace.Tracer.
-func (NoopTracer) Extract(_ interface{}) (ddtrace.SpanContext, error) {
-	return NoopSpanContext{}, nil
-}
-
-// Inject implements ddtrace.Tracer.
-func (NoopTracer) Inject(_ ddtrace.SpanContext, _ interface{}) error { return nil }
-
-// Stop implements ddtrace.Tracer.
-func (NoopTracer) Stop() {}
+var NoopTracerV2 = TracerV2Adapter{Tracer: v2.NoopTracer{}}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
 
@@ -86,7 +45,7 @@ func (NoopSpan) SetBaggageItem(_, _ string) {}
 func (NoopSpan) Finish(_ ...ddtrace.FinishOption) {}
 
 // Tracer implements ddtrace.Span.
-func (NoopSpan) Tracer() ddtrace.Tracer { return NoopTracer{} }
+func (NoopSpan) Tracer() ddtrace.Tracer { return NoopTracerV2 }
 
 // Context implements ddtrace.Span.
 func (NoopSpan) Context() ddtrace.SpanContext { return NoopSpanContext{} }

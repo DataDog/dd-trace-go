@@ -6,45 +6,51 @@
 package kafka
 
 import (
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/internal/tracing"
+	v2 "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2"
+
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // An Option customizes the config.
-type Option = tracing.Option
+type Option = v2.Option
 
 // WithContext sets the config context to ctx.
 // Deprecated: This is deprecated in favor of passing the context
 // via the message headers
-var WithContext = tracing.WithContext
+func WithContext(_ context.Context) Option {
+	return nil
+}
 
 // WithServiceName sets the config service name to serviceName.
-var WithServiceName = tracing.WithServiceName
+func WithServiceName(serviceName string) Option {
+	return v2.WithService(serviceName)
+}
 
 // WithAnalytics enables Trace Analytics for all started spans.
-var WithAnalytics = tracing.WithAnalytics
+func WithAnalytics(on bool) Option {
+	return v2.WithAnalytics(on)
+}
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-var WithAnalyticsRate = tracing.WithAnalyticsRate
+func WithAnalyticsRate(rate float64) Option {
+	return v2.WithAnalyticsRate(rate)
+}
 
 // WithCustomTag will cause the given tagFn to be evaluated after executing
 // a query and attach the result to the span tagged by the key.
 func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Option {
-	wrapped := func(msg tracing.Message) interface{} {
-		if m, ok := msg.Unwrap().(*kafka.Message); ok {
-			return tagFn(m)
-		}
-		return nil
-	}
-	return tracing.WithCustomTag(tag, wrapped)
+	return v2.WithCustomTag(tag, tagFn)
 }
 
 // WithConfig extracts the config information for the client to be tagged
-func WithConfig(cm *kafka.ConfigMap) Option {
-	return tracing.WithConfig(wrapConfigMap(cm))
+func WithConfig(cg *kafka.ConfigMap) Option {
+	return v2.WithConfig(cg)
 }
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
-var WithDataStreams = tracing.WithDataStreams
+func WithDataStreams() Option {
+	return v2.WithDataStreams()
+}

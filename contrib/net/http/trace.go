@@ -7,24 +7,38 @@ package http // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 
 import (
 	"net/http"
+	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http/internal/wrap"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	v2 "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	v2tracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-func init() {
-	telemetry.LoadIntegration(config.ComponentName)
-	tracer.MarkIntegrationImported(config.ComponentName)
-}
+var (
+	serveConfigPool = sync.Pool{
+		New: func() interface{} {
+			return &v2.ServeConfig{
+				FinishOpts: make([]v2tracer.FinishOption, 1),
+				SpanOpts:   make([]v2tracer.StartSpanOption, 1),
+			}
+		},
+	}
+)
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
-type ServeConfig = httptrace.ServeConfig
+type ServeConfig = v2.ServeConfig
 
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *ServeConfig) {
-	wrap.TraceAndServe(h, w, r, cfg)
+	c := serveConfigPool.Get().(*v2.ServeConfig)
+	defer serveConfigPool.Put(c)
+	c.Service = cfg.Service
+	c.Resource = cfg.Resource
+	c.QueryParams = cfg.QueryParams
+	c.Route = cfg.Route
+	c.RouteParams = cfg.RouteParams
+	c.FinishOpts = cfg.FinishOpts
+	c.SpanOpts = cfg.SpanOpts
+	c.IsStatusError = cfg.IsStatusError
+	v2.TraceAndServe(h, w, r, c)
 }

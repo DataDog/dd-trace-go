@@ -21,6 +21,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	spanServer              = "graphql.server"
+	spanParse               = "graphql.parse"
+	spanValidate            = "graphql.validate"
+	spanExecute             = "graphql.execute"
+	spanResolve             = "graphql.resolve"
+	tagGraphqlField         = "graphql.field"
+	tagGraphqlOperationName = "graphql.operation.name"
+	tagGraphqlOperationType = "graphql.operation.type"
+	tagGraphqlSource        = "graphql.source"
+	tagGraphqlVariables     = "graphql.variables"
+)
+
 func Test(t *testing.T) {
 	rootQuery := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
@@ -61,7 +74,7 @@ func Test(t *testing.T) {
 		traceID := spans[0].TraceID()
 		for i := 1; i < len(spans); i++ {
 			assert.Equal(t, traceID, spans[i].TraceID())
-			assert.Equal(t, componentName, spans[i].Integration())
+			assert.Equal(t, "graphql-go/graphql", spans[i].Integration())
 		}
 		assertSpanMatches(t, spans[0],
 			hasNoTag(ext.Error),
@@ -158,7 +171,7 @@ func Test(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 2)
 		assertSpanMatches(t, spans[0],
-			hasTag(ext.Error, resp.Errors[0].OriginalError()),
+			hasTag(ext.ErrorMsg, resp.Errors[0].OriginalError().Error()),
 			hasTag(tagGraphqlOperationName, "Båd"),
 			hasTag(tagGraphqlSource, "query is invalid"),
 			hasTag(ext.ServiceName, "test-graphql-service"),
@@ -166,15 +179,15 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.parse"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-		assert.Equal(t, componentName, spans[0].Integration())
+		assert.Equal(t, "graphql-go/graphql", spans[0].Integration())
 		assertSpanMatches(t, spans[1],
-			hasTag(ext.Error, resp.Errors[0].OriginalError()),
+			hasTag(ext.ErrorMsg, resp.Errors[0].OriginalError().Error()),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasOperationName("graphql.server"),
 			hasTag(ext.ResourceName, "graphql.server"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-		assert.Equal(t, componentName, spans[1].Integration())
+		assert.Equal(t, "graphql-go/graphql", spans[1].Integration())
 	})
 
 	t.Run("request fails validation", func(t *testing.T) {
@@ -198,9 +211,9 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.parse"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-		assert.Equal(t, componentName, spans[0].Integration())
+		assert.Equal(t, "graphql-go/graphql", spans[0].Integration())
 		assertSpanMatches(t, spans[1],
-			hasTag(ext.Error, resp.Errors[0]),
+			hasTag(ext.ErrorMsg, resp.Errors[0].Error()),
 			hasTag(tagGraphqlOperationName, "TestQuery"),
 			hasTag(tagGraphqlSource, "query TestQuery { hello, helloNonTrivial, invalidField }"),
 			hasTag(ext.ServiceName, "test-graphql-service"),
@@ -208,15 +221,15 @@ func Test(t *testing.T) {
 			hasTag(ext.ResourceName, "graphql.validate"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-		assert.Equal(t, componentName, spans[1].Integration())
+		assert.Equal(t, "graphql-go/graphql", spans[1].Integration())
 		assertSpanMatches(t, spans[2],
-			hasTag(ext.Error, resp.Errors[0]),
+			hasTag(ext.ErrorMsg, resp.Errors[0].Error()),
 			hasTag(ext.ServiceName, "test-graphql-service"),
 			hasOperationName("graphql.server"),
 			hasTag(ext.ResourceName, "graphql.server"),
 			hasTag(ext.Component, "graphql-go/graphql"),
 		)
-		assert.Equal(t, componentName, spans[2].Integration())
+		assert.Equal(t, "graphql-go/graphql", spans[2].Integration())
 	})
 }
 
@@ -245,13 +258,13 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 
 	evt := events[0]
 	assert.Equal(t, "dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(t, evt.Config.Time)
-	assert.NotEmpty(t, evt.Config.Attributes["stacktrace"])
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
 	assert.Equal(t, map[string]any{
 		"message":          "test error",
 		"path":             []string{"withError"},
 		"locations":        []string{"1:3"},
-		"stacktrace":       evt.Config.Attributes["stacktrace"],
+		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "gqlerrors.FormattedError",
 		"extensions.str":   "1",
 		"extensions.int":   1,
@@ -259,7 +272,7 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 		"extensions.bool":  true,
 		"extensions.slice": []string{"1", "2"},
 		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
-	}, evt.Config.Attributes)
+	}, evt.Attributes)
 
 	// the rest of the spans should not have span events
 	for _, s := range spans {

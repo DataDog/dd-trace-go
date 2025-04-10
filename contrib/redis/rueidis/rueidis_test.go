@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/redis/rueidis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 )
 
 var (
@@ -36,9 +36,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewClient(t *testing.T) {
-	prevName := globalconfig.ServiceName()
-	defer globalconfig.SetServiceName(prevName)
-	globalconfig.SetServiceName("global-service")
+	testutils.SetGlobalServiceName(t, "global-service")
 
 	tests := []struct {
 		name            string
@@ -62,10 +60,10 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value", span.Tag(ext.RedisRawCommand))
-				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
-				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 			},
 			wantServiceName: "test-service",
@@ -82,10 +80,10 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Nil(t, span.Tag(ext.RedisRawCommand))
-				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
-				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 			},
 			wantServiceName: "global-service",
@@ -130,19 +128,19 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "HMGET mk 1 2", span.Tag(ext.RedisRawCommand))
-				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
-				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 
 				span = spans[1]
 				assert.Equal(t, "HMGET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "HMGET mk 1 2", span.Tag(ext.RedisRawCommand))
-				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
-				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 			},
 			wantServiceName: "global-service",
@@ -198,7 +196,7 @@ func TestNewClient(t *testing.T) {
 				assert.Nil(t, span.Tag(ext.RedisClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.RedisClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.RedisClientCachePTTL))
-				assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
+				assert.Equal(t, context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -225,7 +223,7 @@ func TestNewClient(t *testing.T) {
 				assert.Nil(t, span.Tag(ext.RedisClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.RedisClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.RedisClientCachePTTL))
-				assert.Equal(t, context.DeadlineExceeded, span.Tag(ext.Error).(error))
+				assert.Equal(t, context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
 		},
@@ -246,6 +244,102 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value", span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test SET command with canceled context and custom error check",
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return err != nil && !rueidis.IsRedisNil(err) && !errors.Is(err, context.Canceled)
+				}),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				ctx, cancel := context.WithCancel(ctx)
+				cancel()
+				require.Error(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Nil(t, span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test redis nil not attached to span",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				require.Error(t, client.Do(ctx, client.B().Get().Key("404").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "GET 404", span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test SET command with canceled context and custom error check",
+			opts: []Option{
+				WithErrorCheck(func(err error) bool {
+					return err != nil && !rueidis.IsRedisNil(err) && !errors.Is(err, context.Canceled)
+				}),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				ctx, cancel := context.WithCancel(ctx)
+				cancel()
+				require.Error(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Nil(t, span.Tag(ext.RedisRawCommand))
+				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test redis nil not attached to span",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				require.Error(t, client.Do(ctx, client.B().Get().Key("404").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "GET 404", span.Tag(ext.RedisRawCommand))
 				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
 				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
 				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))

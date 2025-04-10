@@ -7,71 +7,30 @@ package mgo
 
 import (
 	"context"
-	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
 )
 
-const defaultServiceName = "mongodb"
-
-type mongoConfig struct {
-	ctx           context.Context
-	serviceName   string
-	spanName      string
-	analyticsRate float64
-}
-
-func newConfig() *mongoConfig {
-	rate := math.NaN()
-	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
-	return &mongoConfig{
-		serviceName: namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName),
-		spanName:    namingschema.OpName(namingschema.MongoDBOutbound),
-		ctx:         context.Background(),
-		// analyticsRate: globalconfig.AnalyticsRate(),
-		analyticsRate: rate,
-	}
-}
-
 // DialOption represents an option that can be passed to Dial
-type DialOption func(*mongoConfig)
+type DialOption = v2.DialOption
 
 // WithServiceName sets the service name for a given MongoDB context.
 func WithServiceName(name string) DialOption {
-	return func(cfg *mongoConfig) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithContext sets the context.
 func WithContext(ctx context.Context) DialOption {
-	return func(cfg *mongoConfig) {
-		cfg.ctx = ctx
-	}
+	return v2.WithContext(ctx)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) DialOption {
-	return func(cfg *mongoConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) DialOption {
-	return func(cfg *mongoConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }

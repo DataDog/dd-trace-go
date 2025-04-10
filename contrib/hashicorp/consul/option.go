@@ -6,75 +6,31 @@
 package consul
 
 import (
-	"math"
-	"net"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2"
 
 	consul "github.com/hashicorp/consul/api"
 )
 
-const (
-	defaultServiceName = "consul"
-)
-
-type clientConfig struct {
-	serviceName   string
-	spanName      string
-	analyticsRate float64
-	hostname      string
-}
-
 // ClientOption represents an option that can be used to create or wrap a client.
-type ClientOption func(*clientConfig)
-
-func defaults(cfg *clientConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.ConsulOutbound)
-
-	if internal.BoolEnv("DD_TRACE_CONSUL_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-}
+type ClientOption = v2.ClientOption
 
 // WithServiceName sets the given service name for the client.
 func WithServiceName(name string) ClientOption {
-	return func(cfg *clientConfig) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) ClientOption {
-	return func(cfg *clientConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) ClientOption {
-	return func(cfg *clientConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithConfig extracts the config information for the client to be tagged
 func WithConfig(config *consul.Config) ClientOption {
-	return func(cfg *clientConfig) {
-		if host, _, err := net.SplitHostPort(config.Address); err == nil {
-			cfg.hostname = host
-		}
-	}
+	return v2.WithConfig(config)
 }

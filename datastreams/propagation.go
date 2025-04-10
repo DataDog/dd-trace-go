@@ -8,7 +8,7 @@ package datastreams
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 )
 
 // MergeContexts returns the first context which includes the pathway resulting from merging the pathways
@@ -16,19 +16,7 @@ import (
 // This function should be used in fan-in situations. The current implementation keeps only 1 Pathway.
 // A future implementation could merge multiple Pathways together and put the resulting Pathway in the context.
 func MergeContexts(ctxs ...context.Context) context.Context {
-	if len(ctxs) == 0 {
-		return context.Background()
-	}
-	pathways := make([]datastreams.Pathway, 0, len(ctxs))
-	for _, ctx := range ctxs {
-		if p, ok := datastreams.PathwayFromContext(ctx); ok {
-			pathways = append(pathways, p)
-		}
-	}
-	if len(pathways) == 0 {
-		return ctxs[0]
-	}
-	return datastreams.ContextWithPathway(ctxs[0], datastreams.Merge(pathways))
+	return datastreams.MergeContexts(ctxs...)
 }
 
 // TextMapWriter allows setting key/value pairs of strings on the underlying
@@ -51,21 +39,10 @@ type TextMapReader interface {
 
 // ExtractFromBase64Carrier extracts the pathway context from a carrier to a context object
 func ExtractFromBase64Carrier(ctx context.Context, carrier TextMapReader) (outCtx context.Context) {
-	outCtx = ctx
-	carrier.ForeachKey(func(key, val string) error {
-		if key == datastreams.PropagationKeyBase64 {
-			_, outCtx, _ = datastreams.DecodeBase64(ctx, val)
-		}
-		return nil
-	})
-	return outCtx
+	return datastreams.ExtractFromBase64Carrier(ctx, carrier)
 }
 
 // InjectToBase64Carrier injects a pathway context from a context object inta a carrier
 func InjectToBase64Carrier(ctx context.Context, carrier TextMapWriter) {
-	p, ok := datastreams.PathwayFromContext(ctx)
-	if !ok {
-		return
-	}
-	carrier.Set(datastreams.PropagationKeyBase64, p.EncodeBase64())
+	datastreams.InjectToBase64Carrier(ctx, carrier)
 }

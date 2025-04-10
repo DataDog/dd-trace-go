@@ -16,14 +16,12 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	eventBridgeTypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
@@ -31,8 +29,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/aws/smithy-go/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -105,10 +101,11 @@ func TestAppendMiddleware(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			sqsClient := sqs.NewFromConfig(awsCfg)
-			sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
+			_, err := sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
 				MessageBody: aws.String("foobar"),
 				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 			})
+			require.NoError(t, err)
 
 			spans := mt.FinishedSpans()
 
@@ -132,7 +129,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -207,7 +204,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -281,7 +278,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -412,7 +409,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, server.URL+"/MyBucketName", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -507,7 +504,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 
 			// Check for trace context injection
 			assert.NotNil(t, tt.publishInput.MessageAttributes)
@@ -594,7 +591,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -667,7 +664,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -738,7 +735,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -865,7 +862,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
-			assert.Equal(t, componentName, s.Integration())
+			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Integration())
 		})
 	}
 }
@@ -1040,128 +1037,6 @@ func TestHTTPCredentials(t *testing.T) {
 	assert.Equal(t, auth, "myuser:mypassword")
 }
 
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		awsCfg := newIntegrationTestConfig(t, opts...)
-		ctx := context.Background()
-		ec2Client := ec2.NewFromConfig(awsCfg)
-		s3Client := s3.NewFromConfig(awsCfg)
-		sqsClient := sqs.NewFromConfig(awsCfg)
-		snsClient := sns.NewFromConfig(awsCfg)
-
-		_, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
-		require.NoError(t, err)
-		_, err = s3Client.ListBuckets(ctx, &s3.ListBucketsInput{})
-		require.NoError(t, err)
-		_, err = sqsClient.ListQueues(ctx, &sqs.ListQueuesInput{})
-		require.NoError(t, err)
-		_, err = snsClient.ListTopics(ctx, &sns.ListTopicsInput{})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "EC2.request", spans[0].OperationName())
-		assert.Equal(t, "S3.request", spans[1].OperationName())
-		assert.Equal(t, "SQS.request", spans[2].OperationName())
-		assert.Equal(t, "SNS.request", spans[3].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
-		assert.Equal(t, "aws.s3.request", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.request", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
-		WithDDService:            []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func TestMessagingNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		awsCfg := newIntegrationTestConfig(t, opts...)
-		resourceName := "test-naming-schema-aws-v2"
-		ctx := context.Background()
-		sqsClient := sqs.NewFromConfig(awsCfg)
-		snsClient := sns.NewFromConfig(awsCfg)
-
-		// create a SQS queue
-		sqsResp, err := sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{QueueName: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		msg := &sqs.SendMessageInput{QueueUrl: sqsResp.QueueUrl, MessageBody: aws.String("body")}
-		_, err = sqsClient.SendMessage(ctx, msg)
-		require.NoError(t, err)
-
-		entry := sqsTypes.SendMessageBatchRequestEntry{Id: aws.String("1"), MessageBody: aws.String("body")}
-		batchMsg := &sqs.SendMessageBatchInput{QueueUrl: sqsResp.QueueUrl, Entries: []sqsTypes.SendMessageBatchRequestEntry{entry}}
-		_, err = sqsClient.SendMessageBatch(ctx, batchMsg)
-		require.NoError(t, err)
-
-		// create an SNS topic
-		snsResp, err := snsClient.CreateTopic(ctx, &sns.CreateTopicInput{Name: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		_, err = snsClient.Publish(ctx, &sns.PublishInput{TopicArn: snsResp.TopicArn, Message: aws.String("message")})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "SQS.request", spans[0].OperationName())
-		assert.Equal(t, "SQS.request", spans[1].OperationName())
-		assert.Equal(t, "SQS.request", spans[2].OperationName())
-		assert.Equal(t, "SNS.request", spans[3].OperationName())
-		assert.Equal(t, "SNS.request", spans[4].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "aws.sqs.request", spans[0].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
-		assert.Equal(t, "aws.sns.send", spans[4].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.SQS", "aws.SQS", "aws.SQS", "aws.SNS", "aws.SNS"},
-		WithDDService:            []string{"aws.SQS", "aws.SQS", "aws.SQS", "aws.SNS", "aws.SNS"},
-		WithDDServiceAndOverride: repeat(serviceOverride, 5),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func repeat(s string, n int) []string {
-	r := make([]string, n)
-	for i := 0; i < n; i++ {
-		r[i] = s
-	}
-	return r
-}
-
 func TestWithErrorCheck(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1218,67 +1093,6 @@ func TestWithErrorCheck(t *testing.T) {
 			assert.Len(t, spans, 1)
 			s := spans[0]
 			assert.Equal(t, tt.errExist, s.Tag(ext.Error) != nil)
-		})
-	}
-}
-
-func TestStreamName(t *testing.T) {
-	dummyName := `my-stream`
-	dummyArn := `arn:aws:kinesis:us-east-1:111111111111:stream/` + dummyName
-
-	tests := []struct {
-		name     string
-		input    any
-		expected string
-	}{
-		{
-			name:     "PutRecords with ARN",
-			input:    &kinesis.PutRecordsInput{StreamARN: &dummyArn},
-			expected: dummyName,
-		},
-		{
-			name:     "PutRecords with Name",
-			input:    &kinesis.PutRecordsInput{StreamName: &dummyName},
-			expected: dummyName,
-		},
-		{
-			name:     "PutRecords with both",
-			input:    &kinesis.PutRecordsInput{StreamName: &dummyName, StreamARN: &dummyArn},
-			expected: dummyName,
-		},
-		{
-			name:     "PutRecord with Name",
-			input:    &kinesis.PutRecordInput{StreamName: &dummyName},
-			expected: dummyName,
-		},
-		{
-			name:     "CreateStream",
-			input:    &kinesis.CreateStreamInput{StreamName: &dummyName},
-			expected: dummyName,
-		},
-		{
-			name:     "CreateStream with nothing",
-			input:    &kinesis.CreateStreamInput{},
-			expected: "",
-		},
-		{
-			name:     "GetRecords",
-			input:    &kinesis.GetRecordsInput{StreamARN: &dummyArn},
-			expected: dummyName,
-		},
-		{
-			name:     "GetRecords with nothing",
-			input:    &kinesis.GetRecordsInput{},
-			expected: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := middleware.InitializeInput{
-				Parameters: tt.input,
-			}
-			val := streamName(req)
-			assert.Equal(t, tt.expected, val)
 		})
 	}
 }

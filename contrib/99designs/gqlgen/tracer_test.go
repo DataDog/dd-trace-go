@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	internaltestserver "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen/internal/testserver"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/lists"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
@@ -20,6 +18,13 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	readOp       = "graphql.read"
+	parsingOp    = "graphql.parse"
+	validationOp = "graphql.validate"
+	fieldOp      = "graphql.field"
 )
 
 type testServerResponse struct {
@@ -40,7 +45,7 @@ func TestOptions(t *testing.T) {
 				assert.Equal(ext.SpanTypeGraphQL, root.Tag(ext.SpanType))
 				assert.Equal("99designs/gqlgen", root.Tag(ext.Component))
 				assert.Nil(root.Tag(ext.EventSampleRate))
-				assert.Equal(componentName, root.Integration())
+				assert.Equal("99designs/gqlgen", root.Integration())
 			},
 		},
 		"WithServiceName": {
@@ -170,13 +175,13 @@ func TestError(t *testing.T) {
 
 	evt := events[0]
 	assert.Equal("dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(evt.Config.Time)
-	assert.NotEmpty(evt.Config.Attributes["stacktrace"])
+	assert.NotEmpty(evt.TimeUnixNano)
+	assert.NotEmpty(evt.Attributes["stacktrace"])
 	assert.Equal(map[string]any{
 		"message":    "resolver error",
-		"stacktrace": evt.Config.Attributes["stacktrace"],
+		"stacktrace": evt.Attributes["stacktrace"],
 		"type":       "*gqlerror.Error",
-	}, evt.Config.Attributes)
+	}, evt.Attributes)
 }
 
 func TestObfuscation(t *testing.T) {
@@ -224,58 +229,6 @@ func TestChildSpans(t *testing.T) {
 	assert.ElementsMatch(opNames, []string{readOp, parsingOp, validationOp, fieldOp, "graphql.query"})
 	assert.NotNil(root)
 	assert.Nil(root.Tag(ext.Error))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		c := newTestClient(t, testserver.New(), NewTracer(opts...))
-		err := c.Post(`{ name }`, &testServerResponse{})
-		require.NoError(t, err)
-
-		err = c.Post(`mutation Name { name }`, &testServerResponse{})
-		assert.ErrorContains(t, err, "mutations are not supported")
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 9)
-		assert.Equal(t, "graphql.read", spans[0].OperationName())
-		assert.Equal(t, "graphql.parse", spans[1].OperationName())
-		assert.Equal(t, "graphql.validate", spans[2].OperationName())
-		assert.Equal(t, "graphql.field", spans[3].OperationName())
-		assert.Equal(t, "graphql.query", spans[4].OperationName())
-		assert.Equal(t, "graphql.read", spans[5].OperationName())
-		assert.Equal(t, "graphql.parse", spans[6].OperationName())
-		assert.Equal(t, "graphql.validate", spans[7].OperationName())
-		assert.Equal(t, "graphql.mutation", spans[8].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 9)
-		assert.Equal(t, "graphql.read", spans[0].OperationName())
-		assert.Equal(t, "graphql.parse", spans[1].OperationName())
-		assert.Equal(t, "graphql.validate", spans[2].OperationName())
-		assert.Equal(t, "graphql.field", spans[3].OperationName())
-		assert.Equal(t, "graphql.server.request", spans[4].OperationName())
-		assert.Equal(t, "graphql.read", spans[5].OperationName())
-		assert.Equal(t, "graphql.parse", spans[6].OperationName())
-		assert.Equal(t, "graphql.validate", spans[7].OperationName())
-		assert.Equal(t, "graphql.server.request", spans[8].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             lists.RepeatString("graphql", 9),
-		WithDDService:            lists.RepeatString("graphql", 9),
-		WithDDServiceAndOverride: lists.RepeatString(serviceOverride, 9),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 func newTestClient(t *testing.T, h *testserver.TestServer, tracer graphql.HandlerExtension) *client.Client {
@@ -393,20 +346,20 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 
 	evt := events[0]
 	assert.Equal(t, "dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(t, evt.Config.Time)
-	assert.NotEmpty(t, evt.Config.Attributes["stacktrace"])
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
 	assert.Equal(t, map[string]any{
 		"message":          "test error",
-		"path":             []string{"withError"},
-		"stacktrace":       evt.Config.Attributes["stacktrace"],
+		"path":             []interface{}{"withError"},
+		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "*gqlerror.Error",
 		"extensions.str":   "1",
-		"extensions.int":   1,
+		"extensions.int":   float64(1),
 		"extensions.float": 1.1,
 		"extensions.bool":  true,
-		"extensions.slice": []string{"1", "2"},
+		"extensions.slice": []interface{}{"1", "2"},
 		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
-	}, evt.Config.Attributes)
+	}, evt.Attributes)
 
 	// the rest of the spans should not have span events
 	for _, s := range spans {

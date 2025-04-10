@@ -27,7 +27,6 @@ env:
   DD_APPSEC_WAF_TIMEOUT: 1m
   TESTS: >-
     ./appsec/...
-    ./internal/appsec/...
     ./contrib/gin-gonic/gin/...
     ./contrib/google.golang.org/grpc/...
     ./contrib/net/http/...
@@ -73,7 +72,7 @@ jobs:
         id: cfg
         run: |
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
-          echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
+          echo "path=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
 
       - uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
@@ -90,8 +89,6 @@ jobs:
 
       - name: Download Go modules
         if: steps.cache.outputs.cache-hit != 'true'
-        env:
-          GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
   macos:
@@ -125,8 +122,6 @@ jobs:
       # reruns under different settings.
       - name: go test
         shell: bash
-        env:
-          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
           cgocheck="GOEXPERIMENT=cgocheck2"
@@ -167,15 +162,11 @@ jobs:
           go-version: stable
           cache: false # we manage the caching ourselves
 
-      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
-        if: runner.os == 'Windows'
-      - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
-        if: runner.os != 'Windows'
-
       - name: go test
         shell: bash
         run: |
           set -euxo pipefail
+          go mod tidy
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
               if ! env $appsec_enabled_env go test -v $go_tags $TESTS; then
@@ -226,8 +217,6 @@ jobs:
           sudo apt install -y docker-ce docker-ce-cli containerd.io
 
       - name: Create container
-        env:
-          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |-
           sudo docker run                                                       \
             --rm                                                                \
@@ -241,10 +230,11 @@ jobs:
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'
-        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
+        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat git
       - name: Output go env
         run: sudo docker exec -i test.runner go env
-
+      - name: Ensure go.mod is up to date
+        run: sudo docker exec -i test.runner go mod tidy
       - name: NOCGO, undefined appsec state
         run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
       - name: NOCGO, appsec disabled

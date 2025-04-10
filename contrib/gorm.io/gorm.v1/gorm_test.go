@@ -17,8 +17,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/lib/pq"
@@ -216,7 +216,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(componentName, span.Integration())
+		a.Equal("gorm.io/gorm.v1", span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -254,7 +254,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(componentName, span.Integration())
+		a.Equal("gorm.io/gorm.v1", span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -313,7 +313,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(componentName, span.Integration())
+		a.Equal("gorm.io/gorm.v1", span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -352,7 +352,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
-		a.Equal(componentName, span.Integration())
+		a.Equal("gorm.io/gorm.v1", span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -454,9 +454,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -479,9 +477,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -595,10 +591,9 @@ func TestPlugin(t *testing.T) {
 	opt := WithCustomTag("foo", func(_ *gorm.DB) interface{} {
 		return "bar"
 	})
-	plugin := NewTracePlugin(opt).(tracePlugin)
+	plugin := NewTracePlugin(opt)
 
 	assert.Equal(t, "DDTracePlugin", plugin.Name())
-	assert.Len(t, plugin.options, 1)
 	require.NoError(t, db.Use(plugin))
 
 	assert.NotNil(t, db.Callback().Create().Get("dd-trace-go:before_create"))

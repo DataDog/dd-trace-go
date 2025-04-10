@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,6 +61,7 @@ func TestSQLCommentCarrier(t *testing.T) {
 		{
 			name:               "no-trace",
 			query:              "SELECT * from FOO",
+			injectSpan:         false,
 			mode:               DBMPropagationModeFull,
 			peerDBName:         "",
 			peerDBHostname:     "",
@@ -167,23 +169,25 @@ func TestSQLCommentCarrier(t *testing.T) {
 		},
 	}
 
+	// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
+	// as per the sqlcommenter spec
+	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+	defer tracer.Stop()
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
-			// as per the sqlcommenter spec
-			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
-			defer globalconfig.SetServiceName("")
-			defer tracer.Stop()
-
 			var spanCtx ddtrace.SpanContext
 			var traceID uint64
 			if tc.injectSpan {
 				traceID = uint64(10)
-				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID)).(*span)
+				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID))
 				root.SetTag(ext.SamplingPriority, tc.samplingPriority)
 				spanCtx = root.Context()
 			}
 
+			if tc.name == "no-trace" {
+				t.Log()
+			}
 			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db", PeerDBHostname: tc.peerDBHostname, PeerDBName: tc.peerDBName, PeerService: tc.peerServiceName}
 			err := carrier.Inject(spanCtx)
 			require.NoError(t, err)
@@ -199,47 +203,18 @@ func TestSQLCommentCarrier(t *testing.T) {
 			assert.Equal(t, tc.expectedExtractErr, err)
 
 			if tc.expectedExtractErr == nil {
-				xctx, ok := sctx.(*spanContext)
+				xctx, ok := sctx.(internal.SpanContextV2Adapter)
 				require.True(t, ok)
 
-				assert.Equal(t, carrier.SpanID, xctx.spanID)
-				assert.Equal(t, traceID, xctx.traceID.Lower())
+				assert.Equal(t, carrier.SpanID, xctx.SpanID())
+				assert.Equal(t, traceID, xctx.TraceID())
 
-				p, ok := xctx.SamplingPriority()
+				p, ok := xctx.Ctx.SamplingPriority()
 				assert.True(t, ok)
 				assert.Equal(t, tc.samplingPriority, p)
 			}
 		})
 	}
-}
-
-// https://github.com/DataDog/dd-trace-go/issues/2837
-func TestSQLCommentCarrierInjectNilSpan(t *testing.T) {
-	tracer := newTracer()
-	defer tracer.Stop()
-
-	headers := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "4",
-		DefaultParentIDHeader: "1",
-		originHeader:          "synthetics",
-		b3TraceIDHeader:       "0021dc1807524785",
-		traceparentHeader:     "00-00000000000000000000000000000004-2222222222222222-01",
-		tracestateHeader:      "dd=s:2;o:rum;p:0000000000000001;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
-	})
-
-	spanCtx, err := tracer.Extract(headers)
-	require.NoError(t, err)
-
-	carrier := SQLCommentCarrier{
-		Query:          "SELECT * from FOO",
-		Mode:           DBMPropagationModeFull,
-		DBServiceName:  "whiskey-db",
-		PeerDBHostname: "",
-		PeerDBName:     "",
-		PeerService:    "",
-	}
-	err = carrier.Inject(spanCtx)
-	require.NoError(t, err)
 }
 
 func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
@@ -260,14 +235,15 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	carrier := SQLCommentCarrier{Query: q}
 	sctx, err := carrier.Extract()
 	require.NoError(t, err)
-	xctx, ok := sctx.(*spanContext)
+	xctx, ok := sctx.(internal.SpanContextV2Adapter)
 	assert.True(t, ok)
 
-	assert.Equal(t, spanID, xctx.spanID)
-	assert.Equal(t, lower, xctx.traceID.Lower())
-	assert.Equal(t, upper, xctx.traceID.Upper())
+	assert.Equal(t, spanID, xctx.SpanID())
+	assert.Equal(t, lower, xctx.TraceID())
+	tID := xctx.TraceID128Bytes()
+	assert.Equal(t, upper, binary.BigEndian.Uint64(tID[:8]))
 
-	p, ok := xctx.SamplingPriority()
+	p, ok := xctx.Ctx.SamplingPriority()
 	assert.True(t, ok)
 	assert.Equal(t, priority, p)
 }
@@ -292,71 +268,6 @@ func FuzzExtract(f *testing.F) {
 	})
 }
 
-func FuzzSpanContextFromTraceComment(f *testing.F) {
-	f.Fuzz(func(t *testing.T, query string, traceID uint64, spanID uint64, sampled int64) {
-		expectedSampled := 0
-		if sampled > 0 {
-			expectedSampled = 1
-		}
-
-		ts := strconv.FormatUint(traceID, 16)
-		var b strings.Builder
-		b.Grow(32)
-		for i := 0; i < 32-len(ts); i++ {
-			b.WriteRune('0')
-		}
-		b.WriteString(ts)
-		ts = b.String()
-
-		traceIDUpper, _ := strconv.ParseUint(ts[:16], 16, 64)
-		traceIDLower, err := strconv.ParseUint(ts[16:], 16, 64)
-		if err != nil {
-			t.Skip()
-		}
-
-		tags := make(map[string]string)
-		comment := encodeTraceParent(traceID, spanID, int64(expectedSampled))
-		tags[sqlCommentTraceParent] = comment
-		q := commentQuery(query, tags)
-
-		c, found := findTraceComment(q)
-		if !found {
-			t.Fatalf("Error parsing trace comment from query")
-		}
-
-		xctx, err := spanContextFromTraceComment(c)
-
-		if err != nil {
-			t.Fatalf("Error: %+v creating span context from trace comment: %s", err, c)
-		}
-		if xctx.spanID != spanID {
-			t.Fatalf(`Inconsistent span id parsing:
-				got: %d
-				wanted: %d`, xctx.spanID, spanID)
-		}
-		if xctx.traceID.Lower() != traceIDLower {
-			t.Fatalf(`Inconsistent lower trace id parsing:
-				got: %d
-				wanted: %d`, xctx.traceID.Lower(), traceIDLower)
-		}
-		if xctx.traceID.Upper() != traceIDUpper {
-			t.Fatalf(`Inconsistent lower trace id parsing:
-				got: %d
-				wanted: %d`, xctx.traceID.Upper(), traceIDUpper)
-		}
-
-		p, ok := xctx.SamplingPriority()
-		if !ok {
-			t.Fatalf("Error retrieving sampling priority")
-		}
-		if p != expectedSampled {
-			t.Fatalf(`Inconsistent trace id parsing:
-				got: %d
-				wanted: %d`, p, expectedSampled)
-		}
-	})
-}
-
 func BenchmarkSQLCommentInjection(b *testing.B) {
 	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()
@@ -378,9 +289,9 @@ func BenchmarkSQLCommentExtraction(b *testing.B) {
 	}
 }
 
-func setupBenchmark() (*tracer, ddtrace.SpanContext, SQLCommentCarrier) {
+func setupBenchmark() (ddtrace.Tracer, ddtrace.SpanContext, SQLCommentCarrier) {
 	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
-	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
+	root := tracer.StartSpan("service.calling.db", WithSpanID(10))
 	root.SetTag(ext.SamplingPriority, 2)
 	spanCtx := root.Context()
 	carrier := SQLCommentCarrier{Query: "SELECT 1 FROM dual", Mode: DBMPropagationModeFull, DBServiceName: "whiskey-db"}

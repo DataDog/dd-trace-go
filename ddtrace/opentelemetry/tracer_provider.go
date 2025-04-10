@@ -29,13 +29,10 @@
 package opentelemetry
 
 import (
-	"sync"
-	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -49,9 +46,7 @@ var _ oteltrace.TracerProvider = (*TracerProvider)(nil)
 // WithInstrumentationVersion and WithSchemaURL TracerOptions are not supported.
 type TracerProvider struct {
 	noop.TracerProvider // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
-	tracer              *oteltracer
-	stopped             uint32 // stopped indicates whether the tracerProvider has been shutdown.
-	sync.Once
+	v2tracerProvider    *v2.TracerProvider
 }
 
 // NewTracerProvider returns an instance of an OpenTelemetry TracerProvider,
@@ -59,13 +54,10 @@ type TracerProvider struct {
 // This TracerProvider only supports a singleton tracer, and repeated calls to
 // the Tracer() method will return the same instance each time.
 func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
-	tracer.Start(opts...)
-	p := &TracerProvider{}
-	t := &oteltracer{
-		DD:       internal.GetGlobalTracer(),
-		provider: p,
+	tp := v2.NewTracerProvider(opts...)
+	p := &TracerProvider{
+		v2tracerProvider: tp,
 	}
-	p.tracer = t
 	return p
 }
 
@@ -73,45 +65,17 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 // the provided name and any provided options to this method.
 // If the TracerProvider has already been shut down, this will return a no-op tracer.
 func (p *TracerProvider) Tracer(_ string, _ ...oteltrace.TracerOption) oteltrace.Tracer {
-	if atomic.LoadUint32(&p.stopped) != 0 {
-		return noop.NewTracerProvider().Tracer("")
-	}
-	return p.tracer
+	return p.v2tracerProvider.Tracer("")
 }
 
 // Shutdown stops the started tracer. Subsequent calls are valid but become no-op.
 func (p *TracerProvider) Shutdown() error {
-	p.Once.Do(func() {
-		tracer.Stop()
-		atomic.StoreUint32(&p.stopped, 1)
-	})
+	_ = p.v2tracerProvider.Shutdown()
 	return nil
 }
 
 // ForceFlush flushes any buffered traces. Flush is in effect only if a tracer
 // is started.
 func (p *TracerProvider) ForceFlush(timeout time.Duration, callback func(ok bool)) {
-	p.forceFlush(timeout, callback, tracer.Flush)
-}
-
-func (p *TracerProvider) forceFlush(timeout time.Duration, callback func(ok bool), flush func()) {
-	if atomic.LoadUint32(&p.stopped) != 0 {
-		log.Warn("Cannot perform (*TracerProvider).Flush since the tracer is already stopped.")
-		return
-	}
-	done := make(chan struct{})
-	go func() {
-		flush()
-		done <- struct{}{}
-	}()
-	for {
-		select {
-		case <-time.After(timeout):
-			callback(false)
-			return
-		case <-done:
-			callback(true)
-			return
-		}
-	}
+	p.v2tracerProvider.ForceFlush(timeout, callback)
 }
