@@ -170,8 +170,8 @@ const (
 	// AutoTestRetriesRetryReason indicates that the test is retried due to auto test retries.
 	AutoTestRetriesRetryReason = "auto_test_retry"
 
-	// TestManagementRetryReason indicates that we don't know the retry reason.
-	UnknownRetryReason = "unknown"
+	// ExternalRetryReason indicates that the test is retried due to an external reason.
+	ExternalRetryReason = "external"
 )
 
 const (

@@ -637,7 +637,7 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 			test.SetTag(constants.TestRetryReason, constants.AutoTestRetriesRetryReason)
 		} else {
 			// Set the unknown reason
-			test.SetTag(constants.TestRetryReason, constants.UnknownRetryReason)
+			test.SetTag(constants.TestRetryReason, constants.ExternalRetryReason)
 		}
 	}
 
