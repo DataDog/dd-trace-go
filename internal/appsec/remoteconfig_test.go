@@ -466,9 +466,14 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 			expectedP: []string{rc.ProductASMFeatures},
 		},
 		{
-			name:      "appsec-enabled/default-RulesManager",
-			env:       map[string]string{config.EnvEnabled: "1"},
-			expectedC: append(asmRemoteConfigCapabilities[:], blockingCapabilities[:]...),
+			name: "appsec-enabled/default-RulesManager",
+			env:  map[string]string{config.EnvEnabled: "1"},
+			expectedC: func() []remoteconfig.Capability {
+				result := make([]remoteconfig.Capability, 0, len(baseCapabilities)+len(blockingCapabilities))
+				result = append(result, baseCapabilities[:]...)
+				result = append(result, blockingCapabilities[:]...)
+				return result
+			}(),
 			expectedP: []string{rc.ProductASM, rc.ProductASMData, rc.ProductASMDD},
 		},
 		{
@@ -516,7 +521,7 @@ func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
 		{
 			name:      "appsec-enabled/default-RulesManager",
 			env:       map[string]string{config.EnvEnabled: "1"},
-			expectedC: asmRemoteConfigCapabilities[:],
+			expectedC: baseCapabilities[:],
 			excludedC: blockingCapabilities[:],
 			expectedP: []string{rc.ProductASM, rc.ProductASMData, rc.ProductASMDD},
 		},
