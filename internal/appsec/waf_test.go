@@ -18,11 +18,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/appsec-internal-go/apisec"
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	waf "github.com/DataDog/go-libddwaf/v3"
-
-	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
@@ -35,11 +36,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/stretchr/testify/mock"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestCustomRules(t *testing.T) {
@@ -107,6 +105,7 @@ func TestCustomRules(t *testing.T) {
 				"waf_error:false",
 				"waf_version:" + waf.Version(),
 				"event_rules_version:1.4.2",
+				"input_truncated:false",
 			}).Get())
 		})
 	}
@@ -466,6 +465,7 @@ func TestBlocking(t *testing.T) {
 				"waf_error:false",
 				"waf_version:" + waf.Version(),
 				"event_rules_version:1.4.2",
+				"input_truncated:false",
 			}).Get())
 		})
 	}
@@ -991,9 +991,6 @@ func TestAttackerFingerprinting(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "CustomRule" {
-				t.Skip("Custom rule is not working on v2")
-			}
 			mt := mocktracer.Start()
 			defer mt.Stop()
 

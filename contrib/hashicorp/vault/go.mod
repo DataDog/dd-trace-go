@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.1.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.1.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
 	github.com/stretchr/testify v1.10.0
@@ -27,6 +27,7 @@ require (
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.26.0 // indirect
 	github.com/DataDog/sketches-go v1.4.7 // indirect
+	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
