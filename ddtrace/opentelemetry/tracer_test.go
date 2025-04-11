@@ -7,18 +7,17 @@ package opentelemetry
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/baggage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel"
@@ -30,12 +29,10 @@ import (
 
 func TestGetTracer(t *testing.T) {
 	assert := assert.New(t)
-	tp := NewTracerProvider()
-	tr := tp.Tracer("ot")
-	dd := internal.GetGlobalTracer()
-	ott, ok := tr.(*oteltracer)
-	assert.True(ok)
-	assert.Equal(ott.DD, dd)
+	_ = NewTracerProvider()
+	dd := internal.GetGlobalTracer().(internal.TracerV2Adapter).Tracer
+	assert.NotNil(dd)
+	assert.NotEqual(dd, v2.NoopTracer{})
 }
 
 func TestGetTracerMultiple(t *testing.T) {
@@ -55,7 +52,6 @@ func TestSpanWithContext(t *testing.T) {
 	got, ok := tracer.SpanFromContext(ctx)
 
 	assert.True(ok)
-	assert.Equal(got, sp.(*span).DD)
 	assert.Equal(fmt.Sprintf("%016x", got.Context().SpanID()), sp.SpanContext().SpanID().String())
 }
 
@@ -67,13 +63,16 @@ func TestSpanWithNewRoot(t *testing.T) {
 	noopParent, ddCtx := tracer.StartSpanFromContext(context.Background(), "otel.child")
 
 	otelCtx, child := tr.Start(ddCtx, "otel.child", oteltrace.WithNewRoot())
-	got, ok := tracer.SpanFromContext(otelCtx)
+	_, ok := tracer.SpanFromContext(otelCtx)
 	assert.True(ok)
-	assert.Equal(got, child.(*span).DD)
 
 	var parentBytes oteltrace.TraceID
 	uint64ToByte(noopParent.Context().TraceID(), parentBytes[:])
 	assert.NotEqual(parentBytes, child.SpanContext().TraceID())
+}
+
+func uint64ToByte(n uint64, b []byte) {
+	binary.BigEndian.PutUint64(b, n)
 }
 
 func TestSpanWithoutNewRoot(t *testing.T) {
@@ -92,9 +91,8 @@ func TestTracerOptions(t *testing.T) {
 	otel.SetTracerProvider(NewTracerProvider(tracer.WithEnv("wrapper_env")))
 	tr := otel.Tracer("ot")
 	ctx, sp := tr.Start(context.Background(), "otel.test")
-	got, ok := tracer.SpanFromContext(ctx)
+	_, ok := tracer.SpanFromContext(ctx)
 	assert.True(ok)
-	assert.Equal(got, sp.(*span).DD)
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
@@ -134,10 +132,7 @@ func TestForceFlush(t *testing.T) {
 		flushed   bool
 		flushFunc func()
 	}{
-		{timeOut: 30 * time.Second, flushed: true, flushFunc: tracer.Flush},
-		{timeOut: 0 * time.Second, flushed: false, flushFunc: func() {
-			time.Sleep(300 * time.Second)
-		}},
+		{timeOut: 30 * time.Second, flushed: true},
 	}
 	for _, tc := range testData {
 		t.Run(fmt.Sprintf("Flush success: %t", tc.flushed), func(t *testing.T) {
@@ -155,7 +150,7 @@ func TestForceFlush(t *testing.T) {
 			tr := otel.Tracer("")
 			_, sp := tr.Start(context.Background(), "test_span")
 			sp.End()
-			tp.forceFlush(tc.timeOut, setFlushStatus, tc.flushFunc)
+			tp.ForceFlush(tc.timeOut, setFlushStatus)
 			p, err := waitForPayload(payloads)
 			if tc.flushed {
 				assert.NoError(err)
@@ -166,19 +161,6 @@ func TestForceFlush(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("Flush after shutdown", func(t *testing.T) {
-		tp := NewTracerProvider()
-		otel.SetTracerProvider(tp)
-		testLog := new(log.RecordLogger)
-		defer log.UseLogger(testLog)()
-
-		tp.stopped = 1
-		tp.ForceFlush(time.Second, func(ok bool) {})
-
-		logs := testLog.Logs()
-		assert.Contains(logs[len(logs)-1], "Cannot perform (*TracerProvider).Flush since the tracer is already stopped")
-	})
 }
 
 func TestShutdownOnce(t *testing.T) {
@@ -191,19 +173,8 @@ func TestShutdownOnce(t *testing.T) {
 	// should be no-op types.
 	tr := otel.Tracer("")
 	ctx, sp := tr.Start(context.Background(), "after_shutdown")
-	assert.Equal(uint32(1), tp.stopped)
 	assert.Equal(noop.Span{}, sp)
 	assert.Equal(oteltrace.ContextWithSpan(context.Background(), noop.Span{}), ctx)
-}
-
-func TestSpanTelemetry(t *testing.T) {
-	telemetryClient := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(telemetryClient)()
-	tp := NewTracerProvider()
-	otel.SetTracerProvider(tp)
-	tr := otel.Tracer("")
-	_, _ = tr.Start(context.Background(), "otel.span")
-	assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Get())
 }
 
 func TestConcurrentSetAttributes(_ *testing.T) {

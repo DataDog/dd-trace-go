@@ -15,21 +15,22 @@ import (
 	"math"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	sqltraced "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
 	"gopkg.in/jinzhu/gorm.v1"
 )
 
 const componentName = "gopkg.in/jinzhu/gorm.v1"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageGopkgJinZhuGormV1)
 }
 
 const (
