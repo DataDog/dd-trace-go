@@ -44,3 +44,8 @@ func WithoutTraceTrivialResolvedFields() Option {
 func WithCustomTag(key string, value interface{}) Option {
 	return v2.WithCustomTag(key, value)
 }
+
+// WithErrorExtensions allows to configure the error extensions to include in the error span events.
+func WithErrorExtensions(errExtensions ...string) Option {
+	return v2.WithErrorExtensions(errExtensions...)
+}

@@ -21,3 +21,9 @@ func WithRawCommand(rawCommand bool) Option {
 func WithServiceName(name string) Option {
 	return v2.WithService(name)
 }
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error.
+func WithErrorCheck(fn func(err error) bool) Option {
+	return v2.WithErrorCheck(fn)
+}

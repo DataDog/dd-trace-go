@@ -20,14 +20,6 @@ import (
 	"github.com/graph-gophers/graphql-go/trace/tracer"
 )
 
-const (
-	tagGraphqlField         = "graphql.field"
-	tagGraphqlQuery         = "graphql.query"
-	tagGraphqlType          = "graphql.type"
-	tagGraphqlOperationName = "graphql.operation.name"
-	tagGraphqlVariables     = "graphql.variables"
-)
-
 // A Tracer implements the graphql-go/trace.Tracer interface by sending traces
 // to the Datadog tracer.
 type Tracer struct {

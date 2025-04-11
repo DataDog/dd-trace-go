@@ -46,13 +46,6 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 )
 
-const (
-	readOp       = "graphql.read"
-	parsingOp    = "graphql.parse"
-	validationOp = "graphql.validate"
-	fieldOp      = "graphql.field"
-)
-
 // NewTracer creates a graphql.HandlerExtension instance that can be used with
 // a graphql.handler.Server.
 // Options can be passed in for further configuration.

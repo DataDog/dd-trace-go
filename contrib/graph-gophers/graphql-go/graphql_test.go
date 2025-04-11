@@ -20,10 +20,45 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	tagGraphqlField         = "graphql.field"
+	tagGraphqlQuery         = "graphql.query"
+	tagGraphqlType          = "graphql.type"
+	tagGraphqlOperationName = "graphql.operation.name"
+	tagGraphqlVariables     = "graphql.variables"
+)
+
 type testResolver struct{}
 
 func (*testResolver) Hello() string                    { return "Hello, world!" }
 func (*testResolver) HelloNonTrivial() (string, error) { return "Hello, world!", nil }
+func (*testResolver) WithError() (*graphql.ID, error) {
+	return nil, customError{
+		message: "test error",
+		extensions: map[string]any{
+			"int":                          1,
+			"float":                        1.1,
+			"str":                          "1",
+			"bool":                         true,
+			"slice":                        []string{"1", "2"},
+			"unsupported_type_stringified": []any{1, "foo"},
+			"not_captured":                 "nope",
+		},
+	}
+}
+
+type customError struct {
+	message    string
+	extensions map[string]any
+}
+
+func (e customError) Error() string {
+	return e.message
+}
+
+func (e customError) Extensions() map[string]any {
+	return e.extensions
+}
 
 const testServerSchema = `
 	schema {
@@ -32,6 +67,7 @@ const testServerSchema = `
 	type Query {
 		hello: String!
 		helloNonTrivial: String!
+		withError: ID
 	}
 `
 

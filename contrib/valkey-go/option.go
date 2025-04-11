@@ -13,7 +13,7 @@ import (
 type Option = v2.Option
 
 // WithRawCommand can be used to set a tag `valkey.raw_command` in the created spans (disabled by default).
-// Warning: please note the datadog-agent currently does not support obfuscation for this tag, so use this at your own risk.
+// Warning: please note the datadog-agent v7.63.x or below does not support obfuscation for this tag, so use this at your own risk.
 func WithRawCommand(rawCommand bool) Option {
 	return v2.WithRawCommand(rawCommand)
 }
@@ -21,4 +21,10 @@ func WithRawCommand(rawCommand bool) Option {
 // WithServiceName sets the given service name for the client.
 func WithServiceName(name string) Option {
 	return v2.WithService(name)
+}
+
+// WithErrorCheck specifies a function fn which determines whether the passed
+// error should be marked as an error.
+func WithErrorCheck(fn func(err error) bool) Option {
+	return v2.WithErrorCheck(fn)
 }

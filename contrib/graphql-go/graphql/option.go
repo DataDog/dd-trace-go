@@ -26,3 +26,8 @@ func WithAnalyticsRate(rate float64) Option {
 func WithServiceName(name string) Option {
 	return v2.WithService(name)
 }
+
+// WithErrorExtensions allows to configure the error extensions to include in the error span events.
+func WithErrorExtensions(errExtensions ...string) Option {
+	return v2.WithErrorExtensions(errExtensions...)
+}

@@ -7,12 +7,16 @@ package graphql
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/handler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,13 +27,13 @@ func Test(t *testing.T) {
 		Fields: graphql.Fields{
 			"hello": {
 				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (any, error) {
+				Resolve: func(_ graphql.ResolveParams) (any, error) {
 					return "Hello, world!", nil
 				},
 			},
 			"helloNonTrivial": {
 				Type: graphql.String,
-				Resolve: func(p graphql.ResolveParams) (any, error) {
+				Resolve: func(_ graphql.ResolveParams) (any, error) {
 					return "Hello, world!", nil
 				},
 			},
@@ -214,6 +218,105 @@ func Test(t *testing.T) {
 		)
 		assert.Equal(t, "graphql-go/graphql", spans[2].Integration())
 	})
+}
+
+func TestErrorsAsSpanEvents(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	srv := newTestServer(t, WithErrorExtensions("str", "float", "int", "bool", "slice", "unsupported_type_stringified"))
+	defer srv.Close()
+
+	q := `{"query": "{ withError }"}`
+	resp, err := http.Post(srv.URL, "application/json", strings.NewReader(q))
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 5)
+
+	s0 := spans[3]
+	assert.Equal(t, "graphql.execute", s0.OperationName())
+	assert.NotNil(t, s0.Tag(ext.Error))
+
+	events := s0.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal(t, "dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(t, evt.Config.Time)
+	assert.NotEmpty(t, evt.Config.Attributes["stacktrace"])
+	assert.Equal(t, map[string]any{
+		"message":          "test error",
+		"path":             []string{"withError"},
+		"locations":        []string{"1:3"},
+		"stacktrace":       evt.Config.Attributes["stacktrace"],
+		"type":             "gqlerrors.FormattedError",
+		"extensions.str":   "1",
+		"extensions.int":   1,
+		"extensions.float": 1.1,
+		"extensions.bool":  true,
+		"extensions.slice": []string{"1", "2"},
+		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
+	}, evt.Config.Attributes)
+
+	// the rest of the spans should not have span events
+	for _, s := range spans {
+		if s.OperationName() == "graphql.execute" {
+			continue
+		}
+		assert.Emptyf(t, s.Events(), "span %s should not have span events", s.OperationName())
+	}
+}
+
+func newTestServer(t *testing.T, opts ...Option) *httptest.Server {
+	cfg := graphql.SchemaConfig{
+		Query: graphql.NewObject(graphql.ObjectConfig{
+			Name: "Query",
+			Fields: graphql.Fields{
+				"withError": &graphql.Field{
+					Args: graphql.FieldConfigArgument{},
+					Type: graphql.ID,
+					Resolve: func(_ graphql.ResolveParams) (interface{}, error) {
+						return nil, customError{
+							message: "test error",
+							extensions: map[string]any{
+								"int":                          1,
+								"float":                        1.1,
+								"str":                          "1",
+								"bool":                         true,
+								"slice":                        []string{"1", "2"},
+								"unsupported_type_stringified": []any{1, "foo"},
+								"not_captured":                 "nope",
+							},
+						}
+					},
+				},
+			},
+		}),
+	}
+	schema, err := NewSchema(cfg, opts...)
+	require.NoError(t, err)
+
+	h := handler.New(&handler.Config{Schema: &schema, Pretty: true, GraphiQL: true})
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	return srv
+}
+
+type customError struct {
+	message    string
+	extensions map[string]any
+}
+
+func (e customError) Error() string {
+	return e.message
+}
+
+func (e customError) Extensions() map[string]any {
+	return e.extensions
 }
 
 type spanMatcher func(*testing.T, mocktracer.Span)

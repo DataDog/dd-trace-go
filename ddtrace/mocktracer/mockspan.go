@@ -50,11 +50,17 @@ type Span interface {
 	// Links returns the span's span links.
 	Links() []ddtrace.SpanLink
 
+	// Events returns the span's span events.
+	Events() []SpanEvent
+
 	// Stringer allows pretty-printing the span's fields for debugging.
 	fmt.Stringer
 
 	Integration() string
 }
+
+// SpanEvent represents a span event from a mockspan.
+type SpanEvent = v2.SpanEvent
 
 type MockspanV2Adapter struct {
 	Span *v2.Span
@@ -192,6 +198,11 @@ func (msa MockspanV2Adapter) TraceID() uint64 {
 // Links returns the span's span links.
 func (msa MockspanV2Adapter) Links() []ddtrace.SpanLink {
 	return msa.Span.Links()
+}
+
+// Events returns the span's span events.
+func (msa MockspanV2Adapter) Events() []SpanEvent {
+	return msa.Span.Events()
 }
 
 // Integration returns the component from which the mockspan was created.

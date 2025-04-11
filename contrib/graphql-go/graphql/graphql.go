@@ -11,19 +11,6 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-const (
-	spanServer              = "graphql.server"
-	spanParse               = "graphql.parse"
-	spanValidate            = "graphql.validate"
-	spanExecute             = "graphql.execute"
-	spanResolve             = "graphql.resolve"
-	tagGraphqlField         = "graphql.field"
-	tagGraphqlOperationName = "graphql.operation.name"
-	tagGraphqlOperationType = "graphql.operation.type"
-	tagGraphqlSource        = "graphql.source"
-	tagGraphqlVariables     = "graphql.variables"
-)
-
 func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, error) {
 	return v2.NewSchema(config, options...)
 }

@@ -8,6 +8,7 @@ package gqlgen
 import (
 	"testing"
 
+	internaltestserver "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen/internal/testserver"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
@@ -16,6 +17,14 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/testserver"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	readOp       = "graphql.read"
+	parsingOp    = "graphql.parse"
+	validationOp = "graphql.validate"
+	fieldOp      = "graphql.field"
 )
 
 type testServerResponse struct {
@@ -160,6 +169,19 @@ func TestError(t *testing.T) {
 	}
 	assert.NotNil(root)
 	assert.NotNil(root.Tag(ext.Error))
+
+	events := root.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal("dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(evt.TimeUnixNano)
+	assert.NotEmpty(evt.Attributes["stacktrace"])
+	assert.Equal(map[string]any{
+		"message":    "resolver error",
+		"stacktrace": evt.Attributes["stacktrace"],
+		"type":       "*gqlerror.Error",
+	}, evt.Attributes)
 }
 
 func TestObfuscation(t *testing.T) {
@@ -302,4 +324,48 @@ func TestInterceptOperation(t *testing.T) {
 		assertions.NotNil(root)
 		assertions.Nil(root.Tag(ext.Error))
 	})
+}
+
+func TestErrorsAsSpanEvents(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	_, c := internaltestserver.New(t, NewTracer(WithErrorExtensions("str", "float", "int", "bool", "slice", "unsupported_type_stringified")))
+	err := c.Post(`{ withError }`, &testServerResponse{})
+	require.Error(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 5)
+
+	s0 := spans[4]
+	assert.Equal(t, "graphql.query", s0.OperationName())
+	assert.NotNil(t, s0.Tag(ext.Error))
+
+	events := s0.Events()
+	require.Len(t, events, 1)
+
+	evt := events[0]
+	assert.Equal(t, "dd.graphql.query.error", evt.Name)
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
+	assert.Equal(t, map[string]any{
+		"message":          "test error",
+		"path":             []interface{}{"withError"},
+		"stacktrace":       evt.Attributes["stacktrace"],
+		"type":             "*gqlerror.Error",
+		"extensions.str":   "1",
+		"extensions.int":   float64(1),
+		"extensions.float": 1.1,
+		"extensions.bool":  true,
+		"extensions.slice": []interface{}{"1", "2"},
+		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
+	}, evt.Attributes)
+
+	// the rest of the spans should not have span events
+	for _, s := range spans {
+		if s.OperationName() == "graphql.query" {
+			continue
+		}
+		assert.Emptyf(t, s.Events(), "span %s should not have span events", s.OperationName())
+	}
 }

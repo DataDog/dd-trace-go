@@ -39,3 +39,8 @@ func WithOmitTrivial() Option {
 func WithTraceVariables() Option {
 	return v2.WithTraceVariables()
 }
+
+// WithErrorExtensions allows to configure the error extensions to include in the error span events.
+func WithErrorExtensions(errExtensions ...string) Option {
+	return v2.WithErrorExtensions(errExtensions...)
+}
