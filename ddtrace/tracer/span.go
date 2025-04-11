@@ -617,37 +617,26 @@ func (s *span) finish(finishTime int64) {
 	}
 
 	keep := true
-	if t, ok := internal.GetGlobalTracer().(*tracer); ok {
-		if !t.config.enabled.current {
+	tracer, hasTracer := internal.GetGlobalTracer().(*tracer)
+	if hasTracer {
+		if !tracer.config.enabled.current {
 			return
 		}
 		// we have an active tracer
-		if t.config.canComputeStats() {
-			statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
-			if shouldCalc {
-				// the agent supports computed stats
-				select {
-				case t.stats.In <- statSpan:
-					// ok
-				default:
-					log.Error("Stats channel full, disregarding span.")
-				}
-			}
-		}
-		if t.config.canDropP0s() {
+		if tracer.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
-		if t.config.debugAbandonedSpans {
+		if tracer.config.debugAbandonedSpans {
 			// the tracer supports debugging abandoned spans
 			select {
-			case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
+			case tracer.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, true):
 				// ok
 			default:
 				log.Error("Abandoned spans channel full, disregarding span.")
 			}
 		}
-		t.spansFinished.Inc(s.integration)
+		tracer.spansFinished.Inc(s.integration)
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
@@ -659,6 +648,20 @@ func (s *span) finish(finishTime int64) {
 			s, s.Name, s.Resource, s.Meta, s.Metrics)
 	}
 	s.context.finish()
+
+	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
+	if hasTracer && tracer.config.canComputeStats() {
+		statSpan, shouldCalc := tracer.stats.newTracerStatSpan(s, tracer.obfuscator)
+		if shouldCalc {
+			// the agent supports computed stats
+			select {
+			case tracer.stats.In <- statSpan:
+				// ok
+			default:
+				log.Error("Stats channel full, disregarding span.")
+			}
+		}
+	}
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
