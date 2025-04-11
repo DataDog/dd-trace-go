@@ -125,11 +125,11 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.1.0-dev.0.20250410160512-1170e9371ea1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.1.0-dev.0.20250410160512-1170e9371ea1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.1.0-dev.0.20250410160512-1170e9371ea1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-rc.11 // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-rc.12 // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.1.0-dev.0.20250410160512-1170e9371ea1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.1.0-dev.0.20250410160512-1170e9371ea1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.1.0-dev.0.20250410160512-1170e9371ea1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-rc.11 // indirect
+	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-rc.12 // indirect
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.0.20250410160512-1170e9371ea1 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
 	github.com/DataDog/go-sqllexer v0.1.0 // indirect
