@@ -7,7 +7,7 @@ require (
 	github.com/99designs/gqlgen v0.17.62
 	github.com/DataDog/datadog-agent/pkg/proto v0.64.2
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-rc.11
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.11
 	github.com/DataDog/go-libddwaf/v3 v3.5.4
 	github.com/DataDog/orchestrion v1.3.1
 	github.com/IBM/sarama v1.44.0
