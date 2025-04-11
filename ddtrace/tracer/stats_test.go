@@ -183,3 +183,27 @@ func TestObfuscation(t *testing.T) {
 	assert.Equal(t, 2, tsp.obfVersion)
 	assert.Equal(t, "GET", actualStats[0].Stats[0].Stats[0].Resource)
 }
+
+func TestStatsByKind(t *testing.T) {
+	s1 := span{
+		Name:     "http.request",
+		Start:    time.Now().UnixNano(),
+		Duration: 1,
+		Metrics:  map[string]float64{keyMeasured: 0},
+	}
+	s2 := span{
+		Name:     "sql.query",
+		Start:    time.Now().UnixNano(),
+		Duration: 1,
+		Metrics:  map[string]float64{keyMeasured: 0},
+	}
+	s1.SetTag("span.kind", "client")
+	s2.SetTag("span.kind", "invalid")
+
+	c := newConcentrator(&config{transport: newDummyTransport(), env: "someEnv"}, 100, &statsd.NoOpClientDirect{})
+	_, ok := c.newTracerStatSpan(&s1, nil)
+	assert.True(t, ok)
+
+	_, ok = c.newTracerStatSpan(&s2, nil)
+	assert.False(t, ok)
+}
