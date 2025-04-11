@@ -1093,3 +1093,77 @@ func testConcurrentSpanSetTag(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestStatsAfterFinish(t *testing.T) {
+	t.Run("peerServiceDefaults-enabled", func(t *testing.T) {
+		tracer := newTracer(
+			WithPeerServiceDefaults(true),
+			WithStatsComputation(true),
+		)
+		defer tracer.Stop()
+		internal.SetGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.transport = transport
+		tracer.config.agent.Stats = true
+		tracer.config.agent.peerTags = []string{"peer.service"}
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag("span.kind", "client")
+		sp.SetTag("messaging.system", "kafka")
+		sp.SetTag("messaging.kafka.bootstrap.servers", "kafka-cluster")
+		sp.SetTag(keyMeasured, 1)
+		sp.Finish()
+
+		s, _ := sp.(*span)
+		assert.Equal(t, "kafka-cluster", s.Meta["peer.service"])
+
+		// peer.service has been added on the span.Finish() call. Ensure the StatSpan is also accessing this.
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		log.Info("%v", stats)
+		peerTags := stats[0].Stats[0].Stats[0].PeerTags
+		assert.Contains(t, peerTags, "peer.service:kafka-cluster")
+	})
+	t.Run("peerServiceDefaults-disabled", func(t *testing.T) {
+		tracer := newTracer(
+			WithPeerServiceDefaults(false),
+			WithStatsComputation(true),
+		)
+		defer tracer.Stop()
+		internal.SetGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.transport = transport
+		tracer.config.agent.Stats = true
+		tracer.config.agent.peerTags = []string{"peer.service"}
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag("span.kind", "client")
+		sp.SetTag("messaging.system", "kafka")
+		sp.SetTag("messaging.kafka.bootstrap.servers", "kafka-cluster")
+		sp.SetTag(keyMeasured, 1)
+		sp.Finish()
+
+		s, _ := sp.(*span)
+		assert.Equal(t, "", s.Meta["peer.service"])
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		log.Info("%v", stats)
+		peerTags := stats[0].Stats[0].Stats[0].PeerTags
+		assert.Empty(t, peerTags)
+	})
+}
