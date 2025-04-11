@@ -365,9 +365,11 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		StartRequestSpan(r, opts...)
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			StartRequestSpan(r, opts...)
+		}
+	})
 }
 
 func TestStartRequestSpanWithBaggage(t *testing.T) {

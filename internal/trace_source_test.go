@@ -13,6 +13,7 @@ import (
 )
 
 func TestParseTraceSourceProduct(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		hexStr string
 	}
@@ -70,6 +71,7 @@ func TestParseTraceSourceProduct(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := ParseTraceSource(tt.args.hexStr)
 			if !tt.wantErr(t, err, fmt.Sprintf("ParseTraceSourceProduct(%v)", tt.args.hexStr)) {
 				return
@@ -84,6 +86,7 @@ func TestParseTraceSourceProduct(t *testing.T) {
 }
 
 func TestTraceSource_Set(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		sources []TraceSource
 	}
@@ -143,6 +146,7 @@ func TestTraceSource_Set(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			s := TraceSource(0)
 
 			for _, source := range tt.args.sources {
@@ -156,6 +160,7 @@ func TestTraceSource_Set(t *testing.T) {
 }
 
 func TestVerifyTraceSourceEnabled(t *testing.T) {
+	t.Parallel()
 	type args struct {
 		hexStr string
 	}
@@ -253,6 +258,7 @@ func TestVerifyTraceSourceEnabled(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			for k, v := range allSources {
 				assert.Equalf(t, tt.wantSources[v], VerifyTraceSourceEnabled(tt.args.hexStr, v), "Source %s should be %v for mask %s",
 					k, tt.wantSources[v], tt.args.hexStr)
