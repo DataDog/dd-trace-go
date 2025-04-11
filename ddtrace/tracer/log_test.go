@@ -38,6 +38,8 @@ func TestStartupLog(t *testing.T) {
 	t.Run("configured", func(t *testing.T) {
 		assert := assert.New(t)
 		tp := new(log.RecordLogger)
+		c, err := newConfig()
+		assert.NoError(err)
 
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
 		tracer, _, _, stop, err := startTestTracer(t,
@@ -56,7 +58,7 @@ func TestStartupLog(t *testing.T) {
 			WithFeatureFlags("discovery"),
 		)
 		require.NoError(t, err)
-		defer globalconfig.SetAnalyticsRate(math.NaN())
+		defer c.globalConf.SetAnalyticsRate(math.NaN())
 		defer globalconfig.SetServiceName("")
 		defer stop()
 
@@ -69,6 +71,8 @@ func TestStartupLog(t *testing.T) {
 
 	t.Run("limit", func(t *testing.T) {
 		assert := assert.New(t)
+		c, err := newConfig()
+		assert.NoError(err)
 		tp := new(log.RecordLogger)
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.123")
 		t.Setenv("DD_TRACE_RATE_LIMIT", "1000.001")
@@ -87,7 +91,7 @@ func TestStartupLog(t *testing.T) {
 			WithDebugMode(true),
 		)
 		require.NoError(t, err)
-		defer globalconfig.SetAnalyticsRate(math.NaN())
+		defer c.globalConf.SetAnalyticsRate(math.NaN())
 		defer globalconfig.SetServiceName("")
 		defer stop()
 
