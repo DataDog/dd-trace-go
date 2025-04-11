@@ -7,6 +7,7 @@ package waf
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	waf "github.com/DataDog/go-libddwaf/v3"
@@ -98,11 +99,11 @@ func addTruncationTags(th trace.TagSetter, stats waf.Stats) {
 
 	wafMaxTruncationsMap := make(map[waf.TruncationReason]int, wafMaxTruncationsMapSize)
 	for reason, list := range stats.Truncations {
-		wafMaxTruncationsMap[reason] = max(0, len(list))
+		wafMaxTruncationsMap[reason] = slices.Max(list)
 	}
 
 	for reason, list := range stats.TruncationsRASP {
-		wafMaxTruncationsMap[reason] = max(wafMaxTruncationsMap[reason], len(list))
+		wafMaxTruncationsMap[reason] = max(wafMaxTruncationsMap[reason], slices.Max(list))
 	}
 
 	for reason, count := range wafMaxTruncationsMap {

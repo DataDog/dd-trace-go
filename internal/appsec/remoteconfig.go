@@ -12,13 +12,14 @@ import (
 	"maps"
 	"os"
 
+	internal "github.com/DataDog/appsec-internal-go/appsec"
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func genApplyStatus(ack bool, err error) rc.ApplyStatus {
@@ -218,11 +219,11 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.A
 			log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
 		} else if data.ASM.Enabled && !a.started {
 			log.Debug("appsec: Remote config: Starting AppSec")
-			telemetry := newAppsecTelemetry()
-			defer telemetry.emit()
-			if err = a.start(telemetry); err != nil {
+			if err = a.start(); err != nil {
 				log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
+				continue
 			}
+			registerAppsecStartTelemetry(config.ForcedOn, telemetry.OriginRemoteConfig)
 		} else if !data.ASM.Enabled && a.started {
 			log.Debug("appsec: Remote config: Stopping AppSec")
 			a.stop()

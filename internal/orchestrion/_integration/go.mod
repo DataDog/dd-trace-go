@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.44.0
 	github.com/99designs/gqlgen v0.17.62
 	github.com/DataDog/datadog-agent/pkg/proto v0.64.2
-	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.1.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
 	github.com/DataDog/go-libddwaf/v3 v3.5.4
 	github.com/DataDog/orchestrion v1.4.0-rc.3
@@ -135,6 +135,7 @@ require (
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.26.0 // indirect
 	github.com/DataDog/sketches-go v1.4.7 // indirect
 	github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.5.2 // indirect
+	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/agnivade/levenshtein v1.2.0 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
