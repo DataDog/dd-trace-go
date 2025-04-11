@@ -91,6 +91,7 @@ type span struct {
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
+	finishGuard     atomic.Uint32   `msg:"-"` // finishGuard value to detect if Span.Finish has been called to only finish the span once
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
@@ -528,6 +529,11 @@ func (s *span) serializeSpanEvents() {
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
+	// If Span.Finish has already been called, do nothing.
+	// In this way, we can ensure that Span.Finish is called at most once.
+	if !s.finishGuard.CompareAndSwap(0, 1) {
+		return
+	}
 	t := now()
 	if len(opts) > 0 {
 		cfg := ddtrace.FinishConfig{
