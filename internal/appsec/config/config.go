@@ -57,6 +57,9 @@ type StartConfig struct {
 	MetaStructAvailable bool
 
 	APISecOptions []internal.APISecOption
+
+	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
+	BlockingUnavailable bool
 }
 
 type EnablementMode int8
@@ -123,6 +126,12 @@ func WithAPISecOptions(opts ...internal.APISecOption) StartOption {
 	}
 }
 
+func WithBlockingUnavailable(unavailable bool) StartOption {
+	return func(c *StartConfig) {
+		c.BlockingUnavailable = unavailable
+	}
+}
+
 // Config is the AppSec configuration.
 type Config struct {
 	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used
@@ -143,6 +152,8 @@ type Config struct {
 	SupportedAddresses AddressSet
 	// MetaStructAvailable is true if meta struct is supported by the trace agent.
 	MetaStructAvailable bool
+	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
+	BlockingUnavailable bool
 }
 
 // AddressSet is a set of WAF addresses.
@@ -211,5 +222,6 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		RASP:                internal.RASPEnabled(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
+		BlockingUnavailable: c.BlockingUnavailable,
 	}, nil
 }
