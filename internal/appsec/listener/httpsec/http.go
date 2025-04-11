@@ -21,7 +21,7 @@ import (
 )
 
 type Feature struct {
-	APISec internal.APISecConfig
+	APISec appsec.APISecConfig
 }
 
 func (*Feature) String() string {

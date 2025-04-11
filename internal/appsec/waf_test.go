@@ -991,9 +991,6 @@ func TestAttackerFingerprinting(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "CustomRule" {
-				t.Skip("Custom rule is not working on v2")
-			}
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
