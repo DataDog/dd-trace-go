@@ -257,15 +257,15 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 	assert.NotEmpty(t, evt.Attributes["stacktrace"])
 	assert.Equal(t, map[string]any{
 		"message":          "test error",
-		"path":             []string{"withError"},
-		"locations":        []string{"1:3"},s
+		"path":             []interface{}{"withError"},
+		"locations":        []interface{}{"1:3"},
 		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "gqlerrors.FormattedError",
 		"extensions.str":   "1",
-		"extensions.int":   1,
+		"extensions.int":   float64(1),
 		"extensions.float": 1.1,
 		"extensions.bool":  true,
-		"extensions.slice": []string{"1", "2"},
+		"extensions.slice": []interface{}{"1", "2"},
 		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
 	}, evt.Attributes)
 
