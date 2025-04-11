@@ -22,7 +22,7 @@ func GetGlobalTracer() ddtrace.Tracer {
 	return TracerV2Adapter{Tracer: tr}
 }
 
-var NoopTracerV2 = TracerV2Adapter{Tracer: v2.NoopTracer{}}
+var NoopTracerV2 = TracerV2Adapter{Tracer: &v2.NoopTracer{}}
 
 var _ ddtrace.Span = (*NoopSpan)(nil)
 
