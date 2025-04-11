@@ -21,6 +21,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	tagGraphqlField         = "graphql.field"
+	tagGraphqlOperationName = "graphql.operation.name"
+	tagGraphqlOperationType = "graphql.operation.type"
+	tagGraphqlSource        = "graphql.source"
+	tagGraphqlVariables     = "graphql.variables"
+)
+
 func Test(t *testing.T) {
 	rootQuery := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
@@ -245,13 +253,13 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 
 	evt := events[0]
 	assert.Equal(t, "dd.graphql.query.error", evt.Name)
-	assert.NotEmpty(t, evt.Config.Time)
-	assert.NotEmpty(t, evt.Config.Attributes["stacktrace"])
+	assert.NotEmpty(t, evt.TimeUnixNano)
+	assert.NotEmpty(t, evt.Attributes["stacktrace"])
 	assert.Equal(t, map[string]any{
 		"message":          "test error",
 		"path":             []string{"withError"},
-		"locations":        []string{"1:3"},
-		"stacktrace":       evt.Config.Attributes["stacktrace"],
+		"locations":        []string{"1:3"},s
+		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "gqlerrors.FormattedError",
 		"extensions.str":   "1",
 		"extensions.int":   1,
@@ -259,7 +267,7 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 		"extensions.bool":  true,
 		"extensions.slice": []string{"1", "2"},
 		"extensions.unsupported_type_stringified": "[1,\"foo\"]",
-	}, evt.Config.Attributes)
+	}, evt.Attributes)
 
 	// the rest of the spans should not have span events
 	for _, s := range spans {
