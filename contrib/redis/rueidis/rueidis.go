@@ -100,10 +100,19 @@ func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, cont
 
 func (c *client) finishSpan(span *tracer.Span, err error) {
 	var opts []tracer.FinishOption
-	if err != nil && !rueidis.IsRedisNil(err) {
+	if c.cfg.errCheck(err) {
 		opts = append(opts, tracer.WithError(err))
 	}
 	span.Finish(opts...)
+}
+
+func (c *client) firstError(s []rueidis.RedisResult) error {
+	for _, result := range s {
+		if err := result.Error(); c.cfg.errCheck(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *client) B() rueidis.Builder {
@@ -114,14 +123,14 @@ func (c *client) Do(ctx context.Context, cmd rueidis.Completed) rueidis.RedisRes
 	span, ctx := c.startSpan(ctx, processCommand(&cmd))
 	resp := c.client.Do(ctx, cmd)
 	setClientCacheTags(span, resp)
-	span.Finish(tracer.WithError(resp.Error()))
+	c.finishSpan(span, resp.Error())
 	return resp
 }
 
 func (c *client) DoMulti(ctx context.Context, multi ...rueidis.Completed) []rueidis.RedisResult {
 	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
 	resp := c.client.DoMulti(ctx, multi...)
-	c.finishSpan(span, firstError(resp))
+	c.finishSpan(span, c.firstError(resp))
 	return resp
 }
 
@@ -147,7 +156,7 @@ func (c *client) DoCache(ctx context.Context, cmd rueidis.Cacheable, ttl time.Du
 func (c *client) DoMultiCache(ctx context.Context, multi ...rueidis.CacheableTTL) []rueidis.RedisResult {
 	span, ctx := c.startSpan(ctx, processCommandMultiCache(multi))
 	resp := c.client.DoMultiCache(ctx, multi...)
-	c.finishSpan(span, firstError(resp))
+	c.finishSpan(span, c.firstError(resp))
 	return resp
 }
 
@@ -196,6 +205,10 @@ func (c *client) Nodes() map[string]rueidis.Client {
 		}
 	}
 	return nodes
+}
+
+func (c *client) Mode() rueidis.ClientMode {
+	return c.client.Mode()
 }
 
 type dedicatedClient struct {
@@ -259,15 +272,6 @@ func multiCommand(cmds []command) command {
 		statement: statement.String(),
 		raw:       raw.String(),
 	}
-}
-
-func firstError(s []rueidis.RedisResult) error {
-	for _, result := range s {
-		if err := result.Error(); err != nil && !rueidis.IsRedisNil(err) {
-			return err
-		}
-	}
-	return nil
 }
 
 func setClientCacheTags(s *tracer.Span, result rueidis.RedisResult) {

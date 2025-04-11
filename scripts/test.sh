@@ -110,7 +110,7 @@ if [[ "$contrib" != "" ]]; then
 
   find . -mindepth 2 -type f -name go.mod | while read -r go_mod_path; do
     dir=$(dirname "$go_mod_path")
-	[ "$dir" = "./tools/v2check/_stage" ] && continue
+	[ "$dir" = "./tools/v2fix/_stage" ] && continue
 	[ "$dir" = "./scripts/autoreleasetagger/testdata/root" ] && continue
 	[ "$dir" = "./scripts/autoreleasetagger/testdata/root/moduleA" ] && continue
 	[ "$dir" = "./scripts/autoreleasetagger/testdata/root/moduleB" ] && continue

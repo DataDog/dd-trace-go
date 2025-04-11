@@ -5,7 +5,7 @@ go 1.23.0
 godebug x509negativeserial=1
 
 require (
-	github.com/DataDog/appsec-internal-go v1.9.0
+	github.com/DataDog/appsec-internal-go v1.11.2
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/proto v0.64.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.64.0-rc.1
@@ -15,6 +15,7 @@ require (
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
+	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
@@ -86,7 +87,7 @@ require (
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250212204824-5a70512c5d8b // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

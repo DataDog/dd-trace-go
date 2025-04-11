@@ -7,8 +7,4 @@
 
 package appsec
 
-func init() {
-	// Go doesn't provide any way to check if cgo is enabled, so we compute it
-	// ourselves with the cgo build tag.
-	cgoEnabled = true
-}
+const cgoEnabled = true

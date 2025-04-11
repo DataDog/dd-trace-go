@@ -40,13 +40,12 @@ jobs:
       - name: Setup go
         uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
-          go-version: stable
+          go-version: ${{ inputs.go-version }}
       - name: Copyright
         run: |
           go run ./scripts/checkcopyright.go
 
   generate:
-    name: Verify generated files are up-to-date
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -67,7 +66,6 @@ jobs:
         run: git diff --exit-code
 
   check-modules:
-    name: Verify modules are go mod tidy'ed and have correct replaces
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

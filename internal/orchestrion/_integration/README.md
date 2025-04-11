@@ -31,25 +31,6 @@ $ export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
 
 </details>
 
-#### Python
-
-In order to validate side-effects injected by compile-time instrumentation, this test suite uses the
-[`dd-apm-test-agent`][5] package. If the `ddapm-test-agent` binary can be resolved from `$PATH`, it
-will be used as-is (resulting in faster overall execution times); otherwise, a Python virtual
-environment will be created at the start of each test.
-
-<details>
-<summary>
-🐍 Installing <tt>dd-apm-test-agent</tt> locally
-</summary>
-
-You can install the `ddapm-test-agent` program using the following command:
-```console
-$ pip install -r internal/agent/requirements-dev.txt
-```
-
-</details>
-
 ### Running the test suite
 
 You can locally run this test suite using the following commands:
