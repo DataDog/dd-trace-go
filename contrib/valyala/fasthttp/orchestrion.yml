@@ -1,0 +1,24 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp
+  description: |-
+    Package fasthttp provides a fast HTTP implementation for Go, with a focus on performance and low memory usage.
+
+aspects:
+  - id: New
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/valyala/fasthttp.Server'
+    advice:
+      - prepend-statements:
+          imports:
+            fasthttptrace: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
+          template: |-
+            {{- $srv := .Function.Receiver -}}
+            {{ $srv }}.Handler = fasthttptrace.WrapHandler({{ $srv }}.Handler)
