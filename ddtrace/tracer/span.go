@@ -531,9 +531,9 @@ func (s *span) serializeSpanEvents() {
 func (s *span) Finish(opts ...ddtrace.FinishOption) {
 	// If Span.Finish has already been called, do nothing.
 	// In this way, we can ensure that Span.Finish is called at most once.
-	if !s.finishGuard.CompareAndSwap(0, 1) {
-		return
-	}
+	// if !s.finishGuard.CompareAndSwap(0, 1) {
+	// 	return
+	// }
 	t := now()
 	if len(opts) > 0 {
 		cfg := ddtrace.FinishConfig{
