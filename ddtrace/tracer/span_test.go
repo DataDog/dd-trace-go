@@ -9,13 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
@@ -107,11 +108,27 @@ func TestSpanFinishTwice(t *testing.T) {
 	span.Finish()
 	tracer.awaitPayload(t, 1)
 
+	// check that the span does not have any span links serialized
+	// spans don't have span links by default and they are serialized in the meta map
+	// as part of the Finish call
+	assert.Zero(span.Meta["_dd.span_links"])
+
+	// manipulate the span
+	span.AddSpanLink(ddtrace.SpanLink{
+		TraceID: span.TraceID,
+		SpanID:  span.SpanID,
+		Attributes: map[string]string{
+			"manual.keep": "true",
+		},
+	})
+
 	previousDuration := span.Duration
 	time.Sleep(wait)
 	span.Finish()
 	assert.Equal(previousDuration, span.Duration)
-	tracer.awaitPayload(t, 1)
+	assert.Zero(span.Meta["_dd.span_links"])
+
+	tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
 }
 
 func TestShouldDrop(t *testing.T) {
