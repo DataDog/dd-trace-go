@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"math"
 	"sync"
 	"sync/atomic"
 
@@ -149,4 +150,16 @@ func ToFloat64(value any) (f float64, ok bool) {
 	default:
 		return 0, false
 	}
+}
+
+func round(f float64) int {
+	return int(f + math.Copysign(0.5, f))
+}
+
+// RoundFloat64 enables rounding for float64. This can allow us to more safely
+// compare two float64s and account for precision errors.
+// Do not use RoundFloat64 for large floats.
+func RoundFloat64(f float64, precision int) float64 {
+	base := math.Pow(10.0, float64(precision))
+	return float64(round(f*base)) / base
 }
