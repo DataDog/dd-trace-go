@@ -252,6 +252,14 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 	}
 }
 
+// WithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func RTWithStatusCheck(fn func(statusCode int) bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.isStatusError = fn
+	}
+}
+
 // RTWithErrorCheck specifies a function fn which determines whether the passed
 // error should be marked as an error. The fn is called whenever an http operation
 // finishes with an error
