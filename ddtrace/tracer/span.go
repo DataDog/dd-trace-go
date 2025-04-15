@@ -612,6 +612,21 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
+
+	s.RLock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		s.RUnlock()
+		return
+	}
+	s.RUnlock()
+
+	s.Lock()
+	s.finished = true
+	s.Unlock()
+
 	t := now()
 	if len(opts) > 0 {
 		cfg := FinishConfig{
@@ -688,13 +703,6 @@ func (s *Span) SetOperationName(operationName string) {
 func (s *Span) finish(finishTime int64) {
 	s.Lock()
 	defer s.Unlock()
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		// already finished
-		return
-	}
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()

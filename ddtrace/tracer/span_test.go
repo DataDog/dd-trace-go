@@ -174,8 +174,8 @@ func TestSpanFinishTwice(t *testing.T) {
 
 	// the finish must be idempotent
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-	time.Sleep(wait)
 	span.Finish()
+	time.Sleep(wait)
 	tracer.awaitPayload(t, 1)
 
 	// check that the span does not have any span links serialized
@@ -193,7 +193,6 @@ func TestSpanFinishTwice(t *testing.T) {
 	})
 
 	previousDuration := span.duration
-	time.Sleep(wait)
 	span.Finish()
 
 	assert.Equal(previousDuration, span.duration)
