@@ -553,6 +553,18 @@ func (s *Span) setMetric(key string, v float64) {
 
 // AddLink appends the given link to the span's span links.
 func (s *Span) AddLink(link SpanLink) {
+	if s == nil {
+		return
+	}
+	s.Lock()
+	defer s.Unlock()
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		// already finished
+		return
+	}
 	s.spanLinks = append(s.spanLinks, link)
 }
 
@@ -857,6 +869,8 @@ func (s *Span) Format(f fmt.State, c rune) {
 
 // AddEvent attaches a new event to the current span.
 func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
+	s.Lock()
+	defer s.Unlock()
 	if s.finished {
 		return
 	}
