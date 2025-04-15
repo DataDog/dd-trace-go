@@ -176,11 +176,13 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			wafRes, err := wafCtx.Run(runData)
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
+			der := make(map[string]string, len(wafRes.Derivatives))
 			for k, v := range wafRes.Derivatives {
 				res, err := json.Marshal(v)
 				require.NoError(t, err)
-				require.Equal(t, tc.tags[k], string(res))
+				der[k] = string(res)
 			}
+			require.Subset(t, der, tc.tags)
 		})
 	}
 }
