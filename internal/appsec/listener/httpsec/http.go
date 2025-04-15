@@ -11,17 +11,20 @@ import (
 	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/DataDog/appsec-internal-go/appsec"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 type Feature struct {
-	APISec appsec.APISecConfig
+	APISec                        appsec.APISecConfig
+	ForceKeepWhenGeneratingSchema bool
 }
 
 func (*Feature) String() string {
@@ -44,7 +47,8 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.
 	}
 
 	feature := &Feature{
-		APISec: config.APISec,
+		APISec:                        config.APISec,
+		ForceKeepWhenGeneratingSchema: config.TracingAsTransport,
 	}
 
 	dyngo.On(rootOp, feature.OnRequest)
@@ -85,6 +89,10 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 
 	if feature.shouldExtractShema(op, resp.StatusCode) {
 		builder = builder.ExtractSchema()
+
+		if feature.ForceKeepWhenGeneratingSchema {
+			op.SetTag(ext.ManualKeep, samplernames.AppSec)
+		}
 	}
 
 	op.Run(op, builder.Build())

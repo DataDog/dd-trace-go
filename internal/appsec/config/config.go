@@ -13,6 +13,7 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
+	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -154,6 +155,8 @@ type Config struct {
 	MetaStructAvailable bool
 	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
 	BlockingUnavailable bool
+	// TracingAsTransport is true if APM is disabled and manually force keeping a trace is the only way for it to be sent.
+	TracingAsTransport bool
 }
 
 // AddressSet is a set of WAF addresses.
@@ -223,5 +226,6 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
 		BlockingUnavailable: c.BlockingUnavailable,
+		TracingAsTransport:  !sharedinternal.BoolEnv("DD_APM_TRACING_ENABLED", true),
 	}, nil
 }

@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+'
-      - 'contrib/net/http/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/k8s.io/cmd/request-mirror/v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -37,8 +37,8 @@ jobs:
         include:
           - dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
             image: "ghcr.io/datadog/dd-trace-go/service-extensions-callout"
-          - dockerfile: ./contrib/net/http/cmd/traffic-mirror/Dockerfile
-            image: "ghcr.io/datadog/dd-trace-go/traffic-mirror"
+          - dockerfile: ./contrib/k8s.io/cmd/request-mirror/Dockerfile
+            image: "ghcr.io/datadog/dd-trace-go/request-mirror"
 
     steps:
       - name: Prepare
@@ -108,7 +108,7 @@ jobs:
       matrix:
         image:
           - ghcr.io/datadog/dd-trace-go/service-extensions-callout
-          - ghcr.io/datadog/dd-trace-go/traffic-mirror
+          - ghcr.io/datadog/dd-trace-go/request-mirror
 
     steps:
       - name: Download digests
