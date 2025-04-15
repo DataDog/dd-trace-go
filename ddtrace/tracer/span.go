@@ -139,7 +139,6 @@ type Span struct {
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
-	finishGuard     atomic.Uint32   `msg:"-"` // finishGuard value to detect if Span.Finish has been called to only finish the span once
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
@@ -601,11 +600,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
-	// If Span.Finish has already been called, do nothing.
-	// In this way, we can ensure that Span.Finish is called at most once.
-	if !s.finishGuard.CompareAndSwap(0, 1) {
-		return
-	}
 	t := now()
 	if len(opts) > 0 {
 		cfg := FinishConfig{
@@ -658,9 +652,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 	}
 
-	s.serializeSpanLinksInMeta()
-	s.serializeSpanEvents()
-
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
 }
@@ -692,6 +683,10 @@ func (s *Span) finish(finishTime int64) {
 		// already finished
 		return
 	}
+
+	s.serializeSpanLinksInMeta()
+	s.serializeSpanEvents()
+
 	if s.duration == 0 {
 		s.duration = finishTime - s.start
 	}
