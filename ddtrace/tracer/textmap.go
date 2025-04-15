@@ -1372,52 +1372,31 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		return nil
 	}
 
-	// Copy the baggage map under the read lock to avoid data races.
-	ctx.mu.RLock()
-	baggageCopy := make(map[string]string, len(ctx.baggage))
-	for k, v := range ctx.baggage {
-		baggageCopy[k] = v
-	}
-	ctx.mu.RUnlock()
-
-	// If the baggage is empty, do nothing.
-	if len(baggageCopy) == 0 {
-		return nil
-	}
-
-	baggageItems := make([]string, 0, len(baggageCopy))
-	totalSize := 0
-	count := 0
-
-	for key, value := range baggageCopy {
-		if count >= baggageMaxItems {
-			log.Warn("Baggage item limit exceeded. Only the first %d items will be propagated.", baggageMaxItems)
-			break
+	ctr := 0
+	var baggageBuilder strings.Builder
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		if ctr >= baggageMaxItems {
+			return false
 		}
 
-		encodedKey := encodeKey(key)
-		encodedValue := encodeValue(value)
-		item := fmt.Sprintf("%s=%s", encodedKey, encodedValue)
-
-		itemSize := len(item)
-		if count > 0 {
-			itemSize++ // account for the comma separator
+		var itemBuilder strings.Builder
+		if ctr > 0 {
+			itemBuilder.WriteRune(',')
 		}
 
-		if totalSize+itemSize > baggageMaxBytes {
-			log.Warn("Baggage size limit exceeded. Only the first %d bytes will be propagated.", baggageMaxBytes)
-			break
+		itemBuilder.WriteString(encodeKey(k))
+		itemBuilder.WriteRune('=')
+		itemBuilder.WriteString(encodeValue(v))
+		if itemBuilder.Len()+baggageBuilder.Len() > baggageMaxBytes {
+			return false
 		}
-
-		baggageItems = append(baggageItems, item)
-		totalSize += itemSize
-		count++
+		baggageBuilder.WriteString(itemBuilder.String())
+		ctr++
+		return true
+	})
+	if baggageBuilder.Len() > 0 {
+		writer.Set("baggage", baggageBuilder.String())
 	}
-
-	if len(baggageItems) > 0 {
-		writer.Set("baggage", strings.Join(baggageItems, ","))
-	}
-
 	return nil
 }
 
@@ -1435,41 +1414,38 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		if strings.ToLower(k) == "baggage" {
+			// Expect only one baggage header, return early
 			baggageHeader = v
+			return nil
 		}
-		return nil
+		return nil // Or do we want to return an error here, because no baggage was found?
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	ctx.baggage = make(map[string]string)
-
 	if baggageHeader == "" {
 		return &ctx, nil
 	}
 
-	pairs := strings.Split(baggageHeader, ",")
-	for _, pair := range pairs {
-		pair = strings.TrimSpace(pair)
-		if !strings.Contains(pair, "=") {
-			// If a pair doesn't contain '=', treat it as invalid.
-			return nil, fmt.Errorf("invalid baggage item: %s", pair)
+	keyVals := strings.Split(baggageHeader, ",")
+	for _, kv := range keyVals {
+		// Cut will split on the first instance of "=" i.e, `a=b=c` beomces `a: b=c`.
+		key, val, ok := strings.Cut(kv, "=")
+		if !ok {
+			log.Warn("invalid baggage item: %s, dropping", kv)
 		}
-
-		keyValue := strings.SplitN(pair, "=", 2)
-		rawKey := strings.TrimSpace(keyValue[0])
-		rawValue := strings.TrimSpace(keyValue[1])
-
-		decKey, errKey := url.QueryUnescape(rawKey)
-		decVal, errVal := url.QueryUnescape(rawValue)
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if key == "" || val == "" {
+			log.Warn("invalid baggage item: '%s', dropping", kv)
+		}
+		key, errKey := url.QueryUnescape(key)
+		val, errVal := url.QueryUnescape(val)
 		if errKey != nil || errVal != nil {
-			return nil, fmt.Errorf("invalid baggage item: %s", pair)
+			log.Warn("failed to decode baggage item: %s, dropping", kv)
 		}
-		ctx.baggage[decKey] = decVal
-	}
-	if len(ctx.baggage) > 0 {
-		atomic.StoreUint32(&ctx.hasBaggage, 1)
+		ctx.setBaggageItem(key, val)
 	}
 	return &ctx, nil
 }

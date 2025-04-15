@@ -2659,12 +2659,12 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 	defer tracer.Stop()
 
 	root := tracer.StartSpan("web.request")
-	ctx := root.Context()
-	ctx.baggage = map[string]string{"userId": "Amélie", "serverNode": "DF 28"}
+	root.SetBaggageItem("userId", "Amélie")
+	root.SetBaggageItem("serverNode", "DF 28")
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
-	err = tracer.Inject(ctx, carrier)
+	err = tracer.Inject(root.Context(), carrier)
 	assert.Nil(err)
 	actualBaggage := headers.Get("baggage")
 	// Instead of checking equality of the whole string, assert that both key/value pairs are present.
@@ -2686,7 +2686,7 @@ func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
 
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
-	ctx.baggage = map[string]string{",;\\()/:<=>?@[]{}": ",;\\"}
+	root.SetBaggageItem(",;\\()/:<=>?@[]{}", ",;\\")
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
@@ -2730,12 +2730,11 @@ func TestInjectBaggageMaxItems(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
 
-	baggageItems := make(map[string]string)
 	for i := 0; i < baggageMaxItems+2; i++ {
-		baggageItems[fmt.Sprintf("key%d", i)] = fmt.Sprintf("val%d", i)
+		iString := strconv.Itoa(i)
+		ctx.setBaggageItem("key"+iString, "val"+iString)
 	}
 
-	ctx.baggage = baggageItems
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
