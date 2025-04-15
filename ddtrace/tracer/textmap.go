@@ -1414,7 +1414,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (ddtrace.SpanCont
 	var ctx spanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		if strings.ToLower(k) == "baggage" {
-			// there should just be one baggage header, right? So we can return early?
+			// Expect only one baggage header, return early
 			baggageHeader = v
 			return nil
 		}
@@ -1430,7 +1430,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (ddtrace.SpanCont
 
 	keyVals := strings.Split(baggageHeader, ",")
 	for _, kv := range keyVals {
-		// How do we handle `a=b=c`? Cut separates at the first instance i.e, `a: b=c`. Returns false if "=" not found in kv.
+		// Cut will split on the first instance of "=" i.e, `a=b=c` beomces `a: b=c`.
 		key, val, ok := strings.Cut(kv, "=")
 		if !ok {
 			log.Warn("invalid baggage item: %s, dropping", kv)
