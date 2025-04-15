@@ -45,12 +45,11 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) T
 	resourceName := name
 
 	// Suite tags should include module and session tags so the backend can calculate the module and session fingerprint from the suite.
-	suiteTags := slices.Clone(module.tags)
+	suiteTags := append(slices.Clone(module.tags), tracer.Tag(constants.TestSuite, name))
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTestSuite),
 		tracer.StartTime(startTime),
-		tracer.Tag(constants.TestSuite, name),
 	}), suiteTags...)
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
