@@ -13,6 +13,7 @@ import (
 	"go/token"
 	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,7 +51,7 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 	resourceName := fmt.Sprintf("%s.%s", suite.name, name)
 
 	// Test tags should include suite, module, and session tags so the backend can calculate the suite, module, and session fingerprint from the test.
-	testTags := append(suite.tags, tracer.Tag(constants.TestName, name))
+	testTags := append(slices.Clone(suite.tags), tracer.Tag(constants.TestName, name))
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTest),
