@@ -16,7 +16,6 @@ import (
 	"github.com/puzpuzpuz/xsync/v3"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
@@ -77,7 +76,6 @@ type metricHandle interface {
 
 type metrics struct {
 	store         *xsync.MapOf[metricKey, metricHandle]
-	pool          *internal.SyncPool[*metricPoint]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 }
 

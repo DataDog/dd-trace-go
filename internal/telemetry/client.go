@@ -57,7 +57,6 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		},
 		metrics: metrics{
 			store:         xsync.NewMapOf[metricKey, metricHandle](xsync.WithPresize(knownmetrics.SizeWithFilter(func(decl knownmetrics.Declaration) bool { return decl.Type != transport.DistMetric }))),
-			pool:          internal.NewSyncPool(func() *metricPoint { return &metricPoint{} }),
 			skipAllowlist: config.Debug,
 		},
 		distributions: distributions{
