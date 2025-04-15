@@ -54,7 +54,6 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		},
 		metrics: metrics{
 			skipAllowlist: config.Debug,
-			pool:          internal.NewSyncPool(func() *metricPoint { return &metricPoint{} }),
 		},
 		distributions: distributions{
 			skipAllowlist: config.Debug,
