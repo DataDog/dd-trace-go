@@ -75,7 +75,6 @@ type metricHandle interface {
 
 type metrics struct {
 	store         internal.SyncMap[metricKey, metricHandle]
-	pool          *internal.SyncPool[*metricPoint]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 }
 
@@ -89,11 +88,11 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	)
 	switch kind {
 	case transport.CountMetric:
-		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key, pool: m.pool}})
+		handle, loaded = m.store.LoadOrStore(key, &count{metric: metric{key: key}})
 	case transport.GaugeMetric:
-		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key, pool: m.pool}})
+		handle, loaded = m.store.LoadOrStore(key, &gauge{metric: metric{key: key}})
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrStore(key, &rate{count: count{metric: metric{key: key, pool: m.pool}}})
+		handle, loaded = m.store.LoadOrStore(key, &rate{count: count{metric: metric{key: key}}})
 		if !loaded {
 			// Initialize the interval start for rate metrics
 			r := handle.(*rate)
@@ -137,9 +136,8 @@ type metricPoint struct {
 
 // metric is a meta t
 type metric struct {
-	key  metricKey
-	ptr  atomic.Pointer[metricPoint]
-	pool *internal.SyncPool[*metricPoint]
+	key metricKey
+	ptr atomic.Pointer[metricPoint]
 }
 
 func (m *metric) Get() float64 {
@@ -155,7 +153,6 @@ func (m *metric) Payload() transport.MetricData {
 	if point == nil {
 		return transport.MetricData{}
 	}
-	defer m.pool.Put(point)
 	return m.payload(point)
 }
 
@@ -182,7 +179,7 @@ type count struct {
 }
 
 func (m *count) Submit(newValue float64) {
-	newPoint := m.pool.Get()
+	newPoint := new(metricPoint)
 	newPoint.time = time.Now()
 	for {
 		oldPoint := m.ptr.Load()
@@ -192,9 +189,6 @@ func (m *count) Submit(newValue float64) {
 		}
 		newPoint.value = oldValue + newValue
 		if m.ptr.CompareAndSwap(oldPoint, newPoint) {
-			if oldPoint != nil {
-				m.pool.Put(oldPoint)
-			}
 			return
 		}
 	}
@@ -206,15 +200,12 @@ type gauge struct {
 }
 
 func (g *gauge) Submit(value float64) {
-	newPoint := g.pool.Get()
+	newPoint := new(metricPoint)
 	newPoint.time = time.Now()
 	newPoint.value = value
 	for {
 		oldPoint := g.ptr.Load()
 		if g.ptr.CompareAndSwap(oldPoint, newPoint) {
-			if oldPoint != nil {
-				g.pool.Put(oldPoint)
-			}
 			return
 		}
 	}
@@ -257,7 +248,6 @@ func (r *rate) Payload() transport.MetricData {
 	if point == nil {
 		return transport.MetricData{}
 	}
-	defer r.pool.Put(point)
 
 	point.value /= intervalSeconds
 	payload := r.metric.payload(point)
