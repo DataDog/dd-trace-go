@@ -71,6 +71,6 @@ use (
 	./scripts/apiextractor
 	./scripts/autoreleasetagger
 	./scripts/fixmodules
-	./tools/v2check
-	./tools/v2check/_stage
+	./tools/v2fix
+	./tools/v2fix/_stage
 )

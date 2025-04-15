@@ -47,6 +47,7 @@ func TestMyTest02(gt *testing.T) {
 func Test_Foo(gt *testing.T) {
 	assertTest(gt)
 	t := (*T)(gt)
+
 	var tests = []struct {
 		index byte
 		name  string
@@ -76,6 +77,7 @@ func Test_Foo(gt *testing.T) {
 func TestSkip(gt *testing.T) {
 	assertTest(gt)
 
+	// To instrument skip tests we just need to cast
 	t := (*T)(gt)
 
 	// because we use the instrumented Skip
@@ -95,6 +97,7 @@ func TestRetryWithPanic(t *testing.T) {
 			fmt.Println("CleanUp from the retry")
 		}
 	})
+
 	testRetryWithPanicRunNumber++
 	if testRetryWithPanicRunNumber < 4 {
 		panic("Test Panic")
@@ -111,6 +114,7 @@ func TestRetryWithFail(t *testing.T) {
 			fmt.Println("CleanUp from the retry")
 		}
 	})
+
 	testRetryWithFailRunNumber++
 	if testRetryWithFailRunNumber < 4 {
 		t.Fatal("Failed due the wrong execution number")
