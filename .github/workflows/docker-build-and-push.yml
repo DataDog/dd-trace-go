@@ -37,7 +37,7 @@ jobs:
         include:
           - dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
             image: "ghcr.io/datadog/dd-trace-go/service-extensions-callout"
-          - dockerfile: ./contrib/net/http/cmd/traffic-mirror/Dockerfile
+          - dockerfile: ./instrumentation/httptrace/cmd/traffic-mirror/Dockerfile
             image: "ghcr.io/datadog/dd-trace-go/traffic-mirror"
 
     steps:

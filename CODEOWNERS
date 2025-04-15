@@ -26,7 +26,7 @@ go.work.sum
 /contrib/**/*appsec*.go         @DataDog/asm-go @DataDog/apm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go @DataDog/apm-go
 /contrib/envoyproxy             @DataDog/asm-go @DataDog/apm-go
-/contrib/net/http/cmd           @DataDog/asm-go @DataDog/apm-go
+/contrib/cmd/traffic-mirror     @DataDog/asm-go @DataDog/apm-go
 
 # datastreams
 /datastreams                    @Datadog/data-streams-monitoring @DataDog/apm-go
