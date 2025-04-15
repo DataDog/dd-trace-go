@@ -452,7 +452,8 @@ func (p *propagator) injectTextMap(spanCtx ddtrace.SpanContext, writer TextMapWr
 		writer.Set(p.cfg.BaggagePrefix+k, v)
 		encodedKey := encodeKey(k)
 		encodedValue := encodeValue(v)
-		baggageItems = append(baggageItems, fmt.Sprintf("%s=%s", encodedKey, encodedValue))
+		baggageItem := encodedKey + "=" + encodedValue
+		baggageItems = append(baggageItems, baggageItem)
 		return true
 	})
 
