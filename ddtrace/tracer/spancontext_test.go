@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -96,15 +97,31 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 	assert.Nil(t, err)
 	defer stop()
 
-	root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
-	// My theory is that contrib/aws/internal/span_pointers/span_pointers.go
-	// adds a span link which is causes `serializeSpanLinksInMeta` to write to
-	// `s.Meta` without holding the lock. This crashes when the span flushing
-	// code tries to read `s.Meta` without holding the lock.
-	root.AddLink(SpanLink{TraceID: 1, SpanID: 2})
-	for i := 0; i < 1000; i++ {
-		root.Finish()
-	}
+	t.Run("with link", func(t *testing.T) {
+		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
+		// My theory is that contrib/aws/internal/span_pointers/span_pointers.go
+		// adds a span link which is causes `serializeSpanLinksInMeta` to write to
+		// `s.Meta` without holding the lock. This crashes when the span flushing
+		// code tries to read `s.Meta` without holding the lock.
+		root.AddLink(SpanLink{TraceID: 1, SpanID: 2})
+		for i := 0; i < 1000; i++ {
+			root.Finish()
+		}
+	})
+
+	t.Run("with NoDebugStack", func(t *testing.T) {
+		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
+		for i := 0; i < 1000; i++ {
+			root.Finish(NoDebugStack())
+		}
+	})
+
+	t.Run("with error", func(t *testing.T) {
+		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
+		for i := 0; i < 1000; i++ {
+			root.Finish(WithError(errors.New("test error")))
+		}
+	})
 }
 
 func TestAsyncSpanRace(t *testing.T) {
