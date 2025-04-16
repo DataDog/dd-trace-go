@@ -277,10 +277,10 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 			},
 			wantServiceName: "global-service",
@@ -299,10 +299,10 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "GET 404", span.Tag(ext.ValkeyRawCommand))
-				assert.Equal(t, false, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 			},
 			wantServiceName: "global-service",
