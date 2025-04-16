@@ -669,7 +669,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		if context.reparentID != "" {
 			span.setMeta(keyReparentID, context.reparentID)
 		}
-
+		if context.errors == nil {
+			context.errors = &atomic.Int32{}
+		}
 	}
 	span.context = newSpanContext(span, context)
 	span.setMeta("language", "go")
