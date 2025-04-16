@@ -612,6 +612,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
+
 	t := now()
 	if len(opts) > 0 {
 		cfg := FinishConfig{
@@ -625,6 +626,10 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 		if cfg.NoDebugStack {
 			s.Lock()
+			if s.finished {
+				s.Unlock()
+				return
+			}
 			delete(s.meta, ext.ErrorStack)
 			s.Unlock()
 		}
