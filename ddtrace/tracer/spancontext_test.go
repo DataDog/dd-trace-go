@@ -118,8 +118,9 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 
 	t.Run("with error", func(t *testing.T) {
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
+		err := errors.New("test error")
 		for i := 0; i < 1000; i++ {
-			root.Finish(WithError(errors.New("test error")))
+			root.Finish(WithError(err))
 		}
 	})
 }
