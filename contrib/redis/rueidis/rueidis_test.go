@@ -270,10 +270,10 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
 				assert.Nil(t, span.Tag(ext.RedisRawCommand))
-				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
-				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 			},
 			wantServiceName: "global-service",
@@ -292,10 +292,10 @@ func TestNewClient(t *testing.T) {
 				span := spans[0]
 				assert.Equal(t, "GET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "GET 404", span.Tag(ext.RedisRawCommand))
-				assert.Equal(t, false, span.Tag(ext.RedisClientCacheHit))
-				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), int64(0))
-				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), int64(0))
+				assert.Equal(t, "false", span.Tag(ext.RedisClientCacheHit))
+				assert.Less(t, span.Tag(ext.RedisClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.RedisClientCachePTTL), float64(0))
 				assert.Nil(t, span.Tag(ext.Error))
 			},
 			wantServiceName: "global-service",
