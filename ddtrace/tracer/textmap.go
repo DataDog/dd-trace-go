@@ -1418,7 +1418,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 			baggageHeader = v
 			return nil
 		}
-		return nil // Or do we want to return an error here, because no baggage was found?
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -1430,7 +1430,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 
 	keyVals := strings.Split(baggageHeader, ",")
 	for _, kv := range keyVals {
-		// Cut will split on the first instance of "=" i.e, `a=b=c` beomces `a: b=c`.
+		// Split on the first instance of "=" i.e, `a=b=c` becomes `a: b=c`.
 		key, val, ok := strings.Cut(kv, "=")
 		if !ok {
 			log.Warn("invalid baggage item: %s, dropping", kv)
