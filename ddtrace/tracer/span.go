@@ -612,6 +612,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
+
 	t := now()
 	if len(opts) > 0 {
 		cfg := FinishConfig{
@@ -624,6 +625,12 @@ func (s *Span) Finish(opts ...FinishOption) {
 			t = cfg.FinishTime.UnixNano()
 		}
 		if cfg.NoDebugStack {
+			s.RLock()
+			if s.finished {
+				s.RUnlock()
+				return
+			}
+			s.RUnlock()
 			s.Lock()
 			delete(s.meta, ext.ErrorStack)
 			s.Unlock()
