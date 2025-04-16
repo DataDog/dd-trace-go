@@ -9,28 +9,15 @@ package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 import (
 	"net/http"
 
-	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	v2 "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 
 	"github.com/gorilla/mux"
 )
 
-const componentName = "gorilla/mux"
-
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gorilla/mux")
-}
-
 // Router registers routes to be matched and dispatches a handler.
 type Router struct {
 	*mux.Router
-	config *routerConfig
+	wrappedRouter *v2.Router
 }
 
 // StrictSlash defines the trailing slash behavior for new routes. The initial
@@ -91,58 +78,17 @@ func NewRouter(opts ...RouterOption) *Router {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if r.config.ignoreRequest(req) {
-		r.Router.ServeHTTP(w, req)
-		return
+	if r.wrappedRouter == nil {
+		// If this field is nil, it means that the router has not been created
+		// with WrapRouter. We wrap the assigned router on the fly with no options.
+		r.wrappedRouter = v2.WrapRouter(r.Router)
 	}
-	var (
-		match mux.RouteMatch
-		route string
-	)
-	spanopts := options.Copy(r.config.spanOpts...)
-	// get the resource associated to this request
-	if r.Match(req, &match) && match.Route != nil {
-		if h, err := match.Route.GetHostTemplate(); err == nil {
-			spanopts = append(spanopts, tracer.Tag("mux.host", h))
-		}
-		route, _ = match.Route.GetPathTemplate()
-	}
-	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
-	resource := r.config.resourceNamer(r, req)
-	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
-		Service:       r.config.serviceName,
-		Resource:      resource,
-		FinishOpts:    r.config.finishOpts,
-		SpanOpts:      spanopts,
-		QueryParams:   r.config.queryParams,
-		RouteParams:   match.Vars,
-		Route:         route,
-		IsStatusError: r.config.isStatusError,
-	})
+	r.wrappedRouter.ServeHTTP(w, req)
 }
 
 // WrapRouter returns the given router wrapped with the tracing of the HTTP
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
-	cfg := newConfig(opts)
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
-	return &Router{
-		Router: router,
-		config: cfg,
-	}
-}
-
-// defaultResourceNamer attempts to quantize the resource for an HTTP request by
-// retrieving the path template associated with the route from the request.
-func defaultResourceNamer(router *Router, req *http.Request) string {
-	var match mux.RouteMatch
-	// get the resource associated with the given request
-	if router.Match(req, &match) && match.Route != nil {
-		if r, err := match.Route.GetPathTemplate(); err == nil {
-			return req.Method + " " + r
-		}
-	}
-	return req.Method + " unknown"
+	r := v2.WrapRouter(router, opts...)
+	return &Router{router, r}
 }

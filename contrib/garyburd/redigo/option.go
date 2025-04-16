@@ -8,8 +8,8 @@ package redigo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/garyburd/redig
 import (
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
 )
 
 const defaultServiceName = "redis.conn"
@@ -24,9 +24,10 @@ type dialConfig struct {
 type DialOption func(*dialConfig)
 
 func defaults(cfg *dialConfig) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.RedisOutbound)
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	// cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	// cfg.spanName = namingschema.OpName(namingschema.RedisOutbound)
 	if internal.BoolEnv("DD_TRACE_REDIGO_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {

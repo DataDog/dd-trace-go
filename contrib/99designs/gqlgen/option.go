@@ -6,84 +6,46 @@
 package gqlgen
 
 import (
-	"math"
-
-	internalgraphql "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/graphql"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"
 )
 
 const defaultServiceName = "graphql"
 
-type config struct {
-	serviceName                       string
-	analyticsRate                     float64
-	withoutTraceIntrospectionQuery    bool
-	withoutTraceTrivialResolvedFields bool
-	tags                              map[string]interface{}
-	errExtensions                     []string
-}
-
 // An Option configures the gqlgen integration.
-type Option func(cfg *config)
-
-func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.analyticsRate = globalconfig.AnalyticsRate()
-	cfg.tags = make(map[string]interface{})
-	cfg.errExtensions = internalgraphql.ErrorExtensionsFromEnv()
-}
+type Option = v2.Option
 
 // WithAnalytics enables or disables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	if on {
-		return WithAnalyticsRate(1.0)
-	}
-	return WithAnalyticsRate(math.NaN())
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		cfg.analyticsRate = rate
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithServiceName sets the given service name for the gqlgen server.
 func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithoutTraceIntrospectionQuery skips creating spans for fields when the operation name is IntrospectionQuery.
 func WithoutTraceIntrospectionQuery() Option {
-	return func(cfg *config) {
-		cfg.withoutTraceIntrospectionQuery = true
-	}
+	return v2.WithoutTraceIntrospectionQuery()
 }
 
 // WithoutTraceTrivialResolvedFields skips creating spans for fields that have a trivial resolver.
 // For example, a field resolved from an object w/o requiring a custom method is considered trivial.
 func WithoutTraceTrivialResolvedFields() Option {
-	return func(cfg *config) {
-		cfg.withoutTraceTrivialResolvedFields = true
-	}
+	return v2.WithoutTraceTrivialResolvedFields()
 }
 
 // WithCustomTag will attach the value to the span tagged by the key.
 func WithCustomTag(key string, value interface{}) Option {
-	return func(cfg *config) {
-		if cfg.tags == nil {
-			cfg.tags = make(map[string]interface{})
-		}
-		cfg.tags[key] = value
-	}
+	return v2.WithCustomTag(key, value)
 }
 
 // WithErrorExtensions allows to configure the error extensions to include in the error span events.
 func WithErrorExtensions(errExtensions ...string) Option {
-	return func(cfg *config) {
-		cfg.errExtensions = internalgraphql.ParseErrorExtensions(errExtensions)
-	}
+	return v2.WithErrorExtensions(errExtensions...)
 }
