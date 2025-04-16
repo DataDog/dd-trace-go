@@ -625,13 +625,11 @@ func (s *Span) Finish(opts ...FinishOption) {
 			t = cfg.FinishTime.UnixNano()
 		}
 		if cfg.NoDebugStack {
-			s.RLock()
+			s.Lock()
 			if s.finished {
-				s.RUnlock()
+				s.Unlock()
 				return
 			}
-			s.RUnlock()
-			s.Lock()
 			delete(s.meta, ext.ErrorStack)
 			s.Unlock()
 		}
