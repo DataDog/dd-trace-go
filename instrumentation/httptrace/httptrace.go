@@ -110,22 +110,12 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 					}
 					tracer.ChildOf(spanctx)(ssCfg)
 
-					var baggageMap map[string]string
+					ctx := r.Context()
 					spanctx.ForeachBaggageItem(func(k, v string) bool {
-						// Make the map only if we actually discover any baggage items.
-						if baggageMap == nil {
-							baggageMap = make(map[string]string)
-						}
-						baggageMap[k] = v
+						ctx = baggage.Set(ctx, k, v)
 						return true
 					})
-					if len(baggageMap) > 0 {
-						ctx := r.Context()
-						for k, v := range baggageMap {
-							ctx = baggage.Set(ctx, k, v)
-						}
-						r = r.WithContext(ctx)
-					}
+					r = r.WithContext(ctx)
 				}
 			}
 

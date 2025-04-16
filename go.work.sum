@@ -315,7 +315,6 @@ github.com/DataDog/datadog-agent/pkg/util/pointer v0.64.1/go.mod h1:cY4100zn21kB
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.64.2 h1:riYWM572c2zVBK6yMg1i2XfmGhmDtooM9+WXBGNXtHk=
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.64.2/go.mod h1:cY4100zn21kBb748mG0hDv9BfswD+tUw3p2M4XdUzAE=
 github.com/DataDog/datadog-go v3.2.0+incompatible h1:qSG2N4FghB1He/r2mFrWKCaL7dXCilEuNEeAn20fdD4=
-github.com/DataDog/orchestrion v1.3.1/go.mod h1:vCQMJqwvQpJRfwxpd9gAL+zWmaF4R0OqOUK/ru+vmQo=
 github.com/DataDog/viper v1.7.0 h1:hJvGT/zsNgVPxJLjW+ozl247LzEIRs7DdKakUgSsQzo=
 github.com/DataDog/viper v1.7.0/go.mod h1:ZiWeW+zYFKm7srdB9IoDzzZXaJaI5eL9QjNiN/DMA2s=
 github.com/DataDog/zstd v1.5.6 h1:LbEglqepa/ipmmQJUDnSsfvA8e8IStVcGaFWDuxvGOY=
@@ -1385,7 +1384,6 @@ go.opentelemetry.io/collector/otelcol v0.120.0 h1:iCUzunaztU69MlA+fe1/5VLIuufAFo
 go.opentelemetry.io/collector/otelcol v0.120.0/go.mod h1:nNELe3quKRa4Ra3zTsCOkC7IXii0Z2E2wureB1SW1OA=
 go.opentelemetry.io/collector/otelcol/otelcoltest v0.120.0 h1:j+xLokFCKaeR0t9qL00FrzGn247h/ntJOmXGJm0yFs0=
 go.opentelemetry.io/collector/otelcol/otelcoltest v0.120.0/go.mod h1:QwZG/+Zfvh76eihBH+FJ6UV2gWTZZPNxamhHToRNUxQ=
-go.opentelemetry.io/collector/pdata v1.28.1/go.mod h1:asKE8MD/4SOKz1mCrGdAz4VO2U2HUNg8A6094uK7pq0=
 go.opentelemetry.io/collector/pipeline/xpipeline v0.120.0 h1:klY22BaRMO1+JmjUu0Af961hpHA5qnOTAVR7tN+UTW8=
 go.opentelemetry.io/collector/pipeline/xpipeline v0.120.0/go.mod h1:K/7Ki7toZQpNV0GF7TbrOEoo8dP3dDXKKSRNnTyEsBE=
 go.opentelemetry.io/collector/receiver v0.120.0 h1:JTnPqmBLRXpOyLPh8Kch/5C8SivnpYK9Lzy4PvtEnLQ=
