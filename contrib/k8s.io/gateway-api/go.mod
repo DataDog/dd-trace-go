@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/contrib/k8s.io/cmd/request-mirror/v2
+module github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/v2
 
 go 1.23.0
 
@@ -6,6 +6,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.3
+	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
 	sigs.k8s.io/gateway-api v1.2.1
 	sigs.k8s.io/yaml v1.4.0
 )
@@ -89,9 +90,8 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/v2 => ../../../..
+replace github.com/DataDog/dd-trace-go/v2 => ../../..

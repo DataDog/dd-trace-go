@@ -19,13 +19,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	"sigs.k8s.io/yaml"
+
+	gatewayapi "github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/v2"
 )
 
 func main() {
-	// Define the target label key and value
-	const labelKey = "app"
-	const labelValue = "request-mirror"
-
 	ctx := context.Background()
 
 	// Load kubeconfig
@@ -71,6 +69,11 @@ func main() {
 			continue
 		}
 
+		if value, ok := gateway.Labels["admission.datadoghq.com/enabled"]; ok && value == "false" {
+			log.Printf("Skipping Gateway %s/%s due to admission label", gw.GetNamespace(), gw.GetName())
+			continue
+		}
+
 		// Flag to determine if patch is needed
 		needsPatch := false
 
@@ -100,9 +103,9 @@ func main() {
 					gateway.Spec.Listeners[i].AllowedRoutes.Namespaces.Selector.MatchLabels = make(map[string]string)
 				}
 
-				if gateway.Spec.Listeners[i].AllowedRoutes.Namespaces.Selector.MatchLabels[labelKey] != labelValue {
+				if gateway.Spec.Listeners[i].AllowedRoutes.Namespaces.Selector.MatchLabels[gatewayapi.RequestMirrorLabelKey] != gatewayapi.RequestMirrorLabelValue {
 					needsPatch = true
-					gateway.Spec.Listeners[i].AllowedRoutes.Namespaces.Selector.MatchLabels[labelKey] = labelValue
+					gateway.Spec.Listeners[i].AllowedRoutes.Namespaces.Selector.MatchLabels[gatewayapi.RequestMirrorLabelKey] = gatewayapi.RequestMirrorLabelValue
 				}
 			}
 		}

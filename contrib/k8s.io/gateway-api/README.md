@@ -33,7 +33,7 @@ secondary server where Datadog's request mirror deployment processes the request
 3. Deploy the Appsec Gateway API Request in the `datadog` namespace:
 
   ```bash
-  kubectl apply -f https://raw.githubusercontent.com/DataDog/dd-trace-go/main/contrib/k8s.io/cmd/request-mirror/deployment.yaml
+  kubectl apply -f https://raw.githubusercontent.com/DataDog/dd-trace-go/main/contrib/k8s.io/gateway-api/cmd/request-mirror/deployment.yaml
   ```
 
 4. Verify the deployment:
@@ -45,5 +45,11 @@ secondary server where Datadog's request mirror deployment processes the request
 5. Make sure your `Gateway` resources allow access to the `datadog` namespace.
 
   ```bash
-  go run ./patch_gateways.go
+  go run github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/cmd/patch-gateways@latest
+  ```
+
+6. Make sure your `HTTPRoute` resources allow access to the `datadog` namespace.
+
+  ```bash
+  go run github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/cmd/patch-httproutes@latest
   ```

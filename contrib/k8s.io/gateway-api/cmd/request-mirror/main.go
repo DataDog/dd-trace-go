@@ -6,24 +6,14 @@
 package main
 
 import (
-	"encoding/json"
-	"io"
 	"net/http"
 	"os"
-	"path"
 	"runtime/debug"
-	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/appsec"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	gatewayapi "github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
-)
-
-const (
-	maxBodyBytes = 5 * 1 << 20 // 5 MB
-	maxNbHeaders = 1_000
 )
 
 var (
@@ -81,47 +71,6 @@ func getConfig() Config {
 	return cfg
 }
 
-// analyzeRequestBody check if the body can be parsed and if so, parse it and send it to the WAF
-// and return if blocking was performed on the http.ResponseWriter
-func analyzeRequestBody(r *http.Request) bool {
-	if r.Body == nil {
-		logger.Debug("Request body is nil")
-		return false
-	}
-
-	if r.ContentLength == 0 {
-		logger.Debug("Request body is empty")
-		return false
-	}
-
-	var (
-		body any
-		err  error
-	)
-
-	// Check if the body is a valid JSON
-	switch r.Header.Get("Content-Type") {
-	case "application/json":
-		body = make(map[string]any)
-		err = json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes)).Decode(&body)
-	}
-
-	if err == io.EOF {
-		return false
-	}
-
-	if err != nil {
-		logger.Debug("Failed to parse request body: %v", err)
-		return false
-	}
-
-	if body == nil {
-		return false
-	}
-
-	return appsec.MonitorParsedHTTPBody(r.Context(), body) != nil
-}
-
 func main() {
 	setEnv()
 	config := getConfig()
@@ -139,51 +88,14 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if len(r.Header) > maxNbHeaders {
-			logger.Info("More than 1000 headers in request, skipping it...")
-			return
-		}
-
-		if strings.HasSuffix(r.Host, "-shadow") && r.Header.Get("X-Envoy-Internal") != "" {
-			// Remove the -shadow suffix from the host when envoy is the one sending the request
-			r.Host = strings.TrimSuffix(r.Host, "-shadow")
-		}
-
-		_, _, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
+	mux.Handle("/", gatewayapi.HTTPRequestMirrorHandler(gatewayapi.Config{
+		ServeConfig: httptrace.ServeConfig{
 			Framework: "sigs.k8s.io/gateway-api",
-			Resource:  r.Method + " " + path.Clean(r.URL.Path),
-			SpanOpts: []tracer.StartSpanOption{
-				tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-			},
 			FinishOpts: []tracer.FinishOption{
 				tracer.NoDebugStack(),
 			},
-		}, w, r)
-
-		defer afterHandle()
-
-		if blocked {
-			logger.Error("Unexpected request blocking response was sent")
-		}
-
-		analyzeRequestBody(r)
-
-		// Force the connection to be closed so we don't send a response
-		wr, ok := w.(http.Hijacker)
-		if !ok {
-			logger.Error("ResponseWriter does not support Hijack")
-			os.Exit(1)
-		}
-
-		conn, _, err := wr.Hijack()
-		if err != nil {
-			logger.Error("Failed to hijack connection: %v", err)
-			os.Exit(1)
-		}
-
-		defer conn.Close()
-	})
+		},
+	}))
 
 	go func() {
 		healthcheckMux := http.NewServeMux()
