@@ -612,6 +612,14 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
+
+	s.RLock()
+	if s.finished {
+		s.RUnlock()
+		return
+	}
+	s.RUnlock()
+
 	t := now()
 	if len(opts) > 0 {
 		cfg := FinishConfig{
