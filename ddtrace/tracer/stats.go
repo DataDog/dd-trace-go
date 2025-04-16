@@ -60,7 +60,7 @@ type tracerStatSpan struct {
 // configuration c. It creates buckets of bucketSize nanoseconds duration.
 func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdClient) *concentrator {
 	sCfg := &stats.SpanConcentratorConfig{
-		ComputeStatsBySpanKind: false,
+		ComputeStatsBySpanKind: true,
 		BucketInterval:         defaultStatsBucketSize,
 	}
 	env := c.agent.defaultEnv
