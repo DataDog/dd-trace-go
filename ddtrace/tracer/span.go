@@ -549,13 +549,11 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 			t = cfg.FinishTime.UnixNano()
 		}
 		if cfg.NoDebugStack {
-			s.RLock()
+			s.Lock()
 			if s.finished {
-				s.RUnlock()
+				s.Unlock()
 				return
 			}
-			s.RUnlock()
-			s.Lock()
 			delete(s.Meta, ext.ErrorStack)
 			s.Unlock()
 		}
