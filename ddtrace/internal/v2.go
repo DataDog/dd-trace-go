@@ -134,6 +134,9 @@ func (ta TracerV2Adapter) Stop() {
 	ta.Tracer.Stop()
 }
 
+var _ ddtrace.Span = (*SpanV2Adapter)(nil)
+var _ ddtrace.SpanWithEvents = (*SpanV2Adapter)(nil)
+
 type SpanV2Adapter struct {
 	Span *v2.Span
 }
@@ -225,6 +228,21 @@ func (sa SpanV2Adapter) Root() ddtrace.Span {
 // Format implements fmt.Formatter.
 func (sa SpanV2Adapter) Format(f fmt.State, c rune) {
 	sa.Span.Format(f, c)
+}
+
+func (sa SpanV2Adapter) AddEvent(name string, opts ...ddtrace.SpanEventOption) {
+	sa.Span.AddEvent(name, ApplyV1SpanEventOptions(opts...))
+}
+
+func ApplyV1SpanEventOptions(opts ...ddtrace.SpanEventOption) v2.SpanEventOption {
+	return func(cfg *v2.SpanEventConfig) {
+		ec := &ddtrace.SpanEventConfig{}
+		for _, o := range opts {
+			o(ec)
+		}
+		cfg.Time = ec.Time
+		cfg.Attributes = ec.Attributes
+	}
 }
 
 type SpanContextV2Adapter struct {
