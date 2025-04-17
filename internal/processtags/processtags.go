@@ -1,0 +1,73 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+package processtags
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+)
+
+var (
+	processTags      = make(map[string]string)
+	processTagsMutex sync.RWMutex
+)
+
+func init() {
+	tags := make(map[string]string)
+
+	execPath, err := os.Executable()
+	if err != nil {
+		log.Debug("failed to get binary path: %v", err)
+	} else {
+		baseDirName := filepath.Base(filepath.Dir(execPath))
+		tags["entrypoint.name"] = filepath.Base(execPath)
+		tags["entrypoint.basedir"] = baseDirName
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Debug("failed to get working directory: %v", err)
+	} else {
+		tags["workdir"] = filepath.Base(wd)
+	}
+
+	if len(tags) > 0 {
+		AddTags(tags)
+	}
+}
+
+// AddTags merges the given tags into the global processTags map.
+func AddTags(tags map[string]string) {
+	processTagsMutex.Lock()
+	defer processTagsMutex.Unlock()
+	for k, v := range tags {
+		processTags[k] = v
+	}
+}
+
+// ProcessTags returns the process tags serialized to string.
+// TODO: cache this value.
+func ProcessTags() string {
+	processTagsMutex.RLock()
+	defer processTagsMutex.RUnlock()
+
+	var b strings.Builder
+	first := true
+	for k, val := range processTags {
+		if !first {
+			b.WriteByte(',')
+		}
+		first = false
+		b.WriteString(k)
+		b.WriteByte(':')
+		b.WriteString(val)
+	}
+	return b.String()
+}

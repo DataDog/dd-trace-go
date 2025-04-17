@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -475,7 +476,7 @@ func (t *trace) push(sp *Span) {
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *Span) {
+func (t *trace) setTraceTags(s *Span, cfg TracerConf) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
@@ -487,6 +488,11 @@ func (t *trace) setTraceTags(s *Span) {
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+	}
+	if cfg.ProcessTags {
+		if pTags := processtags.ProcessTags(); pTags != "" {
+			s.setMeta(keyProcessTags, processtags.ProcessTags())
+		}
 	}
 }
 
@@ -534,7 +540,7 @@ func (t *trace) finishedOne(s *Span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
+		t.setTraceTags(s, tc)
 	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
@@ -572,7 +578,7 @@ func (t *trace) finishedOne(s *Span) {
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(finishedSpans[0])
+		t.setTraceTags(finishedSpans[0], tc)
 	}
 	t.finishChunk(tr, &Chunk{
 		spans:    finishedSpans,
