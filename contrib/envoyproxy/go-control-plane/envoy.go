@@ -226,6 +226,9 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 			tracer.Tag(ext.Component, spanComponentName),
 		},
+		FinishOpts: []tracer.FinishOption{
+			tracer.NoDebugStack(),
+		},
 	}, fakeResponseWriter, request)
 
 	// Block handling: If triggered, we need to block the request, return an immediate response

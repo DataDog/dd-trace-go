@@ -57,6 +57,7 @@ const (
 	PackageMiekgDNS                Package = "miekg/dns"
 	PackageLabstackEchoV4          Package = "labstack/echo.v4"
 	PackageK8SClientGo             Package = "k8s.io/client-go"
+	PackageK8SGatewayAPI           Package = "k8s.io/gateway-api"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
 	PackageJackcPGXV5              Package = "jackc/pgx.v5"
@@ -644,6 +645,9 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageK8SClientGo: {
 		TracedPackage: "k8s.io/client-go",
+	},
+	PackageK8SGatewayAPI: {
+		TracedPackage: "sigs.k8s.io/gateway-api",
 	},
 	PackageJulienschmidtHTTPRouter: {
 		TracedPackage: "github.com/julienschmidt/httprouter",
