@@ -84,7 +84,14 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			}
 		}
 	}
-
+	var baggageTags map[string]string
+	allowed := make(map[string]struct{})
+	for _, key := range strings.Split(cfg.BaggageTagKeys, ",") { // need to add new config
+		trimmed := strings.TrimSpace(key)
+		if trimmed != "" {
+			allowed[trimmed] = struct{}{}
+		}
+	}
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
 		func(ssCfg *tracer.StartSpanConfig) {
@@ -116,10 +123,15 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 						return true
 					})
 					r = r.WithContext(ctx)
+
 				}
 			}
 
 			for k, v := range ipTags {
+				ssCfg.Tags[k] = v
+			}
+
+			for k, v := range baggageTags {
 				ssCfg.Tags[k] = v
 			}
 		})
