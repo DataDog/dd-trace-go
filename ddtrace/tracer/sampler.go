@@ -95,7 +95,7 @@ func (r *rateSampler) Sample(s *Span) bool {
 		// fast path
 		return true
 	}
-	if s == nil {
+	if r.rate == 0 || s == nil {
 		return false
 	}
 	r.RLock()
@@ -106,10 +106,14 @@ func (r *rateSampler) Sample(s *Span) bool {
 // sampledByRate verifies if the number n should be sampled at the specified
 // rate.
 func sampledByRate(n uint64, rate float64) bool {
-	if rate < 1 {
-		return n*knuthFactor < uint64(rate*math.MaxUint64)
+	if rate == 1 {
+		return true
 	}
-	return true
+	if rate == 0 {
+		return false
+	}
+
+	return n*knuthFactor <= uint64(rate*math.MaxUint64)
 }
 
 // prioritySampler holds a set of per-service sampling rates and applies
