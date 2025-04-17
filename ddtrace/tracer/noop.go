@@ -5,6 +5,8 @@
 
 package tracer
 
+import "github.com/DataDog/dd-trace-go/v2/internal/log"
+
 var _ Tracer = (*NoopTracer)(nil)
 
 // NoopTracer is an implementation of Tracer that is a no-op.
@@ -12,6 +14,7 @@ type NoopTracer struct{}
 
 // StartSpan implements Tracer.
 func (NoopTracer) StartSpan(_ string, _ ...StartSpanOption) *Span {
+	log.Warn("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
 	return nil
 }
 
