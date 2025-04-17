@@ -1,0 +1,10 @@
+displayName: Datadog ASM External Processing Plugin
+runtime: wasm
+type: middleware
+
+summary: Enable Datadog threat detection on your Traefik proxy!
+
+testData:
+  external_processing_host: "127.0.0.1"
+  external_processing_port: "443"
+  timeout: 500
