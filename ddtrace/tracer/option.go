@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -597,23 +598,38 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
-
-	if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
-		// Enable tracing as transport layer mode
-		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
-		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
-		// to let the backend know that it needs to keep APM UI disabled.
-		c.globalSampleRate = 1.0
-		c.traceRateLimitPerSecond = 1.0 / 60
-		c.tracingAsTransport = true
-		WithGlobalTag("_dd.apm.enabled", 0)(c)
-		// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
-		// tell the agent we computed them, so it doesn't do it either.
-		c.runtimeMetrics = false
-		c.runtimeMetricsV2 = false
+	if v := stableconfig.FleetConfig.Get("DD_APM_TRACING_ENABLED"); v != "" {
+		vv, err := strconv.ParseBool(v)
+		if err != nil {
+			// log about it, default to next config in precedence list
+			if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
+				apmTracingDisabled(c)
+			}
+		}
+		if !vv {
+			apmTracingDisabled(c)
+		}
+	} else if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
+		apmTracingDisabled(c)
 	}
+	// TODO: Apply Local config iff DD_APM_TRACING_ENABLED envvar was not set
 
 	return c, nil
+}
+
+func apmTracingDisabled(c *config) {
+	// Enable tracing as transport layer mode
+	// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
+	// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
+	// to let the backend know that it needs to keep APM UI disabled.
+	c.globalSampleRate = 1.0
+	c.traceRateLimitPerSecond = 1.0 / 60
+	c.tracingAsTransport = true
+	WithGlobalTag("_dd.apm.enabled", 0)(c)
+	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
+	// tell the agent we computed them, so it doesn't do it either.
+	c.runtimeMetrics = false
+	c.runtimeMetricsV2 = false
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
