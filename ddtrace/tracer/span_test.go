@@ -1374,7 +1374,6 @@ func TestStatsAfterFinish(t *testing.T) {
 		c.Stop()
 		stats := transport.Stats()
 		assert.Equal(t, 1, len(stats))
-		log.Info("%v", stats)
 		peerTags := stats[0].Stats[0].Stats[0].PeerTags
 		assert.Contains(t, peerTags, "peer.service:kafka-cluster")
 	})
@@ -1410,7 +1409,6 @@ func TestStatsAfterFinish(t *testing.T) {
 		c.Stop()
 		stats := transport.Stats()
 		assert.Equal(t, 1, len(stats))
-		log.Info("%v", stats)
 		peerTags := stats[0].Stats[0].Stats[0].PeerTags
 		assert.Empty(t, peerTags)
 	})
