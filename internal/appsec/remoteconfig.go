@@ -383,20 +383,23 @@ func (a *appsec) enableRemoteActivation() error {
 	return remoteconfig.RegisterCallback(a.onRemoteActivation)
 }
 
-var blockingCapabilities = [...]remoteconfig.Capability{
-	remoteconfig.ASMUserBlocking,
-	remoteconfig.ASMRequestBlocking,
-	remoteconfig.ASMIPBlocking,
+var baseCapabilities = [...]remoteconfig.Capability{
 	remoteconfig.ASMDDRules,
 	remoteconfig.ASMExclusions,
 	remoteconfig.ASMCustomRules,
-	remoteconfig.ASMCustomBlockingResponse,
 	remoteconfig.ASMTrustedIPs,
 	remoteconfig.ASMExclusionData,
 	remoteconfig.ASMEndpointFingerprinting,
 	remoteconfig.ASMSessionFingerprinting,
 	remoteconfig.ASMNetworkFingerprinting,
 	remoteconfig.ASMHeaderFingerprinting,
+}
+
+var blockingCapabilities = [...]remoteconfig.Capability{
+	remoteconfig.ASMUserBlocking,
+	remoteconfig.ASMRequestBlocking,
+	remoteconfig.ASMIPBlocking,
+	remoteconfig.ASMCustomBlockingResponse,
 }
 
 func (a *appsec) enableRCBlocking() {
@@ -420,9 +423,17 @@ func (a *appsec) enableRCBlocking() {
 		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
 	}
 
-	for _, c := range blockingCapabilities {
+	for _, c := range baseCapabilities {
 		if err := a.registerRCCapability(c); err != nil {
 			log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+		}
+	}
+
+	if !a.cfg.BlockingUnavailable {
+		for _, c := range blockingCapabilities {
+			if err := a.registerRCCapability(c); err != nil {
+				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+			}
 		}
 	}
 }
@@ -448,9 +459,16 @@ func (a *appsec) disableRCBlocking() {
 	if a.cfg.RC == nil {
 		return
 	}
-	for _, c := range blockingCapabilities {
+	for _, c := range baseCapabilities {
 		if err := a.unregisterRCCapability(c); err != nil {
 			log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+		}
+	}
+	if !a.cfg.BlockingUnavailable {
+		for _, c := range blockingCapabilities {
+			if err := a.unregisterRCCapability(c); err != nil {
+				log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+			}
 		}
 	}
 	if err := remoteconfig.UnregisterCallback(a.onRCRulesUpdate); err != nil {

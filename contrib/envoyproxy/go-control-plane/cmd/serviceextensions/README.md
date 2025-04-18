@@ -22,11 +22,12 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 
 >**GCP requires that the default configuration for the Service Extension should not change.**
 
-| Environment variable | Default value | Description |
-|---|---|---|
-| `DD_SERVICE_EXTENSION_HOST` | `0.0.0.0` | Host on where the gRPC and HTTP server should listen to. |
-| `DD_SERVICE_EXTENSION_PORT` | `443` | Port used by the gRPC Server.<br>Envoy Google backend’s is only using secure connection to Service Extension. |
-| `DD_SERVICE_EXTENSION_HEALTHCHECK_PORT` | `80` | Port used for the HTTP server for the health check. |
+| Environment variable | Default value | Description                                                                                                   |
+|---|---------------|---------------------------------------------------------------------------------------------------------------|
+| `DD_SERVICE_EXTENSION_HOST` | `0.0.0.0`     | Host on where the gRPC and HTTP server should listen to.                                                      |
+| `DD_SERVICE_EXTENSION_PORT` | `443`         | Port used by the gRPC Server.<br>Envoy Google backend’s is only using secure connection to Service Extension. |
+| `DD_SERVICE_EXTENSION_HEALTHCHECK_PORT` | `80`          | Port used for the HTTP server for the health check.                                                           |
+| `DD_SERVICE_EXTENSION_OBSERVABILITY_MODE` | `false`       | Enable observability mode. This will process a request asynchronously (blocking would be disabled).         |
 
 > The Service Extension need to be connected to a deployed [Datadog agent](https://docs.datadoghq.com/agent).
 
