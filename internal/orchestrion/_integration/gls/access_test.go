@@ -79,14 +79,20 @@ func BenchmarkGLS(b *testing.B) {
 	}
 
 	b.Run("Set", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			set(i)
-		}
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				set(i)
+				i += 1
+			}
+		})
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			runtime.KeepAlive(get())
-		}
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				runtime.KeepAlive(get())
+			}
+		})
 	})
 }

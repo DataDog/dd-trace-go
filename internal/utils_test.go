@@ -20,9 +20,11 @@ import (
 func BenchmarkIter(b *testing.B) {
 	m := NewLockMap(nil)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m.Iter(func(_ string, _ string) {})
-	}
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			m.Iter(func(_ string, _ string) {})
+		}
+	})
 }
 func TestLockMapThrash(t *testing.T) {
 	wg := sync.WaitGroup{}

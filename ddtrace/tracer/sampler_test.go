@@ -1631,11 +1631,13 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		assert.Nil(b, err)
 		rs := newSingleSpanRulesSampler(rules)
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
-			for _, span := range spans {
-				rs.apply(span)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				for _, span := range spans {
+					rs.apply(span)
+				}
 			}
-		}
+		})
 	})
 
 	b.Run("glob-match-?", func(b *testing.B) {
@@ -1659,11 +1661,13 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		rs := newSingleSpanRulesSampler(rules)
 
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
-			for _, span := range spans {
-				rs.apply(span)
+		b.RunParallel(func(pb *testing.PB) {
+			for pb.Next() {
+				for _, span := range spans {
+					rs.apply(span)
+				}
 			}
-		}
+		})
 	})
 }
 

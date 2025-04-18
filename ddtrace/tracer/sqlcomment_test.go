@@ -358,9 +358,12 @@ func BenchmarkSQLCommentInjection(b *testing.B) {
 	defer tracer.Stop()
 
 	b.ReportAllocs()
-	for n := 0; n < b.N; n++ {
-		carrier.Inject(spanCtx)
-	}
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			carrier.Inject(spanCtx)
+		}
+	})
 }
 
 func BenchmarkSQLCommentExtraction(b *testing.B) {
@@ -369,9 +372,12 @@ func BenchmarkSQLCommentExtraction(b *testing.B) {
 	carrier.Inject(spanCtx)
 
 	b.ReportAllocs()
-	for n := 0; n < b.N; n++ {
-		carrier.Extract()
-	}
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			carrier.Extract()
+		}
+	})
 }
 
 func setupBenchmark() (*tracer, *SpanContext, SQLCommentCarrier) {
