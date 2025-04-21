@@ -39,6 +39,7 @@ type config struct {
 	traceClientIP                bool
 	isStatusError                func(statusCode int) bool
 	inferredProxyServicesEnabled bool
+	baggageTagKeys               string
 }
 
 // ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
@@ -53,6 +54,12 @@ func newConfig() config {
 		traceClientIP:                internal.BoolEnv(envTraceClientIPEnabled, false),
 		isStatusError:                isServerError,
 		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
+		baggageTagKeys: func() string {
+			if v, ok := os.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+				return v
+			}
+			return "usr.id,account.id,session.id"
+		}(),
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {

@@ -414,3 +414,44 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	assert.Equal(t, "header_value", mergedBaggage["header_key"], "should contain header baggage")
 	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
 }
+
+func TestBaggageSpanTagsDefault(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create a base context with pre-set baggage.
+	baseCtx := baggage.Set(context.Background(), "usr.id", "1234")
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(baseCtx)
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "header_key=header_value,account.id=456,session.id=789")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// Assert that the expected baggage keys are present with the correct values.
+	if v, ok := m["baggage.account.id"]; ok {
+		assert.Equal(t, "456", v, "should contain account.id value")
+	} else {
+		t.Errorf("baggage.account.id not found in span")
+	}
+
+	if v, ok := m["baggage.session.id"]; ok {
+		assert.Equal(t, "789", v, "should contain session.id value")
+	} else {
+		t.Errorf("baggage.session.id not found in span")
+	}
+
+	// Assert that a key that shouldn't be included (header_key) is not present.
+	if _, ok := m["baggage.header_key"]; ok {
+		t.Errorf("baggage.header_key should not be included in span tags")
+	}
+	// baggage span tagging happens only at extraction
+	if _, ok := m["baggage.usr.id"]; ok {
+		t.Errorf("baggage.header_key should not be included in span tags")
+	}
+
+	span.Finish()
+}

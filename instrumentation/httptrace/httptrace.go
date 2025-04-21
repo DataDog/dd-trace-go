@@ -84,9 +84,9 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			}
 		}
 	}
-	var baggageTags map[string]string
+	baggageTags := make(map[string]string)
 	allowed := make(map[string]struct{})
-	for _, key := range strings.Split(cfg.BaggageTagKeys, ",") { // need to add new config
+	for _, key := range strings.Split(cfg.baggageTagKeys, ",") {
 		trimmed := strings.TrimSpace(key)
 		if trimmed != "" {
 			allowed[trimmed] = struct{}{}
@@ -119,6 +119,9 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 					ctx := r.Context()
 					spanctx.ForeachBaggageItem(func(k, v string) bool {
+						if _, ok := allowed[k]; ok {
+							baggageTags["baggage."+k] = v
+						}
 						ctx = baggage.Set(ctx, k, v)
 						return true
 					})
