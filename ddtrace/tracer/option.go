@@ -179,6 +179,10 @@ type config struct {
 	// all spans.
 	globalTags dynamicConfig[map[string]interface{}]
 
+	// additionalConfigs holds extra telemetry options that should be used when starting
+	// instrumentation telemetry
+	additionalConfigs []telemetry.Configuration
+
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
 
@@ -373,7 +377,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 
-	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
+	c.additionalConfigs = append(c.additionalConfigs, telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")

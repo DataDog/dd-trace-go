@@ -14,12 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-var additionalConfigs []telemetry.Configuration
-
-func reportTelemetryOnAppStarted(c telemetry.Configuration) {
-	additionalConfigs = append(additionalConfigs, c)
-}
-
 // startTelemetry starts the global instrumentation telemetry client with tracer data
 // unless instrumentation telemetry is disabled via the DD_INSTRUMENTATION_TELEMETRY_ENABLED
 // env var.
@@ -106,7 +100,7 @@ func startTelemetry(c *config) {
 	if c.orchestrionCfg.Enabled {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: c.orchestrionCfg.Metadata.Version, Origin: telemetry.OriginCode})
 	}
-	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
+	telemetryConfigs = append(telemetryConfigs, c.additionalConfigs...)
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 	cfg := telemetry.ClientConfig{
 		HTTPClient: c.httpClient,
