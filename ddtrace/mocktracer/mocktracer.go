@@ -22,6 +22,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	utils "gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -54,10 +56,21 @@ type Tracer interface {
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
-	t := newMockTracer()
+
+	var t ddtrace.Tracer
+	if utils.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) &&
+		!utils.BoolEnv(constants.CIVisibilityTestingEnabledEnvironmentVariable, false) {
+		// If CI Visibility is enabled (and we are not in a CI Visibility testing mode), we need to use the CIVisibilityMockTracer
+		// to bypass the CI Visibility spans from the mocktracer.
+		// This supports the scenario where the mocktracer is used in a test (we need to keep reporting test spans)
+		t = newCIVisibilityMockTracer()
+	} else {
+		t = newMockTracer()
+	}
+
 	internal.SetGlobalTracer(t)
 	internal.Testing = true
-	return t
+	return t.(Tracer)
 }
 
 type mocktracer struct {

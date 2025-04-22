@@ -50,6 +50,8 @@ func EnsureCiVisibilityInitialization() {
 // InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
 func InitializeCIVisibilityMock() mocktracer.Tracer {
 	internalCiVisibilityInitialization(func([]tracer.StartOption) {
+		// Set the environment variable to enable testing mode
+		_ = os.Setenv(constants.CIVisibilityTestingEnabledEnvironmentVariable, "true")
 		// Initialize the mocktracer
 		mTracer = mocktracer.Start()
 	})

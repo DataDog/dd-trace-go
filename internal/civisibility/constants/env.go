@@ -11,6 +11,9 @@ const (
 	// features related to CI Visibility in the Datadog platform.
 	CIVisibilityEnabledEnvironmentVariable = "DD_CIVISIBILITY_ENABLED"
 
+	// CIVisibilityTestingEnabledEnvironmentVariable indicates if CI Visibility testing mode is enabled.
+	CIVisibilityTestingEnabledEnvironmentVariable = "DD_INTERNAL_CIVISIBILITY_TESTING_ENABLED"
+
 	// CIVisibilityAgentlessEnabledEnvironmentVariable indicates if CI Visibility agentless mode is enabled.
 	// This environment variable should be set to "1" or "true" to enable agentless mode for CI Visibility, where traces
 	// are sent directly to Datadog without using a local agent.
