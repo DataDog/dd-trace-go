@@ -31,8 +31,8 @@ func (t *trace) setPropagatingTag(key, value string) {
 }
 
 func (t *trace) setTraceSourcePropagatingTag(key string, value internal.TraceSource) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	// If there is already a TraceSource value set in the trace
 	// we need to add the new value to the bitmask.
