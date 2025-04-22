@@ -87,13 +87,24 @@ func getDDorOtelConfig(configName string) string {
 	if !ok {
 		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
 	}
-	var checkStableCfg bool
+
+	// Stores whether this key is compatible with the stable configuration feature
+	stableCfgKey := false
+
+	// Check for stable configuration keys
 	if config.dd == "DD_RUNTIME_METRICS_ENABLED" {
-		checkStableCfg = true
-		if v := stableconfig.FleetConfig.Get(config.dd); v != "" {
+		stableCfgKey = true
+		if v := stableconfig.FleetConfig.Get("DD_RUNTIME_METRICS_ENABLED"); v != "" {
+			return v
+		}
+	} else if config.dd == "DD_TRACE_DEBUG" {
+		stableCfgKey = true
+		if v := stableconfig.FleetConfig.Get("DD_TRACE_DEBUG"); v != "" {
 			return v
 		}
 	}
+
+	// Resolve from Datadog and Opentelemetry env vars
 	val := os.Getenv(config.dd)
 	if otVal := os.Getenv(config.ot); otVal != "" {
 		ddPrefix := "config_datadog:"
@@ -112,11 +123,14 @@ func getDDorOtelConfig(configName string) string {
 			val = v
 		}
 	}
-	if val == "" && checkStableCfg {
+
+	// If val was not already resolved, and it's a stable configuration key, check local config source
+	if val == "" && stableCfgKey {
 		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {
 			return v
 		}
 	}
+
 	return val
 }
 

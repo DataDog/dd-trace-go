@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	// TODO: Support configurable agent directory for windows, PROJECTLOCATION: https://docs.datadoghq.com/agent/basic_agent_usage/windows/?tab=standardinstallation#installation-configuration-options
 	localFilePath = "/etc/datadog-agent/application_monitoring.yaml"
 	fleetFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
 )

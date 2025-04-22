@@ -15,10 +15,10 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -60,7 +60,8 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 	ciVisibilityInitializationOnce.Do(func() {
 		// check the debug flag to enable debug logs. The tracer initialization happens
 		// after the CI Visibility initialization so we need to handle this flag ourselves
-		if internal.BoolEnv("DD_TRACE_DEBUG", false) {
+		// TODO: capture Origin, report to telemetry
+		if enabled, _ := stableconfig.BoolStableConfig("DD_TRACE_DEBUG", false); enabled {
 			log.SetLevel(log.LevelDebug)
 		}
 

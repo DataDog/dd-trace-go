@@ -13,8 +13,8 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -26,14 +26,8 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
-	val, defined, err := parseBoolEnvVar(EnvSCAEnabled)
-	if err != nil {
-		log.Error("appsec: %v", err)
-		return
-	}
-	if defined {
-		telemetry.RegisterAppConfig(EnvSCAEnabled, val, telemetry.OriginEnvVar)
-	}
+	enabled, origin := stableconfig.BoolStableConfig(EnvSCAEnabled, false)
+	telemetry.RegisterAppConfig(EnvSCAEnabled, enabled, origin)
 }
 
 // The following environment variables dictate the enablement of different the ASM products.

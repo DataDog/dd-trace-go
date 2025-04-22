@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -217,7 +218,8 @@ func defaultConfig() (*config, error) {
 	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
 		c.enabled = true
 	} else {
-		c.enabled = internal.BoolEnv("DD_PROFILING_ENABLED", true)
+		// TODO: capture Origin, report to telemetry
+		c.enabled, _ = stableconfig.BoolStableConfig("DD_PROFILING_ENABLED", true)
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)

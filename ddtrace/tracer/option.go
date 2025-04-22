@@ -454,7 +454,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
-	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+	// TODO: capture Origin, report to telemetry
+	c.dataStreamsMonitoringEnabled, _ = stableconfig.BoolStableConfig("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -468,7 +469,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
 
-	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	// TODO: capture Origin, report to telemetry
+	c.dynamicInstrumentationEnabled, _ = stableconfig.BoolStableConfig("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -598,21 +600,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
-	if v := stableconfig.FleetConfig.Get("DD_APM_TRACING_ENABLED"); v != "" {
-		vv, err := strconv.ParseBool(v)
-		if err != nil {
-			// log about it, default to next config in precedence list
-			if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
-				apmTracingDisabled(c)
-			}
-		}
-		if !vv {
-			apmTracingDisabled(c)
-		}
-	} else if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
+	// TODO: capture Origin, report to telemetry
+	if tracingEnabled, _ := stableconfig.BoolStableConfig("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
-	// TODO: Apply Local config iff DD_APM_TRACING_ENABLED envvar was not set
 
 	return c, nil
 }

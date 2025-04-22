@@ -108,6 +108,7 @@ func (i *Instrumentation) AppSecRASPEnabled() bool {
 	return appsec.RASPEnabled()
 }
 
+// TODO: Stable config here?
 func (i *Instrumentation) DataStreamsEnabled() bool {
 	return internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
 }

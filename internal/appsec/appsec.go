@@ -7,8 +7,9 @@ package appsec
 
 import (
 	"fmt"
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"sync"
+
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
 	waf "github.com/DataDog/go-libddwaf/v3"
@@ -51,7 +52,7 @@ func Start(opts ...config.StartOption) {
 	// 2. Remotely when DD_APPSEC_ENABLED is undefined
 	// Note: DD_APPSEC_ENABLED=false takes precedence over remote configuration
 	// and enforces to have AppSec disabled.
-	mode, modeOrigin, err := startConfig.EnablementMode()
+	mode, modeOrigin, err := startConfig.EnablementMode() // TODO: Stable Config
 	if err != nil {
 		logUnexpectedStartError(err)
 		return
