@@ -715,20 +715,20 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	if t, ok := GetGlobalTracer().(*tracer); ok {
-		if !t.config.enabled.current {
+	tracer, hasTracer := GetGlobalTracer().(*tracer)
+	if hasTracer {
+		if !tracer.config.enabled.current {
 			return
 		}
-		t.Submit(s)
-		if t.config.canDropP0s() {
+		if tracer.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
-		if t.config.debugAbandonedSpans {
+		if tracer.config.debugAbandonedSpans {
 			// the tracer supports debugging abandoned spans
-			t.submitAbandonedSpan(s, true)
+			tracer.submitAbandonedSpan(s, true)
 		}
-		t.spansFinished.Inc(s.integration)
+		tracer.spansFinished.Inc(s.integration)
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
@@ -740,6 +740,11 @@ func (s *Span) finish(finishTime int64) {
 			s, s.name, s.resource, s.meta, s.metrics)
 	}
 	s.context.finish()
+
+	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
+	if hasTracer {
+		tracer.Submit(s)
+	}
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
