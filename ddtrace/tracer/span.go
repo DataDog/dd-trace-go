@@ -548,15 +548,6 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 		if !cfg.FinishTime.IsZero() {
 			t = cfg.FinishTime.UnixNano()
 		}
-		if cfg.NoDebugStack {
-			s.Lock()
-			if s.finished {
-				s.Unlock()
-				return
-			}
-			delete(s.Meta, ext.ErrorStack)
-			s.Unlock()
-		}
 		if cfg.Error != nil {
 			s.Lock()
 			s.setTagError(cfg.Error, errorConfig{
