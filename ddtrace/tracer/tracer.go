@@ -655,9 +655,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		}
 		if context.span != nil {
 			// local parent, inherit service
-			context.span.RLock()
+			context.span.mu.RLock()
 			span.service = context.span.service
-			context.span.RUnlock()
+			context.span.mu.RUnlock()
 		} else {
 			// remote parent
 			if context.origin != "" {
