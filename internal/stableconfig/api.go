@@ -37,3 +37,16 @@ func BoolStableConfig(env string, def bool) (bool, telemetry.Origin) {
 	}
 	return def, telemetry.OriginDefault
 }
+
+func StringStableConfig(env string, def string) (string, telemetry.Origin) {
+	if v := FleetConfig.Get(env); v != "" {
+		return v, telemetry.OriginFleetStableConfig
+	}
+	if v, ok := os.LookupEnv(env); ok {
+		return v, telemetry.OriginEnvVar
+	}
+	if v := LocalConfig.Get(env); v != "" {
+		return v, telemetry.OriginLocalStableConfig
+	}
+	return def, telemetry.OriginDefault
+}
