@@ -26,8 +26,10 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
-	val, origin := stableconfig.BoolStableConfig(EnvSCAEnabled, false)
-	telemetry.RegisterAppConfig(EnvSCAEnabled, val, origin)
+	val, origin, configured := stableconfig.BoolStableConfig(EnvSCAEnabled, false)
+	if configured {
+		telemetry.RegisterAppConfig(EnvSCAEnabled, val, origin)
+	}
 }
 
 // The following environment variables dictate the enablement of different the ASM products.

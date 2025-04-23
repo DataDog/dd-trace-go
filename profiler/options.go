@@ -220,7 +220,7 @@ func defaultConfig() (*config, error) {
 		c.enabled = true
 	} else {
 		// TODO: capture Origin, report to telemetry
-		c.enabled, _ = stableconfig.BoolStableConfig("DD_PROFILING_ENABLED", true)
+		c.enabled, _, _ = stableconfig.BoolStableConfig("DD_PROFILING_ENABLED", true)
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
