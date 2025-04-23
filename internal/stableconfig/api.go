@@ -22,7 +22,7 @@ func BoolStableConfig(env string, def bool) (bool, telemetry.Origin) {
 		}
 	}
 	if v, ok := os.LookupEnv(env); ok {
-		if vv, err := strconv.ParseBool(v); err != nil {
+		if vv, err := strconv.ParseBool(v); err == nil {
 			return vv, telemetry.OriginEnvVar
 		} else {
 			log.Warn("Non-boolean value for env var %s, dropping. Parse failed with error: %v", env, err)
