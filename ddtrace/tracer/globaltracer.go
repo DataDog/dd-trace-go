@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"sync/atomic"
+	_ "unsafe" // for go:linkname
 )
 
 var (
@@ -34,4 +35,9 @@ func GetGlobalTracer() Tracer {
 func StopTestTracer() {
 	var tracer Tracer = &NoopTracer{}
 	globalTracer.Swap(&tracer)
+}
+
+//go:linkname storeGlobalTracer
+func storeGlobalTracer(t Tracer) {
+	globalTracer.Store(&t)
 }

@@ -162,7 +162,6 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	if t.agentless {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
-	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 
 	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 	startTime := time.Now()
