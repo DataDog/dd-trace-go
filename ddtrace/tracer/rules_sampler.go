@@ -196,8 +196,8 @@ func (sr *SamplingRule) match(s *Span) bool {
 	if sr.Resource != nil && !sr.Resource.MatchString(s.resource) {
 		return false
 	}
-	s.Lock()
-	defer s.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if sr.Tags != nil {
 		for k, regex := range sr.Tags {
 			if regex == nil {
@@ -481,8 +481,8 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	span.Lock()
-	defer span.Unlock()
+	span.mu.Lock()
+	defer span.mu.Unlock()
 
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)

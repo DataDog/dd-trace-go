@@ -408,8 +408,8 @@ func createTslvSpan(span *Span) tslvSpan {
 //
 //	The retrieved metadata value.
 func getAndRemoveMeta(span *Span, key string) string {
-	span.Lock()
-	defer span.Unlock()
+	span.mu.Lock()
+	defer span.mu.Unlock()
 	if span.meta == nil {
 		span.meta = make(map[string]string, 1)
 	}
