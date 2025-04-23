@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -167,13 +168,49 @@ func BenchmarkFirst(gb *testing.B) {
 	_ = gb.Elapsed()
 }
 
+var assertMutex sync.Mutex
+
 func assertTest(t *testing.T) {
+	assertMutex.Lock()
+	defer assertMutex.Unlock()
 	assert := assert.New(t)
 	spans := mTracer.OpenSpans()
 	hasSession := false
 	hasModule := false
 	hasSuite := false
 	hasTest := false
+
+	assertCommon := func(span mocktracer.Span) {
+		spanTags := span.Tags()
+
+		assert.Subset(spanTags, map[string]interface{}{
+			constants.Origin:          constants.CIAppTestOrigin,
+			constants.TestType:        constants.TestTypeTest,
+			constants.LogicalCPUCores: float64(runtime.NumCPU()),
+		})
+
+		assert.Contains(spanTags, ext.ResourceName)
+		assert.Contains(spanTags, constants.TestCommand)
+		assert.Contains(spanTags, constants.TestCommandWorkingDirectory)
+		assert.Contains(spanTags, constants.OSPlatform)
+		assert.Contains(spanTags, constants.OSArchitecture)
+		assert.Contains(spanTags, constants.OSVersion)
+		assert.Contains(spanTags, constants.RuntimeVersion)
+		assert.Contains(spanTags, constants.RuntimeName)
+		assert.Contains(spanTags, constants.GitRepositoryURL)
+		assert.Contains(spanTags, constants.GitCommitSHA)
+		// GitHub CI does not provide commit details
+		if spanTags[constants.CIProviderName] != "github" {
+			assert.Contains(spanTags, constants.GitCommitMessage)
+			assert.Contains(spanTags, constants.GitCommitAuthorEmail)
+			assert.Contains(spanTags, constants.GitCommitAuthorDate)
+			assert.Contains(spanTags, constants.GitCommitCommitterEmail)
+			assert.Contains(spanTags, constants.GitCommitCommitterDate)
+			assert.Contains(spanTags, constants.GitCommitCommitterName)
+		}
+		assert.Contains(spanTags, constants.CIWorkspacePath)
+	}
+
 	for _, span := range spans {
 		spanTags := span.Tags()
 
@@ -183,7 +220,7 @@ func assertTest(t *testing.T) {
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
-			assertCommon(assert, *span)
+			assertCommon(*span)
 			hasSession = true
 		}
 
@@ -196,7 +233,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assert.Contains(spanTags, constants.TestModuleIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
-			assertCommon(assert, *span)
+			assertCommon(*span)
 			hasModule = true
 		}
 
@@ -211,7 +248,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSuiteIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assert.Contains(spanTags, constants.TestSuite)
-			assertCommon(assert, *span)
+			assertCommon(*span)
 			hasSuite = true
 		}
 
@@ -231,7 +268,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestCodeOwners)
 			assert.Contains(spanTags, constants.TestSourceFile)
 			assert.Contains(spanTags, constants.TestSourceStartLine)
-			assertCommon(assert, *span)
+			assertCommon(*span)
 			hasTest = true
 		}
 	}
@@ -240,35 +277,4 @@ func assertTest(t *testing.T) {
 	assert.True(hasModule)
 	assert.True(hasSuite)
 	assert.True(hasTest)
-}
-
-func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
-	spanTags := span.Tags()
-
-	assert.Subset(spanTags, map[string]interface{}{
-		constants.Origin:          constants.CIAppTestOrigin,
-		constants.TestType:        constants.TestTypeTest,
-		constants.LogicalCPUCores: float64(runtime.NumCPU()),
-	})
-
-	assert.Contains(spanTags, ext.ResourceName)
-	assert.Contains(spanTags, constants.TestCommand)
-	assert.Contains(spanTags, constants.TestCommandWorkingDirectory)
-	assert.Contains(spanTags, constants.OSPlatform)
-	assert.Contains(spanTags, constants.OSArchitecture)
-	assert.Contains(spanTags, constants.OSVersion)
-	assert.Contains(spanTags, constants.RuntimeVersion)
-	assert.Contains(spanTags, constants.RuntimeName)
-	assert.Contains(spanTags, constants.GitRepositoryURL)
-	assert.Contains(spanTags, constants.GitCommitSHA)
-	// GitHub CI does not provide commit details
-	if spanTags[constants.CIProviderName] != "github" {
-		assert.Contains(spanTags, constants.GitCommitMessage)
-		assert.Contains(spanTags, constants.GitCommitAuthorEmail)
-		assert.Contains(spanTags, constants.GitCommitAuthorDate)
-		assert.Contains(spanTags, constants.GitCommitCommitterEmail)
-		assert.Contains(spanTags, constants.GitCommitCommitterDate)
-		assert.Contains(spanTags, constants.GitCommitCommitterName)
-	}
-	assert.Contains(spanTags, constants.CIWorkspacePath)
 }

@@ -49,8 +49,9 @@ type (
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
 	runTestWithRetryOptions struct {
-		targetFunc func(t *testing.T) // target function to retry
-		t          *testing.T         // test to be executed
+		targetFunc      func(t *testing.T) // target function to retry
+		t               *testing.T         // test to be executed
+		isEfdInParallel bool               // flag to check if the test is running in parallel
 
 		// function to modify the execution metadata before each execution (first callback executed). It's also called before postOnRetryEnd to do a final sync
 		preExecMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int)
@@ -220,13 +221,6 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	// get the pointer to use the reference in the wrapper
 	ptrMeta := &meta
 
-	// function to detect if we should be in an efd execution
-	isAnEfdExecution := func(execMeta *testExecutionMetadata) bool {
-		isANewTest := execMeta.isANewTest
-		isAModifiedTest := execMeta.isAModifiedTest && !execMeta.isAttemptToFix
-		return execMeta.isEarlyFlakeDetectionEnabled && (isANewTest || isAModifiedTest)
-	}
-
 	// Create a unified wrapper that will use a single runTestWithRetry call.
 	wrapper := func(t *testing.T) {
 		t.Helper()
@@ -239,8 +233,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 		var allRetriesFailed int32 = 1
 
 		runTestWithRetry(&runTestWithRetryOptions{
-			targetFunc: f,
-			t:          t,
+			targetFunc:      f,
+			t:               t,
+			isEfdInParallel: internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false),
 			preExecMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
 				// Synchronize the test execution metadata with the original test execution metadata.
 
@@ -458,7 +453,21 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 
 	// Set this func as a helper func of t
 	options.t.Helper()
-	for {
+
+	var preMutex sync.Locker
+	var postMutex sync.Locker
+	if options.isEfdInParallel {
+		preMutex = &sync.Mutex{}
+		postMutex = &sync.Mutex{}
+	} else {
+		preMutex = &noopMutex{}
+		postMutex = &noopMutex{}
+	}
+
+	executeTestIteration := func() bool {
+		// Initial lock
+		preMutex.Lock()
+
 		// Clear the matcher subnames map before each execution to avoid subname tests being called "parent/subname#NN" due to retries
 		matcher := getTestContextMatcherPrivateFields(options.t)
 		if matcher != nil {
@@ -504,6 +513,9 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 			execMeta.isLastRetry = options.preIsLastRetry(execMeta, executionIndex, retryCount)
 		}
 
+		// unlock the pre mutex
+		preMutex.Unlock()
+
 		// Run original func similar to how it gets run internally in tRunner
 		startTime := time.Now()
 		chn := make(chan struct{}, 1)
@@ -521,6 +533,10 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {
 			fmt.Printf("cleanup error: %v\n", err)
 		}
+
+		// Lock the post mutex
+		postMutex.Lock()
+		defer postMutex.Unlock()
 
 		// Copy the current test to the wrapper if necessary
 		if originalExecMeta != nil {
@@ -560,13 +576,35 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 			options.postPerExecution(ptrToLocalT, execMeta, executionIndex, duration)
 		}
 
-		// Update lastPtrToLocalT
+		// Update lastPtrToLocalT and lastExecMeta
 		lastPtrToLocalT = ptrToLocalT
 		lastExecMeta = execMeta
 
 		// Decide whether to continue
-		if !options.postShouldRetry(ptrToLocalT, execMeta, executionIndex, retryCount) {
-			break
+		return options.postShouldRetry(ptrToLocalT, execMeta, executionIndex, retryCount)
+	}
+
+	// Execute the test function for the first time
+	if executeTestIteration() {
+		// retry is required
+		if options.isEfdInParallel && isAnEfdExecution(lastExecMeta) {
+			// In parallel, we use the retry count set in the first execution
+			var wg sync.WaitGroup
+			wg.Add(int(retryCount + 1))
+			for i := int64(0); i <= retryCount; i++ {
+				go func(idx int64) {
+					defer wg.Done()
+					executeTestIteration()
+				}(i)
+			}
+			wg.Wait()
+		} else {
+			// Execute retries sequentially
+			for {
+				if !executeTestIteration() {
+					break
+				}
+			}
 		}
 	}
 
@@ -609,6 +647,19 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
 	execMeta.isAttemptToFix = execMeta.isAttemptToFix || originalExecMeta.isAttemptToFix
 }
+
+// isAnEfdExecution checks if the current test execution is an Early Flake Detection execution.
+func isAnEfdExecution(execMeta *testExecutionMetadata) bool {
+	isANewTest := execMeta.isANewTest
+	isAModifiedTest := execMeta.isAModifiedTest && !execMeta.isAttemptToFix
+	return execMeta.isEarlyFlakeDetectionEnabled && (isANewTest || isAModifiedTest)
+}
+
+type noopMutex struct{}
+
+func (m *noopMutex) Lock()         {}
+func (m *noopMutex) Unlock()       {}
+func (m *noopMutex) TryLock() bool { return true }
 
 //go:linkname testingTRunCleanup testing.(*common).runCleanup
 func testingTRunCleanup(c *testing.T, ph int) (panicVal any)
