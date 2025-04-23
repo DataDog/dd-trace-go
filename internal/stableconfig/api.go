@@ -6,14 +6,16 @@
 package stableconfig
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin, configured bool) {
+	fmt.Println("MTOFF bool 1", env)
 	if v := FleetConfig.Get(env); v != "" {
 		if vv, err := strconv.ParseBool(v); err == nil {
 			return vv, telemetry.OriginFleetStableConfig, true
@@ -22,10 +24,14 @@ func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin
 		}
 	}
 	if v, ok := os.LookupEnv(env); ok {
+		fmt.Println("MTOFF bool 2 ", env)
 		if vv, err := strconv.ParseBool(v); err == nil {
+			fmt.Println("MTOFF bool 3")
 			return vv, telemetry.OriginEnvVar, true
 		} else {
+			fmt.Println("MTOFF bool 4")
 			log.Warn("Non-boolean value for env var %s, dropping. Parse failed with error: %v", env, err)
+			fmt.Println("MTOFF bool 5")
 		}
 	}
 	if v := LocalConfig.Get(env); v != "" {

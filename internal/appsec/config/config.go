@@ -26,8 +26,11 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
+	fmt.Println("MTOFF")
 	val, origin, configured := stableconfig.BoolStableConfig(EnvSCAEnabled, false)
+	fmt.Println("MTOFF 2")
 	if configured {
+		fmt.Println("MTOFF 3")
 		telemetry.RegisterAppConfig(EnvSCAEnabled, val, origin)
 	}
 }
