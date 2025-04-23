@@ -6,31 +6,45 @@
 package addresses
 
 import (
+	"math"
+
 	"github.com/DataDog/go-libddwaf/v4"
 )
 
-type RASPRuleType string
+type RASPRuleType uint8
 
 const (
-	RASPRuleTypeLFI  RASPRuleType = "lfi"
-	RASPRuleTypeSSRF RASPRuleType = "ssrf"
-	RASPRuleTypeSQLI RASPRuleType = "sql_injection"
-	RASPRuleTypeCMDI RASPRuleType = "command_injection"
+	RASPRuleTypeLFI RASPRuleType = iota
+	RASPRuleTypeSSRF
+	RASPRuleTypeSQLI
+	RASPRuleTypeCMDI
 )
 
-func RASPRuleTypes() []RASPRuleType {
-	return []RASPRuleType{
-		RASPRuleTypeLFI,
-		RASPRuleTypeSSRF,
-		RASPRuleTypeSQLI,
-		RASPRuleTypeCMDI,
+var RASPRuleTypes = [...]RASPRuleType{
+	RASPRuleTypeLFI,
+	RASPRuleTypeSSRF,
+	RASPRuleTypeSQLI,
+	RASPRuleTypeCMDI,
+}
+
+func (r RASPRuleType) String() string {
+	switch r {
+	case RASPRuleTypeLFI:
+		return "lfi"
+	case RASPRuleTypeSSRF:
+		return "ssrf"
+	case RASPRuleTypeSQLI:
+		return "sql_injection"
+	case RASPRuleTypeCMDI:
+		return "command_injection"
 	}
+	return "unknown()"
 }
 
 // RASPRuleTypeFromAddressSet returns the RASPRuleType for the given address set if it has a RASP address.
 func RASPRuleTypeFromAddressSet(addressSet libddwaf.RunAddressData) (RASPRuleType, bool) {
 	if addressSet.Scope != libddwaf.RASPScope {
-		return "", false
+		return math.MaxUint8, false
 	}
 
 	for address := range addressSet.Ephemeral {
@@ -46,5 +60,5 @@ func RASPRuleTypeFromAddressSet(addressSet libddwaf.RunAddressData) (RASPRuleTyp
 		}
 	}
 
-	return "", false
+	return math.MaxUint8, false
 }

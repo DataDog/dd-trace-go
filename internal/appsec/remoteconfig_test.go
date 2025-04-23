@@ -86,7 +86,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 			defer a.stop()
 			require.NotNil(t, a)
 			if tc.startBefore {
-				require.NoError(t, a.start(nil))
+				require.NoError(t, a.start())
 			}
 			require.Equal(t, tc.startBefore, a.started)
 			a.handleASMFeatures(tc.update)
@@ -206,9 +206,14 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 			expectedP: []string{state.ProductASMFeatures},
 		},
 		{
-			name:      "appsec-enabled/default-RulesManager",
-			env:       map[string]string{config.EnvEnabled: "1"},
-			expectedC: blockingCapabilities[:],
+			name: "appsec-enabled/default-RulesManager",
+			env:  map[string]string{config.EnvEnabled: "1"},
+			expectedC: func() []remoteconfig.Capability {
+				result := make([]remoteconfig.Capability, 0, len(baseCapabilities)+len(blockingCapabilities))
+				result = append(result, baseCapabilities[:]...)
+				result = append(result, blockingCapabilities[:]...)
+				return result
+			}(),
 			expectedP: []string{state.ProductASM, state.ProductASMData, state.ProductASMDD},
 		},
 		{
@@ -235,6 +240,54 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 				found, err := remoteconfig.HasCapability(cap)
 				require.NoError(t, err)
 				require.True(t, found)
+			}
+			for _, p := range tc.expectedP {
+				found, err := remoteconfig.HasProduct(p)
+				require.NoError(t, err)
+				require.True(t, found)
+			}
+		})
+	}
+}
+
+func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		expectedC []remoteconfig.Capability
+		excludedC []remoteconfig.Capability
+		expectedP []string
+	}{
+		{
+			name:      "appsec-enabled/default-RulesManager",
+			env:       map[string]string{config.EnvEnabled: "1"},
+			expectedC: baseCapabilities[:],
+			excludedC: blockingCapabilities[:],
+			expectedP: []string{state.ProductASM, state.ProductASMData, state.ProductASMDD},
+		},
+	} {
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(config.EnvEnabled, "")
+			os.Unsetenv(config.EnvEnabled)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()), config.WithBlockingUnavailable(true))
+			defer Stop()
+			if !Enabled() && activeAppSec == nil {
+				t.Skip()
+			}
+
+			for _, cap := range tc.expectedC {
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.True(t, found)
+			}
+			for _, cap := range tc.excludedC {
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.False(t, found)
 			}
 			for _, p := range tc.expectedP {
 				found, err := remoteconfig.HasProduct(p)

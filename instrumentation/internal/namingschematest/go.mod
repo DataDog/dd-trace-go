@@ -37,7 +37,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.1.0-dev
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.1.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.1.0-dev
@@ -45,8 +45,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.1.0-dev
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.1.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.1.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
@@ -107,10 +107,11 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.1 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
-	github.com/DataDog/go-sqllexer v0.1.0 // indirect
+	github.com/DataDog/go-sqllexer v0.1.6 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.26.0 // indirect
 	github.com/DataDog/sketches-go v1.4.7 // indirect
+	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect

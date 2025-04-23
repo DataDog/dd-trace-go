@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -170,57 +171,14 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		testPrivateFields := getTestPrivateFields(t)
 		if testPrivateFields != nil && testPrivateFields.parent != nil {
 			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
-			if parentExecMeta != nil {
-				execMeta.isANewTest = execMeta.isANewTest || parentExecMeta.isANewTest
-				execMeta.isARetry = execMeta.isARetry || parentExecMeta.isARetry
-				execMeta.isEFDExecution = execMeta.isEFDExecution || parentExecMeta.isEFDExecution
-				execMeta.isATRExecution = execMeta.isATRExecution || parentExecMeta.isATRExecution
-				execMeta.isQuarantined = execMeta.isQuarantined || parentExecMeta.isQuarantined
-				execMeta.isDisabled = execMeta.isDisabled || parentExecMeta.isDisabled
-				execMeta.isAttemptToFix = execMeta.isAttemptToFix || parentExecMeta.isAttemptToFix
-			}
+			propagateTestExecutionMetadataFlags(execMeta, parentExecMeta)
 		}
 
-		// Set the CI visibility test.
-		execMeta.test = test
-
-		// If the execution is for a new test we tag the test event from early flake detection
-		if execMeta.isANewTest {
-			// Set the is new test tag
-			test.SetTag(constants.TestIsNew, "true")
-		}
-
-		// If the execution is a retry we tag the test event
-		if execMeta.isARetry {
-			// Set the retry tag
-			test.SetTag(constants.TestIsRetry, "true")
-
-			// If the execution is an EFD execution we tag the test event reason
-			if execMeta.isEFDExecution {
-				// Set the EFD as the retry reason
-				test.SetTag(constants.TestRetryReason, "efd")
-			} else if execMeta.isATRExecution {
-				// Set the ATR as the retry reason
-				test.SetTag(constants.TestRetryReason, "atr")
-			} else if execMeta.isAttemptToFix {
-				// Set the attempt to fix as the retry reason
-				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
-			}
-		}
-
-		// If the test is an attempt to fix we tag the test event
-		if execMeta.isAttemptToFix {
-			test.SetTag(constants.TestIsAttempToFix, "true")
-		}
-
-		// If the test is quarantined we tag the test event
-		if execMeta.isQuarantined {
-			test.SetTag(constants.TestIsQuarantined, "true")
-		}
-
-		// If the test is disabled we tag the test event
-		if execMeta.isDisabled {
-			test.SetTag(constants.TestIsDisabled, "true")
+		// Set some required tags from the execution metadata
+		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
+		if cancelExecution {
+			checkModuleAndSuite(module, suite)
+			return
 		}
 
 		defer func() {
@@ -235,7 +193,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
 				// so for this case we avoid closing CI Visibility, but we don't stop the panic from happening.
 				// it will be handled by `t.Run`
-				if checkIfCIVisibilityExitIsRequiredByPanic() {
+				if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
 					integrations.ExitCiVisibility()
 				}
 				panic(r)
@@ -258,7 +216,6 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				test.Close(integrations.ResultStatusPass)
 			}
 			checkModuleAndSuite(module, suite)
-
 		}()
 
 		// Execute the original test function.
@@ -501,4 +458,27 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 //go:linkname instrumentTestifySuiteRun
 func instrumentTestifySuiteRun(t *testing.T, suite any) {
 	registerTestifySuite(t, suite)
+}
+
+// getTestOptimizationContext helper function to get the context of the test
+//
+//go:linkname getTestOptimizationContext
+func getTestOptimizationContext(tb testing.TB) context.Context {
+	if iTest := getTestOptimizationTest(tb); iTest != nil {
+		return iTest.Context()
+	}
+
+	return context.Background()
+}
+
+// getTestOptimizationTest helper function to get the test optimization test of the testing.TB
+//
+//go:linkname getTestOptimizationTest
+func getTestOptimizationTest(tb testing.TB) integrations.Test {
+	ciTestItem := getTestMetadata(tb)
+	if ciTestItem != nil && ciTestItem.test != nil {
+		return ciTestItem.test
+	}
+
+	return nil
 }
