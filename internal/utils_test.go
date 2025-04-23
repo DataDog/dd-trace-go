@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -99,6 +100,35 @@ func TestCounterMap(t *testing.T) {
 
 		assert.Equal(map[string]int64{"key": 10}, cm.GetAndReset())
 	})
+
+	t.Run("concurrent with reset", func(t *testing.T) {
+		assert := assert.New(t)
+		cm := NewCounterMap()
+		wg := sync.WaitGroup{}
+		val := &atomic.Int64{}
+		for range 10 {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+
+			go func() {
+				defer wg.Done()
+				v, ok := cm.GetAndReset()["key"]
+				if ok {
+					val.Add(v)
+				}
+
+			}()
+		}
+		wg.Wait()
+		v, ok := cm.GetAndReset()["key"]
+		if ok {
+			val.Add(v)
+		}
+		assert.Equal(int64(10), val.Load())
+	})
 }
 func BenchmarkCounterMap(b *testing.B) {
 	b.Run("base_case", func(b *testing.B) {
@@ -160,6 +190,35 @@ func BenchmarkCounterMap(b *testing.B) {
 		wg.Wait()
 
 		assert.Equal(b, map[string]int64{"key": int64(b.N)}, cm.GetAndReset())
+	})
+
+	b.Run("concurrent with reset", func(b *testing.B) {
+		cm := NewCounterMap()
+		wg := sync.WaitGroup{}
+		val := &atomic.Int64{}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				cm.Inc("key")
+			}()
+
+			go func() {
+				defer wg.Done()
+				v, ok := cm.GetAndReset()["key"]
+				if ok {
+					val.Add(v)
+				}
+			}()
+		}
+		wg.Wait()
+		v, ok := cm.GetAndReset()["key"]
+		if ok {
+			val.Add(v)
+		}
+		assert.Equal(b, int64(b.N), val.Load())
 	})
 }
 
