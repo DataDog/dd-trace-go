@@ -81,6 +81,9 @@ func TestCounterMap(t *testing.T) {
 
 		cm.Inc("a")
 		assert.Equal(map[string]int64{"a": 1}, cm.GetAndReset())
+
+		cm.Inc("c")
+		assert.Equal(map[string]int64{"c": 1}, cm.GetAndReset())
 	})
 
 	t.Run("concurrent", func(t *testing.T) {
@@ -99,6 +102,30 @@ func TestCounterMap(t *testing.T) {
 		wg.Wait()
 
 		assert.Equal(map[string]int64{"key": 10}, cm.GetAndReset())
+	})
+
+	t.Run("concurrent with multiple keys", func(t *testing.T) {
+		assert := assert.New(t)
+
+		cm := NewCounterMap()
+
+		wg := sync.WaitGroup{}
+		for i := range 10 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				key := fmt.Sprintf("key%d", i)
+				cm.Inc(key)
+			}()
+		}
+		wg.Wait()
+
+		res := cm.GetAndReset()
+		assert.Len(res, 10)
+		for i := range 10 {
+			key := fmt.Sprintf("key%d", i)
+			assert.Equal(int64(1), res[key])
+		}
 	})
 
 	t.Run("concurrent with reset", func(t *testing.T) {
