@@ -94,12 +94,12 @@ func getDDorOtelConfig(configName string) string {
 	// Check for stable configuration keys
 	if config.dd == "DD_RUNTIME_METRICS_ENABLED" {
 		stableCfgKey = true
-		if v := stableconfig.FleetConfig.Get("DD_RUNTIME_METRICS_ENABLED"); v != "" {
+		if v := stableconfig.ManagedConfig.Get("DD_RUNTIME_METRICS_ENABLED"); v != "" {
 			return v
 		}
 	} else if config.dd == "DD_TRACE_DEBUG" {
 		stableCfgKey = true
-		if v := stableconfig.FleetConfig.Get("DD_TRACE_DEBUG"); v != "" {
+		if v := stableconfig.ManagedConfig.Get("DD_TRACE_DEBUG"); v != "" {
 			return v
 		}
 	}

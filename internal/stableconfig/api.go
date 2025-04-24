@@ -14,9 +14,9 @@ import (
 )
 
 func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin, configured bool) {
-	if v := FleetConfig.Get(env); v != "" {
+	if v := ManagedConfig.Get(env); v != "" {
 		if vv, err := strconv.ParseBool(v); err == nil {
-			return vv, telemetry.OriginFleetStableConfig, true
+			return vv, telemetry.OriginManagedStableConfig, true
 		} else {
 			log.Warn("Non-boolean value for %s in fleet-managed configuration file, dropping. Parse failed with error: %v", env, err)
 		}
@@ -39,8 +39,8 @@ func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin
 }
 
 func StringStableConfig(env string, def string) (string, telemetry.Origin) {
-	if v := FleetConfig.Get(env); v != "" {
-		return v, telemetry.OriginFleetStableConfig
+	if v := ManagedConfig.Get(env); v != "" {
+		return v, telemetry.OriginManagedStableConfig
 	}
 	if v, ok := os.LookupEnv(env); ok {
 		return v, telemetry.OriginEnvVar
