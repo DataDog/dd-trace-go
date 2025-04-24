@@ -16,20 +16,13 @@ import (
 const (
 	localFilePath   = "/etc/datadog-agent/application_monitoring.yaml"
 	managedFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
-	maxFileSize     = 4 * 1024 // 4 KB. Was determined based on the size of bigValidYaml (see: stableconfigsource_test.go)
+	// TODO: Update maxFileSize to support extensibility to phase 2.
+	maxFileSize = 4 * 1024 // 4 KB. Was determined based on the size of bigValidYaml (see: stableconfigsource_test.go)
 )
 
-var LocalConfig *stableConfigSource = &stableConfigSource{
-	filePath: localFilePath,
-	origin:   telemetry.OriginLocalStableConfig,
-	config:   ParseFile(localFilePath),
-}
+var LocalConfig *stableConfigSource = newStableConfigSource(localFilePath, telemetry.OriginManagedStableConfig)
 
-var ManagedConfig *stableConfigSource = &stableConfigSource{
-	filePath: managedFilePath,
-	origin:   telemetry.OriginManagedStableConfig,
-	config:   ParseFile(managedFilePath),
-}
+var ManagedConfig *stableConfigSource = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
 
 type stableConfigSource struct {
 	filePath string
@@ -39,6 +32,14 @@ type stableConfigSource struct {
 
 func (s *stableConfigSource) Get(key string) string {
 	return s.config.get(key)
+}
+
+func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConfigSource {
+	return &stableConfigSource{
+		filePath: filePath,
+		origin:   origin,
+		config:   ParseFile(localFilePath),
+	}
 }
 
 func ParseFile(filePath string) *stableConfig {

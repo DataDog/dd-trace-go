@@ -13,21 +13,21 @@ import (
 )
 
 const (
-	simpleInvalidYaml = `
+	invalidYaml = `
 a: Easy!
 b:
   c: 2
   d: [3, 4]
 `
 
-	simpleValidYaml = `
+	validYaml = `
 config_id: 67890
 apm_configuration_default:
     DD_KEY_1: value_1
     "DD_KEY_2": "value_2"
 `
 
-	simpleEmptyYaml = ``
+	emptyYaml = ``
 
 	bigValidYaml = `
 "config_id": 67890
@@ -48,11 +48,11 @@ apm_configuration_default:
 
 func TestFileContentsToConfig(t *testing.T) {
 	t.Run("simple failure", func(t *testing.T) {
-		scfg := fileContentsToConfig([]byte(simpleInvalidYaml), "test.yml")
+		scfg := fileContentsToConfig([]byte(invalidYaml), "test.yml")
 		assert.True(t, scfg.isEmpty())
 	})
 	t.Run("simple success", func(t *testing.T) {
-		scfg := fileContentsToConfig([]byte(simpleValidYaml), "test.yml")
+		scfg := fileContentsToConfig([]byte(validYaml), "test.yml")
 		assert.Equal(t, scfg.Id, 67890)
 		assert.Equal(t, len(scfg.Config), 2)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "value_1")
@@ -79,7 +79,7 @@ apm_configuration_default:
 		assert.Equal(t, scfg.Id, -1)
 	})
 	t.Run("success with empty contents", func(t *testing.T) {
-		scfg := fileContentsToConfig([]byte(simpleEmptyYaml), "test.yml")
+		scfg := fileContentsToConfig([]byte(emptyYaml), "test.yml")
 		assert.True(t, scfg.isEmpty())
 	})
 }
@@ -90,7 +90,7 @@ func TestParseFile(t *testing.T) {
 		assert.True(t, scfg.isEmpty())
 	})
 	t.Run("success", func(t *testing.T) {
-		err := os.WriteFile("test.yml", []byte(simpleValidYaml), 0644)
+		err := os.WriteFile("test.yml", []byte(validYaml), 0644)
 		assert.NoError(t, err)
 		defer os.Remove("test.yml")
 		scfg := ParseFile("test.yml")
