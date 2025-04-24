@@ -38,6 +38,7 @@ func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin
 	return def, telemetry.OriginDefault, false
 }
 
+// Unlike callers of BoolStableConfig, callers of StringStableConfig don't care about configured, so exclude it include it in return data
 func StringStableConfig(env string, def string) (string, telemetry.Origin) {
 	if v := ManagedConfig.Get(env); v != "" {
 		return v, telemetry.OriginManagedStableConfig
