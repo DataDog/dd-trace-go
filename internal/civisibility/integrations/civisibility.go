@@ -61,7 +61,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		// check the debug flag to enable debug logs. The tracer initialization happens
 		// after the CI Visibility initialization so we need to handle this flag ourselves
 		// TODO: capture Origin, report to telemetry
-		if enabled, _ := stableconfig.BoolStableConfig("DD_TRACE_DEBUG", false); enabled {
+		if enabled, _, _ := stableconfig.BoolStableConfig("DD_TRACE_DEBUG", false); enabled {
 			log.SetLevel(log.LevelDebug)
 		}
 
