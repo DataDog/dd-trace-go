@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zeebo/assert"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -25,10 +25,25 @@ config_id: 67890
 apm_configuration_default:
     DD_KEY_1: value_1
     "DD_KEY_2": "value_2"
-
 `
 
 	simpleEmptyYaml = ``
+
+	bigValidYaml = `
+"config_id": 67890
+"apm_configuration_default":
+    "DD_APM_TRACING_ENABLED": "false"
+    "DD_RUNTIME_METRICS_ENABLED": "false"
+    "DD_LOGS_INJECTION": "false"
+    "DD_PROFILING_ENABLED": "false"
+    "DD_DATA_STREAMS_ENABLED": "false"
+    "DD_APPSEC_ENABLED": "false"
+    "DD_IAST_ENABLED": "false"
+    "DD_DYNAMIC_INSTRUMENTATION_ENABLED": "false"
+    "DD_DATA_JOBS_ENABLED": "false"
+    "DD_APPSEC_SCA_ENABLED": "false"
+    "DD_TRACE_DEBUG": "false"
+`
 )
 
 func TestFileContentsToConfig(t *testing.T) {
@@ -56,7 +71,6 @@ config_id: 67890
 apm_configuration_default:
     DD_KEY_1: value_1
     "DD_KEY_2": "value_2"
-
 `
 		scfg := fileContentsToConfig([]byte(data), "test.yml")
 		assert.Equal(t, len(scfg.Config), 2)
@@ -84,5 +98,33 @@ func TestParseFile(t *testing.T) {
 		assert.Equal(t, len(scfg.Config), 2)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "value_1")
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "value_2")
+	})
+}
+
+func TestFileSizeLimits(t *testing.T) {
+	// assert that bigValidYaml is within range
+	t.Run("under limit", func(t *testing.T) {
+		err := os.WriteFile("test.yml", []byte(bigValidYaml), 0644)
+		assert.NoError(t, err)
+		defer os.Remove("test.yml")
+		scfg := ParseFile("test.yml")
+		assert.False(t, scfg.isEmpty()) // file parsing succeeded
+	})
+	t.Run("over limit", func(t *testing.T) {
+		// Build a valid stable configuration file that surpasses maxFileSize
+		header := `"config_id": 67890
+		"apm_configuration_default":
+		`
+		entry := `    "DD_TRACE_DEBUG": "false"`
+		content := header
+		for len(content) <= maxFileSize {
+			content += entry
+		}
+
+		err := os.WriteFile("test.yml", []byte(content), 0644)
+		assert.NoError(t, err)
+		defer os.Remove("test.yml")
+		scfg := ParseFile("test.yml")
+		assert.True(t, scfg.isEmpty()) // file parsing succeeded
 	})
 }

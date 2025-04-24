@@ -16,18 +16,19 @@ import (
 const (
 	localFilePath = "/etc/datadog-agent/application_monitoring.yaml"
 	fleetFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
+	maxFileSize   = 4 * 1024 // 4 KB. Was determined based on the size of bigValidYaml (see: stableconfigsource_test.go)
 )
 
 var LocalConfig *stableConfigSource = &stableConfigSource{
 	filePath: localFilePath,
 	origin:   telemetry.OriginLocalStableConfig,
-	config:   &stableConfig{},
+	config:   ParseFile(localFilePath),
 }
 
 var FleetConfig *stableConfigSource = &stableConfigSource{
 	filePath: fleetFilePath,
 	origin:   telemetry.OriginFleetStableConfig,
-	config:   &stableConfig{},
+	config:   ParseFile(fleetFilePath),
 }
 
 type stableConfigSource struct {
@@ -40,20 +41,37 @@ func (s *stableConfigSource) Get(key string) string {
 	return s.config.get(key)
 }
 
-func ParseFile(filePath string) stableConfig {
+func ParseFile(filePath string) *stableConfig {
+	// check file size limits
+	info, err := os.Stat(filePath)
+	if err != nil {
+		// There are many valid cases where stable config file won't exist
+		if err != os.ErrNotExist {
+			// log about it
+		}
+		return emptyStableConfig()
+	}
+
+	if info.Size() > maxFileSize {
+		log.Warn("Stable config file %s exceeds size limit (%d bytes > %d bytes), dropping", filePath, info.Size(), maxFileSize)
+		return emptyStableConfig()
+	}
+
+	// read file, parse contents
 	data, err := os.ReadFile(filePath)
 	if err == nil {
 		return fileContentsToConfig(data, filePath)
 	}
+	// There are many valid cases where stable config file won't exist
 	if err != os.ErrNotExist {
 		// log about it
 	}
 	return emptyStableConfig()
 }
 
-func fileContentsToConfig(data []byte, fileName string) stableConfig {
-	var scfg stableConfig
-	err := yaml.Unmarshal(data, &scfg)
+func fileContentsToConfig(data []byte, fileName string) *stableConfig {
+	scfg := &stableConfig{}
+	err := yaml.Unmarshal(data, scfg)
 	if err != nil {
 		log.Warn("Parsing stable config file" + fileName + "failed due to error: " + err.Error())
 		return emptyStableConfig()
