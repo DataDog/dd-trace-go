@@ -6,6 +6,7 @@
 package stableconfig
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -20,7 +21,7 @@ const (
 	maxFileSize = 4 * 1024 // 4 KB. Was determined based on the size of bigValidYaml (see: stableconfigsource_test.go)
 )
 
-var LocalConfig *stableConfigSource = newStableConfigSource(localFilePath, telemetry.OriginManagedStableConfig)
+var LocalConfig *stableConfigSource = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
 
 var ManagedConfig *stableConfigSource = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
 
@@ -38,12 +39,13 @@ func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConf
 	return &stableConfigSource{
 		filePath: filePath,
 		origin:   origin,
-		config:   ParseFile(localFilePath),
+		config:   ParseFile(filePath),
 	}
 }
 
 func ParseFile(filePath string) *stableConfig {
 	// check file size limits
+	fmt.Println("MTOFF file path", filePath)
 	info, err := os.Stat(filePath)
 	if err != nil {
 		// There are many valid cases where stable config file won't exist
