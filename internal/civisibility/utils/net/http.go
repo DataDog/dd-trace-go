@@ -82,9 +82,8 @@ func (r *Response) Unmarshal(target interface{}) error {
 		if target.(msgp.Unmarshaler) != nil {
 			_, err := target.(msgp.Unmarshaler).UnmarshalMsg(r.Body)
 			return err
-		} else {
-			return errors.New("target must implement msgp.Unmarshaler for MessagePack unmarshalling")
 		}
+		return errors.New("target must implement msgp.Unmarshaler for MessagePack unmarshalling")
 	default:
 		return fmt.Errorf("unsupported format '%s' for unmarshalling", r.Format)
 	}

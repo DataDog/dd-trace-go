@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	_ "unsafe"
+	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"

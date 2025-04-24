@@ -387,36 +387,36 @@ func HasProduct(p string) (bool, error) {
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
-func RegisterCapability(cap Capability) error {
+func RegisterCapability(c Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	client.capabilities[cap] = struct{}{}
+	client.capabilities[c] = struct{}{}
 	return nil
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
-func UnregisterCapability(cap Capability) error {
+func UnregisterCapability(c Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	delete(client.capabilities, cap)
+	delete(client.capabilities, c)
 	return nil
 }
 
 // HasCapability returns whether a given capability was registered
-func HasCapability(cap Capability) (bool, error) {
+func HasCapability(c Capability) (bool, error) {
 	if client == nil {
 		return false, ErrClientNotStarted
 	}
 	client.capabilitiesMu.RLock()
 	defer client.capabilitiesMu.RUnlock()
-	_, found := client.capabilities[cap]
+	_, found := client.capabilities[c]
 	return found, nil
 }
 

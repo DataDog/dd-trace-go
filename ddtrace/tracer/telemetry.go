@@ -124,7 +124,7 @@ func startTelemetry(c *config) {
 	if c.orchestrionCfg.Enabled {
 		// If orchestrion is enabled, report it to the back-end via a telemetry metric on every flush.
 		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + c.orchestrionCfg.Metadata.Version})
-		client.AddFlushTicker(func(c telemetry.Client) { handle.Submit(1) })
+		client.AddFlushTicker(func(_ telemetry.Client) { handle.Submit(1) })
 	}
 
 	telemetry.StartApp(client)
