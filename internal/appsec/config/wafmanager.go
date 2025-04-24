@@ -52,6 +52,17 @@ func NewWAFManager(obfuscator appsec.ObfuscatorConfig, defaultRules any) (*WAFMa
 			builder.Close()
 			return nil, err
 		}
+		diag.EachFeature(func(name string, feature *libddwaf.Feature) {
+			if feature.Error != "" {
+				log.Error("%s", feature.Error, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+			}
+			for msg, ids := range feature.Errors {
+				log.Error("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+			}
+			for msg, ids := range feature.Warnings {
+				log.Warn("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+			}
+		})
 		rulesVersion = diag.Version
 	}
 

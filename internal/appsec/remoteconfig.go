@@ -89,8 +89,47 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	for path, update := range addOrUpdates {
 		diag, err := wafConfigUpdater.AddOrUpdateConfig(path, update.Content)
 		if err != nil {
-			// TODO: https://docs.google.com/document/d/1t6U7WXko_QChhoNIApn0-CRNe6SAKuiiAQIyCRPUXP4/edit?tab=t.0#heading=h.6ud96uy74pzs
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
+			// Configuration object has been fully rejected; or there was an error processing it or parsing the diagnostics
+			// value. If we have a diagnostics object, encode all errors from the diagnostics object as a JSON value, as
+			// described by:
+			// https://docs.google.com/document/d/1t6U7WXko_QChhoNIApn0-CRNe6SAKuiiAQIyCRPUXP4/edit?tab=t.0#heading=h.6ud96uy74pzs
+			type errInfo struct {
+				Error  string              `json:"error,omitempty"`
+				Errors map[string][]string `json:"errors,omitempty"`
+			}
+			var errs map[string]errInfo
+			diag.EachFeature(func(name string, feat *libddwaf.Feature) {
+				var (
+					info errInfo
+					some bool
+				)
+				if feat.Error != "" {
+					info.Error = feat.Error
+					some = true
+				}
+				for msg, ids := range feat.Errors {
+					info.Errors[msg] = ids
+					some = true
+				}
+				if !some {
+					return
+				}
+				if err == nil {
+					errs = make(map[string]errInfo)
+				}
+				errs[name] = info
+			})
+
+			errMsg := err.Error()
+			if len(errs) > 0 {
+				if data, err := json.Marshal(errs); err == nil {
+					errMsg = string(data)
+				} else {
+					telemetrylog.Error("appsec: remote config: failed to marshal error details: %v", err)
+				}
+			}
+
+			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: errMsg}
 			continue
 		}
 
@@ -99,7 +138,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 			anyASMDD = true
 		}
 		diag.EachFeature(func(name string, feat *libddwaf.Feature) {
-			if len(feat.Errors) == 0 && len(feat.Warnings) == 0 {
+			if feat.Error == "" && len(feat.Errors) == 0 && len(feat.Warnings) == 0 {
 				// No errors or warnings; nothing to report...
 				return
 			}
@@ -110,6 +149,9 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				"log_type:rc::" + strings.ToLower(update.Product) + "::diagnostic",
 				"appsec_config_key:" + name,
 				"rc_config_id:" + path.ConfigID,
+			}
+			if err := feat.Error; err != "" {
+				telemetrylog.Error("%s", err, telemetry.WithTags(tags))
 			}
 			for err, ids := range feat.Errors {
 				telemetrylog.Error("%q: %q", err, ids, telemetry.WithTags(tags))

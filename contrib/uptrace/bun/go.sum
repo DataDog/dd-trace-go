@@ -23,8 +23,8 @@ github.com/DataDog/datadog-agent/pkg/version v0.64.0-rc.1 h1:eg+XW2CzOwFa//bjoXi
 github.com/DataDog/datadog-agent/pkg/version v0.64.0-rc.1/go.mod h1:DgOVsfSRaNV4GZNl/qgoZjG3hJjoYUNWPPhbfTfTqtY=
 github.com/DataDog/datadog-go/v5 v5.6.0 h1:2oCLxjF/4htd55piM75baflj/KoE6VYS7alEUqFvRDw=
 github.com/DataDog/datadog-go/v5 v5.6.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.1 h1:aBz88M6Gf2rt4ZpjH0l0GyBIQjvyOCDqb/wmpiG/hqc=
-github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.1/go.mod h1:1kRZJCu3b57M2Ve44XKi7a+dQU+1V4NcmAMk+z0Yjbc=
+github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.2 h1:+yJvX3LkYR8qQ5A//GLP8jgSYEJzj0m8F6LHIFcj72Y=
+github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.2/go.mod h1:1kRZJCu3b57M2Ve44XKi7a+dQU+1V4NcmAMk+z0Yjbc=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 h1:bpitH5JbjBhfcTG+H2RkkiUXpYa8xSuIPnyNtTaSPog=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6/go.mod h1:quaQJ+wPN41xEC458FCpTwyROZm3MzmTZ8q8XOXQiPs=
 github.com/DataDog/go-sqllexer v0.1.6 h1:skEXpWEVCpeZFIiydoIa2f2rf+ymNpjiIMqpW4w3YAk=
