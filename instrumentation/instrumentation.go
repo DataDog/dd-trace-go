@@ -39,7 +39,7 @@ func Load(pkg Package) *Instrumentation {
 	}
 }
 
-func Register(name string, info PackageInfo) error {
+func Register(_ string, info PackageInfo) error {
 	info.external = true
 	return nil
 }

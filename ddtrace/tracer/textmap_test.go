@@ -2494,7 +2494,7 @@ func TestMalformedTID(t *testing.T) {
 	defer tracer.Stop()
 	defer SetGlobalTracer(&NoopTracer{})
 
-	t.Run("datadog, short tid", func(t *testing.T) {
+	t.Run("datadog, short tid", func(_ *testing.T) {
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
@@ -2507,7 +2507,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.NotContains(root.meta, keyTraceID128)
 	})
 
-	t.Run("datadog, malformed tid", func(t *testing.T) {
+	t.Run("datadog, malformed tid", func(_ *testing.T) {
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
@@ -2520,7 +2520,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.NotContains(root.meta, keyTraceID128)
 	})
 
-	t.Run("datadog, valid tid", func(t *testing.T) {
+	t.Run("datadog, valid tid", func(_ *testing.T) {
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",

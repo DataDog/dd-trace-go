@@ -68,7 +68,7 @@ func TestSpanAsMap(t *testing.T) {
 			want: nil,
 		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			assertions.Equal(tt.want, tt.span.AsMap()[ext.SpanName])
 		})
 	}
