@@ -23,7 +23,6 @@ type (
 		rulesVersion  string
 		defaultLoaded bool
 		closed        bool
-		// mu is used to guard access to the [WAFManager] state.
 		mu sync.RWMutex
 	}
 
