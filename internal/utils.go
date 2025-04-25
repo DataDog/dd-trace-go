@@ -123,22 +123,24 @@ func (cm *CounterMap) getStateFromPool() *state {
 
 func (cm *CounterMap) Inc(key string) {
 	// Get the current active state.
-	state := cm.activeState.Load()
-
 	// Before adding to the inFlightOps, lock to ensure no GetAndReset() can be run
 	// Otherwise, we risk losing data due to concurrent Inc() and GetAndReset()
+	cm.mu.Lock()
+	state := cm.activeState.Load()
+
 	state.cond.L.Lock()
 	state.inFlightOps.Add(1)
 	state.cond.L.Unlock()
+	cm.mu.Unlock()
 
 	defer func() {
 		// Remove operation from in-flight list.
 		// If this was the last in-flight operation, signal waiters
+		state.cond.L.Lock()
 		if state.inFlightOps.Add(-1) == 0 {
-			// It is allowed, but not required for the caller to hold c.L during the call.
-			// See: https://pkg.go.dev/sync#Cond.Signal
 			state.cond.Signal()
 		}
+		state.cond.L.Unlock()
 	}()
 
 	// Try to load existing counter.
@@ -175,7 +177,7 @@ func (cm *CounterMap) GetAndReset() map[string]int64 {
 	for oldState.inFlightOps.Load() > 0 {
 		oldState.cond.Wait() // Releases the lock while waiting.
 	}
-	oldState.cond.L.Unlock()
+	defer oldState.cond.L.Unlock()
 
 	// Process the old state - no more in-flight operations on it.
 	res := make(map[string]int64)
