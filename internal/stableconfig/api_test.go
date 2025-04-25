@@ -35,27 +35,27 @@ apm_configuration_default:
 	assert.NoError(t, err)
 	defer os.Remove(managedYaml)
 	t.Run("default", func(t *testing.T) {
-		val, origin, configured := BoolStableConfig("UNKNOWN_KEY", true)
+		val, origin, err := BoolStableConfig("UNKNOWN_KEY", true)
 		assert.True(t, val)
 		assert.Equal(t, telemetry.OriginDefault, origin)
-		assert.False(t, configured)
+		assert.Nil(t, err)
 	})
 	t.Run("localStableconfig only", func(t *testing.T) {
 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
-		val, origin, configured := BoolStableConfig("DD_KEY", false)
+		val, origin, err := BoolStableConfig("DD_KEY", false)
 		assert.True(t, val)
 		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
-		assert.True(t, configured)
+		assert.Nil(t, err)
 	})
 	t.Run("env overrides localStableConfig", func(t *testing.T) {
 		t.Setenv("DD_KEY", "false")
 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
-		val, origin, configured := BoolStableConfig("DD_KEY", true)
+		val, origin, err := BoolStableConfig("DD_KEY", true)
 		assert.False(t, val)
 		assert.Equal(t, telemetry.OriginEnvVar, origin)
-		assert.True(t, configured)
+		assert.Nil(t, err)
 	})
 	t.Run("managedStableConfig overrides env", func(t *testing.T) {
 		t.Setenv("DD_KEY", "true")
@@ -66,10 +66,10 @@ apm_configuration_default:
 		ManagedConfig = newStableConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
 		defer func() { ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig) }()
 
-		val, origin, configured := BoolStableConfig("DD_KEY", true)
+		val, origin, err := BoolStableConfig("DD_KEY", true)
 		assert.False(t, val)
 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
-		assert.True(t, configured)
+		assert.Nil(t, err)
 	})
 }
 

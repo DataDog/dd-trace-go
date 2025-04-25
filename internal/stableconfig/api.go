@@ -6,36 +6,38 @@
 package stableconfig
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin, configured bool) {
+func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin, err error) {
+	// explicitly define err as nil
+	err = nil
 	if v := ManagedConfig.Get(env); v != "" {
-		if vv, err := strconv.ParseBool(v); err == nil {
-			return vv, telemetry.OriginManagedStableConfig, true
+		if vv, parseErr := strconv.ParseBool(v); parseErr == nil {
+			return vv, telemetry.OriginManagedStableConfig, nil
 		} else {
-			log.Warn("Non-boolean value for %s in fleet-managed configuration file, dropping. Parse failed with error: %v", env, err)
+			err = fmt.Errorf("non-boolean value for %s: '%s' in fleet-managed configuration file, dropping", env, v)
 		}
 	}
 	if v, ok := os.LookupEnv(env); ok {
-		if vv, err := strconv.ParseBool(v); err == nil {
-			return vv, telemetry.OriginEnvVar, true
+		if vv, parseErr := strconv.ParseBool(v); parseErr == nil {
+			return vv, telemetry.OriginEnvVar, nil
 		} else {
-			log.Warn("Non-boolean value for env var %s, dropping. Parse failed with error: %v", env, err)
+			err = fmt.Errorf("could not parse %s value `%s` as a boolean value", env, v)
 		}
 	}
 	if v := LocalConfig.Get(env); v != "" {
-		if vv, err := strconv.ParseBool(v); err == nil {
-			return vv, telemetry.OriginLocalStableConfig, true
+		if vv, parseErr := strconv.ParseBool(v); parseErr == nil {
+			return vv, telemetry.OriginLocalStableConfig, nil
 		} else {
-			log.Warn("Non-boolean value for %s in fleet-managed configuration file, dropping. Parse failed with error: %v", env, err)
+			err = fmt.Errorf("non-boolean value for %s: '%s' in local configuration file, dropping", env, v)
 		}
 	}
-	return def, telemetry.OriginDefault, false
+	return def, telemetry.OriginDefault, err
 }
 
 // Unlike callers of BoolStableConfig, callers of StringStableConfig don't care about configured, so exclude it include it in return data
