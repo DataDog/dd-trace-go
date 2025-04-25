@@ -6,7 +6,6 @@
 package stableconfig
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -45,7 +44,6 @@ func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConf
 
 func ParseFile(filePath string) *stableConfig {
 	// check file size limits
-	fmt.Println("MTOFF file path", filePath)
 	info, err := os.Stat(filePath)
 	if err != nil {
 		// There are many valid cases where stable config file won't exist
