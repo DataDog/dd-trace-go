@@ -73,12 +73,16 @@ func (l *LockMap) Get(k string) string {
 }
 
 type state struct {
-	counters *xsync.MapOf[string, *xsync.Counter]
+	counters    *xsync.MapOf[string, *xsync.Counter]
+	inFlightOps *atomic.Int64
+	cond        *sync.Cond
 }
 
 func newState() *state {
 	return &state{
-		counters: xsync.NewMapOf[string, *xsync.Counter](),
+		counters:    xsync.NewMapOf[string, *xsync.Counter](),
+		inFlightOps: &atomic.Int64{},
+		cond:        sync.NewCond(&sync.Mutex{}),
 	}
 }
 
@@ -91,25 +95,20 @@ type CounterMap struct {
 	activeState atomic.Pointer[state]
 
 	// Prevents concurrent GetAndReset operations.
-	mu *sync.RWMutex
+	mu *sync.Mutex
 
 	// Pool for state objects to reduce GC pressure
 	statePool sync.Pool
-
-	inFlightOps *atomic.Int64
-	cond        *sync.Cond
 }
 
 func NewCounterMap() *CounterMap {
 	cm := &CounterMap{
-		mu: &sync.RWMutex{},
+		mu: &sync.Mutex{},
 		statePool: sync.Pool{
 			New: func() any {
 				return newState()
 			},
 		},
-		inFlightOps: &atomic.Int64{},
-		cond:        sync.NewCond(&sync.Mutex{}),
 	}
 	cm.activeState.Store(cm.getStateFromPool())
 	return cm
@@ -123,19 +122,22 @@ func (cm *CounterMap) getStateFromPool() *state {
 }
 
 func (cm *CounterMap) Inc(key string) {
-	// Mark operation as in-flight.
-	cm.inFlightOps.Add(1)
-
 	// Get the current active state.
 	state := cm.activeState.Load()
+
+	// Before adding to the inFlightOps, lock to ensure no GetAndReset() can be run
+	// Otherwise, we risk losing data due to concurrent Inc() and GetAndReset()
+	state.cond.L.Lock()
+	state.inFlightOps.Add(1)
+	state.cond.L.Unlock()
 
 	defer func() {
 		// Remove operation from in-flight list.
 		// If this was the last in-flight operation, signal waiters
-		if cm.inFlightOps.Add(-1) == 0 {
-			cm.cond.L.Lock()
-			cm.cond.Signal()
-			cm.cond.L.Unlock()
+		if state.inFlightOps.Add(-1) == 0 {
+			// It is allowed, but not required for the caller to hold c.L during the call.
+			// See: https://pkg.go.dev/sync#Cond.Signal
+			state.cond.Signal()
 		}
 	}()
 
@@ -157,7 +159,10 @@ func (cm *CounterMap) Inc(key string) {
 
 func (cm *CounterMap) GetAndReset() map[string]int64 {
 	// Ensure only one GetAndReset operation runs at a time.
-	cm.mu.Lock()
+	// If another GetAndReset() is already running, we return early.
+	if !cm.mu.TryLock() {
+		return nil
+	}
 	defer cm.mu.Unlock()
 
 	// Atomically swap the states.
@@ -166,11 +171,11 @@ func (cm *CounterMap) GetAndReset() map[string]int64 {
 	oldState := cm.activeState.Swap(newState)
 
 	// Wait for all in-flight operations on the old map to complete.
-	cm.cond.L.Lock()
-	for cm.inFlightOps.Load() > 0 {
-		cm.cond.Wait() // Releases the lock while waiting.
+	oldState.cond.L.Lock()
+	for oldState.inFlightOps.Load() > 0 {
+		oldState.cond.Wait() // Releases the lock while waiting.
 	}
-	cm.cond.L.Unlock()
+	oldState.cond.L.Unlock()
 
 	// Process the old state - no more in-flight operations on it.
 	res := make(map[string]int64)
