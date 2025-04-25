@@ -6,9 +6,6 @@
 package config
 
 import (
-	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
@@ -180,21 +177,11 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // If the [EnvEnabled] variable is set to a value that is not a valid boolean (according to
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
-	return parseBoolEnvVar(EnvEnabled)
-}
-
-// Return true when the given environment variable is defined and set to true (as of strconv's
-// parsing rules). When false, it also returns whether the env var was actually set or not.
-// In case of a parsing error, it returns a detailed error.
-func parseBoolEnvVar(env string) (enabled bool, set bool, err error) {
-	str, set := os.LookupEnv(env)
-	if str == "" {
-		return false, set, nil
-	} else if enabled, err = strconv.ParseBool(str); err != nil {
-		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", env, str)
+	enabled, origin, err := stableconfig.BoolStableConfig(EnvEnabled, false)
+	if origin != telemetry.OriginDefault {
+		set = true
 	}
-
-	return enabled, set, nil
+	return
 }
 
 // NewConfig returns a fresh appsec configuration read from the env
