@@ -16,6 +16,12 @@ linters:
       - third_party$
       - builtin$
       - examples$
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow # TODO: Enable this once we've fixed all the shadowing issues.
 formatters:
   enable:
     - gofmt
