@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +68,7 @@ func TestSpanAsMap(t *testing.T) {
 			want: nil,
 		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			assertions.Equal(tt.want, tt.span.AsMap()[ext.SpanName])
 		})
 	}
@@ -1336,5 +1337,79 @@ func TestSpanLinksInMeta(t *testing.T) {
 		assert.Equal(t, uint64(456), links[0].TraceID)
 		assert.Equal(t, uint64(789), links[1].SpanID)
 		assert.Equal(t, uint64(012), links[1].TraceID)
+	})
+}
+
+func TestStatsAfterFinish(t *testing.T) {
+	t.Run("peerServiceDefaults-enabled", func(t *testing.T) {
+		tracer, err := newTracer(
+			WithPeerServiceDefaults(true),
+			WithStatsComputation(true),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		SetGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.transport = transport
+		tracer.config.agent.Stats = true
+		tracer.config.agent.DropP0s = true
+		tracer.config.agent.peerTags = []string{"peer.service"}
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag("span.kind", "client")
+		sp.SetTag("messaging.system", "kafka")
+		sp.SetTag("messaging.kafka.bootstrap.servers", "kafka-cluster")
+		sp.SetTag(keyMeasured, 1)
+		sp.Finish()
+
+		assert.Equal(t, "kafka-cluster", sp.meta["peer.service"])
+
+		// peer.service has been added on the span.Finish() call. Ensure the StatSpan is also accessing this.
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		peerTags := stats[0].Stats[0].Stats[0].PeerTags
+		assert.Contains(t, peerTags, "peer.service:kafka-cluster")
+	})
+	t.Run("peerServiceDefaults-disabled", func(t *testing.T) {
+		tracer, err := newTracer(
+			WithPeerServiceDefaults(false),
+			WithStatsComputation(true),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		SetGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.transport = transport
+		tracer.config.agent.Stats = true
+		tracer.config.agent.DropP0s = true
+		tracer.config.agent.peerTags = []string{"peer.service"}
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag("span.kind", "client")
+		sp.SetTag("messaging.system", "kafka")
+		sp.SetTag("messaging.kafka.bootstrap.servers", "kafka-cluster")
+		sp.SetTag(keyMeasured, 1)
+		sp.Finish()
+
+		assert.Equal(t, "", sp.meta["peer.service"])
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		peerTags := stats[0].Stats[0].Stats[0].PeerTags
+		assert.Empty(t, peerTags)
 	})
 }

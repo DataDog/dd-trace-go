@@ -175,6 +175,11 @@ func TestRateSampler(t *testing.T) {
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0).Sample(newBasicSpan("test")))
 	assert.False(NewRateSampler(0.99).Sample(nil))
+	assert.False(NewRateSampler(0.5).Sample(newSpan("test", "test", "test", 0, 12078589664685934330, 0)))
+	assert.True(NewRateSampler(0.5).Sample(newSpan("test", "test", "test", 0, 13794769880582338323, 0)))
+	// traceID 9223372036854775808 * knuthFactor = 9223372036854775808 (leveraging the overflow logic)
+	// which is 0.5 * MaxUint64
+	assert.True(NewRateSampler(0.5).Sample(newSpan("test", "test", "test", 0, 9223372036854775808, 0)))
 }
 
 func TestSamplerRates(t *testing.T) {
