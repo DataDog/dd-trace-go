@@ -126,9 +126,13 @@ type tracer struct {
 
 	// These maps count the spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished globalinternal.XSyncMapCounterMap
+	// +checklocksignore
+	spansStarted globalinternal.XSyncMapCounterMap
+	// +checklocksignore
+	spansFinished globalinternal.XSyncMapCounterMap
 
 	// Keeps track of the total number of traces dropped for accurate logging.
+	// +checkatomic
 	totalTracesDropped uint32
 
 	logDroppedTraces *time.Ticker

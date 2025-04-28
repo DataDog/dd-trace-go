@@ -50,6 +50,7 @@ type payload struct {
 	off int
 
 	// count specifies the number of items in the stream.
+	// +checkatomic
 	count uint32
 
 	// buf holds the sequence of msgpack-encoded items.

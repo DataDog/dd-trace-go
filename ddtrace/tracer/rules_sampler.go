@@ -494,15 +494,15 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.traceID, rate) {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityAssumesHoldingLock(ext.PriorityUserReject, sampler)
 		return
 	}
 
 	sampled, rate := rs.limiter.allowOne(now)
 	if sampled {
-		span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		span.setSamplingPriorityAssumesHoldingLock(ext.PriorityUserKeep, sampler)
 	} else {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		span.setSamplingPriorityAssumesHoldingLock(ext.PriorityUserReject, sampler)
 	}
 	span.setMetric(keyRulesSamplerLimiterRate, rate)
 }
