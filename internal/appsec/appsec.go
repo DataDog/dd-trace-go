@@ -52,7 +52,7 @@ func Start(opts ...config.StartOption) {
 	// 2. Remotely when DD_APPSEC_ENABLED is undefined
 	// Note: DD_APPSEC_ENABLED=false takes precedence over remote configuration
 	// and enforces to have AppSec disabled.
-	mode, modeOrigin, err := startConfig.EnablementMode() // TODO: Stable Config
+	mode, modeOrigin, err := startConfig.EnablementMode()
 	if err != nil {
 		logUnexpectedStartError(err)
 		return

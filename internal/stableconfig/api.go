@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+// Package stableconfig provides utilities to load and manage APM configurations
+// loaded from YAML configuration files
 package stableconfig
 
 import (
@@ -13,8 +15,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
+// BoolStableConfig returns a boolean config value from managed file-based config, environment variable,
+// or local file-based config, in that order. If none provide a valid boolean, it returns the default.
+// Also returns the value's origin and any parse error encountered.
 func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin, err error) {
-	// explicitly define err as nil
 	err = nil
 	if v := ManagedConfig.Get(env); v != "" {
 		if vv, parseErr := strconv.ParseBool(v); parseErr == nil {
@@ -40,7 +44,8 @@ func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin
 	return def, telemetry.OriginDefault, err
 }
 
-// Unlike callers of BoolStableConfig, callers of StringStableConfig don't care about configured, so exclude it include it in return data
+// StringStableConfig returns a string config value from managed file-based config, environment variable,
+// or local file-based config, in that order. If none are set, it returns the default value and origin.
 func StringStableConfig(env string, def string) (string, telemetry.Origin) {
 	if v := ManagedConfig.Get(env); v != "" {
 		return v, telemetry.OriginManagedStableConfig

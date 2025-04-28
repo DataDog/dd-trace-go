@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+// Package stableconfig provides utilities to load and manage APM configurations
+// loaded from YAML configuration files
 package stableconfig
 
 import (
