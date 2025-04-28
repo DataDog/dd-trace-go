@@ -10,6 +10,7 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -23,7 +24,11 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
-	val, origin, _ := stableconfig.BoolStableConfig(EnvSCAEnabled, false)
+	val, origin, err := stableconfig.BoolStableConfig(EnvSCAEnabled, false)
+	if err != nil {
+		log.Error("appsec: %v", err)
+		return
+	}
 	if origin != telemetry.OriginDefault {
 		telemetry.RegisterAppConfig(EnvSCAEnabled, val, origin)
 	}
@@ -181,7 +186,7 @@ func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
 	if origin != telemetry.OriginDefault {
 		set = true
 	}
-	return
+	return enabled, set, err
 }
 
 // NewConfig returns a fresh appsec configuration read from the env

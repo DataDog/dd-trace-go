@@ -8,7 +8,6 @@
 package stableconfig
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -57,7 +56,7 @@ func ParseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to stat stable config file %s: %v", filePath, err)
+			log.Warn("Failed to stat stable config file %s, dropping: %v", filePath, err)
 		}
 		return emptyStableConfig()
 	}
@@ -72,7 +71,7 @@ func ParseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to read stable config file %s: %v", filePath, err)
+			log.Warn("Failed to read stable config file %s, dropping: %v", filePath, err)
 		}
 		return emptyStableConfig()
 	}
@@ -86,8 +85,7 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	scfg := &stableConfig{}
 	err := yaml.Unmarshal(data, scfg)
 	if err != nil {
-		fmt.Println("Parsing stable config file" + fileName + "failed due to error: " + err.Error())
-		log.Warn("Parsing stable config file" + fileName + "failed due to error: " + err.Error())
+		log.Warn("Parsing stable config file" + fileName + "failed due to error, dropping: " + err.Error())
 		return emptyStableConfig()
 	}
 	if scfg.Config == nil {
