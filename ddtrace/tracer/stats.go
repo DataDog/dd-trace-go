@@ -38,6 +38,7 @@ type concentrator struct {
 	In chan *tracerStatSpan
 
 	// stopped reports whether the concentrator is stopped (when non-zero)
+	// +checkatomic
 	stopped uint32
 
 	spanConcentrator *stats.SpanConcentrator

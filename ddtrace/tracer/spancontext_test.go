@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -283,7 +284,7 @@ func TestTraceFinishChunk(t *testing.T) {
 		trace.finishChunk(tracer, &c)
 		trace.mu.Unlock()
 	}
-	assert.Equal(uint32(1), tracer.totalTracesDropped)
+	assert.Equal(uint32(1), atomic.LoadUint32((*uint32)(&tracer.totalTracesDropped)))
 }
 
 func TestPartialFlush(t *testing.T) {
@@ -861,7 +862,7 @@ func TestSpanContextParent(t *testing.T) {
 			assert.Contains(ctx.trace.spans, s)
 			if parentCtx.trace != nil {
 				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
-				assert.Equal(ctx.trace.samplingDecision, parentCtx.trace.samplingDecision)
+				assert.Equal(atomic.LoadUint32((*uint32)(&ctx.trace.samplingDecision)), atomic.LoadUint32((*uint32)(&parentCtx.trace.samplingDecision)))
 			}
 			assert.Equal(parentCtx.baggage, ctx.baggage)
 			assert.Equal(parentCtx.origin, ctx.origin)

@@ -52,6 +52,7 @@ type agentTraceWriter struct {
 	// statsd is used to send metrics
 	statsd globalinternal.StatsdClient
 
+	// +checkatomic
 	tracesQueued uint32
 }
 

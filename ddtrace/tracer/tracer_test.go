@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -379,7 +380,7 @@ func TestSamplingDecision(t *testing.T) {
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
-		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, samplingDecision(atomic.LoadUint32((*uint32)(&span.context.trace.samplingDecision))))
 	})
 
 	t.Run("dropped_sent", func(t *testing.T) {
@@ -402,7 +403,7 @@ func TestSamplingDecision(t *testing.T) {
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
-		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, samplingDecision(atomic.LoadUint32((*uint32)(&span.context.trace.samplingDecision))))
 	})
 
 	t.Run("dropped_stats", func(t *testing.T) {
@@ -426,7 +427,7 @@ func TestSamplingDecision(t *testing.T) {
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
-		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionNone, samplingDecision(atomic.LoadUint32((*uint32)(&span.context.trace.samplingDecision))))
 	})
 
 	t.Run("events_sampled", func(t *testing.T) {
@@ -448,7 +449,7 @@ func TestSamplingDecision(t *testing.T) {
 		span.Finish()
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
-		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, samplingDecision(atomic.LoadUint32((*uint32)(&span.context.trace.samplingDecision))))
 	})
 
 	t.Run("client_dropped", func(t *testing.T) {
@@ -475,7 +476,7 @@ func TestSamplingDecision(t *testing.T) {
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
-		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
+		assert.Equal(t, decisionDrop, samplingDecision(atomic.LoadUint32((*uint32)(&span.context.trace.samplingDecision))))
 	})
 
 	t.Run("client_dropped_with_single_spans:stats_enabled", func(t *testing.T) {
@@ -502,7 +503,7 @@ func TestSamplingDecision(t *testing.T) {
 		parent.Finish()
 		tracer.Stop()
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
-		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
+		assert.Equal(t, decisionDrop, samplingDecision(atomic.LoadUint32((*uint32)(&parent.context.trace.samplingDecision))))
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
 		assert.Equal(t, 1.0, parent.metrics[keySingleSpanSamplingRuleRate])
 		assert.Equal(t, 15.0, parent.metrics[keySingleSpanSamplingMPS])
@@ -530,7 +531,7 @@ func TestSamplingDecision(t *testing.T) {
 		parent.Finish()
 		tracer.Stop()
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
-		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
+		assert.Equal(t, decisionDrop, samplingDecision(atomic.LoadUint32((*uint32)(&parent.context.trace.samplingDecision))))
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
 		assert.Equal(t, 1.0, parent.metrics[keySingleSpanSamplingRuleRate])
 		assert.Equal(t, 15.0, parent.metrics[keySingleSpanSamplingMPS])
@@ -558,7 +559,7 @@ func TestSamplingDecision(t *testing.T) {
 		parent.Finish()
 		tracer.Stop()
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
-		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
+		assert.Equal(t, decisionDrop, samplingDecision(atomic.LoadUint32((*uint32)(&parent.context.trace.samplingDecision))))
 		assert.NotContains(t, parent.metrics, keySpanSamplingMechanism)
 		assert.NotContains(t, parent.metrics, keySingleSpanSamplingRuleRate)
 		assert.NotContains(t, parent.metrics, keySingleSpanSamplingMPS)
@@ -588,7 +589,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer.Stop()
 		// single span sampling should only run on dropped traces
 		assert.Equal(t, float64(ext.PriorityAutoKeep), parent.metrics[keySamplingPriority])
-		assert.Equal(t, decisionKeep, parent.context.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, samplingDecision(atomic.LoadUint32((*uint32)(&parent.context.trace.samplingDecision))))
 		assert.NotContains(t, parent.metrics, keySpanSamplingMechanism)
 		assert.NotContains(t, parent.metrics, keySingleSpanSamplingRuleRate)
 		assert.NotContains(t, parent.metrics, keySingleSpanSamplingMPS)

@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	assert.Equal(int64(3), counts["datadog.tracer.queue.enqueued.traces"])
 	w, ok := tracer.traceWriter.(*agentTraceWriter)
 	assert.True(ok)
-	assert.Equal(uint32(0), w.tracesQueued)
+	assert.Equal(uint32(0), atomic.LoadUint32((*uint32)(&w.tracesQueued)))
 }
 
 func TestSpansStartedTags(t *testing.T) {
