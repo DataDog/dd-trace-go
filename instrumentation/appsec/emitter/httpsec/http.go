@@ -48,6 +48,7 @@ type (
 		Framework    string // Optional: name of the framework or library being used
 		Method       string
 		RequestURI   string
+		RequestPath  string
 		RequestRoute string // the HTTP route for the current handler operation, if available
 		Host         string
 		RemoteAddr   string
@@ -82,9 +83,9 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		route:            args.RequestRoute,
 	}
 	if op.route == "" {
-		// If there is no route, use the request URI instead
+		// If there is no route, use the request URI instead without the query params
 		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + args.Framework}).Submit(1)
-		op.route = args.RequestURI
+		op.route = args.RequestPath
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -175,6 +176,7 @@ func BeforeHandle(
 		Method:       r.Method,
 		RequestURI:   r.RequestURI,
 		RequestRoute: opts.RouteForRequest(r),
+		RequestPath:  r.URL.Path,
 		Host:         r.Host,
 		RemoteAddr:   r.RemoteAddr,
 		Headers:      r.Header,
