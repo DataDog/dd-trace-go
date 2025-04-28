@@ -77,7 +77,10 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 				if cfg.Route != "" {
 					return cfg.Route
 				}
-				return pattern.Route(r.Pattern)
+				if route := pattern.Route(r.Pattern); route != r.Pattern {
+					return route
+				}
+				return ""
 			},
 		}
 

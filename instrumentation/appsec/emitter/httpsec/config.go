@@ -28,5 +28,11 @@ type Config struct {
 
 var defaultWrapHandlerConfig = &Config{
 	ResponseHeaderCopier: func(w http.ResponseWriter) http.Header { return w.Header() },
-	RouteForRequest:      func(r *http.Request) string { return pattern.Route(r.Pattern) },
+	RouteForRequest: func(r *http.Request) string {
+		if route := pattern.Route(r.Pattern); route != r.Pattern {
+			return route
+		}
+
+		return ""
+	},
 }
