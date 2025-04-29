@@ -240,6 +240,7 @@ func Start(opts ...StartOption) error {
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
+
 	appsec.Start(appsecopts...)
 
 	// start instrumentation telemetry unless it is disabled through the
@@ -654,9 +655,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		}
 		if context.span != nil {
 			// local parent, inherit service
-			context.span.RLock()
+			context.span.mu.RLock()
 			span.service = context.span.service
-			context.span.RUnlock()
+			context.span.mu.RUnlock()
 		} else {
 			// remote parent
 			if context.origin != "" {
