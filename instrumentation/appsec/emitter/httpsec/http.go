@@ -47,7 +47,7 @@ type (
 		Framework    string // Optional: name of the framework or library being used
 		Method       string
 		RequestURI   string
-		RequestRoute string // the HTTP route for the current handler operation, if available
+		RequestRoute string
 		Host         string
 		RemoteAddr   string
 		Headers      map[string][]string
@@ -151,7 +151,6 @@ func BeforeHandle(
 	w http.ResponseWriter,
 	r *http.Request,
 	span trace.TagSetter,
-	pathParams map[string]string,
 	opts *Config,
 ) (http.ResponseWriter, *http.Request, func(), bool) {
 	if opts == nil {
@@ -160,21 +159,18 @@ func BeforeHandle(
 	if opts.ResponseHeaderCopier == nil {
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
-	if opts.RouteForRequest == nil {
-		opts.RouteForRequest = defaultWrapHandlerConfig.RouteForRequest
-	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
 		Framework:    opts.Framework,
 		Method:       r.Method,
 		RequestURI:   r.RequestURI,
-		RequestRoute: opts.RouteForRequest(r),
+		RequestRoute: opts.Route,
 		Host:         r.Host,
 		RemoteAddr:   r.RemoteAddr,
 		Headers:      r.Header,
 		Cookies:      makeCookies(r.Cookies()),
 		QueryParams:  r.URL.Query(),
-		PathParams:   pathParams,
+		PathParams:   opts.RouteParams,
 	}, span)
 	tr := r.WithContext(ctx)
 
@@ -218,9 +214,9 @@ func BeforeHandle(
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, opts *Config) http.Handler {
+func WrapHandler(handler http.Handler, span trace.TagSetter, opts *Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, pathParams, opts)
+		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, opts)
 		defer afterHandle()
 		if handled {
 			return

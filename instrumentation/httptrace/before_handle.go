@@ -11,7 +11,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
@@ -27,7 +26,7 @@ type ServeConfig struct {
 	Resource string
 	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
 	QueryParams bool
-	// Route is the request matched route if any, or is empty otherwise
+	// Route is the request matched route if any, if empty, a quantization algorithm will create one using the request URL.
 	Route string
 	// RouteParams specifies framework-specific route parameters (e.g. for route /user/:id coming
 	// in as /user/123 we'll have {"id": "123"}). This field is optional and is used for monitoring
@@ -49,18 +48,21 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	opts := options.Expand(cfg.SpanOpts, 2, 3)
-	// Pre-append span.kind and component tags to the options so that they can be overridden.
+	if cfg.Route == "" {
+		var quantizer urlQuantizer
+		cfg.Route = quantizer.Quantize(r.URL.EscapedPath())
+	}
+
+	opts := options.Expand(cfg.SpanOpts, 3, 2)
+	// Pre-append span.kind, component and http.route tags to the options so that they can be overridden.
 	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	opts[1] = tracer.Tag(ext.Component, "net/http")
+	opts[2] = tracer.Tag(ext.HTTPRoute, cfg.Route)
 	if cfg.Service != "" {
 		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
-	}
-	if cfg.Route != "" {
-		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
 	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
@@ -72,21 +74,12 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	handled := false
 	if appsec.Enabled() {
 		appsecConfig := &httpsec.Config{
-			Framework: cfg.Framework,
-			RouteForRequest: func(r *http.Request) string {
-				if cfg.Route != "" {
-					return cfg.Route
-				}
-				if route := pattern.Route(r.Pattern); route != r.Pattern {
-					return route
-				}
-
-				var quantizer urlQuantizer
-				return quantizer.Quantize(r.URL.EscapedPath())
-			},
+			Framework:   cfg.Framework,
+			Route:       cfg.Route,
+			RouteParams: cfg.RouteParams,
 		}
 
-		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, cfg.RouteParams, appsecConfig)
+		secW, secReq, secAfterHandle, secHandled := httpsec.BeforeHandle(rw, rt, span, appsecConfig)
 		afterHandle = func() {
 			secAfterHandle()
 			closeSpan()
