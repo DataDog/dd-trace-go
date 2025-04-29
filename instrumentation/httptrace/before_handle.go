@@ -48,21 +48,18 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg == nil {
 		cfg = new(ServeConfig)
 	}
-	if cfg.Route == "" {
-		var quantizer urlQuantizer
-		cfg.Route = quantizer.Quantize(r.URL.EscapedPath())
-	}
-
-	opts := options.Expand(cfg.SpanOpts, 3, 2)
+	opts := options.Expand(cfg.SpanOpts, 2, 3)
 	// Pre-append span.kind, component and http.route tags to the options so that they can be overridden.
 	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	opts[1] = tracer.Tag(ext.Component, "net/http")
-	opts[2] = tracer.Tag(ext.HTTPRoute, cfg.Route)
 	if cfg.Service != "" {
 		opts = append(opts, tracer.ServiceName(cfg.Service))
 	}
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
+	}
+	if cfg.Route != "" {
+		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
 	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
@@ -73,9 +70,14 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	afterHandle := closeSpan
 	handled := false
 	if appsec.Enabled() {
+		route := cfg.Route
+		if route == "" {
+			var quantizer urlQuantizer
+			route = quantizer.Quantize(r.URL.EscapedPath())
+		}
 		appsecConfig := &httpsec.Config{
 			Framework:   cfg.Framework,
-			Route:       cfg.Route,
+			Route:       route,
 			RouteParams: cfg.RouteParams,
 		}
 
