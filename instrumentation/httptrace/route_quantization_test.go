@@ -1,9 +1,9 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016-present Datadog, Inc.
+// Copyright 2025 Datadog, Inc.
 
-package httpsec
+package httptrace
 
 import (
 	"runtime"
@@ -83,7 +83,7 @@ func TestTokenizer(t *testing.T) {
 }
 
 func TestURLQuantizer(t *testing.T) {
-	quantizer := newURLQuantizer()
+	var quantizer urlQuantizer
 
 	type testCase struct {
 		path     string
@@ -190,7 +190,7 @@ func TestURLQuantizer(t *testing.T) {
 
 // The purpose of this benchmark is to ensure that the whole quantization process doesn't allocate
 func BenchmarkQuantization(b *testing.B) {
-	quantizer := newURLQuantizer()
+	var quantizer urlQuantizer
 
 	// This should trigger the quantization since `/users/1/view` becomes
 	// `/users/*/view` post-quantization (see test case above)
@@ -205,7 +205,7 @@ func BenchmarkQuantization(b *testing.B) {
 
 // This benchmark represents the case where a path does *not* trigger a quantization
 func BenchmarkQuantizationHappyPath(b *testing.B) {
-	quantizer := newURLQuantizer()
+	var quantizer urlQuantizer
 	path := "/foo/bar"
 	b.ReportAllocs()
 	b.ResetTimer()

@@ -80,7 +80,9 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 				if route := pattern.Route(r.Pattern); route != r.Pattern {
 					return route
 				}
-				return ""
+
+				var quantizer urlQuantizer
+				return quantizer.Quantize(r.URL.EscapedPath())
 			},
 		}
 

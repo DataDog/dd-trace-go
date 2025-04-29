@@ -22,7 +22,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // HandlerOperation type representing an HTTP operation. It must be created with
@@ -48,7 +47,6 @@ type (
 		Framework    string // Optional: name of the framework or library being used
 		Method       string
 		RequestURI   string
-		RequestPath  string
 		RequestRoute string // the HTTP route for the current handler operation, if available
 		Host         string
 		RemoteAddr   string
@@ -68,8 +66,6 @@ type (
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
 func (HandlerOperationRes) IsResultOf(*HandlerOperation) {}
 
-var quantizer = newURLQuantizer()
-
 func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.TagSetter) (*HandlerOperation, *atomic.Pointer[actions.BlockHTTP], context.Context) {
 	wafOp, found := dyngo.FindOperation[waf.ContextOperation](ctx)
 	if !found {
@@ -83,13 +79,6 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		framework:        args.Framework,
 		method:           args.Method,
 		route:            args.RequestRoute,
-	}
-
-	if op.route == "" {
-		// If there is no route, we use a simple algorithm to simplify the RequestPath into a route.
-		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + args.Framework}).Submit(1)
-		op.route = quantizer.Quantize(args.RequestPath)
-
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -179,7 +168,6 @@ func BeforeHandle(
 		Framework:    opts.Framework,
 		Method:       r.Method,
 		RequestURI:   r.RequestURI,
-		RequestPath:  r.URL.Path,
 		RequestRoute: opts.RouteForRequest(r),
 		Host:         r.Host,
 		RemoteAddr:   r.RemoteAddr,

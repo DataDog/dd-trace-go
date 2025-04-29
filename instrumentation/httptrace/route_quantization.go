@@ -1,25 +1,18 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2025 Datadog, Inc.
 
-package httpsec
+package httptrace
 
 import (
 	"strings"
 )
 
-// urlQuantizer is responsible for quantizing URLs into a more generic form that resembles a route
+// urlQuantizer is responsible for quantizing URLs paths into a more generic form that resembles a route
 type urlQuantizer struct {
-	tokenizer *tokenizer
+	tokenizer tokenizer
 	buf       strings.Builder
-}
-
-// newURLQuantizer returns a new instance of a urlQuantizer
-func newURLQuantizer() *urlQuantizer {
-	return &urlQuantizer{
-		tokenizer: new(tokenizer),
-	}
 }
 
 // Quantize path (eg /segment1/segment2/segment3) by doing the following:
