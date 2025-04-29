@@ -484,6 +484,10 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 	span.mu.Lock()
 	defer span.mu.Unlock()
 
+	if span.finished {
+		return
+	}
+
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.traceID, rate) {
