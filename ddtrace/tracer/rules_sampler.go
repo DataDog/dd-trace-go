@@ -484,6 +484,9 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 	span.mu.Lock()
 	defer span.mu.Unlock()
 
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if span.finished {
 		return
 	}
