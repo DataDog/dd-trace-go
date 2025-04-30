@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -61,7 +62,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() && !cfg.appsecDisabled {
-				next = withAppsec(next, r, span, &cfg.appsecConfig)
+				next = withAppsec(next, r, span, cfg)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
@@ -69,7 +70,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 
-			routePattern := cfg.appsecConfig.RouteForRequest(r)
+			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
 			span.SetTag(ext.HTTPRoute, routePattern)
 			var resourceName string
 			if cfg.resourceNamer != nil {

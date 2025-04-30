@@ -17,7 +17,9 @@ import (
 func withAppsec(next http.Handler, r *http.Request, span trace.TagSetter) http.Handler {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
-		return httpsec.WrapHandler(next, span, nil, nil)
+		return httpsec.WrapHandler(next, span, &httpsec.Config{
+			Framework: "github.com/go-chi/chi",
+		})
 	}
 	var pathParams map[string]string
 	keys := rctx.URLParams.Keys
@@ -28,5 +30,10 @@ func withAppsec(next http.Handler, r *http.Request, span trace.TagSetter) http.H
 			pathParams[key] = values[i]
 		}
 	}
-	return httpsec.WrapHandler(next, span, pathParams, nil)
+
+	return httpsec.WrapHandler(next, span, &httpsec.Config{
+		Framework:   "github.com/go-chi/chi",
+		Route:       rctx.RoutePattern(),
+		RouteParams: pathParams,
+	})
 }
