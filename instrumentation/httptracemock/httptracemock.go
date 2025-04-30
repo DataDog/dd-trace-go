@@ -76,8 +76,8 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 	var h http.Handler = mux.ServeMux
 	if appsec.Enabled() {
-		h = httpsec.WrapHandler(h, span, nil, &httpsec.Config{
-			RouteForRequest: func(*http.Request) string { return route },
+		h = httpsec.WrapHandler(h, span, &httpsec.Config{
+			Route: route,
 		})
 	}
 	h.ServeHTTP(rw, r.WithContext(ctx))

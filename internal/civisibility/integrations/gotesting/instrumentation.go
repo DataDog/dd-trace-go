@@ -241,7 +241,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 		runTestWithRetry(&runTestWithRetryOptions{
 			targetFunc: f,
 			t:          t,
-			preExecMetaAdjust: func(execMeta *testExecutionMetadata, executionIndex int) {
+			preExecMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 				// Synchronize the test execution metadata with the original test execution metadata.
 
 				execMeta.isQuarantined = execMeta.isQuarantined || ptrMeta.isQuarantined
@@ -265,7 +265,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				ptrMeta.isNew = execMeta.isANewTest
 				ptrMeta.isModified = execMeta.isAModifiedTest
 			},
-			preIsLastRetry: func(execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool {
+			preIsLastRetry: func(execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
 				if execMeta.isAttemptToFix || isAnEfdExecution(execMeta) {
 					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
 					return remainingRetries == 1
@@ -309,7 +309,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				// No retries
 				return 0
 			},
-			postPerExecution: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, duration time.Duration) {
+			postPerExecution: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, _ time.Duration) {
 				if ptrToLocalT.Failed() || ptrToLocalT.Skipped() {
 					atomic.StoreInt32(&allAttemptsPassed, 0)
 				}
@@ -347,7 +347,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 					return
 				}
 			},
-			postShouldRetry: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool {
+			postShouldRetry: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
 				if execMeta.isAttemptToFix {
 					// For attempt-to-fix tests, retry if remaining retries > 0.
 					return remainingRetries > 0

@@ -22,7 +22,7 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.5.4 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
-	github.com/DataDog/go-sqllexer v0.1.0 // indirect
+	github.com/DataDog/go-sqllexer v0.1.6 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.26.0 // indirect
 	github.com/DataDog/sketches-go v1.4.7 // indirect
@@ -85,3 +85,8 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+// Pinning against gqlgen v0.17.36 to avoid breaking changes in gqlgen's v0.17.72 API.
+// Also, we are not able to upgrade to gqlgen v0.17.72 yet because it requires Go 1.23.8,
+// and we want to keep compatibility with Go 1.23.0 until Go 1.25.0 is released.
+replace github.com/99designs/gqlgen => github.com/99designs/gqlgen v0.17.36

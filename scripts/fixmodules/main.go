@@ -132,6 +132,9 @@ func main() {
 
 	for _, modPath := range sortedKeys(fixModules) {
 		mod := fixModules[modPath]
+		if mod.Module.Path == "github.com/DataDog/dd-trace-go/tools/v2fix" {
+			continue
+		}
 
 		files, err := getModGoFiles(mod)
 		if err != nil {
