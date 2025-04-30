@@ -535,6 +535,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	ptrToLocalT := &testing.T{}
 	copyTestWithoutParent(execOpts.options.t, ptrToLocalT)
 	ptrToLocalT.Helper()
+	execOpts.options.t.Helper()
 
 	// Create a dummy parent so we can run the test using this local copy
 	// without affecting the test parent
@@ -578,6 +579,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			*cn <- struct{}{}
 		}()
 		pLocalT.Helper()
+		opts.t.Helper()
 		opts.targetFunc(pLocalT)
 	}(ptrToLocalT, execOpts.options, &chn)
 	<-chn
