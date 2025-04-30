@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var currentM *testing.M
@@ -30,7 +31,7 @@ var mTracer mocktracer.Tracer
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
-	// log.SetLevel(log.LevelDebug)
+	log.SetLevel(log.LevelDebug)
 
 	const scenarioStarted = "Scenario %s started.\n"
 	// We need to spawn separated test process for each scenario
