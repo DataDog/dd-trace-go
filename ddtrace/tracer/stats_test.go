@@ -180,8 +180,11 @@ func TestObfuscation(t *testing.T) {
 	assert.Len(t, actualStats, 1)
 	assert.Len(t, actualStats[0].Stats, 1)
 	assert.Len(t, actualStats[0].Stats[0].Stats, 1)
-	assert.Equal(t, 2, tsp.obfVersion)
 	assert.Equal(t, "GET", actualStats[0].Stats[0].Stats[0].Resource)
+	// TODO(kakkoyun): Refactor.
+	tsp.mu.RLock()
+	assert.Equal(t, 2, tsp.obfVersion)
+	tsp.mu.RUnlock()
 }
 
 func TestStatsByKind(t *testing.T) {

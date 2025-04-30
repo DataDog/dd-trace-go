@@ -484,7 +484,7 @@ func TestRuleEnvVars(t *testing.T) {
 func TestRulesSampler(t *testing.T) {
 	makeSpan := func(op string, svc string) *Span {
 		s := newSpan(op, svc, "res-10", randUint64(), randUint64(), 0)
-		s.setMeta("hostname", "hn-30")
+		s.setMetaAssumesHoldingLock("hostname", "hn-30") // +checklocksignore
 		return s
 	}
 	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *Span {
@@ -492,7 +492,7 @@ func TestRulesSampler(t *testing.T) {
 		for k, v := range tags {
 			s.SetTag(k, v)
 		}
-		s.finished = true
+		s.finished = true // +checklocksignore
 		return s
 	}
 	t.Run("no-rules", func(t *testing.T) {
@@ -1279,6 +1279,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 		now := time.Now()
 		rs := &rulesSampler{}
 		span := makeSpanAt("http.request", "test-service", now)
+		span.mu.Lock()
+		defer span.mu.Unlock()
 		rs.traces.applyRate(span, 0.0, now, samplernames.RuleRate)
 		assert.Equal(0.0, span.metrics[keyRulesSamplerAppliedRate])
 		_, ok := span.metrics[keyRulesSamplerLimiterRate]
@@ -1297,6 +1299,8 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.seen = 1
 
 		span := makeSpanAt("http.request", "test-service", now)
+		span.mu.Lock()
+		defer span.mu.Unlock()
 		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
@@ -1313,13 +1317,19 @@ func TestRulesSamplerInternals(t *testing.T) {
 		rs.traces.limiter.prevTime = now.Add(-1 * time.Second)
 		rs.traces.limiter.allowed = 2
 		rs.traces.limiter.seen = 2
+
 		// first span kept, second dropped
 		span := makeSpanAt("http.request", "test-service", now)
+		span.mu.Lock()
+		defer span.mu.Unlock()
 		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.EqualValues(ext.PriorityUserKeep, span.metrics[keySamplingPriority])
 		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
 		assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
+
 		span = makeSpanAt("http.request", "test-service", now)
+		span.mu.Lock()
+		defer span.mu.Unlock()
 		rs.traces.applyRate(span, 1.0, now, samplernames.RuleRate)
 		assert.EqualValues(ext.PriorityUserReject, span.metrics[keySamplingPriority])
 		assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
@@ -1633,7 +1643,9 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
 			for _, span := range spans {
+				span.mu.Lock()
 				rs.apply(span)
+				span.mu.Unlock()
 			}
 		}
 	})
@@ -1646,7 +1658,9 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
 			for _, span := range spans {
+				span.mu.Lock()
 				rs.apply(span)
+				span.mu.Unlock()
 			}
 		}
 	})
@@ -1661,7 +1675,9 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
 			for _, span := range spans {
+				span.mu.Lock()
 				rs.apply(span)
+				span.mu.Unlock()
 			}
 		}
 	})

@@ -75,7 +75,7 @@ jobs:
       - name: Test dd-trace-go
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
-        run: go test $PACKAGES
+        run: go test -tags debug $PACKAGES
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.

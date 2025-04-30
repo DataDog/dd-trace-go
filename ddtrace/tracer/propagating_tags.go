@@ -8,7 +8,10 @@ package tracer
 import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/trailofbits/go-mutexasserts"
 )
+
+// TODO(kakkoyun): Refactor. Move to trace.go.
 
 func (t *trace) hasPropagatingTag(k string) bool {
 	t.mu.RLock()
@@ -27,7 +30,7 @@ func (t *trace) propagatingTag(k string) string {
 func (t *trace) setPropagatingTag(key, value string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setPropagatingTagLocked(key, value)
+	t.setPropagatingTagAssumesHoldingLock(key, value)
 }
 
 func (t *trace) setTraceSourcePropagatingTag(key string, value internal.TraceSource) {
@@ -44,16 +47,18 @@ func (t *trace) setTraceSourcePropagatingTag(key string, value internal.TraceSou
 
 		tSource |= value
 
-		t.setPropagatingTagLocked(key, tSource.String())
+		t.setPropagatingTagAssumesHoldingLock(key, tSource.String())
 		return
 	}
 
-	t.setPropagatingTagLocked(key, value.String())
+	t.setPropagatingTagAssumesHoldingLock(key, value.String())
 }
 
-// setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
+// setPropagatingTagAssumesHoldingLock sets the key/value pair as a trace propagating tag.
 // Not safe for concurrent use, setPropagatingTag should be used instead in that case.
-func (t *trace) setPropagatingTagLocked(key, value string) {
+// +checklocks:t.mu
+func (t *trace) setPropagatingTagAssumesHoldingLock(key, value string) {
+	mutexasserts.AssertRWMutexLocked(&t.mu)
 	if t.propagatingTags == nil {
 		t.propagatingTags = make(map[string]string, 1)
 	}

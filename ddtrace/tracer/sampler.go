@@ -119,8 +119,11 @@ func sampledByRate(n uint64, rate float64) bool {
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
-	mu          sync.RWMutex
-	rates       map[string]float64
+	mu sync.RWMutex
+
+	// +checklocks:mu
+	rates map[string]float64
+	// +checklocks:mu
 	defaultRate float64
 }
 
@@ -151,10 +154,11 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	return nil
 }
 
-// getRate returns the sampling rate to be used for the given span. Callers must
-// guard the span.
-func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
+// getRate returns the sampling rate to be used for the given span.
+func (ps *prioritySampler) getRate(s *Span) float64 {
+	s.mu.RLock()
+	key := "service:" + s.service + ",env:" + s.meta[ext.Environment]
+	s.mu.RUnlock()
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {
@@ -165,12 +169,14 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
-func (ps *prioritySampler) apply(spn *Span) {
-	rate := ps.getRate(spn)
-	if sampledByRate(spn.traceID, rate) {
-		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+func (ps *prioritySampler) apply(s *Span) {
+	s.mu.RLock()
+	rate := ps.getRate(s)
+	s.mu.RUnlock()
+	if sampledByRate(s.traceID, rate) {
+		s.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
 	} else {
-		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
+		s.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
 	}
-	spn.SetTag(keySamplingPriorityRate, rate)
+	s.SetTag(keySamplingPriorityRate, rate)
 }

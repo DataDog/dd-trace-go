@@ -159,6 +159,11 @@ func TestSpanFinish(t *testing.T) {
 	// the finish should set finished and the duration
 	time.Sleep(wait)
 	span.Finish()
+
+	// TODO(kakkoyun): Refactor.
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
 	assert.Greater(span.duration, int64(wait))
 	assert.True(span.finished)
 }
@@ -222,14 +227,18 @@ func TestShouldDrop(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
 			s.setSamplingPriority(tt.prio, samplernames.Default)
 			s.SetTag(ext.EventSampleRate, tt.rate)
-			atomic.StoreInt32(&s.context.errors, tt.errors)
-			assert.Equal(t, shouldKeep(s), tt.want)
+			atomic.StoreInt32(&s.Context().errors, tt.errors)
+			s.mu.RLock()
+			assert.Equal(t, s.shouldKeepAssumesHoldingLock(), tt.want)
+			s.mu.RUnlock()
 		})
 	}
 
 	t.Run("none", func(t *testing.T) {
 		s := newSpan("", "", "", 1, 1, 0)
-		assert.Equal(t, shouldKeep(s), false)
+		s.mu.RLock()
+		assert.Equal(t, s.shouldKeepAssumesHoldingLock(), false)
+		s.mu.RUnlock()
 	})
 }
 
@@ -250,7 +259,10 @@ func TestShouldComputeStats(t *testing.T) {
 		{map[string]float64{}, false},
 	} {
 		t.Run("", func(t *testing.T) {
-			assert.Equal(t, shouldComputeStats(&Span{metrics: tt.metrics}), tt.want)
+			s := &Span{metrics: tt.metrics}
+			s.mu.RLock()
+			assert.Equal(t, s.shouldComputeStatsAssumesHoldingLock(), tt.want)
+			s.mu.RUnlock()
 		})
 	}
 }
@@ -460,16 +472,15 @@ func (t *testMsgpStruct) MarshalMsg(_ []byte) ([]byte, error) {
 }
 
 func TestSpanSetTagError(t *testing.T) {
-
 	t.Run("off", func(t *testing.T) {
 		span := newBasicSpan("web.request")
-		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
+		span.setTagErrorAssumesHoldingLock(errors.New("error value with no trace"), errorConfig{noDebugStack: true}) // +checklocksignore
 		assert.Empty(t, span.meta[ext.ErrorStack])
 	})
 
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
-		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
+		span.setTagErrorAssumesHoldingLock(errors.New("error value with trace"), errorConfig{noDebugStack: false}) // +checklocksignore
 		assert.NotEmpty(t, span.meta[ext.ErrorStack])
 	})
 }
@@ -489,7 +500,9 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			assert.NoError(t, err)
 			span := tracer.newRootSpan("root span", "my service", "my resource")
 			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			assert.Equal(t, scenario.keep, span.shouldKeepAssumesHoldingLock())
+			span.mu.RUnlock()
 		})
 
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
@@ -500,7 +513,9 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			assert.Equal(t, scenario.keep, span.shouldKeepAssumesHoldingLock())
+			span.mu.RUnlock()
 		})
 	}
 }
@@ -810,14 +825,18 @@ func TestSpanSamplingPriority(t *testing.T) {
 		v, ok := span.metrics[keySamplingPriority]
 		assert.True(ok)
 		assert.EqualValues(priority, v)
-		assert.EqualValues(*span.context.trace.priority, v)
+		sp, ok := span.Context().trace.samplingPriority()
+		assert.True(ok)
+		assert.EqualValues(float64(sp), v)
 
 		childSpan := tracer.newChildSpan("my.child", span)
 		v0, ok0 := span.metrics[keySamplingPriority]
 		v1, ok1 := childSpan.metrics[keySamplingPriority]
 		assert.Equal(ok0, ok1)
 		assert.Equal(v0, v1)
-		assert.EqualValues(*childSpan.context.trace.priority, v0)
+		sp, ok = childSpan.Context().trace.samplingPriority()
+		assert.True(ok)
+		assert.EqualValues(float64(sp), v0)
 	}
 }
 
@@ -829,7 +848,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	}
 	t.Run("noservice_first", noServiceTest)
@@ -840,7 +859,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -850,7 +869,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -860,7 +879,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -870,7 +889,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -883,7 +902,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request", ServiceName("subservice name"))
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -896,7 +915,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -906,7 +925,7 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request")
-		expect := fmt.Sprintf(`%%!b(tracer.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0")`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`%%!b(tracer.Span=dd.service=tracer.test dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0")`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%b", span))
 	})
 
@@ -917,7 +936,7 @@ func TestSpanLog(t *testing.T) {
 		span := tracer.StartSpan("test.request")
 		stop()
 		// no service, env, or version after the tracer is stopped
-		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -932,7 +951,7 @@ func TestSpanLog(t *testing.T) {
 		stop()
 		// service is not included: it is cleared when we stop the tracer
 		// env, version are included: it reads the environment variable when there is no tracer
-		expect := fmt.Sprintf(`dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.context.TraceID(), span.spanID)
+		expect := fmt.Sprintf(`dd.env=testenv dd.version=1.2.3 dd.trace_id="%s" dd.span_id="%d" dd.parent_id="0"`, span.Context().TraceID(), span.spanID)
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -945,7 +964,7 @@ func TestSpanLog(t *testing.T) {
 		span := tracer.StartSpan("test.request")
 		span.spanID = 87654321
 		span.Finish()
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.context.TraceID())
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.Context().TraceID())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
 	})
 
@@ -977,9 +996,9 @@ func TestSpanLog(t *testing.T) {
 		span := tracer.StartSpan("test.request")
 		span.spanID = 87654321
 		span.Finish()
-		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.context.TraceID())
+		expect := fmt.Sprintf(`dd.service=tracer.test dd.env=testenv dd.trace_id=%q dd.span_id="87654321" dd.parent_id="0"`, span.Context().TraceID())
 		assert.Equal(expect, fmt.Sprintf("%v", span))
-		v, _ := getMeta(span, keyTraceID128)
+		v, _ := span.getMeta(keyTraceID128)
 		assert.NotEmpty(v)
 	})
 
@@ -992,10 +1011,10 @@ func TestSpanLog(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		span := tracer.StartSpan("test.request", WithSpanID(87654321))
-		span.context.traceID.SetUpper(1)
+		span.Context().traceID.SetUpper(1)
 		span.Finish()
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="00000000000000010000000005397fb1" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
-		v, _ := getMeta(span, keyTraceID128)
+		v, _ := span.getMeta(keyTraceID128)
 		assert.Equal("0000000000000001", v)
 	})
 
@@ -1009,9 +1028,9 @@ func TestSpanLog(t *testing.T) {
 		defer stop()
 		span := tracer.StartSpan("test.request", WithSpanID(87654321))
 		span.Finish()
-		assert.False(span.context.traceID.HasUpper()) // it should not have generated upper bits
+		assert.False(span.Context().traceID.HasUpper()) // it should not have generated upper bits
 		assert.Equal(`dd.service=tracer.test dd.env=testenv dd.trace_id="87654321" dd.span_id="87654321" dd.parent_id="0"`, fmt.Sprintf("%v", span))
-		v, _ := getMeta(span, keyTraceID128)
+		v, _ := span.getMeta(keyTraceID128)
 		assert.Equal("", v)
 	})
 
@@ -1135,7 +1154,7 @@ func TestSetUserPropagatedUserID(t *testing.T) {
 	require.NoError(t, err)
 	s = tracer.StartSpan("op", ChildOf(c))
 	s.SetUser("userino")
-	assert.True(t, s.context.updated)
+	assert.True(t, s.Context().updated)
 }
 
 func TestStartChild(t *testing.T) {
@@ -1250,9 +1269,12 @@ func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
 	}
 	span.AddLink(SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
 
+	// TODO(kakkoyun): Refactor.
+	span.mu.Lock()
+	defer span.mu.Unlock()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		span.serializeSpanLinksInMeta()
+		span.serializeSpanLinksInMetaAssumesHoldingLock()
 	}
 }
 

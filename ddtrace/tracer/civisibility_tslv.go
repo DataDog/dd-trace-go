@@ -397,32 +397,6 @@ func createTslvSpan(span *Span) tslvSpan {
 	}
 }
 
-// getAndRemoveMeta retrieves a metadata value from a span and removes it from the span's metadata and metrics.
-//
-// Parameters:
-//
-//	span - The span to modify.
-//	key - The metadata key to retrieve and remove.
-//
-// Returns:
-//
-//	The retrieved metadata value.
-func getAndRemoveMeta(span *Span, key string) string {
-	span.mu.Lock()
-	defer span.mu.Unlock()
-	if span.meta == nil {
-		span.meta = make(map[string]string, 1)
-	}
-
-	if v, ok := span.meta[key]; ok {
-		delete(span.meta, key)
-		delete(span.metrics, key)
-		return v
-	}
-
-	return ""
-}
-
 // getAndRemoveMetaToUInt64 retrieves a metadata value from a span, removes it, and converts it to a uint64.
 //
 // Parameters:

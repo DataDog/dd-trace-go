@@ -285,7 +285,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		// If the extractor is the baggage propagator and its baggage is empty,
 		// treat it as if nothing was extracted.
 		if _, ok := v.(*propagatorBaggage); ok {
-			if len(extractedCtx.baggage) == 0 {
+			if len(extractedCtx.getBaggage()) == 0 {
 				extractedCtx = nil
 			}
 		}
@@ -325,10 +325,13 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 			} else if extractedCtx2 != nil { // Trace IDs do not match - create span links
 				link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx2.trace; trace != nil {
-					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
-						link.Flags = 1
-					} else {
-						link.Flags = 0
+					priority, ok := trace.samplingPriority()
+					if ok {
+						if priority > 0 {
+							link.Flags = 1
+						} else {
+							link.Flags = 0
+						}
 					}
 					link.Tracestate = extractedCtx2.trace.propagatingTag(tracestateHeader)
 				}
@@ -337,11 +340,11 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		}
 
 		if _, ok := v.(*propagatorBaggage); ok && extractedCtx != nil {
-			if len(extractedCtx.baggage) > 0 {
-				ctx.baggage = extractedCtx.baggage
+			baggage := extractedCtx.getBaggage()
+			if len(baggage) > 0 {
+				ctx.setBaggage(baggage)
 				atomic.StoreUint32(&ctx.hasBaggage, 1)
 			}
-
 		}
 	}
 
@@ -350,7 +353,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		return nil, ErrSpanContextNotFound
 	}
 	if len(links) > 0 {
-		ctx.spanLinks = links
+		ctx.setSpanLinks(links)
 	}
 	log.Debug("Extracted span context: %#v", ctx)
 	return ctx, nil
@@ -436,8 +439,9 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if sp, ok := ctx.SamplingPriority(); ok {
 		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(sp))
 	}
-	if ctx.origin != "" {
-		writer.Set(originHeader, ctx.origin)
+	origin := ctx.getOrigin()
+	if origin != "" {
+		writer.Set(originHeader, origin)
 	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		// Propagate OpenTracing baggage.
@@ -524,7 +528,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
 		case originHeader:
-			ctx.origin = v
+			ctx.setOrigin(v)
 		case traceTagsHeader:
 			unmarshalPropagatingTags(&ctx, v)
 		default:
@@ -1036,8 +1040,9 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	b.WriteString(strconv.Itoa(priority))
 	listLength := 1
 
-	if ctx.origin != "" {
-		oWithSub := sm.Mutate(originDisallowedFn, ctx.origin)
+	origin := ctx.getOrigin()
+	if origin != "" {
+		oWithSub := sm.Mutate(originDisallowedFn, origin)
 		b.WriteString(";o:")
 		b.WriteString(oWithSub)
 	}
@@ -1246,7 +1251,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 			}
 			key, val := keyVal[0], keyVal[1]
 			if key == "o" {
-				ctx.origin = strings.ReplaceAll(val, "~", "=")
+				ctx.setOrigin(strings.ReplaceAll(val, "~", "="))
 			} else if key == "s" {
 				stateP, err := strconv.Atoi(val)
 				if err != nil {

@@ -92,7 +92,9 @@ func Test_spanAddEvent(t *testing.T) {
 
 	t.Run("with native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
+		s.mu.Lock()
 		s.supportsEvents = true
+		s.mu.Unlock()
 		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-3")
@@ -120,7 +122,9 @@ func Test_spanAddEvent(t *testing.T) {
 
 	t.Run("without native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
+		s.mu.Lock()
 		s.supportsEvents = false
+		s.mu.Unlock()
 		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-3")

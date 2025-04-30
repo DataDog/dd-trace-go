@@ -50,13 +50,15 @@ func TestNewSpanContextPushError(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	assert.Nil(t, err)
 	defer stop()
-	parent := newBasicSpan("test1")                  // 1st span in trace
-	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
+	parent := newBasicSpan("test1")                    // 1st span in trace
+	parent.Context().trace.push(newBasicSpan("test2")) // 2nd span in trace
 	child := newSpan("child", "", "", 0, 0, 0)
 
 	// new context having a parent with a trace of two spans.
 	// One more should overflow.
-	child.context = newSpanContext(child, parent.context)
+	child.mu.Lock()
+	child.context = newSpanContext(child, parent.Context())
+	child.mu.Unlock()
 
 	log.Flush()
 	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2 spans)")
@@ -251,10 +253,11 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
-	trace := root.context.trace
+	trace := root.Context().trace
 
-	assert.Len(trace.spans, 1)
-	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
+	spans := trace.getSpans()
+	assert.Len(spans, 1)
+	assert.Equal(root, spans[0], "the span is the one pushed before")
 
 	root.Finish()
 	flush(1)
@@ -264,7 +267,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	trc := traces[0]
 	assert.Len(trc, 1, "there was a trace in the channel")
 	comparePayloadSpans(t, root, trc[0])
-	assert.Equal(0, len(trace.spans), "no more spans in the trace")
+	assert.Equal(0, len(trace.getSpans()), "no more spans in the trace")
 }
 
 // Tests to confirm that when the payload queue is full, chunks are dropped
@@ -276,12 +279,12 @@ func TestTraceFinishChunk(t *testing.T) {
 	defer tracer.statsd.Close()
 
 	root := newSpan("name", "service", "resource", 0, 0, 0)
-	trace := root.context.trace
+	trace := root.Context().trace
 
 	for i := 0; i < payloadQueueSize+1; i++ {
 		trace.mu.Lock()
 		c := Chunk{spans: make([]*Span, 1)}
-		trace.finishChunk(tracer, &c)
+		trace.finishChunkAssumesHoldingLock(tracer, &c)
 		trace.mu.Unlock()
 	}
 	assert.Equal(uint32(1), atomic.LoadUint32((*uint32)(&tracer.totalTracesDropped)))
@@ -299,7 +302,7 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.context.trace.setTag("someTraceTag", "someValue")
+		root.Context().trace.setTag("someTraceTag", "someValue")
 		var children []*Span
 		for i := 0; i < 3; i++ { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
@@ -342,7 +345,7 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.context.trace.setTag("someTraceTag", "someValue")
+		root.Context().trace.setTag("someTraceTag", "someValue")
 		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			child.Finish()
@@ -364,15 +367,16 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	buffer := newTrace()
 	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	assert.Len(buffer.getSpans(), 0)
 
 	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
-	root.context.trace = buffer
+	root.Context().trace = buffer
 
 	buffer.push(root)
-	assert.Len(buffer.spans, 1, "there is one span in the buffer")
-	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
+	spans := buffer.getSpans()
+	assert.Len(spans, 1, "there is one span in the buffer")
+	assert.Equal(root, spans[0], "the span is the one pushed before")
 
 	<-time.After(time.Second / 10)
 	log.Flush()
@@ -390,7 +394,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	defer stop()
 	buffer := newTrace()
 	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	assert.Len(buffer.getSpans(), 0)
 
 	traceID := randUint64()
 	root := trc.StartSpan("name1", WithSpanID(traceID))
@@ -401,10 +405,11 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	trace := []*Span{root, span2, span3, span3a}
 
 	for i, span := range trace {
-		span.context.trace = buffer
+		span.Context().trace = buffer
 		buffer.push(span)
-		assert.Len(buffer.spans, i+1, "there is one more span in the buffer")
-		assert.Equal(span, buffer.spans[i], "the span is the one pushed before")
+		spans := buffer.getSpans()
+		assert.Len(spans, i+1, "there is one more span in the buffer")
+		assert.Equal(span, spans[i], "the span is the one pushed before")
 	}
 
 	for _, span := range trace {
@@ -774,9 +779,9 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.NotNil(ctx.trace)
-		assert.Nil(ctx.trace.priority)
+		assert.Nil(ctx.trace.priority) // +checklocksforce: don't care about locking for this test.
 		assert.Equal(ctx.trace.root, span)
-		assert.Contains(ctx.trace.spans, span)
+		assert.Contains(ctx.trace.getSpans(), span)
 	})
 
 	t.Run("priority", func(t *testing.T) {
@@ -791,7 +796,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.Equal(ctx.SpanID(), span.spanID)
-		assert.Equal(*ctx.trace.priority, 1.)
+		assert.Equal(*ctx.trace.priority, 1.) // +checklocksforce: don't care about locking for this test.
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -811,7 +816,7 @@ func TestNewSpanContext(t *testing.T) {
 		span := StartSpan("some-span", ChildOf(ctx))
 		assert.EqualValues(uint64(1), ctx.traceID.Lower())
 		assert.EqualValues(2, ctx.spanID)
-		assert.EqualValues(3, *ctx.trace.priority)
+		assert.EqualValues(3, *ctx.trace.priority) // +checklocksforce: don't care about locking for this test.
 		assert.Equal(ctx.trace.root, span)
 	})
 }
@@ -856,16 +861,17 @@ func TestSpanContextParent(t *testing.T) {
 			assert.Equal(ctx.traceID.Lower(), s.traceID)
 			assert.Equal(ctx.spanID, s.spanID)
 			if parentCtx.trace != nil {
-				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))
+				assert.Equal(len(ctx.trace.getSpans()), len(parentCtx.trace.getSpans()))
 			}
 			assert.NotNil(ctx.trace)
-			assert.Contains(ctx.trace.spans, s)
+			assert.Contains(ctx.trace.getSpans(), s)
 			if parentCtx.trace != nil {
-				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+				// TODO(kakkoyun): Refactor.
+				assert.Equal(ctx.trace.priority, parentCtx.trace.priority) // +checklocksignore
 				assert.Equal(atomic.LoadUint32((*uint32)(&ctx.trace.samplingDecision)), atomic.LoadUint32((*uint32)(&parentCtx.trace.samplingDecision)))
 			}
-			assert.Equal(parentCtx.baggage, ctx.baggage)
-			assert.Equal(parentCtx.origin, ctx.origin)
+			assert.Equal(parentCtx.getBaggage(), ctx.getBaggage())
+			assert.Equal(parentCtx.getOrigin(), ctx.getOrigin())
 		})
 	}
 }
@@ -962,35 +968,35 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoReject, samplernames.RemoteRate) // +checklocksignore: don't care about locking for this test.
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoReject, samplernames.Unknown) // +checklocksignore: don't care about locking for this test.
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoKeep, samplernames.RemoteRate) // +checklocksignore: don't care about locking for this test.
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoKeep, samplernames.AgentRate) // +checklocksignore: don't care about locking for this test.
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoKeep, samplernames.RemoteRate) // +checklocksignore: don't care about locking for this test.
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }

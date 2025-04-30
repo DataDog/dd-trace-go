@@ -550,7 +550,7 @@ func NewChunk(spans []*Span, willSend bool) *Chunk {
 // sampleChunk applies single-span sampling to the provided trace.
 func (t *tracer) sampleChunk(c *Chunk) {
 	if len(c.spans) > 0 {
-		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
+		if p, ok := c.spans[0].Context().SamplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
 			return
 		}
@@ -599,6 +599,8 @@ func (t *tracer) pushChunk(trace *Chunk) {
 	}
 }
 
+// TODO(kakkoyun): Refactor.
+// +checklocksignore
 func spanStart(operationName string, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
@@ -655,7 +657,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
-			span.setMetric(keySamplingPriority, float64(p))
+			span.setMetricAssumesHoldingLock(keySamplingPriority, float64(p))
 		}
 		if context.span != nil {
 			// local parent, inherit service
@@ -666,17 +668,18 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 			// remote parent
 			if context.origin != "" {
 				// mark origin
-				span.setMeta(keyOrigin, context.origin)
+				span.setMetaAssumesHoldingLock(keyOrigin, context.origin)
 			}
 		}
 
 		if context.reparentID != "" {
-			span.setMeta(keyReparentID, context.reparentID)
+			span.setMetaAssumesHoldingLock(keyReparentID, context.reparentID)
 		}
 
 	}
 	span.context = newSpanContext(span, context)
-	span.setMeta("language", "go")
+	// TODO(kakkoyun): Lock the span.
+	span.setMetaAssumesHoldingLock("language", "go")
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -686,8 +689,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		traceprof.SetProfilerRootTags(span)
 	}
 	if isRootSpan || context.span.service != span.service {
-		// The span is the local root span.
-		span.setMetric(keyTopLevel, 1)
+		span.setMetricAssumesHoldingLock(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.metrics, keyMeasured)
 	}
@@ -697,6 +699,8 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
+// TODO(kakkoyun): Refactor.
+// +checklocksignore
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
 	if !t.config.enabled.current {
 		return nil
@@ -707,7 +711,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	span.noDebugStack = t.config.noDebugStack
 	if t.config.hostname != "" {
-		span.setMeta(keyHostname, t.config.hostname)
+		span.setMetaAssumesHoldingLock(keyHostname, t.config.hostname)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
@@ -722,11 +726,11 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if t.config.version != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
-			span.setMeta(ext.Version, t.config.version)
+			span.setMetaAssumesHoldingLock(ext.Version, t.config.version)
 		}
 	}
 	if t.config.env != "" {
-		span.setMeta(ext.Environment, t.config.env)
+		span.setMetaAssumesHoldingLock(ext.Environment, t.config.env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -757,9 +761,9 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if span.metrics[keyTopLevel] == 1 {
 		// The span is the local root span.
-		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+		span.setMetricAssumesHoldingLock(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
-	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMetricAssumesHoldingLock(ext.Pid, float64(t.pid))
 	t.spansStarted.Inc(span.integration)
 
 	return span
@@ -769,6 +773,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
+// +checklocks:span.mu
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
@@ -885,7 +890,8 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
-			ctx.trace.priority = nil
+			// TODO(kakkoyun): Make sure sampler name is correct.
+			ctx.trace.setSamplingPriority(ext.PriorityAutoReject, samplernames.Default)
 		}
 	}
 	return ctx, err
@@ -946,6 +952,7 @@ func (t *tracer) SubmitChunk(c *Chunk) {
 const sampleRateMetricKey = "_sample_rate"
 
 // Sample samples a span with the internal sampler.
+// +checklocks:span.mu
 func (t *tracer) sample(span *Span) {
 	if _, ok := span.context.SamplingPriority(); ok {
 		// sampling decision was already made
@@ -958,12 +965,12 @@ func (t *tracer) sample(span *Span) {
 		return
 	}
 	if sampler.Rate() < 1 {
-		span.setMetric(sampleRateMetricKey, sampler.Rate())
+		span.setMetricAssumesHoldingLock(sampleRateMetricKey, sampler.Rate())
 	}
-	if t.rulesSampling.SampleTraceGlobalRate(span) {
+	if t.rulesSampling.sampleTraceGlobalRateAssumesHoldingLock(span) {
 		return
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.sampleTraceAssumesHoldingLock(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
@@ -973,7 +980,10 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 	if !rt.IsEnabled() {
 		return ctx, func() {}
 	}
+	// TODO(kakkoyun): Refactor.
+	span.mu.Lock()
 	span.goExecTraced = true
+	span.mu.Unlock()
 	// Task name is the resource (operationName) of the span, e.g.
 	// "POST /foo/bar" (http) or "/foo/pkg.Method" (grpc).
 	taskName := span.resource
