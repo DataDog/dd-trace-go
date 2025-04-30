@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"sync"
 	"testing"
 	"time"
@@ -89,10 +90,10 @@ below.
 			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/tracer.go:404 +0x2b4
 */
 func TestIncident37240DoubleFinish(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
-	defer stop()
+	t.Run("with link", func(_ *testing.T) {
+		_, _, _, stop := startTestTracer(t)
+		defer stop()
 
-	t.Run("with link", func(t *testing.T) {
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 		// My theory is that contrib/aws/internal/span_pointers/span_pointers.go
 		// adds a span link which is causes `serializeSpanLinksInMeta` to write to
@@ -104,18 +105,43 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		}
 	})
 
-	t.Run("with NoDebugStack", func(t *testing.T) {
+	t.Run("with NoDebugStack", func(_ *testing.T) {
+		_, _, _, stop := startTestTracer(t)
+		defer stop()
+
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 		for i := 0; i < 1000; i++ {
 			root.Finish(NoDebugStack())
 		}
 	})
 
-	t.Run("with error", func(t *testing.T) {
+	t.Run("with error", func(_ *testing.T) {
+		_, _, _, stop := startTestTracer(t)
+		defer stop()
+
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 		err := errors.New("test error")
 		for i := 0; i < 1000; i++ {
 			root.Finish(WithError(err))
+		}
+	})
+
+	t.Run("with rules sampler", func(t *testing.T) {
+		_, _, _, stop := startTestTracer(t,
+			WithService("svc"),
+			WithSamplingRules([]SamplingRule{
+				{Service: regexp.MustCompile("svc"), Rate: 1.0},
+			}),
+		)
+		defer stop()
+
+		root, _ := StartSpanFromContext(context.Background(), "root")
+		span := root.(*span)
+		for i := 0; i < 1000; i++ {
+			root.Finish()
+			assert.Equal(t, 1.0, span.Metrics[keyRulesSamplerLimiterRate])
+			assert.Equal(t, 2.0, span.Metrics[keySamplingPriority])
+			assert.Empty(t, span.Metrics[keySamplingPriorityRate])
 		}
 	})
 }
