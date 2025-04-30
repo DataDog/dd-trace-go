@@ -213,7 +213,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				// should use x-datadog-parent-id, not the id in the tracestate
 				assert.Equal(uint64(1), sctx.spanID)
 			}
-			assert.Equal("synthetics", sctx.origin) // should use x-datadog-origin, not the origin in the tracestate
+			assert.Equal("synthetics", sctx.getOrigin()) // should use x-datadog-origin, not the origin in the tracestate
 			if tc.wantTracestatePropagation {
 				assert.Equal("0000000000000001", sctx.reparentID)
 				assert.Equal("dd=s:0;o:synthetics;p:0000000000000001,othervendor=t61rcWkgMzE", sctx.trace.propagatingTag(tracestateHeader))
@@ -288,8 +288,8 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	err = tracer.Inject(ctx, carrier)
 	assert.Nil(err)
 
-	tid := strconv.FormatUint(root.traceID, 10)
-	pid := strconv.FormatUint(root.spanID, 10)
+	tid := strconv.FormatUint(root.getTraceID(), 10)
+	pid := strconv.FormatUint(root.getSpanID(), 10)
 
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)
@@ -312,8 +312,9 @@ func TestTextMapPropagatorOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ctx.origin != "synthetics" {
-		t.Fatalf("didn't propagate origin, got: %q", ctx.origin)
+	origin := ctx.getOrigin()
+	if origin != "synthetics" {
+		t.Fatalf("didn't propagate origin, got: %q", origin)
 	}
 	dst := map[string]string{}
 	if err := tracer.Inject(ctx, TextMapCarrier(dst)); err != nil {
@@ -343,7 +344,7 @@ func TestTextMapPropagatorTraceTagsWithPriority(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		"hello":    "world=",
 		"_dd.p.dm": "934086a6-4",
-	}, ctx.trace.propagatingTags)
+	}, ctx.trace.getPropagatingTags())
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -372,7 +373,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		"hello":    "world",
 		"_dd.p.dm": "-1",
-	}, ctx.trace.propagatingTags)
+	}, ctx.trace.getPropagatingTags())
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -399,7 +400,7 @@ func TestExtractOriginSynthetics(t *testing.T) {
 	}
 	assert.Equal(t, ctx.spanID, uint64(0))
 	assert.Equal(t, ctx.traceID.Lower(), uint64(3))
-	assert.Equal(t, ctx.origin, "synthetics")
+	assert.Equal(t, ctx.getOrigin(), "synthetics")
 }
 
 func Test257CharacterDDTracestateLengh(t *testing.T) {
@@ -412,12 +413,12 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	root.SetTag(ext.ManualKeep, true)
 	ctx := root.Context()
-	ctx.origin = "rum"
+	ctx.setOrigin("rum")
 	ctx.traceID = traceIDFrom64Bits(1)
 	ctx.spanID = 2
-	ctx.trace.propagatingTags = map[string]string{
+	ctx.trace.setPropagatingTags(map[string]string{
 		"tracestate": "valid_vendor=a:1",
-	}
+	})
 	// need to create a tracestate where the dd portion will be 257 chars long
 	// we currently have:
 	// 3 chars ->  dd=
@@ -433,8 +434,8 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	longKey := strings.Repeat("a", 234) // 234 is correct num for 257
 	shortKey := "a"
 
-	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", shortKey)] = "0"
-	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", longKey)] = "0"
+	ctx.trace.setPropagatingTag(fmt.Sprintf("_dd.p.%s", shortKey), "0")
+	ctx.trace.setPropagatingTag(fmt.Sprintf("_dd.p.%s", longKey), "0")
 
 	headers := TextMapCarrier(map[string]string{})
 	err = tracer.Inject(ctx, headers)
@@ -526,7 +527,7 @@ func TestTextMapPropagator(t *testing.T) {
 				assert.NotEmpty(t, dst[tracestateHeader])
 				assert.NotEmpty(t, dst[traceparentHeader])
 			}
-			assert.Equal(t, tc.errStr, child.Context().trace.tags["_dd.propagation_error"])
+			assert.Equal(t, tc.errStr, child.Context().trace.getTag("_dd.propagation_error"))
 		})
 	}
 	t.Run("Extract-InvalidTraceTagsHeader", func(t *testing.T) {
@@ -541,7 +542,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.NoError(t, err)
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
-		assert.Equal(t, "decoding_error", ctx.trace.tags["_dd.propagation_error"])
+		assert.Equal(t, "decoding_error", ctx.trace.getTag("_dd.propagation_error"))
 	})
 
 	t.Run("Extract-TooManyTags", func(t *testing.T) {
@@ -556,7 +557,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.NoError(t, err)
 		ctx, err := tracer.Extract(src)
 		assert.Nil(t, err)
-		assert.Equal(t, "extract_max_size", ctx.trace.tags["_dd.propagation_error"])
+		assert.Equal(t, "extract_max_size", ctx.trace.getTag("_dd.propagation_error"))
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
@@ -586,8 +587,9 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal(xctx.traceID.HexEncoded(), ctx.traceID.HexEncoded())
 		assert.Equal(xctx.spanID, ctx.spanID)
-		assert.Equal(xctx.baggage, ctx.baggage)
-		assert.Equal(xctx.trace.priority, ctx.trace.priority)
+		assert.Equal(xctx.getBaggage(), ctx.getBaggage())
+		// TODO(kakkoyun): Refactor.
+		assert.Equal(xctx.trace.priority, ctx.trace.priority) // +checklocksignore
 	})
 }
 
@@ -825,7 +827,9 @@ func TestEnvVars(t *testing.T) {
 					// assert.Equal(tc.traceID128, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
 					if len(tc.out) > 2 {
 						require.NotNil(t, ctx.trace)
-						assert.Equal(float64(tc.out[2]), *ctx.trace.priority)
+						priority, ok := ctx.trace.samplingPriority()
+						assert.True(ok)
+						assert.Equal(float64(tc.out[2]), float64(priority))
 					}
 				})
 			}
@@ -1057,8 +1061,9 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(ctx.traceID, xctx.traceID)
 					assert.Equal(ctx.spanID, xctx.spanID)
-					assert.Equal(ctx.baggage, xctx.baggage)
-					assert.Equal(ctx.trace.priority, xctx.trace.priority)
+					assert.Equal(ctx.getBaggage(), xctx.getBaggage())
+					// TODO(kakkoyun): Refactor.
+					assert.Equal(ctx.trace.priority, xctx.trace.priority) // +checklocksignore
 				})
 			}
 		}
@@ -1256,12 +1261,11 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.tid, ctx.traceID)
 					assert.Equal(tc.out[0], ctx.spanID)
-					assert.Equal(tc.origin, ctx.origin)
+					assert.Equal(tc.origin, ctx.getOrigin())
 					p, ok := ctx.SamplingPriority()
 					assert.True(ok)
 					assert.Equal(int(tc.out[1]), p)
-
-					assert.Equal(tc.propagatingTags, ctx.trace.propagatingTags)
+					assert.Equal(tc.propagatingTags, ctx.trace.getPropagatingTags())
 				})
 			}
 		}
@@ -1362,7 +1366,7 @@ func TestEnvVars(t *testing.T) {
 					}
 					root := tracer.StartSpan("web.request", ChildOf(ctx))
 					defer root.Finish()
-					ctx.origin = tc.origin
+					ctx.setOrigin(tc.origin)
 
 					assert.Equal(tc.tid, ctx.traceID)
 					assert.Equal(tc.sid, ctx.spanID)
@@ -1559,10 +1563,10 @@ func TestEnvVars(t *testing.T) {
 					root := tracer.StartSpan("web.request")
 					root.setSamplingPriority(tc.priority, samplernames.Default)
 					ctx := root.Context()
-					ctx.origin = tc.origin
+					ctx.setOrigin(tc.origin)
 					ctx.traceID = tc.tid
 					ctx.spanID = tc.sid
-					ctx.trace.propagatingTags = tc.propagatingTags
+					ctx.trace.setPropagatingTags(tc.propagatingTags)
 					ctx.reparentID = "0123456789abcdef"
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1589,15 +1593,15 @@ func TestEnvVars(t *testing.T) {
 					root := tracer.StartSpan("web.request")
 					root.SetTag(ext.ManualKeep, true)
 					ctx := root.Context()
-					ctx.origin = "old_tracestate"
+					ctx.setOrigin("old_tracestate")
 					ctx.traceID = traceIDFrom64Bits(1229782938247303442)
 					ctx.spanID = 2459565876494606882
-					ctx.trace.propagatingTags = map[string]string{
+					ctx.trace.setPropagatingTags(map[string]string{
 						"tracestate": "valid_vendor=a:1",
-					}
+					})
 					// dd part of the tracestate must not exceed 256 characters
 					for i := 0; i < 32; i++ {
-						ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.a%v", i)] = "i"
+						ctx.trace.setPropagatingTag(fmt.Sprintf("_dd.p.a%v", i), "i")
 					}
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1667,7 +1671,7 @@ func TestEnvVars(t *testing.T) {
 				checkSameElements(assert, tc.outHeaders[tracestateHeader], headers[tracestateHeader])
 
 				// NOTE: this will be set for phase 3
-				assert.Empty(root.meta["_dd.parent_id"], "extraction happened from DD headers, so _dd.parent_id mustn't be set")
+				assert.Empty(root.fetchMeta("_dd.parent_id"), "extraction happened from DD headers, so _dd.parent_id mustn't be set")
 
 				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 				// -3 as we don't count dd= as part of the "value" length limit
@@ -1734,8 +1738,10 @@ func TestEnvVars(t *testing.T) {
 
 					assert.Equal(tc.out[0], ctx.traceID.Lower())
 					assert.Equal(tc.out[1], ctx.spanID)
-					assert.Equal(tc.origin, ctx.origin)
-					assert.Equal(tc.priority, *ctx.trace.priority)
+					assert.Equal(tc.origin, ctx.getOrigin())
+					priority, ok := ctx.trace.samplingPriority()
+					assert.True(ok)
+					assert.Equal(tc.priority, float64(priority))
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1801,9 +1807,9 @@ func TestEnvVars(t *testing.T) {
 					}
 
 					if tc.lastParent == "" {
-						assert.Empty(s.meta["_dd.parent_id"])
+						assert.Empty(s.fetchMeta("_dd.parent_id"))
 					} else {
-						assert.Equal(s.meta["_dd.parent_id"], tc.lastParent)
+						assert.Equal(s.fetchMeta("_dd.parent_id"), tc.lastParent)
 					}
 
 					assert.Equal(true, sctx.updated)
@@ -1812,7 +1818,7 @@ func TestEnvVars(t *testing.T) {
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
 					assert.Equal(tc.tid, sctx.traceID)
-					assert.Equal(tc.out[0], sctx.span.parentID)
+					assert.Equal(tc.out[0], sctx.span.getParentID())
 					assert.Equal(tc.out[1], sctx.spanID)
 
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
@@ -1974,9 +1980,10 @@ func TestSpanLinks(t *testing.T) {
 				}
 
 				assert.Equal(tt.tid, sctx.traceID)
-				assert.Len(sctx.spanLinks, 2)
-				assert.Contains(sctx.spanLinks, tt.out[0])
-				assert.Contains(sctx.spanLinks, tt.out[1])
+				spanLinks := sctx.getSpanLinks()
+				assert.Len(spanLinks, 2)
+				assert.Contains(spanLinks, tt.out[0])
+				assert.Contains(spanLinks, tt.out[1])
 			})
 		}
 	})
@@ -1998,7 +2005,7 @@ func TestSpanLinks(t *testing.T) {
 		}
 
 		assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
-		assert.Len(sctx.spanLinks, 0)
+		assert.Len(sctx.getSpanLinks(), 0)
 	})
 }
 
@@ -2334,13 +2341,13 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 			sendCtx.trace.setPropagatingTag(key, val)
 		}
 		marshal := propagator.marshalPropagatingTags(sendCtx)
-		if _, ok := sendCtx.trace.tags[keyPropagationError]; ok {
+		if _, ok := sendCtx.trace.getTags()[keyPropagationError]; ok {
 			t.Skipf("Skipping invalid tags")
 		}
 		unmarshalPropagatingTags(recvCtx, marshal)
-		marshaled := sendCtx.trace.propagatingTags
-		unmarshaled := recvCtx.trace.propagatingTags
-		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+		marshaled := sendCtx.trace.getPropagatingTags()
+		unmarshaled := recvCtx.trace.getPropagatingTags()
+		if !reflect.DeepEqual(marshaled, unmarshaled) {
 			t.Fatalf("Inconsistent marshaling/unmarshaling: (%q) is different from (%q)", marshaled, unmarshaled)
 		}
 	})
@@ -2392,14 +2399,14 @@ func FuzzComposeTracestate(f *testing.F) {
 		traceState := composeTracestate(sendCtx, priority, oldState)
 		parseTracestate(recvCtx, traceState)
 		setPropagatingTag(sendCtx, tracestateHeader, traceState)
-		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
+		marshaled := sendCtx.trace.getPropagatingTags()
+		unmarshaled := recvCtx.trace.getPropagatingTags()
+		if !reflect.DeepEqual(marshaled, unmarshaled) {
 			t.Fatalf(`Inconsistent composing/parsing:
 			pre compose: (%q)
 			is different from
 			parsed: (%q)
-			for tracestate of: (%s)`, sendCtx.trace.propagatingTags,
-				recvCtx.trace.propagatingTags,
-				traceState)
+			for tracestate of: (%s)`, marshaled, unmarshaled, traceState)
 		}
 	})
 }
@@ -2504,7 +2511,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.NotContains(root.meta, keyTraceID128)
+		assert.NotContains(root.getMetas(), keyTraceID128)
 	})
 
 	t.Run("datadog, malformed tid", func(_ *testing.T) {
@@ -2517,7 +2524,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.NotContains(root.meta, keyTraceID128)
+		assert.NotContains(root.getMetas(), keyTraceID128)
 	})
 
 	t.Run("datadog, valid tid", func(_ *testing.T) {
@@ -2530,7 +2537,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.Equal("640cfd8d00000000", root.meta[keyTraceID128])
+		assert.Equal("640cfd8d00000000", root.fetchMeta(keyTraceID128))
 	})
 }
 
@@ -2766,7 +2773,7 @@ func TestInjectBaggageMaxBytes(t *testing.T) {
 		"key3": strings.Repeat("c", baggageMaxBytes/3),
 	}
 
-	ctx.baggage = baggageItems
+	ctx.setBaggage(baggageItems)
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)

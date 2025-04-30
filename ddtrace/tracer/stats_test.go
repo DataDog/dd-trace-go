@@ -63,7 +63,9 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
+			s1.mu.RLock()
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			s1.mu.RUnlock()
 			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
@@ -81,9 +83,13 @@ func TestConcentrator(t *testing.T) {
 			testStats := &statsdtest.TestStatsdClient{}
 			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), testStats)
 			assert.Len(t, transport.Stats(), 0)
+			s1.mu.RLock()
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			s1.mu.RUnlock()
 			assert.True(t, ok)
+			s2.mu.RLock()
 			ss2, ok := c.newTracerStatSpan(&s2, nil)
+			s2.mu.RUnlock()
 			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
@@ -108,7 +114,9 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport, env: "someEnv", ciVisibilityEnabled: true}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
+			s1.mu.RLock()
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			s1.mu.RUnlock()
 			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
@@ -122,7 +130,9 @@ func TestConcentrator(t *testing.T) {
 			transport := newDummyTransport()
 			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
+			s1.mu.RLock()
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			s1.mu.RUnlock()
 			assert.True(t, ok)
 			c.Start()
 			c.In <- ss1
@@ -171,7 +181,9 @@ func TestObfuscation(t *testing.T) {
 	tracerObfuscationVersion = 2
 
 	assert.Len(t, tsp.Stats(), 0)
+	s1.mu.RLock()
 	ss1, ok := c.newTracerStatSpan(&s1, obfuscate.NewObfuscator(obfuscate.Config{}))
+	s1.mu.RUnlock()
 	assert.True(t, ok)
 	c.Start()
 	c.In <- ss1
@@ -180,8 +192,11 @@ func TestObfuscation(t *testing.T) {
 	assert.Len(t, actualStats, 1)
 	assert.Len(t, actualStats[0].Stats, 1)
 	assert.Len(t, actualStats[0].Stats[0].Stats, 1)
-	assert.Equal(t, 2, tsp.obfVersion)
 	assert.Equal(t, "GET", actualStats[0].Stats[0].Stats[0].Resource)
+	// TODO(kakkoyun): Refactor.
+	tsp.mu.RLock()
+	assert.Equal(t, 2, tsp.obfVersion)
+	tsp.mu.RUnlock()
 }
 
 func TestStatsByKind(t *testing.T) {
@@ -201,9 +216,14 @@ func TestStatsByKind(t *testing.T) {
 	s2.SetTag("span.kind", "invalid")
 
 	c := newConcentrator(&config{transport: newDummyTransport(), env: "someEnv"}, 100, &statsd.NoOpClientDirect{})
+
+	s1.mu.RLock()
 	_, ok := c.newTracerStatSpan(&s1, nil)
+	s1.mu.RUnlock()
 	assert.True(t, ok)
 
+	s2.mu.RLock()
 	_, ok = c.newTracerStatSpan(&s2, nil)
+	s2.mu.RUnlock()
 	assert.False(t, ok)
 }

@@ -7,6 +7,7 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
+// +checklocksignore
 func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
@@ -200,6 +201,7 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
+// +checklocksignore
 func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
 	zb0001Len := uint32(15)
@@ -430,6 +432,7 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+// +checklocksignore
 func (z *Span) Msgsize() (s int) {
 	s = 1 + 5 + msgp.StringPrefixSize + len(z.name) + 8 + msgp.StringPrefixSize + len(z.service) + 9 + msgp.StringPrefixSize + len(z.resource) + 5 + msgp.StringPrefixSize + len(z.spanType) + 6 + msgp.Int64Size + 9 + msgp.Int64Size + 5 + msgp.MapHeaderSize
 	if z.meta != nil {
@@ -457,6 +460,7 @@ func (z *Span) Msgsize() (s int) {
 }
 
 // DecodeMsg implements msgp.Decodable
+// +checklocksignore
 func (z *errorConfig) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
@@ -504,6 +508,7 @@ func (z *errorConfig) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
+// +checklocksignore
 func (z errorConfig) EncodeMsg(en *msgp.Writer) (err error) {
 	// map header, size 3
 	// write "noDebugStack"
@@ -540,12 +545,14 @@ func (z errorConfig) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+// +checklocksignore
 func (z errorConfig) Msgsize() (s int) {
 	s = 1 + 13 + msgp.BoolSize + 12 + msgp.UintSize + 10 + msgp.UintSize
 	return
 }
 
 // DecodeMsg implements msgp.Decodable
+// +checklocksignore
 func (z *spanList) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0002 uint32
 	zb0002, err = dc.ReadArrayHeader()
@@ -581,6 +588,7 @@ func (z *spanList) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
+// +checklocksignore
 func (z spanList) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
@@ -605,6 +613,7 @@ func (z spanList) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+// +checklocksignore
 func (z spanList) Msgsize() (s int) {
 	s = msgp.ArrayHeaderSize
 	for zb0003 := range z {
@@ -618,6 +627,7 @@ func (z spanList) Msgsize() (s int) {
 }
 
 // DecodeMsg implements msgp.Decodable
+// +checklocksignore
 func (z *spanLists) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0003 uint32
 	zb0003, err = dc.ReadArrayHeader()
@@ -666,6 +676,7 @@ func (z *spanLists) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
+// +checklocksignore
 func (z spanLists) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
@@ -697,6 +708,7 @@ func (z spanLists) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+// +checklocksignore
 func (z spanLists) Msgsize() (s int) {
 	s = msgp.ArrayHeaderSize
 	for zb0005 := range z {

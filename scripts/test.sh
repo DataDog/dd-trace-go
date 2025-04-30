@@ -69,12 +69,20 @@ if [[ ! -z "$tools" ]]; then
     pushd /tmp
     go install golang.org/x/tools/cmd/goimports@latest
     go install gotest.tools/gotestsum@latest
+	# https://pkg.go.dev/gvisor.dev/gvisor/tools/checklocks#section-readme
+	go install gvisor.dev/gvisor/tools/checklocks/cmd/checklocks@go
+	# The linter installed by the CI might be outdated.
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
     popd
 fi
 
 if [[ ! -z "$lint" ]]; then
-    echo "Running Linter"
-    goimports -e -l -local github.com/DataDog/dd-trace-go/v2 .
+    echo "Running Linters"
+    goimports -e -l -local github.com/DataDog/dd-trace-go/v2 . || exit 1
+	# Check for lock violations.
+	go vet -vettool=$HOME/go/bin/checklocks ./ddtrace/tracer || exit 1
+	# Run the linter.
+	golangci-lint run --fix ./... || exit 1
 fi
 
 if [[ "$INTEGRATION" != "" ]]; then

@@ -1286,11 +1286,12 @@ func TestStartWithLink(t *testing.T) {
 	defer tracer.Stop()
 
 	span := tracer.StartSpan("test.request", WithSpanLinks(links))
-	assert.Len(span.spanLinks, 2)
-	assert.Equal(span.spanLinks[0].TraceID, uint64(1))
-	assert.Equal(span.spanLinks[0].SpanID, uint64(2))
-	assert.Equal(span.spanLinks[1].TraceID, uint64(3))
-	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
+	spanLinks := span.getSpanLinks()
+	assert.Len(spanLinks, 2)
+	assert.Equal(spanLinks[0].TraceID, uint64(1))
+	assert.Equal(spanLinks[0].SpanID, uint64(2))
+	assert.Equal(spanLinks[1].TraceID, uint64(3))
+	assert.Equal(spanLinks[1].SpanID, uint64(4))
 }
 
 func TestOtelResourceAtttributes(t *testing.T) {
@@ -1875,7 +1876,7 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.NoError(err)
 
 	s := tracer.StartSpan("test", WithStartSpanConfig(cfg))
-	defer s.Finish()
+	s.mu.RLock()
 	assert.Equal(float64(1), s.metrics[keyMeasured])
 	assert.Equal("value", s.meta["key"])
 	assert.Equal(parent.Context().SpanID(), s.parentID)
@@ -1885,6 +1886,8 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(spanID, s.spanID)
 	assert.Equal(ext.SpanTypeWeb, s.spanType)
 	assert.Equal(tm.UnixNano(), s.start)
+	s.mu.RUnlock()
+	s.Finish()
 }
 
 func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
@@ -1907,8 +1910,12 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		Tag("key", "after_start_span_config"),
 	)
 	defer s.Finish()
-	assert.Equal("should_override", s.meta["k2"])
-	assert.Equal("after_start_span_config", s.meta["key"])
+	val, ok := s.getMeta("k2")
+	assert.True(ok)
+	assert.Equal("should_override", val)
+	val, ok = s.getMeta("key")
+	assert.True(ok)
+	assert.Equal("after_start_span_config", val)
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {

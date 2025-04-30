@@ -92,26 +92,29 @@ func Test_spanAddEvent(t *testing.T) {
 
 	t.Run("with native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
+		s.mu.Lock()
 		s.supportsEvents = true
+		s.mu.Unlock()
 		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-3")
 		s.Finish()
 
-		require.Len(t, s.spanEvents, 3)
-		evt := s.spanEvents[0]
+		events := s.getSpanEvents()
+		require.Len(t, events, 3)
+		evt := events[0]
 		assert.Equal(t, "test-event-1", evt.Name)
 		assert.EqualValues(t, ts.UnixNano(), evt.TimeUnixNano)
 		assert.Equal(t, wantAttrs, evt.Attributes)
 		assert.Nil(t, evt.RawAttributes)
 
-		evt = s.spanEvents[1]
+		evt = events[1]
 		assert.Equal(t, "test-event-2", evt.Name)
 		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
 		assert.Equal(t, wantAttrs, evt.Attributes)
 		assert.Nil(t, evt.RawAttributes)
 
-		evt = s.spanEvents[2]
+		evt = events[2]
 		assert.Equal(t, "test-event-3", evt.Name)
 		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
 		assert.Nil(t, evt.Attributes)
@@ -120,17 +123,19 @@ func Test_spanAddEvent(t *testing.T) {
 
 	t.Run("without native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
+		s.mu.Lock()
 		s.supportsEvents = false
+		s.mu.Unlock()
 		s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
 		s.AddEvent("test-event-3")
 		s.Finish()
 
-		require.Empty(t, s.spanEvents)
-		assert.NotEmpty(t, s.meta["events"])
+		require.Empty(t, s.getSpanEvents())
+		assert.NotEmpty(t, s.fetchMeta("events"))
 
 		var spanEvents []spanEvent
-		err := json.Unmarshal([]byte(s.meta["events"]), &spanEvents)
+		err := json.Unmarshal([]byte(s.fetchMeta("events")), &spanEvents)
 		require.NoError(t, err)
 
 		require.Len(t, spanEvents, 3)

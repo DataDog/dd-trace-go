@@ -161,8 +161,8 @@ type ciVisibilityEvent struct {
 //	value - The tag value.
 func (e *ciVisibilityEvent) SetTag(key string, value interface{}) {
 	e.span.SetTag(key, value)
-	e.Content.Meta = e.span.meta
-	e.Content.Metrics = e.span.metrics
+	e.Content.Meta = e.span.getMetas()
+	e.Content.Metrics = e.span.getMetrics()
 }
 
 // SetOperationName sets the operation name of the event's span and updates the content name.
@@ -172,7 +172,7 @@ func (e *ciVisibilityEvent) SetTag(key string, value interface{}) {
 //	operationName - The new operation name.
 func (e *ciVisibilityEvent) SetOperationName(operationName string) {
 	e.span.SetOperationName(operationName)
-	e.Content.Name = e.span.name
+	e.Content.Name = e.span.getName()
 }
 
 // BaggageItem retrieves the baggage item associated with the given key from the event's span.
@@ -246,7 +246,7 @@ type tslvSpan struct {
 //
 //	A pointer to the created ciVisibilityEvent.
 func getCiVisibilityEvent(span *Span) *ciVisibilityEvent {
-	switch span.spanType {
+	switch span.getSpanType() {
 	case constants.SpanTypeTest:
 		return createTestEventFromSpan(span)
 	case constants.SpanTypeTestSuite:
@@ -276,8 +276,8 @@ func createTestEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTag)
 	tSpan.CorrelationID = getAndRemoveMeta(span, constants.ItrCorrelationIDTag)
-	tSpan.SpanID = span.spanID
-	tSpan.TraceID = span.traceID
+	tSpan.SpanID = span.getSpanID()
+	tSpan.TraceID = span.getTraceID()
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTest,
@@ -363,8 +363,8 @@ func createTestSessionEventFromSpan(span *Span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createSpanEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
-	tSpan.SpanID = span.spanID
-	tSpan.TraceID = span.traceID
+	tSpan.SpanID = span.getSpanID()
+	tSpan.TraceID = span.getTraceID()
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeSpan,
@@ -383,6 +383,9 @@ func createSpanEventFromSpan(span *Span) *ciVisibilityEvent {
 //
 //	The created tslvSpan.
 func createTslvSpan(span *Span) tslvSpan {
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
 	return tslvSpan{
 		Name:     span.name,
 		Service:  span.service,
@@ -395,32 +398,6 @@ func createTslvSpan(span *Span) tslvSpan {
 		Meta:     span.meta,
 		Metrics:  span.metrics,
 	}
-}
-
-// getAndRemoveMeta retrieves a metadata value from a span and removes it from the span's metadata and metrics.
-//
-// Parameters:
-//
-//	span - The span to modify.
-//	key - The metadata key to retrieve and remove.
-//
-// Returns:
-//
-//	The retrieved metadata value.
-func getAndRemoveMeta(span *Span, key string) string {
-	span.mu.Lock()
-	defer span.mu.Unlock()
-	if span.meta == nil {
-		span.meta = make(map[string]string, 1)
-	}
-
-	if v, ok := span.meta[key]; ok {
-		delete(span.meta, key)
-		delete(span.metrics, key)
-		return v
-	}
-
-	return ""
 }
 
 // getAndRemoveMetaToUInt64 retrieves a metadata value from a span, removes it, and converts it to a uint64.

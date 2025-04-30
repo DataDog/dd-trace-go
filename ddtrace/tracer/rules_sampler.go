@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trailofbits/go-mutexasserts"
 	"golang.org/x/time/rate"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -48,6 +49,14 @@ func (r *rulesSampler) SampleTrace(s *Span) bool {
 	if s == nil {
 		return false
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return r.sampleTraceAssumesHoldingLock(s)
+}
+
+// TODO(kakkoyun): Refactor.
+// +checklocks:s.mu
+func (r *rulesSampler) sampleTraceAssumesHoldingLock(s *Span) bool {
 	return r.traces.sampleRules(s)
 }
 
@@ -55,6 +64,14 @@ func (r *rulesSampler) SampleTraceGlobalRate(s *Span) bool {
 	if s == nil {
 		return false
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return r.sampleTraceGlobalRateAssumesHoldingLock(s)
+}
+
+// TODO(kakkoyun): Refactor.
+// +checklocks:s.mu
+func (r *rulesSampler) sampleTraceGlobalRateAssumesHoldingLock(s *Span) bool {
 	return r.traces.sampleGlobalRate(s)
 }
 
@@ -62,6 +79,8 @@ func (r *rulesSampler) SampleSpan(s *Span) bool {
 	if s == nil {
 		return false
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return r.spans.apply(s)
 }
 
@@ -186,7 +205,10 @@ func (sr *SamplingRule) EqualsFalseNegative(other *SamplingRule) bool {
 }
 
 // match returns true when the span's details match all the expected values in the rule.
+// +checklocks:s.mu
 func (sr *SamplingRule) match(s *Span) bool {
+	mutexasserts.AssertRWMutexLocked(&s.mu)
+
 	if sr.Service != nil && !sr.Service.MatchString(s.service) {
 		return false
 	}
@@ -196,8 +218,6 @@ func (sr *SamplingRule) match(s *Span) bool {
 	if sr.Resource != nil && !sr.Resource.MatchString(s.resource) {
 		return false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if sr.Tags != nil {
 		for k, regex := range sr.Tags {
 			if regex == nil {
@@ -420,6 +440,8 @@ func (rs *traceRulesSampler) setTraceSampleRules(rules []SamplingRule) bool {
 // sampleGlobalRate applies the global trace sampling rate to the span. If the rate is Nan,
 // the function return false, then it returns false and the span is not
 // modified.
+//
+// +checklocks:span.mu
 func (rs *traceRulesSampler) sampleGlobalRate(span *Span) bool {
 	if !rs.enabled() {
 		// short path when disabled
@@ -447,6 +469,8 @@ func (rs *traceRulesSampler) sampleGlobalRate(span *Span) bool {
 // sampleRules uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
+//
+// +checklocks:span.mu
 func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 	if !rs.enabled() {
 		// short path when disabled
@@ -480,9 +504,9 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 	return true
 }
 
+// +checklocks:span.mu
 func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	span.mu.Lock()
-	defer span.mu.Unlock()
+	mutexasserts.AssertRWMutexLocked(&span.mu)
 
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
@@ -491,7 +515,7 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 		return
 	}
 
-	span.setMetric(keyRulesSamplerAppliedRate, rate)
+	span.setMetricAssumesHoldingLock(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.traceID, rate) {
 		span.setSamplingPriorityAssumesHoldingLock(ext.PriorityUserReject, sampler)
@@ -504,7 +528,7 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 	} else {
 		span.setSamplingPriorityAssumesHoldingLock(ext.PriorityUserReject, sampler)
 	}
-	span.setMetric(keyRulesSamplerLimiterRate, rate)
+	span.setMetricAssumesHoldingLock(keyRulesSamplerLimiterRate, rate)
 }
 
 // limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
@@ -557,11 +581,15 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
+//
+// +checklocks:span.mu
 func (rs *singleSpanRulesSampler) apply(span *Span) bool {
+	mutexasserts.AssertRWMutexLocked(&span.mu)
+
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			rate := rule.Rate
-			span.setMetric(keyRulesSamplerAppliedRate, rate)
+			span.setMetricAssumesHoldingLock(keyRulesSamplerAppliedRate, rate)
 			if !sampledByRate(span.spanID, rate) {
 				return false
 			}
@@ -573,10 +601,10 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 				}
 			}
 			delete(span.metrics, keySamplingPriorityRate)
-			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
-			span.setMetric(keySingleSpanSamplingRuleRate, rate)
+			span.setMetricAssumesHoldingLock(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
+			span.setMetricAssumesHoldingLock(keySingleSpanSamplingRuleRate, rate)
 			if rule.MaxPerSecond != 0 {
-				span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
+				span.setMetricAssumesHoldingLock(keySingleSpanSamplingMPS, rule.MaxPerSecond)
 			}
 			return true
 		}

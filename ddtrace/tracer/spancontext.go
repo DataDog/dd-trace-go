@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trailofbits/go-mutexasserts"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
@@ -83,6 +85,8 @@ func (t *traceID) UpperHex() string {
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
 type SpanContext struct {
+	// TODO(kakkoyun): Check unguarded fields are safe to access.
+
 	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
 
 	// the below group should propagate only locally
@@ -108,12 +112,15 @@ type SpanContext struct {
 	traceID traceID
 	spanID  uint64
 
-	mu      sync.RWMutex // guards below fields
+	mu sync.RWMutex // guards below fields
+
+	// +checklocks:mu
 	baggage map[string]string
 	// +checkatomic
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	origin     string // e.g. "synthetics"
-
+	// +checklocks:mu
+	origin string // e.g. "synthetics"
+	// +checklocks:mu
 	spanLinks []SpanLink // links to related spans in separate|external|disconnected traces
 }
 
@@ -128,6 +135,7 @@ type spanContextV1Adapter interface {
 
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
 // to start child spans.
+// +checklocksignore: mu is locked for ForeachBaggageItem.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
 	sc.traceID = c.TraceIDBytes()
@@ -135,7 +143,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	sc.baggage = make(map[string]string)
 	c.ForeachBaggageItem(func(k, v string) bool {
 		atomic.StoreUint32(&sc.hasBaggage, 1)
-		sc.baggage[k] = v
+		sc.baggage[k] = v // +checklocksignore: mu is locked for ForeachBaggageItem.
 		return true
 	})
 	ctx, ok := c.(spanContextV1Adapter)
@@ -144,6 +152,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	}
 	sc.origin = ctx.Origin()
 	sc.trace = newTrace()
+	// +checklocksforce: sc is just getting allocated.
 	sc.trace.priority = ctx.Priority()
 	atomic.StoreUint32((*uint32)(&sc.trace.samplingDecision), uint32(ctx.SamplingDecision()))
 	sc.trace.tags = ctx.Tags()
@@ -156,7 +165,10 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
+// +checklocksread:span.mu
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
+	mutexasserts.AssertRWMutexRLocked(&span.mu)
+
 	context := &SpanContext{
 		spanID: span.spanID,
 		span:   span,
@@ -166,7 +178,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	if parent != nil {
 		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
-		context.origin = parent.origin
+		context.setOrigin(parent.getOrigin())
 		atomic.StoreInt32(&context.errors, atomic.LoadInt32(&parent.errors))
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
@@ -206,6 +218,30 @@ func (c *SpanContext) SpanID() uint64 {
 	return c.spanID
 }
 
+func (c *SpanContext) getOrigin() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.origin
+}
+
+func (c *SpanContext) setOrigin(origin string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.origin = origin
+}
+
+func (c *SpanContext) getSpanLinks() []SpanLink {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanLinks
+}
+
+func (c *SpanContext) setSpanLinks(spanLinks []SpanLink) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanLinks = spanLinks
+}
+
 // TraceID implements ddtrace.SpanContext.
 func (c *SpanContext) TraceID() string {
 	if c == nil {
@@ -240,6 +276,8 @@ func (c *SpanContext) TraceIDUpper() uint64 {
 
 // SpanLinks implements ddtrace.SpanContext
 func (c *SpanContext) SpanLinks() []SpanLink {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	cp := make([]SpanLink, len(c.spanLinks))
 	copy(cp, c.spanLinks)
 	return cp
@@ -280,6 +318,18 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 	return c.trace.samplingPriority()
 }
 
+func (c *SpanContext) getBaggage() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baggage
+}
+
+func (c *SpanContext) setBaggage(baggage map[string]string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.baggage = baggage
+}
+
 func (c *SpanContext) setBaggageItem(key, val string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -300,7 +350,11 @@ func (c *SpanContext) baggageItem(key string) string {
 }
 
 // finish marks this span as finished in the trace.
-func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
+// +checklocks:c.span.mu
+func (c *SpanContext) finish() {
+	mutexasserts.AssertRWMutexLocked(&c.span.mu)
+	c.trace.finishedOne(c.span)
+}
 
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision uint32
@@ -315,25 +369,35 @@ const (
 	decisionKeep
 )
 
+// TODO(kakkoyun): Refactor. Move to trace.go.
+
 // trace contains shared context information about a trace, such as sampling
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu              sync.RWMutex      // guards below fields
-	spans           []*Span           // all the spans that are part of this trace
-	tags            map[string]string // trace level tags
-	propagatingTags map[string]string // trace level tags that will be propagated across service boundaries
-	finished        int               // the number of finished spans
-	full            bool              // signifies that the span buffer is full
-	priority        *float64          // sampling priority
-	locked          bool              // specifies if the sampling priority can be altered
-	// +checkatomic
-	samplingDecision samplingDecision // samplingDecision indicates whether to send the trace to the agent.
-
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
 	// the trace yet.
 	root *Span
+
+	mu sync.RWMutex // guards below fields
+
+	// +checklocks:mu
+	spans []*Span // all the spans that are part of this trace
+	// +checklocks:mu
+	tags map[string]string // trace level tags
+	// +checklocks:mu
+	propagatingTags map[string]string // trace level tags that will be propagated across service boundaries
+	// +checklocks:mu
+	finished int // the number of finished spans
+	// +checklocks:mu
+	full bool // signifies that the span buffer is full
+	// +checklocks:mu
+	priority *float64 // sampling priority
+	// +checklocks:mu
+	locked bool // specifies if the sampling priority can be altered
+	// +checkatomic
+	samplingDecision samplingDecision // samplingDecision indicates whether to send the trace to the agent.
 }
 
 var (
@@ -356,17 +420,38 @@ func newTrace() *trace {
 	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
-func (t *trace) samplingPriorityLocked() (p int, ok bool) {
-	if t.priority == nil {
-		return 0, false
-	}
-	return int(*t.priority), true
+func (t *trace) getSpans() []*Span {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.spans
+}
+
+func (t *trace) getPropagatingTags() map[string]string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.propagatingTags
+}
+
+func (t *trace) setPropagatingTags(propagatingTags map[string]string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.propagatingTags = propagatingTags
 }
 
 func (t *trace) samplingPriority() (p int, ok bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	return t.samplingPriorityLocked()
+	return t.samplingPriorityAssumesHoldingLock()
+}
+
+// samplingPriorityAssumesHoldingLock returns the sampling priority and true if it is set.
+// +checklocksread:t.mu
+func (t *trace) samplingPriorityAssumesHoldingLock() (p int, ok bool) {
+	mutexasserts.AssertRWMutexLocked(&t.mu)
+	if t.priority == nil {
+		return 0, false
+	}
+	return int(*t.priority), true
 }
 
 // setSamplingPriority sets the sampling priority and the decision maker
@@ -374,7 +459,7 @@ func (t *trace) samplingPriority() (p int, ok bool) {
 func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.setSamplingPriorityLocked(p, sampler)
+	return t.setSamplingPriorityAssumesHoldingLock(p, sampler)
 }
 
 func (t *trace) keep() {
@@ -385,13 +470,27 @@ func (t *trace) drop() {
 	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionDrop))
 }
 
+func (t *trace) getTags() map[string]string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.tags
+}
+
+func (t *trace) getTag(key string) string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.tags[key]
+}
+
 func (t *trace) setTag(key, value string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setTagLocked(key, value)
+	t.setTagAssumesHoldingLock(key, value)
 }
 
-func (t *trace) setTagLocked(key, value string) {
+// +checklocks:t.mu
+func (t *trace) setTagAssumesHoldingLock(key, value string) {
+	mutexasserts.AssertRWMutexLocked(&t.mu)
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
@@ -402,7 +501,9 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 	return "-" + strconv.Itoa(int(sampler))
 }
 
-func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+// +checklocks:t.mu
+func (t *trace) setSamplingPriorityAssumesHoldingLock(p int, sampler samplernames.SamplerName) bool {
+	mutexasserts.AssertRWMutexLocked(&t.mu)
 	if t.locked {
 		return false
 	}
@@ -425,7 +526,7 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 		dm := samplerToDM(sampler)
 		updatedDM := !existed || dm != curDM
 		if updatedDM {
-			t.setPropagatingTagLocked(keyDecisionMaker, dm)
+			t.setPropagatingTagAssumesHoldingLock(keyDecisionMaker, dm)
 			return true
 		}
 	}
@@ -450,7 +551,10 @@ func (t *trace) setLocked(locked bool) {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
+// +checklocksread:sp.mu
 func (t *trace) push(sp *Span) {
+	mutexasserts.AssertRWMutexRLocked(&sp.mu)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
@@ -468,7 +572,7 @@ func (t *trace) push(sp *Span) {
 		return
 	}
 	if v, ok := sp.metrics[keySamplingPriority]; ok {
-		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
+		t.setSamplingPriorityAssumesHoldingLock(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
 	if tr != nil {
@@ -476,20 +580,24 @@ func (t *trace) push(sp *Span) {
 	}
 }
 
-// setTraceTags sets all "trace level" tags on the provided span
-// t must already be locked.
-func (t *trace) setTraceTags(s *Span) {
+// setTraceTagsAssumesHoldingLock sets all "trace level" tags on the provided span
+// +checklocks:t.mu
+// +checklocks:s.mu
+func (t *trace) setTraceTagsAssumesHoldingLock(s *Span) {
+	mutexasserts.AssertRWMutexLocked(&s.mu)
+	mutexasserts.AssertRWMutexLocked(&t.mu)
+
 	for k, v := range t.tags {
-		s.setMeta(k, v)
+		s.setMetaAssumesHoldingLock(k, v)
 	}
 	for k, v := range t.propagatingTags {
-		s.setMeta(k, v)
+		s.setMetaAssumesHoldingLock(k, v)
 	}
 	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
-		s.setMeta(k, v)
+		s.setMetaAssumesHoldingLock(k, v)
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		s.setMetaAssumesHoldingLock(keyTraceID128, s.context.traceID.UpperHex())
 	}
 }
 
@@ -498,10 +606,14 @@ func (t *trace) setTraceTags(s *Span) {
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 // The provided span must be locked.
+// +checklocks:s.mu
 func (t *trace) finishedOne(s *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	mutexasserts.AssertRWMutexLocked(&s.mu)
 	s.finished = true
+
 	if t.full {
 		// capacity has been reached, the buffer is no longer tracking
 		// all the spans in the trace, so the below conditions will not
@@ -517,7 +629,7 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 	tc := tr.TracerConf()
-	setPeerService(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
+	setPeerServiceAssumesHoldingLock(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
@@ -528,7 +640,9 @@ func (t *trace) finishedOne(s *Span) {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		mutexasserts.AssertRWMutexLocked(&t.root.mu)
+		// +checklocksalias:t.root.mu=s.mu
+		t.root.setMetricAssumesHoldingLock(keySamplingPriority, *t.priority) // +checklocksignore
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -537,7 +651,7 @@ func (t *trace) finishedOne(s *Span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
+		t.setTraceTagsAssumesHoldingLock(s)
 	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
@@ -547,7 +661,7 @@ func (t *trace) finishedOne(s *Span) {
 	}
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans
-		t.finishChunk(tr, &Chunk{
+		t.finishChunkAssumesHoldingLock(tr, &Chunk{
 			spans:    t.spans,
 			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 		})
@@ -564,7 +678,16 @@ func (t *trace) finishedOne(s *Span) {
 	finishedSpans := make([]*Span, 0, t.finished)
 	leftoverSpans := make([]*Span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
-		if s2.finished {
+		var isFinished bool
+		if s2 == s {
+			isFinished = s.finished
+		} else {
+			// TODO(kakkoyun): Refactor.
+			s2.mu.RLock()
+			isFinished = s2.finished
+			s2.mu.RUnlock()
+		}
+		if isFinished {
 			finishedSpans = append(finishedSpans, s2)
 		} else {
 			leftoverSpans = append(leftoverSpans, s2)
@@ -572,28 +695,42 @@ func (t *trace) finishedOne(s *Span) {
 	}
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
-	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
+
+	firstFinishedSpan := finishedSpans[0]
+	// TODO(kakkoyun): Refactor.
+	firstFinishedSpan.mu.Lock()
+	firstFinishedSpan.setMetricAssumesHoldingLock(keySamplingPriority, *t.priority) // +checklocksignore
+	firstFinishedSpan.mu.Unlock()
 	if s != t.spans[0] {
-		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(finishedSpans[0])
+		// Make sure the first span in the chunk has the trace-level tags.
+		// TODO(kakkoyun): Refactor.
+		firstFinishedSpan.mu.Lock()
+		t.setTraceTagsAssumesHoldingLock(firstFinishedSpan)
+		firstFinishedSpan.mu.Unlock()
 	}
-	t.finishChunk(tr, &Chunk{
+	t.finishChunkAssumesHoldingLock(tr, &Chunk{
 		spans:    finishedSpans,
 		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
 	})
 	t.spans = leftoverSpans
 }
 
-func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
+// +checklocks:t.mu
+func (t *trace) finishChunkAssumesHoldingLock(tr Tracer, ch *Chunk) {
+	mutexasserts.AssertRWMutexLocked(&t.mu)
 	tr.SubmitChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
-// setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
+// TODO(kakkoyun): Refactor. Move to span.go.
+// setPeerServiceAssumesHoldingLock sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
+// +checklocks:s.mu
+func setPeerServiceAssumesHoldingLock(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
+	mutexasserts.AssertRWMutexLocked(&s.mu)
+
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
-		s.setMeta(keyPeerServiceSource, ext.PeerService)
+		s.setMetaAssumesHoldingLock(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -601,28 +738,32 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		if !shouldSetDefaultPeerService {
 			return
 		}
-		source := setPeerServiceFromSource(s)
+		source := setPeerServiceFromSourceAssumesHoldingLock(s)
 		if source == "" {
 			log.Debug("No source tag value could be found for span %q, peer.service not set", s.name)
 			return
 		}
-		s.setMeta(keyPeerServiceSource, source)
+		s.setMetaAssumesHoldingLock(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
 	if to, ok := peerServiceMappings[ps]; ok {
-		s.setMeta(keyPeerServiceRemappedFrom, ps)
-		s.setMeta(ext.PeerService, to)
+		s.setMetaAssumesHoldingLock(keyPeerServiceRemappedFrom, ps)
+		s.setMetaAssumesHoldingLock(ext.PeerService, to)
 	}
 }
 
-// setPeerServiceFromSource sets peer.service from the sources determined
+// TODO(kakkoyun): Refactor. Move to span.go.
+// setPeerServiceFromSourceAssumesHoldingLock sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
-func setPeerServiceFromSource(s *Span) string {
+// +checklocks:s.mu
+func setPeerServiceFromSourceAssumesHoldingLock(s *Span) string {
+	mutexasserts.AssertRWMutexLocked(&s.mu)
+
 	has := func(tag string) bool {
 		_, ok := s.meta[tag]
-		return ok
+		return ok // +checklocksignore
 	}
 	var sources []string
 	useTargetHost := true
@@ -665,7 +806,7 @@ func setPeerServiceFromSource(s *Span) string {
 	}
 	for _, source := range sources {
 		if val, ok := s.meta[source]; ok {
-			s.setMeta(ext.PeerService, val)
+			s.setMetaAssumesHoldingLock(ext.PeerService, val)
 			return source
 		}
 	}

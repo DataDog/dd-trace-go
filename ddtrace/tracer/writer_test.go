@@ -31,11 +31,13 @@ func TestImplementsTraceWriter(t *testing.T) {
 // makeSpan returns a span, adding n entries to meta and metrics each.
 func makeSpan(n int) *Span {
 	s := newSpan("encodeName", "encodeService", "encodeResource", randUint64(), randUint64(), randUint64())
+	s.mu.Lock()
 	for i := 0; i < n; i++ {
 		istr := fmt.Sprintf("%0.10d", i)
 		s.meta[istr] = istr
 		s.metrics[istr] = float64(i)
 	}
+	s.mu.Unlock()
 	return s
 }
 
@@ -135,9 +137,11 @@ func TestLogWriter(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(0)
+		s.mu.Lock()
 		s.metrics["nan"] = math.NaN()
 		s.metrics["+inf"] = math.Inf(1)
 		s.metrics["-inf"] = math.Inf(-1)
+		s.mu.Unlock()
 		h.add([]*Span{s})
 		h.flush()
 		json := buf.String()
@@ -237,9 +241,11 @@ func TestLogWriter(t *testing.T) {
 	t.Run("invalid-characters", func(t *testing.T) {
 		assert := assert.New(t)
 		s := newSpan("name\n", "srv\t", `"res"`, 2, 1, 3)
+		s.mu.Lock()
 		s.start = 12
 		s.meta["query\n"] = "Select * from \n Where\nvalue"
 		s.metrics["version\n"] = 3
+		s.mu.Unlock()
 
 		var w logTraceWriter
 		w.encodeSpan(s)
@@ -451,9 +457,11 @@ func minInts(a, b int) int {
 
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
+	s.mu.Lock()
 	s.metrics["nan"] = math.NaN()
 	s.metrics["+inf"] = math.Inf(1)
 	s.metrics["-inf"] = math.Inf(-1)
+	s.mu.Unlock()
 	h := &logTraceWriter{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

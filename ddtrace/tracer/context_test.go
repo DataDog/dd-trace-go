@@ -67,11 +67,11 @@ func TestStartSpanFromContext(t *testing.T) {
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	assert.Equal(uint64(456), got.traceID)
-	assert.Equal(uint64(123), got.parentID)
-	assert.Equal("http.request", got.name)
-	assert.Equal("gin", got.service)
-	assert.Equal("/", got.resource)
+	assert.Equal(uint64(456), got.getTraceID())
+	assert.Equal(uint64(123), got.getParentID())
+	assert.Equal("http.request", got.getName())
+	assert.Equal("gin", got.getService())
+	assert.Equal("/", got.getResource())
 }
 
 func TestStartSpanFromContextDefault(t *testing.T) {
@@ -82,12 +82,12 @@ func TestStartSpanFromContextDefault(t *testing.T) {
 	assert := assert.New(t)
 	root, ctx := StartSpanFromContext(context.TODO(), "http.request")
 	assert.NotNil(root)
-	assert.Equal("http.request", root.name)
+	assert.Equal("http.request", root.getName())
 	span, _ := StartSpanFromContext(ctx, "db.query")
 	assert.NotNil(span)
-	assert.Equal("db.query", span.name)
-	assert.Equal(span.traceID, root.traceID)
-	assert.NotEqual(span.spanID, root.spanID)
+	assert.Equal("db.query", span.getName())
+	assert.Equal(span.getTraceID(), root.getTraceID())
+	assert.NotEqual(span.getSpanID(), root.getSpanID())
 }
 
 func TestStartSpanWithSpanLinks(t *testing.T) {
@@ -106,10 +106,11 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 			ChildOf(ctx),
 		)
 
-		assert.Equal(t, 1, len(s.spanLinks))
-		assert.Equal(t, spanLink, s.spanLinks[0])
+		links := s.getSpanLinks()
+		assert.Equal(t, 1, len(links))
+		assert.Equal(t, spanLink, links[0])
 
-		assert.Equal(t, 0, len(s.context.spanLinks)) // ensure that the span links are not added to the parent context
+		assert.Equal(t, 0, len(s.Context().getSpanLinks())) // ensure that the span links are not added to the parent context
 	})
 }
 
@@ -189,7 +190,7 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	assert.Nil(ctx.Value("not_found_key"))
 
 	internalSpan := child
-	assert.Equal("http.request", internalSpan.name)
+	assert.Equal("http.request", internalSpan.getName())
 
 	// the returned context includes the span
 	ctxSpan, ok := SpanFromContext(ctx)

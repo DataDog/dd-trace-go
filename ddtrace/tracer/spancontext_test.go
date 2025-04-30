@@ -50,13 +50,17 @@ func TestNewSpanContextPushError(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	assert.Nil(t, err)
 	defer stop()
-	parent := newBasicSpan("test1")                  // 1st span in trace
-	parent.context.trace.push(newBasicSpan("test2")) // 2nd span in trace
+	// 1st span in trace
+	parent := newBasicSpan("test1") // +checklocksignore
+	// 2nd span in trace
+	parent.Context().trace.push(newBasicSpan("test2")) // +checklocksignore
 	child := newSpan("child", "", "", 0, 0, 0)
 
 	// new context having a parent with a trace of two spans.
 	// One more should overflow.
-	child.context = newSpanContext(child, parent.context)
+	child.mu.Lock()
+	child.context = newSpanContext(child, parent.Context())
+	child.mu.Unlock()
 
 	log.Flush()
 	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2 spans)")
@@ -144,9 +148,15 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		root, _ := StartSpanFromContext(context.Background(), "root")
 		for i := 0; i < 1000; i++ {
 			root.Finish(WithError(err))
-			assert.Equal(t, 1.0, root.metrics[keyRulesSamplerLimiterRate])
-			assert.Equal(t, 2.0, root.metrics[keySamplingPriority])
-			assert.Empty(t, root.metrics[keySamplingPriorityRate])
+			m, ok := root.getMetric(keyRulesSamplerLimiterRate)
+			assert.True(t, ok)
+			assert.Equal(t, 1.0, m)
+			m, ok = root.getMetric(keySamplingPriority)
+			assert.True(t, ok)
+			assert.Equal(t, 2.0, m)
+			m, ok = root.getMetric(keySamplingPriorityRate)
+			assert.False(t, ok)
+			assert.Empty(t, m)
 		}
 	})
 }
@@ -196,7 +206,7 @@ func testAsyncSpanRace(t *testing.T) {
 				close(done)
 
 				for i := 0; i < 500; i++ {
-					for range root.metrics {
+					for range root.getMetrics() {
 						// this range simulates iterating over the metrics map
 						// as we do when encoding msgpack upon flushing.
 						continue
@@ -215,7 +225,7 @@ func testAsyncSpanRace(t *testing.T) {
 				finishes.Wait()
 
 				for i := 0; i < 500; i++ {
-					for range root.meta {
+					for range root.getMetas() {
 						// this range simulates iterating over the meta map
 						// as we do when encoding msgpack upon flushing.
 						continue
@@ -251,10 +261,11 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
-	trace := root.context.trace
+	trace := root.Context().trace
 
-	assert.Len(trace.spans, 1)
-	assert.Equal(root, trace.spans[0], "the span is the one pushed before")
+	spans := trace.getSpans()
+	assert.Len(spans, 1)
+	assert.Equal(root, spans[0], "the span is the one pushed before")
 
 	root.Finish()
 	flush(1)
@@ -264,7 +275,7 @@ func TestSpanTracePushOne(t *testing.T) {
 	trc := traces[0]
 	assert.Len(trc, 1, "there was a trace in the channel")
 	comparePayloadSpans(t, root, trc[0])
-	assert.Equal(0, len(trace.spans), "no more spans in the trace")
+	assert.Equal(0, len(trace.getSpans()), "no more spans in the trace")
 }
 
 // Tests to confirm that when the payload queue is full, chunks are dropped
@@ -276,12 +287,12 @@ func TestTraceFinishChunk(t *testing.T) {
 	defer tracer.statsd.Close()
 
 	root := newSpan("name", "service", "resource", 0, 0, 0)
-	trace := root.context.trace
+	trace := root.Context().trace
 
 	for i := 0; i < payloadQueueSize+1; i++ {
 		trace.mu.Lock()
 		c := Chunk{spans: make([]*Span, 1)}
-		trace.finishChunk(tracer, &c)
+		trace.finishChunkAssumesHoldingLock(tracer, &c)
 		trace.mu.Unlock()
 	}
 	assert.Equal(uint32(1), atomic.LoadUint32((*uint32)(&tracer.totalTracesDropped)))
@@ -299,7 +310,7 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.context.trace.setTag("someTraceTag", "someValue")
+		root.Context().trace.setTag("someTraceTag", "someValue")
 		var children []*Span
 		for i := 0; i < 3; i++ { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
@@ -311,10 +322,16 @@ func TestPartialFlush(t *testing.T) {
 		ts := transport.Traces()
 		require.Len(t, ts, 1)
 		require.Len(t, ts[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
-		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
-		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+		meta := ts[0][0].getMetas()
+		assert.Equal(t, "someValue", meta["someTraceTag"])
+		m, ok := ts[0][0].getMetric(keySamplingPriority)
+		assert.True(t, ok)
+		assert.Equal(t, 1.0, m)
+		mt, ok := ts[0][1].getMeta("someTraceTag")
+		assert.Empty(t, mt) // the tag should only be on the first span in the chunk
+		m, ok = ts[0][1].getMetric(keySamplingPriority)
+		assert.True(t, ok)
+		assert.Equal(t, 1.0, m) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, children[0], ts[0][0])
 		comparePayloadSpans(t, children[1], ts[0][1])
 
@@ -327,10 +344,17 @@ func TestPartialFlush(t *testing.T) {
 		tsRoot := transport.Traces()
 		require.Len(t, tsRoot, 1)
 		require.Len(t, tsRoot[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
-		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
-		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
+
+		mt, ok = tsRoot[0][0].getMeta("someTraceTag")
+		assert.Equal(t, "someValue", mt)
+		m, ok = tsRoot[0][0].getMetric(keySamplingPriority)
+		assert.True(t, ok)
+		assert.Equal(t, 1.0, m)
+		mt, ok = tsRoot[0][1].getMeta("someTraceTag")
+		assert.Empty(t, mt) // the tag should only be on the first span in the chunk
+		m, ok = tsRoot[0][1].getMetric(keySamplingPriority)
+		assert.True(t, ok)
+		assert.Equal(t, 1.0, m) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root, tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
 	})
@@ -342,7 +366,7 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		root.context.trace.setTag("someTraceTag", "someValue")
+		root.Context().trace.setTag("someTraceTag", "someValue")
 		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			child.Finish()
@@ -364,15 +388,16 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 
 	buffer := newTrace()
 	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	assert.Len(buffer.getSpans(), 0)
 
 	traceID := randUint64()
 	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
-	root.context.trace = buffer
+	root.Context().trace = buffer
 
-	buffer.push(root)
-	assert.Len(buffer.spans, 1, "there is one span in the buffer")
-	assert.Equal(root, buffer.spans[0], "the span is the one pushed before")
+	buffer.push(root) // +checklocksignore
+	spans := buffer.getSpans()
+	assert.Len(spans, 1, "there is one span in the buffer")
+	assert.Equal(root, spans[0], "the span is the one pushed before")
 
 	<-time.After(time.Second / 10)
 	log.Flush()
@@ -390,7 +415,7 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	defer stop()
 	buffer := newTrace()
 	assert.NotNil(buffer)
-	assert.Len(buffer.spans, 0)
+	assert.Len(buffer.getSpans(), 0)
 
 	traceID := randUint64()
 	root := trc.StartSpan("name1", WithSpanID(traceID))
@@ -401,10 +426,11 @@ func TestSpanTracePushSeveral(t *testing.T) {
 	trace := []*Span{root, span2, span3, span3a}
 
 	for i, span := range trace {
-		span.context.trace = buffer
-		buffer.push(span)
-		assert.Len(buffer.spans, i+1, "there is one more span in the buffer")
-		assert.Equal(span, buffer.spans[i], "the span is the one pushed before")
+		span.Context().trace = buffer
+		buffer.push(span) // +checklocksignore
+		spans := buffer.getSpans()
+		assert.Len(spans, i+1, "there is one more span in the buffer")
+		assert.Equal(span, spans[i], "the span is the one pushed before")
 	}
 
 	for _, span := range trace {
@@ -448,9 +474,9 @@ func TestSpanFinishPriority(t *testing.T) {
 	trace := traces[0]
 	assert.Len(trace, 2)
 	for _, span := range trace {
-		if span.name == "root" {
+		if span.getName() == "root" {
 			// root should have inherited child's sampling priority
-			assert.Equal(span.metrics[keySamplingPriority], 2.)
+			assert.Equal(span.getMetrics()[keySamplingPriority], 2.)
 			return
 		}
 	}
@@ -630,19 +656,25 @@ func TestSpanPeerService(t *testing.T) {
 	for _, tc := range testCases {
 		assertSpan := func(t *testing.T, s *Span) {
 			if tc.wantPeerService == "" {
-				assert.NotContains(t, s.meta, "peer.service")
+				assert.NotContains(t, s.getMetas(), "peer.service")
 			} else {
-				assert.Equal(t, tc.wantPeerService, s.meta["peer.service"])
+				mt, ok := s.getMetas()["peer.service"]
+				assert.True(t, ok)
+				assert.Equal(t, tc.wantPeerService, mt)
 			}
 			if tc.wantPeerServiceSource == "" {
-				assert.NotContains(t, s.meta, "_dd.peer.service.source")
+				assert.NotContains(t, s.getMetas(), "_dd.peer.service.source")
 			} else {
-				assert.Equal(t, tc.wantPeerServiceSource, s.meta["_dd.peer.service.source"])
+				mt, ok := s.getMetas()["_dd.peer.service.source"]
+				assert.True(t, ok)
+				assert.Equal(t, tc.wantPeerServiceSource, mt)
 			}
 			if tc.wantPeerServiceRemappedFrom == "" {
-				assert.NotContains(t, s.meta, "_dd.peer.service.remapped_from")
+				assert.NotContains(t, s.getMetas(), "_dd.peer.service.remapped_from")
 			} else {
-				assert.Equal(t, tc.wantPeerServiceRemappedFrom, s.meta["_dd.peer.service.remapped_from"])
+				mt, ok := s.getMetas()["_dd.peer.service.remapped_from"]
+				assert.True(t, ok)
+				assert.Equal(t, tc.wantPeerServiceRemappedFrom, mt)
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
@@ -705,8 +737,10 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "span-service", s.service)
-			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
+			assert.Equal(t, "span-service", s.getService())
+			mt, ok := s.getMeta("_dd.base_service")
+			assert.True(t, ok)
+			assert.Equal(t, "global-service", mt)
 		}
 	})
 	t.Run("span-service-equal-global-service", func(t *testing.T) {
@@ -718,8 +752,10 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "global-service", s.service)
-			assert.NotContains(t, s.meta, "_dd.base_service")
+			assert.Equal(t, "global-service", s.getService())
+			mt, ok := s.getMeta("_dd.base_service")
+			assert.False(t, ok)
+			assert.Empty(t, mt)
 		}
 	})
 	t.Run("span-service-equal-different-case", func(t *testing.T) {
@@ -731,8 +767,10 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "GLOBAL-service", s.service)
-			assert.NotContains(t, s.meta, "_dd.base_service")
+			assert.Equal(t, "GLOBAL-service", s.getService())
+			mt, ok := s.getMeta("_dd.base_service")
+			assert.False(t, ok)
+			assert.Empty(t, mt)
 		}
 	})
 	t.Run("global-service-not-set", func(t *testing.T) {
@@ -741,10 +779,12 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, nil, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "span-service", s.service)
+			assert.Equal(t, "span-service", s.getService())
 			// in this case we don't assert to a concrete value because the default tracer service name is calculated
 			// based on the process name and might change depending on how tests are run.
-			assert.NotEmpty(t, s.meta["_dd.base_service"])
+			mt, ok := s.getMeta("_dd.base_service")
+			assert.True(t, ok)
+			assert.NotEmpty(t, mt)
 		}
 	})
 	t.Run("using-tag-option", func(t *testing.T) {
@@ -756,8 +796,10 @@ func TestSpanDDBaseService(t *testing.T) {
 		}
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
-			assert.Equal(t, "span-service", s.service)
-			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
+			assert.Equal(t, "span-service", s.getService())
+			mt, ok := s.getMeta("_dd.base_service")
+			assert.True(t, ok)
+			assert.Equal(t, "global-service", mt)
 		}
 	})
 }
@@ -769,14 +811,16 @@ func TestNewSpanContext(t *testing.T) {
 			spanID:   2,
 			parentID: 3,
 		}
+		span.mu.RLock()
 		ctx := newSpanContext(span, nil)
+		span.mu.RUnlock()
 		assert := assert.New(t)
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.NotNil(ctx.trace)
-		assert.Nil(ctx.trace.priority)
+		assert.Nil(ctx.trace.priority) // +checklocksforce: don't care about locking for this test.
 		assert.Equal(ctx.trace.root, span)
-		assert.Contains(ctx.trace.spans, span)
+		assert.Contains(ctx.trace.getSpans(), span)
 	})
 
 	t.Run("priority", func(t *testing.T) {
@@ -786,12 +830,14 @@ func TestNewSpanContext(t *testing.T) {
 			parentID: 3,
 			metrics:  map[string]float64{keySamplingPriority: 1},
 		}
+		span.mu.RLock()
 		ctx := newSpanContext(span, nil)
+		span.mu.RUnlock()
 		assert := assert.New(t)
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.Equal(ctx.SpanID(), span.spanID)
-		assert.Equal(*ctx.trace.priority, 1.)
+		assert.Equal(*ctx.trace.priority, 1.) // +checklocksforce: don't care about locking for this test.
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -811,7 +857,7 @@ func TestNewSpanContext(t *testing.T) {
 		span := StartSpan("some-span", ChildOf(ctx))
 		assert.EqualValues(uint64(1), ctx.traceID.Lower())
 		assert.EqualValues(2, ctx.spanID)
-		assert.EqualValues(3, *ctx.trace.priority)
+		assert.EqualValues(3, *ctx.trace.priority) // +checklocksforce: don't care about locking for this test.
 		assert.Equal(ctx.trace.root, span)
 	})
 }
@@ -851,21 +897,24 @@ func TestSpanContextParent(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			s.mu.RLock()
 			ctx := newSpanContext(s, parentCtx)
+			s.mu.RUnlock()
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID.Lower(), s.traceID)
-			assert.Equal(ctx.spanID, s.spanID)
+			assert.Equal(ctx.traceID.Lower(), s.getTraceID())
+			assert.Equal(ctx.spanID, s.getSpanID())
 			if parentCtx.trace != nil {
-				assert.Equal(len(ctx.trace.spans), len(parentCtx.trace.spans))
+				assert.Equal(len(ctx.trace.getSpans()), len(parentCtx.trace.getSpans()))
 			}
 			assert.NotNil(ctx.trace)
-			assert.Contains(ctx.trace.spans, s)
+			assert.Contains(ctx.trace.getSpans(), s)
 			if parentCtx.trace != nil {
-				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+				// TODO(kakkoyun): Refactor.
+				assert.Equal(ctx.trace.priority, parentCtx.trace.priority) // +checklocksignore
 				assert.Equal(atomic.LoadUint32((*uint32)(&ctx.trace.samplingDecision)), atomic.LoadUint32((*uint32)(&parentCtx.trace.samplingDecision)))
 			}
-			assert.Equal(parentCtx.baggage, ctx.baggage)
-			assert.Equal(parentCtx.origin, ctx.origin)
+			assert.Equal(parentCtx.getBaggage(), ctx.getBaggage())
+			assert.Equal(parentCtx.getOrigin(), ctx.getOrigin())
 		})
 	}
 }
@@ -885,13 +934,13 @@ func TestSpanContextPushFull(t *testing.T) {
 
 	buffer := newTrace()
 	assert := assert.New(t)
-	buffer.push(span1)
+	buffer.push(span1) // +checklocksignore
 	log.Flush()
 	assert.Len(tp.Logs(), 0)
-	buffer.push(span2)
+	buffer.push(span2) // +checklocksignore
 	log.Flush()
 	assert.Len(tp.Logs(), 0)
-	buffer.push(span3)
+	buffer.push(span3) // +checklocksignore
 	log.Flush()
 	assert.Contains(tp.Logs()[0], "ERROR: trace buffer full (2 spans)")
 }
@@ -962,35 +1011,35 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoReject, samplernames.RemoteRate) // +checklocksignore: don't care about locking for this test.
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoReject, samplernames.Unknown) // +checklocksignore: don't care about locking for this test.
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoKeep, samplernames.RemoteRate) // +checklocksignore: don't care about locking for this test.
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoKeep, samplernames.AgentRate) // +checklocksignore: don't care about locking for this test.
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
-		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoKeep, samplernames.RemoteRate) // +checklocksignore: don't care about locking for this test.
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }
