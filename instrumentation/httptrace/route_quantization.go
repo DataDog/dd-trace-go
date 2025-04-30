@@ -22,6 +22,14 @@ type urlQuantizer struct {
 // * If a segment contains one or more digits or special characters, we replace it by '*'
 // * If a segments represents an API version (eg. v123) we keep it as it is
 func (q *urlQuantizer) Quantize(path string) string {
+	if len(path) == 0 {
+		return ""
+	}
+
+	if path[0] != '/' {
+		path = "/" + path
+	}
+
 	q.tokenizer.Reset(path)
 	q.buf.Reset()
 	replacements := 0

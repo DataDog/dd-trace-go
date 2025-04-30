@@ -212,6 +212,4 @@ func BenchmarkQuantizationHappyPath(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		runtime.KeepAlive(quantizer.Quantize(path))
 	}
-
-	b.StopTimer()
 }
