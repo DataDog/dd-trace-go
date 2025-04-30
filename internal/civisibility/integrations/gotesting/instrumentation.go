@@ -71,6 +71,20 @@ type (
 		// function executed when all execution have finished (last callback executed after all test executions(+retries))
 		postOnRetryEnd func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T)
 	}
+
+	// executionOptions holds the execution options for the test
+	executionOptions struct {
+		mutex                     sync.Locker              // mutex for synchronizing test iterations
+		options                   *runTestWithRetryOptions // options for the test execution
+		executionIndex            int                      // current execution index
+		retryCount                int64                    // remaining retry count
+		originalExecutionMetadata *testExecutionMetadata   // original test execution metadata
+		panicExecutionMetadata    *testExecutionMetadata   // panicked execution metadata
+		ptrToLocalT               *testing.T               // pointer to the local test instance
+		executionMetadata         *testExecutionMetadata   // current test execution metadata
+		module                    integrations.TestModule  // module associated with the test
+		suite                     integrations.TestSuite   // suite associated with the test
+	}
 )
 
 var (
@@ -437,171 +451,41 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 
 // runTestWithRetry encapsulates the common retry logic for test functions.
 func runTestWithRetry(options *runTestWithRetryOptions) {
-	executionIndex := -1
-	var panicExecution *testExecutionMetadata
-	var lastPtrToLocalT *testing.T
-
-	// Module and suite for this test
-	var module integrations.TestModule
-	var suite integrations.TestSuite
-
-	// Check if we have execution metadata to propagate
-	originalExecMeta := getTestMetadata(options.t)
-
-	retryCount := int64(0)
-	var lastExecMeta *testExecutionMetadata
-
 	// Set this func as a helper func of t
 	options.t.Helper()
 
-	var preMutex sync.Locker
-	var postMutex sync.Locker
-	if options.isEfdInParallel {
-		preMutex = &sync.Mutex{}
-		postMutex = &sync.Mutex{}
-	} else {
-		preMutex = &noopMutex{}
-		postMutex = &noopMutex{}
+	// Initialize execution options variables
+	execOpts := &executionOptions{
+		mutex:                     &noopMutex{},
+		options:                   options,
+		executionIndex:            -1,
+		retryCount:                int64(0),
+		originalExecutionMetadata: getTestMetadata(options.t),
 	}
 
-	executeTestIteration := func() bool {
-		// Initial lock
-		preMutex.Lock()
-
-		// Clear the matcher subnames map before each execution to avoid subname tests being called "parent/subname#NN" due to retries
-		matcher := getTestContextMatcherPrivateFields(options.t)
-		if matcher != nil {
-			matcher.ClearSubNames()
-		}
-
-		// Increment execution index
-		executionIndex++
-
-		// Create a new local copy of `t` to isolate execution results
-		ptrToLocalT := &testing.T{}
-		copyTestWithoutParent(options.t, ptrToLocalT)
-		ptrToLocalT.Helper()
-
-		// Create a dummy parent so we can run the test using this local copy
-		// without affecting the test parent
-		localTPrivateFields := getTestPrivateFields(ptrToLocalT)
-		if localTPrivateFields == nil {
-			panic("getting test private fields failed")
-		}
-		if localTPrivateFields.parent == nil {
-			panic("parent of the test is nil")
-		}
-		*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
-
-		// Create an execution metadata instance
-		execMeta := createTestMetadata(ptrToLocalT)
-		execMeta.hasAdditionalFeatureWrapper = true
-
-		// Propagate set tags from a parent wrapper
-		propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
-
-		// If we are in a retry execution, set the `isARetry` flag
-		execMeta.isARetry = executionIndex > 0
-
-		// Adjust execution metadata
-		if options.preExecMetaAdjust != nil {
-			options.preExecMetaAdjust(execMeta, executionIndex)
-		}
-
-		// Set if we are in the last retry
-		if execMeta.isARetry {
-			execMeta.isLastRetry = options.preIsLastRetry(execMeta, executionIndex, retryCount)
-		}
-
-		// unlock the pre mutex
-		preMutex.Unlock()
-
-		// Run original func similar to how it gets run internally in tRunner
-		startTime := time.Now()
-		chn := make(chan struct{}, 1)
-		go func() {
-			defer func() {
-				chn <- struct{}{}
-			}()
-			ptrToLocalT.Helper()
-			options.targetFunc(ptrToLocalT)
-		}()
-		<-chn
-		duration := time.Since(startTime)
-
-		// Call cleanup functions after this execution
-		if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {
-			fmt.Printf("cleanup error: %v\n", err)
-		}
-
-		// Lock the post mutex
-		postMutex.Lock()
-		defer postMutex.Unlock()
-
-		// Copy the current test to the wrapper if necessary
-		if originalExecMeta != nil {
-			originalExecMeta.test = execMeta.test
-		}
-
-		// Extract module and suite if present
-		currentSuite := execMeta.test.Suite()
-		if suite == nil && currentSuite != nil {
-			suite = currentSuite
-		}
-		if module == nil && currentSuite != nil && currentSuite.Module() != nil {
-			module = currentSuite.Module()
-		}
-
-		// Remove execution metadata
-		deleteTestMetadata(ptrToLocalT)
-
-		// Handle panic data
-		if execMeta.panicData != nil {
-			ptrToLocalT.Fail()
-			if panicExecution == nil {
-				panicExecution = execMeta
-			}
-		}
-
-		// Adjust retry count after first execution if necessary
-		if options.postAdjustRetryCount != nil && executionIndex == 0 {
-			retryCount = options.postAdjustRetryCount(execMeta, duration)
-		}
-
-		// Decrement retry count
-		retryCount--
-
-		// Call perExecution function
-		if options.postPerExecution != nil {
-			options.postPerExecution(ptrToLocalT, execMeta, executionIndex, duration)
-		}
-
-		// Update lastPtrToLocalT and lastExecMeta
-		lastPtrToLocalT = ptrToLocalT
-		lastExecMeta = execMeta
-
-		// Decide whether to continue
-		return options.postShouldRetry(ptrToLocalT, execMeta, executionIndex, retryCount)
+	// Create a mutex for synchronizing test iterations
+	if options.isEfdInParallel {
+		execOpts.mutex = &sync.Mutex{}
 	}
 
 	// Execute the test function for the first time
-	if executeTestIteration() {
+	if executeTestIteration(execOpts) {
 		// retry is required
-		if options.isEfdInParallel && isAnEfdExecution(lastExecMeta) {
+		if options.isEfdInParallel && isAnEfdExecution(execOpts.executionMetadata) {
 			// In parallel, we use the retry count set in the first execution
 			var wg sync.WaitGroup
-			wg.Add(int(retryCount + 1))
-			for i := int64(0); i <= retryCount; i++ {
+			wg.Add(int(execOpts.retryCount + 1))
+			for i := int64(0); i <= execOpts.retryCount; i++ {
 				go func(idx int64) {
 					defer wg.Done()
-					executeTestIteration()
+					executeTestIteration(execOpts)
 				}(i)
 			}
 			wg.Wait()
 		} else {
 			// Execute retries sequentially
 			for {
-				if !executeTestIteration() {
+				if !executeTestIteration(execOpts) {
 					break
 				}
 			}
@@ -610,25 +494,147 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 
 	// Adjust execution metadata
 	if options.preExecMetaAdjust != nil {
-		options.preExecMetaAdjust(lastExecMeta, executionIndex)
+		options.preExecMetaAdjust(execOpts.executionMetadata, execOpts.executionIndex)
 	}
 
 	// Call onRetryEnd
 	if options.postOnRetryEnd != nil {
-		options.postOnRetryEnd(options.t, executionIndex, lastPtrToLocalT)
+		options.postOnRetryEnd(options.t, execOpts.executionIndex, execOpts.ptrToLocalT)
 	}
 
 	// After all test executions, check if we need to close the suite and the module
-	if originalExecMeta == nil {
-		checkModuleAndSuite(module, suite)
+	if execOpts.originalExecutionMetadata == nil {
+		checkModuleAndSuite(execOpts.module, execOpts.suite)
 	}
 
 	// Re-panic if test failed and panic data exists
-	if options.t.Failed() && panicExecution != nil {
+	if options.t.Failed() && execOpts.panicExecutionMetadata != nil {
 		// Ensure we flush all CI visibility data and close the session event
 		integrations.ExitCiVisibility()
-		panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", executionIndex, panicExecution.panicData, panicExecution.panicStacktrace))
+		panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", execOpts.executionIndex, execOpts.panicExecutionMetadata.panicData, execOpts.panicExecutionMetadata.panicStacktrace))
 	}
+}
+
+// executeTestIteration executes a single test iteration and handles retries.
+func executeTestIteration(execOpts *executionOptions) bool {
+	// Iteration lock
+	execOpts.mutex.Lock()
+	defer execOpts.mutex.Unlock()
+
+	// Clear the matcher subnames map before each execution to avoid subname tests being called "parent/subname#NN" due to retries
+	matcher := getTestContextMatcherPrivateFields(execOpts.options.t)
+	if matcher != nil {
+		matcher.ClearSubNames()
+	}
+
+	// Increment execution index
+	execOpts.executionIndex++
+	currentIndex := execOpts.executionIndex
+
+	// Create a new local copy of `t` to isolate execution results
+	ptrToLocalT := &testing.T{}
+	copyTestWithoutParent(execOpts.options.t, ptrToLocalT)
+	ptrToLocalT.Helper()
+
+	// Create a dummy parent so we can run the test using this local copy
+	// without affecting the test parent
+	localTPrivateFields := getTestPrivateFields(ptrToLocalT)
+	if localTPrivateFields == nil {
+		panic("getting test private fields failed")
+	}
+	if localTPrivateFields.parent == nil {
+		panic("parent of the test is nil")
+	}
+	*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
+
+	// Create an execution metadata instance
+	execMeta := createTestMetadata(ptrToLocalT)
+	execMeta.hasAdditionalFeatureWrapper = true
+
+	// Propagate set tags from a parent wrapper
+	propagateTestExecutionMetadataFlags(execMeta, execOpts.originalExecutionMetadata)
+
+	// If we are in a retry execution, set the `isARetry` flag
+	execMeta.isARetry = currentIndex > 0
+
+	// Adjust execution metadata
+	if execOpts.options.preExecMetaAdjust != nil {
+		execOpts.options.preExecMetaAdjust(execMeta, currentIndex)
+	}
+
+	// Set if we are in the last retry
+	if execMeta.isARetry {
+		execMeta.isLastRetry = execOpts.options.preIsLastRetry(execMeta, currentIndex, execOpts.retryCount)
+	}
+
+	// unlock the mutex
+	execOpts.mutex.Unlock()
+
+	// Run original func similar to how it gets run internally in tRunner
+	startTime := time.Now()
+	chn := make(chan struct{}, 1)
+	go func(pLocalT *testing.T, opts *runTestWithRetryOptions, cn *chan struct{}) {
+		defer func() {
+			*cn <- struct{}{}
+		}()
+		pLocalT.Helper()
+		opts.targetFunc(pLocalT)
+	}(ptrToLocalT, execOpts.options, &chn)
+	<-chn
+	duration := time.Since(startTime)
+
+	// Call cleanup functions after this execution
+	if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {
+		fmt.Printf("cleanup error: %v\n", err)
+	}
+
+	// Lock mutex
+	execOpts.mutex.Lock()
+
+	// Copy the current test to the wrapper if necessary
+	if execOpts.originalExecutionMetadata != nil {
+		execOpts.originalExecutionMetadata.test = execMeta.test
+	}
+
+	// Extract module and suite if present
+	currentSuite := execMeta.test.Suite()
+	if execOpts.suite == nil && currentSuite != nil {
+		execOpts.suite = currentSuite
+	}
+	if execOpts.module == nil && currentSuite != nil && currentSuite.Module() != nil {
+		execOpts.module = currentSuite.Module()
+	}
+
+	// Remove execution metadata
+	deleteTestMetadata(ptrToLocalT)
+
+	// Handle panic data
+	if execMeta.panicData != nil {
+		ptrToLocalT.Fail()
+		if execOpts.panicExecutionMetadata == nil {
+			execOpts.panicExecutionMetadata = execMeta
+		}
+	}
+
+	// Adjust retry count after first execution if necessary
+	if execOpts.options.postAdjustRetryCount != nil && currentIndex == 0 {
+		execOpts.retryCount = execOpts.options.postAdjustRetryCount(execMeta, duration)
+	}
+
+	// Decrement retry count
+	execOpts.retryCount--
+
+	// Call perExecution function
+	if execOpts.options.postPerExecution != nil {
+		execOpts.options.postPerExecution(ptrToLocalT, execMeta, currentIndex, duration)
+	}
+
+	// Update lastPtrToLocalT and lastExecMeta
+	execOpts.ptrToLocalT = ptrToLocalT
+	execOpts.executionMetadata = execMeta
+
+	// Decide whether to continue
+	return execOpts.options.postShouldRetry(ptrToLocalT, execMeta, currentIndex, execOpts.retryCount)
 }
 
 // propagateTestExecutionMetadataFlags propagates the test execution metadata flags from the original test execution metadata to the current one.
