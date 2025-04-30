@@ -127,6 +127,7 @@ func (s *span) SetTag(key string, value interface{}) {
 	value = dereference(value)
 	s.Lock()
 	defer s.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -266,6 +267,7 @@ func (s *span) SetUser(id string, opts ...UserMonitoringOption) {
 	trace := root.context.trace
 	root.Lock()
 	defer root.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -339,6 +341,9 @@ func (s *span) setTagError(value interface{}, cfg errorConfig) {
 			s.Error = 0
 		}
 	}
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
@@ -486,6 +491,7 @@ func (s *span) setMetric(key string, v float64) {
 func (s *span) AddSpanLink(link ddtrace.SpanLink) {
 	s.Lock()
 	defer s.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -592,6 +598,7 @@ func (s *span) Finish(opts ...ddtrace.FinishOption) {
 func (s *span) SetOperationName(operationName string) {
 	s.Lock()
 	defer s.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -605,6 +612,7 @@ func (s *span) SetOperationName(operationName string) {
 func (s *span) finish(finishTime int64) {
 	s.Lock()
 	defer s.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -801,6 +809,10 @@ func (s *span) Format(f fmt.State, c rune) {
 func (s *span) AddEvent(name string, opts ...ddtrace.SpanEventOption) {
 	s.Lock()
 	defer s.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
