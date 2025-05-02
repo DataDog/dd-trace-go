@@ -42,13 +42,14 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 		so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
 		pttrn := getPattern(nil, req)
 		TraceAndServe(h, w, req, &httptrace.ServeConfig{
-			Framework:   "net/http",
-			Service:     service,
-			Resource:    resc,
-			FinishOpts:  cfg.FinishOpts,
-			SpanOpts:    so,
-			Route:       pattern.Route(pttrn),
-			RouteParams: pattern.PathParameters(pttrn, req),
+			Framework:     "net/http",
+			Service:       service,
+			Resource:      resc,
+			FinishOpts:    cfg.FinishOpts,
+			SpanOpts:      so,
+			IsStatusError: cfg.IsStatusError,
+			Route:         pattern.Route(pttrn),
+			RouteParams:   pattern.PathParameters(pttrn, req),
 		})
 	})
 }

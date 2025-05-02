@@ -421,6 +421,35 @@ func TestRoundTripperIgnoreRequest(t *testing.T) {
 	assert.Len(t, spans, 1)
 }
 
+func TestRoundTripperStatusCheck(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer s.Close()
+
+	rt := WrapRoundTripper(http.DefaultTransport, WithStatusCheck(func(statusCode int) bool {
+		return statusCode >= 400 && statusCode != http.StatusNotFound
+	}))
+
+	client := &http.Client{
+		Transport: rt,
+	}
+	resp, err := client.Get(s.URL + "/hello/world")
+	assert.Nil(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	assert.Equal(t, "http.request", spans[0].OperationName())
+	assert.Equal(t, "http.request", spans[0].Tag(ext.ResourceName))
+	assert.Equal(t, "404", spans[0].Tag(ext.HTTPCode))
+	assert.Equal(t, "GET", spans[0].Tag(ext.HTTPMethod))
+	assert.Nil(t, spans[0].Tag(ext.Error))
+}
+
 func TestRoundTripperURLWithoutPort(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
