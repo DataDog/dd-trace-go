@@ -5,28 +5,20 @@
 
 package tracer
 
-import (
-	"sync/atomic"
-)
-
-var (
-	// globalTracer stores the current tracer as *ddtrace.Tracer (pointer to interface). The
-	// atomic.Value type requires types to be consistent, which requires using *ddtrace.Tracer.
-	globalTracer atomic.Value
-)
+import "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 
 func init() {
 	var tracer Tracer = &NoopTracer{}
-	globalTracer.Store(&tracer)
+	internal.GlobalTracer.Store(&tracer)
 }
 
 // SetGlobalTracer sets the global tracer to t.
 func SetGlobalTracer(t Tracer) {
-	old := *globalTracer.Swap(&t).(*Tracer)
+	old := *internal.GlobalTracer.Swap(&t).(*Tracer)
 	old.Stop()
 }
 
 // GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() Tracer {
-	return *globalTracer.Load().(*Tracer)
+	return *internal.GlobalTracer.Load().(*Tracer)
 }
