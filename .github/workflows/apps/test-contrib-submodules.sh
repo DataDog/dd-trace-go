@@ -8,7 +8,7 @@ set +e
 
 [[ -d ./contrib ]] || exit 0
 
-CONTRIBS=$(find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \;)
+CONTRIBS=$1
 
 report_error=0
 

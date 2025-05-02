@@ -30,6 +30,12 @@ jobs:
       go-version: ${{ matrix.go-version }}
       ref: ${{ inputs.ref || github.ref }}
     secrets: inherit
+  contrib-tests:
+    uses: ./.github/workflows/contrib-tests.yml
+    with:
+      go-version: ${{ matrix.go-version }}
+      ref: ${{ inputs.ref || github.ref }}
+    secrets: inherit
   multios-unit-tests:
     strategy:
       matrix:
