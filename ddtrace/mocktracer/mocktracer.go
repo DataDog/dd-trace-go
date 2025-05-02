@@ -58,10 +58,6 @@ type Tracer interface {
 // interface to query the tracer's state.
 func Start() Tracer {
 	t := newMockTracer()
-	old := tracer.GetGlobalTracer()
-	if _, ok := old.(*mocktracer); ok {
-		tracer.StopTestTracer()
-	}
 	tracer.SetGlobalTracer(t)
 	return t
 }
@@ -99,7 +95,7 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (t *mocktracer) Stop() {
-	tracer.StopTestTracer()
+	tracer.Stop()
 	t.dsmProcessor.Stop()
 }
 

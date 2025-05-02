@@ -30,8 +30,3 @@ func SetGlobalTracer(t Tracer) {
 func GetGlobalTracer() Tracer {
 	return *globalTracer.Load().(*Tracer)
 }
-
-func StopTestTracer() {
-	var tracer Tracer = &NoopTracer{}
-	globalTracer.Swap(&tracer)
-}
