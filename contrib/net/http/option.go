@@ -261,6 +261,14 @@ func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	}
 }
 
+// RTWithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func RTWithStatusCheck(fn func(statusCode int) bool) RoundTripperOption {
+	return func(cfg *roundTripperConfig) {
+		cfg.isStatusError = fn
+	}
+}
+
 func isClientError(statusCode int) bool {
 	return statusCode >= 400 && statusCode < 500
 }
