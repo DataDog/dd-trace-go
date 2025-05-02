@@ -182,6 +182,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 	value = dereference(value)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -328,6 +329,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	trace := root.context.trace
 	root.mu.Lock()
 	defer root.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -409,6 +411,9 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 			s.error = 0
 		}
 	}
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
@@ -558,6 +563,7 @@ func (s *Span) AddLink(link SpanLink) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -626,6 +632,9 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 		if cfg.NoDebugStack {
 			s.mu.Lock()
+			// We don't lock spans when flushing, so we could have a data race when
+			// modifying a span as it's being flushed. This protects us against that
+			// race, since spans are marked `finished` before we flush them.
 			if s.finished {
 				s.mu.Unlock()
 				return
@@ -680,6 +689,7 @@ func (s *Span) SetOperationName(operationName string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -693,6 +703,7 @@ func (s *Span) SetOperationName(operationName string) {
 func (s *Span) finish(finishTime int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -881,6 +892,10 @@ func (s *Span) Format(f fmt.State, c rune) {
 func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
