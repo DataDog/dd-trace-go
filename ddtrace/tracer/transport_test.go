@@ -336,7 +336,7 @@ func TestWithHTTPClient(t *testing.T) {
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 	assert := assert.New(t)
 	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		hits++
 		if r.Method == http.MethodGet {
 			return
