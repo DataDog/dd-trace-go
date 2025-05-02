@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 
@@ -57,9 +58,13 @@ type Tracer interface {
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
-	t := newMockTracer()
-	tracer.SetGlobalTracer(t)
-	return t
+	var t tracer.Tracer = newMockTracer()
+	internal.SetGlobalTracer(t)
+	return t.(Tracer)
+}
+
+func getGlobalTracer() tracer.Tracer {
+	return internal.GetGlobalTracer[tracer.Tracer]()
 }
 
 type mocktracer struct {

@@ -271,7 +271,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		SetGlobalTracer(trc)
+		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -294,7 +294,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		SetGlobalTracer(trc)
+		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))
@@ -316,7 +316,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		}
 		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
 		assert.NoError(err)
-		SetGlobalTracer(trc)
+		setGlobalTracer(trc)
 		defer trc.Stop()
 
 		p, err := encode(getTestTrace(1, 1))

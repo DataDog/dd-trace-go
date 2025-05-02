@@ -160,7 +160,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set("Content-Length", strconv.Itoa(p.size()))
 	req.Header.Set(headerComputedTopLevel, "yes")
-	if t := GetGlobalTracer(); t != nil {
+	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()
 		if tc.TracingAsTransport || tc.CanComputeStats {
 			// tracingAsTransport uses this header to disable the trace agent's stats computation
@@ -202,7 +202,7 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 }
 
 func reportAPIErrorsMetric(response *http.Response, err error) {
-	if t, ok := GetGlobalTracer().(*tracer); ok {
+	if t, ok := getGlobalTracer().(*tracer); ok {
 		var reason string
 		if err != nil {
 			reason = "network_failure"

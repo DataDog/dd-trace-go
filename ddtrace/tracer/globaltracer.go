@@ -12,13 +12,12 @@ func init() {
 	internal.StoreGlobalTracer(tracer)
 }
 
-// SetGlobalTracer sets the global tracer to t.
-func SetGlobalTracer(t Tracer) {
-	old := *internal.GlobalTracer.Swap(&t).(*Tracer)
-	old.Stop()
+// setGlobalTracer sets the global tracer to t.
+func setGlobalTracer(t Tracer) {
+	internal.SetGlobalTracer(t)
 }
 
-// GetGlobalTracer returns the currently active tracer.
-func GetGlobalTracer() Tracer {
-	return *internal.GlobalTracer.Load().(*Tracer)
+// getGlobalTracer returns the currently active tracer.
+func getGlobalTracer() Tracer {
+	return internal.GetGlobalTracer[Tracer]()
 }
