@@ -154,6 +154,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
+	req.ContentLength = int64(buffer.Len())
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
