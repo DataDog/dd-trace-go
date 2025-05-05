@@ -19,3 +19,4 @@ jobs:
         uses: DataDog/ensure-ci-success@a874030af0d650da8864aff94b8b42f83e88a0b5
         with:
           initial-delay-seconds: "1000"  # smoke tests takes approx 20 mn to finish
+          max-retries: "60"
