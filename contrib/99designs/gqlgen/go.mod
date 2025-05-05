@@ -72,7 +72,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.23.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/net v0.36.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
@@ -85,3 +85,8 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+// Pinning against gqlgen v0.17.36 to avoid breaking changes in gqlgen's v0.17.72 API.
+// Also, we are not able to upgrade to gqlgen v0.17.72 yet because it requires Go 1.23.8,
+// and we want to keep compatibility with Go 1.23.0 until Go 1.25.0 is released.
+replace github.com/99designs/gqlgen => github.com/99designs/gqlgen v0.17.36

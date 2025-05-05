@@ -414,7 +414,7 @@ func extractGithubActions() map[string]string {
 		if eventFile, err := os.Open(eventFilePath); err == nil {
 			defer eventFile.Close()
 
-			var eventJson struct {
+			var eventJSON struct {
 				PullRequest struct {
 					Base struct {
 						Sha string `json:"sha"`
@@ -427,10 +427,10 @@ func extractGithubActions() map[string]string {
 			}
 
 			eventDecoder := json.NewDecoder(eventFile)
-			if eventDecoder.Decode(&eventJson) == nil {
-				tags[constants.GitHeadCommit] = eventJson.PullRequest.Head.Sha
-				tags[constants.GitPrBaseCommit] = eventJson.PullRequest.Base.Sha
-				tags[constants.GitPrBaseBranch] = eventJson.PullRequest.Base.Ref
+			if eventDecoder.Decode(&eventJSON) == nil {
+				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
+				tags[constants.GitPrBaseCommit] = eventJSON.PullRequest.Base.Sha
+				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
 			}
 		}
 	}

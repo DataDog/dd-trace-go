@@ -73,7 +73,7 @@ type defaultKnownChange struct {
 }
 
 func (d defaultKnownChange) End() token.Pos {
-	end, ok := d.ctx.Value("end").(token.Pos)
+	end, ok := d.ctx.Value(endKey).(token.Pos)
 	if ok {
 		return end
 	}
@@ -84,7 +84,7 @@ func (d defaultKnownChange) End() token.Pos {
 }
 
 func (d defaultKnownChange) Pos() token.Pos {
-	pos, ok := d.ctx.Value("pos").(token.Pos)
+	pos, ok := d.ctx.Value(posKey).(token.Pos)
 	if ok {
 		return pos
 	}
@@ -111,7 +111,7 @@ type V1ImportURL struct {
 }
 
 func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
-	path := c.ctx.Value("pkg_path").(string)
+	path := c.ctx.Value(pkgPathKey).(string)
 	if path == "" {
 		return nil
 	}
@@ -146,7 +146,7 @@ type DDTraceTypes struct {
 }
 
 func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
-	typ, ok := c.ctx.Value("declared_type").(*types.Named)
+	typ, ok := c.ctx.Value(declaredTypeKey).(*types.Named)
 	if !ok {
 		return nil
 	}
@@ -187,7 +187,7 @@ type TracerStructs struct {
 }
 
 func (c TracerStructs) Fixes() []analysis.SuggestedFix {
-	typ, ok := c.ctx.Value("declared_type").(*types.Named)
+	typ, ok := c.ctx.Value(declaredTypeKey).(*types.Named)
 	if !ok {
 		return nil
 	}
@@ -228,7 +228,7 @@ type WithServiceName struct {
 }
 
 func (c WithServiceName) Fixes() []analysis.SuggestedFix {
-	args, ok := c.ctx.Value("args").([]string)
+	args, ok := c.ctx.Value(argsKey).([]string)
 	if !ok || args == nil {
 		return nil
 	}
@@ -263,7 +263,7 @@ type TraceIDString struct {
 }
 
 func (c TraceIDString) Fixes() []analysis.SuggestedFix {
-	fn, ok := c.ctx.Value("fn").(func())
+	fn, ok := c.ctx.Value(fnKey).(func())
 	if !ok || fn == nil {
 		return nil
 	}

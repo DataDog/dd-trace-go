@@ -40,9 +40,8 @@ func GetErrorTypeFromStatusCode(statusCode int) ErrorType {
 			return StatusCode5xxErrorType
 		} else if statusCode >= 400 && statusCode < 500 {
 			return StatusCode4xxErrorType
-		} else {
-			return StatusCodeErrorType
 		}
+		return StatusCodeErrorType
 	}
 }
 
