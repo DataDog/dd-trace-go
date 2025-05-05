@@ -186,7 +186,7 @@ aspects:
               __dd_instr = kafkatrace.Package(__dd_ckgoVersion)
             }
 
-            func __dd_newKafkaTracer(opts ...kafkatrace.Option) *kafkatrace.KafkaTracer {
+            func __dd_newKafkaTracer(opts ...kafkatrace.Option) *kafkatrace.Tracer {
               v, _ := LibraryVersion()
               return kafkatrace.NewKafkaTracer(__dd_instr, __dd_ckgoVersion, v, opts...)
             }
@@ -219,7 +219,7 @@ aspects:
 
             type __dd_eventChan = chan Event
             type __dd_messageChan = chan *Message
-            type __dd_kafkaTracer = kafkatrace.KafkaTracer
+            type __dd_kafkaTracer = kafkatrace.Tracer
 
   ## Trace Consumer ##
   - id: NewConsumer
