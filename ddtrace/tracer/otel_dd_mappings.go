@@ -91,6 +91,7 @@ func getDDorOtelConfig(configName string) string {
 	// Stores whether this key is compatible with the stable configuration feature
 	stableCfgKey := false
 
+	// TODO: APMAPI-1358
 	// Check for stable configuration keys
 	if config.dd == "DD_RUNTIME_METRICS_ENABLED" {
 		stableCfgKey = true
@@ -124,6 +125,7 @@ func getDDorOtelConfig(configName string) string {
 		}
 	}
 
+	// TODO: APMAPI-1358
 	// If val was not already resolved, and it's a stable configuration key, check local config source
 	if val == "" && stableCfgKey {
 		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {

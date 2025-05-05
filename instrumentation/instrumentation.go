@@ -110,6 +110,7 @@ func (i *Instrumentation) AppSecRASPEnabled() bool {
 }
 
 func (i *Instrumentation) DataStreamsEnabled() bool {
+	// TODO: APMAPI-1358
 	v, _, _ := stableconfig.BoolStableConfig("DD_DATA_STREAMS_ENABLED", false)
 	return v
 }

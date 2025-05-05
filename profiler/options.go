@@ -215,11 +215,11 @@ func defaultConfig() (*config, error) {
 	}
 	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
 	// the Datadog admission controller, so we set it to true.
-	// TODO: capture Origin, report to telemetry
+	// TODO: APMAPI-1358
 	if v, _ := stableconfig.StringStableConfig("DD_PROFILING_ENABLED", ""); v == "auto" {
 		c.enabled = true
 	} else {
-		// TODO: capture Origin, report to telemetry
+		// TODO: APMAPI-1358
 		c.enabled, _, _ = stableconfig.BoolStableConfig("DD_PROFILING_ENABLED", true)
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
