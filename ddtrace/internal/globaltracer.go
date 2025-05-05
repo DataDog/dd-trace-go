@@ -22,17 +22,15 @@ type tracerLike interface {
 	Stop()
 }
 
-// StoreGlobalTracer stores a tracer in the global tracer.
-// It is the responsibility of the caller to ensure that the value is `tracer.Tracer`.
-func StoreGlobalTracer[T tracerLike](t T) {
-	globalTracer.Store(&t)
-}
-
 // SetGlobalTracer sets the global tracer to t.
 // It is the responsibility of the caller to ensure that the value is `tracer.Tracer`.
 func SetGlobalTracer[T tracerLike](t T) {
-	old := *globalTracer.Swap(&t).(*T)
-	old.Stop()
+	old := globalTracer.Swap(&t)
+	if old == nil {
+		return
+	}
+	oldTracer := *old.(*T)
+	oldTracer.Stop()
 }
 
 // GetGlobalTracer returns the current global tracer.

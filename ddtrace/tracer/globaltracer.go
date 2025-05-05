@@ -9,7 +9,7 @@ import "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 
 func init() {
 	var tracer Tracer = &NoopTracer{}
-	internal.StoreGlobalTracer(tracer)
+	internal.SetGlobalTracer(tracer)
 }
 
 // setGlobalTracer sets the global tracer to t.
