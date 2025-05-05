@@ -31,7 +31,7 @@ func main() {
 	}
 
 	numRunners := 3
-	contribs := make([][]string, numRunners)
+	contribs := make([]string, numRunners)
 	i := 0
 	dec := json.NewDecoder(&stdout)
 	for dec.More() {
@@ -47,7 +47,7 @@ func main() {
 		if validContrib == nil || internalContrib {
 			continue
 		}
-		contribs[i] = append(contribs[i], "."+validContrib[0])
+		contribs[i] += "." + validContrib[0] + " "
 		i = (i + 1) % numRunners
 	}
 
