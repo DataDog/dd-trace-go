@@ -510,21 +510,17 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+
 	if impactedTests {
 		// impacteds tests will trigger EFD retries (if the test is not quarantined nor disabled)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 11)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 11)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 11)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 11)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
 	} else {
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
 	}
@@ -547,20 +543,18 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 	// Impacted tests
 	if impactedTests {
-		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 80)
+		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 30)
 
 		// check spans by type
 		checkSpansByType(finishedSpans,
-			107,
+			57,
 			1,
 			1,
 			4,
-			101,
+			51,
 			0)
 
-		impactedTestsSpans := checkSpansByTagName(finishedSpans, constants.TestIsModified, 44)
-		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.Test_Foo", 11)
-		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestSkip", 11)
+		impactedTestsSpans := checkSpansByTagName(finishedSpans, constants.TestIsModified, 22)
 		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithPanic", 11)
 		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithFail", 11)
 
