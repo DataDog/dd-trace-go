@@ -4,7 +4,7 @@ set +e
 
 # This script is used to test the contrib submodules in the apps directory.
 # It is run by the GitHub Actions CI workflow defined in
-# .github/workflows/unit-integration-tests.yml.
+# .github/workflows/contrib-tests.yml.
 
 [[ -d ./contrib ]] || exit 0
 
