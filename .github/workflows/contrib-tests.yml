@@ -201,7 +201,7 @@ jobs:
       - name: Test Contrib
         if: always()
         run: |
-          ./.github/workflows/apps/test-contrib-submodules.sh '${{ toJson(matrix.chunk) }}'
+          ./.github/workflows/apps/test-contrib-submodules.sh default '${{ toJson(matrix.chunk) }}'
 
       - name: Upload the results to Datadog CI App
         if: always()
