@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: request-mirror
+  labels:
+    app.kubernetes.io/component: request-mirror
+    app.kubernetes.io/name: datadog
+spec:
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: request-mirror
+  template:
+    metadata:
+      labels:
+        app: request-mirror
+        app.kubernetes.io/component: request-mirror
+        app.kubernetes.io/name: datadog
+    spec:
+      containers:
+        - name: request-mirror
+          image: ghcr.io/datadog/dd-trace-go/request-mirror:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8081
+              scheme: HTTP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8081
+              scheme: HTTP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: request-mirror
+  labels:
+    app.kubernetes.io/component: request-mirror
+    app.kubernetes.io/name: datadog
+spec:
+  selector:
+    app: request-mirror
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
