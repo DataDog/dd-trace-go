@@ -9,18 +9,18 @@ import (
 	"net/netip"
 	"strconv"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 const contextProcessKey = "waf.context.processor"
 
 type RunAddressDataBuilder struct {
-	waf.RunAddressData
+	libddwaf.RunAddressData
 }
 
 func NewAddressesBuilder() *RunAddressDataBuilder {
 	return &RunAddressDataBuilder{
-		RunAddressData: waf.RunAddressData{
+		RunAddressData: libddwaf.RunAddressData{
 			Persistent: make(map[string]any, 1),
 			Ephemeral:  make(map[string]any, 1),
 		},
@@ -149,7 +149,7 @@ func (b *RunAddressDataBuilder) WithFilePath(file string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerIOFSFileAddr] = file
-	b.Scope = waf.RASPScope
+	b.Scope = libddwaf.RASPScope
 	return b
 }
 
@@ -158,7 +158,7 @@ func (b *RunAddressDataBuilder) WithURL(url string) *RunAddressDataBuilder {
 		return b
 	}
 	b.Ephemeral[ServerIoNetURLAddr] = url
-	b.Scope = waf.RASPScope
+	b.Scope = libddwaf.RASPScope
 	return b
 }
 
@@ -167,7 +167,7 @@ func (b *RunAddressDataBuilder) WithDBStatement(statement string) *RunAddressDat
 		return b
 	}
 	b.Ephemeral[ServerDBStatementAddr] = statement
-	b.Scope = waf.RASPScope
+	b.Scope = libddwaf.RASPScope
 	return b
 }
 
@@ -176,7 +176,7 @@ func (b *RunAddressDataBuilder) WithDBType(driver string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerDBTypeAddr] = driver
-	b.Scope = waf.RASPScope
+	b.Scope = libddwaf.RASPScope
 	return b
 }
 
@@ -185,7 +185,7 @@ func (b *RunAddressDataBuilder) WithSysExecCmd(cmd []string) *RunAddressDataBuil
 		return b
 	}
 	b.Ephemeral[ServerSysExecCmd] = cmd
-	b.Scope = waf.RASPScope
+	b.Scope = libddwaf.RASPScope
 	return b
 }
 
@@ -263,6 +263,6 @@ func (b *RunAddressDataBuilder) ExtractSchema() *RunAddressDataBuilder {
 	return b
 }
 
-func (b *RunAddressDataBuilder) Build() waf.RunAddressData {
+func (b *RunAddressDataBuilder) Build() libddwaf.RunAddressData {
 	return b.RunAddressData
 }

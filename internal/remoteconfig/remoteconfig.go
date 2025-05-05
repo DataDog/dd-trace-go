@@ -13,10 +13,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"net/http"
 	"reflect"
-	"strings"
+	"slices"
 	"sync"
 	"time"
 
@@ -113,6 +114,18 @@ const (
 	ASMHeaderFingerprinting
 	// ASMTruncationRules is the support for truncation payload rules
 	ASMTruncationRules
+	// ASMRASPCommandInjection represents the capability for ASM's RASP Command Injection prevention
+	ASMRASPCommandInjection
+	// APMTracingEnableDynamicInstrumentation represents the capability to enable dynamic instrumentation
+	APMTracingEnableDynamicInstrumentation
+	// APMTracingEnableExceptionReplay represents the capability to enable exception replay
+	APMTracingEnableExceptionReplay
+	// APMTracingEnableCodeOrigin represents the capability to enable code origin
+	APMTracingEnableCodeOrigin
+	// APMTracingEnableLiveDebugging represents the capability to enable live debugging
+	APMTracingEnableLiveDebugging
+	// ASMDDMultiConfig represents the capability to handle multiple ASM_DD configuration objects
+	ASMDDMultiConfig
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.
@@ -335,6 +348,7 @@ func UnregisterCallback(f Callback) error {
 	client._callbacksMu.Lock()
 	defer client._callbacksMu.Unlock()
 	fValue := reflect.ValueOf(f)
+<<<<<<< Updated upstream
 	for i, callback := range client.callbacks {
 		if reflect.ValueOf(callback) == fValue { // nolint:govet
 			// TODO: Investigate and fix the tests.
@@ -346,6 +360,19 @@ func UnregisterCallback(f Callback) error {
 			break
 		}
 	}
+||||||| Stash base
+	for i, callback := range client.callbacks {
+		if reflect.ValueOf(callback) == fValue {
+			client.callbacks = append(client.callbacks[:i], client.callbacks[i+1:]...)
+			break
+		}
+	}
+=======
+
+	client.callbacks = slices.DeleteFunc(client.callbacks, func(cb Callback) bool {
+		return reflect.ValueOf(cb) == fValue
+	})
+>>>>>>> Stashed changes
 	return nil
 }
 
@@ -472,17 +499,21 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	allProducts := c.allProducts()
 	productUpdates := make(map[string]ProductUpdate, len(allProducts))
-	for _, p := range allProducts {
-		productUpdates[p] = make(ProductUpdate)
-	}
 	for _, f := range pbUpdate.TargetFiles {
-		fileMap[f.Path] = f.Raw
-		for _, p := range allProducts {
-			// Check the config file path to make sure it belongs to the right product
-			if strings.Contains(f.Path, "/"+p+"/") {
-				productUpdates[p][f.Path] = f.Raw
-			}
+		path, valid := ParsePath(f.Path)
+		if !valid {
+			log.Warn("remoteconfig: ignoring invalid target file path: %s", f.Path)
+			continue
 		}
+
+		fileMap[f.Path] = f.Raw
+		if slices.Contains(allProducts, path.Product) {
+			log.Debug("remoteconfig: ignoring file for unknown product %s: %s", path.Product, f.Path)
+		}
+		if productUpdates[path.Product] == nil {
+			productUpdates[path.Product] = make(ProductUpdate)
+		}
+		productUpdates[path.Product][f.Path] = f.Raw
 	}
 
 	mapify := func(s *rc.RepositoryState) map[string]string {
@@ -559,9 +590,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	productCallbacks := c.productCallbacks()
 	for product, update := range productUpdates {
 		if fn, ok := productCallbacks[product]; ok {
-			for path, status := range fn(update) {
-				statuses[path] = status
-			}
+			maps.Copy(statuses, fn(update))
 		}
 	}
 	for p, s := range statuses {
