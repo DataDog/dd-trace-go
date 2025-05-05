@@ -53,7 +53,7 @@ jobs:
         INTEGRATION: true
     strategy:
       matrix:
-        chunk: ${{ fromJson(needs.set-up.outputs.json) }}
+        chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
     services:
       datadog-agent:
         image: datadog/agent:latest
