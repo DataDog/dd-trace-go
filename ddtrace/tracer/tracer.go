@@ -19,6 +19,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
+	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
+	"github.com/google/uuid"
+	"github.com/trailofbits/go-mutexasserts"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -32,10 +37,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"github.com/google/uuid"
-
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
-	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
 )
 
 type TracerConf struct { //nolint:revive
@@ -914,7 +915,10 @@ func (t *tracer) TracerConf() TracerConf {
 	}
 }
 
+// +checklocksread:s.mu
 func (t *tracer) Submit(s *Span) {
+	mutexasserts.AssertRWMutexRLocked(&s.mu)
+
 	if !t.config.enabled.current {
 		return
 	}

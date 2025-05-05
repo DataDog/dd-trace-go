@@ -4,6 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
+//go:generate go run ../../scripts/addmsgpcomments/main.go -- span_msgp.go
 
 package tracer
 
@@ -79,9 +80,12 @@ type Span struct {
 	spanID     uint64             `msg:"span_id"`               // identifier of this span
 	traceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
 	parentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
-	error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
+	// +checklocks:mu
+	error int32 `msg:"error"` // error status of the span; 0 means no errors
 
-	spanLinks  []SpanLink  `msg:"span_links,omitempty"`  // links to other spans
+	// +checklocks:mu
+	spanLinks []SpanLink `msg:"span_links,omitempty"` // links to other spans
+	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
 
 	// +checklocks:mu
@@ -681,6 +685,77 @@ func (s *Span) AddLink(link SpanLink) {
 	s.spanLinks = append(s.spanLinks, link)
 }
 
+func (s *Span) getSpanLinks() []SpanLink {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	links := make([]SpanLink, len(s.spanLinks))
+	copy(links, s.spanLinks)
+	return links
+}
+
+// AddEvent attaches a new event to the current span.
+func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+	cfg := SpanEventConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.Time.IsZero() {
+		cfg.Time = time.Now()
+	}
+	event := spanEvent{
+		Name:         name,
+		TimeUnixNano: uint64(cfg.Time.UnixNano()),
+	}
+	if s.supportsEvents {
+		event.Attributes = toSpanEventAttributeMsg(cfg.Attributes)
+	} else {
+		event.RawAttributes = cfg.Attributes
+	}
+	s.spanEvents = append(s.spanEvents, event)
+}
+
+func (s *Span) getSpanEvents() []spanEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	events := make([]spanEvent, len(s.spanEvents))
+	copy(events, s.spanEvents)
+	return events
+}
+
+// SetOperationName sets or changes the operation name.
+func (s *Span) SetOperationName(operationName string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		// already finished
+		return
+	}
+	s.name = operationName
+}
+
+func (s *Span) getError() int32 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.error
+}
+
 // serializeSpanLinksInMetaAssumesHoldingLock saves span links as a JSON string under `Span[meta][_dd.span_links]`.
 // +checklocks:s.mu
 func (s *Span) serializeSpanLinksInMetaAssumesHoldingLock() {
@@ -866,24 +941,6 @@ func (s *Span) finish(finishTime int64) {
 	}
 }
 
-// SetOperationName sets or changes the operation name.
-func (s *Span) SetOperationName(operationName string) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		// already finished
-		return
-	}
-	s.name = operationName
-}
-
 // textNonParsable specifies the text that will be assigned to resources for which the resource
 // can not be parsed due to an obfuscation error.
 const textNonParsable = "Non-parsable SQL query"
@@ -1021,36 +1078,6 @@ func (s *Span) Format(f fmt.State, c rune) {
 	default:
 		fmt.Fprintf(f, "%%!%c(tracer.Span=%v)", c, s)
 	}
-}
-
-// AddEvent attaches a new event to the current span.
-func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if s.finished {
-		return
-	}
-	cfg := SpanEventConfig{}
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-	if cfg.Time.IsZero() {
-		cfg.Time = time.Now()
-	}
-	event := spanEvent{
-		Name:         name,
-		TimeUnixNano: uint64(cfg.Time.UnixNano()),
-	}
-	if s.supportsEvents {
-		event.Attributes = toSpanEventAttributeMsg(cfg.Attributes)
-	} else {
-		event.RawAttributes = cfg.Attributes
-	}
-	s.spanEvents = append(s.spanEvents, event)
 }
 
 const (

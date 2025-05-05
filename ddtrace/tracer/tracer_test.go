@@ -2377,6 +2377,9 @@ func comparePayloadSpans(t *testing.T, a, b *Span) {
 }
 
 func cpspan(s *Span) *Span {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if len(s.metrics) == 0 {
 		s.metrics = nil
 	}
@@ -2483,7 +2486,9 @@ loop:
 		duration: 1,
 		metrics:  map[string]float64{keyMeasured: 1},
 	}
+	s.mu.RLock()
 	statSpan, ok := c.newTracerStatSpan(s, tr.obfuscator)
+	s.mu.RUnlock()
 	assert.True(t, ok)
 	c.add(statSpan)
 

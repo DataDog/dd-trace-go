@@ -383,6 +383,9 @@ func createSpanEventFromSpan(span *Span) *ciVisibilityEvent {
 //
 //	The created tslvSpan.
 func createTslvSpan(span *Span) tslvSpan {
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
 	return tslvSpan{
 		Name:     span.name,
 		Service:  span.service,

@@ -106,8 +106,9 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 			ChildOf(ctx),
 		)
 
-		assert.Equal(t, 1, len(s.spanLinks))
-		assert.Equal(t, spanLink, s.spanLinks[0])
+		links := s.getSpanLinks()
+		assert.Equal(t, 1, len(links))
+		assert.Equal(t, spanLink, links[0])
 
 		assert.Equal(t, 0, len(s.Context().getSpanLinks())) // ensure that the span links are not added to the parent context
 	})

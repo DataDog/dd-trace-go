@@ -295,6 +295,9 @@ func TestSpanFinishWithError(t *testing.T) {
 	span := newBasicSpan("web.request")
 	span.Finish(WithError(err))
 
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
@@ -308,6 +311,9 @@ func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 	span := newBasicSpan("web.request")
 	span.Finish(WithError(err), NoDebugStack())
 
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
@@ -320,6 +326,9 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	err := errors.New("test error")
 	span := newBasicSpan("web.request")
 	span.Finish(WithError(err), StackFrames(2, 1))
+
+	span.mu.RLock()
+	defer span.mu.RUnlock()
 
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", span.meta[ext.ErrorMsg])
@@ -363,22 +372,22 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("{1 2}", span.meta["tagStruct"])
 
 	span.SetTag(ext.Error, true)
-	assert.Equal(int32(1), span.error)
+	assert.Equal(int32(1), span.getError())
 
 	span.SetTag(ext.Error, nil)
-	assert.Equal(int32(0), span.error)
+	assert.Equal(int32(0), span.getError())
 
 	span.SetTag(ext.Error, errors.New("abc"))
-	assert.Equal(int32(1), span.error)
+	assert.Equal(int32(1), span.getError())
 	assert.Equal("abc", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
 	assert.NotEmpty(span.meta[ext.ErrorStack])
 
 	span.SetTag(ext.Error, "something else")
-	assert.Equal(int32(1), span.error)
+	assert.Equal(int32(1), span.getError())
 
 	span.SetTag(ext.Error, false)
-	assert.Equal(int32(0), span.error)
+	assert.Equal(int32(0), span.getError())
 
 	span.SetTag("some.bool", true)
 	assert.Equal("true", span.meta["some.bool"])
@@ -699,10 +708,14 @@ func TestSpanError(t *testing.T) {
 	// check the error is set in the default meta
 	err = errors.New("Something wrong")
 	span.SetTag(ext.Error, err)
+
+	span.mu.RLock()
 	assert.Equal(int32(1), span.error)
 	assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
 	assert.NotEqual("", span.meta[ext.ErrorStack])
+	span.mu.RUnlock()
+
 	span.Finish()
 
 	// operating on a finished span is a no-op
@@ -710,8 +723,11 @@ func TestSpanError(t *testing.T) {
 	nMeta := len(span.meta)
 	span.Finish()
 	span.SetTag(ext.Error, err)
-	assert.Equal(int32(0), span.error)
 
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
+	assert.Equal(int32(0), span.error)
 	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`
 	t.Logf("%q\n", span.meta)
 	assert.Equal(nMeta+3, len(span.meta))
@@ -730,6 +746,10 @@ func TestSpanError_Typed(t *testing.T) {
 	// check the error is set in the default meta
 	err = &boomError{}
 	span.SetTag(ext.Error, err)
+
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
 	assert.Equal(int32(1), span.error)
 	assert.Equal("boom", span.meta[ext.ErrorMsg])
 	assert.Equal("*tracer.boomError", span.meta[ext.ErrorType])
@@ -747,6 +767,10 @@ func TestSpanErrorNil(t *testing.T) {
 	// don't set the error if it's nil
 	nMeta := len(span.meta)
 	span.SetTag(ext.Error, nil)
+
+	span.mu.RLock()
+	defer span.mu.RUnlock()
+
 	assert.Equal(int32(0), span.error)
 	assert.Equal(nMeta, len(span.meta))
 }

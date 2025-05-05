@@ -200,6 +200,9 @@ func encodeFloat(p []byte, f float64) []byte {
 }
 
 func (h *logTraceWriter) encodeSpan(s *Span) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var scratch [maxFloatLength]byte
 	h.buf.WriteString(`{"trace_id":"`)
 	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.traceID), 16))

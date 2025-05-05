@@ -12,12 +12,13 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
+	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/trailofbits/go-mutexasserts"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-
-	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
 // tracerObfuscationVersion indicates which version of stats obfuscation logic we implement
@@ -161,13 +162,23 @@ func (c *concentrator) runIngester() {
 	}
 }
 
+// +checklocksread:s.mu
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	mutexasserts.AssertRWMutexRLocked(&s.mu)
 	resource := s.resource
 	if c.shouldObfuscate() {
 		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
 	}
-	statSpan, ok := c.spanConcentrator.NewStatSpan(s.service, resource,
-		s.name, s.spanType, s.parentID, s.start, s.duration, s.error, s.meta, s.metrics, c.cfg.agent.peerTags)
+	// TODO(kakkoyun): Refactor.
+	// s.mu.RLock()
+	// defer s.mu.RUnlock()
+	statSpan, ok := c.spanConcentrator.NewStatSpan(
+		s.service, resource,
+		s.name, s.spanType,
+		s.parentID, s.start,
+		s.duration, s.error,
+		s.meta, s.metrics,
+		c.cfg.agent.peerTags)
 	if !ok {
 		return nil, false
 	}

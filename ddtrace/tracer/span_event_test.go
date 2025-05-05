@@ -100,20 +100,21 @@ func Test_spanAddEvent(t *testing.T) {
 		s.AddEvent("test-event-3")
 		s.Finish()
 
-		require.Len(t, s.spanEvents, 3)
-		evt := s.spanEvents[0]
+		events := s.getSpanEvents()
+		require.Len(t, events, 3)
+		evt := events[0]
 		assert.Equal(t, "test-event-1", evt.Name)
 		assert.EqualValues(t, ts.UnixNano(), evt.TimeUnixNano)
 		assert.Equal(t, wantAttrs, evt.Attributes)
 		assert.Nil(t, evt.RawAttributes)
 
-		evt = s.spanEvents[1]
+		evt = events[1]
 		assert.Equal(t, "test-event-2", evt.Name)
 		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
 		assert.Equal(t, wantAttrs, evt.Attributes)
 		assert.Nil(t, evt.RawAttributes)
 
-		evt = s.spanEvents[2]
+		evt = events[2]
 		assert.Equal(t, "test-event-3", evt.Name)
 		assert.Greater(t, int64(evt.TimeUnixNano), ts.UnixNano())
 		assert.Nil(t, evt.Attributes)
@@ -130,7 +131,7 @@ func Test_spanAddEvent(t *testing.T) {
 		s.AddEvent("test-event-3")
 		s.Finish()
 
-		require.Empty(t, s.spanEvents)
+		require.Empty(t, s.getSpanEvents())
 		assert.NotEmpty(t, s.meta["events"])
 
 		var spanEvents []spanEvent
