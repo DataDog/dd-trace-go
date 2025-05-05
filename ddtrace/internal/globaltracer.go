@@ -15,7 +15,7 @@ var (
 )
 
 // tracerLike is an interface to restrict the types that can be stored in `globalTracer`.
-// This interface doesn't leak to the users. We are leveraging the type system to generating
+// This interface doesn't leak to the users. We are leveraging the type system to generate
 // the functions below for `tracer.Tracer` without creating an import cycle.
 type tracerLike interface {
 	Flush()
