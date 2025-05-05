@@ -12,7 +12,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
-	"github.com/go-chi/chi/v5"
 )
 
 type config struct {
@@ -49,11 +48,7 @@ func defaults(cfg *config) {
 	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
 	cfg.resourceNamer = nil
 	cfg.appsecDisabled = false
-
 	cfg.appsecConfig.Framework = "github.com/go-chi/chi/v5"
-	cfg.appsecConfig.RouteForRequest = func(r *http.Request) string {
-		return cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
-	}
 }
 
 // WithService sets the given service name for the router.
