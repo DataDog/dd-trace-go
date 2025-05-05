@@ -24,10 +24,10 @@ const (
 )
 
 // LocalConfig holds the configuration loaded from the user-managed file.
-var LocalConfig *stableConfigSource = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
+var LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
 
 // ManagedConfig holds the configuration loaded from the fleet-managed file.
-var ManagedConfig *stableConfigSource = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
+var ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
 
 // stableConfigSource represents a source of stable configuration loaded from a file.
 type stableConfigSource struct {
@@ -45,13 +45,13 @@ func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConf
 	return &stableConfigSource{
 		filePath: filePath,
 		origin:   origin,
-		config:   ParseFile(filePath),
+		config:   parseFile(filePath),
 	}
 }
 
 // ParseFile reads and parses the config file at the given path.
 // Returns an empty config if the file doesn't exist or is invalid.
-func ParseFile(filePath string) *stableConfig {
+func parseFile(filePath string) *stableConfig {
 	info, err := os.Stat(filePath)
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
@@ -91,8 +91,8 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	if scfg.Config == nil {
 		scfg.Config = make(map[string]string, 0)
 	}
-	if scfg.Id == 0 {
-		scfg.Id = -1
+	if scfg.ID == 0 {
+		scfg.ID = -1
 	}
 	return scfg
 }

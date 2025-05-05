@@ -10,7 +10,7 @@ package stableconfig
 // stableConfig represents a configuration loaded from a YAML source file.
 type stableConfig struct {
 	Config map[string]string `yaml:"apm_configuration_default,omitempty"` // Configuration key-value pairs.
-	Id     int               `yaml:"config_id,omitempty"`                 // Identifier for the config set.
+	ID     int               `yaml:"config_id,omitempty"`                 // Identifier for the config set.
 }
 
 func (s *stableConfig) get(key string) string {
@@ -19,13 +19,13 @@ func (s *stableConfig) get(key string) string {
 
 // isEmpty checks if the config is considered empty (no ID and no config entries).
 func (s *stableConfig) isEmpty() bool {
-	return s.Id == -1 && len(s.Config) == 0
+	return s.ID == -1 && len(s.Config) == 0
 }
 
 // emptyStableConfig creates and returns a new, empty stableConfig instance.
 func emptyStableConfig() *stableConfig {
 	return &stableConfig{
 		Config: make(map[string]string, 0),
-		Id:     -1,
+		ID:     -1,
 	}
 }
