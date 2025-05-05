@@ -476,7 +476,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 			var wg sync.WaitGroup
 			wg.Add(int(execOpts.retryCount + 1))
 			for i := int64(0); i <= execOpts.retryCount; i++ {
-				go func(idx int64) {
+				go func(_ int64) {
 					defer wg.Done()
 					executeTestIteration(execOpts)
 				}(i)
