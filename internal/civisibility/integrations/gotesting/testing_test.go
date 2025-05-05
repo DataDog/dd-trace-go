@@ -7,10 +7,13 @@ package gotesting
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -125,13 +128,16 @@ func TestRetryWithFail(t *testing.T) {
 //dd:test.unskippable
 func TestNormalPassingAfterRetryAlwaysFail(_ *testing.T) {}
 
-var run int
+var run int32
 
 //dd:test.unskippable
 func TestEarlyFlakeDetection(t *testing.T) {
-	run++
-	fmt.Printf(" Run: %d", run)
-	if run%2 == 0 {
+	runValue := atomic.AddInt32(&run, 1)
+	if os.Getenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled) == "true" {
+		<-time.After(4 * time.Second)
+	}
+	fmt.Printf(" Run: %d", runValue)
+	if runValue%2 == 0 {
 		fmt.Println(" Failed")
 		t.FailNow()
 	}
