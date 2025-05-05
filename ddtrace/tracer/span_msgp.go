@@ -201,7 +201,7 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
-	// check for omitted fields
+	// omitempty: check for empty values
 	zb0001Len := uint32(15)
 	var zb0001Mask uint16 /* 15 bits */
 	_ = zb0001Mask
@@ -226,203 +226,202 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-
-	// skip if no fields are to be emitted
-	if zb0001Len != 0 {
-		// write "name"
-		err = en.Append(0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	if zb0001Len == 0 {
+		return
+	}
+	// write "name"
+	err = en.Append(0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.name)
+	if err != nil {
+		err = msgp.WrapError(err, "name")
+		return
+	}
+	// write "service"
+	err = en.Append(0xa7, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.service)
+	if err != nil {
+		err = msgp.WrapError(err, "service")
+		return
+	}
+	// write "resource"
+	err = en.Append(0xa8, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.resource)
+	if err != nil {
+		err = msgp.WrapError(err, "resource")
+		return
+	}
+	// write "type"
+	err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.spanType)
+	if err != nil {
+		err = msgp.WrapError(err, "spanType")
+		return
+	}
+	// write "start"
+	err = en.Append(0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt64(z.start)
+	if err != nil {
+		err = msgp.WrapError(err, "start")
+		return
+	}
+	// write "duration"
+	err = en.Append(0xa8, 0x64, 0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt64(z.duration)
+	if err != nil {
+		err = msgp.WrapError(err, "duration")
+		return
+	}
+	if (zb0001Mask & 0x40) == 0 { // if not empty
+		// write "meta"
+		err = en.Append(0xa4, 0x6d, 0x65, 0x74, 0x61)
 		if err != nil {
 			return
 		}
-		err = en.WriteString(z.name)
+		err = en.WriteMapHeader(uint32(len(z.meta)))
 		if err != nil {
-			err = msgp.WrapError(err, "name")
+			err = msgp.WrapError(err, "meta")
 			return
 		}
-		// write "service"
-		err = en.Append(0xa7, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.service)
-		if err != nil {
-			err = msgp.WrapError(err, "service")
-			return
-		}
-		// write "resource"
-		err = en.Append(0xa8, 0x72, 0x65, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.resource)
-		if err != nil {
-			err = msgp.WrapError(err, "resource")
-			return
-		}
-		// write "type"
-		err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
-		if err != nil {
-			return
-		}
-		err = en.WriteString(z.spanType)
-		if err != nil {
-			err = msgp.WrapError(err, "spanType")
-			return
-		}
-		// write "start"
-		err = en.Append(0xa5, 0x73, 0x74, 0x61, 0x72, 0x74)
-		if err != nil {
-			return
-		}
-		err = en.WriteInt64(z.start)
-		if err != nil {
-			err = msgp.WrapError(err, "start")
-			return
-		}
-		// write "duration"
-		err = en.Append(0xa8, 0x64, 0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
-		if err != nil {
-			return
-		}
-		err = en.WriteInt64(z.duration)
-		if err != nil {
-			err = msgp.WrapError(err, "duration")
-			return
-		}
-		if (zb0001Mask & 0x40) == 0 { // if not omitted
-			// write "meta"
-			err = en.Append(0xa4, 0x6d, 0x65, 0x74, 0x61)
-			if err != nil {
-				return
-			}
-			err = en.WriteMapHeader(uint32(len(z.meta)))
+		for za0001, za0002 := range z.meta {
+			err = en.WriteString(za0001)
 			if err != nil {
 				err = msgp.WrapError(err, "meta")
 				return
 			}
-			for za0001, za0002 := range z.meta {
-				err = en.WriteString(za0001)
-				if err != nil {
-					err = msgp.WrapError(err, "meta")
-					return
-				}
-				err = en.WriteString(za0002)
-				if err != nil {
-					err = msgp.WrapError(err, "meta", za0001)
-					return
-				}
-			}
-		}
-		// write "meta_struct"
-		err = en.Append(0xab, 0x6d, 0x65, 0x74, 0x61, 0x5f, 0x73, 0x74, 0x72, 0x75, 0x63, 0x74)
-		if err != nil {
-			return
-		}
-		err = z.metaStruct.EncodeMsg(en)
-		if err != nil {
-			err = msgp.WrapError(err, "metaStruct")
-			return
-		}
-		if (zb0001Mask & 0x100) == 0 { // if not omitted
-			// write "metrics"
-			err = en.Append(0xa7, 0x6d, 0x65, 0x74, 0x72, 0x69, 0x63, 0x73)
+			err = en.WriteString(za0002)
 			if err != nil {
+				err = msgp.WrapError(err, "meta", za0001)
 				return
 			}
-			err = en.WriteMapHeader(uint32(len(z.metrics)))
+		}
+	}
+	// write "meta_struct"
+	err = en.Append(0xab, 0x6d, 0x65, 0x74, 0x61, 0x5f, 0x73, 0x74, 0x72, 0x75, 0x63, 0x74)
+	if err != nil {
+		return
+	}
+	err = z.metaStruct.EncodeMsg(en)
+	if err != nil {
+		err = msgp.WrapError(err, "metaStruct")
+		return
+	}
+	if (zb0001Mask & 0x100) == 0 { // if not empty
+		// write "metrics"
+		err = en.Append(0xa7, 0x6d, 0x65, 0x74, 0x72, 0x69, 0x63, 0x73)
+		if err != nil {
+			return
+		}
+		err = en.WriteMapHeader(uint32(len(z.metrics)))
+		if err != nil {
+			err = msgp.WrapError(err, "metrics")
+			return
+		}
+		for za0003, za0004 := range z.metrics {
+			err = en.WriteString(za0003)
 			if err != nil {
 				err = msgp.WrapError(err, "metrics")
 				return
 			}
-			for za0003, za0004 := range z.metrics {
-				err = en.WriteString(za0003)
-				if err != nil {
-					err = msgp.WrapError(err, "metrics")
-					return
-				}
-				err = en.WriteFloat64(za0004)
-				if err != nil {
-					err = msgp.WrapError(err, "metrics", za0003)
-					return
-				}
-			}
-		}
-		// write "span_id"
-		err = en.Append(0xa7, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x69, 0x64)
-		if err != nil {
-			return
-		}
-		err = en.WriteUint64(z.spanID)
-		if err != nil {
-			err = msgp.WrapError(err, "spanID")
-			return
-		}
-		// write "trace_id"
-		err = en.Append(0xa8, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64)
-		if err != nil {
-			return
-		}
-		err = en.WriteUint64(z.traceID)
-		if err != nil {
-			err = msgp.WrapError(err, "traceID")
-			return
-		}
-		// write "parent_id"
-		err = en.Append(0xa9, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x64)
-		if err != nil {
-			return
-		}
-		err = en.WriteUint64(z.parentID)
-		if err != nil {
-			err = msgp.WrapError(err, "parentID")
-			return
-		}
-		// write "error"
-		err = en.Append(0xa5, 0x65, 0x72, 0x72, 0x6f, 0x72)
-		if err != nil {
-			return
-		}
-		err = en.WriteInt32(z.error)
-		if err != nil {
-			err = msgp.WrapError(err, "error")
-			return
-		}
-		if (zb0001Mask & 0x2000) == 0 { // if not omitted
-			// write "span_links"
-			err = en.Append(0xaa, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
+			err = en.WriteFloat64(za0004)
 			if err != nil {
+				err = msgp.WrapError(err, "metrics", za0003)
 				return
 			}
-			err = en.WriteArrayHeader(uint32(len(z.spanLinks)))
+		}
+	}
+	// write "span_id"
+	err = en.Append(0xa7, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x69, 0x64)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.spanID)
+	if err != nil {
+		err = msgp.WrapError(err, "spanID")
+		return
+	}
+	// write "trace_id"
+	err = en.Append(0xa8, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.traceID)
+	if err != nil {
+		err = msgp.WrapError(err, "traceID")
+		return
+	}
+	// write "parent_id"
+	err = en.Append(0xa9, 0x70, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x64)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.parentID)
+	if err != nil {
+		err = msgp.WrapError(err, "parentID")
+		return
+	}
+	// write "error"
+	err = en.Append(0xa5, 0x65, 0x72, 0x72, 0x6f, 0x72)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt32(z.error)
+	if err != nil {
+		err = msgp.WrapError(err, "error")
+		return
+	}
+	if (zb0001Mask & 0x2000) == 0 { // if not empty
+		// write "span_links"
+		err = en.Append(0xaa, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x6c, 0x69, 0x6e, 0x6b, 0x73)
+		if err != nil {
+			return
+		}
+		err = en.WriteArrayHeader(uint32(len(z.spanLinks)))
+		if err != nil {
+			err = msgp.WrapError(err, "spanLinks")
+			return
+		}
+		for za0005 := range z.spanLinks {
+			err = z.spanLinks[za0005].EncodeMsg(en)
 			if err != nil {
-				err = msgp.WrapError(err, "spanLinks")
+				err = msgp.WrapError(err, "spanLinks", za0005)
 				return
-			}
-			for za0005 := range z.spanLinks {
-				err = z.spanLinks[za0005].EncodeMsg(en)
-				if err != nil {
-					err = msgp.WrapError(err, "spanLinks", za0005)
-					return
-				}
 			}
 		}
-		if (zb0001Mask & 0x4000) == 0 { // if not omitted
-			// write "span_events"
-			err = en.Append(0xab, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x73)
+	}
+	if (zb0001Mask & 0x4000) == 0 { // if not empty
+		// write "span_events"
+		err = en.Append(0xab, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x73)
+		if err != nil {
+			return
+		}
+		err = en.WriteArrayHeader(uint32(len(z.spanEvents)))
+		if err != nil {
+			err = msgp.WrapError(err, "spanEvents")
+			return
+		}
+		for za0006 := range z.spanEvents {
+			err = z.spanEvents[za0006].EncodeMsg(en)
 			if err != nil {
+				err = msgp.WrapError(err, "spanEvents", za0006)
 				return
-			}
-			err = en.WriteArrayHeader(uint32(len(z.spanEvents)))
-			if err != nil {
-				err = msgp.WrapError(err, "spanEvents")
-				return
-			}
-			for za0006 := range z.spanEvents {
-				err = z.spanEvents[za0006].EncodeMsg(en)
-				if err != nil {
-					err = msgp.WrapError(err, "spanEvents", za0006)
-					return
-				}
 			}
 		}
 	}
