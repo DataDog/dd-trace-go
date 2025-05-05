@@ -35,6 +35,7 @@ jobs:
     uses: ./.github/workflows/contrib-tests.yml
     with:
       go-version: ${{ matrix.go-version }}
+      runs-on: ubuntu-latest
       ref: ${{ inputs.ref || github.ref }}
     secrets: inherit
   multios-unit-tests:
