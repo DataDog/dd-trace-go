@@ -231,7 +231,7 @@ func TestFileSizeLimitsPhase1(t *testing.T) {
 		`
 		entry := `    "DD_TRACE_DEBUG": "false"`
 		content := header
-		for len(content) <= maxFileSizeDefault {
+		for int64(len(content)) <= fileSizeLimit {
 			content += entry
 		}
 
@@ -239,7 +239,22 @@ func TestFileSizeLimitsPhase1(t *testing.T) {
 		assert.NoError(t, err)
 		defer os.Remove("test.yml")
 		scfg := parseFile("test.yml")
-		assert.True(t, scfg.isEmpty()) // file parsing succeeded
+		assert.True(t, scfg.isEmpty()) // file parsing failed
+	})
+	t.Run("DD_TRACE_STABLE_CONFIG_FILE_MAX_SIZE configured", func(t *testing.T) {
+		t.Setenv("DD_TRACE_STABLE_CONFIG_FILE_MAX_SIZE", "1")
+		// re-run getFileSizeLimit after setting env
+		fileSizeLimit = getFileSizeLimit()
+		data := `
+"config_id": 67890
+"apm_configuration_default":
+    "DD_APM_TRACING_ENABLED": "false"
+`
+		err := os.WriteFile("test.yml", []byte(data), 0644)
+		assert.NoError(t, err)
+		defer os.Remove("test.yml")
+		scfg := parseFile("test.yml")
+		assert.True(t, scfg.isEmpty()) // file parsing should fail
 	})
 }
 

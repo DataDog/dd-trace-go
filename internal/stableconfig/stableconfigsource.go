@@ -9,6 +9,7 @@ package stableconfig
 
 import (
 	"os"
+	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -19,9 +20,8 @@ const (
 	localFilePath   = "/etc/datadog-agent/application_monitoring.yaml"
 	managedFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
 
-	// maxFileSize constants define the maximum size in bytes for stable config files with apm_configuration_default and apm_configuration_rules, respectively
-	maxFileSizeDefault = 4 * 1024   // 4KB
-	maxFileSizeRules   = 256 * 1024 // 256 KB
+	// defaultMaxFileSize defines the default maximum size in bytes for stable config files
+	defaultMaxFileSize int64 = 256 * 1024 // 256 KB
 )
 
 // LocalConfig holds the configuration loaded from the user-managed file.
@@ -29,6 +29,9 @@ var LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStab
 
 // ManagedConfig holds the configuration loaded from the fleet-managed file.
 var ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
+
+// fileSizeLimit determines the actual maximum size in bytes for stable config files, determined by DD_TRACE_STABLE_CONFIG_FILE_MAX_SIZE if set, else defaults to defaultMaxFileSize
+var fileSizeLimit = getFileSizeLimit()
 
 // stableConfigSource represents a source of stable configuration loaded from a file.
 type stableConfigSource struct {
@@ -50,6 +53,17 @@ func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConf
 	}
 }
 
+func getFileSizeLimit() int64 {
+	if v, ok := os.LookupEnv("DD_TRACE_STABLE_CONFIG_FILE_MAX_SIZE"); ok {
+		if vv, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return vv
+		} else {
+			log.Debug("Error converting DD_TRACE_STABLE_CONFIG_FILE_MAX_SIZE value %s to int64; using defaults instead", v)
+		}
+	}
+	return defaultMaxFileSize
+}
+
 // ParseFile reads and parses the config file at the given path.
 // Returns an empty config if the file doesn't exist or is invalid.
 func parseFile(filePath string) *stableConfig {
@@ -62,12 +76,11 @@ func parseFile(filePath string) *stableConfig {
 		return emptyStableConfig()
 	}
 
-	if info.Size() > maxFileSizeDefault {
+	if info.Size() > fileSizeLimit {
 		log.Warn("Stable config file %s exceeds size limit (%d bytes > %d bytes), dropping",
-			filePath, info.Size(), maxFileSizeDefault)
+			filePath, info.Size(), fileSizeLimit)
 		return emptyStableConfig()
 	}
-
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
