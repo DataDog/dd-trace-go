@@ -201,7 +201,7 @@ func TestParseFile(t *testing.T) {
 	})
 }
 
-func TestFileSizeLimits(t *testing.T) {
+func TestFileSizeLimitsPhase1(t *testing.T) {
 	t.Run("under limit", func(t *testing.T) {
 		data := `
 "config_id": 67890
@@ -231,7 +231,7 @@ func TestFileSizeLimits(t *testing.T) {
 		`
 		entry := `    "DD_TRACE_DEBUG": "false"`
 		content := header
-		for len(content) <= maxFileSize {
+		for len(content) <= maxFileSizeDefault {
 			content += entry
 		}
 
@@ -242,3 +242,73 @@ func TestFileSizeLimits(t *testing.T) {
 		assert.True(t, scfg.isEmpty()) // file parsing succeeded
 	})
 }
+
+// func TestFileSizeLimitsPhase2(t *testing.T) {
+// 	t.Run("under limit", func(t *testing.T) {
+// 		baseData := `
+// "config_id": 67890
+// "apm_configuration_default":
+//     "DD_APM_TRACING_ENABLED": "false"
+//     "DD_RUNTIME_METRICS_ENABLED": "false"
+//     "DD_LOGS_INJECTION": "false"
+//     "DD_PROFILING_ENABLED": "false"
+//     "DD_DATA_STREAMS_ENABLED": "false"
+//     "DD_APPSEC_ENABLED": "false"
+//     "DD_IAST_ENABLED": "false"
+//     "DD_DYNAMIC_INSTRUMENTATION_ENABLED": "false"
+//     "DD_DATA_JOBS_ENABLED": "false"
+//     "DD_APPSEC_SCA_ENABLED": "false"
+//     "DD_TRACE_DEBUG": "false"
+// "apm_configuration_rules":
+// `
+// 		basePhase2Data := `
+// - "selectors":
+//   - "origin": "language"
+//     "matches": ["golang"]
+//     "operator": "equals"
+//   "configuration":
+//     "DD_APM_TRACING_ENABLED": "false"
+//     "DD_RUNTIME_METRICS_ENABLED": "false"
+//     "DD_LOGS_INJECTION": "false"
+//     "DD_PROFILING_ENABLED": "false"
+//     "DD_DATA_STREAMS_ENABLED": "false"
+//     "DD_APPSEC_ENABLED": "false"
+//     "DD_IAST_ENABLED": "false"
+//     "DD_DYNAMIC_INSTRUMENTATION_ENABLED": "false"
+//     "DD_DATA_JOBS_ENABLED": "false"
+//     "DD_APPSEC_SCA_ENABLED": "false"
+//     "DD_TRACE_DEBUG": "false"
+// `
+// 		dataPhase2 := baseData
+// 		for i := 0; i < 100; i++ {
+// 			dataPhase2 += basePhase2Data
+// 		}
+
+// 		fmt.Println("MTOFF: size is ", len(dataPhase2))
+// 		scfg := parseFile("test.yml")
+// 		assert.False(t, scfg.isEmpty()) // file parsing succeeded
+
+// 		// err := os.WriteFile("test.yml", []byte(dataPhase2), 0644)
+// 		// assert.NoError(t, err)
+// 		// defer os.Remove("test.yml")
+// 		// scfg := parseFile("test.yml")
+// 		// assert.False(t, scfg.isEmpty()) // file parsing succeeded
+// 	})
+// 	t.Run("over limit", func(t *testing.T) {
+// 		// Build a valid stable configuration file that surpasses maxFileSize
+// 		header := `"config_id": 67890
+// 		"apm_configuration_default":
+// 		`
+// 		entry := `    "DD_TRACE_DEBUG": "false"`
+// 		content := header
+// 		for len(content) <= maxFileSizeDefault {
+// 			content += entry
+// 		}
+
+// 		err := os.WriteFile("test.yml", []byte(content), 0644)
+// 		assert.NoError(t, err)
+// 		defer os.Remove("test.yml")
+// 		scfg := parseFile("test.yml")
+// 		assert.True(t, scfg.isEmpty()) // file parsing succeeded
+// 	})
+// }

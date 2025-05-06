@@ -19,8 +19,9 @@ const (
 	localFilePath   = "/etc/datadog-agent/application_monitoring.yaml"
 	managedFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
 
-	// maxFileSize defines the maximum size in bytes for stable config files (4KB). This limit ensures predictable memory use and guards against malformed large files.
-	maxFileSize = 4 * 1024
+	// maxFileSize constants define the maximum size in bytes for stable config files with apm_configuration_default and apm_configuration_rules, respectively
+	maxFileSizeDefault = 4 * 1024   // 4KB
+	maxFileSizeRules   = 256 * 1024 // 256 KB
 )
 
 // LocalConfig holds the configuration loaded from the user-managed file.
@@ -61,9 +62,9 @@ func parseFile(filePath string) *stableConfig {
 		return emptyStableConfig()
 	}
 
-	if info.Size() > maxFileSize {
+	if info.Size() > maxFileSizeDefault {
 		log.Warn("Stable config file %s exceeds size limit (%d bytes > %d bytes), dropping",
-			filePath, info.Size(), maxFileSize)
+			filePath, info.Size(), maxFileSizeDefault)
 		return emptyStableConfig()
 	}
 
