@@ -274,6 +274,37 @@ jobs:
       group: "APM Larger Runners"
     env:
         TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+    services:
+      datadog-agent:
+        image: datadog/agent:latest
+        env:
+          DD_HOSTNAME: "github-actions-worker"
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: "invalid_key_but_this_is_fine"
+          DD_TEST_AGENT_HOST: "localhost"
+          DD_TEST_AGENT_PORT: 9126
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
+        ports:
+          - 8125:8125/udp
+          - 8126:8126
+      testagent:
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
+        ports:
+          - 9126:9126
+        env:
+          LOG_LEVEL: DEBUG
+          TRACE_LANGUAGE: golang
+          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
+          PORT: 9126
+          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
+          DD_POOL_TRACE_CHECK_FAILURES: true
+          DD_DISABLE_ERROR_RESPONSES: true
+      localstack:
+        image: localstack/localstack:latest
+        ports:
+          - 4566:4566
     steps:
       - name: Upload the results to Datadog CI App
         if: always()
