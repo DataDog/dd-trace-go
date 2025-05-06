@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -155,10 +154,10 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
+	req.ContentLength = int64(buffer.Len())
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set("Content-Length", strconv.Itoa(buffer.Len()))
 	if t.agentless {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
