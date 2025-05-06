@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracing
+package kafkatrace
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-func (tr *KafkaTracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
+func (tr *Tracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
 	if err != nil || tr.groupID == "" || !tr.dsmEnabled {
 		return
 	}
@@ -22,7 +22,7 @@ func (tr *KafkaTracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
 	}
 }
 
-func (tr *KafkaTracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Consumer) {
+func (tr *Tracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Consumer) {
 	if !tr.dsmEnabled {
 		return
 	}
@@ -33,7 +33,7 @@ func (tr *KafkaTracer) TrackHighWatermarkOffset(offsets []TopicPartition, consum
 	}
 }
 
-func (tr *KafkaTracer) TrackProduceOffsets(msg Message) {
+func (tr *Tracer) TrackProduceOffsets(msg Message) {
 	err := msg.GetTopicPartition().GetError()
 	if err != nil || !tr.dsmEnabled || msg.GetTopicPartition().GetTopic() == "" {
 		return
@@ -42,7 +42,7 @@ func (tr *KafkaTracer) TrackProduceOffsets(msg Message) {
 	tracer.TrackKafkaProduceOffset(tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
 }
 
-func (tr *KafkaTracer) SetConsumeCheckpoint(msg Message) {
+func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
 	if !tr.dsmEnabled || msg == nil {
 		return
 	}
@@ -62,7 +62,7 @@ func (tr *KafkaTracer) SetConsumeCheckpoint(msg Message) {
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 }
 
-func (tr *KafkaTracer) SetProduceCheckpoint(msg Message) {
+func (tr *Tracer) SetProduceCheckpoint(msg Message) {
 	if !tr.dsmEnabled || msg == nil {
 		return
 	}

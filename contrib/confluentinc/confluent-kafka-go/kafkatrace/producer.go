@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracing
+package kafkatrace
 
 import (
 	"math"
@@ -12,7 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-func WrapProduceChannel[M any, TM Message](tr *KafkaTracer, out chan M, translateFn func(M) TM) chan M {
+func WrapProduceChannel[M any, TM Message](tr *Tracer, out chan M, translateFn func(M) TM) chan M {
 	if out == nil {
 		return out
 	}
@@ -29,7 +29,7 @@ func WrapProduceChannel[M any, TM Message](tr *KafkaTracer, out chan M, translat
 	return in
 }
 
-func WrapProduceEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, translateFn func(E) TE) chan E {
+func WrapProduceEventsChannel[E any, TE Event](tr *Tracer, in chan E, translateFn func(E) TE) chan E {
 	if in == nil {
 		return nil
 	}
@@ -47,7 +47,7 @@ func WrapProduceEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, trans
 	return out
 }
 
-func (tr *KafkaTracer) StartProduceSpan(msg Message) *tracer.Span {
+func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.producerServiceName),
 		tracer.ResourceName("Produce Topic " + msg.GetTopicPartition().GetTopic()),
@@ -79,7 +79,7 @@ func (tr *KafkaTracer) StartProduceSpan(msg Message) *tracer.Span {
 	return span
 }
 
-func WrapDeliveryChannel[E any, TE Event](tr *KafkaTracer, deliveryChan chan E, span *tracer.Span, translateFn func(E) TE) (chan E, chan error) {
+func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span *tracer.Span, translateFn func(E) TE) (chan E, chan error) {
 	// if the user has selected a delivery channel, we will wrap it and
 	// wait for the delivery event to finish the span
 	if deliveryChan == nil {
