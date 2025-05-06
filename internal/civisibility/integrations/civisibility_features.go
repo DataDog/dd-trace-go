@@ -250,15 +250,7 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 			// if wheter the settings response or the env var is true we load the impacted tests analyzer
 			if ciVisibilitySettings.ImpactedTestsEnabled ||
 				internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, false) {
-				var iTests *impactedtests.ImpactedTestAnalyzer
-				var err error
-				if ciVisibilitySettings.ImpactedTestsEnabled {
-					// backend returned enabled = true, we pass the client to the analyzer for backend requests
-					iTests, err = impactedtests.NewImpactedTestAnalyzer(ciVisibilityClient)
-				} else {
-					// only local diff (not using the backend response)
-					iTests, err = impactedtests.NewImpactedTestAnalyzer(nil)
-				}
+				iTests, err := impactedtests.NewImpactedTestAnalyzer()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %v", err)
 				} else {
