@@ -8,46 +8,46 @@ package kafka
 import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 
-	tracing "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go"
+	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
 )
 
 // Option describes an option for the Kafka integration.
-type Option = tracing.Option
+type Option = kafkatrace.Option
 
 // OptionFn represents options applicable to NewConsumer, NewProducer, WrapConsumer and WrapProducer.
-type OptionFn = tracing.OptionFn
+type OptionFn = kafkatrace.OptionFn
 
 // WithContext sets the config context to ctx.
 // Deprecated: This is deprecated in favor of passing the context
 // via the message headers
-var WithContext = tracing.WithContext
+var WithContext = kafkatrace.WithContext
 
 // WithService sets the config service name to serviceName.
-var WithService = tracing.WithService
+var WithService = kafkatrace.WithService
 
 // WithAnalytics enables Trace Analytics for all started spans.
-var WithAnalytics = tracing.WithAnalytics
+var WithAnalytics = kafkatrace.WithAnalytics
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-var WithAnalyticsRate = tracing.WithAnalyticsRate
+var WithAnalyticsRate = kafkatrace.WithAnalyticsRate
 
 // WithCustomTag will cause the given tagFn to be evaluated after executing
 // a query and attach the result to the span tagged by the key.
 func WithCustomTag(tag string, tagFn func(msg *kafka.Message) interface{}) Option {
-	wrapped := func(msg tracing.Message) interface{} {
+	wrapped := func(msg kafkatrace.Message) interface{} {
 		if m, ok := msg.Unwrap().(*kafka.Message); ok {
 			return tagFn(m)
 		}
 		return nil
 	}
-	return tracing.WithCustomTag(tag, wrapped)
+	return kafkatrace.WithCustomTag(tag, wrapped)
 }
 
 // WithConfig extracts the config information for the client to be tagged
 func WithConfig(cm *kafka.ConfigMap) Option {
-	return tracing.WithConfig(wrapConfigMap(cm))
+	return kafkatrace.WithConfig(wrapConfigMap(cm))
 }
 
 // WithDataStreams enables the Data Streams monitoring product features: https://www.datadoghq.com/product/data-streams-monitoring/
-var WithDataStreams = tracing.WithDataStreams
+var WithDataStreams = kafkatrace.WithDataStreams
