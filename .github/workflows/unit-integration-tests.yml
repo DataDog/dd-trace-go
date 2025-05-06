@@ -105,21 +105,6 @@ jobs:
           reporter: github-pr-review
           workdir: internal/orchestrion/_integration
 
-  test-contrib:
-    runs-on:
-      group: "APM Larger Runners"
-    env:
-       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-       INTEGRATION: true
-    steps:
-      - name: Run Tests
-        uses: ./.github/workflows/contrib-tests.yml
-        with:
-          go-version: ${{ matrix.go-version }}
-          runs-on: ubuntu-latest
-          ref: ${{ inputs.ref || github.ref }}
-        secrets: inherit
-
   test-core:
     runs-on:
       group: "APM Larger Runners"
