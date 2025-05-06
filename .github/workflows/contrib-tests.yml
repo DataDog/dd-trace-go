@@ -209,6 +209,28 @@ jobs:
         run: |
           ./.github/workflows/apps/test-contrib-submodules.sh default ${{ toJson(matrix.chunk) }}
 
+  test-outlier-contrib:
+    runs-on:
+      group: "APM Larger Runners"
+    env:
+        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+        INTEGRATION: true
+    steps:
+      - name: Testing outlier google.golang.org/api
+        run: |
+              go get google.golang.org/api@v0.192.0 # version used to generate code
+              go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
+              go test -v ./...
+
+  upload-test-results:
+    needs:
+      - test-contrib
+      - test-outlier-contrib
+    runs-on:
+      group: "APM Larger Runners"
+    env:
+        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+    steps:
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -251,9 +273,3 @@ jobs:
                   cat summary_response.txt | jq "."
                   exit 1
               fi
-
-      - name: Testing outlier google.golang.org/api
-        run: |
-              go get google.golang.org/api@v0.192.0 # version used to generate code
-              go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
-              go test -v ./...
