@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracing
+package kafkatrace
 
 import (
 	"math"
@@ -12,7 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-func WrapConsumeEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, consumer Consumer, translateFn func(E) TE) chan E {
+func WrapConsumeEventsChannel[E any, TE Event](tr *Tracer, in chan E, consumer Consumer, translateFn func(E) TE) chan E {
 	// in will be nil when consuming via the events channel is not enabled
 	if in == nil {
 		return nil
@@ -50,7 +50,7 @@ func WrapConsumeEventsChannel[E any, TE Event](tr *KafkaTracer, in chan E, consu
 	return out
 }
 
-func (tr *KafkaTracer) StartConsumeSpan(msg Message) *tracer.Span {
+func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + msg.GetTopicPartition().GetTopic()),
