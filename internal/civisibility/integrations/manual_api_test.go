@@ -38,6 +38,11 @@ func (m *MockDdTslvEvent) SetTag(key string, value interface{}) {
 	m.Called(key, value)
 }
 
+func (m *MockDdTslvEvent) GetTag(key string) (interface{}, bool) {
+	args := m.Called(key)
+	return args.Get(0), true
+}
+
 // Mocking the DdTest interface
 type MockDdTest struct {
 	MockDdTslvEvent

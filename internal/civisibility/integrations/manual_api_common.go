@@ -9,12 +9,21 @@ import (
 	"context"
 	"sync"
 	"time"
+	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
+
+// Go linknames
+
+//go:linkname getMeta github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.getMeta
+func getMeta(s *tracer.Span, key string) (string, bool)
+
+//go:linkname getMetric github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.getMetric
+func getMetric(s *tracer.Span, key string) (float64, bool)
 
 // common
 var _ ddTslvEvent = (*ciVisibilityCommon)(nil)
@@ -72,6 +81,24 @@ func (c *ciVisibilityCommon) SetError(options ...ErrorOption) {
 
 // SetTag sets a tag on the event.
 func (c *ciVisibilityCommon) SetTag(key string, value interface{}) { c.span.SetTag(key, value) }
+
+// GetTag retrieves a tag from the event.
+func (c *ciVisibilityCommon) GetTag(key string) (interface{}, bool) {
+	// Check if the span is nil
+	if c.span == nil {
+		return nil, false
+	}
+
+	// Check if the key is a meta key
+	metaVal, ok := getMeta(c.span, key)
+	if ok {
+		return metaVal, true
+	}
+
+	// Check if the key is a metric key
+	metricVal, ok := getMetric(c.span, key)
+	return metricVal, ok
+}
 
 // fillCommonTags adds common tags to the span options for CI visibility.
 func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
