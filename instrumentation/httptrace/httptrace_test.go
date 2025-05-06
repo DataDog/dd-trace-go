@@ -420,7 +420,7 @@ func TestBaggageSpanTagsDefault(t *testing.T) {
 	defer tracer.Stop()
 
 	// Create a base context with pre-set baggage.
-	baseCtx := baggage.Set(context.Background(), "usr.id", "1234")
+	baseCtx := baggage.Set(context.Background(), "user.id", "1234")
 
 	// Create an HTTP request with that context.
 	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(baseCtx)
@@ -449,9 +449,158 @@ func TestBaggageSpanTagsDefault(t *testing.T) {
 		t.Errorf("baggage.header_key should not be included in span tags")
 	}
 	// baggage span tagging happens only at extraction
-	if _, ok := m["baggage.usr.id"]; ok {
+	if _, ok := m["baggage.user.id"]; ok {
 		t.Errorf("baggage.header_key should not be included in span tags")
 	}
 
+	span.Finish()
+}
+
+func TestBaggageSpanTagsWildcard(t *testing.T) {
+	os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", "*")
+	ResetCfg()
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "user.id=abcd,account.id=456,session.id=789,color=blue,foo=bar")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// Assert that the expected baggage keys are present with the correct values.
+	if v, ok := m["baggage.account.id"]; ok {
+		assert.Equal(t, "456", v, "should contain account.id value")
+	} else {
+		t.Errorf("baggage.account.id not found in span")
+	}
+	if v, ok := m["baggage.user.id"]; ok {
+		assert.Equal(t, "abcd", v, "should contain user.id value")
+	} else {
+		t.Errorf("baggage.user.id not found in span")
+	}
+	if v, ok := m["baggage.session.id"]; ok {
+		assert.Equal(t, "789", v, "should contain session.id value")
+	} else {
+		t.Errorf("baggage.session.id not found in span")
+	}
+	if v, ok := m["baggage.color"]; ok {
+		assert.Equal(t, "blue", v, "should contain color value")
+	} else {
+		t.Errorf("baggage.color not found in span")
+	}
+	if v, ok := m["baggage.foo"]; ok {
+		assert.Equal(t, "bar", v, "should contain foo value")
+	} else {
+		t.Errorf("baggage.foo not found in span")
+	}
+
+	span.Finish()
+}
+
+func TestBaggageSpanTagsDisabled(t *testing.T) {
+	os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", "")
+	ResetCfg()
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "user.id=abcd,account.id=456,session.id=789,color=blue")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// no values should be present in span tags
+	if _, ok := m["baggage.account.id"]; ok {
+		t.Errorf("baggage.account.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.user.id"]; ok {
+		t.Errorf("baggage.user.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.session.id"]; ok {
+		t.Errorf("baggage.session.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.color"]; ok {
+		t.Errorf("baggage.color should not be included in span tags")
+	}
+	span.Finish()
+}
+
+func TestBaggageSpanTagsSpecifyKeys(t *testing.T) {
+	os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", "device,os.version,app.version")
+	ResetCfg()
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "device=mobile,os.version=14.2,app.version=5.3.1,account.id=456,session.id=789,color=blue")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// no values should be present in span tags
+	if _, ok := m["baggage.account.id"]; ok {
+		t.Errorf("baggage.account.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.session.id"]; ok {
+		t.Errorf("baggage.session.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.color"]; ok {
+		t.Errorf("baggage.color should not be included in span tags")
+	}
+	if v, ok := m["baggage.device"]; ok {
+		assert.Equal(t, "mobile", v, "should contain device value")
+	} else {
+		t.Errorf("baggage.device not found in span")
+	}
+	if v, ok := m["baggage.os.version"]; ok {
+		assert.Equal(t, "14.2", v, "should contain os.version value")
+	} else {
+		t.Errorf("baggage.os.version not found in span")
+	}
+	if v, ok := m["baggage.app.version"]; ok {
+		assert.Equal(t, "5.3.1", v, "should contain app.version value")
+	} else {
+		t.Errorf("baggage.app.version not found in span")
+	}
+	span.Finish()
+}
+
+func TestBaggageSpanTagsMalformedHeader(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "user.id=,account.id=456,session.id=789,foo=bar")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// if baggage header is malfromed, the entire header should be dropped
+	// therefore, there will be no baggage span tags
+	if _, ok := m["baggage.account.id"]; ok {
+		t.Errorf("baggage.account.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.user.id"]; ok {
+		t.Errorf("baggage.user.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.session.id"]; ok {
+		t.Errorf("baggage.session.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.foo"]; ok {
+		t.Errorf("baggage.foo should not be included in span tags")
+	}
 	span.Finish()
 }

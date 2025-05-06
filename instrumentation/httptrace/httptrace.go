@@ -84,14 +84,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			}
 		}
 	}
-	baggageTags := make(map[string]string)
-	allowed := make(map[string]struct{})
-	for _, key := range strings.Split(cfg.baggageTagKeys, ",") {
-		trimmed := strings.TrimSpace(key)
-		if trimmed != "" {
-			allowed[trimmed] = struct{}{}
-		}
-	}
+
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
 		func(ssCfg *tracer.StartSpanConfig) {
@@ -119,10 +112,15 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 					ctx := r.Context()
 					spanctx.ForeachBaggageItem(func(k, v string) bool {
-						if _, ok := allowed[k]; ok {
-							baggageTags["baggage."+k] = v
-						}
+						// always propagate into the context
 						ctx = baggage.Set(ctx, k, v)
+						// tag only if we allow all or it’s in our map
+						if cfg.allowAllBaggage || func() bool {
+							_, ok := cfg.baggageTagKeys[k]
+							return ok
+						}() {
+							ssCfg.Tags["baggage."+k] = v
+						}
 						return true
 					})
 					r = r.WithContext(ctx)
@@ -134,9 +132,6 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				ssCfg.Tags[k] = v
 			}
 
-			for k, v := range baggageTags {
-				ssCfg.Tags[k] = v
-			}
 		})
 
 	nopts = append(nopts, opts...)
