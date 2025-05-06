@@ -273,7 +273,6 @@ jobs:
         image: localstack/localstack:latest
         ports:
           - 4566:4566
-
     steps:
       - name: Checkout
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
@@ -455,7 +454,7 @@ jobs:
         if: always()
         continue-on-error: true
         shell: bash
-        run: bash <(curl -s https://codecov.io/bash)
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
       - name: Get Datadog APM Test Agent Logs
         if: always()
