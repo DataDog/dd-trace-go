@@ -130,8 +130,6 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
-      SYSTEM_TESTS_AWS_ACCESS_KEY_ID: ${{ secrets.SYSTEM_TESTS_IDM_AWS_ACCESS_KEY_ID }}
-      SYSTEM_TESTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SYSTEM_TESTS_IDM_AWS_SECRET_ACCESS_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
