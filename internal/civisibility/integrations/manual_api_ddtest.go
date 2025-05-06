@@ -78,6 +78,11 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 		},
 	}
 
+	// If we have a global test event start hook we call it here.
+	if globalTestEventStartHook != nil {
+		globalTestEventStartHook(t)
+	}
+
 	// Note: if the process is killed some tests will not be closed and will be lost. This is a known limitation.
 	// We will not close it because there's no a good test status to report in this case, and we don't want to report a false positive (pass, fail, or skip).
 
@@ -125,6 +130,11 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 
 	if defaults.skipReason != "" {
 		t.span.SetTag(constants.TestSkipReason, defaults.skipReason)
+	}
+
+	// If we have a global test event finish hook we call it here.
+	if globalTestEventFinishHook != nil {
+		globalTestEventFinishHook(t)
 	}
 
 	t.span.Finish(tracer.FinishTime(defaults.finishTime))
