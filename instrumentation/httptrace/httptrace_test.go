@@ -604,3 +604,67 @@ func TestBaggageSpanTagsMalformedHeader(t *testing.T) {
 	}
 	span.Finish()
 }
+
+func TestBaggageSpanTagsCaseSensitive(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "user.id=doggo,ACCOUNT.id=456,seSsIon.id=789")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// no values should be present in span tags
+	if _, ok := m["baggage.account.id"]; ok {
+		t.Errorf("baggage.account.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.session.id"]; ok {
+		t.Errorf("baggage.session.id should not be included in span tags")
+	}
+	if v, ok := m["baggage.user.id"]; ok {
+		assert.Equal(t, "doggo", v, "should contain user.id value")
+	} else {
+		t.Errorf("baggage.user.id not found in span")
+	}
+	span.Finish()
+}
+
+func TestBaggageSpanTagsExtractionOnly(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+	ctx := baggage.Set(context.Background(), "user.id", "alice")
+	ctx = baggage.Set(ctx, "account.id", "testaccount")
+	ctx = baggage.Set(ctx, "region", "us-east-1")
+
+	// Create an HTTP request with context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(ctx)
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "user.id=john,session.id=testingsession")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// baggage span tagging happens only at extraction
+	if _, ok := m["baggage.account.id"]; ok {
+		t.Errorf("baggage.account.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.region"]; ok {
+		t.Errorf("baggage.region should not be included in span tags")
+	}
+	if v, ok := m["baggage.user.id"]; ok {
+		assert.Equal(t, "john", v, "should contain user.id value")
+	} else {
+		t.Errorf("baggage.user.id not found in span")
+	}
+	if v, ok := m["baggage.session.id"]; ok {
+		assert.Equal(t, "testingsession", v, "should contain session.id value")
+	} else {
+		t.Errorf("baggage.session.id not found in span")
+	}
+	span.Finish()
+}
