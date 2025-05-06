@@ -9,6 +9,7 @@ import (
 	"context"
 	"runtime"
 	"time"
+	_ "unsafe" // for go:linkname
 )
 
 // TestResultStatus represents the result status of a test.
@@ -303,11 +304,15 @@ var globalTestEventStartHook func(interface{}) = nil
 var globalTestEventFinishHook func(interface{}) = nil
 
 // SetGlobalTestEventStartHook sets a global hook to be called when a test event is started.
+
+//go:linkname SetGlobalTestEventStartHook
 func SetGlobalTestEventStartHook(hook func(interface{})) {
 	globalTestEventStartHook = hook
 }
 
 // SetGlobalTestEventFinishHook sets a global hook to be called when a test event is finished.
+//
+//go:linkname SetGlobalTestEventFinishHook
 func SetGlobalTestEventFinishHook(hook func(interface{})) {
 	globalTestEventFinishHook = hook
 }
