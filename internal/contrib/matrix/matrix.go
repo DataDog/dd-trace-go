@@ -18,7 +18,8 @@ import (
 // Outputs a JSON encoded array that can be used as a matrix input to GitHub workflows.
 // Rather than testing all contribs under one job, we would rather parallelize the jobs
 // by using a matrix.
-// dd-trace-go shares 12 runners. Choose up to 3 to run our contrib tests on.
+// dd-trace-go shares 12 runners, so the number of runners being used for these jobs should
+// not exceed 12 (and should be less).
 // TODO: can we find an optimal number of runners that will make the test efficient without
 // creating too much cost?
 func main() {
@@ -30,7 +31,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	numRunners := 3
+	numRunners := 6
 	contribs := make([]string, numRunners)
 	i := 0
 	dec := json.NewDecoder(&stdout)
