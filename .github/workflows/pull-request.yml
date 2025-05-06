@@ -24,7 +24,7 @@ jobs:
       go-version: "1.23"
       ref: ${{ github.ref }}
     secrets: inherit
-  contrib-tests:
+  test-contrib:
     uses: ./.github/workflows/contrib-tests.yml
     with:
       go-version: ${{ matrix.go-version }}
