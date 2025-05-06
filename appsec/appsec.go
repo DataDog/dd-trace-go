@@ -86,7 +86,6 @@ func setUser(ctx context.Context, id string, userEventType usersec.UserEventType
 		UserLogin: login,
 		UserOrg:   userOrg,
 		SessionID: sessionID,
-		Success:   true,
 	})
 
 	return *errPtr
