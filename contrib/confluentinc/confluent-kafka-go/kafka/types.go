@@ -6,16 +6,16 @@
 package kafka
 
 import (
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 
-	tracing "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go"
+	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
 )
 
 type wMessage struct {
 	*kafka.Message
 }
 
-func wrapMessage(msg *kafka.Message) tracing.Message {
+func wrapMessage(msg *kafka.Message) kafkatrace.Message {
 	if msg == nil {
 		return nil
 	}
@@ -34,15 +34,15 @@ func (w *wMessage) GetKey() []byte {
 	return w.Message.Key
 }
 
-func (w *wMessage) GetHeaders() []tracing.Header {
-	hs := make([]tracing.Header, 0, len(w.Headers))
+func (w *wMessage) GetHeaders() []kafkatrace.Header {
+	hs := make([]kafkatrace.Header, 0, len(w.Headers))
 	for _, h := range w.Headers {
 		hs = append(hs, wrapHeader(h))
 	}
 	return hs
 }
 
-func (w *wMessage) SetHeaders(headers []tracing.Header) {
+func (w *wMessage) SetHeaders(headers []kafkatrace.Header) {
 	hs := make([]kafka.Header, 0, len(headers))
 	for _, h := range headers {
 		hs = append(hs, kafka.Header{
@@ -53,7 +53,7 @@ func (w *wMessage) SetHeaders(headers []tracing.Header) {
 	w.Message.Headers = hs
 }
 
-func (w *wMessage) GetTopicPartition() tracing.TopicPartition {
+func (w *wMessage) GetTopicPartition() kafkatrace.TopicPartition {
 	return wrapTopicPartition(w.Message.TopicPartition)
 }
 
@@ -61,7 +61,7 @@ type wHeader struct {
 	kafka.Header
 }
 
-func wrapHeader(h kafka.Header) tracing.Header {
+func wrapHeader(h kafka.Header) kafkatrace.Header {
 	return &wHeader{h}
 }
 
@@ -77,12 +77,12 @@ type wTopicPartition struct {
 	kafka.TopicPartition
 }
 
-func wrapTopicPartition(tp kafka.TopicPartition) tracing.TopicPartition {
+func wrapTopicPartition(tp kafka.TopicPartition) kafkatrace.TopicPartition {
 	return wTopicPartition{tp}
 }
 
-func wrapTopicPartitions(tps []kafka.TopicPartition) []tracing.TopicPartition {
-	wtps := make([]tracing.TopicPartition, 0, len(tps))
+func wrapTopicPartitions(tps []kafka.TopicPartition) []kafkatrace.TopicPartition {
+	wtps := make([]kafkatrace.TopicPartition, 0, len(tps))
 	for _, tp := range tps {
 		wtps = append(wtps, wTopicPartition{tp})
 	}
@@ -112,18 +112,18 @@ type wEvent struct {
 	kafka.Event
 }
 
-func wrapEvent(event kafka.Event) tracing.Event {
+func wrapEvent(event kafka.Event) kafkatrace.Event {
 	return wEvent{event}
 }
 
-func (w wEvent) KafkaMessage() (tracing.Message, bool) {
+func (w wEvent) KafkaMessage() (kafkatrace.Message, bool) {
 	if m, ok := w.Event.(*kafka.Message); ok {
 		return wrapMessage(m), true
 	}
 	return nil, false
 }
 
-func (w wEvent) KafkaOffsetsCommitted() (tracing.OffsetsCommitted, bool) {
+func (w wEvent) KafkaOffsetsCommitted() (kafkatrace.OffsetsCommitted, bool) {
 	if oc, ok := w.Event.(kafka.OffsetsCommitted); ok {
 		return wrapOffsetsCommitted(oc), true
 	}
@@ -134,7 +134,7 @@ type wOffsetsCommitted struct {
 	kafka.OffsetsCommitted
 }
 
-func wrapOffsetsCommitted(oc kafka.OffsetsCommitted) tracing.OffsetsCommitted {
+func wrapOffsetsCommitted(oc kafka.OffsetsCommitted) kafkatrace.OffsetsCommitted {
 	return wOffsetsCommitted{oc}
 }
 
@@ -142,8 +142,8 @@ func (w wOffsetsCommitted) GetError() error {
 	return w.Error
 }
 
-func (w wOffsetsCommitted) GetOffsets() []tracing.TopicPartition {
-	ttps := make([]tracing.TopicPartition, 0, len(w.Offsets))
+func (w wOffsetsCommitted) GetOffsets() []kafkatrace.TopicPartition {
+	ttps := make([]kafkatrace.TopicPartition, 0, len(w.Offsets))
 	for _, tp := range w.Offsets {
 		ttps = append(ttps, wrapTopicPartition(tp))
 	}
@@ -154,7 +154,7 @@ type wConfigMap struct {
 	cfg *kafka.ConfigMap
 }
 
-func wrapConfigMap(cm *kafka.ConfigMap) tracing.ConfigMap {
+func wrapConfigMap(cm *kafka.ConfigMap) kafkatrace.ConfigMap {
 	return &wConfigMap{cm}
 }
 
