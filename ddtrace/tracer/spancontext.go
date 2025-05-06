@@ -491,7 +491,7 @@ func (t *trace) setTraceTags(s *Span, cfg TracerConf) {
 	}
 	if cfg.ProcessTags {
 		if pTags := processtags.ProcessTags(); pTags != "" {
-			s.setMeta(keyProcessTags, processtags.ProcessTags())
+			s.setMeta(keyProcessTags, pTags)
 		}
 	}
 }

@@ -11,12 +11,15 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var (
-	processTags      = make(map[string]string)
-	processTagsMutex sync.RWMutex
+	processTags         = make(map[string]string)
+	processTagsTagValue = ""
+	processTagsMutex    sync.RWMutex
 )
 
 func init() {
@@ -30,14 +33,12 @@ func init() {
 		tags["entrypoint.name"] = filepath.Base(execPath)
 		tags["entrypoint.basedir"] = baseDirName
 	}
-
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Debug("failed to get working directory: %v", err)
 	} else {
 		tags["workdir"] = filepath.Base(wd)
 	}
-
 	if len(tags) > 0 {
 		AddTags(tags)
 	}
@@ -50,24 +51,25 @@ func AddTags(tags map[string]string) {
 	for k, v := range tags {
 		processTags[k] = v
 	}
+	processTagsTagValue = serializeProcessTags(processTags)
 }
 
 // ProcessTags returns the process tags serialized to string.
-// TODO: cache this value.
 func ProcessTags() string {
 	processTagsMutex.RLock()
 	defer processTagsMutex.RUnlock()
+	return processTagsTagValue
+}
 
+func serializeProcessTags(pTags map[string]string) string {
 	var b strings.Builder
 	first := true
-	for k, val := range processTags {
+	for k, val := range pTags {
 		if !first {
 			b.WriteByte(',')
 		}
 		first = false
-		b.WriteString(k)
-		b.WriteByte(':')
-		b.WriteString(val)
+		b.WriteString(traceutil.NormalizeTag(k + ":" + val))
 	}
 	return b.String()
 }
