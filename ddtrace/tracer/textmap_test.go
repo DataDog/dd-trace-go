@@ -2777,3 +2777,23 @@ func TestInjectBaggageMaxBytes(t *testing.T) {
 	headerSize := len([]byte(headerValue))
 	assert.LessOrEqual(headerSize, baggageMaxBytes)
 }
+
+func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  "foo=,bar,key1=val1,key2=val2,key3=val3",
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	// since the header is malformed, we should not have any baggage items
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 0)
+}
