@@ -287,7 +287,7 @@ jobs:
         if: always()
         continue-on-error: true
         shell: bash
-        run: bash <(curl -s https://codecov.io/bash)
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
       - name: Get Datadog APM Test Agent Logs
         if: always()
@@ -377,4 +377,4 @@ jobs:
       - name: Upload Coverage
         if: always()
         shell: bash
-        run: bash <(curl -s https://codecov.io/bash)
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
