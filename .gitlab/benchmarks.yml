@@ -25,7 +25,7 @@ benchmark:
     expire_in: 3 months
 
 matrixes:
-  extends: benchmarks
+  extends: benchmark
   parallel:
     matrix:
       - DIRECTORY: "./ddtrace"
