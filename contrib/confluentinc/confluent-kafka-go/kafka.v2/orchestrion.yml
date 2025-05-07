@@ -24,18 +24,18 @@ aspects:
           type: "*ConfigMap"
       - inject-declarations:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
-            telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
-            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
           lang: go1.18
           template: |-
-            const __dd_ckgoVersion = tracing.CKGoVersion2
-
+            const __dd_ckgoVersion = kafkatrace.CKGoVersion2
+            var __dd_instr *instrumentation.Instrumentation
+            
             type __dd_wMessage struct {
               *Message
             }
 
-            func __dd_wrapMessage(msg *Message) tracing.Message {
+            func __dd_wrapMessage(msg *Message) kafkatrace.Message {
               if msg == nil {
                 return nil
               }
@@ -54,15 +54,15 @@ aspects:
               return w.Message.Key
             }
 
-            func (w *__dd_wMessage) GetHeaders() []tracing.Header {
-              hs := make([]tracing.Header, 0, len(w.Headers))
+            func (w *__dd_wMessage) GetHeaders() []kafkatrace.Header {
+              hs := make([]kafkatrace.Header, 0, len(w.Headers))
               for _, h := range w.Headers {
                 hs = append(hs, __dd_wrapHeader(h))
               }
               return hs
             }
 
-            func (w *__dd_wMessage) SetHeaders(headers []tracing.Header) {
+            func (w *__dd_wMessage) SetHeaders(headers []kafkatrace.Header) {
               hs := make([]Header, 0, len(headers))
               for _, h := range headers {
                 hs = append(hs, Header{
@@ -73,7 +73,7 @@ aspects:
               w.Message.Headers = hs
             }
 
-            func (w *__dd_wMessage) GetTopicPartition() tracing.TopicPartition {
+            func (w *__dd_wMessage) GetTopicPartition() kafkatrace.TopicPartition {
               return __dd_wrapTopicPartition(w.Message.TopicPartition)
             }
 
@@ -81,7 +81,7 @@ aspects:
               Header
             }
 
-            func __dd_wrapHeader(h Header) tracing.Header {
+            func __dd_wrapHeader(h Header) kafkatrace.Header {
               return &__dd_wHeader{h}
             }
 
@@ -97,12 +97,12 @@ aspects:
               TopicPartition
             }
 
-            func __dd_wrapTopicPartition(tp TopicPartition) tracing.TopicPartition {
+            func __dd_wrapTopicPartition(tp TopicPartition) kafkatrace.TopicPartition {
               return __dd_wTopicPartition{tp}
             }
 
-            func __dd_wrapTopicPartitions(tps []TopicPartition) []tracing.TopicPartition {
-              wtps := make([]tracing.TopicPartition, 0, len(tps))
+            func __dd_wrapTopicPartitions(tps []TopicPartition) []kafkatrace.TopicPartition {
+              wtps := make([]kafkatrace.TopicPartition, 0, len(tps))
               for _, tp := range tps {
                 wtps = append(wtps, __dd_wTopicPartition{tp})
               }
@@ -132,18 +132,18 @@ aspects:
               Event
             }
 
-            func __dd_wrapEvent(event Event) tracing.Event {
+            func __dd_wrapEvent(event Event) kafkatrace.Event {
               return __dd_wEvent{event}
             }
 
-            func (w __dd_wEvent) KafkaMessage() (tracing.Message, bool) {
+            func (w __dd_wEvent) KafkaMessage() (kafkatrace.Message, bool) {
               if m, ok := w.Event.(*Message); ok {
                 return __dd_wrapMessage(m), true
               }
               return nil, false
             }
 
-            func (w __dd_wEvent) KafkaOffsetsCommitted() (tracing.OffsetsCommitted, bool) {
+            func (w __dd_wEvent) KafkaOffsetsCommitted() (kafkatrace.OffsetsCommitted, bool) {
               if oc, ok := w.Event.(OffsetsCommitted); ok {
                 return __dd_wrapOffsetsCommitted(oc), true
               }
@@ -154,7 +154,7 @@ aspects:
               OffsetsCommitted
             }
 
-            func __dd_wrapOffsetsCommitted(oc OffsetsCommitted) tracing.OffsetsCommitted {
+            func __dd_wrapOffsetsCommitted(oc OffsetsCommitted) kafkatrace.OffsetsCommitted {
               return __dd_wOffsetsCommitted{oc}
             }
 
@@ -162,8 +162,8 @@ aspects:
               return w.Error
             }
 
-            func (w __dd_wOffsetsCommitted) GetOffsets() []tracing.TopicPartition {
-              ttps := make([]tracing.TopicPartition, 0, len(w.Offsets))
+            func (w __dd_wOffsetsCommitted) GetOffsets() []kafkatrace.TopicPartition {
+              ttps := make([]kafkatrace.TopicPartition, 0, len(w.Offsets))
               for _, tp := range w.Offsets {
                 ttps = append(ttps, __dd_wrapTopicPartition(tp))
               }
@@ -174,7 +174,7 @@ aspects:
               cfg *ConfigMap
             }
 
-            func __dd_wrapConfigMap(cm *ConfigMap) tracing.ConfigMap {
+            func __dd_wrapConfigMap(cm *ConfigMap) kafkatrace.ConfigMap {
               return &__dd_wConfigMap{cm}
             }
 
@@ -183,26 +183,25 @@ aspects:
             }
 
             func init() {
-              telemetry.LoadIntegration(tracing.ComponentName(__dd_ckgoVersion))
-              tracer.MarkIntegrationImported(tracing.IntegrationName(__dd_ckgoVersion))
+              __dd_instr = kafkatrace.Package(__dd_ckgoVersion)
             }
 
-            func __dd_newKafkaTracer(opts ...tracing.Option) *tracing.KafkaTracer {
+            func __dd_newKafkaTracer(opts ...kafkatrace.Option) *kafkatrace.Tracer {
               v, _ := LibraryVersion()
-              return tracing.NewKafkaTracer(__dd_ckgoVersion, v, opts...)
+              return kafkatrace.NewKafkaTracer(__dd_instr, __dd_ckgoVersion, v, opts...)
             }
 
             func __dd_initConsumer(c *Consumer) {
               if c.__dd_tracer != nil {
                 return
               }
-              var opts []tracing.Option
+              var opts []kafkatrace.Option
               if c.__dd_confmap != nil {
-                opts = append(opts, tracing.WithConfig(__dd_wrapConfigMap(c.__dd_confmap)))
+                opts = append(opts, kafkatrace.WithConfig(__dd_wrapConfigMap(c.__dd_confmap)))
               }
               c.__dd_tracer = __dd_newKafkaTracer(opts...)
               // TODO: accessing c.events here might break if the library renames this variable...
-              c.__dd_events = tracing.WrapConsumeEventsChannel(c.__dd_tracer, c.events, c, __dd_wrapEvent)
+              c.__dd_events = kafkatrace.WrapConsumeEventsChannel(c.__dd_tracer, c.events, c, __dd_wrapEvent)
             }
 
             func __dd_initProducer(p *Producer) {
@@ -212,15 +211,15 @@ aspects:
               p.__dd_tracer = __dd_newKafkaTracer()
               // TODO: accessing p.events and p.produceChannel here might break if the library renames this variable...
               p.__dd_events = p.events
-              p.__dd_produceChannel = tracing.WrapProduceChannel(p.__dd_tracer, p.produceChannel, __dd_wrapMessage)
+              p.__dd_produceChannel = kafkatrace.WrapProduceChannel(p.__dd_tracer, p.produceChannel, __dd_wrapMessage)
               if p.__dd_tracer.DSMEnabled() {
-                p.__dd_events = tracing.WrapProduceEventsChannel(p.__dd_tracer, p.events, __dd_wrapEvent)
+                p.__dd_events = kafkatrace.WrapProduceEventsChannel(p.__dd_tracer, p.events, __dd_wrapEvent)
               }
             }
 
             type __dd_eventChan = chan Event
             type __dd_messageChan = chan *Message
-            type __dd_kafkaTracer = tracing.KafkaTracer
+            type __dd_kafkaTracer = kafkatrace.Tracer
 
   ## Trace Consumer ##
   - id: NewConsumer
@@ -233,7 +232,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $conf := .Function.Argument 0 -}}
             {{- $c := .Function.Result 0 -}}
@@ -254,7 +253,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $c := .Function.Receiver -}}
             __dd_initConsumer({{ $c }})
@@ -274,7 +273,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $events := .Function.Result 0 -}}
@@ -293,7 +292,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $event := .Function.Result 0 -}}
@@ -323,7 +322,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $tps := .Function.Result 0 -}}
@@ -344,7 +343,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $tps := .Function.Result 0 -}}
@@ -365,7 +364,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $c := .Function.Receiver -}}
             {{- $tps := .Function.Result 0 -}}
@@ -447,7 +446,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
             {{- $p := .Function.Receiver -}}
@@ -459,7 +458,7 @@ aspects:
             span := p.__dd_tracer.StartProduceSpan(tMsg)
 
             var errChan chan error
-            {{ $deliveryChan }}, errChan = tracing.WrapDeliveryChannel({{ $p }}.__dd_tracer, {{ $deliveryChan }}, span, __dd_wrapEvent)
+            {{ $deliveryChan }}, errChan = kafkatrace.WrapDeliveryChannel({{ $p }}.__dd_tracer, {{ $deliveryChan }}, span, __dd_wrapEvent)
 
             {{ $p }}.__dd_tracer.SetProduceCheckpoint(tMsg)
             defer func() {

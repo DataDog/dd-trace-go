@@ -378,7 +378,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			),
 		}
 
-		tr, ok := GetGlobalTracer().(*tracer)
+		tr, ok := getGlobalTracer().(*tracer)
 		require.Equal(t, true, ok)
 		applyStatus := tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
