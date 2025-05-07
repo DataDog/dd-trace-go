@@ -14,19 +14,16 @@ import (
 	"time"
 
 	"github.com/redis/rueidis"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const (
-	componentName      = "redis/rueidis"
-	defaultServiceName = "redis.client"
-)
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/redis/rueidis")
+	instr = instrumentation.Load(instrumentation.PackageRedisRueidis)
 }
 
 var (
@@ -74,14 +71,14 @@ type command struct {
 	raw       string
 }
 
-func (c *client) startSpan(ctx context.Context, cmd command) (tracer.Span, context.Context) {
+func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, context.Context) {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(cmd.statement),
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.Tag(ext.TargetHost, c.host),
 		tracer.Tag(ext.TargetPort, c.port),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageRedisRueidis),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		tracer.Tag(ext.TargetDB, c.dbIndex),
@@ -101,12 +98,21 @@ func (c *client) startSpan(ctx context.Context, cmd command) (tracer.Span, conte
 	return tracer.StartSpanFromContext(ctx, "redis.command", opts...)
 }
 
-func (c *client) finishSpan(span tracer.Span, err error) {
+func (c *client) finishSpan(span *tracer.Span, err error) {
 	var opts []tracer.FinishOption
-	if err != nil && !rueidis.IsRedisNil(err) {
+	if c.cfg.errCheck(err) {
 		opts = append(opts, tracer.WithError(err))
 	}
 	span.Finish(opts...)
+}
+
+func (c *client) firstError(s []rueidis.RedisResult) error {
+	for _, result := range s {
+		if err := result.Error(); c.cfg.errCheck(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *client) B() rueidis.Builder {
@@ -117,14 +123,14 @@ func (c *client) Do(ctx context.Context, cmd rueidis.Completed) rueidis.RedisRes
 	span, ctx := c.startSpan(ctx, processCommand(&cmd))
 	resp := c.client.Do(ctx, cmd)
 	setClientCacheTags(span, resp)
-	span.Finish(tracer.WithError(resp.Error()))
+	c.finishSpan(span, resp.Error())
 	return resp
 }
 
 func (c *client) DoMulti(ctx context.Context, multi ...rueidis.Completed) []rueidis.RedisResult {
 	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
 	resp := c.client.DoMulti(ctx, multi...)
-	c.finishSpan(span, firstError(resp))
+	c.finishSpan(span, c.firstError(resp))
 	return resp
 }
 
@@ -150,7 +156,7 @@ func (c *client) DoCache(ctx context.Context, cmd rueidis.Cacheable, ttl time.Du
 func (c *client) DoMultiCache(ctx context.Context, multi ...rueidis.CacheableTTL) []rueidis.RedisResult {
 	span, ctx := c.startSpan(ctx, processCommandMultiCache(multi))
 	resp := c.client.DoMultiCache(ctx, multi...)
-	c.finishSpan(span, firstError(resp))
+	c.finishSpan(span, c.firstError(resp))
 	return resp
 }
 
@@ -199,6 +205,10 @@ func (c *client) Nodes() map[string]rueidis.Client {
 		}
 	}
 	return nodes
+}
+
+func (c *client) Mode() rueidis.ClientMode {
+	return c.client.Mode()
 }
 
 type dedicatedClient struct {
@@ -264,16 +274,7 @@ func multiCommand(cmds []command) command {
 	}
 }
 
-func firstError(s []rueidis.RedisResult) error {
-	for _, result := range s {
-		if err := result.Error(); err != nil && !rueidis.IsRedisNil(err) {
-			return err
-		}
-	}
-	return nil
-}
-
-func setClientCacheTags(s tracer.Span, result rueidis.RedisResult) {
+func setClientCacheTags(s *tracer.Span, result rueidis.RedisResult) {
 	s.SetTag(ext.RedisClientCacheHit, result.IsCacheHit())
 	s.SetTag(ext.RedisClientCacheTTL, result.CacheTTL())
 	s.SetTag(ext.RedisClientCachePTTL, result.CachePTTL())

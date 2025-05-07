@@ -7,16 +7,15 @@ package opentelemetry
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -29,7 +28,7 @@ var _ oteltrace.Span = (*span)(nil)
 type span struct {
 	noop.Span               // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
 	mu         sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
-	DD         tracer.Span
+	DD         *tracer.Span
 	finished   bool
 	attributes map[string]interface{}
 	spanKind   oteltrace.SpanKind
@@ -49,9 +48,8 @@ func (s *span) SetName(name string) {
 
 // spanEvent holds information about span events
 type spanEvent struct {
-	Name         string                 `json:"name"`
-	TimeUnixNano int64                  `json:"time_unix_nano"`
-	Attributes   map[string]interface{} `json:"attributes,omitempty"`
+	name    string
+	options []tracer.SpanEventOption
 }
 
 func (s *span) End(options ...oteltrace.SpanEndOption) {
@@ -79,13 +77,8 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
 	}
-	if s.events != nil {
-		b, err := json.Marshal(s.events)
-		if err == nil {
-			s.DD.SetTag("events", string(b))
-		} else {
-			log.Debug("Issue marshaling span events; events dropped from span meta\n%v", err)
-		}
+	for _, evt := range s.events {
+		s.DD.AddEvent(evt.name, evt.options...)
 	}
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
@@ -93,13 +86,25 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
 		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
 	}
-	if t := finishCfg.Timestamp(); !t.IsZero() {
-		opts = append(opts, tracer.FinishTime(t))
-	}
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)
 	}
+	// If finishOpts has been appended, the following option will be a no-op.
+	// This is because finishOpts may contain a FinishTime option, which will be
+	// used to set the finish time of the span.
+	if t := finishCfg.Timestamp(); !t.IsZero() {
+		opts = append(opts, finishTime(t))
+	}
 	s.DD.Finish(opts...)
+}
+
+func finishTime(t time.Time) tracer.FinishOption {
+	return func(cfg *tracer.FinishConfig) {
+		if !cfg.FinishTime.IsZero() {
+			return
+		}
+		cfg.FinishTime = t
+	}
 }
 
 // EndOptions sets tracer.FinishOption on a given span to be executed when span is finished.
@@ -116,12 +121,7 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 	ctx := s.DD.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
-	if w3cCtx, ok := ctx.(ddtrace.SpanContextW3C); ok {
-		traceID = w3cCtx.TraceID128Bytes()
-	} else {
-		log.Debug("Non-W3C context found in span, unable to get full 128 bit trace id")
-		uint64ToByte(ctx.TraceID(), traceID[:])
-	}
+	traceID = ctx.TraceIDBytes()
 	uint64ToByte(ctx.SpanID(), spanID[:])
 	config := oteltrace.SpanContextConfig{
 		TraceID: traceID,
@@ -197,9 +197,11 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
 	e := spanEvent{
-		Name:         name,
-		TimeUnixNano: c.Timestamp().UnixNano(),
-		Attributes:   attrs,
+		name: name,
+		options: []tracer.SpanEventOption{
+			tracer.WithSpanEventTimestamp(c.Timestamp()),
+			tracer.WithSpanEventAttributes(attrs),
+		},
 	}
 	s.events = append(s.events, e)
 }

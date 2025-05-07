@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package go_control_plane_test
+package gocontrolplane
 
 import (
 	"log"
@@ -12,7 +12,6 @@ import (
 	"google.golang.org/grpc"
 
 	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	gocontrolplane "gopkg.in/DataDog/dd-trace-go.v1/contrib/envoyproxy/go-control-plane"
 )
 
 // interface fpr external processing server
@@ -32,7 +31,11 @@ func Example_server() {
 	srv := &envoyExtProcServer{}
 
 	// Register the appsec envoy external processor service
-	appsecSrv := gocontrolplane.AppsecEnvoyExternalProcessorServer(srv)
+	appsecSrv := AppsecEnvoyExternalProcessorServer(srv, AppsecEnvoyConfig{
+		IsGCPServiceExtension: false,
+		BlockingUnavailable:   false,
+	})
+
 	extprocv3.RegisterExternalProcessorServer(s, appsecSrv)
 
 	// ... register your services

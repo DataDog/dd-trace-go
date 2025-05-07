@@ -12,12 +12,12 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/eapache/queue/v2"
-	"github.com/hashicorp/go-secure-stdlib/parseutil"
 )
 
 var (
@@ -27,7 +27,7 @@ var (
 
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
-		"gopkg.in/DataDog/dd-trace-go.v1",
+		"github.com/DataDog/dd-trace-go/v2",
 		"github.com/DataDog/dd-trace-go",
 		"github.com/DataDog/go-libddwaf",
 		"github.com/DataDog/datadog-agent",
@@ -45,7 +45,7 @@ const (
 
 func init() {
 	if env := os.Getenv(envStackTraceEnabled); env != "" {
-		if e, err := parseutil.ParseBool(env); err == nil {
+		if e, err := strconv.ParseBool(env); err == nil {
 			enabled = e
 		} else {
 			log.Error("Failed to parse %s env var as boolean: %v (using default value: %v)", envStackTraceEnabled, err, enabled)
@@ -58,10 +58,10 @@ func init() {
 			return
 		}
 
-		if depth, err := parseutil.SafeParseInt(env); err == nil {
+		if depth, err := strconv.Atoi(env); err == nil {
 			defaultMaxDepth = depth
 		} else {
-			if depth <= 0 && err == nil {
+			if depth <= 0 {
 				err = errors.New("value is not a strictly positive integer")
 			}
 			log.Error("Failed to parse %s env var as a positive integer: %v (using default value: %v)", envStackTraceDepth, err, defaultMaxDepth)
@@ -100,8 +100,8 @@ type symbol struct {
 var symbolRegex = regexp.MustCompile(`^(([^(]+/)?([^(/.]+)?)(\.\(([^/)]+)\))?\.([^/()]+)$`)
 
 // parseSymbol parses a symbol name into its package, receiver and function
-// ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException
-// -> package: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace
+// ex: github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Event).NewException
+// -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
 // -> receiver: *Event
 // -> function: NewException
 func parseSymbol(name string) symbol {

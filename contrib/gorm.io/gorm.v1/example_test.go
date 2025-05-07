@@ -10,10 +10,10 @@ import (
 	"errors"
 	"log"
 
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	gormtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorm.io/gorm.v1"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
+	gormtrace "github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
@@ -27,7 +27,7 @@ type User struct {
 
 func ExampleOpen() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gormtrace.Open.
-	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithService("my-service"))
 	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -45,7 +45,7 @@ func ExampleOpen() {
 // ExampleNewTracePlugin illustrates how to trace gorm using the gorm.Plugin api.
 func ExampleNewTracePlugin() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gorm.Open and the gormtrace.TracePlugin.
-	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithService("my-service"))
 	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -69,7 +69,7 @@ func ExampleNewTracePlugin() {
 
 func ExampleContext() {
 	// Register augments the provided driver with tracing, enabling it to be loaded by gormtrace.Open.
-	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithServiceName("my-service"))
+	sqltrace.Register("pgx", &stdlib.Driver{}, sqltrace.WithService("my-service"))
 	sqlDb, err := sqltrace.Open("pgx", "postgres://pqgotest:password@localhost/pqgotest?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)

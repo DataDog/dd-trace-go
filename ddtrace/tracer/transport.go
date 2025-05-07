@@ -14,13 +14,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
-	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -125,6 +124,9 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	if err != nil {
 		return err
 	}
+	for header, value := range t.headers {
+		req.Header.Set(header, value)
+	}
 	if tracerObfuscationVersion > 0 {
 		req.Header.Set(obfuscationVersionHeader, strconv.Itoa(tracerObfuscationVersion))
 	}
@@ -158,32 +160,33 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
 	req.Header.Set(headerComputedTopLevel, "yes")
-	var tr *tracer
-	var haveTracer bool
-	if tr, haveTracer = traceinternal.GetGlobalTracer().(*tracer); haveTracer {
-		if tr.config.tracingAsTransport || tr.config.canComputeStats() {
+	if t := GetGlobalTracer(); t != nil {
+		tc := t.TracerConf()
+		if tc.TracingAsTransport || tc.CanComputeStats {
 			// tracingAsTransport uses this header to disable the trace agent's stats computation
 			// while making canComputeStats() always false to also disable client stats computation.
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
-		droppedTraces := int(atomic.SwapUint32(&tr.droppedP0Traces, 0))
-		partialTraces := int(atomic.SwapUint32(&tr.partialTraces, 0))
-		droppedSpans := int(atomic.SwapUint32(&tr.droppedP0Spans, 0))
-		if stats := tr.statsd; stats != nil {
-			stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
-				[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
-			stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
+		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
+		droppedSpans := int(tracerstats.Count(tracerstats.AgentDroppedP0Spans))
+		if tt, ok := t.(*tracer); ok {
+			if stats := tt.statsd; stats != nil {
+				stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
+					[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
+				stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+			}
 		}
 		req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
 		req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
-		reportAPIErrorsMetric(haveTracer, response, err, tr)
+		reportAPIErrorsMetric(response, err)
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
-		reportAPIErrorsMetric(haveTracer, response, err, tr)
+		reportAPIErrorsMetric(response, err)
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
@@ -198,18 +201,19 @@ func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	return response.Body, nil
 }
 
-func reportAPIErrorsMetric(haveTracer bool, response *http.Response, err error, t *tracer) {
-	if !haveTracer {
+func reportAPIErrorsMetric(response *http.Response, err error) {
+	if t, ok := GetGlobalTracer().(*tracer); ok {
+		var reason string
+		if err != nil {
+			reason = "network_failure"
+		}
+		if response != nil {
+			reason = fmt.Sprintf("server_response_%d", response.StatusCode)
+		}
+		t.statsd.Incr("datadog.tracer.api.errors", []string{"reason:" + reason}, 1)
+	} else {
 		return
 	}
-	var reason string
-	if err != nil {
-		reason = "network_failure"
-	}
-	if response != nil {
-		reason = fmt.Sprintf("server_response_%d", response.StatusCode)
-	}
-	t.statsd.Incr("datadog.tracer.api.errors", []string{"reason:" + reason}, 1)
 }
 
 func (t *httpTransport) endpoint() string {

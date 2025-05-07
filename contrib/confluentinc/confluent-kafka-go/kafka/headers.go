@@ -8,13 +8,13 @@ package kafka
 import (
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/internal/tracing"
+	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
 )
 
 // A MessageCarrier injects and extracts traces from a kafka.Message.
-type MessageCarrier = tracing.MessageCarrier
+type MessageCarrier = kafkatrace.MessageCarrier
 
 // NewMessageCarrier creates a new MessageCarrier.
 func NewMessageCarrier(msg *kafka.Message) MessageCarrier {
-	return tracing.NewMessageCarrier(wrapMessage(msg))
+	return kafkatrace.NewMessageCarrier(wrapMessage(msg))
 }

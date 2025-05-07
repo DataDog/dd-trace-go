@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 var additionalConfigs []telemetry.Configuration
@@ -58,7 +58,7 @@ func startTelemetry(c *config) {
 		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
-		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled},
+		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
 		{Name: "trace_log_directory", Value: c.logDirectory},
 		c.traceSampleRate.toTelemetry(),
@@ -104,9 +104,7 @@ func startTelemetry(c *config) {
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
 	if c.orchestrionCfg.Enabled {
-		for k, v := range c.orchestrionCfg.Metadata {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_" + k, Value: v})
-		}
+		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: c.orchestrionCfg.Metadata.Version, Origin: telemetry.OriginCode})
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
@@ -122,5 +120,12 @@ func startTelemetry(c *config) {
 		log.Debug("tracer: failed to create telemetry client: %v", err)
 		return
 	}
+
+	if c.orchestrionCfg.Enabled {
+		// If orchestrion is enabled, report it to the back-end via a telemetry metric on every flush.
+		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + c.orchestrionCfg.Metadata.Version})
+		client.AddFlushTicker(func(_ telemetry.Client) { handle.Submit(1) })
+	}
+
 	telemetry.StartApp(client)
 }

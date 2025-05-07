@@ -13,14 +13,15 @@ import (
 	"go/token"
 	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 // Test
@@ -50,7 +51,7 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 	resourceName := fmt.Sprintf("%s.%s", suite.name, name)
 
 	// Test tags should include suite, module, and session tags so the backend can calculate the suite, module, and session fingerprint from the test.
-	testTags := append(suite.tags, tracer.Tag(constants.TestName, name))
+	testTags := append(slices.Clone(suite.tags), tracer.Tag(constants.TestName, name))
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTest),
@@ -286,6 +287,15 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 			t.SetTag(constants.TestUnskippable, "true")
 			telemetry.ITRUnskippable(telemetry.TestEventType)
 			t.ctx = context.WithValue(t.ctx, constants.TestUnskippable, true)
+		}
+
+		// if impacted tests analyzer was loaded, we run it
+		if analyzer := GetImpactedTestsAnalyzer(); analyzer != nil {
+			if analyzer.IsImpacted(t.Name(), file, startLine, endLine) {
+				t.SetTag(constants.TestIsModified, "true")
+				telemetry.ImpactedTestsModified()
+				t.ctx = context.WithValue(t.ctx, constants.TestIsModified, true)
+			}
 		}
 	}
 

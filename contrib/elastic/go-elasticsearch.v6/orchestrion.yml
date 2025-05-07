@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6
+  name: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
   description: The official Go client for Elasticsearch
 
 # FIXME: in v7 and v8, if elasticsearch.Config.CACert != nil, the call to elasticsearch.NewClient will always return
@@ -24,7 +24,7 @@ aspects:
       - wrap-expression:
           imports:
             elasticsearch: github.com/elastic/go-elasticsearch/v6
-            elastictrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6
+            elastictrace: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
           template: |-
             func(cfg elasticsearch.Config) elasticsearch.Config {
               if cfg.Transport == nil {
@@ -45,7 +45,7 @@ aspects:
       - wrap-expression:
           imports:
             elasticsearch: github.com/elastic/go-elasticsearch/v6
-            elastictrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6
+            elastictrace: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
           template: |-
             func(cfg *elasticsearch.Config) *elasticsearch.Config {
               if cfg.Transport == nil {
@@ -66,7 +66,7 @@ aspects:
       - wrap-expression:
           imports:
             elasticsearch: github.com/elastic/go-elasticsearch/v7
-            elastictrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6
+            elastictrace: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
           template: &templateValV7 |-
             func(cfg elasticsearch.Config) elasticsearch.Config {
               if cfg.CACert != nil {
@@ -91,7 +91,7 @@ aspects:
       - wrap-expression:
           imports:
             elasticsearch: github.com/elastic/go-elasticsearch/v7
-            elastictrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6
+            elastictrace: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
           template: &templatePtrV7 |-
             func(cfg *elasticsearch.Config) *elasticsearch.Config {
               if cfg.CACert != nil {
@@ -116,7 +116,7 @@ aspects:
       - wrap-expression:
           imports:
             elasticsearch: github.com/elastic/go-elasticsearch/v8
-            elastictrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6
+            elastictrace: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
           template: *templateValV7
 
   - id: '*v8.Config'
@@ -128,5 +128,5 @@ aspects:
       - wrap-expression:
           imports:
             elasticsearch: github.com/elastic/go-elasticsearch/v8
-            elastictrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch.v6
+            elastictrace: github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
           template: *templatePtrV7

@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v2
+  name: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
   description: An Express inspired web framework built on Fasthttp, the fastest HTTP engine for Go.
 
 aspects:
@@ -16,7 +16,7 @@ aspects:
       - wrap-expression:
           imports:
             fiber: github.com/gofiber/fiber/v2
-            fibertrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/gofiber/fiber.v2
+            fibertrace: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
           template: |-
             func() *fiber.App {
               app := {{ . }}

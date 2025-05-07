@@ -13,9 +13,9 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func init() {
@@ -52,9 +52,14 @@ type StartConfig struct {
 	RC *remoteconfig.ClientConfig
 	// IsEnabled is a function that determines whether AppSec is enabled or not. When unset, the
 	// default [IsEnabled] function is used.
-	EnablementMode func() (EnablementMode, Origin, error)
+	EnablementMode func() (EnablementMode, telemetry.Origin, error)
 	// MetaStructAvailable is true if meta struct is supported by the trace agent.
 	MetaStructAvailable bool
+
+	APISecOptions []internal.APISecOption
+
+	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
+	BlockingUnavailable bool
 }
 
 type EnablementMode int8
@@ -68,30 +73,19 @@ const (
 	ForcedOn EnablementMode = 1
 )
 
-type Origin uint8
-
-const (
-	// OriginDefault is the origin of configuration values not explicitly set by the user in any way.
-	OriginDefault Origin = iota
-	// OriginEnvVar is the origin of configuration values set through environment variables.
-	OriginEnvVar
-	// OriginExplicitOption is the origin of configuration values set though explicit options in code.
-	OriginExplicitOption
-)
-
 func NewStartConfig(opts ...StartOption) *StartConfig {
 	c := &StartConfig{
-		EnablementMode: func() (mode EnablementMode, origin Origin, err error) {
+		EnablementMode: func() (mode EnablementMode, origin telemetry.Origin, err error) {
 			enabled, set, err := IsEnabledByEnvironment()
 			if set {
-				origin = OriginEnvVar
+				origin = telemetry.OriginEnvVar
 				if enabled {
 					mode = ForcedOn
 				} else {
 					mode = ForcedOff
 				}
 			} else {
-				origin = OriginDefault
+				origin = telemetry.OriginDefault
 				mode = RCStandby
 			}
 			return mode, origin, err
@@ -107,8 +101,8 @@ func NewStartConfig(opts ...StartOption) *StartConfig {
 // implemented by [IsEnabledByEnvironment].
 func WithEnablementMode(mode EnablementMode) StartOption {
 	return func(c *StartConfig) {
-		c.EnablementMode = func() (EnablementMode, Origin, error) {
-			return mode, OriginExplicitOption, nil
+		c.EnablementMode = func() (EnablementMode, telemetry.Origin, error) {
+			return mode, telemetry.OriginCode, nil
 		}
 	}
 }
@@ -123,6 +117,18 @@ func WithRCConfig(cfg remoteconfig.ClientConfig) StartOption {
 func WithMetaStructAvailable(available bool) StartOption {
 	return func(c *StartConfig) {
 		c.MetaStructAvailable = available
+	}
+}
+
+func WithAPISecOptions(opts ...internal.APISecOption) StartOption {
+	return func(c *StartConfig) {
+		c.APISecOptions = append(c.APISecOptions, opts...)
+	}
+}
+
+func WithBlockingUnavailable(unavailable bool) StartOption {
+	return func(c *StartConfig) {
+		c.BlockingUnavailable = unavailable
 	}
 }
 
@@ -146,6 +152,8 @@ type Config struct {
 	SupportedAddresses AddressSet
 	// MetaStructAvailable is true if meta struct is supported by the trace agent.
 	MetaStructAvailable bool
+	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
+	BlockingUnavailable bool
 }
 
 // AddressSet is a set of WAF addresses.
@@ -210,9 +218,10 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		WAFTimeout:          internal.WAFTimeoutFromEnv(),
 		TraceRateLimit:      int64(internal.RateLimitFromEnv()),
 		Obfuscator:          internal.NewObfuscatorConfig(),
-		APISec:              internal.NewAPISecConfig(),
+		APISec:              internal.NewAPISecConfig(c.APISecOptions...),
 		RASP:                internal.RASPEnabled(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
+		BlockingUnavailable: c.BlockingUnavailable,
 	}, nil
 }

@@ -17,11 +17,11 @@ import (
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // Constants for CI Visibility API paths and subdomains.
@@ -106,6 +106,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = TestCycleSubdomain
 		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
+	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
 
 	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
 
@@ -153,12 +154,14 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %v", err)
 	}
+	req.ContentLength = int64(buffer.Len())
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
 	if t.agentless {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
+	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 
 	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 	startTime := time.Now()

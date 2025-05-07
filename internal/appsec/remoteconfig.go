@@ -12,13 +12,14 @@ import (
 	"maps"
 	"os"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func genApplyStatus(ack bool, err error) rc.ApplyStatus {
@@ -218,11 +219,11 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]rc.A
 			log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
 		} else if data.ASM.Enabled && !a.started {
 			log.Debug("appsec: Remote config: Starting AppSec")
-			telemetry := newAppsecTelemetry()
-			defer telemetry.emit()
-			if err = a.start(telemetry); err != nil {
+			if err = a.start(); err != nil {
 				log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
+				continue
 			}
+			registerAppsecStartTelemetry(config.ForcedOn, telemetry.OriginRemoteConfig)
 		} else if !data.ASM.Enabled && a.started {
 			log.Debug("appsec: Remote config: Stopping AppSec")
 			a.stop()
@@ -382,20 +383,23 @@ func (a *appsec) enableRemoteActivation() error {
 	return remoteconfig.RegisterCallback(a.onRemoteActivation)
 }
 
-var blockingCapabilities = [...]remoteconfig.Capability{
-	remoteconfig.ASMUserBlocking,
-	remoteconfig.ASMRequestBlocking,
-	remoteconfig.ASMIPBlocking,
+var baseCapabilities = [...]remoteconfig.Capability{
 	remoteconfig.ASMDDRules,
 	remoteconfig.ASMExclusions,
 	remoteconfig.ASMCustomRules,
-	remoteconfig.ASMCustomBlockingResponse,
 	remoteconfig.ASMTrustedIPs,
 	remoteconfig.ASMExclusionData,
 	remoteconfig.ASMEndpointFingerprinting,
 	remoteconfig.ASMSessionFingerprinting,
 	remoteconfig.ASMNetworkFingerprinting,
 	remoteconfig.ASMHeaderFingerprinting,
+}
+
+var blockingCapabilities = [...]remoteconfig.Capability{
+	remoteconfig.ASMUserBlocking,
+	remoteconfig.ASMRequestBlocking,
+	remoteconfig.ASMIPBlocking,
+	remoteconfig.ASMCustomBlockingResponse,
 }
 
 func (a *appsec) enableRCBlocking() {
@@ -419,9 +423,17 @@ func (a *appsec) enableRCBlocking() {
 		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
 	}
 
-	for _, c := range blockingCapabilities {
+	for _, c := range baseCapabilities {
 		if err := a.registerRCCapability(c); err != nil {
 			log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+		}
+	}
+
+	if !a.cfg.BlockingUnavailable {
+		for _, c := range blockingCapabilities {
+			if err := a.registerRCCapability(c); err != nil {
+				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+			}
 		}
 	}
 }
@@ -447,9 +459,16 @@ func (a *appsec) disableRCBlocking() {
 	if a.cfg.RC == nil {
 		return
 	}
-	for _, c := range blockingCapabilities {
+	for _, c := range baseCapabilities {
 		if err := a.unregisterRCCapability(c); err != nil {
 			log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+		}
+	}
+	if !a.cfg.BlockingUnavailable {
+		for _, c := range blockingCapabilities {
+			if err := a.unregisterRCCapability(c); err != nil {
+				log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+			}
 		}
 	}
 	if err := remoteconfig.UnregisterCallback(a.onRCRulesUpdate); err != nil {

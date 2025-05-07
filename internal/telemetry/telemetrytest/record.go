@@ -7,13 +7,14 @@ package telemetrytest
 
 import (
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 type MetricKey struct {
@@ -69,6 +70,7 @@ func (r *RecordClient) metric(kind string, namespace telemetry.Namespace, name s
 		r.Metrics = make(map[MetricKey]*RecordMetricHandle)
 	}
 
+	sort.Strings(tags)
 	key := MetricKey{Namespace: namespace, Name: name, Tags: strings.Join(tags, ","), Kind: kind}
 	if _, ok := r.Metrics[key]; !ok {
 		r.Metrics[key] = &RecordMetricHandle{submit: submit, get: get}
@@ -187,6 +189,9 @@ func (r *RecordClient) AppStop() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Stopped = true
+}
+
+func (r *RecordClient) AddFlushTicker(func(telemetry.Client)) {
 }
 
 func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value any) {

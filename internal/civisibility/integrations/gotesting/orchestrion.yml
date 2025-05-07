@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting
+  name: github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
   description: Testing instrumentation
 
 aspects:
@@ -20,9 +20,9 @@ aspects:
     advice:
       - inject-declarations:
           links:
-            - gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
           template: |-
-            //go:linkname __dd_civisibility_instrumentTestingM gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentTestingM
+            //go:linkname __dd_civisibility_instrumentTestingM github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingM
             func __dd_civisibility_instrumentTestingM(*M) func(int)
       - prepend-statements:
           template: |-
@@ -40,22 +40,22 @@ aspects:
     advice:
       - inject-declarations:
           links:
-            - gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting
-            - gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations
           template: |-
-            //go:linkname __dd_civisibility_instrumentTestingTFunc gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentTestingTFunc
+            //go:linkname __dd_civisibility_instrumentTestingTFunc github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingTFunc
             func __dd_civisibility_instrumentTestingTFunc(func(*T)) func(*T)
 
-            //go:linkname __dd_civisibility_instrumentSetErrorInfo gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentSetErrorInfo
+            //go:linkname __dd_civisibility_instrumentSetErrorInfo github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentSetErrorInfo
             func __dd_civisibility_instrumentSetErrorInfo(tb TB, errType string, errMessage string, skip int)
 
-            //go:linkname __dd_civisibility_instrumentCloseAndSkip gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentCloseAndSkip
+            //go:linkname __dd_civisibility_instrumentCloseAndSkip github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentCloseAndSkip
             func __dd_civisibility_instrumentCloseAndSkip(tb TB, skipReason string)
 
-            //go:linkname __dd_civisibility_instrumentSkipNow gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentSkipNow
+            //go:linkname __dd_civisibility_instrumentSkipNow github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentSkipNow
             func __dd_civisibility_instrumentSkipNow(tb TB)
 
-            //go:linkname __dd_civisibility_ExitCiVisibility gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations.ExitCiVisibility
+            //go:linkname __dd_civisibility_ExitCiVisibility github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations.ExitCiVisibility
             func __dd_civisibility_ExitCiVisibility()
 
       - prepend-statements:
@@ -73,9 +73,9 @@ aspects:
     advice:
       - inject-declarations:
           links:
-            - gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
           template: |-
-            //go:linkname __dd_civisibility_instrumentTestingBFunc gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentTestingBFunc
+            //go:linkname __dd_civisibility_instrumentTestingBFunc github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingBFunc
             func __dd_civisibility_instrumentTestingBFunc(*B, string, func(*B)) (string, func(*B))
       - prepend-statements:
           template: |-
@@ -225,9 +225,9 @@ aspects:
           imports:
             testing: testing
           links:
-            - gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
           template: |-
-            //go:linkname __dd_civisibility_instrumentTestifySuiteRun gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting.instrumentTestifySuiteRun
+            //go:linkname __dd_civisibility_instrumentTestifySuiteRun github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestifySuiteRun
             func __dd_civisibility_instrumentTestifySuiteRun(*testing.T, interface{})
       - prepend-statements:
           template: |-

@@ -11,20 +11,17 @@ import (
 	"net"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/miekg/dns"
 )
 
-const componentName = "miekg/dns"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/miekg/dns")
+	instr = instrumentation.Load(instrumentation.PackageMiekgDNS)
 }
 
 // ListenAndServe calls dns.ListenAndServe with a wrapped Handler.
@@ -44,7 +41,7 @@ type Handler struct {
 
 // WrapHandler creates a new, wrapped DNS handler.
 func WrapHandler(handler dns.Handler) *Handler {
-	log.Debug("contrib/miekg/dns: Wrapping Handler")
+	instr.Logger().Debug("contrib/miekg/dns: Wrapping Handler")
 	return &Handler{
 		Handler: handler,
 	}
@@ -118,21 +115,21 @@ func (c *Client) ExchangeContext(ctx context.Context, m *dns.Msg, addr string) (
 	return r, rtt, err
 }
 
-func startSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+func startSpan(ctx context.Context, opcode int) (*tracer.Span, context.Context) {
 	return tracer.StartSpanFromContext(ctx, "dns.request",
 		tracer.ServiceName("dns"),
 		tracer.ResourceName(dns.OpcodeToString[opcode]),
 		tracer.SpanType(ext.SpanTypeDNS),
-		tracer.Tag(ext.Component, componentName))
+		tracer.Tag(ext.Component, instrumentation.PackageMiekgDNS))
 }
 
-func startClientSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+func startClientSpan(ctx context.Context, opcode int) (*tracer.Span, context.Context) {
 	span, ctx := startSpan(ctx, opcode)
 	span.SetTag(ext.SpanKind, ext.SpanKindClient)
 	return span, ctx
 }
 
-func startServerSpan(ctx context.Context, opcode int) (ddtrace.Span, context.Context) {
+func startServerSpan(ctx context.Context, opcode int) (*tracer.Span, context.Context) {
 	span, ctx := startSpan(ctx, opcode)
 	span.SetTag(ext.SpanKind, ext.SpanKindServer)
 	return span, ctx

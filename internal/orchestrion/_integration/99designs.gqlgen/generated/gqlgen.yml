@@ -66,7 +66,7 @@ resolver:
 # gqlgen will search for any type names in the schema in these go packages
 # if they match it will use them, otherwise it will generate them.
 autobind:
-#  - "github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/99designs.gqlgen/generated/graph/model"
+#  - "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/99designs.gqlgen/generated/graph/model"
 
 # This section declares type mapping between the GraphQL and go type systems
 #

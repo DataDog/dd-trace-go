@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/containers"
-	"github.com/DataDog/dd-trace-go/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	topic     = "gotest"
+	topic     = "shopify_sarama_default_test"
 	partition = int32(0)
 )
 
@@ -38,7 +38,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.cfg.Version = sarama.V0_11_0_0
 	tc.cfg.Producer.Return.Successes = true
 
-	container, addr := containers.StartKafkaTestContainer(t)
+	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
 	tc.server = container
 	tc.addrs = []string{addr}
 }

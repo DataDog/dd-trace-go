@@ -13,7 +13,7 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/httpsec"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 )
 
 const (

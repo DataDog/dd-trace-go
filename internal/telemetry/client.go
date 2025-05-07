@@ -11,10 +11,13 @@ import (
 	"strconv"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/mapper"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/internal/transport"
+	"github.com/puzpuzpuz/xsync/v3"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/mapper"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 // NewClient creates a new telemetry client with the given service, environment, and version and config.
@@ -53,15 +56,17 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			DependencyLoader: config.DependencyLoader,
 		},
 		metrics: metrics{
+			store:         xsync.NewMapOf[metricKey, metricHandle](xsync.WithPresize(knownmetrics.SizeWithFilter(func(decl knownmetrics.Declaration) bool { return decl.Type != transport.DistMetric }))),
 			skipAllowlist: config.Debug,
-			pool:          internal.NewSyncPool(func() *metricPoint { return &metricPoint{} }),
 		},
 		distributions: distributions{
+			store:         xsync.NewMapOf[metricKey, *distribution](xsync.WithPresize(knownmetrics.SizeWithFilter(func(decl knownmetrics.Declaration) bool { return decl.Type == transport.DistMetric }))),
+			pool:          internal.NewSyncPool(func() []float64 { return make([]float64, config.DistributionsSize.Min) }),
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
-			pool:          internal.NewSyncPool(func() []float64 { return make([]float64, config.DistributionsSize.Min) }),
 		},
 		logger: logger{
+			store:           xsync.NewMapOf[loggerKey, *loggerValue](),
 			maxDistinctLogs: config.MaxDistinctLogs,
 		},
 	}
@@ -117,6 +122,10 @@ type client struct {
 
 	// payloadQueue is used when we cannot flush previously built payload for multiple reasons.
 	payloadQueue *internal.RingQueue[transport.Payload]
+
+	// flushTickerFuncs are functions that are called just before flushing the data to the backend.
+	flushTickerFuncs   []func(Client)
+	flushTickerFuncsMu sync.Mutex
 }
 
 func (c *client) Log(level LogLevel, text string, options ...LogOption) {
@@ -181,6 +190,12 @@ func (c *client) RegisterAppConfigs(kvs ...Configuration) {
 	}
 }
 
+func (c *client) AddFlushTicker(f func(Client)) {
+	c.flushTickerFuncsMu.Lock()
+	defer c.flushTickerFuncsMu.Unlock()
+	c.flushTickerFuncs = append(c.flushTickerFuncs, f)
+}
+
 func (c *client) Config() ClientConfig {
 	return c.clientConfig
 }
@@ -200,6 +215,16 @@ func (c *client) Flush() {
 			SwapClient(nil)
 		}
 	}()
+
+	// We call the flushTickerFuncs before flushing the data for data sources
+	{
+		c.flushTickerFuncsMu.Lock()
+		defer c.flushTickerFuncsMu.Unlock()
+
+		for _, f := range c.flushTickerFuncs {
+			f(c)
+		}
+	}
 
 	payloads := make([]transport.Payload, 0, 8)
 	for _, ds := range c.dataSources {

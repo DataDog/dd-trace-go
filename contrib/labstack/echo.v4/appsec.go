@@ -8,21 +8,21 @@ package echo
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/labstack/echo/v4"
 )
 
-func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
+func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		params := make(map[string]string)
 		for _, n := range c.ParamNames() {
 			params[n] = c.Param(n)
 		}
 		var err error
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			c.SetRequest(r)
 			err = next(c)
 			// If the error is a monitoring one, it means appsec actions will take care of writing the response
@@ -32,7 +32,11 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			}
 		})
 		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
-		httpsec.WrapHandler(handler, span, params, nil).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
+		httpsec.WrapHandler(handler, span, &httpsec.Config{
+			Framework:   "github.com/labstack/echo/v4",
+			Route:       c.Path(),
+			RouteParams: params,
+		}).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
 		// If an error occurred, wrap it under an echo.HTTPError. We need to do this so that APM doesn't override
 		// the response code tag with 500 in case it doesn't recognize the error type.
 		if _, ok := err.(*echo.HTTPError); !ok && err != nil {

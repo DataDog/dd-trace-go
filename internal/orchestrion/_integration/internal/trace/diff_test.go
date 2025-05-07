@@ -71,7 +71,7 @@ func TestTrace_matchesAny(t *testing.T) {
 	// got the same 4 spans, but the parent-child relationships are different
 	got := Traces{
 		{
-			ID: 6461804313269386728,
+			SpanID: 6461804313269386728,
 			Meta: map[string]string{
 				"messaging.system": "kafka",
 				"span.kind":        "producer",
@@ -85,7 +85,7 @@ func TestTrace_matchesAny(t *testing.T) {
 			},
 			Children: Traces{
 				{
-					ID: 1242110709011053063,
+					SpanID: 1242110709011053063,
 					Meta: map[string]string{
 						"messaging.system": "kafka",
 						"span.kind":        "producer",
@@ -99,7 +99,7 @@ func TestTrace_matchesAny(t *testing.T) {
 					},
 					Children: Traces{
 						{
-							ID: 7873578434319770271,
+							SpanID: 7873578434319770271,
 							Meta: map[string]string{
 								"messaging.system": "kafka",
 								"span.kind":        "consumer",
@@ -116,7 +116,7 @@ func TestTrace_matchesAny(t *testing.T) {
 					},
 				},
 				{
-					ID: 6458862152963979372,
+					SpanID: 6458862152963979372,
 					Meta: map[string]string{
 						"messaging.system": "kafka",
 						"span.kind":        "consumer",

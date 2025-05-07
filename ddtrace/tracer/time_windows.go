@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // This method is more precise than the go1.8 time.Now on Windows
@@ -31,7 +31,7 @@ func lowPrecisionNow() int64 {
 // nil dereference panic.
 var now func() int64 = func() func() int64 {
 	if err := windows.LoadGetSystemTimePreciseAsFileTime(); err != nil {
-		log.Warn("Unable to load high precison timer, defaulting to time.Now()")
+		log.Warn("Unable to load high precision timer, defaulting to time.Now()")
 		return lowPrecisionNow
 	} else {
 		return highPrecisionNow
@@ -40,7 +40,7 @@ var now func() int64 = func() func() int64 {
 
 var nowTime func() time.Time = func() func() time.Time {
 	if err := windows.LoadGetSystemTimePreciseAsFileTime(); err != nil {
-		log.Warn("Unable to load high precison timer, defaulting to time.Now()")
+		log.Warn("Unable to load high precision timer, defaulting to time.Now()")
 		return func() time.Time { return time.Unix(0, lowPrecisionNow()) }
 	} else {
 		return func() time.Time { return time.Unix(0, highPrecisionNow()) }

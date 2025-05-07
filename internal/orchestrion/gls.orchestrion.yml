@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion
+  name: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
   description: Operations that interact with Go's runtime system.
   caveats: |-
     This configuration introduces a way to access the Goroutine Local Storage (GLS), which is not
@@ -14,25 +14,25 @@ meta:
     value is not available.
 
 aspects:
-  - id: __dd_gls
+  - id: __dd_gls_v2
     join-point:
       struct-definition: runtime.g
     advice:
       - add-struct-field:
-          name: __dd_gls
+          name: __dd_gls_v2
           type: any
       - add-blank-import: unsafe # Needed for go:linkname
       - inject-declarations:
           # Reference: https://github.com/golang/go/blob/6d89b38ed86e0bfa0ddaba08dc4071e6bb300eea/src/runtime/HACKING.md?plain=1#L44-L54
           template: |-
-            //go:linkname __dd_orchestrion_gls_get __dd_orchestrion_gls_get
+            //go:linkname __dd_orchestrion_gls_get __dd_orchestrion_gls_get.V2
             var __dd_orchestrion_gls_get = func() any {
-              return getg().m.curg.__dd_gls
+              return getg().m.curg.__dd_gls_v2
             }
 
-            //go:linkname __dd_orchestrion_gls_set __dd_orchestrion_gls_set
+            //go:linkname __dd_orchestrion_gls_set __dd_orchestrion_gls_set.V2
             var __dd_orchestrion_gls_set = func(val any) {
-              getg().m.curg.__dd_gls = val
+              getg().m.curg.__dd_gls_v2 = val
             }
   - id: goexit1
     join-point:
@@ -45,4 +45,4 @@ aspects:
               - name: goexit1
     advice:
       - prepend-statements:
-          template: getg().__dd_gls = nil
+          template: getg().__dd_gls_v2 = nil

@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
 	"reflect"
 	"runtime"
 	"slices"
@@ -15,12 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -213,55 +213,17 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		test := suite.CreateTest(testInfo.testName)
 		test.SetTestFunc(originalFunc)
 
-		// Set the CI Visibility test to the execution metadata
-		execMeta.test = test
-
 		// If the execution is for a new test we tag the test event as new
 		execMeta.isANewTest = execMeta.isANewTest || testIsNew
-		if execMeta.isANewTest {
-			// Set the is new test tag
-			test.SetTag(constants.TestIsNew, "true")
+
+		// Set some required tags from the execution metadata
+		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
+		if cancelExecution {
+			return
 		}
 
-		// If the execution is a retry we tag the test event
-		if execMeta.isARetry {
-			// Set the retry tag
-			test.SetTag(constants.TestIsRetry, "true")
-
-			// If the execution is an EFD execution we tag the test event reason
-			if execMeta.isEFDExecution {
-				// Set the EFD as the retry reason
-				test.SetTag(constants.TestRetryReason, "efd")
-			} else if execMeta.isATRExecution {
-				// Set the ATR as the retry reason
-				test.SetTag(constants.TestRetryReason, "atr")
-			} else if execMeta.isAttemptToFix {
-				// Set the attempt to fix as the retry reason
-				test.SetTag(constants.TestRetryReason, "attempt_to_fix")
-			}
-		}
-
-		// If the test is an attempt to fix we tag the test event
-		if execMeta.isAttemptToFix {
-			test.SetTag(constants.TestIsAttempToFix, "true")
-		}
-
-		// If the test is quarantined we tag the test event
-		if execMeta.isQuarantined {
-			test.SetTag(constants.TestIsQuarantined, "true")
-		}
-
-		// If the test is disabled we tag the test event
-		if execMeta.isDisabled {
-			test.SetTag(constants.TestIsDisabled, "true")
-			if !execMeta.isAttemptToFix {
-				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason("Flaky test is disabled by Datadog"))
-				return
-			}
-		}
-
-		// Check if the test needs to be skipped by ITR
-		if testSkippedByITR {
+		// Check if the test needs to be skipped by ITR (attempt to fix is excluded)
+		if testSkippedByITR && !execMeta.isAttemptToFix && !execMeta.isAModifiedTest {
 			// check if the test was marked as unskippable
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
@@ -272,10 +234,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				checkModuleAndSuite(module, suite)
 				t.Skip(constants.SkippedByITRReason)
 				return
-			} else {
-				test.SetTag(constants.TestForcedToRun, "true")
-				telemetry.ITRForcedRun(telemetry.TestEventType)
 			}
+			test.SetTag(constants.TestForcedToRun, "true")
+			telemetry.ITRForcedRun(telemetry.TestEventType)
 		}
 
 		// Check if the coverage is enabled
@@ -635,4 +596,69 @@ func getTestManagementData(testInfo *commonInfo) (data *net.TestManagementTestsR
 	}
 
 	return nil, false
+}
+
+// setTestTagsFromExecutionMetadata sets the test tags from the execution metadata.
+func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExecutionMetadata) (cancelExecution bool) {
+	settings := integrations.GetSettings()
+
+	// Set the Test Optimization test to the execution metadata
+	execMeta.test = test
+
+	// If the execution is for a new test we tag the test event as new
+	if execMeta.isANewTest {
+		// Set the is new test tag
+		test.SetTag(constants.TestIsNew, "true")
+	}
+
+	// If the execution is for a modified test
+	execMeta.isAModifiedTest = execMeta.isAModifiedTest || (settings.ImpactedTestsEnabled && test.Context().Value(constants.TestIsModified) == true)
+	if execMeta.isAModifiedTest {
+		if execMeta.isDisabled || execMeta.isQuarantined {
+			// automatic attempt to fix if a disabled or quarantined test is modified
+			execMeta.isAttemptToFix = true
+		}
+	}
+
+	// If the execution is a retry we tag the test event
+	if execMeta.isARetry {
+		// Set the retry tag
+		test.SetTag(constants.TestIsRetry, "true")
+
+		// let's set the retry reason
+		if execMeta.isAttemptToFix {
+			// Set attempt_to_fix as the retry reason
+			test.SetTag(constants.TestRetryReason, constants.AttemptToFixRetryReason)
+		} else if execMeta.isEarlyFlakeDetectionEnabled && (execMeta.isANewTest || execMeta.isAModifiedTest) {
+			// Set early_flake_detection as the retry reason
+			test.SetTag(constants.TestRetryReason, constants.EarlyFlakeDetectionRetryReason)
+		} else if execMeta.isFlakyTestRetriesEnabled {
+			// Set auto_test_retry as the retry reason
+			test.SetTag(constants.TestRetryReason, constants.AutoTestRetriesRetryReason)
+		} else {
+			// Set the unknown reason
+			test.SetTag(constants.TestRetryReason, constants.ExternalRetryReason)
+		}
+	}
+
+	// If the test is an attempt to fix we tag the test event
+	if execMeta.isAttemptToFix {
+		test.SetTag(constants.TestIsAttempToFix, "true")
+	}
+
+	// If the test is quarantined we tag the test event
+	if execMeta.isQuarantined {
+		test.SetTag(constants.TestIsQuarantined, "true")
+	}
+
+	// If the test is disabled we tag the test event
+	if execMeta.isDisabled {
+		test.SetTag(constants.TestIsDisabled, "true")
+		if !execMeta.isAttemptToFix {
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.TestDisabledSkipReason))
+			return true
+		}
+	}
+
+	return false
 }

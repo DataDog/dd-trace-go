@@ -11,11 +11,12 @@ import (
 	"slices"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -62,6 +63,9 @@ var (
 
 	// ciVisibilityTestManagementTests contains the CI Visibility test management tests for this session
 	ciVisibilityTestManagementTests net.TestManagementTestsResponseDataModules
+
+	// ciVisibilityImpactedTestsAnalyzer contains the CI Visibility impacted tests analyzer
+	ciVisibilityImpactedTestsAnalyzer *impactedtests.ImpactedTestAnalyzer
 )
 
 func ensureSettingsInitialization(serviceName string) {
@@ -105,6 +109,9 @@ func ensureSettingsInitialization(serviceName string) {
 			} else if ciSettings != nil {
 				ciVisibilitySettings = *ciSettings
 			}
+		} else if ciVisibilitySettings.ImpactedTestsEnabled {
+			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
+			<-uploadChannel
 		} else {
 			log.Debug("civisibility: no need to wait for the git upload to finish")
 			// Enqueue a close action to wait for the upload to finish before finishing the process
@@ -238,6 +245,30 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 			wg.Done()
 		}()
 
+		wg.Add(1)
+		go func() {
+			// if wheter the settings response or the env var is true we load the impacted tests analyzer
+			if ciVisibilitySettings.ImpactedTestsEnabled ||
+				internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, false) {
+				var iTests *impactedtests.ImpactedTestAnalyzer
+				var err error
+				if ciVisibilitySettings.ImpactedTestsEnabled {
+					// backend returned enabled = true, we pass the client to the analyzer for backend requests
+					iTests, err = impactedtests.NewImpactedTestAnalyzer(ciVisibilityClient)
+				} else {
+					// only local diff (not using the backend response)
+					iTests, err = impactedtests.NewImpactedTestAnalyzer(nil)
+				}
+				if err != nil {
+					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %v", err)
+				} else {
+					ciVisibilityImpactedTestsAnalyzer = iTests
+					log.Debug("civisibility: impacted tests analyzer loaded")
+				}
+			}
+			wg.Done()
+		}()
+
 		// wait for all the additional features to be loaded
 		wg.Wait()
 	})
@@ -276,6 +307,13 @@ func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttrib
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilitySkippables
+}
+
+// GetImpactedTestsAnalyzer gets the impacted tests analyzer
+func GetImpactedTestsAnalyzer() *impactedtests.ImpactedTestAnalyzer {
+	// call to ensure the additional features initialization is completed (service name can be null here)
+	ensureAdditionalFeaturesInitialization("")
+	return ciVisibilityImpactedTestsAnalyzer
 }
 
 func uploadRepositoryChanges() (bytes int64, err error) {

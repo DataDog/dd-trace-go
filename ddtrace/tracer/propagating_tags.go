@@ -6,8 +6,8 @@
 package tracer
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func (t *trace) hasPropagatingTag(k string) bool {
@@ -31,8 +31,8 @@ func (t *trace) setPropagatingTag(key, value string) {
 }
 
 func (t *trace) setTraceSourcePropagatingTag(key string, value internal.TraceSource) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	// If there is already a TraceSource value set in the trace
 	// we need to add the new value to the bitmask.

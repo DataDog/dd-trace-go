@@ -10,20 +10,17 @@ import (
 	"math"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/tidwall/buntdb"
 )
 
-const componentName = "tidwall/buntdb"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/tidwall/buntdb")
+	instr = instrumentation.Load(instrumentation.PackageTidwallBuntDB)
 }
 
 // A DB wraps a buntdb.DB, automatically tracing any transactions.
@@ -92,21 +89,21 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	log.Debug("contrib/tidwall/buntdb: Wrapping Transaction: %#v", cfg)
+	instr.Logger().Debug("contrib/tidwall/buntdb: Wrapping Transaction: %#v", cfg)
 	return &Tx{
 		Tx:  tx,
 		cfg: cfg,
 	}
 }
 
-func (tx *Tx) startSpan(name string) ddtrace.Span {
-	opts := []ddtrace.StartSpanOption{
+func (tx *Tx) startSpan(name string) *tracer.Span {
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.AppTypeDB),
 		tracer.ServiceName(tx.cfg.serviceName),
 		tracer.ResourceName(name),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageTidwallBuntDB),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemBuntDB),
 	}

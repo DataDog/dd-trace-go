@@ -8,15 +8,14 @@ package gin
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/gin-gonic/gin"
 )
 
-// useAppSec executes the AppSec logic related to the operation start and
-// returns the  function to be executed upon finishing the operation
-func useAppSec(c *gin.Context, span tracer.Span) {
+// useAppSec executes the AppSec logic related to the operation start
+func useAppSec(c *gin.Context, span trace.TagSetter) {
 	var params map[string]string
 	if l := len(c.Params); l > 0 {
 		params = make(map[string]string, l)
@@ -24,11 +23,14 @@ func useAppSec(c *gin.Context, span tracer.Span) {
 			params[p.Key] = p.Value
 		}
 	}
-	httpWrapper := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	httpWrapper := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		c.Request = r
 		c.Next()
 	})
-	httpsec.WrapHandler(httpWrapper, span, params, &httpsec.Config{
-		OnBlock: []func(){func() { c.Abort() }},
+	httpsec.WrapHandler(httpWrapper, span, &httpsec.Config{
+		Framework:   "github.com/gin-gonic/gin",
+		OnBlock:     []func(){func() { c.Abort() }},
+		Route:       c.FullPath(),
+		RouteParams: params,
 	}).ServeHTTP(c.Writer, c.Request)
 }

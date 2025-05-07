@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -76,21 +77,21 @@ func TestConnect(t *testing.T) {
 	}{
 		{
 			name: "pool",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newPoolCreator(nil, opts...)
 			},
 		},
 		{
 			name: "conn",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, nil, opts...)
 			},
 		},
 		{
 			name: "conn_with_options",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, &pgx.ParseConfigOptions{}, opts...)
 			},
@@ -257,8 +258,8 @@ func TestCopyFrom(t *testing.T) {
 	assert.Equal(t, "Copy From", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Copy From", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
-	assert.EqualValues(t, []string{"numbers"}, s.Tag("db.copy_from.tables"))
-	assert.EqualValues(t, []string{"number"}, s.Tag("db.copy_from.columns"))
+	assert.EqualValues(t, "numbers", s.Tag("db.copy_from.tables.0"))
+	assert.EqualValues(t, "number", s.Tag("db.copy_from.columns.0"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -442,15 +443,15 @@ func runAllOperations(t *testing.T, createConn createConnFn) {
 	require.NoError(t, err)
 }
 
-func assertCommonTags(t *testing.T, s mocktracer.Span) {
+func assertCommonTags(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, defaultServiceName, s.Tag(ext.ServiceName))
 	assert.Equal(t, ext.SpanTypeSQL, s.Tag(ext.SpanType))
 	assert.Equal(t, ext.DBSystemPostgreSQL, s.Tag(ext.DBSystem))
-	assert.Equal(t, componentName, s.Tag(ext.Component))
-	assert.Equal(t, componentName, s.Integration())
+	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	assert.Equal(t, "127.0.0.1", s.Tag(ext.NetworkDestinationName))
-	assert.Equal(t, 5432, s.Tag(ext.NetworkDestinationPort))
+	assert.Equal(t, float64(5432), s.Tag(ext.NetworkDestinationPort))
 	assert.Equal(t, "postgres", s.Tag(ext.DBName))
 	assert.Equal(t, "postgres", s.Tag(ext.DBUser))
 }

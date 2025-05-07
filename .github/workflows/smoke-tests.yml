@@ -20,7 +20,7 @@ on:
       - 'instrumentation/**'
   schedule: # nightly
     - cron: "0 0 * * *"
-  workflow_dispatch: {} # manually
+  workflow_dispatch: { } # manually
   pull_request:
     branches:
       - '**'
@@ -58,6 +58,7 @@ jobs:
         run: |-
           go get -u -t $PACKAGES
           go mod tidy
+          for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
       - name: Install requested go-libddwaf version
         if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
         run: |-
@@ -65,14 +66,19 @@ jobs:
           go mod tidy
       - name: Compile dd-trace-go
         run: go build $PACKAGES
+      - name: Test contribs (v2)
+        # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
+        run: |
+          go install gotest.tools/gotestsum@latest
+          mkdir -p $TEST_RESULTS
+          ./.github/workflows/apps/test-contrib-submodules.sh smoke
       - name: Test dd-trace-go
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
         run: go test $PACKAGES
 
-  go-mod-tidy:
-    # Run go mod tidy to ensure that all go.mod and go.sum files are up-to-date.
-    name: 'go mod tidy smoke test'
+  check-gen-files:
+    name: Check generated files and go mod files are up-to-date.
     runs-on: ubuntu-latest
     env:
       # Users may build our library with GOTOOLCHAIN=local. If they do, and our
@@ -89,9 +95,10 @@ jobs:
         with:
           go-version: "1.23"
           cache: true
-      - name: go mod tidy
+      - name: Run generate scripts and check diff
         run: |-
-          find -name go.mod -execdir go mod tidy \;
+          ./scripts/generate.sh
+          ./scripts/fix_modules.sh
           git diff --exit-code
 
   # TODO: macos setup requirements (xcode tools installation, etc.)

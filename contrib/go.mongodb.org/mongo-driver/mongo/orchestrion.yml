@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: gopkg.in/DataDog/dd-trace-go.v1/contrib/go.mongodb.org/mongo-driver/mongo
+  name: github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2/mongo
   description: Official Golang driver for MongoDB.
 
 aspects:
@@ -16,6 +16,6 @@ aspects:
       - wrap-expression:
           imports:
             options: go.mongodb.org/mongo-driver/mongo/options
-            mongotrace: gopkg.in/DataDog/dd-trace-go.v1/contrib/go.mongodb.org/mongo-driver/mongo
+            mongotrace: github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2/mongo
           template: |-
             {{ . }}.SetMonitor(mongotrace.NewMonitor())

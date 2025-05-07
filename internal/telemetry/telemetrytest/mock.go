@@ -7,7 +7,7 @@
 package telemetrytest
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -88,6 +88,10 @@ func (m *MockClient) AppStart() {
 
 func (m *MockClient) AppStop() {
 	m.Called()
+}
+
+func (m *MockClient) AddFlushTicker(ticker func(telemetry.Client)) {
+	m.Called(ticker)
 }
 
 var _ telemetry.Client = (*MockClient)(nil)

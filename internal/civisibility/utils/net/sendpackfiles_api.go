@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (

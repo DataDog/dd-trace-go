@@ -18,7 +18,7 @@ import (
 
 func TestGetHostname(t *testing.T) {
 	ctx := context.Background()
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{
 			"name": "vm-name",
@@ -48,7 +48,7 @@ func TestGetHostnameWithInvalidMetadata(t *testing.T) {
 	ctx := context.Background()
 
 	for _, response := range []string{"", "!"} {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, fmt.Sprintf(`{
 				"name": "%s",

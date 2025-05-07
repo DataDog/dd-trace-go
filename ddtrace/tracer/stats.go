@@ -12,10 +12,10 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -60,7 +60,7 @@ type tracerStatSpan struct {
 // configuration c. It creates buckets of bucketSize nanoseconds duration.
 func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdClient) *concentrator {
 	sCfg := &stats.SpanConcentratorConfig{
-		ComputeStatsBySpanKind: false,
+		ComputeStatsBySpanKind: true,
 		BucketInterval:         defaultStatsBucketSize,
 	}
 	env := c.agent.defaultEnv
@@ -160,17 +160,17 @@ func (c *concentrator) runIngester() {
 	}
 }
 
-func (c *concentrator) newTracerStatSpan(s *span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
-	resource := s.Resource
+func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	resource := s.resource
 	if c.shouldObfuscate() {
-		resource = obfuscatedResource(obfuscator, s.Type, s.Resource)
+		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
 	}
-	statSpan, ok := c.spanConcentrator.NewStatSpan(s.Service, resource,
-		s.Name, s.Type, s.ParentID, s.Start, s.Duration, s.Error, s.Meta, s.Metrics, c.cfg.agent.peerTags)
+	statSpan, ok := c.spanConcentrator.NewStatSpan(s.service, resource,
+		s.name, s.spanType, s.parentID, s.start, s.duration, s.error, s.meta, s.metrics, c.cfg.agent.peerTags)
 	if !ok {
 		return nil, false
 	}
-	origin := s.Meta[keyOrigin]
+	origin := s.meta[keyOrigin]
 	return &tracerStatSpan{
 		statSpan: statSpan,
 		origin:   origin,

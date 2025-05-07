@@ -8,14 +8,7 @@ package twirp
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-)
-
-const (
-	defaultClientServiceName = "twirp-client"
-	defaultServerServiceName = "twirp-server"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
@@ -24,40 +17,45 @@ type config struct {
 	analyticsRate float64
 }
 
-// Option represents an option that can be passed to Dial.
-type Option func(*config)
+// Option describes options for the Twirp integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to NewServerHooks, WrapClient and WrapServer.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 func defaults(cfg *config) {
-	if internal.BoolEnv("DD_TRACE_TWIRP_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
+	cfg.analyticsRate = instr.AnalyticsRate(true)
 }
 
 func clientDefaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultClientServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.TwirpClient)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentClient, nil)
+	cfg.spanName = instr.OperationName(instrumentation.ComponentClient, nil)
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServerServiceName)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	// spanName is calculated dynamically since V0 span names are based on the twirp service name.
 	defaults(cfg)
 }
 
-// WithServiceName sets the given service name for the dialled connection.
+// WithService sets the given service name for the dialled connection.
 // When the service name is not explicitly set, it will be inferred based on the
 // request to the twirp service.
-func WithServiceName(name string) Option {
+func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	if on {
 		return WithAnalyticsRate(1.0)
 	}
@@ -66,7 +64,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
