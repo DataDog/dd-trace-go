@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"runtime"
@@ -67,19 +68,33 @@ type Span struct {
 	// +checklocks:mu
 	context *SpanContext `msg:"-"` // span propagation context
 
-	// TODO(kakkoyun): Add checklock annotations for the following fields (figure out serialization generated files).
-	name       string             `msg:"name"`                  // operation name
-	service    string             `msg:"service"`               // service name (i.e. "grpc.server", "http.request")
-	resource   string             `msg:"resource"`              // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	spanType   string             `msg:"type"`                  // protocol associated with the span (i.e. "web", "db", "cache")
-	start      int64              `msg:"start"`                 // span start time expressed in nanoseconds since epoch
-	duration   int64              `msg:"duration"`              // duration of the span expressed in nanoseconds
-	meta       map[string]string  `msg:"meta,omitempty"`        // arbitrary map of metadata
-	metaStruct metaStructMap      `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
-	metrics    map[string]float64 `msg:"metrics,omitempty"`     // arbitrary map of numeric metrics
-	spanID     uint64             `msg:"span_id"`               // identifier of this span
-	traceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
-	parentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
+	// +checklocks:mu
+	name string `msg:"name"` // operation name
+	// +checklocks:mu
+	service string `msg:"service"` // service name (i.e. "grpc.server", "http.request")
+	// +checklocks:mu
+	resource string `msg:"resource"` // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	// +checklocks:mu
+	spanType string `msg:"type"` // protocol associated with the span (i.e. "web", "db", "cache")
+	// +checklocks:mu
+	start int64 `msg:"start"` // span start time expressed in nanoseconds since epoch
+	// +checklocks:mu
+	duration int64 `msg:"duration"` // duration of the span expressed in nanoseconds
+
+	// +checklocks:mu
+	meta map[string]string `msg:"meta,omitempty"` // arbitrary map of metadata
+	// +checklocks:mu
+	metaStruct metaStructMap `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
+	// +checklocks:mu
+	metrics map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
+
+	// +checklocks:mu
+	spanID uint64 `msg:"span_id"` // identifier of this span
+	// +checklocks:mu
+	traceID uint64 `msg:"trace_id"` // lower 64-bits of the root span identifier
+	// +checklocks:mu
+	parentID uint64 `msg:"parent_id"` // identifier of the span's direct parent
+
 	// +checklocks:mu
 	error int32 `msg:"error"` // error status of the span; 0 means no errors
 
@@ -153,6 +168,20 @@ func (s *Span) AsMap() map[string]interface{} {
 	return m
 }
 
+func (s *Span) getName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.name
+}
+
+func (s *Span) getSpanType() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.spanType
+}
+
 // +checklocksread:s.mu
 func (s *Span) spanEventsAsJSONStringAssumesHoldingLock() string {
 	mutexasserts.AssertRWMutexLocked(&s.mu)
@@ -181,6 +210,27 @@ func (s *Span) Context() *SpanContext {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.context
+}
+
+func (s *Span) getSpanID() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.spanID
+}
+
+func (s *Span) getTraceID() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.traceID
+}
+
+func (s *Span) getParentID() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.parentID
 }
 
 // SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
@@ -349,6 +399,16 @@ func (s *Span) Root() *Span {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if s.context == nil {
+		return nil
+	}
+	return s.rootAssumesHoldingLock()
+}
+
+// +checklocksread:s.mu
+func (s *Span) rootAssumesHoldingLock() *Span {
+	mutexasserts.AssertRWMutexRLocked(&s.mu)
+
 	if s.context == nil {
 		return nil
 	}
@@ -555,6 +615,7 @@ func takeStacktrace(n, skip uint) string {
 // +checklocks:s.mu
 func (s *Span) setMetaAssumesHoldingLock(key, v string) {
 	mutexasserts.AssertRWMutexLocked(&s.mu)
+
 	if s.meta == nil {
 		s.meta = make(map[string]string, 1)
 	}
@@ -579,6 +640,13 @@ func (s *Span) getMeta(key string) (string, bool) {
 
 	val, ok := s.meta[key]
 	return val, ok
+}
+
+func (s *Span) getMetaData() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return maps.Clone(s.meta)
 }
 
 // getAndRemoveMeta retrieves a metadata value from a span and removes it from the span's metadata and metrics.
@@ -645,11 +713,27 @@ func (s *Span) setTagBoolAssumesHoldingLock(key string, v bool) {
 	}
 }
 
+func (s *Span) getMetric(key string) (float64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	val, ok := s.metrics[key]
+	return val, ok
+}
+
+func (s *Span) getMetrics() map[string]float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return maps.Clone(s.metrics)
+}
+
 // setMetricAssumesHoldingLock sets a numeric tag, in our case called a metric.
 // This method is not safe for concurrent use.
 // +checklocks:s.mu
 func (s *Span) setMetricAssumesHoldingLock(key string, v float64) {
 	mutexasserts.AssertRWMutexLocked(&s.mu)
+
 	if s.metrics == nil {
 		s.metrics = make(map[string]float64, 1)
 	}
@@ -754,6 +838,13 @@ func (s *Span) getError() int32 {
 	defer s.mu.RUnlock()
 
 	return s.error
+}
+
+func (s *Span) getPprofCtxActive() context.Context {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.pprofCtxActive
 }
 
 // serializeSpanLinksInMetaAssumesHoldingLock saves span links as a JSON string under `Span[meta][_dd.span_links]`.
@@ -876,7 +967,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 		return
 	}
 
-	s.finish(t)
+	s.finishAssumesHoldingLock(t)
 	s.mu.Unlock()
 
 	if log.DebugEnabled() {
@@ -890,7 +981,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 }
 
 // +checklocks:s.mu
-func (s *Span) finish(finishTime int64) {
+func (s *Span) finishAssumesHoldingLock(finishTime int64) {
 	mutexasserts.AssertRWMutexLocked(&s.mu)
 
 	s.serializeSpanLinksInMetaAssumesHoldingLock()

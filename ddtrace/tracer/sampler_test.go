@@ -95,7 +95,7 @@ func TestPrioritySampler(t *testing.T) {
 		} {
 			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(tt.in))))
 			for k, v := range tt.out {
-				assert.Equal(v, ps.getRate(mkSpan(k.service, k.env)), k)
+				assert.Equal(v, ps.getRate(mkSpan(k.service, k.env)), k) // +checklocksignore
 			}
 		}
 	})
@@ -127,8 +127,8 @@ func TestPrioritySampler(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 500; i++ {
-				ps.getRate(mkSpan("obfuscate.http", "none"))
-				ps.getRate(mkSpan("other.service", "none"))
+				ps.getRate(mkSpan("obfuscate.http", "none")) // +checklocksignore
+				ps.getRate(mkSpan("other.service", "none"))  // +checklocksignore
 			}
 		}()
 
@@ -150,6 +150,9 @@ func TestPrioritySampler(t *testing.T) {
 		))
 
 		testSpan1 := newBasicSpan("http.request")
+		testSpan1.mu.Lock()
+		defer testSpan1.mu.Unlock()
+
 		testSpan1.service = "obfuscate.http"
 		testSpan1.traceID = math.MaxUint64 - (math.MaxUint64 / 4)
 

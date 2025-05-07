@@ -11,6 +11,8 @@ import (
 	"math"
 	"sync"
 
+	"github.com/trailofbits/go-mutexasserts"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -90,6 +92,7 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
+// +checklocksread:s.mu
 func (r *rateSampler) Sample(s *Span) bool {
 	if r.rate == 1 {
 		// fast path
@@ -100,6 +103,7 @@ func (r *rateSampler) Sample(s *Span) bool {
 	}
 	r.RLock()
 	defer r.RUnlock()
+	mutexasserts.AssertRWMutexRLocked(&s.mu)
 	return sampledByRate(s.traceID, r.rate)
 }
 
@@ -155,10 +159,11 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 }
 
 // getRate returns the sampling rate to be used for the given span.
+// +checklocksread:s.mu
 func (ps *prioritySampler) getRate(s *Span) float64 {
-	s.mu.RLock()
+	mutexasserts.AssertRWMutexRLocked(&s.mu)
+
 	key := "service:" + s.service + ",env:" + s.meta[ext.Environment]
-	s.mu.RUnlock()
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {
@@ -169,14 +174,15 @@ func (ps *prioritySampler) getRate(s *Span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
+// +checklocks:s.mu
 func (ps *prioritySampler) apply(s *Span) {
-	s.mu.RLock()
+	mutexasserts.AssertRWMutexLocked(&s.mu)
+
 	rate := ps.getRate(s)
-	s.mu.RUnlock()
 	if sampledByRate(s.traceID, rate) {
-		s.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
+		s.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoKeep, samplernames.AgentRate)
 	} else {
-		s.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
+		s.setSamplingPriorityAssumesHoldingLock(ext.PriorityAutoReject, samplernames.AgentRate)
 	}
-	s.SetTag(keySamplingPriorityRate, rate)
+	s.setMetricAssumesHoldingLock(keySamplingPriorityRate, rate)
 }

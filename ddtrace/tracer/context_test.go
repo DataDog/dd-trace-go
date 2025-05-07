@@ -67,8 +67,8 @@ func TestStartSpanFromContext(t *testing.T) {
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	assert.Equal(uint64(456), got.traceID)
-	assert.Equal(uint64(123), got.parentID)
+	assert.Equal(uint64(456), got.getTraceID())
+	assert.Equal(uint64(123), got.getParentID())
 	assert.Equal("http.request", got.name)
 	assert.Equal("gin", got.service)
 	assert.Equal("/", got.resource)
@@ -86,8 +86,8 @@ func TestStartSpanFromContextDefault(t *testing.T) {
 	span, _ := StartSpanFromContext(ctx, "db.query")
 	assert.NotNil(span)
 	assert.Equal("db.query", span.name)
-	assert.Equal(span.traceID, root.traceID)
-	assert.NotEqual(span.spanID, root.spanID)
+	assert.Equal(span.getTraceID(), root.getTraceID())
+	assert.NotEqual(span.getSpanID(), root.getSpanID())
 }
 
 func TestStartSpanWithSpanLinks(t *testing.T) {

@@ -161,8 +161,8 @@ type ciVisibilityEvent struct {
 //	value - The tag value.
 func (e *ciVisibilityEvent) SetTag(key string, value interface{}) {
 	e.span.SetTag(key, value)
-	e.Content.Meta = e.span.meta
-	e.Content.Metrics = e.span.metrics
+	e.Content.Meta = e.span.getMetaData()
+	e.Content.Metrics = e.span.getMetrics()
 }
 
 // SetOperationName sets the operation name of the event's span and updates the content name.
@@ -172,7 +172,7 @@ func (e *ciVisibilityEvent) SetTag(key string, value interface{}) {
 //	operationName - The new operation name.
 func (e *ciVisibilityEvent) SetOperationName(operationName string) {
 	e.span.SetOperationName(operationName)
-	e.Content.Name = e.span.name
+	e.Content.Name = e.span.getName()
 }
 
 // BaggageItem retrieves the baggage item associated with the given key from the event's span.
@@ -246,7 +246,7 @@ type tslvSpan struct {
 //
 //	A pointer to the created ciVisibilityEvent.
 func getCiVisibilityEvent(span *Span) *ciVisibilityEvent {
-	switch span.spanType {
+	switch span.getSpanType() {
 	case constants.SpanTypeTest:
 		return createTestEventFromSpan(span)
 	case constants.SpanTypeTestSuite:
@@ -276,8 +276,8 @@ func createTestEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTag)
 	tSpan.CorrelationID = getAndRemoveMeta(span, constants.ItrCorrelationIDTag)
-	tSpan.SpanID = span.spanID
-	tSpan.TraceID = span.traceID
+	tSpan.SpanID = span.getSpanID()
+	tSpan.TraceID = span.getTraceID()
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTest,
@@ -363,8 +363,8 @@ func createTestSessionEventFromSpan(span *Span) *ciVisibilityEvent {
 //	A pointer to the created ciVisibilityEvent.
 func createSpanEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
-	tSpan.SpanID = span.spanID
-	tSpan.TraceID = span.traceID
+	tSpan.SpanID = span.getSpanID()
+	tSpan.TraceID = span.getTraceID()
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeSpan,

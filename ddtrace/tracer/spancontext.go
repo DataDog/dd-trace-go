@@ -165,6 +165,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
+// +checklocksread:span.mu
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
@@ -565,7 +566,7 @@ func (t *trace) push(sp *Span) {
 		}
 		return
 	}
-	if v, ok := sp.metrics[keySamplingPriority]; ok {
+	if v, ok := sp.getMetric(keySamplingPriority); ok {
 		t.setSamplingPriorityAssumesHoldingLock(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)

@@ -1876,7 +1876,7 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.NoError(err)
 
 	s := tracer.StartSpan("test", WithStartSpanConfig(cfg))
-	defer s.Finish()
+	s.mu.RLock()
 	assert.Equal(float64(1), s.metrics[keyMeasured])
 	assert.Equal("value", s.meta["key"])
 	assert.Equal(parent.Context().SpanID(), s.parentID)
@@ -1886,6 +1886,8 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(spanID, s.spanID)
 	assert.Equal(ext.SpanTypeWeb, s.spanType)
 	assert.Equal(tm.UnixNano(), s.start)
+	s.mu.RUnlock()
+	s.Finish()
 }
 
 func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {

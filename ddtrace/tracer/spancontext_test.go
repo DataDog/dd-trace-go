@@ -774,7 +774,9 @@ func TestNewSpanContext(t *testing.T) {
 			spanID:   2,
 			parentID: 3,
 		}
+		span.mu.RLock()
 		ctx := newSpanContext(span, nil)
+		span.mu.RUnlock()
 		assert := assert.New(t)
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
@@ -791,7 +793,9 @@ func TestNewSpanContext(t *testing.T) {
 			parentID: 3,
 			metrics:  map[string]float64{keySamplingPriority: 1},
 		}
+		span.mu.RLock()
 		ctx := newSpanContext(span, nil)
+		span.mu.RUnlock()
 		assert := assert.New(t)
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
@@ -856,10 +860,12 @@ func TestSpanContextParent(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			s.mu.RLock()
 			ctx := newSpanContext(s, parentCtx)
+			s.mu.RUnlock()
 			assert := assert.New(t)
-			assert.Equal(ctx.traceID.Lower(), s.traceID)
-			assert.Equal(ctx.spanID, s.spanID)
+			assert.Equal(ctx.traceID.Lower(), s.getTraceID())
+			assert.Equal(ctx.spanID, s.getSpanID())
 			if parentCtx.trace != nil {
 				assert.Equal(len(ctx.trace.getSpans()), len(parentCtx.trace.getSpans()))
 			}

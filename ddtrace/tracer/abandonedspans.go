@@ -16,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/trailofbits/go-mutexasserts"
 )
 
 var (
@@ -82,7 +83,10 @@ type abandonedSpanCandidate struct {
 	Integration     string
 }
 
+// +checklocksread:s.mu
 func newAbandonedSpanCandidate(s *Span, finished bool) *abandonedSpanCandidate {
+	mutexasserts.AssertRWMutexRLocked(&s.mu)
+
 	var component string
 	if v, ok := s.meta[ext.Component]; ok {
 		component = v

@@ -288,8 +288,8 @@ func TestTextMapPropagatorInjectHeader(t *testing.T) {
 	err = tracer.Inject(ctx, carrier)
 	assert.Nil(err)
 
-	tid := strconv.FormatUint(root.traceID, 10)
-	pid := strconv.FormatUint(root.spanID, 10)
+	tid := strconv.FormatUint(root.getTraceID(), 10)
+	pid := strconv.FormatUint(root.getSpanID(), 10)
 
 	assert.Equal(headers.Get("tid"), tid)
 	assert.Equal(headers.Get("pid"), pid)
@@ -1818,7 +1818,7 @@ func TestEnvVars(t *testing.T) {
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
 					assert.Equal(tc.tid, sctx.traceID)
-					assert.Equal(tc.out[0], sctx.span.parentID)
+					assert.Equal(tc.out[0], sctx.span.getParentID())
 					assert.Equal(tc.out[1], sctx.spanID)
 
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
