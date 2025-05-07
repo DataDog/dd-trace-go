@@ -18,8 +18,7 @@ import (
 // Outputs a JSON encoded array that can be used as a matrix input to GitHub workflows.
 // Rather than testing all contribs under one job, we would rather parallelize the jobs
 // by using a matrix.
-// dd-trace-go shares 12 runners, so the number of runners being used for these jobs should
-// not exceed 12 (and should be less).
+// The `APM Larger Runners` group shares around 50 runners. We should not use all 50.
 // TODO: can we find an optimal number of runners that will make the test efficient without
 // creating too much cost?
 func main() {

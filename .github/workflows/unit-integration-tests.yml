@@ -119,9 +119,9 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./internal/contrib/matrix       >> "${GITHUB_OUTPUT}"
+          go run ./internal/contrib/matrix       >> "${GITHUB_OUTPUT}"  
 
-  test-contrib-matrix:
+  test-contrib:
     needs: set-up
     runs-on:
       group: "APM Larger Runners"
@@ -288,79 +288,6 @@ jobs:
         if: always()
         run: |
           ./.github/workflows/apps/test-contrib-submodules.sh default ${{ toJson(matrix.chunk) }}
-
-  test-outlier-contrib:
-    runs-on:
-      group: "APM Larger Runners"
-    env:
-        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-        INTEGRATION: true
-    services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-      testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
-        ports:
-          - 9126:9126
-        env:
-          LOG_LEVEL: DEBUG
-          TRACE_LANGUAGE: golang
-          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
-          PORT: 9126
-          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-          DD_POOL_TRACE_CHECK_FAILURES: true
-          DD_DISABLE_ERROR_RESPONSES: true
-      localstack:
-        image: localstack/localstack:latest
-        ports:
-          - 4566:4566
-    steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-
-      - name: Testing outlier google.golang.org/api
-        run: |
-              go get google.golang.org/api@v0.192.0 # version used to generate code
-              go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
-              go test -v ./...
-
-  test-contrib:
-    needs:
-      - test-contrib-matrix
-      - test-outlier-contrib
-    runs-on:
-      group: "APM Larger Runners"
-    if: success() || failure()
-    continue-on-error: true
-    steps:
-      - name: Success
-        if: needs.test-contrib-matrix.result == 'success' && needs.test-outlier-contrib.result == 'success'
-        run: echo "Success!"
-      - name: Failure
-        if: needs.test-contrib-matrix.result != 'success' || needs.test-outlier-contrib.result != 'success'
-        run: echo "Failure!" && exit 1
 
   test-core:
     runs-on:
