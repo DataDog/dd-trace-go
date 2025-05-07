@@ -25,6 +25,9 @@ type tracerLike interface {
 // SetGlobalTracer sets the global tracer to t.
 // It is the responsibility of the caller to ensure that the value is `tracer.Tracer`.
 func SetGlobalTracer[T tracerLike](t T) {
+	if (tracerLike)(t) == nil {
+		panic("ddtrace/internal: SetGlobalTracer called with nil")
+	}
 	old := globalTracer.Swap(&t)
 	if old == nil {
 		return
