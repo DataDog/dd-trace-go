@@ -36,6 +36,7 @@ func setTestTime() func() {
 
 // spanAge takes in a span and returns the current test duration of the
 // span in seconds as a string
+// +checklocksread:s.mu
 func spanAge(s *Span) string {
 	return fmt.Sprintf("%d sec", (now()-s.start)/int64(time.Second))
 }

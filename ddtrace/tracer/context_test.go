@@ -69,9 +69,9 @@ func TestStartSpanFromContext(t *testing.T) {
 	assert.Equal(gotctx, got)
 	assert.Equal(uint64(456), got.getTraceID())
 	assert.Equal(uint64(123), got.getParentID())
-	assert.Equal("http.request", got.name)
-	assert.Equal("gin", got.service)
-	assert.Equal("/", got.resource)
+	assert.Equal("http.request", got.getName())
+	assert.Equal("gin", got.getService())
+	assert.Equal("/", got.getResource())
 }
 
 func TestStartSpanFromContextDefault(t *testing.T) {
@@ -82,10 +82,10 @@ func TestStartSpanFromContextDefault(t *testing.T) {
 	assert := assert.New(t)
 	root, ctx := StartSpanFromContext(context.TODO(), "http.request")
 	assert.NotNil(root)
-	assert.Equal("http.request", root.name)
+	assert.Equal("http.request", root.getName())
 	span, _ := StartSpanFromContext(ctx, "db.query")
 	assert.NotNil(span)
-	assert.Equal("db.query", span.name)
+	assert.Equal("db.query", span.getName())
 	assert.Equal(span.getTraceID(), root.getTraceID())
 	assert.NotEqual(span.getSpanID(), root.getSpanID())
 }
@@ -190,7 +190,7 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	assert.Nil(ctx.Value("not_found_key"))
 
 	internalSpan := child
-	assert.Equal("http.request", internalSpan.name)
+	assert.Equal("http.request", internalSpan.getName())
 
 	// the returned context includes the span
 	ctxSpan, ok := SpanFromContext(ctx)

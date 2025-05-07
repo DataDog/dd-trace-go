@@ -1910,8 +1910,12 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		Tag("key", "after_start_span_config"),
 	)
 	defer s.Finish()
-	assert.Equal("should_override", s.meta["k2"])
-	assert.Equal("after_start_span_config", s.meta["key"])
+	val, ok := s.getMeta("k2")
+	assert.True(ok)
+	assert.Equal("should_override", val)
+	val, ok = s.getMeta("key")
+	assert.True(ok)
+	assert.Equal("after_start_span_config", val)
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {

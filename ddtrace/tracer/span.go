@@ -196,6 +196,13 @@ func (s *Span) getService() string {
 	return s.service
 }
 
+func (s *Span) getDuration() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.duration
+}
+
 // +checklocksread:s.mu
 func (s *Span) spanEventsAsJSONStringAssumesHoldingLock() string {
 	mutexasserts.AssertRWMutexLocked(&s.mu)
@@ -245,6 +252,13 @@ func (s *Span) getParentID() uint64 {
 	defer s.mu.RUnlock()
 
 	return s.parentID
+}
+
+func (s *Span) getStart() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.start
 }
 
 // SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
@@ -687,6 +701,13 @@ func getAndRemoveMeta(span *Span, key string) string {
 	}
 
 	return ""
+}
+
+func (s *Span) getMetaStruct() metaStructMap {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.metaStruct
 }
 
 // +checklocks:s.mu
