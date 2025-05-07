@@ -18,7 +18,7 @@ import (
 
 func TestStart(t *testing.T) {
 	trc := Start()
-	if tt, ok := tracer.GetGlobalTracer().(Tracer); !ok || tt != trc {
+	if tt, ok := getGlobalTracer().(Tracer); !ok || tt != trc {
 		t.Fail()
 	}
 	// If the tracer isn't stopped it leaks goroutines, and breaks other tests.
@@ -27,7 +27,7 @@ func TestStart(t *testing.T) {
 
 func TestTracerStop(t *testing.T) {
 	Start().Stop()
-	if _, ok := tracer.GetGlobalTracer().(*tracer.NoopTracer); !ok {
+	if _, ok := getGlobalTracer().(*tracer.NoopTracer); !ok {
 		t.Fail()
 	}
 }

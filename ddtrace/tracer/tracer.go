@@ -205,7 +205,7 @@ func Start(opts ...StartOption) error {
 		// share control of the global telemetry client.
 		return nil
 	}
-	SetGlobalTracer(t)
+	setGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
 	}
@@ -280,7 +280,7 @@ func storeConfig(c *config) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	SetGlobalTracer(&NoopTracer{})
+	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
 }
@@ -288,21 +288,21 @@ func Stop() {
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.
 func StartSpan(operationName string, opts ...StartSpanOption) *Span {
-	return GetGlobalTracer().StartSpan(operationName, opts...)
+	return getGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
 func Extract(carrier interface{}) (*SpanContext, error) {
-	return GetGlobalTracer().Extract(carrier)
+	return getGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
 func Inject(ctx *SpanContext, carrier interface{}) error {
-	return GetGlobalTracer().Inject(ctx, carrier)
+	return getGlobalTracer().Inject(ctx, carrier)
 }
 
 // SetUser associates user information to the current trace which the
@@ -411,7 +411,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 // NOTE: This function does NOT set the global tracer, which is required for
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
-// SetGlobalTracer(...) with the tracer provided by this function.
+// setGlobalTracer(...) with the tracer provided by this function.
 func newTracer(opts ...StartOption) (*tracer, error) {
 	t, err := newUnstartedTracer(opts...)
 	if err != nil {
@@ -471,7 +471,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 // whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
-	if t := GetGlobalTracer(); t != nil {
+	if t := getGlobalTracer(); t != nil {
 		t.Flush()
 	}
 }
