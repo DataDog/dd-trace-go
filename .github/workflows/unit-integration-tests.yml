@@ -119,9 +119,9 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./internal/contrib/matrix       >> "${GITHUB_OUTPUT}"  
+          go run ./internal/contrib/matrix       >> "${GITHUB_OUTPUT}"
 
-  test-contrib:
+  test-contrib-matrix:
     needs: set-up
     runs-on:
       group: "APM Larger Runners"
@@ -288,6 +288,21 @@ jobs:
         if: always()
         run: |
           ./.github/workflows/apps/test-contrib-submodules.sh default ${{ toJson(matrix.chunk) }}
+
+  test-contrib:
+    needs:
+      - test-contrib-matrix
+    runs-on:
+      group: "APM Larger Runners"
+    if: success() || failure()
+    continue-on-error: true
+    steps:
+      - name: Success
+        if: needs.test-contrib-matrix.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.test-contrib-matrix.result != 'success'
+        run: echo "Failure!" && exit 1
 
   test-core:
     runs-on:
