@@ -687,7 +687,8 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		span.setTagAssumesHoldingLock(k, v)
 	}
 	isRootSpan := context == nil || context.span == nil
-	if isRootSpan || context.span.service != span.service {
+	// TODO(kakkoyun): context.span.service access?
+	if isRootSpan || context.span.getService() != span.service {
 		span.setMetricAssumesHoldingLock(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.metrics, keyMeasured)
@@ -762,10 +763,9 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	span.mu.Unlock()
 
 	if log.DebugEnabled() {
-		// TODO(kakkoyun): How to handle this elegantly?
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
-			span, span.name, span.resource, span.meta, span.metrics)
+			span, span.getName(), span.getResource(), span.getMetaData(), span.getMetrics())
 	}
 	return span
 }
@@ -783,29 +783,47 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
+
 	localRootSpan := span.rootAssumesHoldingLock()
-	var spanID uint64
-	if localRootSpan == span {
-		spanID = span.spanID
-	} else {
-		spanID = localRootSpan.getSpanID()
+	if localRootSpan != nil {
+		sameSpan := localRootSpan == span
+
+		var (
+			spanID   uint64
+			resource string
+			PIISafe  bool
+		)
+		if sameSpan {
+			spanID = span.spanID
+			resource = span.resource
+		} else {
+			localRootSpan.mu.RLock()
+			spanID = localRootSpan.spanID
+			resource = localRootSpan.resource
+			PIISafe = spanResourcePIISafe(localRootSpan)
+			localRootSpan.mu.RUnlock()
+		}
+
+		if t.config.profilerHotspots {
+			labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
+
+			if PIISafe {
+				labels = append(labels, traceprof.TraceEndpoint, resource)
+
+				if sameSpan {
+					// Inform the profiler of endpoint hits. This is used for the unit of
+					// work feature. We can't use APM stats for this since the stats don't
+					// have enough cardinality (e.g. runtime-id tags are missing).
+					traceprof.GlobalEndpointCounter().Inc(resource)
+				}
+			}
+		}
 	}
-	if t.config.profilerHotspots && localRootSpan != nil {
-		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
-	}
+
 	if t.config.profilerHotspots {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	// TODO(kakkoyun): properly lock the localRootSpan.
-	if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) && localRootSpan != nil {
-		labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
-		if span == localRootSpan {
-			// Inform the profiler of endpoint hits. This is used for the unit of
-			// work feature. We can't use APM stats for this since the stats don't
-			// have enough cardinality (e.g. runtime-id tags are missing).
-			traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
-		}
-	}
+
 	if len(labels) > 0 {
 		span.pprofCtxRestore = ctx
 		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
@@ -816,9 +834,9 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 // spanResourcePIISafe returns true if s.resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
 // but http, rpc or custom (s.spanType == "") span resource names generally do not.
-// +checklocks:s.mu
+// +checklocksread:s.mu
 func spanResourcePIISafe(s *Span) bool {
-	mutexasserts.AssertRWMutexLocked(&s.mu)
+	mutexasserts.AssertRWMutexRLocked(&s.mu)
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
 }
 

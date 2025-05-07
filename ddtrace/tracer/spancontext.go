@@ -167,6 +167,8 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // for the same span.
 // +checklocksread:span.mu
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
+	mutexasserts.AssertRWMutexRLocked(&span.mu)
+
 	context := &SpanContext{
 		spanID: span.spanID,
 		span:   span,
@@ -549,7 +551,10 @@ func (t *trace) setLocked(locked bool) {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
+// +checklocksread:sp.mu
 func (t *trace) push(sp *Span) {
+	mutexasserts.AssertRWMutexRLocked(&sp.mu)
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
@@ -566,7 +571,7 @@ func (t *trace) push(sp *Span) {
 		}
 		return
 	}
-	if v, ok := sp.getMetric(keySamplingPriority); ok {
+	if v, ok := sp.metrics[keySamplingPriority]; ok {
 		t.setSamplingPriorityAssumesHoldingLock(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)

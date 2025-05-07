@@ -182,6 +182,20 @@ func (s *Span) getSpanType() string {
 	return s.spanType
 }
 
+func (s *Span) getResource() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.resource
+}
+
+func (s *Span) getService() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.service
+}
+
 // +checklocksread:s.mu
 func (s *Span) spanEventsAsJSONStringAssumesHoldingLock() string {
 	mutexasserts.AssertRWMutexLocked(&s.mu)
@@ -950,13 +964,14 @@ func (s *Span) Finish(opts ...FinishOption) {
 		s.setTagAssumesHoldingLock("go_execution_traced", "partial")
 	}
 
-	if s.Root() == s {
-		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
-			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
-				tr.rulesSampling.SampleTrace(s)
-			}
-		}
-	}
+	// TODO(kakkoyun): Clean this up.
+	// if s.rootAssumesHoldingLock() == s {
+	// 	if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+	// 		if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
+	// 			tr.rulesSampling.SampleTrace(s)
+	// 		}
+	// 	}
+	// }
 
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
@@ -1141,34 +1156,41 @@ func (s *Span) Format(f fmt.State, c rune) {
 	case 's':
 		fmt.Fprint(f, s.stringAssumesHoldingLock())
 	case 'v':
-		if svc := globalconfig.ServiceName(); svc != "" {
-			fmt.Fprintf(f, "dd.service=%s ", svc)
-		}
-		if tr := getGlobalTracer(); tr != nil {
-			tc := tr.TracerConf()
-			if tc.EnvTag != "" {
-				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := os.Getenv("DD_ENV"); env != "" {
-				fmt.Fprintf(f, "dd.env=%s ", env)
-			}
-			if tc.VersionTag != "" {
-				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := os.Getenv("DD_VERSION"); v != "" {
-				fmt.Fprintf(f, "dd.version=%s ", v)
-			}
-		}
-		var traceID string
-		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true) && s.context.traceID.HasUpper() {
-			traceID = s.context.TraceID()
-		} else {
-			traceID = fmt.Sprintf("%d", s.traceID)
-		}
-		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
-		fmt.Fprintf(f, `dd.span_id="%d" `, s.spanID)
-		fmt.Fprintf(f, `dd.parent_id="%d"`, s.parentID)
+		s.formatAssumesHoldingLock(f, c)
 	default:
 		fmt.Fprintf(f, "%%!%c(tracer.Span=%v)", c, s)
 	}
+}
+
+// +checklocksread:s.mu
+func (s *Span) formatAssumesHoldingLock(f fmt.State, c rune) {
+	mutexasserts.AssertRWMutexLocked(&s.mu)
+
+	if svc := globalconfig.ServiceName(); svc != "" {
+		fmt.Fprintf(f, "dd.service=%s ", svc)
+	}
+	if tr := getGlobalTracer(); tr != nil {
+		tc := tr.TracerConf()
+		if tc.EnvTag != "" {
+			fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
+		} else if env := os.Getenv("DD_ENV"); env != "" {
+			fmt.Fprintf(f, "dd.env=%s ", env)
+		}
+		if tc.VersionTag != "" {
+			fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
+		} else if v := os.Getenv("DD_VERSION"); v != "" {
+			fmt.Fprintf(f, "dd.version=%s ", v)
+		}
+	}
+	var traceID string
+	if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true) && s.context.traceID.HasUpper() {
+		traceID = s.context.TraceID()
+	} else {
+		traceID = fmt.Sprintf("%d", s.traceID)
+	}
+	fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
+	fmt.Fprintf(f, `dd.span_id="%d" `, s.spanID)
+	fmt.Fprintf(f, `dd.parent_id="%d"`, s.parentID)
 }
 
 const (
