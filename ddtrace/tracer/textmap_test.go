@@ -497,7 +497,7 @@ func TestTextMapPropagator(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
-			SetGlobalTracer(tracer)
+			setGlobalTracer(tracer)
 			child := tracer.StartSpan("test")
 			for k, v := range tc.tags {
 				child.Context().trace.setPropagatingTag(k, v)
@@ -2490,9 +2490,9 @@ func TestMalformedTID(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer()
 	assert.Nil(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
-	defer SetGlobalTracer(&NoopTracer{})
+	defer setGlobalTracer(&NoopTracer{})
 
 	t.Run("datadog, short tid", func(t *testing.T) {
 		headers := TextMapCarrier(map[string]string{

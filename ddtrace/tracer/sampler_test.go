@@ -1384,9 +1384,9 @@ func BenchmarkRulesSampler(b *testing.B) {
 	const batchSize = 500
 
 	benchmarkStartSpan := func(b *testing.B, t *tracer) {
-		SetGlobalTracer(t)
+		setGlobalTracer(t)
 		defer func() {
-			SetGlobalTracer(&NoopTracer{})
+			setGlobalTracer(&NoopTracer{})
 		}()
 		t.prioritySampling.readRatesJSON(io.NopCloser(strings.NewReader(
 			`{
@@ -1695,7 +1695,7 @@ func TestSampleTagsRootOnly(t *testing.T) {
 			Rule{Tags: map[string]string{"tag": "20"}, Rate: 1},
 			Rule{ResourceGlob: "root"},
 		)))
-		tr := GetGlobalTracer()
+		tr := getGlobalTracer()
 		defer tr.Stop()
 
 		root := tr.StartSpan("mysql.root", ResourceName("root"))
@@ -1736,7 +1736,7 @@ func TestSampleTagsRootOnly(t *testing.T) {
 			Rule{Tags: map[string]string{"tag": "20"}, Rate: 1},
 			Rule{Tags: nil, ResourceGlob: "root"},
 		)))
-		tr := GetGlobalTracer()
+		tr := getGlobalTracer()
 		defer tr.Stop()
 
 		root := tr.StartSpan("mysql.root", ResourceName("root"))
