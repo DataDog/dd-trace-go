@@ -242,6 +242,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 
 	if v, ok := value.([]byte); ok {
 		s.setMeta(key, string(v))
+		return
 	}
 
 	if value != nil {

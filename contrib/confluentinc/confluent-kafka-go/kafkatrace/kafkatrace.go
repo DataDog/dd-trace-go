@@ -3,7 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package tracing
+// Package kafkatrace provides common tracing functionality for different confluentinc/confluent-kafka-go versions.
+//
+// This package is not meant to be used directly (use instead
+// github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 or
+// github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2)
+package kafkatrace
 
 import "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
@@ -20,17 +25,6 @@ func ComponentName(v CKGoVersion) string {
 		return "confluentinc/confluent-kafka-go/kafka"
 	case CKGoVersion2:
 		return "confluentinc/confluent-kafka-go/kafka.v2"
-	default:
-		return ""
-	}
-}
-
-func IntegrationName(v CKGoVersion) string {
-	switch v {
-	case CKGoVersion1:
-		return "github.com/confluentinc/confluent-kafka-go"
-	case CKGoVersion2:
-		return "github.com/confluentinc/confluent-kafka-go/v2"
 	default:
 		return ""
 	}

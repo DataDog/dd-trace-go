@@ -9,26 +9,27 @@ package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/con
 import (
 	"time"
 
-	tracing "github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
+
+	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 const (
-	ckgoVersion = tracing.CKGoVersion1
-	pkgPath     = "contrib/confluentinc/confluent-kafka-go/kafka"
+	componentName = instrumentation.PackageConfluentKafkaGo
+	pkgPath       = "contrib/confluentinc/confluent-kafka-go/kafka"
 )
 
 var instr *instrumentation.Instrumentation
 
 func init() {
-	instr = tracing.Package(ckgoVersion)
+	instr = instrumentation.Load(componentName)
 }
 
-func newKafkaTracer(opts ...Option) *tracing.KafkaTracer {
+func newKafkaTracer(opts ...Option) *kafkatrace.Tracer {
 	v, _ := kafka.LibraryVersion()
-	return tracing.NewKafkaTracer(tracing.CKGoVersion1, v, opts...)
+	return kafkatrace.NewKafkaTracer(instr, kafkatrace.CKGoVersion1, v, opts...)
 }
 
 // NewConsumer calls kafka.NewConsumer and wraps the resulting Consumer.
@@ -54,7 +55,7 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 // A Consumer wraps a kafka.Consumer.
 type Consumer struct {
 	*kafka.Consumer
-	tracer *tracing.KafkaTracer
+	tracer *kafkatrace.Tracer
 	events chan kafka.Event
 }
 
@@ -65,7 +66,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 		tracer:   newKafkaTracer(opts...),
 	}
 	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.tracer)
-	wrapped.events = tracing.WrapConsumeEventsChannel(wrapped.tracer, c.Events(), c, wrapEvent)
+	wrapped.events = kafkatrace.WrapConsumeEventsChannel(wrapped.tracer, c.Events(), c, wrapEvent)
 	return wrapped
 }
 
@@ -155,7 +156,7 @@ func (c *Consumer) CommitOffsets(offsets []kafka.TopicPartition) ([]kafka.TopicP
 // A Producer wraps a kafka.Producer.
 type Producer struct {
 	*kafka.Producer
-	tracer         *tracing.KafkaTracer
+	tracer         *kafkatrace.Tracer
 	produceChannel chan *kafka.Message
 	events         chan kafka.Event
 }
@@ -168,9 +169,9 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 		events:   p.Events(),
 	}
 	instr.Logger().Debug("%s: Wrapping Producer: %#v", pkgPath, wrapped.tracer)
-	wrapped.produceChannel = tracing.WrapProduceChannel(wrapped.tracer, p.ProduceChannel(), wrapMessage)
+	wrapped.produceChannel = kafkatrace.WrapProduceChannel(wrapped.tracer, p.ProduceChannel(), wrapMessage)
 	if wrapped.tracer.DSMEnabled() {
-		wrapped.events = tracing.WrapProduceEventsChannel(wrapped.tracer, p.Events(), wrapEvent)
+		wrapped.events = kafkatrace.WrapProduceEventsChannel(wrapped.tracer, p.Events(), wrapEvent)
 	}
 	return wrapped
 }
@@ -194,7 +195,7 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 	span := p.tracer.StartProduceSpan(tMsg)
 
 	var errChan chan error
-	deliveryChan, errChan = tracing.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
+	deliveryChan, errChan = kafkatrace.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
 
 	p.tracer.SetProduceCheckpoint(tMsg)
 
