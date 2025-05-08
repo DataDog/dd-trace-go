@@ -93,6 +93,8 @@ func TestCIVisibilityMockTracer_Stop(t *testing.T) {
 	internal.StoreGlobalTracer[Tracer, tracer.Tracer](cmt)
 	defer internal.SetGlobalTracer(cmt.real)
 
+	cmt.Stop() // Stop the tracer
+
 	// Verify isnoop is set (internal check, not strictly necessary but good for understanding)
 	assert.True(t, cmt.isnoop.Load(), "isnoop flag should be true after Stop")
 
