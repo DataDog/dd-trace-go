@@ -1428,21 +1428,28 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		return &ctx, nil
 	}
 
-	// 1) validation pass
 	parts := strings.Split(baggageHeader, ",")
-	for _, kv := range parts {
+
+	// 1) validation & single-trim pass
+	for i, kv := range parts {
 		k, v, ok := strings.Cut(kv, "=")
-		if !ok || strings.TrimSpace(k) == "" || strings.TrimSpace(v) == "" {
+		trimmedK := strings.TrimSpace(k)
+		trimmedV := strings.TrimSpace(v)
+		if !ok || trimmedK == "" || trimmedV == "" {
 			log.Warn("invalid baggage item: %q, dropping entire header", kv)
 			return &ctx, nil
 		}
+		// store back the trimmed pair so we don't re-trim below
+		parts[i] = trimmedK + "=" + trimmedV
 	}
-	// 2) safe to parse & apply
+
+	// 2) safe to URL-decode & apply
 	for _, kv := range parts {
 		rawK, rawV, _ := strings.Cut(kv, "=")
-		key, _ := url.QueryUnescape(strings.TrimSpace(rawK))
-		val, _ := url.QueryUnescape(strings.TrimSpace(rawV))
+		key, _ := url.QueryUnescape(rawK)
+		val, _ := url.QueryUnescape(rawV)
 		ctx.setBaggageItem(key, val)
 	}
+
 	return &ctx, nil
 }
