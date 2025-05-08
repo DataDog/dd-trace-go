@@ -19,6 +19,12 @@ const (
 	CKGoVersion2 CKGoVersion = 2
 )
 
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageConfluentKafkaGo)
+}
+
 func ComponentName(v CKGoVersion) string {
 	switch v {
 	case CKGoVersion1:

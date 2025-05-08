@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2
+module github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2
 
 go 1.23.0
 
