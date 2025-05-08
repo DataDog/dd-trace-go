@@ -105,9 +105,6 @@ func (w wTopicPartition) GetOffset() int64 {
 }
 
 func (w wTopicPartition) GetError() kafkatrace.TopicPartitionError {
-	if w.Error == nil {
-		return nil
-	}
 	return wTopicPartitionError{w.Error}
 }
 
