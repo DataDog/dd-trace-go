@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"context"
+	"errors"
 	"math"
 
 	"github.com/IBM/sarama"
@@ -173,6 +174,13 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 						span.Finish(tracer.WithError(err))
 					}
 				}
+
+				if errors.Is(err, sarama.ErrUnknown) {
+					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
+						"broker logs for more information. Tracer message header injection for Kafka is disabled.", err)
+					cfg.dataStreamsEnabled = false
+				}
+
 				wrapped.errors <- err
 			}
 		}
@@ -203,7 +211,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span := tracer.StartSpan(cfg.producerSpanName, opts...)
-	if version.IsAtLeast(sarama.V0_11_0_0) {
+	if version.IsAtLeast(sarama.V0_11_0_0) && cfg.dataStreamsEnabled {
 		// re-inject the span context so consumers can pick it up
 		tracer.Inject(span.Context(), carrier)
 	}

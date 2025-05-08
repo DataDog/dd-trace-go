@@ -104,8 +104,11 @@ func (w wTopicPartition) GetOffset() int64 {
 	return int64(w.Offset)
 }
 
-func (w wTopicPartition) GetError() error {
-	return w.Error
+func (w wTopicPartition) GetError() tracing.TopicPartitionError {
+	if w.Error == nil {
+		return nil
+	}
+	return wTopicPartitionError{w.Error}
 }
 
 type wEvent struct {
@@ -128,6 +131,21 @@ func (w wEvent) KafkaOffsetsCommitted() (tracing.OffsetsCommitted, bool) {
 		return wrapOffsetsCommitted(oc), true
 	}
 	return nil, false
+}
+
+type wTopicPartitionError struct {
+	error
+}
+
+func (w wTopicPartitionError) IsGenericServerError() bool {
+	if w.error == nil {
+		return false
+	}
+	return w.error.(kafka.Error).Code() == kafka.ErrUnknown
+}
+
+func (w wTopicPartitionError) GetError() error {
+	return w.error
 }
 
 type wOffsetsCommitted struct {
