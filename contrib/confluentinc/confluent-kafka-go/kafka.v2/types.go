@@ -104,10 +104,7 @@ func (w wTopicPartition) GetOffset() int64 {
 	return int64(w.Offset)
 }
 
-func (w wTopicPartition) GetError() tracing.TopicPartitionError {
-	if w.Error == nil {
-		return nil
-	}
+func (w wTopicPartition) GetError() kafkatrace.TopicPartitionError {
 	return wTopicPartitionError{w.Error}
 }
 
@@ -138,6 +135,9 @@ type wTopicPartitionError struct {
 }
 
 func (w wTopicPartitionError) IsGenericServerError() bool {
+	if w.error == nil {
+		return false
+	}
 	return w.error.(kafka.Error).Code() == kafka.ErrUnknown
 }
 

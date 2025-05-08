@@ -104,7 +104,7 @@ func (w wTopicPartition) GetOffset() int64 {
 	return int64(w.Offset)
 }
 
-func (w wTopicPartition) GetError() tracing.TopicPartitionError {
+func (w wTopicPartition) GetError() kafkatrace.TopicPartitionError {
 	if w.Error == nil {
 		return nil
 	}
