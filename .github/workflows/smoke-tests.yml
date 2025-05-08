@@ -99,6 +99,7 @@ jobs:
 
   smoke-test-tracer:
     name: Test dd-trace-go
+    runs-on: ubuntu-latest
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
