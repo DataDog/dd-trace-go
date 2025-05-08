@@ -5,7 +5,9 @@
 
 package internal
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+)
 
 var (
 	// globalTracer stores the current tracer as *ddtrace/tracer.Tracer (pointer to interface). The
@@ -41,4 +43,24 @@ func SetGlobalTracer[T tracerLike](t T) {
 // as generic type.
 func GetGlobalTracer[T tracerLike]() T {
 	return *globalTracer.Load().(*T)
+}
+
+// mockTracerLike is an interface to restrict the types that can be stored in `globalTracer`.
+// This represents the mock tracer type used in tests. And prevent calling the StoreGlobalTracer
+// function with a normal tracer.Tracer.
+type mockTracerLike interface {
+	tracerLike
+	Reset()
+}
+
+// StoreGlobalTracer is a helper function to set the global tracer internally without stopping the old one.
+// WARNING: this is used by the civisibilitymocktracer working as a wrapper around the global tracer, hence we don't stop the tracer.
+// DO NOT USE THIS FUNCTION ON NORMAL tracer.Tracer.
+func StoreGlobalTracer[M mockTracerLike, T tracerLike](m M) {
+	if (mockTracerLike)(m) == nil {
+		panic("ddtrace/internal: StoreGlobalTracer called with nil")
+	}
+	// convert the mock tracer like to the actual tracer like type (avoid panic on storing different types in the atomic.Value)
+	t := (tracerLike)(m).(T)
+	globalTracer.Store(&t)
 }
