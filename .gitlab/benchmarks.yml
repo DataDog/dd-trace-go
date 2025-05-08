@@ -1,4 +1,4 @@
-.benchmarks:
+.benchmark:
   stage: benchmarks
   image: $BASE_CI_IMAGE
   when: on_success
@@ -11,7 +11,7 @@
   script:
     - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-    - git clone --branch dario.castane/remove-v2-prefix-paths https://github.com/DataDog/benchmarking-platform /platform && cd /platform
+    - git clone --branch hannahkm/parallelize-ddtracego https://github.com/DataDog/benchmarking-platform /platform && cd /platform
     - ./steps/capture-hardware-software-info.sh
     - ./steps/run-benchmarks.sh
     - ./steps/analyze-results.sh
@@ -24,17 +24,19 @@
       - reports/
     expire_in: 3 months
 
-benchmark-ddtrace:
-  extends: .benchmarks
-
-benchmark-net-http:
-  extends: .benchmarks
-
-benchmark-graphql:
-  extends: .benchmarks
-
-benchmark-appsec:
-  extends: .benchmarks
-
-benchmark-internal-contrib:
-  extends: .benchmarks
+matrix:
+  extends: .benchmark
+  parallel:
+    matrix:
+      - DIRECTORY: "./ddtrace"
+        GROUP: 1
+      - DIRECTORY: "./contrib/net/http"
+        GROUP: 2
+      - DIRECTORY: "./internal/appsec"
+        GROUP: 3
+      - DIRECTORY: "./internal/contrib"
+        GROUP: 4
+      - DIRECTORY: "./contrib/graphql-go"
+        GROUP: 5
+  variables:
+    SPLITS: 5
