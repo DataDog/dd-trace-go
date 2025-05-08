@@ -141,7 +141,7 @@ func (w wTopicPartitionError) IsGenericServerError() bool {
 	return w.error.(kafka.Error).Code() == kafka.ErrUnknown
 }
 
-func (w wTopicPartitionError) GetError() error {
+func (w wTopicPartitionError) Error() error {
 	return w.error
 }
 

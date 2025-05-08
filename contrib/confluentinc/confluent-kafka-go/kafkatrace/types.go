@@ -40,7 +40,7 @@ type OffsetsCommitted interface {
 }
 
 type TopicPartitionError interface {
-	GetError() error
+	Error() error
 	IsGenericServerError() bool
 }
 
