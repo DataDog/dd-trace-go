@@ -242,6 +242,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 
 	if v, ok := value.([]byte); ok {
 		s.setMeta(key, string(v))
+		return
 	}
 
 	if value != nil {
@@ -377,7 +378,7 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 		return nil
 	}
 	opts = append(opts, ChildOf(s.Context()))
-	return GetGlobalTracer().StartSpan(operationName, opts...)
+	return getGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // setSamplingPriorityLocked updates the sampling priority.
@@ -671,7 +672,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
@@ -726,7 +727,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	tracer, hasTracer := GetGlobalTracer().(*tracer)
+	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
 		if !tracer.config.enabled.current {
 			return
@@ -861,7 +862,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := GetGlobalTracer(); tr != nil {
+		if tr := getGlobalTracer(); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
