@@ -124,8 +124,8 @@ aspects:
               return int64(w.Offset)
             }
 
-            func (w __dd_wTopicPartition) GetError() error {
-              return w.Error
+            func (w __dd_wTopicPartition) GetError() kafkatrace.TopicPartitionError {
+              return __dd_wTopicPartitionError{w.Error}
             }
 
             type __dd_wEvent struct {
@@ -148,6 +148,21 @@ aspects:
                 return __dd_wrapOffsetsCommitted(oc), true
               }
               return nil, false
+            }
+
+            type __dd_wTopicPartitionError struct {
+              error
+            }
+
+            func (w __dd_wTopicPartitionError) IsGenericServerError() bool {
+              if w.error == nil {
+                return false
+              }
+              return w.error.(Error).Code() == ErrUnknown
+            }
+
+            func (w __dd_wTopicPartitionError) GetError() error {
+              return w.error
             }
 
             type __dd_wOffsetsCommitted struct {
