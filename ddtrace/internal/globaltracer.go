@@ -5,9 +5,7 @@
 
 package internal
 
-import (
-	"sync/atomic"
-)
+import "sync/atomic"
 
 var (
 	// globalTracer stores the current tracer as *ddtrace/tracer.Tracer (pointer to interface). The
