@@ -161,7 +161,7 @@ aspects:
               return w.error.(Error).Code() == ErrUnknown
             }
 
-            func (w __dd_wTopicPartitionError) GetError() error {
+            func (w __dd_wTopicPartitionError) Error() error {
               return w.error
             }
 
