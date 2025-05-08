@@ -32,9 +32,15 @@ var (
 
 // Creates a new CIVisibilityMockTracer that uses the mock tracer for all spans except the CIVisibility spans.
 func newCIVisibilityMockTracer() *civisibilitymocktracer {
+	currentTracer := getGlobalTracer()
+	// let's check if the current tracer is already a civisibilitymocktracer
+	// if so, we need to get the real tracer from it
+	if currentCIVisibilityMockTracer, ok := currentTracer.(*civisibilitymocktracer); ok && currentCIVisibilityMockTracer != nil {
+		currentTracer = currentCIVisibilityMockTracer.real
+	}
 	return &civisibilitymocktracer{
 		mock: newMockTracer(),
-		real: getGlobalTracer(),
+		real: currentTracer,
 	}
 }
 
