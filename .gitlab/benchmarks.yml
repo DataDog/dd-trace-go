@@ -34,9 +34,7 @@ matrix:
         GROUP: 2
       - DIRECTORY: "./internal/appsec"
         GROUP: 3
-      - DIRECTORY: "./internal/contrib"
+      - DIRECTORY: "./contrib/graphql-go/graphql"
         GROUP: 4
-      - DIRECTORY: "./contrib/graphql-go"
-        GROUP: 5
   variables:
-    SPLITS: 5
+    SPLITS: 4
