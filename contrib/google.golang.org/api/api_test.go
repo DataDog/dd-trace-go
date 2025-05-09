@@ -77,7 +77,7 @@ func TestCivicInfo(t *testing.T) {
 		Transport: WrapRoundTripper(badRequestTransport),
 	}))
 	assert.NoError(t, err)
-	svc.Representatives.RepresentativeInfoByAddress().Do()
+	svc.Elections.ElectionQuery().Do()
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
@@ -86,10 +86,10 @@ func TestCivicInfo(t *testing.T) {
 	assert.Equal(t, "http.request", s0.OperationName())
 	assert.Equal(t, "http", s0.Tag(ext.SpanType))
 	assert.Equal(t, "google.civicinfo", s0.Tag(ext.ServiceName))
-	assert.Equal(t, "civicinfo.representatives.representativeInfoByAddress", s0.Tag(ext.ResourceName))
+	assert.Equal(t, "civicinfo.elections.electionQuery", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
-	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, svc.BasePath+"civicinfo/v2/elections?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
 	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))
@@ -131,7 +131,7 @@ func TestWithEndpointMetadataDisabled(t *testing.T) {
 		Transport: WrapRoundTripper(badRequestTransport, WithEndpointMetadataDisabled()),
 	}))
 	require.NoError(t, err)
-	svc.Representatives.RepresentativeInfoByAddress().Do()
+	svc.Elections.ElectionQuery().Do()
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
@@ -143,7 +143,7 @@ func TestWithEndpointMetadataDisabled(t *testing.T) {
 	assert.Equal(t, "GET civicinfo.googleapis.com", s0.Tag(ext.ResourceName))
 	assert.Equal(t, "400", s0.Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", s0.Tag(ext.HTTPMethod))
-	assert.Equal(t, svc.BasePath+"civicinfo/v2/representatives?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
+	assert.Equal(t, svc.BasePath+"civicinfo/v2/elections?alt=json&prettyPrint=false", s0.Tag(ext.HTTPURL))
 	assert.Equal(t, "google.golang.org/api", s0.Tag(ext.Component))
 	assert.Equal(t, componentName, s0.Integration())
 	assert.Equal(t, ext.SpanKindClient, s0.Tag(ext.SpanKind))

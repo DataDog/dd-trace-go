@@ -2,16 +2,6 @@
 
 # default owner
 *                               @DataDog/dd-trace-go-guild @DataDog/apm-go
-
-# no owner: changes to these files will not automatically ping any particular
-# team and can be reviewed by anybody with the appropriate permissions. This is
-# meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
-# changes one of these files.
-**/go.mod
-**/go.sum
-go.work
-go.work.sum
-
 # tracing
 /contrib                        @DataDog/apm-go @Datadog/apm-idm-go
 /ddtrace                        @DataDog/apm-go
@@ -26,6 +16,7 @@ go.work.sum
 /contrib/**/*appsec*.go         @DataDog/asm-go @DataDog/apm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go @DataDog/apm-go
 /contrib/envoyproxy             @DataDog/asm-go @DataDog/apm-go
+/contrib/k8s.io/gateway-api     @DataDog/asm-go @DataDog/apm-go
 
 # datastreams
 /datastreams                    @Datadog/data-streams-monitoring @DataDog/apm-go
@@ -42,3 +33,12 @@ go.work.sum
 # Orchestrion
 /internal/orchestrion           @DataDog/apm-orchestrion @DataDog/apm-go
 /**/orchestrion.yml             @DataDog/apm-orchestrion @DataDog/apm-go
+
+# no owner: changes to these files will not automatically ping any particular
+# team and can be reviewed by anybody with the appropriate permissions. This is
+# meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
+# changes one of these files.
+**/go.mod
+**/go.sum
+go.work
+go.work.sum
