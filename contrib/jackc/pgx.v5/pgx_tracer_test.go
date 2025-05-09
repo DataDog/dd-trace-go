@@ -257,8 +257,8 @@ func TestCopyFrom(t *testing.T) {
 	assert.Equal(t, "Copy From", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Copy From", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
-	assert.EqualValues(t, []string{"numbers"}, s.Tag("db.copy_from.tables"))
-	assert.EqualValues(t, []string{"number"}, s.Tag("db.copy_from.columns"))
+	assert.EqualValues(t, "numbers", s.Tag("db.copy_from.tables.0"))
+	assert.EqualValues(t, "number", s.Tag("db.copy_from.columns.0"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -442,6 +442,11 @@ func runAllOperations(t *testing.T, createConn createConnFn) {
 	require.NoError(t, err)
 }
 
+const (
+	componentName      = "jackc/pgx.v5"
+	defaultServiceName = "postgres.db"
+)
+
 func assertCommonTags(t *testing.T, s mocktracer.Span) {
 	assert.Equal(t, defaultServiceName, s.Tag(ext.ServiceName))
 	assert.Equal(t, ext.SpanTypeSQL, s.Tag(ext.SpanType))
@@ -458,10 +463,6 @@ func assertCommonTags(t *testing.T, s mocktracer.Span) {
 type pgxMockTracer struct {
 	called map[string]bool
 }
-
-var (
-	_ allPgxTracers = (*pgxMockTracer)(nil)
-)
 
 func (p *pgxMockTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
 	p.called["query.start"] = true

@@ -101,20 +101,6 @@ func TestBaggageFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("withBaggage", func(t *testing.T) {
-		ctx := context.Background()
-
-		// Create a map and insert into context directly
-		initialMap := map[string]string{"customKey": "customValue"}
-		ctx = withBaggage(ctx, initialMap)
-
-		// Verify
-		got, _ := Get(ctx, "customKey")
-		if got != "customValue" {
-			t.Errorf("Baggage(ctx, \"customKey\") = %q; want \"customValue\"", got)
-		}
-	})
-
 	t.Run("explicitOkCheck", func(t *testing.T) {
 		ctx := context.Background()
 

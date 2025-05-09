@@ -7,69 +7,30 @@ package buntdb
 
 import (
 	"context"
-	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	v2 "github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2"
 )
 
-const defaultServiceName = "buntdb"
-
-type config struct {
-	ctx           context.Context
-	serviceName   string
-	spanName      string
-	analyticsRate float64
-}
-
-func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	cfg.spanName = namingschema.OpName(namingschema.BuntDBOutbound)
-	cfg.ctx = context.Background()
-	// cfg.analyticsRate = globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_BUNTDB_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = math.NaN()
-	}
-}
-
 // An Option customizes the config.
-type Option func(cfg *config)
+type Option = v2.Option
 
 // WithContext sets the context for the transaction.
 func WithContext(ctx context.Context) Option {
-	return func(cfg *config) {
-		cfg.ctx = ctx
-	}
+	return v2.WithContext(ctx)
 }
 
 // WithServiceName sets the given service name for the transaction.
 func WithServiceName(serviceName string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = serviceName
-	}
+	return v2.WithService(serviceName)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }

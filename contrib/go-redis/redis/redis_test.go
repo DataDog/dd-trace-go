@@ -13,18 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/go-redis/redis"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-const debug = false
 
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
@@ -59,7 +55,7 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("go-redis/redis", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
@@ -108,7 +104,7 @@ func TestClient(t *testing.T) {
 	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("go-redis/redis", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("15", span.Tag("out.db"))
@@ -140,7 +136,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("go-redis/redis", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
@@ -163,7 +159,7 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n", span.Tag(ext.ResourceName))
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("go-redis/redis", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
@@ -195,7 +191,7 @@ func TestPipelined(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("go-redis/redis", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
@@ -219,7 +215,7 @@ func TestPipelined(t *testing.T) {
 	assert.Equal("expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n", span.Tag(ext.ResourceName))
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("go-redis/redis", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
@@ -302,12 +298,12 @@ func TestError(t *testing.T) {
 
 		assert.Equal("redis.command", span.OperationName())
 		assert.NotNil(err)
-		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis", span.Tag(ext.Component))
-		assert.Equal(componentName, span.Integration())
+		assert.Equal("go-redis/redis", span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 		assert.Equal("0", span.Tag("out.db"))
@@ -334,7 +330,7 @@ func TestError(t *testing.T) {
 		assert.Equal("6379", span.Tag(ext.TargetPort))
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis", span.Tag(ext.Component))
-		assert.Equal(componentName, span.Integration())
+		assert.Equal("go-redis/redis", span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 		assert.Equal("0", span.Tag("out.db"))
@@ -368,9 +364,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -393,9 +387,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -447,22 +439,4 @@ func TestWithContext(t *testing.T) {
 	assert.NotNil(getSpan)
 	assert.Equal(span1.SpanID(), setSpan.ParentID())
 	assert.Equal(span2.SpanID(), getSpan.ParentID())
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
-		st := client.Set("test_key", "test_value", 0)
-		require.NoError(t, st.Err())
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewRedisTest(genSpans, "redis.client")(t)
 }
