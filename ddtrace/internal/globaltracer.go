@@ -6,19 +6,27 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
+	_ "unsafe" // required by go:linkname
+
 	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
+//go:linkname setGlobalTracer github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.setGlobalTracer
+func setGlobalTracer(tracer v2.Tracer)
+
+//go:linkname getGlobalTracer github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.getGlobalTracer
+func getGlobalTracer() v2.Tracer
+
 // SetGlobalTracer sets the global tracer to t.
 func SetGlobalTracer(t ddtrace.Tracer) {
 	rt := t.(TracerV2Adapter)
-	v2.SetGlobalTracer(rt.Tracer)
+	setGlobalTracer(rt.Tracer)
 }
 
 // GetGlobalTracer returns the currently active tracer.
 func GetGlobalTracer() ddtrace.Tracer {
-	tr := v2.GetGlobalTracer()
+	tr := getGlobalTracer()
 	return TracerV2Adapter{Tracer: tr}
 }
 
