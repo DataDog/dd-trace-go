@@ -8,7 +8,6 @@ package kafka
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -364,9 +363,7 @@ func TestCustomTags(t *testing.T) {
 	s := spans[0]
 
 	assert.Equal(t, "bar", s.Tag("foo"))
-	for i, c := range "key1" {
-		assert.Equal(t, float64(c), s.Tag(fmt.Sprintf("key.%d", i)))
-	}
+	assert.Equal(t, "key1", s.Tag("key"))
 }
 
 // Test we don't leak goroutines and properly close the span when Produce returns an error
