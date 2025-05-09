@@ -421,8 +421,7 @@ func TestResourceNamerSettings(t *testing.T) {
 	})
 
 	t.Run("custom", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		router := gin.New()
 		router.Use(Middleware("foobar", WithResourceNamer(staticNamer)))
