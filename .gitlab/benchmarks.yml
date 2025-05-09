@@ -23,7 +23,6 @@
     paths:
       - reports/
     expire_in: 3 months
-  PARALLELIZE: "true"
 
 matrix:
   extends: .benchmark
