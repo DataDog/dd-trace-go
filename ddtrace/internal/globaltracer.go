@@ -47,7 +47,7 @@ type NoopTracer struct{}
 
 // StartSpan implements ddtrace.Tracer.
 func (NoopTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
-	log.Warn("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
+	log.Debug("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
 	return NoopSpan{}
 }
 
