@@ -23,6 +23,7 @@ func NewAddressesBuilder() *RunAddressDataBuilder {
 		RunAddressData: libddwaf.RunAddressData{
 			Persistent: make(map[string]any, 1),
 			Ephemeral:  make(map[string]any, 1),
+			TimerKey:   WAFScope, // Default value for TimerKey
 		},
 	}
 }
@@ -149,7 +150,7 @@ func (b *RunAddressDataBuilder) WithFilePath(file string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerIOFSFileAddr] = file
-	b.Scope = libddwaf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -158,7 +159,7 @@ func (b *RunAddressDataBuilder) WithURL(url string) *RunAddressDataBuilder {
 		return b
 	}
 	b.Ephemeral[ServerIoNetURLAddr] = url
-	b.Scope = libddwaf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -167,7 +168,7 @@ func (b *RunAddressDataBuilder) WithDBStatement(statement string) *RunAddressDat
 		return b
 	}
 	b.Ephemeral[ServerDBStatementAddr] = statement
-	b.Scope = libddwaf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -176,7 +177,7 @@ func (b *RunAddressDataBuilder) WithDBType(driver string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerDBTypeAddr] = driver
-	b.Scope = libddwaf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -185,7 +186,7 @@ func (b *RunAddressDataBuilder) WithSysExecCmd(cmd []string) *RunAddressDataBuil
 		return b
 	}
 	b.Ephemeral[ServerSysExecCmd] = cmd
-	b.Scope = libddwaf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 

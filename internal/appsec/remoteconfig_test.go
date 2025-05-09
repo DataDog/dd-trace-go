@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -653,7 +654,7 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ := appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		wafCtx, err := wafHandle.NewContext(time.Hour)
+		wafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
 		require.NoError(t, err)
 		defer wafCtx.Close()
 		values := map[string]any{
@@ -672,7 +673,7 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ = appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		newWafCtx, err := wafHandle.NewContext(time.Hour)
+		newWafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching

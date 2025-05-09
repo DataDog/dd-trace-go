@@ -54,7 +54,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.Ru
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
 
-	op.metrics.RegisterWafRun(addrs, RequestMilestones{
+	op.metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
 		requestBlocked: blocking,
 		ruleTriggered:  result.HasEvents(),
 		wafTimeout:     wafTimeout,

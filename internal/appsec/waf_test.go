@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/DataDog/appsec-internal-go/apisec"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
@@ -903,7 +904,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 	require.NotNil(b, handle)
 
 	for i := 0; i < b.N; i++ {
-		ctx, err := handle.NewContext(time.Second)
+		ctx, err := handle.NewContext(timer.WithBudget(time.Second))
 		if err != nil || ctx == nil {
 			b.Fatal("nil context")
 		}

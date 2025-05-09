@@ -58,6 +58,8 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		addOrUpdates     = make(map[string]UpdatedConfig)
 		wafConfigUpdater = a.cfg.WAFManager.LockForUpdates()
 	)
+	defer wafConfigUpdater.Unlock()
+
 	for product, updates := range updates {
 		for path, data := range updates {
 			switch product {
@@ -114,7 +116,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				if !some {
 					return
 				}
-				if err == nil {
+				if errs == nil {
 					errs = make(map[string]errInfo)
 				}
 				errs[name] = info
@@ -144,8 +146,6 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 			telemetrylog.Error("appsec: RC could not restore default config: %v", err)
 		}
 	}
-	// We're done with the updates now; we can unlock the WAF updater
-	wafConfigUpdater.Unlock()
 
 	// If an error occurs while updating the WAF handle, don't swap the RulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one

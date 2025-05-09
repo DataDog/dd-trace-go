@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
@@ -23,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 )
 
 type Feature struct {
@@ -90,9 +92,9 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 		AddRulesMonitoringTags(op)
 	})
 
-	ctx, err := waf.handle.NewContext(waf.timeout)
+	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
 	if err != nil {
-		log.Debug("appsec: failed to create Feature context: %v", err)
+		log.Debug("appsec: failed to create WAF context: %v", err)
 	}
 
 	op.SwapContext(ctx)
@@ -133,10 +135,11 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	ctx.Close()
 
-	stats := ctx.Stats()
+	truncations := ctx.Truncations()
+	timerStats := ctx.Timer.Stats()
 	metrics := op.GetMetricsInstance()
-	AddWAFMonitoringTags(op, metrics, waf.rulesVersion, stats)
-	metrics.RegisterStats(stats)
+	AddWAFMonitoringTags(op, metrics, waf.rulesVersion, truncations, timerStats)
+	metrics.Submit(truncations, timerStats)
 
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
 		tagValue := map[string][]any{"triggers": wafEvents}

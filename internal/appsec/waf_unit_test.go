@@ -13,6 +13,7 @@ import (
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,7 +91,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext(time.Second)
+			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
 			require.NoError(t, err)
 			defer wafCtx.Close()
 			runData := libddwaf.RunAddressData{
@@ -167,7 +168,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run("tags/"+tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext(time.Second)
+			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
 			require.NoError(t, err)
 			defer wafCtx.Close()
 
