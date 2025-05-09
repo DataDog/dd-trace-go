@@ -156,3 +156,9 @@ func WithStatusCheck(fn func(statusCode int) bool) Option {
 func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
 	return v2.WithErrorCheck(fn)
 }
+
+// RTWithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func RTWithStatusCheck(fn func(statusCode int) bool) RoundTripperOption {
+	return v2.WithStatusCheck(fn)
+}
