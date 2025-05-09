@@ -1433,20 +1433,17 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		// Split on the first instance of "=" i.e, `a=b=c` becomes `a: b=c`.
 		key, val, ok := strings.Cut(kv, "=")
 		if !ok {
-			log.Warn("invalid baggage item: %s, dropping header", kv)
-			return &ctx, nil
+			log.Warn("invalid baggage item: %s, dropping", kv)
 		}
 		key = strings.TrimSpace(key)
 		val = strings.TrimSpace(val)
 		if key == "" || val == "" {
-			log.Warn("invalid baggage item: %s, dropping header", kv)
-			return &ctx, nil
+			log.Warn("invalid baggage item: '%s', dropping", kv)
 		}
 		key, errKey := url.QueryUnescape(key)
 		val, errVal := url.QueryUnescape(val)
 		if errKey != nil || errVal != nil {
-			log.Warn("invalid baggage item: %s, dropping header", kv)
-			return &ctx, nil
+			log.Warn("failed to decode baggage item: %s, dropping", kv)
 		}
 		ctx.setBaggageItem(key, val)
 	}

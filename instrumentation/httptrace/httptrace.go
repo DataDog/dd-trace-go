@@ -112,13 +112,8 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 					ctx := r.Context()
 					spanctx.ForeachBaggageItem(func(k, v string) bool {
-						// always propagate into the context
 						ctx = baggage.Set(ctx, k, v)
-						// tag only if we allow all or it’s in our map
-						if cfg.allowAllBaggage || func() bool {
-							_, ok := cfg.baggageTagKeys[k]
-							return ok
-						}() {
+						if cfg.shouldTagBaggageKey(k) {
 							ssCfg.Tags["baggage."+k] = v
 						}
 						return true

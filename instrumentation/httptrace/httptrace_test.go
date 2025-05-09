@@ -575,6 +575,40 @@ func TestBaggageSpanTagsSpecifyKeys(t *testing.T) {
 	span.Finish()
 }
 
+func TestBaggageSpanTagsAsteriskKey(t *testing.T) {
+	os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", "user.id,*version")
+	ResetCfg()
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create an HTTP request with that context.
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+
+	// Set the baggage header with additional baggage items.
+	req.Header.Set("baggage", "usr.id=fakeuser,*version=9.4,app.version=9.1.2")
+
+	// Start the request span, which will extract header baggage and merge it with the context's baggage.
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+	// no values should be present in span tags
+	if _, ok := m["baggage.user.id"]; ok {
+		t.Errorf("baggage.user.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.usr.id"]; ok {
+		t.Errorf("baggage.usr.id should not be included in span tags")
+	}
+	if _, ok := m["baggage.app.version"]; ok {
+		t.Errorf("baggage.app.version should not be included in span tags")
+	}
+	if v, ok := m["baggage.*version"]; ok {
+		assert.Equal(t, "9.4", v, "should contain version value")
+	} else {
+		t.Errorf("baggage.version not found in span")
+	}
+
+	span.Finish()
+}
+
 func TestBaggageSpanTagsMalformedHeader(t *testing.T) {
 	tracer.Start()
 	defer tracer.Stop()

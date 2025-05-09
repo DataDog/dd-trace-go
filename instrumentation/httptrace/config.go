@@ -39,8 +39,8 @@ type config struct {
 	traceClientIP                bool
 	isStatusError                func(statusCode int) bool
 	inferredProxyServicesEnabled bool
-	allowAllBaggage              bool
-	baggageTagKeys               map[string]struct{}
+	allowAllBaggage              bool                // tag all baggage items when true (DD_TRACE_BAGGAGE_TAG_KEYS="*").
+	baggageTagKeys               map[string]struct{} // holds specific baggage keys to tag when; it's a map[string]struct{} for O(1) lookups.
 }
 
 // ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
@@ -57,23 +57,21 @@ func newConfig() config {
 		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
 		baggageTagKeys:               make(map[string]struct{}),
 	}
-	raw, ok := os.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS")
-	if !ok {
-		// not set → default list
-		raw = "user.id,account.id,session.id"
-	}
-	// Now raw=="” only if they explicitly set it to empty
-	parts := strings.Split(raw, ",")
-	for _, part := range parts {
-		key := strings.TrimSpace(part)
-		if key == "" {
-			continue
-		}
-		if key == "*" {
+	if v, ok := os.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
-			c.baggageTagKeys[key] = struct{}{}
+			for _, part := range strings.Split(v, ",") {
+				key := strings.TrimSpace(part)
+				if key == "" {
+					continue
+				} else {
+					c.baggageTagKeys[key] = struct{}{}
+				}
+			}
 		}
+	} else {
+		c.baggageTagKeys = defaultBaggageTagKeys()
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
@@ -153,4 +151,21 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 		}
 		return false
 	}
+}
+
+func defaultBaggageTagKeys() map[string]struct{} {
+	return map[string]struct{}{
+		"user.id":    struct{}{},
+		"account.id": struct{}{},
+		"session.id": struct{}{},
+	}
+}
+
+// shouldTagBaggageKey returns true if we should tag this baggage key.
+func (c *config) shouldTagBaggageKey(key string) bool {
+	if c.allowAllBaggage {
+		return true
+	}
+	_, ok := c.baggageTagKeys[key]
+	return ok
 }
