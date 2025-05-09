@@ -23,18 +23,23 @@
     paths:
       - reports/
     expire_in: 3 months
+  PARALLELIZE: "true"
 
 matrix:
   extends: .benchmark
   parallel:
     matrix:
-      - DIRECTORY: "./ddtrace"
+      - DIRECTORY: 
+        - "./ddtrace"
         GROUP: 1
-      - DIRECTORY: "./contrib/net/http"
+      - DIRECTORY: 
+        - "./contrib/net/http"
         GROUP: 2
-      - DIRECTORY: "./internal/appsec"
+      - DIRECTORY: 
+        - "./internal/appsec"
         GROUP: 3
-      - DIRECTORY: "./contrib/graphql-go/graphql"
+      - DIRECTORY: 
+        - "./contrib/graphql-go/graphql"
+        - "./contrib/graph-gophers/graphql"
+        - "./contrib/99designs/gqlgen"
         GROUP: 4
-  variables:
-    SPLITS: 4
