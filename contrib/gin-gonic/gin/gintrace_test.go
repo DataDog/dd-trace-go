@@ -522,6 +522,9 @@ func TestWithHeaderTags(t *testing.T) {
 }
 
 func TestIgnoreRequestSettings(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
 	router := gin.New()
 	router.Use(Middleware("foobar", WithIgnoreRequest(func(c *gin.Context) bool {
 		return strings.HasPrefix(c.Request.URL.Path, "/skip")
@@ -540,12 +543,10 @@ func TestIgnoreRequestSettings(t *testing.T) {
 		"/skip":    true,
 		"/skipfoo": true,
 	} {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
 		r := httptest.NewRequest("GET", "http://localhost"+path, nil)
 		router.ServeHTTP(httptest.NewRecorder(), r)
 		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
+		mt.Reset()
 	}
 }
 

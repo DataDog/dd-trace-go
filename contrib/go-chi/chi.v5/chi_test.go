@@ -396,6 +396,9 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func TestIgnoreRequest(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
 	router := chi.NewRouter()
 	router.Use(Middleware(
 		WithIgnoreRequest(func(r *http.Request) bool {
@@ -416,12 +419,10 @@ func TestIgnoreRequest(t *testing.T) {
 		"/skip":    true,
 		"/skipfoo": true,
 	} {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
 		r := httptest.NewRequest("GET", "http://localhost"+path, nil)
 		router.ServeHTTP(httptest.NewRecorder(), r)
 		assert.Equal(t, shouldSkip, len(mt.FinishedSpans()) == 0)
+		mt.Reset()
 	}
 }
 

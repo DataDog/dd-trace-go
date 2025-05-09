@@ -304,6 +304,9 @@ func TestAnalyticsSettings(t *testing.T) {
 }
 
 func TestIgnoreRequestOption(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
 	tests := []struct {
 		url       string
 		spanCount int
@@ -325,14 +328,13 @@ func TestIgnoreRequestOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.url, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
 			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, r)
 
 			spans := mt.FinishedSpans()
 			assert.Equal(t, test.spanCount, len(spans))
+			mt.Reset()
 		})
 	}
 }
