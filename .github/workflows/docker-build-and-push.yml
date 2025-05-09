@@ -1,9 +1,10 @@
-name: Publish Service Extensions Callout images packages
+name: Publish Docker images packages
 
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -25,14 +26,18 @@ env:
   TAG_NAME: ${{ github.event.inputs.tag_name || github.ref_name }}
   COMMIT_SHA: ${{ github.event.inputs.commit_sha || github.sha }}
   PUSH_LATEST: ${{ github.event.inputs.set_as_latest || 'true' }}
-  REGISTRY_IMAGE: ghcr.io/datadog/dd-trace-go/service-extensions-callout
 
 jobs:
-  build-service-extensions:
+  build-images:
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'arm-4core-linux' }}
     strategy:
       matrix:
         platform: [ linux/amd64, linux/arm64 ]
+        include:
+          - dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
+            image: "ghcr.io/datadog/dd-trace-go/service-extensions-callout"
+          - dockerfile: ./contrib/k8s.io/cmd/request-mirror/Dockerfile
+            image: "ghcr.io/datadog/dd-trace-go/request-mirror"
 
     steps:
       - name: Prepare
@@ -67,17 +72,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@369eb591f429131d6889c46b94e711f089e6ca96 # v5.6.1
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
+          images: ${{ matrix.image }}
 
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v6.13.0
         with:
           context: .
-          file: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -93,10 +98,16 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  publish-service-extensions:
+  publish-images:
     runs-on: ubuntu-latest
     needs:
-      - build-service-extensions
+      - build-images
+
+    strategy:
+      matrix:
+        image:
+          - ghcr.io/datadog/dd-trace-go/service-extensions-callout
+          - ghcr.io/datadog/dd-trace-go/request-mirror
 
     steps:
       - name: Download digests
@@ -116,17 +127,17 @@ jobs:
       - name: Create tags
         id: tags
         run: |
-            tagname=${TAG_NAME//\//-} # remove slashes from tag name
-            tags="tags=-t ghcr.io/datadog/dd-trace-go/service-extensions-callout:${tagname} \
-            -t ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ env.COMMIT_SHA }}"
-            if [ "${PUSH_LATEST}" == "true" ]; then
-              tags="$tags -t ghcr.io/datadog/dd-trace-go/service-extensions-callout:latest"
-            fi
-          
-            echo $tags >> $GITHUB_OUTPUT
+          tagname=${TAG_NAME//\//-} # remove slashes from tag name
+          tags="tags=-t ${{ matrix.image }}:${tagname} \
+          -t ${{ matrix.image }}:${{ env.COMMIT_SHA }}"
+          if [ "${PUSH_LATEST}" == "true" ]; then
+            tags="$tags -t ${{ matrix.image }}:latest"
+          fi
+
+          echo $tags >> $GITHUB_OUTPUT
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create ${{ steps.tags.outputs.tags }} \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+            $(printf '${{ matrix.image }}@sha256:%s ' *)
