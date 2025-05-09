@@ -34,7 +34,7 @@ func (tr *Tracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Co
 }
 
 func (tr *Tracer) TrackProduceOffsets(msg Message) {
-	err := msg.GetTopicPartition().GetError()
+	err := msg.GetTopicPartition().GetError().Error()
 	if err != nil || !tr.dsmEnabled || msg.GetTopicPartition().GetTopic() == "" {
 		return
 	}

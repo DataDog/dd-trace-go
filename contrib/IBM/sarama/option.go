@@ -12,13 +12,14 @@ import (
 )
 
 type config struct {
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-	dataStreamsEnabled  bool
-	groupID             string
+	consumerServiceName    string
+	producerServiceName    string
+	consumerSpanName       string
+	producerSpanName       string
+	analyticsRate          float64
+	dataStreamsEnabled     bool
+	headerInjectionEnabled bool
+	groupID                string
 }
 
 func defaults(cfg *config) {
@@ -31,6 +32,7 @@ func defaults(cfg *config) {
 	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.headerInjectionEnabled = true
 }
 
 // Option describes options for the Sarama integration.
