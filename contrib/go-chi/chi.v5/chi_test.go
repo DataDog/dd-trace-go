@@ -417,7 +417,7 @@ func TestIgnoreRequest(t *testing.T) {
 		"/skipfoo": true,
 	} {
 		mt := mocktracer.Start()
-		defer mt.Reset()
+		defer mt.Stop()
 
 		r := httptest.NewRequest("GET", "http://localhost"+path, nil)
 		router.ServeHTTP(httptest.NewRecorder(), r)
