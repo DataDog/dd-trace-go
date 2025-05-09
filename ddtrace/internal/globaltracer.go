@@ -6,7 +6,6 @@
 package internal // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 
 import (
-	"sync"
 	"sync/atomic"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -43,16 +42,12 @@ var Testing = false
 
 var _ ddtrace.Tracer = (*NoopTracer)(nil)
 
-var warnOnce sync.Once
-
 // NoopTracer is an implementation of ddtrace.Tracer that is a no-op.
 type NoopTracer struct{}
 
 // StartSpan implements ddtrace.Tracer.
 func (NoopTracer) StartSpan(_ string, _ ...ddtrace.StartSpanOption) ddtrace.Span {
-	warnOnce.Do(func() {
-		log.Warn("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
-	})
+	log.Debug("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
 	return NoopSpan{}
 }
 

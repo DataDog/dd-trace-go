@@ -2708,6 +2708,9 @@ func TestNoopTracerStartSpan(t *testing.T) {
 	undo := log.UseLogger(customLogger{l: llog.New(w, "", llog.LstdFlags)})
 	defer undo()
 
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(log.LevelWarn)
+
 	StartSpan("abcd")
 
 	w.Close()
