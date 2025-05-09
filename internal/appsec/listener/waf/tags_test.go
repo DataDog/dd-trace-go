@@ -8,13 +8,16 @@ package waf
 import (
 	"maps"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,18 +32,23 @@ const (
 func TestTagsTypes(t *testing.T) {
 	th := make(trace.TestTagSetter)
 	AddRulesMonitoringTags(&th)
-	AddWAFMonitoringTags(&th, &emitter.ContextMetrics{}, "1.2.3", libddwaf.Stats{
-		Timers: map[string]time.Duration{
-			"waf.duration":      10 * time.Microsecond,
-			"rasp.duration":     10 * time.Microsecond,
-			"waf.duration_ext":  20 * time.Microsecond,
-			"rasp.duration_ext": 20 * time.Microsecond,
+
+	metrics := &emitter.ContextMetrics{
+		SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
+			addresses.WAFScope:  {libddwaf.DurationTimeKey: &atomic.Int64{}},
+			addresses.RASPScope: {libddwaf.DurationTimeKey: &atomic.Int64{}},
 		},
-		TimeoutCount:     0,
-		TimeoutRASPCount: 2,
-		Truncations: map[libddwaf.TruncationReason][]int{
-			libddwaf.ObjectTooDeep: {1, 2, 3},
-		},
+	}
+	metrics.SumDurations[addresses.WAFScope][libddwaf.DurationTimeKey].Store(int64(time.Millisecond))
+	metrics.SumDurations[addresses.RASPScope][libddwaf.DurationTimeKey].Store(int64(time.Millisecond))
+	metrics.SumWAFTimeouts.Store(1)
+	metrics.SumRASPTimeouts[addresses.RASPRuleTypeLFI].Store(2)
+
+	AddWAFMonitoringTags(&th, metrics, "1.2.3", map[libddwaf.TruncationReason][]int{
+		libddwaf.ObjectTooDeep: {1, 2, 3},
+	}, map[timer.Key]time.Duration{
+		addresses.WAFScope:  10 * time.Millisecond,
+		addresses.RASPScope: 10 * time.Millisecond,
 	})
 
 	tags := th.Tags()
@@ -52,6 +60,7 @@ func TestTagsTypes(t *testing.T) {
 		raspDurationTag,
 		raspDurationExtTag,
 		wafVersionTag,
+		wafTimeoutTag,
 		raspTimeoutTag,
 		truncationTagPrefix + libddwaf.ObjectTooDeep.String(),
 		ext.ManualKeep,

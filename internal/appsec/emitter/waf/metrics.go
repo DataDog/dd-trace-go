@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/DataDog/go-libddwaf/v4/waferrors"
 	"github.com/puzpuzpuz/xsync/v3"
 )
@@ -53,9 +54,11 @@ type HandleMetrics struct {
 
 	// Common metric types
 
-	// wafTimerDistributions holds the telemetry metrics for the `rasp.timeout`, `rasp.duration`, `rasp.duration_ext`, `waf.duration`, `waf.duration_ext` metrics
-	// that are accumulated in a deprecated manner by go-libddwaf/v3.
-	wafTimerDistributions map[string]telemetry.MetricHandle
+	// externalTimerDistributions holds the telemetry metrics for the `rasp.duration_ext`, `waf.duration_ext` metrics
+	externalTimerDistributions map[addresses.Scope]telemetry.MetricHandle
+	// internalTimerDistributions holds the telemetry metrics for the `rasp.duration`, `waf.duration` metrics
+	internalTimerDistributions map[addresses.Scope]telemetry.MetricHandle
+
 	// wafRequestsCounts holds the telemetry metrics for the `waf.requests` metric, lazily filled
 	wafRequestsCounts *xsync.MapOf[RequestMilestones, telemetry.MetricHandle]
 
@@ -112,11 +115,13 @@ func NewMetricsInstance(newHandle *libddwaf.Handle, eventRulesVersion string) Ha
 
 	metrics := HandleMetrics{
 		baseTags: baseTags,
-		wafTimerDistributions: map[string]telemetry.MetricHandle{
-			"rasp.duration":     telemetry.Distribution(telemetry.NamespaceAppSec, "rasp.duration", baseTags),
-			"rasp.duration_ext": telemetry.Distribution(telemetry.NamespaceAppSec, "rasp.duration_ext", baseTags),
-			"waf.duration":      telemetry.Distribution(telemetry.NamespaceAppSec, "waf.duration", baseTags),
-			"waf.duration_ext":  telemetry.Distribution(telemetry.NamespaceAppSec, "waf.duration_ext", baseTags),
+		externalTimerDistributions: map[addresses.Scope]telemetry.MetricHandle{
+			addresses.RASPScope: telemetry.Distribution(telemetry.NamespaceAppSec, "rasp.duration_ext", baseTags),
+			addresses.WAFScope:  telemetry.Distribution(telemetry.NamespaceAppSec, "waf.duration_ext", baseTags),
+		},
+		internalTimerDistributions: map[addresses.Scope]telemetry.MetricHandle{
+			addresses.RASPScope: telemetry.Distribution(telemetry.NamespaceAppSec, "rasp.duration", baseTags),
+			addresses.WAFScope:  telemetry.Distribution(telemetry.NamespaceAppSec, "waf.duration", baseTags),
 		},
 		wafRequestsCounts:       xsync.NewMapOf[RequestMilestones, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(2^6)),
 		truncationCounts:        xsync.NewMapOf[libddwaf.TruncationReason, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(2^3)),
@@ -147,6 +152,18 @@ func NewMetricsInstance(newHandle *libddwaf.Handle, eventRulesVersion string) Ha
 func (m *HandleMetrics) NewContextMetrics() *ContextMetrics {
 	return &ContextMetrics{
 		HandleMetrics: m,
+		SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
+			addresses.WAFScope: {
+				libddwaf.EncodeTimeKey:   &atomic.Int64{},
+				libddwaf.DurationTimeKey: &atomic.Int64{},
+				libddwaf.DecodeTimeKey:   &atomic.Int64{},
+			},
+			addresses.RASPScope: {
+				libddwaf.EncodeTimeKey:   &atomic.Int64{},
+				libddwaf.DurationTimeKey: &atomic.Int64{},
+				libddwaf.DecodeTimeKey:   &atomic.Int64{},
+			},
+		},
 	}
 }
 
@@ -160,30 +177,48 @@ type ContextMetrics struct {
 	// SumRASPErrors is the sum of all the RASP errors that happened in the RASP scope.
 	SumRASPErrors atomic.Uint32
 
+	// SumWAFTimeouts is the sum of all the WAF timeouts that happened not in the RASP scope.
+	SumWAFTimeouts atomic.Uint32
+
 	// SumRASPTimeouts is the sum of all the RASP timeouts that happened in the RASP scope by rule type.
 	SumRASPTimeouts [len(addresses.RASPRuleTypes)]atomic.Uint32
+
+	// SumDurations is the sum of all the run durations calls to ddwaf_run behind go-libddwaf
+	// This map is built statically when ContextMetrics is created and readonly after that.
+	SumDurations map[addresses.Scope]map[timer.Key]*atomic.Int64
 
 	// Milestones are the tags of the metric `waf.requests` that will be submitted at the end of the waf context
 	Milestones RequestMilestones
 }
 
-// RegisterStats increment the metrics for the WAF run stats at the end of each waf context lifecycle
+// Submit increment the metrics for the WAF run stats at the end of each waf context lifecycle
 // It registers the metrics:
-// - `rasp.duration` and `rasp.duration_ext` for the RASP scope using [libddwaf.Stats.Timers]
-// - `waf.duration` and `waf.duration_ext` for the WAF scope using [libddwaf.Stats.Timers]
+// - `waf.duration_ext` and `rasp.duration_ext` using [libddwaf.Context.Timer]
+// - `waf.duration` and `rasp.duration` using [libddwaf.Result.TimerStats] accumulated in the ContextMetrics
 // - `rasp.timeout` for the RASP scope using [libddwaf.Stats.TimeoutRASPCount]
 // - `waf.input_truncated` and `waf.truncated_value_size` for the truncations using [libddwaf.Stats.Truncations]
 // - `waf.requests` for the milestones using [ContextMetrics.Milestones]
-func (m *ContextMetrics) RegisterStats(stats libddwaf.Stats) {
-	// Add metrics `{waf,rasp}.duration[_ext]`
-	for key, value := range stats.Timers {
-		metric, found := m.wafTimerDistributions[key]
+func (m *ContextMetrics) Submit(truncations map[libddwaf.TruncationReason][]int, timerStats map[timer.Key]time.Duration) {
+	for scope, value := range timerStats {
+		// Add metrics `{waf,rasp}.duration_ext`
+		metric, found := m.externalTimerDistributions[scope]
 		if !found {
+			telemetrylog.Error("unexpected scope name: %v", scope, telemetry.WithTags([]string{"product:appsec"}))
 			continue
 		}
 
-		// The metrics should be in microseconds
-		metric.Submit(float64(value.Nanoseconds()) / float64(time.Microsecond.Nanoseconds()))
+		metric.Submit(float64(value) / float64(time.Microsecond.Nanoseconds()))
+
+		// Add metrics `{waf,rasp}.duration`
+		for key, value := range m.SumDurations[scope] {
+			if key != libddwaf.DurationTimeKey {
+				continue
+			}
+
+			if metric, found := m.internalTimerDistributions[scope]; found {
+				metric.Submit(float64(value.Load()) / float64(time.Microsecond.Nanoseconds()))
+			}
+		}
 	}
 
 	for ruleTyp := range m.SumRASPTimeouts {
@@ -193,7 +228,7 @@ func (m *ContextMetrics) RegisterStats(stats libddwaf.Stats) {
 	}
 
 	var truncationTypes libddwaf.TruncationReason
-	for reason, sizes := range stats.Truncations {
+	for reason, sizes := range truncations {
 		truncationTypes |= reason
 		handle, _ := m.truncationDistributions.LoadOrCompute(reason, func() telemetry.MetricHandle {
 			return telemetry.Distribution(telemetry.NamespaceAppSec, "waf.truncated_value_size", []string{"truncation_reason:" + strconv.Itoa(int(reason))})
@@ -210,7 +245,7 @@ func (m *ContextMetrics) RegisterStats(stats libddwaf.Stats) {
 		handle.Submit(1)
 	}
 
-	if len(stats.Truncations) > 0 {
+	if len(truncations) > 0 {
 		m.Milestones.inputTruncated = true
 	}
 
@@ -237,10 +272,17 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 // It registers the metrics:
 // - `rasp.rule.match`
 // - `rasp.rule.eval`
-// - accumulate data to set `waf.requests` by the end of the waf context
-func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, tags RequestMilestones) {
-	switch addrs.Scope {
-	case libddwaf.RASPScope:
+// It accumulate data for:
+// - `waf.requests`
+// - `rasp.duration`
+// - `waf.duration`
+func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStats map[timer.Key]time.Duration, tags RequestMilestones) {
+	for key, value := range timerStats {
+		m.SumDurations[addrs.TimerKey][key].Add(int64(value))
+	}
+
+	switch addrs.TimerKey {
+	case addresses.RASPScope:
 		m.SumRASPCalls.Add(1)
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
@@ -264,7 +306,10 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, tags Requ
 
 			handle.Submit(1)
 		}
-	case libddwaf.DefaultScope, "":
+		if tags.wafTimeout {
+			m.SumRASPTimeouts[ruleType].Add(1)
+		}
+	case addresses.WAFScope, "":
 		if tags.requestBlocked {
 			m.Milestones.requestBlocked = true
 		}
@@ -273,6 +318,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, tags Requ
 		}
 		if tags.wafTimeout {
 			m.Milestones.wafTimeout = true
+			m.SumWAFTimeouts.Add(1)
 		}
 		if tags.rateLimited {
 			m.Milestones.rateLimited = true
@@ -281,7 +327,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, tags Requ
 			m.Milestones.wafError = true
 		}
 	default:
-		telemetrylog.Error("unexpected scope name: %v", addrs.Scope, telemetry.WithTags([]string{"product:appsec"}))
+		telemetrylog.Error("unexpected scope name: %v", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
 	}
 }
 
@@ -300,17 +346,17 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 		}, m.baseTags...)))
 	}
 
-	switch addrs.Scope {
-	case libddwaf.RASPScope:
+	switch addrs.TimerKey {
+	case addresses.RASPScope:
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
 			telemetrylog.Error("unexpected call to RASPRuleTypeFromAddressSet: %v", in, telemetry.WithTags([]string{"product:appsec"}))
 		}
 		m.raspError(in, ruleType)
-	case libddwaf.DefaultScope, "":
+	case addresses.WAFScope, "":
 		m.wafError(in)
 	default:
-		telemetrylog.Error("unexpected scope name: %v", addrs.Scope, telemetry.WithTags([]string{"product:appsec"}))
+		telemetrylog.Error("unexpected scope name: %v", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
 	}
 }
 

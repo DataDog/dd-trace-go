@@ -348,31 +348,10 @@ func UnregisterCallback(f Callback) error {
 	client._callbacksMu.Lock()
 	defer client._callbacksMu.Unlock()
 	fValue := reflect.ValueOf(f)
-<<<<<<< Updated upstream
-	for i, callback := range client.callbacks {
-		if reflect.ValueOf(callback) == fValue { // nolint:govet
-			// TODO: Investigate and fix the tests.
-			// Comparing reflect.Values directly is almost certainly not correct,
-			// as it compares the reflect package's internal representation, not the underlying value.
-			// Right comparison: reflect.DeepEqual(reflect.ValueOf(callback).Interface(), fValue.Interface())
-			// See: https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/reflectvaluecompare
-			client.callbacks = append(client.callbacks[:i], client.callbacks[i+1:]...)
-			break
-		}
-	}
-||||||| Stash base
-	for i, callback := range client.callbacks {
-		if reflect.ValueOf(callback) == fValue {
-			client.callbacks = append(client.callbacks[:i], client.callbacks[i+1:]...)
-			break
-		}
-	}
-=======
 
 	client.callbacks = slices.DeleteFunc(client.callbacks, func(cb Callback) bool {
 		return reflect.ValueOf(cb) == fValue
 	})
->>>>>>> Stashed changes
 	return nil
 }
 
@@ -419,36 +398,36 @@ func HasProduct(p string) (bool, error) {
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
-func RegisterCapability(c Capability) error {
+func RegisterCapability(cap Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	client.capabilities[c] = struct{}{}
+	client.capabilities[cap] = struct{}{}
 	return nil
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
-func UnregisterCapability(c Capability) error {
+func UnregisterCapability(cap Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	delete(client.capabilities, c)
+	delete(client.capabilities, cap)
 	return nil
 }
 
 // HasCapability returns whether a given capability was registered
-func HasCapability(c Capability) (bool, error) {
+func HasCapability(cap Capability) (bool, error) {
 	if client == nil {
 		return false, ErrClientNotStarted
 	}
 	client.capabilitiesMu.RLock()
 	defer client.capabilitiesMu.RUnlock()
-	_, found := client.capabilities[c]
+	_, found := client.capabilities[cap]
 	return found, nil
 }
 

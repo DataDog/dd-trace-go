@@ -15,6 +15,7 @@ import (
 	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 )
 
 const (
@@ -28,6 +29,8 @@ const (
 	raspTimeoutTag       = wafSpanTagPrefix + "rasp.timeout"
 	truncationTagPrefix  = wafSpanTagPrefix + "truncated."
 
+	durationExtSuffix = ".duration_ext"
+
 	blockedRequestTag = "appsec.blocked"
 )
 
@@ -38,7 +41,7 @@ func AddRulesMonitoringTags(th trace.TagSetter) {
 }
 
 // AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
-func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, stats libddwaf.Stats) {
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, truncations map[libddwaf.TruncationReason][]int, timerStats map[timer.Key]time.Duration) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
@@ -55,40 +58,31 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 	}
 
 	// Add metrics like `waf.duration` and `rasp.duration_ext`
-	for key, value := range stats.Timers {
-		th.SetTag(wafSpanTagPrefix+key, float64(value.Nanoseconds())/float64(time.Microsecond.Nanoseconds()))
+	for scope, value := range timerStats {
+		th.SetTag(wafSpanTagPrefix+string(scope)+durationExtSuffix, float64(value.Nanoseconds())/float64(time.Microsecond.Nanoseconds()))
+		for component, atomicValue := range metrics.SumDurations[scope] {
+			if value := atomicValue.Load(); value > 0 {
+				th.SetTag(wafSpanTagPrefix+string(scope)+"."+string(component), float64(value)/float64(time.Microsecond.Nanoseconds()))
+			}
+		}
 	}
 
-	if stats.TimeoutCount > 0 {
-		th.SetTag(wafTimeoutTag, stats.TimeoutCount)
+	if value := metrics.SumWAFTimeouts.Load(); value > 0 {
+		th.SetTag(wafTimeoutTag, value)
 	}
 
-	if stats.TimeoutRASPCount > 0 {
-		th.SetTag(raspTimeoutTag, stats.TimeoutRASPCount)
+	var sumRASPTimeouts uint32
+	for ruleType := range metrics.SumRASPTimeouts {
+		sumRASPTimeouts += metrics.SumRASPTimeouts[ruleType].Load()
 	}
 
-	addTruncationTags(th, stats)
-}
-
-// addTruncationTags adds the span tags related to the truncations
-func addTruncationTags(th trace.TagSetter, stats libddwaf.Stats) {
-	wafMaxTruncationsMapSize := max(len(stats.Truncations), len(stats.TruncationsRASP))
-	if wafMaxTruncationsMapSize == 0 {
-		return
+	if sumRASPTimeouts > 0 {
+		th.SetTag(raspTimeoutTag, sumRASPTimeouts)
 	}
 
-	wafMaxTruncationsMap := make(map[libddwaf.TruncationReason]int, wafMaxTruncationsMapSize)
-	for reason, list := range stats.Truncations {
-		wafMaxTruncationsMap[reason] = slices.Max(list)
-	}
-
-	for reason, list := range stats.TruncationsRASP {
-		wafMaxTruncationsMap[reason] = max(wafMaxTruncationsMap[reason], slices.Max(list))
-	}
-
-	for reason, count := range wafMaxTruncationsMap {
-		if count > 0 {
-			th.SetTag(truncationTagPrefix+reason.String(), count)
+	for reason, count := range truncations {
+		if len(count) > 0 {
+			th.SetTag(truncationTagPrefix+reason.String(), slices.Max(count))
 		}
 	}
 }
