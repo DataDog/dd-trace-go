@@ -329,7 +329,7 @@ func (z *spanEventArrayAttributeValue) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *spanEventArrayAttributeValue) EncodeMsg(en *msgp.Writer) (err error) {
-	// check for omitted fields
+	// omitempty: check for empty values
 	zb0001Len := uint32(5)
 	var zb0001Mask uint8 /* 5 bits */
 	_ = zb0001Mask
@@ -354,66 +354,65 @@ func (z *spanEventArrayAttributeValue) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-
-	// skip if no fields are to be emitted
-	if zb0001Len != 0 {
-		// write "type"
-		err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
+	if zb0001Len == 0 {
+		return
+	}
+	// write "type"
+	err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt32(int32(z.Type))
+	if err != nil {
+		err = msgp.WrapError(err, "Type")
+		return
+	}
+	if (zb0001Mask & 0x2) == 0 { // if not empty
+		// write "string_value"
+		err = en.Append(0xac, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
 		if err != nil {
 			return
 		}
-		err = en.WriteInt32(int32(z.Type))
+		err = en.WriteString(z.StringValue)
 		if err != nil {
-			err = msgp.WrapError(err, "Type")
+			err = msgp.WrapError(err, "StringValue")
 			return
 		}
-		if (zb0001Mask & 0x2) == 0 { // if not omitted
-			// write "string_value"
-			err = en.Append(0xac, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteString(z.StringValue)
-			if err != nil {
-				err = msgp.WrapError(err, "StringValue")
-				return
-			}
+	}
+	if (zb0001Mask & 0x4) == 0 { // if not empty
+		// write "bool_value"
+		err = en.Append(0xaa, 0x62, 0x6f, 0x6f, 0x6c, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+		if err != nil {
+			return
 		}
-		if (zb0001Mask & 0x4) == 0 { // if not omitted
-			// write "bool_value"
-			err = en.Append(0xaa, 0x62, 0x6f, 0x6f, 0x6c, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteBool(z.BoolValue)
-			if err != nil {
-				err = msgp.WrapError(err, "BoolValue")
-				return
-			}
+		err = en.WriteBool(z.BoolValue)
+		if err != nil {
+			err = msgp.WrapError(err, "BoolValue")
+			return
 		}
-		if (zb0001Mask & 0x8) == 0 { // if not omitted
-			// write "int_value"
-			err = en.Append(0xa9, 0x69, 0x6e, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteInt64(z.IntValue)
-			if err != nil {
-				err = msgp.WrapError(err, "IntValue")
-				return
-			}
+	}
+	if (zb0001Mask & 0x8) == 0 { // if not empty
+		// write "int_value"
+		err = en.Append(0xa9, 0x69, 0x6e, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+		if err != nil {
+			return
 		}
-		if (zb0001Mask & 0x10) == 0 { // if not omitted
-			// write "double_value"
-			err = en.Append(0xac, 0x64, 0x6f, 0x75, 0x62, 0x6c, 0x65, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteFloat64(z.DoubleValue)
-			if err != nil {
-				err = msgp.WrapError(err, "DoubleValue")
-				return
-			}
+		err = en.WriteInt64(z.IntValue)
+		if err != nil {
+			err = msgp.WrapError(err, "IntValue")
+			return
+		}
+	}
+	if (zb0001Mask & 0x10) == 0 { // if not empty
+		// write "double_value"
+		err = en.Append(0xac, 0x64, 0x6f, 0x75, 0x62, 0x6c, 0x65, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteFloat64(z.DoubleValue)
+		if err != nil {
+			err = msgp.WrapError(err, "DoubleValue")
+			return
 		}
 	}
 	return
@@ -586,7 +585,7 @@ func (z *spanEventAttribute) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *spanEventAttribute) EncodeMsg(en *msgp.Writer) (err error) {
-	// check for omitted fields
+	// omitempty: check for empty values
 	zb0001Len := uint32(6)
 	var zb0001Mask uint8 /* 6 bits */
 	_ = zb0001Mask
@@ -615,102 +614,101 @@ func (z *spanEventAttribute) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-
-	// skip if no fields are to be emitted
-	if zb0001Len != 0 {
-		// write "type"
-		err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
+	if zb0001Len == 0 {
+		return
+	}
+	// write "type"
+	err = en.Append(0xa4, 0x74, 0x79, 0x70, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt32(int32(z.Type))
+	if err != nil {
+		err = msgp.WrapError(err, "Type")
+		return
+	}
+	if (zb0001Mask & 0x2) == 0 { // if not empty
+		// write "string_value"
+		err = en.Append(0xac, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
 		if err != nil {
 			return
 		}
-		err = en.WriteInt32(int32(z.Type))
+		err = en.WriteString(z.StringValue)
 		if err != nil {
-			err = msgp.WrapError(err, "Type")
+			err = msgp.WrapError(err, "StringValue")
 			return
 		}
-		if (zb0001Mask & 0x2) == 0 { // if not omitted
-			// write "string_value"
-			err = en.Append(0xac, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteString(z.StringValue)
-			if err != nil {
-				err = msgp.WrapError(err, "StringValue")
-				return
-			}
+	}
+	if (zb0001Mask & 0x4) == 0 { // if not empty
+		// write "bool_value"
+		err = en.Append(0xaa, 0x62, 0x6f, 0x6f, 0x6c, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+		if err != nil {
+			return
 		}
-		if (zb0001Mask & 0x4) == 0 { // if not omitted
-			// write "bool_value"
-			err = en.Append(0xaa, 0x62, 0x6f, 0x6f, 0x6c, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteBool(z.BoolValue)
-			if err != nil {
-				err = msgp.WrapError(err, "BoolValue")
-				return
-			}
+		err = en.WriteBool(z.BoolValue)
+		if err != nil {
+			err = msgp.WrapError(err, "BoolValue")
+			return
 		}
-		if (zb0001Mask & 0x8) == 0 { // if not omitted
-			// write "int_value"
-			err = en.Append(0xa9, 0x69, 0x6e, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteInt64(z.IntValue)
-			if err != nil {
-				err = msgp.WrapError(err, "IntValue")
-				return
-			}
+	}
+	if (zb0001Mask & 0x8) == 0 { // if not empty
+		// write "int_value"
+		err = en.Append(0xa9, 0x69, 0x6e, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+		if err != nil {
+			return
 		}
-		if (zb0001Mask & 0x10) == 0 { // if not omitted
-			// write "double_value"
-			err = en.Append(0xac, 0x64, 0x6f, 0x75, 0x62, 0x6c, 0x65, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
-			if err != nil {
-				return
-			}
-			err = en.WriteFloat64(z.DoubleValue)
-			if err != nil {
-				err = msgp.WrapError(err, "DoubleValue")
-				return
-			}
+		err = en.WriteInt64(z.IntValue)
+		if err != nil {
+			err = msgp.WrapError(err, "IntValue")
+			return
 		}
-		if (zb0001Mask & 0x20) == 0 { // if not omitted
-			// write "array_value"
-			err = en.Append(0xab, 0x61, 0x72, 0x72, 0x61, 0x79, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+	}
+	if (zb0001Mask & 0x10) == 0 { // if not empty
+		// write "double_value"
+		err = en.Append(0xac, 0x64, 0x6f, 0x75, 0x62, 0x6c, 0x65, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteFloat64(z.DoubleValue)
+		if err != nil {
+			err = msgp.WrapError(err, "DoubleValue")
+			return
+		}
+	}
+	if (zb0001Mask & 0x20) == 0 { // if not empty
+		// write "array_value"
+		err = en.Append(0xab, 0x61, 0x72, 0x72, 0x61, 0x79, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65)
+		if err != nil {
+			return
+		}
+		if z.ArrayValue == nil {
+			err = en.WriteNil()
 			if err != nil {
 				return
 			}
-			if z.ArrayValue == nil {
-				err = en.WriteNil()
-				if err != nil {
-					return
-				}
-			} else {
-				// map header, size 1
-				// write "values"
-				err = en.Append(0x81, 0xa6, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x73)
-				if err != nil {
-					return
-				}
-				err = en.WriteArrayHeader(uint32(len(z.ArrayValue.Values)))
-				if err != nil {
-					err = msgp.WrapError(err, "ArrayValue", "Values")
-					return
-				}
-				for za0001 := range z.ArrayValue.Values {
-					if z.ArrayValue.Values[za0001] == nil {
-						err = en.WriteNil()
-						if err != nil {
-							return
-						}
-					} else {
-						err = z.ArrayValue.Values[za0001].EncodeMsg(en)
-						if err != nil {
-							err = msgp.WrapError(err, "ArrayValue", "Values", za0001)
-							return
-						}
+		} else {
+			// map header, size 1
+			// write "values"
+			err = en.Append(0x81, 0xa6, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x73)
+			if err != nil {
+				return
+			}
+			err = en.WriteArrayHeader(uint32(len(z.ArrayValue.Values)))
+			if err != nil {
+				err = msgp.WrapError(err, "ArrayValue", "Values")
+				return
+			}
+			for za0001 := range z.ArrayValue.Values {
+				if z.ArrayValue.Values[za0001] == nil {
+					err = en.WriteNil()
+					if err != nil {
+						return
+					}
+				} else {
+					err = z.ArrayValue.Values[za0001].EncodeMsg(en)
+					if err != nil {
+						err = msgp.WrapError(err, "ArrayValue", "Values", za0001)
+						return
 					}
 				}
 			}

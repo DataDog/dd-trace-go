@@ -45,6 +45,8 @@ github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.1.0-dev.1 h1
 github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.1.0-dev.1/go.mod h1:Do451PzbfTCSDcVqtT3GZsne3RTeyqzXAbZCRiFpoDQ=
 github.com/DataDog/go-libddwaf/v3 v3.5.4 h1:cLV5lmGhrUBnHG50EUXdqPQAlJdVCp9n3aQ5bDWJEAg=
 github.com/DataDog/go-libddwaf/v3 v3.5.4/go.mod h1:HoLUHdj0NybsPBth/UppTcg8/DKA4g+AXuk8cZ6nuoo=
+github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.3 h1:jrCC3wldz/EgZpfixxSiBUvigy2Z2eup8aL1+sxDeEw=
+github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.3/go.mod h1:1kRZJCu3b57M2Ve44XKi7a+dQU+1V4NcmAMk+z0Yjbc=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250319104955-81009b9bad14 h1:tc5aVw7OcMyfVmJnrY4IOeiV1RTSaBuJBqF14BXxzIo=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250319104955-81009b9bad14/go.mod h1:quaQJ+wPN41xEC458FCpTwyROZm3MzmTZ8q8XOXQiPs=
 github.com/DataDog/go-sqllexer v0.1.6 h1:skEXpWEVCpeZFIiydoIa2f2rf+ymNpjiIMqpW4w3YAk=
@@ -759,8 +761,8 @@ github.com/rogpeppe/clock v0.0.0-20190514195947-2896927a307a/go.mod h1:4r5QyqhjI
 github.com/rogpeppe/fastuuid v1.2.0/go.mod h1:jVj6XXZzXRy/MSR5jhDC/2q6DgLz+nrA6LYCDYWNEvQ=
 github.com/rogpeppe/go-internal v1.6.1/go.mod h1:xXDCJY+GAPziupqXw64V24skbSoqbTEfhy4qGm1nDQc=
 github.com/rogpeppe/go-internal v1.8.0/go.mod h1:WmiCO8CzOY8rg0OYDC4/i/2WRWAB6poM+XZ2dLUbcbE=
-github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
-github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWNMNyH2VO9fmH0o=
+github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
+github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/rs/xid v1.6.0/go.mod h1:7XoLgs4eV+QndskICGsho+ADou8ySMSjJKDIan90Nz0=
 github.com/rs/zerolog v1.34.0 h1:k43nTLIwcTVQAncfCw4KZ2VY6ukYoZaBPNOE8txlOeY=
 github.com/rs/zerolog v1.34.0/go.mod h1:bJsvje4Z08ROH4Nhs5iH600c3IkWhwp44iRc54W6wYQ=
