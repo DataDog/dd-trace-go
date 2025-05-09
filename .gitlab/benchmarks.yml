@@ -30,15 +30,9 @@ matrix:
     matrix:
       - DIRECTORY: 
         - "./ddtrace"
-        GROUP: 1
       - DIRECTORY: 
         - "./contrib/net/http"
-        GROUP: 2
       - DIRECTORY: 
         - "./internal/appsec"
-        GROUP: 3
       - DIRECTORY: 
         - "./contrib/graphql-go/graphql"
-        - "./contrib/graph-gophers/graphql"
-        - "./contrib/99designs/gqlgen"
-        GROUP: 4
