@@ -7,8 +7,9 @@ package appsec
 
 import (
 	"fmt"
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"sync"
+
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
 	waf "github.com/DataDog/go-libddwaf/v3"
