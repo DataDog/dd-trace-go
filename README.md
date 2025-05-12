@@ -52,7 +52,7 @@ Datadog APM for Go is built upon dependencies defined in specific versions of th
 
 Before considering contributions to the project, please take a moment to read our brief [contribution guidelines](CONTRIBUTING.md).
 
-### Testing
+### Testing.
 
 Tests can be run locally using the Go toolset.
 
