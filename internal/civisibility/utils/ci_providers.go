@@ -248,7 +248,7 @@ func extractBitrise() map[string]string {
 	tags[constants.CIProviderName] = "bitrise"
 	tags[constants.GitRepositoryURL] = os.Getenv("GIT_REPOSITORY_URL")
 	tags[constants.GitCommitSHA] = firstEnv("BITRISE_GIT_COMMIT", "GIT_CLONE_COMMIT_HASH")
-	tags[constants.GitBranch] = firstEnv("BITRISEIO_GIT_BRANCH_DEST", "BITRISE_GIT_BRANCH")
+	tags[constants.GitBranch] = firstEnv("BITRISEIO_PULL_REQUEST_HEAD_BRANCH", "BITRISE_GIT_BRANCH")
 	tags[constants.GitTag] = os.Getenv("BITRISE_GIT_TAG")
 	tags[constants.CIWorkspacePath] = os.Getenv("BITRISE_SOURCE_DIR")
 	tags[constants.CIPipelineID] = os.Getenv("BITRISE_BUILD_SLUG")
@@ -257,7 +257,7 @@ func extractBitrise() map[string]string {
 	tags[constants.CIPipelineURL] = os.Getenv("BITRISE_BUILD_URL")
 	tags[constants.GitCommitMessage] = os.Getenv("BITRISE_GIT_MESSAGE")
 
-	tags[constants.GitPrBaseBranch] = os.Getenv("BITRISEIO_PULL_REQUEST_HEAD_BRANCH")
+	tags[constants.GitPrBaseBranch] = os.Getenv("BITRISEIO_GIT_BRANCH_DEST")
 
 	return tags
 }
