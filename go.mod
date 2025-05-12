@@ -20,6 +20,8 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
+	github.com/klauspost/compress v1.18.0
+	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
 	github.com/spaolacci/murmur3 v1.1.0
@@ -61,7 +63,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240226150601-1dcf7310316a // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
