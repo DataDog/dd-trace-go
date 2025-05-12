@@ -600,7 +600,7 @@ func extractTravis() map[string]string {
 	tags[constants.GitRepositoryURL] = fmt.Sprintf("https://github.com/%s.git", repoSlug)
 	tags[constants.GitCommitSHA] = os.Getenv("TRAVIS_COMMIT")
 	tags[constants.GitTag] = os.Getenv("TRAVIS_TAG")
-	tags[constants.GitBranch] = firstEnv("TRAVIS_PULL_REQUEST_BRANCH", "TRAVIS_BRANCH")
+	tags[constants.GitBranch] = os.Getenv("TRAVIS_BRANCH")
 	tags[constants.CIWorkspacePath] = os.Getenv("TRAVIS_BUILD_DIR")
 	tags[constants.CIPipelineID] = os.Getenv("TRAVIS_BUILD_ID")
 	tags[constants.CIPipelineNumber] = os.Getenv("TRAVIS_BUILD_NUMBER")
