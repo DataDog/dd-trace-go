@@ -54,11 +54,9 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		Content map[string]any
 	}
 	var (
-		deleteDefault    bool // We remove the default config if any ASM_DD config is received
-		addOrUpdates     = make(map[string]UpdatedConfig)
-		wafConfigUpdater = a.cfg.WAFManager.LockForUpdates()
+		deleteDefault bool // We remove the default config if any ASM_DD config is received
+		addOrUpdates  = make(map[string]UpdatedConfig)
 	)
-	defer wafConfigUpdater.Unlock()
 
 	for product, updates := range updates {
 		for path, data := range updates {
@@ -66,7 +64,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 			case state.ProductASMDD, state.ProductASMData, state.ProductASM:
 				if data == nil {
 					// Perofrm the deletion right away; we need to do these before any other updates...
-					wafConfigUpdater.RemoveConfig(path)
+					a.cfg.WAFManager.RemoveConfig(path)
 				} else {
 					cfg := UpdatedConfig{Product: product}
 					if err := json.Unmarshal(data, &cfg.Content); err != nil {
@@ -89,7 +87,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	// Apply all the additions and updates
 	var anyASMDD bool
 	for path, update := range addOrUpdates {
-		diag, err := wafConfigUpdater.AddOrUpdateConfig(path, update.Content)
+		diag, err := a.cfg.WAFManager.AddOrUpdateConfig(path, update.Content)
 		if err != nil {
 			// Configuration object has been fully rejected; or there was an error processing it or parsing the diagnostics
 			// value. If we have a diagnostics object, encode all errors from the diagnostics object as a JSON value, as
@@ -142,7 +140,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		diag.EachFeature(logDiagnosticMessages(update.Product, path))
 	}
 	if deleteDefault && !anyASMDD {
-		if err := wafConfigUpdater.RestoreDefaultConfig(); err != nil {
+		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
 			telemetrylog.Error("appsec: RC could not restore default config: %v", err)
 		}
 	}
