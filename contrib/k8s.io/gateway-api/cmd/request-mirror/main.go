@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 
 	gatewayapi "github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
@@ -75,6 +76,10 @@ func main() {
 			Framework: "sigs.k8s.io/gateway-api",
 			FinishOpts: []tracer.FinishOption{
 				tracer.NoDebugStack(),
+			},
+			SpanOpts: []tracer.StartSpanOption{
+				tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+				tracer.Tag(ext.Component, "k8s.io/gateway-api"),
 			},
 		},
 	}))
