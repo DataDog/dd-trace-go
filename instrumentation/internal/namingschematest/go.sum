@@ -42,8 +42,6 @@ github.com/DataDog/datadog-agent/pkg/version v0.64.0-rc.1/go.mod h1:DgOVsfSRaNV4
 github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3tL4fMGNddJ+vMq1mwgfaqoQ=
 github.com/DataDog/datadog-go/v5 v5.6.0 h1:2oCLxjF/4htd55piM75baflj/KoE6VYS7alEUqFvRDw=
 github.com/DataDog/datadog-go/v5 v5.6.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/go-libddwaf/v3 v3.5.4 h1:cLV5lmGhrUBnHG50EUXdqPQAlJdVCp9n3aQ5bDWJEAg=
-github.com/DataDog/go-libddwaf/v3 v3.5.4/go.mod h1:HoLUHdj0NybsPBth/UppTcg8/DKA4g+AXuk8cZ6nuoo=
 github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.3 h1:jrCC3wldz/EgZpfixxSiBUvigy2Z2eup8aL1+sxDeEw=
 github.com/DataDog/go-libddwaf/v4 v4.0.0-rc.3/go.mod h1:1kRZJCu3b57M2Ve44XKi7a+dQU+1V4NcmAMk+z0Yjbc=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 h1:bpitH5JbjBhfcTG+H2RkkiUXpYa8xSuIPnyNtTaSPog=
