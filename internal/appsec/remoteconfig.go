@@ -108,6 +108,9 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 					some = true
 				}
 				for msg, ids := range feat.Errors {
+					if info.Errors == nil {
+						info.Errors = make(map[string][]string)
+					}
 					info.Errors[msg] = ids
 					some = true
 				}
