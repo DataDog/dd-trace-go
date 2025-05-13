@@ -350,7 +350,7 @@ func UnregisterCallback(f Callback) error {
 	fValue := reflect.ValueOf(f)
 
 	client.callbacks = slices.DeleteFunc(client.callbacks, func(cb Callback) bool {
-		return reflect.ValueOf(cb) == fValue
+		return reflect.ValueOf(cb).Equal(fValue)
 	})
 	return nil
 }
@@ -398,36 +398,36 @@ func HasProduct(p string) (bool, error) {
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
-func RegisterCapability(cap Capability) error {
+func RegisterCapability(cpb Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	client.capabilities[cap] = struct{}{}
+	client.capabilities[cpb] = struct{}{}
 	return nil
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
-func UnregisterCapability(cap Capability) error {
+func UnregisterCapability(cpb Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	delete(client.capabilities, cap)
+	delete(client.capabilities, cpb)
 	return nil
 }
 
 // HasCapability returns whether a given capability was registered
-func HasCapability(cap Capability) (bool, error) {
+func HasCapability(cpb Capability) (bool, error) {
 	if client == nil {
 		return false, ErrClientNotStarted
 	}
 	client.capabilitiesMu.RLock()
 	defer client.capabilitiesMu.RUnlock()
-	_, found := client.capabilities[cap]
+	_, found := client.capabilities[cpb]
 	return found, nil
 }
 

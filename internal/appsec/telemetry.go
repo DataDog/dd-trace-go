@@ -9,10 +9,10 @@ import (
 	"errors"
 	"runtime"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/waferrors"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 )
 
 var (
