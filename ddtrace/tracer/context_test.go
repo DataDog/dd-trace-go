@@ -95,9 +95,39 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 	assert.NoError(t, err)
 	defer stop()
 	spanLink := SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
-	ctx := &SpanContext{spanLinks: []SpanLink{spanLink}, spanID: 789, traceID: traceIDFrom64Bits(789)}
 
+	t.Run("create span with links", func(t *testing.T) {
+		var s *Span
+		s, _ = StartSpanFromContext(
+			context.Background(),
+			"http.request",
+			WithSpanLinks([]SpanLink{spanLink}),
+		)
+
+		assert.Len(t, s.spanLinks, 1)
+		assert.Len(t, s.Context().SpanLinks(), 1)
+		assert.Equal(t, spanLink, s.spanLinks[0])
+	})
+	t.Run("create span with links and add links", func(t *testing.T) {
+		var s *Span
+		s, _ = StartSpanFromContext(
+			context.Background(),
+			"http.request",
+			WithSpanLinks([]SpanLink{spanLink}),
+		)
+		assert.Len(t, s.spanLinks, 1)
+		assert.Len(t, s.Context().SpanLinks(), 1)
+		assert.Equal(t, spanLink, s.spanLinks[0])
+
+		additionalLink := SpanLink{TraceID: 123, SpanID: 123, Attributes: map[string]string{"reason": "terminated_context"}}
+		s.AddLink(additionalLink)
+
+		assert.Len(t, s.spanLinks, 2)
+		assert.Len(t, s.Context().SpanLinks(), 2)
+		assert.Equal(t, additionalLink, s.spanLinks[1])
+	})
 	t.Run("create span from spancontext with links", func(t *testing.T) {
+		ctx := &SpanContext{spanID: 789, traceID: traceIDFrom64Bits(789)}
 		var s *Span
 		s, _ = StartSpanFromContext(
 			context.Background(),
@@ -106,10 +136,10 @@ func TestStartSpanWithSpanLinks(t *testing.T) {
 			ChildOf(ctx),
 		)
 
-		assert.Equal(t, 1, len(s.spanLinks))
+		assert.Len(t, s.spanLinks, 1)
+		assert.Len(t, s.Context().SpanLinks(), 1)
 		assert.Equal(t, spanLink, s.spanLinks[0])
-
-		assert.Equal(t, 0, len(s.context.spanLinks)) // ensure that the span links are not added to the parent context
+		assert.Len(t, ctx.SpanLinks(), 0) // ensure the parent context is not modified
 	})
 }
 
