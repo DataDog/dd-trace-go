@@ -537,26 +537,19 @@ func TestOnRCUpdate(t *testing.T) {
 
 		enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 		// Activate appsec
-		updates := map[string]remoteconfig.ProductUpdate{state.ProductASMFeatures: map[string][]byte{"features/config": enabledPayload}}
-		activeAppSec.onRemoteActivation(updates)
+		status := activeAppSec.handleASMFeatures(map[string][]byte{"features/config": enabledPayload})
 		require.True(t, Enabled())
+		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
 
-		// Deactivate and try to update the rules. The rules update should not happen
-		updates = map[string]remoteconfig.ProductUpdate{
-			state.ProductASMFeatures: map[string][]byte{"features/config": nil},
-			state.ProductASM:         map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
-		}
-		activeAppSec.onRemoteActivation(updates)
+		// Deactivate appsec
+		status = activeAppSec.handleASMFeatures(map[string][]byte{"features/config": nil})
 		require.False(t, Enabled())
-		// Make sure rules did not get updated (callback gets short circuited when activeAppsec.started == false)
-		statuses := activeAppSec.onRCRulesUpdate(updates)
-		require.Equal(t,
-			map[string]state.ApplyStatus{
-				"features/config":   {State: state.ApplyStateUnacknowledged},
-				"irrelevant/config": {State: state.ApplyStateUnacknowledged},
-			},
-			statuses,
-		)
+		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
+
+		status = activeAppSec.onRCRulesUpdate(map[string]remoteconfig.ProductUpdate{
+			state.ProductASMDD: map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
+		})
+		require.Equal(t, map[string]state.ApplyStatus{"irrelevant/config": {State: state.ApplyStateUnacknowledged}}, status)
 		require.NotContains(t, activeAppSec.cfg.WAFManager.ConfigPaths(), "irrelevant/config")
 	})
 }

@@ -486,8 +486,8 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		}
 
 		fileMap[f.Path] = f.Raw
-		if slices.Contains(allProducts, path.Product) {
-			log.Debug("remoteconfig: ignoring file for unknown product %s: %s", path.Product, f.Path)
+		if !slices.Contains(allProducts, path.Product) {
+			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path)
 		}
 		if productUpdates[path.Product] == nil {
 			productUpdates[path.Product] = make(ProductUpdate)

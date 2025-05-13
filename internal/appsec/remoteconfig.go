@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -22,16 +23,6 @@ import (
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/go-libddwaf/v4"
 )
-
-// onRemoteActivation is the RC callback called when an update is received for ASM_FEATURES
-func (a *appsec) onRemoteActivation(updates map[string]remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	statuses := map[string]state.ApplyStatus{}
-	if u, ok := updates[state.ProductASMFeatures]; ok {
-		statuses = a.handleASMFeatures(u)
-	}
-	return statuses
-
-}
 
 // onRCRulesUpdate is the RC callback called when security rules related RC updates are available
 func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
@@ -82,8 +73,8 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 					}
 				}
 			default:
-				log.Debug("appsec: ignoring RC update for un-subscribed product %s", product)
-				statuses[path] = state.ApplyStatus{State: state.ApplyStateUnacknowledged}
+				log.Debug("appsec: remote config: rules updates: ignoring RC update for un-subscribed product %s", product)
+				// Note -- intentionally not setting a status for this path; another callback might handle it!
 			}
 		}
 	}
@@ -202,7 +193,7 @@ func logDiagnosticMessages(product string, path string) func(string, *libddwaf.F
 // handleASMFeatures deserializes an ASM_FEATURES configuration received through remote config
 // and starts/stops appsec accordingly.
 func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	statuses := make(map[string]state.ApplyStatus)
+	statuses := make(map[string]state.ApplyStatus, len(u))
 
 	if len(u) > 1 {
 		log.Warn("appsec: Remote Config: received multiple ASM_FEATURES update; not processing any.")
@@ -239,8 +230,8 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 			if err := a.start(); err != nil {
 				log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
 				statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
+				continue
 			}
-			continue
 		}
 
 		// RC triggers desactivation of ASM; ASM is started... Stopping it!
@@ -295,17 +286,10 @@ func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
 
 func (a *appsec) enableRemoteActivation() error {
 	if a.cfg.RC == nil {
-		return fmt.Errorf("no valid remote configuration client")
+		return errors.New("no valid remote configuration client")
 	}
-	err := a.registerRCProduct(state.ProductASMFeatures)
-	if err != nil {
-		return err
-	}
-	err = a.registerRCCapability(remoteconfig.ASMActivation)
-	if err != nil {
-		return err
-	}
-	return remoteconfig.RegisterCallback(a.onRemoteActivation)
+	log.Debug("appsec: Remote Config: subscribing to ASM_FEATURES updates...")
+	return remoteconfig.Subscribe(state.ProductASMFeatures, a.handleASMFeatures, remoteconfig.ASMActivation)
 }
 
 var baseCapabilities = [...]remoteconfig.Capability{
