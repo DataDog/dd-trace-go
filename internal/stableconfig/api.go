@@ -9,6 +9,7 @@ package stableconfig
 
 import (
 	"fmt"
+	"iter"
 	"os"
 	"strconv"
 
@@ -19,24 +20,11 @@ import (
 // or local file-based config, in that order. If none provide a valid boolean, it returns the default.
 // Also returns the value's origin and any parse error encountered.
 func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin, err error) {
-	err = nil
-	if v := ManagedConfig.Get(env); v != "" {
-		if vv, parseErr := strconv.ParseBool(v); parseErr == nil {
-			return vv, telemetry.OriginManagedStableConfig, nil
+	for o, v := range stableConfigByPriority(env) {
+		if val, err := strconv.ParseBool(v); err == nil {
+			return val, o, nil
 		}
-		err = fmt.Errorf("non-boolean value for %s: '%s' in fleet-managed configuration file, dropping", env, v)
-	}
-	if v, ok := os.LookupEnv(env); ok {
-		if vv, parseErr := strconv.ParseBool(v); parseErr == nil {
-			return vv, telemetry.OriginEnvVar, nil
-		}
-		err = fmt.Errorf("could not parse %s value `%s` as a boolean value", env, v)
-	}
-	if v := LocalConfig.Get(env); v != "" {
-		if vv, parseErr := strconv.ParseBool(v); parseErr == nil {
-			return vv, telemetry.OriginLocalStableConfig, nil
-		}
-		err = fmt.Errorf("non-boolean value for %s: '%s' in local configuration file, dropping", env, v)
+		err = fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, v, o)
 	}
 	return def, telemetry.OriginDefault, err
 }
@@ -44,14 +32,22 @@ func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin
 // StringStableConfig returns a string config value from managed file-based config, environment variable,
 // or local file-based config, in that order. If none are set, it returns the default value and origin.
 func StringStableConfig(env string, def string) (string, telemetry.Origin) {
-	if v := ManagedConfig.Get(env); v != "" {
-		return v, telemetry.OriginManagedStableConfig
-	}
-	if v, ok := os.LookupEnv(env); ok {
-		return v, telemetry.OriginEnvVar
-	}
-	if v := LocalConfig.Get(env); v != "" {
-		return v, telemetry.OriginLocalStableConfig
+	for origin, value := range stableConfigByPriority(env) {
+		return value, origin
 	}
 	return def, telemetry.OriginDefault
+}
+
+func stableConfigByPriority(env string) iter.Seq2[telemetry.Origin, string] {
+	return func(yield func(telemetry.Origin, string) bool) {
+		if v := ManagedConfig.Get(env); v != "" && !yield(telemetry.OriginManagedStableConfig, v) {
+			return
+		}
+		if v, ok := os.LookupEnv(env); ok && !yield(telemetry.OriginEnvVar, v) {
+			return
+		}
+		if v := LocalConfig.Get(env); v != "" && !yield(telemetry.OriginLocalStableConfig, v) {
+			return
+		}
+	}
 }

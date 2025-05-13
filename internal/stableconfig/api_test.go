@@ -121,7 +121,7 @@ func TestBoolStableConfig(t *testing.T) {
 				defaultValue:   true,
 				expectedValue:  true,
 				expectedOrigin: telemetry.OriginDefault,
-				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in fleet-managed configuration file, dropping",
+				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in fleet_stable_config configuration, dropping",
 			},
 			// Invalid boolean in environment variable
 			{
@@ -131,7 +131,7 @@ func TestBoolStableConfig(t *testing.T) {
 				defaultValue:   true,
 				expectedValue:  true,
 				expectedOrigin: telemetry.OriginDefault,
-				expectedErr:    "could not parse DD_KEY value `not-a-bool` as a boolean value",
+				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in env_var configuration, dropping",
 			},
 			// Invalid boolean in local config
 			{
@@ -141,7 +141,7 @@ func TestBoolStableConfig(t *testing.T) {
 				defaultValue:   true,
 				expectedValue:  true,
 				expectedOrigin: telemetry.OriginDefault,
-				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in local configuration file, dropping",
+				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in local_stable_config configuration, dropping",
 			},
 			// Empty string in config; no error expected
 			{
