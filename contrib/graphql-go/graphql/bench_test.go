@@ -7,6 +7,8 @@ package graphql
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path"
 	"testing"
@@ -19,6 +21,7 @@ import (
 )
 
 func BenchmarkGraphQL(b *testing.B) {
+	log.SetOutput(io.Discard)
 	type objectType struct {
 		id string
 	}
