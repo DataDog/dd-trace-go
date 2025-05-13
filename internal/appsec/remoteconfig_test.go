@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -299,9 +299,17 @@ func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
 	}
 }
 
-func craftRCUpdates(fragments map[string]RulesFragment) map[string]remoteconfig.ProductUpdate {
+func craftRCUpdates(fragments map[string]*RulesFragment) map[string]remoteconfig.ProductUpdate {
 	update := make(map[string]remoteconfig.ProductUpdate)
 	for path, frag := range fragments {
+		if frag == nil {
+			if _, ok := update[state.ProductASMDD]; !ok {
+				update[state.ProductASMDD] = make(remoteconfig.ProductUpdate)
+			}
+			update[state.ProductASMDD][path] = nil
+			continue
+		}
+
 		data, err := json.Marshal(frag)
 		if err != nil {
 			panic(err)
@@ -375,7 +383,7 @@ func TestOnRCUpdate(t *testing.T) {
 
 		for _, tc := range []struct {
 			name     string
-			edits    map[string]RulesFragment
+			edits    map[string]*RulesFragment
 			statuses map[string]state.ApplyStatus
 		}{
 			{
@@ -384,8 +392,8 @@ func TestOnRCUpdate(t *testing.T) {
 			},
 			{
 				name: "ASM/overrides/1-config",
-				edits: map[string]RulesFragment{
-					"overrides1/path": overrides1,
+				edits: map[string]*RulesFragment{
+					"overrides1/path": &overrides1,
 				},
 				statuses: map[string]state.ApplyStatus{
 					"overrides1/path": {State: state.ApplyStateAcknowledged},
@@ -393,9 +401,9 @@ func TestOnRCUpdate(t *testing.T) {
 			},
 			{
 				name: "ASM/overrides/2-configs",
-				edits: map[string]RulesFragment{
-					"overrides1/path": overrides1,
-					"overrides2/path": overrides2,
+				edits: map[string]*RulesFragment{
+					"overrides1/path": &overrides1,
+					"overrides2/path": &overrides2,
 				},
 				statuses: map[string]state.ApplyStatus{
 					"overrides1/path": {State: state.ApplyStateAcknowledged},
@@ -416,7 +424,14 @@ func TestOnRCUpdate(t *testing.T) {
 				require.Equal(t, tc.statuses, statuses)
 
 				// Make sure edits are added to the active ruleset
-				require.Equal(t, []string{}, activeAppSec.cfg.WAFManager.ConfigPaths())
+				expected := []string{"ASM_DD/default"}
+				for path := range tc.statuses {
+					expected = append(expected, path)
+				}
+				slices.Sort(expected)
+				actual := activeAppSec.cfg.WAFManager.ConfigPaths()
+				slices.Sort(actual)
+				require.Equal(t, expected, actual)
 			})
 		}
 
@@ -424,43 +439,45 @@ func TestOnRCUpdate(t *testing.T) {
 
 	// Test rules update (ASM_DD)
 	for _, tc := range []struct {
-		name             string
-		initialBasePath  string
-		expectedBasePath string
-		edits            map[string]RulesFragment
-		statuses         map[string]state.ApplyStatus
-		removal          string
+		name                string
+		initialBasePath     string
+		expectedConfigPaths []string
+		edits               map[string]*RulesFragment
+		statuses            map[string]state.ApplyStatus
+		removal             string
 	}{
 		{
 			name:     "no-updates",
 			statuses: map[string]state.ApplyStatus{},
 		},
 		{
-			name:             "ASM_DD/1-config",
-			expectedBasePath: "rules/path",
-			edits: map[string]RulesFragment{
-				"rules/path": rules,
+			name:                "ASM_DD/1-config",
+			expectedConfigPaths: []string{"rules/path"},
+			edits: map[string]*RulesFragment{
+				"rules/path": &rules,
 			},
 			statuses: map[string]state.ApplyStatus{
 				"rules/path": {State: state.ApplyStateAcknowledged},
 			},
 		},
 		{
-			name: "ASM_DD/2-configs (invalid)",
-			edits: map[string]RulesFragment{
-				"rules/path1": rules,
-				"rules/path2": rules,
+			name:                "ASM_DD/2-configs",
+			expectedConfigPaths: []string{"rules/path1"},
+			edits: map[string]*RulesFragment{
+				"rules/path1": &rules,
+				"rules/path2": &rules,
 			},
 			statuses: map[string]state.ApplyStatus{
-				"rules/path1": {State: state.ApplyStateError, Error: "more than one config switch received for ASM_DD"},
-				"rules/path2": {State: state.ApplyStateError, Error: "more than one config switch received for ASM_DD"},
+				"rules/path1": {State: state.ApplyStateAcknowledged},
+				"rules/path2": {State: state.ApplyStateError, Error: `{"rules":{"errors":{"duplicate rule":["blk-001-001"]}}}`},
 			},
 		},
 		{
-			name:             "ASM_DD/1-config-1-removal",
-			expectedBasePath: "rules/path1",
-			edits: map[string]RulesFragment{
-				"rules/path1": rules,
+			name:                "ASM_DD/1-config-1-removal",
+			expectedConfigPaths: []string{"rules/path1"},
+			edits: map[string]*RulesFragment{
+				"rules/path1": &rules,
+				"rules/v1":    nil,
 			},
 			statuses: map[string]state.ApplyStatus{
 				"rules/path1": {State: state.ApplyStateAcknowledged},
@@ -471,8 +488,8 @@ func TestOnRCUpdate(t *testing.T) {
 		{
 			name:            "ASM_DD/1-removal",
 			initialBasePath: "rules/path",
-			edits: map[string]RulesFragment{
-				"rules/path": rules,
+			edits: map[string]*RulesFragment{
+				"rules/path": &rules,
 			},
 			statuses: map[string]state.ApplyStatus{
 				"rules/path": {State: state.ApplyStateAcknowledged},
@@ -487,7 +504,7 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			require.Equal(t, []string{}, activeAppSec.cfg.WAFManager.ConfigPaths())
+			require.Equal(t, []string{"ASM_DD/default"}, activeAppSec.cfg.WAFManager.ConfigPaths())
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
@@ -499,7 +516,11 @@ func TestOnRCUpdate(t *testing.T) {
 			require.Equal(t, tc.statuses, statuses)
 
 			// Compare rulesets base paths to make sure the updates were processed correctly
-			require.Equal(t, tc.expectedBasePath, activeAppSec.cfg.WAFManager.ConfigPaths())
+			expected := tc.expectedConfigPaths
+			if expected == nil {
+				expected = []string{"ASM_DD/default"}
+			}
+			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths())
 		})
 	}
 
@@ -573,38 +594,40 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 	ackStatus := state.ApplyStatus{State: state.ApplyStateAcknowledged}
 
 	for _, tc := range []struct {
-		name        string
-		updates     map[string]remoteconfig.ProductUpdate
-		expected    map[string]state.ApplyStatus
-		updateError bool
+		name     string
+		updates  map[string]remoteconfig.ProductUpdate
+		expected map[string]state.ApplyStatus
 	}{
 		{
 			name:     "single/ack",
-			updates:  craftRCUpdates(map[string]RulesFragment{"overrides": overrides}),
+			updates:  craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides}),
 			expected: map[string]state.ApplyStatus{"overrides": ackStatus},
 		},
 		{
 			name:     "single/error",
-			updates:  craftRCUpdates(map[string]RulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]state.ApplyStatus{"invalid": ackStatus}, // Success, as there exists at least 1 usable rule in the whole set
+			updates:  craftRCUpdates(map[string]*RulesFragment{"invalid": &invalidOverrides}),
+			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
 		},
 		{
 			name:     "multiple/ack",
-			updates:  craftRCUpdates(map[string]RulesFragment{"overrides": overrides, "overrides2": overrides2}),
+			updates:  craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides, "overrides2": &overrides2}),
 			expected: map[string]state.ApplyStatus{"overrides": ackStatus, "overrides2": ackStatus},
 		},
 		{
 			name:    "multiple/single-error",
-			updates: craftRCUpdates(map[string]RulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
+			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides, "invalid": &invalidOverrides}),
 			expected: map[string]state.ApplyStatus{
-				"overrides": ackStatus, // Success, as there exists at least 1 usable rule in the whole set
-				"invalid":   ackStatus, // Success, as there exists at least 1 usable rule in the whole set
+				"overrides": ackStatus,
+				"invalid":   {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 			},
 		},
 		{
-			name:        "multiple/all-errors",
-			updates:     craftRCUpdates(map[string]RulesFragment{"overrides": overrides, "invalid": invalidRules}),
-			updateError: true,
+			name:    "multiple/all-errors",
+			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &invalidOverrides, "invalid": &invalidRules}),
+			expected: map[string]state.ApplyStatus{
+				"overrides": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"invalid":   {State: state.ApplyStateError, Error: `{"rules":{"errors":{"rule has no valid conditions":["id"]}}}`},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -616,15 +639,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			}
 
 			statuses := activeAppSec.onRCRulesUpdate(tc.updates)
-			if tc.updateError {
-				for _, status := range statuses {
-					require.NotEmpty(t, status.Error)
-					require.Equal(t, state.ApplyStateError, status.State)
-				}
-			} else {
-				require.Len(t, statuses, len(tc.expected))
-				require.True(t, reflect.DeepEqual(tc.expected, statuses), "expected: %#v\nactual:   %#v", tc.expected, statuses)
-			}
+			require.Equal(t, tc.expected, statuses)
 		})
 	}
 }
@@ -668,7 +683,7 @@ func TestWafRCUpdate(t *testing.T) {
 		require.Empty(t, result.Actions)
 
 		// Simulate an RC update that disables the rule
-		statuses := appsec.onRCRulesUpdate(craftRCUpdates(map[string]RulesFragment{"override": override}))
+		statuses := appsec.onRCRulesUpdate(craftRCUpdates(map[string]*RulesFragment{"override": &override}))
 		require.Subset(t, statuses, map[string]state.ApplyStatus{"override": {State: state.ApplyStateAcknowledged}})
 		wafHandle, _ = appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)

@@ -8,7 +8,9 @@ package appsec
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
@@ -54,8 +56,8 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		Content map[string]any
 	}
 	var (
-		deleteDefault bool // We remove the default config if any ASM_DD config is received
-		addOrUpdates  = make(map[string]UpdatedConfig)
+		deletedDefault bool // We remove the default config if any ASM_DD config is received
+		addOrUpdates   = make(map[string]UpdatedConfig)
 	)
 
 	for product, prodUpdates := range updates {
@@ -65,6 +67,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				if data == nil {
 					// Perofrm the deletion right away; we need to do these before any other updates...
 					a.cfg.WAFManager.RemoveConfig(path)
+					statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 				} else {
 					cfg := UpdatedConfig{Product: product}
 					if err := json.Unmarshal(data, &cfg.Content); err != nil {
@@ -74,7 +77,8 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 					}
 					addOrUpdates[path] = cfg
 					if product == state.ProductASMDD {
-						deleteDefault = true
+						// Remove the default config if present when an ASM_DD config is received.
+						deletedDefault = a.cfg.WAFManager.RemoveDefaultConfig()
 					}
 				}
 			default:
@@ -84,9 +88,14 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		}
 	}
 
+	// Sort the paths to apply updates in a deterministic order...
+	addOrUpdatePaths := slices.Collect(maps.Keys(addOrUpdates))
+	slices.Sort(addOrUpdatePaths)
+
 	// Apply all the additions and updates
 	var anyASMDD bool
-	for path, update := range addOrUpdates {
+	for _, path := range addOrUpdatePaths {
+		update := addOrUpdates[path]
 		diag, err := a.cfg.WAFManager.AddOrUpdateConfig(path, update.Content)
 		if err != nil {
 			// Configuration object has been fully rejected; or there was an error processing it or parsing the diagnostics
@@ -142,7 +151,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		}
 		diag.EachFeature(logDiagnosticMessages(update.Product, path))
 	}
-	if deleteDefault && !anyASMDD {
+	if deletedDefault && !anyASMDD {
 		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
 			telemetrylog.Error("appsec: RC could not restore default config: %v", err)
 		}
