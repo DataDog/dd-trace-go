@@ -58,8 +58,8 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		addOrUpdates  = make(map[string]UpdatedConfig)
 	)
 
-	for product, updates := range updates {
-		for path, data := range updates {
+	for product, prodUpdates := range updates {
+		for path, data := range prodUpdates {
 			switch product {
 			case state.ProductASMDD, state.ProductASMData, state.ProductASM:
 				if data == nil {
