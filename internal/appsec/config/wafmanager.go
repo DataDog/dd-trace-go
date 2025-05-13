@@ -96,8 +96,9 @@ func (m *WAFManager) Close() {
 
 func (m *WAFManager) doClose(leaked bool) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.closed {
-		m.mu.Unlock()
 		return
 	}
 	if leaked {
@@ -107,7 +108,6 @@ func (m *WAFManager) doClose(leaked bool) {
 	m.builder.Close()
 	m.rulesVersion = ""
 	m.closed = true
-	m.mu.Unlock()
 }
 
 // RemoveConfig removes a configuration from the receiving [WAFManager].
