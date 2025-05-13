@@ -448,4 +448,9 @@ func TestAsync(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+
+	// Verify we have 0 callbacks left after we're done.
+	client._callbacksMu.RLock()
+	defer client._callbacksMu.RUnlock()
+	require.Empty(t, client.callbacks)
 }

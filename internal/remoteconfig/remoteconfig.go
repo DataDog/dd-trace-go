@@ -347,10 +347,10 @@ func UnregisterCallback(f Callback) error {
 	}
 	client._callbacksMu.Lock()
 	defer client._callbacksMu.Unlock()
-	fValue := reflect.ValueOf(f)
 
+	toRemove := reflect.ValueOf(f).Pointer()
 	client.callbacks = slices.DeleteFunc(client.callbacks, func(cb Callback) bool {
-		return reflect.ValueOf(cb).Equal(fValue)
+		return reflect.ValueOf(cb).Pointer() == toRemove
 	})
 	return nil
 }
@@ -557,8 +557,8 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// 3 - ApplyStateAcknowledged
 	// This makes sure that any product that would need to re-receive the config in a subsequent update will be allowed to
 	statuses := make(map[string]rc.ApplyStatus)
-	for _, fn := range c.globalCallbacks() {
-		for path, status := range fn(productUpdates) {
+	for _, cb := range c.globalCallbacks() {
+		for path, status := range cb(productUpdates) {
 			if s, ok := statuses[path]; !ok || status.State == rc.ApplyStateError ||
 				s.State == rc.ApplyStateAcknowledged && status.State == rc.ApplyStateUnacknowledged {
 				statuses[path] = status
