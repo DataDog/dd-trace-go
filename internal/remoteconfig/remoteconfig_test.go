@@ -385,68 +385,97 @@ func TestAsync(t *testing.T) {
 	require.NoError(t, Start(DefaultClientConfig()))
 	defer Stop()
 	const iterations = 10000
-	var wg sync.WaitGroup
+	var (
+		startSync   sync.WaitGroup // Guarantees all goroutines are created before any can actually start
+		cleanupSync sync.WaitGroup // Used to wait for business to be done before cleaning back up to a blank slate
+		wg          sync.WaitGroup // Used to wait for all goroutines to have finished
+	)
+	startSync.Add(1)
 
-	// Subscriptions
-	for i := 0; i < iterations; i++ {
+	for range iterations {
+		// Subscriptions
 		product := fmt.Sprintf("%d", rand.Int()%10)
 		capability := Capability(rand.Uint32() % 10)
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			callback := func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 			Subscribe(product, callback, capability)
 			wg.Done()
 		}()
-	}
 
-	// Products
-	for i := 0; i < iterations; i++ {
+		// Products
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
 		}()
-	}
-	for i := 0; i < iterations; i++ {
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
 		}()
-	}
 
-	// Capabilities
-	for i := 0; i < iterations; i++ {
+		// Capabilities
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			RegisterCapability(Capability(rand.Uint32() % 10))
 		}()
-	}
-	for i := 0; i < iterations; i++ {
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			UnregisterCapability(Capability(rand.Uint32() % 10))
 		}()
-	}
 
-	// Callbacks
-	callback := func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
-	for i := 0; i < iterations; i++ {
+		// Callbacks
+		callback := func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
+		startSync.Add(1)
 		wg.Add(1)
+		cleanupSync.Add(1)
 		go func() {
 			defer wg.Done()
+			defer cleanupSync.Done()
+			startSync.Done()
+			startSync.Wait()
 			RegisterCallback(callback)
 		}()
-	}
-	for i := 0; i < iterations; i++ {
+		startSync.Add(1)
 		wg.Add(1)
+		cleanupSync.Add(1)
 		go func() {
 			defer wg.Done()
+			defer cleanupSync.Done()
+			startSync.Done()
+			startSync.Wait()
+			UnregisterCallback(callback)
+		}()
+		wg.Add(1)
+		go func() {
+			// Make sure the callback is removed before we exit the test...
+			defer wg.Done()
+			cleanupSync.Wait()
 			UnregisterCallback(callback)
 		}()
 	}
+
+	// Unblock the goroutines start
+	startSync.Done()
+	// Wait for all those goroutines to have finished...
 	wg.Wait()
 
 	// Verify we have 0 callbacks left after we're done.
