@@ -28,6 +28,10 @@ const (
 	envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 	// envInferredProxyServicesEnabled is the name of the env var used for enabling inferred span tracing
 	envInferredProxyServicesEnabled = "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED"
+	// envCodeOriginEnabled is used to enabled code origin for spans feature.
+	envCodeOriginEnabled = "DD_CODE_ORIGIN_FOR_SPANS_ENABLED"
+	// envCodeOriginMaxFrames is used to configure the maximum number of user code frames to collect.
+	envCodeOriginMaxFrames = "DD_CODE_ORIGIN_MAX_USER_FRAMES"
 )
 
 // defaultQueryStringRegexp is the regexp used for query string obfuscation if [EnvQueryStringRegexp] is empty.
@@ -39,6 +43,8 @@ type config struct {
 	traceClientIP                bool
 	isStatusError                func(statusCode int) bool
 	inferredProxyServicesEnabled bool
+	codeOriginEnabled            bool
+	codeOriginMaxUserFrames      int
 }
 
 // ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
@@ -53,6 +59,8 @@ func newConfig() config {
 		traceClientIP:                internal.BoolEnv(envTraceClientIPEnabled, false),
 		isStatusError:                isServerError,
 		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
+		codeOriginEnabled:            internal.BoolEnv(envCodeOriginEnabled, false),
+		codeOriginMaxUserFrames:      internal.IntEnv(envCodeOriginMaxFrames, 8),
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
