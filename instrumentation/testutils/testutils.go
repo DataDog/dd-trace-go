@@ -73,6 +73,8 @@ func StartAppSec(t *testing.T, opts ...config.StartOption) {
 }
 
 func StartAppSecBench(b *testing.B) {
+	// maximize rate limit to prevent the spam of "too many WAF events" errors
+	b.Setenv("DD_APPSEC_TRACE_RATE_LIMIT", "9223372036854775807")
 	appsec.Start()
 	b.Cleanup(appsec.Stop)
 }
