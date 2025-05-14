@@ -16,6 +16,7 @@ func TestDataStreamsActivation(t *testing.T) {
 		cfg := new(config)
 		defaults(cfg)
 		assert.False(t, cfg.dataStreamsEnabled)
+		assert.False(t, cfg.checkpointsEnabled())
 	})
 	t.Run("withOption", func(t *testing.T) {
 		cfg := new(config)
@@ -28,6 +29,14 @@ func TestDataStreamsActivation(t *testing.T) {
 		cfg := new(config)
 		defaults(cfg)
 		assert.True(t, cfg.dataStreamsEnabled)
+		assert.True(t, cfg.checkpointsEnabled())
+	})
+	t.Run("checkpointsDisabled", func(t *testing.T) {
+		cfg := new(config)
+		cfg.dataStreamsEnabled = true
+		cfg.headerInjectionEnabled = false
+		assert.True(t, cfg.dataStreamsEnabled)
+		assert.False(t, cfg.checkpointsEnabled())
 	})
 	t.Run("optionOverridesEnv", func(t *testing.T) {
 		t.Setenv("DD_DATA_STREAMS_ENABLED", "false")
