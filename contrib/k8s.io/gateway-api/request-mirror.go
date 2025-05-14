@@ -121,7 +121,7 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 func hijackConnection(w http.ResponseWriter) net.Conn {
 	wr, ok := w.(http.Hijacker)
 	if !ok {
-		panic(fmt.Errorf("%T does not support http.Hijack interface", w))
+		panic(fmt.Errorf("%T does not support http.Hijacker interface", w))
 	}
 
 	conn, _, err := wr.Hijack()
