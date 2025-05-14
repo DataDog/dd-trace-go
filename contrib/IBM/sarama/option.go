@@ -22,6 +22,10 @@ type config struct {
 	groupID                string
 }
 
+func (p *config) checkpointsEnabled() bool {
+	return p.dataStreamsEnabled && p.headerInjectionEnabled
+}
+
 func defaults(cfg *config) {
 	cfg.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
 	cfg.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
