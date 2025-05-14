@@ -30,6 +30,7 @@ type (
 
 	testManagementTestsRequestData struct {
 		RepositoryURL string `json:"repository_url"`
+		CommitSha     string `json:"sha"`
 		Module        string `json:"module,omitempty"`
 		CommitMessage string `json:"commit_message"`
 	}
@@ -76,6 +77,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 			Type: testManagementTestsRequestType,
 			Attributes: testManagementTestsRequestData{
 				RepositoryURL: c.repositoryURL,
+				CommitSha:     c.commitSha,
 				CommitMessage: c.commitMessage,
 			},
 		},

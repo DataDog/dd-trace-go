@@ -42,6 +42,7 @@ use (
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
 	./contrib/k8s.io/client-go
+	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
 	./contrib/log/slog
 	./contrib/miekg/dns

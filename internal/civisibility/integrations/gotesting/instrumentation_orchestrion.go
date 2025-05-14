@@ -184,8 +184,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
-					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
+					test.SetTag(constants.TestAttemptToFixPassed, "false")
 				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
@@ -200,18 +203,28 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			}
 			// Normal finalization: determine the test result based on its state.
 			if t.Failed() {
-				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
-					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
+					test.SetTag(constants.TestAttemptToFixPassed, "false")
 				}
 				test.SetTag(ext.Error, true)
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
 			} else if t.Skipped() {
+				if execMeta.isARetry && execMeta.isLastRetry {
+					test.SetTag(constants.TestAttemptToFixPassed, "false")
+				}
 				test.Close(integrations.ResultStatusSkip)
 			} else {
-				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
-					test.SetTag(constants.TestAttemptToFixPassed, "true")
+				if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.allAttemptsPassed {
+						test.SetTag(constants.TestAttemptToFixPassed, "true")
+					} else {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 				}
 				test.Close(integrations.ResultStatusPass)
 			}
