@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	cloud.google.com/go/pubsub v1.49.0
 	github.com/99designs/gqlgen v0.17.62
-	github.com/DataDog/datadog-agent/pkg/proto v0.64.2
+	github.com/DataDog/datadog-agent/pkg/proto v0.66.0-rc.7
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.2
 	github.com/DataDog/go-libddwaf/v3 v3.5.4
@@ -57,7 +57,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/redis v0.34.0
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.35.0
 	github.com/testcontainers/testcontainers-go/modules/vault v0.34.0
-	github.com/tinylib/msgp v1.2.5
+	github.com/tinylib/msgp v1.3.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/valkey-io/valkey-go v1.0.56
 	github.com/vektah/gqlparser/v2 v2.5.21
@@ -82,13 +82,13 @@ require (
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/DataDog/appsec-internal-go v1.11.2 // indirect
-	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/log v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.64.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/version v0.64.2 // indirect
+	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.0-rc.7 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.0-rc.7 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.0-rc.7 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.66.0-rc.7 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/log v0.66.0-rc.7 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.66.0-rc.7 // indirect
+	github.com/DataDog/datadog-agent/pkg/version v0.66.0-rc.7 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.1.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.1.0-dev.2 // indirect

@@ -6,6 +6,7 @@
 package processtags
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,14 +18,24 @@ import (
 )
 
 var (
+	enabled             bool
 	processTags         = make(map[string]string)
 	processTagsTagValue = ""
 	processTagsMutex    sync.RWMutex
 )
 
 func init() {
-	tags := make(map[string]string)
+	ResetConfig()
+}
 
+// ResetConfig initializes the configuration and process tags collection. This is used in tests.
+func ResetConfig() {
+	enabled = internal.BoolEnv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", false)
+	if !enabled {
+		return
+	}
+
+	tags := make(map[string]string)
 	execPath, err := os.Executable()
 	if err != nil {
 		log.Debug("failed to get binary path: %v", err)
@@ -46,6 +57,9 @@ func init() {
 
 // AddTags merges the given tags into the global processTags map.
 func AddTags(tags map[string]string) {
+	if !enabled {
+		return
+	}
 	processTagsMutex.Lock()
 	defer processTagsMutex.Unlock()
 	for k, v := range tags {
@@ -56,6 +70,9 @@ func AddTags(tags map[string]string) {
 
 // ProcessTags returns the process tags serialized to string.
 func ProcessTags() string {
+	if !enabled {
+		return ""
+	}
 	processTagsMutex.RLock()
 	defer processTagsMutex.RUnlock()
 	return processTagsTagValue

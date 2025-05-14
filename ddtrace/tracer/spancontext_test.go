@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -1044,10 +1045,10 @@ func TestSpanProcessTags(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
+			processtags.ResetConfig()
 			tracer, transport, flush, stop, err := startTestTracer(t)
 			assert.NoError(t, err)
 			t.Cleanup(stop)
-			require.Equal(t, tracer.config.processTagsEnabled, tc.enabled)
 
 			p := tracer.StartSpan("p")
 			c1 := p.StartChild("c1")

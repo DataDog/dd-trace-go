@@ -307,9 +307,6 @@ type config struct {
 
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
-
-	// processTagsEnabled enabled collection of process tags.
-	processTagsEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -471,7 +468,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// if it's explicitly set, and don't require both variables to be configured.
 
 	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	c.processTagsEnabled = internal.BoolEnv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
