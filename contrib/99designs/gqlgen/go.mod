@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/99designs/gqlgen v0.17.36
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.16
 )
@@ -22,10 +22,11 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v3 v3.5.4 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
-	github.com/DataDog/go-sqllexer v0.1.0 // indirect
+	github.com/DataDog/go-sqllexer v0.1.6 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.26.0 // indirect
 	github.com/DataDog/sketches-go v1.4.7 // indirect
+	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -71,9 +72,9 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.23.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
@@ -84,3 +85,8 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+// Pinning against gqlgen v0.17.36 to avoid breaking changes in gqlgen's v0.17.72 API.
+// Also, we are not able to upgrade to gqlgen v0.17.72 yet because it requires Go 1.23.8,
+// and we want to keep compatibility with Go 1.23.0 until Go 1.25.0 is released.
+replace github.com/99designs/gqlgen => github.com/99designs/gqlgen v0.17.36

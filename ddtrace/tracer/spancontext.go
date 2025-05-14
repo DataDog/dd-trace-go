@@ -454,7 +454,7 @@ func (t *trace) push(sp *Span) {
 	if t.full {
 		return
 	}
-	tr := GetGlobalTracer()
+	tr := getGlobalTracer()
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
@@ -515,7 +515,7 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 	t.finished++
-	tr := GetGlobalTracer()
+	tr := getGlobalTracer()
 	if tr == nil {
 		return
 	}

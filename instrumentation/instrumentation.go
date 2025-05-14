@@ -39,11 +39,6 @@ func Load(pkg Package) *Instrumentation {
 	}
 }
 
-func Register(name string, info PackageInfo) error {
-	info.external = true
-	return nil
-}
-
 // Instrumentation represents instrumentation for a package.
 type Instrumentation struct {
 	pkg    Package

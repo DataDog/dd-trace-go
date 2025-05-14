@@ -27,9 +27,10 @@ func useAppSec(c *gin.Context, span trace.TagSetter) {
 		c.Request = r
 		c.Next()
 	})
-	httpsec.WrapHandler(httpWrapper, span, params, &httpsec.Config{
-		Framework:       "github.com/gin-gonic/gin",
-		OnBlock:         []func(){func() { c.Abort() }},
-		RouteForRequest: func(*http.Request) string { return c.FullPath() },
+	httpsec.WrapHandler(httpWrapper, span, &httpsec.Config{
+		Framework:   "github.com/gin-gonic/gin",
+		OnBlock:     []func(){func() { c.Abort() }},
+		Route:       c.FullPath(),
+		RouteParams: params,
 	}).ServeHTTP(c.Writer, c.Request)
 }

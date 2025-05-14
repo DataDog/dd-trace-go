@@ -7,8 +7,6 @@ package httpsec
 
 import (
 	"net/http"
-
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
 )
 
 type Config struct {
@@ -21,12 +19,12 @@ type Config struct {
 	// apply synchronization if they allow http.ResponseWriter objects to be
 	// accessed by multiple goroutines.
 	ResponseHeaderCopier func(http.ResponseWriter) http.Header
-	// RouteForRequest returns the route string for the given request, or blank if
-	// no route information can be determined.
-	RouteForRequest func(*http.Request) string
+	// Route is the route name to be used for the request.
+	Route string
+	// RouteParams is a map of route parameters to be used for the request.
+	RouteParams map[string]string
 }
 
 var defaultWrapHandlerConfig = &Config{
 	ResponseHeaderCopier: func(w http.ResponseWriter) http.Header { return w.Header() },
-	RouteForRequest:      func(r *http.Request) string { return pattern.Route(r.Pattern) },
 }

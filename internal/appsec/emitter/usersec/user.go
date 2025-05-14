@@ -40,7 +40,6 @@ type (
 		UserLogin string
 		UserOrg   string
 		SessionID string
-		Success   bool
 	}
 )
 

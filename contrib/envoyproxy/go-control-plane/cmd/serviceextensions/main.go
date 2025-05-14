@@ -35,23 +35,26 @@ type AppsecCalloutExtensionService struct {
 }
 
 type serviceExtensionConfig struct {
-	extensionPort   string
-	extensionHost   string
-	healthcheckPort string
+	extensionPort     string
+	extensionHost     string
+	healthcheckPort   string
+	observabilityMode bool
 }
 
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := intEnv("DD_SERVICE_EXTENSION_PORT", 443)
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
 	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
+	observabilityMode := boolEnv("DD_SERVICE_EXTENSION_OBSERVABILITY_MODE", false)
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
 
 	return serviceExtensionConfig{
-		extensionPort:   extensionPortStr,
-		extensionHost:   extensionHostStr,
-		healthcheckPort: healthcheckPortStr,
+		extensionPort:     extensionPortStr,
+		extensionHost:     extensionHostStr,
+		healthcheckPort:   healthcheckPortStr,
+		observabilityMode: observabilityMode,
 	}
 }
 
@@ -66,6 +69,12 @@ func main() {
 	}
 
 	config := loadConfig()
+
+	// If the observability mode is enabled, disable blocking
+	if config.observabilityMode {
+		_ = os.Setenv("_DD_APPSEC_BLOCKING_UNAVAILABLE", "true")
+		log.Debug("service_extension: observability mode enabled, disabling blocking\n")
+	}
 
 	if err := startService(config); err != nil {
 		log.Error("service_extension: %v\n", err)
@@ -145,7 +154,12 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
 	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
 
-	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServerGCPServiceExtension(service)
+	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
+		service,
+		gocontrolplane.AppsecEnvoyConfig{
+			IsGCPServiceExtension: true,
+			BlockingUnavailable:   config.observabilityMode,
+		})
 
 	go func() {
 		<-ctx.Done()

@@ -42,7 +42,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	if _, err = os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, _ error) error {
 		if filepath.Base(path) != "go.mod" {
 			return nil
 		}

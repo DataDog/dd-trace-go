@@ -552,17 +552,17 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
-		max := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
-		if max < 0 {
-			log.Warn("Invalid value %d for %s. Setting to 0.", max, envKey)
-			max = 0
+		maxLen := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
+		if maxLen < 0 {
+			log.Warn("Invalid value %d for %s. Setting to 0.", maxLen, envKey)
+			maxLen = 0
 		}
-		if max > maxPropagatedTagsLength {
-			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", max, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
-			max = maxPropagatedTagsLength
+		if maxLen > maxPropagatedTagsLength {
+			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", maxLen, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
+			maxLen = maxPropagatedTagsLength
 		}
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: max,
+			MaxTagsHeaderLen: maxLen,
 		})
 	}
 	if c.logger != nil {

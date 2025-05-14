@@ -8,7 +8,11 @@ set +e
 
 [[ -d ./contrib ]] || exit 0
 
-CONTRIBS=$(find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \;)
+if [ $# -eq 2 ]; then
+  CONTRIBS="$2"
+else
+  CONTRIBS=$(find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \;)
+fi
 
 report_error=0
 

@@ -77,8 +77,8 @@ var rootOperation atomic.Pointer[Operation]
 // SwapRootOperation allows to atomically swap the current root operation with
 // the given new one. Concurrent uses of the old root operation on already
 // existing and running operation are still valid.
-func SwapRootOperation(new Operation) {
-	rootOperation.Swap(&new)
+func SwapRootOperation(newOp Operation) {
+	rootOperation.Swap(&newOp)
 	// Note: calling Finish(old, ...) could result into mem leaks because
 	// some finish event listeners, possibly releasing memory and resources,
 	// wouldn't be called anymore (because Finish() disables the operation and

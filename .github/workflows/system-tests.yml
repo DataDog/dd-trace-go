@@ -56,7 +56,6 @@ jobs:
           - APPSEC_API_SECURITY
           - APPSEC_RASP
           - APPSEC_RUNTIME_ACTIVATION
-          - APM_TRACING_E2E
           - APM_TRACING_E2E_SINGLE_SPAN
           - APM_TRACING_E2E_OTEL
           - TRACING_CONFIG_SCENARIOS
@@ -89,11 +88,6 @@ jobs:
           - weblog-variant: net-http
             scenario: APPSEC_WAF_TELEMETRY
           # APM scenarios requiring specific environment settings
-          - scenario: APM_TRACING_E2E
-            env:
-              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
-              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
-              DD_SITE="datadoghq.com"
           - scenario: APM_TRACING_E2E_SINGLE_SPAN
             env:
               DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
@@ -130,8 +124,6 @@ jobs:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
-      SYSTEM_TESTS_AWS_ACCESS_KEY_ID: ${{ secrets.SYSTEM_TESTS_IDM_AWS_ACCESS_KEY_ID }}
-      SYSTEM_TESTS_AWS_SECRET_ACCESS_KEY: ${{ secrets.SYSTEM_TESTS_IDM_AWS_SECRET_ACCESS_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests

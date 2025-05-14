@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -24,11 +25,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupteardown(start, max int) func() {
+func setupteardown(startSize, maxSize int) func() {
 	oldStartSize := traceStartSize
 	oldMaxSize := traceMaxSize
-	traceStartSize = start
-	traceMaxSize = max
+	traceStartSize = startSize
+	traceMaxSize = maxSize
 	return func() {
 		traceStartSize = oldStartSize
 		traceMaxSize = oldMaxSize
@@ -58,6 +59,95 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 	log.Flush()
 	assert.Contains(t, tp.Logs()[0], "ERROR: trace buffer full (2 spans)")
+}
+
+/*
+This test is an attempt to reproduce one of the panics from incident 37240 [1].
+Run the test with -count 100, and you should get a crash like the one shown
+below.
+
+[1] https://dd.slack.com/archives/C08NGNZR0C8/p1744390495200339
+
+	fatal error: concurrent map iteration and map write
+
+	goroutine 354 [running]:
+	internal/runtime/maps.fatal({0x102db4b48?, 0x14000101d98?})
+			/Users/felix.geisendoerfer/.local/share/mise/installs/go/1.24.2/src/runtime/panic.go:1058 +0x20
+	internal/runtime/maps.(*Iter).Next(0x1400009dca0?)
+			/Users/felix.geisendoerfer/.local/share/mise/installs/go/1.24.2/src/internal/runtime/maps/table.go:683 +0x94
+	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.(*span).EncodeMsg(0x14000140140, 0x14000c1c000)
+			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/span_msgp.go:392 +0x2e8
+	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.spanList.EncodeMsg({0x140003e0320, 0x1, 0x18?}, 0x14000c1c000)
+			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/span_msgp.go:596 +0x80
+	github.com/tinylib/msgp/msgp.Encode({0x1031ebd00?, 0x14000294d48?}, {0x1031ec060?, 0x1400000e090?})
+			/Users/felix.geisendoerfer/go/pkg/mod/github.com/tinylib/msgp@v1.2.5/msgp/write.go:156 +0x60
+	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.(*payload).push(0x14000294d20, {0x140003e0320, 0x1, 0xa})
+			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/payload.go:76 +0x98
+	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.(*agentTraceWriter).add(0x140003e0000, {0x140003e0320?, 0x0?, 0x0?})
+			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/writer.go:69 +0x28
+	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.(*tracer).worker(0x140000c40d0, 0x1400012b2d0)
+			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/tracer.go:457 +0x154
+	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.newTracer.func2()
+			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/tracer.go:412 +0xa8
+	created by gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.newTracer in goroutine 326
+			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/tracer.go:404 +0x2b4
+*/
+func TestIncident37240DoubleFinish(t *testing.T) {
+	t.Run("with link", func(_ *testing.T) {
+		_, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
+		// My theory is that contrib/aws/internal/span_pointers/span_pointers.go
+		// adds a span link which is causes `serializeSpanLinksInMeta` to write to
+		// `s.Meta` without holding the lock. This crashes when the span flushing
+		// code tries to read `s.Meta` without holding the lock.
+		root.AddLink(SpanLink{TraceID: 1, SpanID: 2})
+		for i := 0; i < 1000; i++ {
+			root.Finish()
+		}
+	})
+
+	t.Run("with NoDebugStack", func(_ *testing.T) {
+		_, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
+		for i := 0; i < 1000; i++ {
+			root.Finish(NoDebugStack())
+		}
+	})
+
+	t.Run("with error", func(_ *testing.T) {
+		_, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
+		err = errors.New("test error")
+		for i := 0; i < 1000; i++ {
+			root.Finish(WithError(err))
+		}
+	})
+
+	t.Run("with rules sampler", func(t *testing.T) {
+		_, _, _, stop, err := startTestTracer(t,
+			WithService("svc"),
+			WithSamplingRules(TraceSamplingRules(Rule{ServiceGlob: "svc", Rate: 1.0})),
+		)
+		assert.Nil(t, err)
+		defer stop()
+
+		root, _ := StartSpanFromContext(context.Background(), "root")
+		for i := 0; i < 1000; i++ {
+			root.Finish(WithError(err))
+			assert.Equal(t, 1.0, root.metrics[keyRulesSamplerLimiterRate])
+			assert.Equal(t, 2.0, root.metrics[keySamplingPriority])
+			assert.Empty(t, root.metrics[keySamplingPriorityRate])
+		}
+	})
 }
 
 func TestAsyncSpanRace(t *testing.T) {

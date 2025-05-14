@@ -207,7 +207,7 @@ func getTestImpactInfo(sourceFile string, startLine int, endLine int) []*fileWit
 // parseGitDiffOutput parses the git diff output to extract modified files and their changed lines.
 func parseGitDiffOutput(output string) []fileWithBitmap {
 	var fileChanges []fileWithBitmap
-	var currentFile *fileWithBitmap = nil
+	var currentFile *fileWithBitmap
 	var modifiedLines []lineRange
 
 	// Split output into lines (ignoring empty lines)
