@@ -193,10 +193,14 @@ func logDiagnosticMessages(product string, path string) func(string, *libddwaf.F
 // handleASMFeatures deserializes an ASM_FEATURES configuration received through remote config
 // and starts/stops appsec accordingly.
 func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	statuses := make(map[string]state.ApplyStatus, len(u))
+	if len(u) == 0 {
+		// That should not actually happen; but would not be "invalid" per se.
+		return nil
+	}
 
 	if len(u) > 1 {
 		log.Warn("appsec: Remote Config: received multiple ASM_FEATURES update; not processing any.")
+		statuses := make(map[string]state.ApplyStatus, len(u))
 		for path := range u {
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateUnacknowledged}
 		}
@@ -204,49 +208,49 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	}
 
 	// NOTE: There is exactly 1 item in the map at this point; but it's a map, so we for-range over it.
-	for path, raw := range u {
-		log.Debug("appsec: Remote config: processing %s", path)
-
-		// A nil config means ASM was disabled, and we stopped receiving the config file
-		// Don't ack the config in this case and return early
-		if raw == nil {
-			log.Debug("appsec: Remote config: Stopping AppSec")
-			a.stop()
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-			continue
-		}
-
-		// Parse the config object we just received...
-		var parsed state.ASMFeaturesData
-		if err := json.Unmarshal(raw, &parsed); err != nil {
-			log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
-			continue
-		}
-
-		// RC triggers activation of ASM; ASM is not started yet... Starting it!
-		if parsed.ASM.Enabled && !a.started {
-			log.Debug("appsec: Remote config: Starting AppSec")
-			if err := a.start(); err != nil {
-				log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
-				statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
-				continue
-			}
-		}
-
-		// RC triggers desactivation of ASM; ASM is started... Stopping it!
-		if !parsed.ASM.Enabled && a.started {
-			log.Debug("appsec: Remote config: Stopping AppSec")
-			a.stop()
-			statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-			continue
-		}
-
-		// If we got here, we have an idempotent success!
-		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
+	var (
+		path string
+		raw  []byte
+	)
+	for p, r := range u {
+		path, raw = p, r
 	}
 
-	return statuses
+	log.Debug("appsec: Remote config: processing %s", path)
+
+	// A nil config means ASM was disabled, and we stopped receiving the config file
+	// Don't ack the config in this case and return early
+	if raw == nil {
+		log.Debug("appsec: Remote config: Stopping AppSec")
+		a.stop()
+		return map[string]state.ApplyStatus{path: {State: state.ApplyStateAcknowledged}}
+	}
+
+	// Parse the config object we just received...
+	var parsed state.ASMFeaturesData
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
+		return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
+	}
+
+	// RC triggers activation of ASM; ASM is not started yet... Starting it!
+	if parsed.ASM.Enabled && !a.started {
+		log.Debug("appsec: Remote config: Starting AppSec")
+		if err := a.start(); err != nil {
+			log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
+			return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
+		}
+	}
+
+	// RC triggers desactivation of ASM; ASM is started... Stopping it!
+	if !parsed.ASM.Enabled && a.started {
+		log.Debug("appsec: Remote config: Stopping AppSec")
+		a.stop()
+		return map[string]state.ApplyStatus{path: {State: state.ApplyStateAcknowledged}}
+	}
+
+	// If we got here, we have an idempotent success!
+	return map[string]state.ApplyStatus{path: {State: state.ApplyStateAcknowledged}}
 }
 
 func (a *appsec) startRC() error {
