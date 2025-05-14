@@ -44,7 +44,7 @@ var gvr = schema.GroupVersionResource{
 
 func main() {
 	flag.Parse()
-	log := log.New(os.Stdout, "", 0)
+	log := log.New(os.Stderr, "", 0)
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(*timeout))
 	defer cancel()
