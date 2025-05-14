@@ -54,21 +54,23 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 			case state.ProductASMDD, state.ProductASMData, state.ProductASM:
 				if data == nil {
 					// Perofrm the deletion right away; we need to do these before any other updates...
+					log.Debug("appsec: remote config: removing configuration %q", path)
 					a.cfg.WAFManager.RemoveConfig(path)
 					statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-				} else {
-					cfg := UpdatedConfig{Product: product}
-					if err := json.Unmarshal(data, &cfg.Content); err != nil {
-						log.Error("appsec: unmarshaling remote config update for %s (%s): %v", product, path, err)
-						statuses[product] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
-						continue
-					}
-					addOrUpdates[path] = cfg
-					if product == state.ProductASMDD {
-						// Remove the default config if present when an ASM_DD config is received.
-						if deletedDefault := a.cfg.WAFManager.RemoveDefaultConfig(); deletedDefault {
-							log.Debug("appsec: remote config: processed ASM_DD addition/update; removed default config")
-						}
+					continue
+				}
+				cfg := UpdatedConfig{Product: product}
+				if err := json.Unmarshal(data, &cfg.Content); err != nil {
+					log.Error("appsec: unmarshaling remote config update for %s (%q): %v", product, path, err)
+					statuses[product] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
+					continue
+				}
+				addOrUpdates[path] = cfg
+				if product == state.ProductASMDD {
+					// Remove the default config if present when an ASM_DD config is received.
+					log.Debug("appsec: remote config: processed ASM_DD addition/update; removing default config if present")
+					if deletedDefault := a.cfg.WAFManager.RemoveDefaultConfig(); deletedDefault {
+						log.Debug("appsec: remote config: successfully removed default config")
 					}
 				}
 			case state.ProductASMFeatures:
@@ -76,7 +78,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				// relevant for this particular handler. These are handled by a product-specific handler,
 				// [appsec.handleASMFeatures].
 			default:
-				log.Debug("appsec: remote config: ignoring RC update for non-ASM product %s", product)
+				log.Debug("appsec: remote config: ignoring RC update for non-ASM product %q", path)
 			}
 		}
 	}
@@ -88,8 +90,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	// Apply all the additions and updates
 	for _, path := range addOrUpdatePaths {
 		update := addOrUpdates[path]
+		log.Debug("appsec: remote config: adding/updating configuration %q", path)
 		diag, err := a.cfg.WAFManager.AddOrUpdateConfig(path, update.Content)
 		if err != nil {
+			log.Debug("appsec: remote config: error while adding/updating configuration %q: %v", path, err)
 			// Configuration object has been fully rejected; or there was an error processing it or parsing the diagnostics
 			// value. If we have a diagnostics object, encode all errors from the diagnostics object as a JSON value, as
 			// described by:
@@ -105,10 +109,12 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 					some bool
 				)
 				if feat.Error != "" {
+					log.Debug("appsec: remote config: error in %q feature %s: %s", path, name, feat.Error)
 					info.Error = feat.Error
 					some = true
 				}
 				for msg, ids := range feat.Errors {
+					log.Debug("appsec: remote config: error in %q feature %s: %s for %q", path, name, msg, ids)
 					if info.Errors == nil {
 						info.Errors = make(map[string][]string)
 					}
@@ -145,6 +151,11 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
 			telemetrylog.Error("appsec: RC could not restore default config: %v", err)
 		}
+	}
+
+	if log.DebugEnabled() {
+		// Avoiding the call to ConfigPaths if the Debug level is not enabled...
+		log.Debug("appsec: remote config: rules loaded after update: %q", a.cfg.WAFManager.ConfigPaths(""))
 	}
 
 	// If an error occurs while updating the WAF handle, don't swap the RulesManager and propagate the error

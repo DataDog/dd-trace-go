@@ -11,19 +11,18 @@ import (
 
 	"github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	telemetryLog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/go-libddwaf/v4"
 )
 
 type (
 	// WAFManager holds a [libddwaf.Builder] and allows managing its configuration.
 	WAFManager struct {
-		builder       *libddwaf.Builder
-		initRules     any
-		rulesVersion  string
-		defaultLoaded bool
-		closed        bool
-		mu            sync.RWMutex
+		builder      *libddwaf.Builder
+		initRules    any
+		rulesVersion string
+		closed       bool
+		mu           sync.RWMutex
 	}
 )
 
@@ -49,10 +48,9 @@ func NewWAFManager(obfuscator appsec.ObfuscatorConfig, defaultRules any) (*WAFMa
 	}
 
 	mgr := &WAFManager{
-		builder:       builder,
-		initRules:     defaultRules,
-		rulesVersion:  rulesVersion,
-		defaultLoaded: defaultRules != nil,
+		builder:      builder,
+		initRules:    defaultRules,
+		rulesVersion: rulesVersion,
 	}
 	// Attach a finalizer to close the builder when it is garbage collected, in case
 	// [WAFManager.Close] is not called explicitly by the user. The call to [libddwaf.Builder.Close]
@@ -103,7 +101,7 @@ func (m *WAFManager) doClose(leaked bool) {
 		return
 	}
 	if leaked {
-		log.Warn("WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!")
+		telemetryLog.Warn("WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!")
 	}
 
 	m.builder.Close()
@@ -124,12 +122,8 @@ func (m *WAFManager) RemoveConfig(path string) {
 func (m *WAFManager) RemoveDefaultConfig() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	removed := false
-	if m.defaultLoaded {
-		removed = m.builder.RemoveConfig(defaultRulesPath)
-		m.defaultLoaded = false
-	}
-	return removed
+
+	return m.builder.RemoveConfig(defaultRulesPath)
 }
 
 // AddOrUpdateConfig adds or updates a configuration in the receiving [WAFManager].
@@ -163,13 +157,13 @@ func (m *WAFManager) RestoreDefaultConfig() error {
 
 func logLocalDiagnosticMessages(name string, feature *libddwaf.Feature) {
 	if feature.Error != "" {
-		log.Error("%s", feature.Error, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+		telemetryLog.Error("%s", feature.Error, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
 	}
 	for msg, ids := range feature.Errors {
-		log.Error("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+		telemetryLog.Error("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
 	}
 	for msg, ids := range feature.Warnings {
-		log.Warn("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+		telemetryLog.Warn("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
 	}
 }
 
