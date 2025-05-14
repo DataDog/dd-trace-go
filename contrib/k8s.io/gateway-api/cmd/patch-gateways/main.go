@@ -31,7 +31,7 @@ import (
 var (
 	selector  = flag.String("selector", "", "Label selector to filter Gateways")
 	prompt    = flag.Bool("prompt", false, "Prompt before applying changes to each Gateway")
-	timeout   = flag.Duration("timeout", 1*time.Minute, "Timeout for the operation")
+	timeout   = flag.Duration("timeout", time.Minute, "Timeout for the operation")
 	namespace = flag.String("namespace", "", "Namespace where the request-mirror is (defaults to current context)")
 )
 
@@ -43,7 +43,7 @@ var gvr = schema.GroupVersionResource{
 
 func main() {
 	flag.Parse()
-	log := log.New(os.Stdout, "", 0)
+	log := log.New(os.Stderr, "", 0)
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(*timeout))
 	defer cancel()
