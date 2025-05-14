@@ -444,7 +444,6 @@ func TestOnRCUpdate(t *testing.T) {
 		expectedConfigPaths []string
 		edits               map[string]*RulesFragment
 		statuses            map[string]state.ApplyStatus
-		removal             string
 	}{
 		{
 			name:     "no-updates",
@@ -452,49 +451,46 @@ func TestOnRCUpdate(t *testing.T) {
 		},
 		{
 			name:                "ASM_DD/1-config",
-			expectedConfigPaths: []string{"rules/path"},
+			expectedConfigPaths: []string{"datadog/2/ASM_DD/rules/config"},
 			edits: map[string]*RulesFragment{
-				"rules/path": &rules,
+				"datadog/2/ASM_DD/rules/config": &rules,
 			},
 			statuses: map[string]state.ApplyStatus{
-				"rules/path": {State: state.ApplyStateAcknowledged},
+				"datadog/2/ASM_DD/rules/config": {State: state.ApplyStateAcknowledged},
 			},
 		},
 		{
 			name:                "ASM_DD/2-configs",
-			expectedConfigPaths: []string{"rules/path1"},
+			expectedConfigPaths: []string{"datadog/2/ASM_DD/rules-1/config"},
 			edits: map[string]*RulesFragment{
-				"rules/path1": &rules,
-				"rules/path2": &rules,
+				"datadog/2/ASM_DD/rules-1/config": &rules,
+				"datadog/2/ASM_DD/rules-2/config": &rules,
 			},
 			statuses: map[string]state.ApplyStatus{
-				"rules/path1": {State: state.ApplyStateAcknowledged},
-				"rules/path2": {State: state.ApplyStateError, Error: `{"rules":{"errors":{"duplicate rule":["blk-001-001"]}}}`},
+				"datadog/2/ASM_DD/rules-1/config": {State: state.ApplyStateAcknowledged},
+				"datadog/2/ASM_DD/rules-2/config": {State: state.ApplyStateError, Error: `{"rules":{"errors":{"duplicate rule":["blk-001-001"]}}}`},
 			},
 		},
 		{
 			name:                "ASM_DD/1-config-1-removal",
-			expectedConfigPaths: []string{"rules/path1"},
+			expectedConfigPaths: []string{"datadog/2/ASM_DD/rules/config"},
 			edits: map[string]*RulesFragment{
-				"rules/path1": &rules,
-				"rules/v1":    nil,
+				"datadog/2/ASM_DD/rules/config":    &rules,
+				"datadog/2/ASM_DD/rules-v1/config": nil,
 			},
 			statuses: map[string]state.ApplyStatus{
-				"rules/path1": {State: state.ApplyStateAcknowledged},
-				"rules/v1":    {State: state.ApplyStateAcknowledged},
+				"datadog/2/ASM_DD/rules/config":    {State: state.ApplyStateAcknowledged},
+				"datadog/2/ASM_DD/rules-v1/config": {State: state.ApplyStateAcknowledged},
 			},
-			removal: "rules/v1",
 		},
 		{
-			name:            "ASM_DD/1-removal",
-			initialBasePath: "rules/path",
+			name: "ASM_DD/1-removal",
 			edits: map[string]*RulesFragment{
-				"rules/path": &rules,
+				"datadog/2/ASM_DD/rules/config": nil,
 			},
 			statuses: map[string]state.ApplyStatus{
-				"rules/path": {State: state.ApplyStateAcknowledged},
+				"datadog/2/ASM_DD/rules/config": {State: state.ApplyStateAcknowledged},
 			},
-			removal: "rules/path",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -508,9 +504,6 @@ func TestOnRCUpdate(t *testing.T) {
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
-			if tc.removal != "" {
-				updates[state.ProductASMDD][tc.removal] = nil
-			}
 
 			statuses := activeAppSec.onRCRulesUpdate(updates)
 			require.Equal(t, tc.statuses, statuses)
