@@ -64,19 +64,20 @@ func NewWAFManager(obfuscator appsec.ObfuscatorConfig, defaultRules any) (*WAFMa
 
 // Reset resets the WAF manager to its initial state.
 func (m *WAFManager) Reset() error {
-	for _, path := range m.ConfigPaths() {
+	for _, path := range m.ConfigPaths("") {
 		m.RemoveConfig(path)
 	}
 	return m.RestoreDefaultConfig()
 }
 
 // ConfigPaths returns the list of configuration paths currently loaded in the receiving
-// [WAFManager]. This is typically used for testing purposes.
-func (m *WAFManager) ConfigPaths() []string {
+// [WAFManager]. This is typically used for testing purposes. An optional filter regular expression
+// can be provided to limit what paths are returned.
+func (m *WAFManager) ConfigPaths(filter string) []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	return m.builder.ConfigPaths("")
+	return m.builder.ConfigPaths(filter)
 }
 
 // NewHandle returns a new [*libddwaf.Handle] (which may be nil if no valid WAF could be built) and the

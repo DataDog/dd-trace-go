@@ -46,10 +46,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		Product string
 		Content map[string]any
 	}
-	var (
-		deletedDefault bool // We remove the default config if any ASM_DD config is received
-		addOrUpdates   = make(map[string]UpdatedConfig)
-	)
+	addOrUpdates := make(map[string]UpdatedConfig)
 
 	for product, prodUpdates := range updates {
 		for path, data := range prodUpdates {
@@ -69,12 +66,17 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 					addOrUpdates[path] = cfg
 					if product == state.ProductASMDD {
 						// Remove the default config if present when an ASM_DD config is received.
-						deletedDefault = a.cfg.WAFManager.RemoveDefaultConfig()
+						if deletedDefault := a.cfg.WAFManager.RemoveDefaultConfig(); deletedDefault {
+							log.Debug("appsec: remote config: processed ASM_DD addition/update; removed default config")
+						}
 					}
 				}
+			case state.ProductASMFeatures:
+				// This is a global hook, so it'll receive [remoteconfig.ProductASMFeatures] updates as well, which are not
+				// relevant for this particular handler. These are handled by a product-specific handler,
+				// [appsec.handleASMFeatures].
 			default:
-				log.Debug("appsec: remote config: rules updates: ignoring RC update for un-subscribed product %s", product)
-				// Note -- intentionally not setting a status for this path; another callback might handle it!
+				log.Debug("appsec: remote config: ignoring RC update for non-ASM product %s", product)
 			}
 		}
 	}
@@ -84,7 +86,6 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	slices.Sort(addOrUpdatePaths)
 
 	// Apply all the additions and updates
-	var anyASMDD bool
 	for _, path := range addOrUpdatePaths {
 		update := addOrUpdates[path]
 		diag, err := a.cfg.WAFManager.AddOrUpdateConfig(path, update.Content)
@@ -137,12 +138,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 		}
 
 		statuses[path] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-		if update.Product == state.ProductASMDD {
-			anyASMDD = true
-		}
 		diag.EachFeature(logDiagnosticMessages(update.Product, path))
 	}
-	if deletedDefault && !anyASMDD {
+	if len(a.cfg.WAFManager.ConfigPaths(`^(?:datadog/\d+|employee)/ASM_DD/.+`)) == 0 {
+		log.Debug("appsec: remote config: no ASM_DD config loaded; restoring default config if available")
 		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
 			telemetrylog.Error("appsec: RC could not restore default config: %v", err)
 		}
@@ -151,7 +150,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	// If an error occurs while updating the WAF handle, don't swap the RulesManager and propagate the error
 	// to all config statuses since we can't know which config is the faulty one
 	if err := a.SwapRootOperation(); err != nil {
-		log.Error("appsec: Remote config: could not apply the new security rules: %v", err)
+		log.Error("appsec: remote config: could not apply the new security rules: %v", err)
 		for k := range statuses {
 			if statuses[k].State == state.ApplyStateError || statuses[k].State == state.ApplyStateUnacknowledged {
 				// Leave failed & un-acknowledged configs as-is... This failure is not related to these...
@@ -216,12 +215,12 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 		path, raw = p, r
 	}
 
-	log.Debug("appsec: Remote config: processing %s", path)
+	log.Debug("appsec: remote config: processing %s", path)
 
 	// A nil config means ASM was disabled, and we stopped receiving the config file
 	// Don't ack the config in this case and return early
 	if raw == nil {
-		log.Debug("appsec: Remote config: Stopping AppSec")
+		log.Debug("appsec: remote config: Stopping AppSec")
 		a.stop()
 		return map[string]state.ApplyStatus{path: {State: state.ApplyStateAcknowledged}}
 	}
@@ -229,22 +228,22 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	// Parse the config object we just received...
 	var parsed state.ASMFeaturesData
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		log.Error("appsec: Remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
+		log.Error("appsec: remote config: error while unmarshalling %s: %v. Configuration won't be applied.", path, err)
 		return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
 	}
 
 	// RC triggers activation of ASM; ASM is not started yet... Starting it!
 	if parsed.ASM.Enabled && !a.started {
-		log.Debug("appsec: Remote config: Starting AppSec")
+		log.Debug("appsec: remote config: Starting AppSec")
 		if err := a.start(); err != nil {
-			log.Error("appsec: Remote config: error while processing %s. Configuration won't be applied: %v", path, err)
+			log.Error("appsec: remote config: error while processing %s. Configuration won't be applied: %v", path, err)
 			return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
 		}
 	}
 
 	// RC triggers desactivation of ASM; ASM is started... Stopping it!
 	if !parsed.ASM.Enabled && a.started {
-		log.Debug("appsec: Remote config: Stopping AppSec")
+		log.Debug("appsec: remote config: Stopping AppSec")
 		a.stop()
 		return map[string]state.ApplyStatus{path: {State: state.ApplyStateAcknowledged}}
 	}
@@ -282,7 +281,7 @@ func (a *appsec) registerRCCapability(c remoteconfig.Capability) error {
 
 func (a *appsec) unregisterRCCapability(c remoteconfig.Capability) error {
 	if a.cfg.RC == nil {
-		log.Debug("appsec: Remote config: no valid remote configuration client")
+		log.Debug("appsec: remote config: no valid remote configuration client")
 		return nil
 	}
 	return remoteconfig.UnregisterCapability(c)
@@ -318,35 +317,36 @@ var blockingCapabilities = [...]remoteconfig.Capability{
 
 func (a *appsec) enableRCBlocking() {
 	if a.cfg.RC == nil {
-		log.Debug("appsec: Remote config: no valid remote configuration client")
+		log.Debug("appsec: remote config: no valid remote configuration client")
 		return
 	}
 
 	products := []string{state.ProductASM, state.ProductASMDD, state.ProductASMData}
 	for _, p := range products {
 		if err := a.registerRCProduct(p); err != nil {
-			log.Debug("appsec: Remote config: couldn't register product %s: %v", p, err)
+			log.Debug("appsec: remote config: couldn't register product %s: %v", p, err)
 		}
 	}
 
+	log.Debug("appsec: remote config: registering onRCRulesUpdate callback")
 	if err := remoteconfig.RegisterCallback(a.onRCRulesUpdate); err != nil {
-		log.Debug("appsec: Remote config: couldn't register callback: %v", err)
+		log.Debug("appsec: remote config: couldn't register callback: %v", err)
 	}
 
 	for _, c := range baseCapabilities {
 		if err := a.registerRCCapability(c); err != nil {
-			log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+			log.Debug("appsec: remote config: couldn't register capability %v: %v", c, err)
 		}
 	}
 
 	if localRulesPath, hasLocalRules := os.LookupEnv(internal.EnvRules); hasLocalRules {
-		log.Debug("appsec: Remote config: using rules from %s; will not register blocking capabilities", localRulesPath)
+		log.Debug("appsec: remote config: using rules from %s; will not register blocking capabilities", localRulesPath)
 		return
 	}
 	if !a.cfg.BlockingUnavailable {
 		for _, c := range blockingCapabilities {
 			if err := a.registerRCCapability(c); err != nil {
-				log.Debug("appsec: Remote config: couldn't register capability %v: %v", c, err)
+				log.Debug("appsec: remote config: couldn't register capability %v: %v", c, err)
 			}
 		}
 	}
@@ -357,14 +357,14 @@ func (a *appsec) enableRASP() {
 		return
 	}
 	if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPSSRF); err != nil {
-		log.Debug("appsec: Remote config: couldn't register RASP SSRF: %v", err)
+		log.Debug("appsec: remote config: couldn't register RASP SSRF: %v", err)
 	}
 	if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPSQLI); err != nil {
-		log.Debug("appsec: Remote config: couldn't register RASP SQLI: %v", err)
+		log.Debug("appsec: remote config: couldn't register RASP SQLI: %v", err)
 	}
 	if orchestrion.Enabled() {
 		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPLFI); err != nil {
-			log.Debug("appsec: Remote config: couldn't register RASP LFI: %v", err)
+			log.Debug("appsec: remote config: couldn't register RASP LFI: %v", err)
 		}
 	}
 }
@@ -375,17 +375,17 @@ func (a *appsec) disableRCBlocking() {
 	}
 	for _, c := range baseCapabilities {
 		if err := a.unregisterRCCapability(c); err != nil {
-			log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+			log.Debug("appsec: remote config: couldn't unregister capability %v: %v", c, err)
 		}
 	}
 	if !a.cfg.BlockingUnavailable {
 		for _, c := range blockingCapabilities {
 			if err := a.unregisterRCCapability(c); err != nil {
-				log.Debug("appsec: Remote config: couldn't unregister capability %v: %v", c, err)
+				log.Debug("appsec: remote config: couldn't unregister capability %v: %v", c, err)
 			}
 		}
 	}
 	if err := remoteconfig.UnregisterCallback(a.onRCRulesUpdate); err != nil {
-		log.Debug("appsec: Remote config: couldn't unregister callback: %v", err)
+		log.Debug("appsec: remote config: couldn't unregister callback: %v", err)
 	}
 }

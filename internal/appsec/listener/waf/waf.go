@@ -63,7 +63,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 			"appsec_config_key:*",
 			"rc_config_id:*",
 		}))
-		return nil, fmt.Errorf("failed to obtain WAF instance from the waf.Builder")
+		return nil, fmt.Errorf("failed to obtain WAF instance from the waf.Builder (loaded paths: %q)", cfg.WAFManager.ConfigPaths(""))
 	}
 
 	cfg.SupportedAddresses = config.NewAddressSet(newHandle.Addresses())

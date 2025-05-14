@@ -429,7 +429,7 @@ func TestOnRCUpdate(t *testing.T) {
 					expected = append(expected, path)
 				}
 				slices.Sort(expected)
-				actual := activeAppSec.cfg.WAFManager.ConfigPaths()
+				actual := activeAppSec.cfg.WAFManager.ConfigPaths("")
 				slices.Sort(actual)
 				require.Equal(t, expected, actual)
 			})
@@ -504,7 +504,7 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			require.Equal(t, []string{"ASM_DD/default"}, activeAppSec.cfg.WAFManager.ConfigPaths())
+			require.Equal(t, []string{"ASM_DD/default"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
@@ -520,7 +520,7 @@ func TestOnRCUpdate(t *testing.T) {
 			if expected == nil {
 				expected = []string{"ASM_DD/default"}
 			}
-			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths())
+			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 		})
 	}
 
@@ -550,7 +550,7 @@ func TestOnRCUpdate(t *testing.T) {
 			state.ProductASMDD: map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
 		})
 		require.Equal(t, map[string]state.ApplyStatus{"irrelevant/config": {State: state.ApplyStateUnacknowledged}}, status)
-		require.NotContains(t, activeAppSec.cfg.WAFManager.ConfigPaths(), "irrelevant/config")
+		require.NotContains(t, activeAppSec.cfg.WAFManager.ConfigPaths(""), "irrelevant/config")
 	})
 }
 
