@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.64.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/trace v0.64.0-rc.1
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/go-libddwaf/v4 v4.0.0
+	github.com/DataDog/go-libddwaf/v4 v4.1.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
