@@ -1428,24 +1428,28 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		return &ctx, nil
 	}
 
-	keyVals := strings.Split(baggageHeader, ",")
-	for _, kv := range keyVals {
-		// Split on the first instance of "=" i.e, `a=b=c` becomes `a: b=c`.
-		key, val, ok := strings.Cut(kv, "=")
-		if !ok {
-			log.Warn("invalid baggage item: %s, dropping", kv)
+	parts := strings.Split(baggageHeader, ",")
+
+	// 1) validation & single-trim pass
+	for i, kv := range parts {
+		k, v, ok := strings.Cut(kv, "=")
+		trimmedK := strings.TrimSpace(k)
+		trimmedV := strings.TrimSpace(v)
+		if !ok || trimmedK == "" || trimmedV == "" {
+			log.Warn("invalid baggage item: %q, dropping entire header", kv)
+			return &ctx, nil
 		}
-		key = strings.TrimSpace(key)
-		val = strings.TrimSpace(val)
-		if key == "" || val == "" {
-			log.Warn("invalid baggage item: '%s', dropping", kv)
-		}
-		key, errKey := url.QueryUnescape(key)
-		val, errVal := url.QueryUnescape(val)
-		if errKey != nil || errVal != nil {
-			log.Warn("failed to decode baggage item: %s, dropping", kv)
-		}
+		// store back the trimmed pair so we don't re-trim below
+		parts[i] = trimmedK + "=" + trimmedV
+	}
+
+	// 2) safe to URL-decode & apply
+	for _, kv := range parts {
+		rawK, rawV, _ := strings.Cut(kv, "=")
+		key, _ := url.QueryUnescape(rawK)
+		val, _ := url.QueryUnescape(rawV)
 		ctx.setBaggageItem(key, val)
 	}
+
 	return &ctx, nil
 }

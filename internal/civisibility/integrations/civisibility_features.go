@@ -156,7 +156,7 @@ func ensureSettingsInitialization(serviceName string) {
 }
 
 // ensureAdditionalFeaturesInitialization initialize all the additional features
-func ensureAdditionalFeaturesInitialization(serviceName string) {
+func ensureAdditionalFeaturesInitialization(_ string) {
 	additionalFeaturesInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing additional features")
 		defer log.Debug("civisibility: additional features initialization complete")

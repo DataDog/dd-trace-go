@@ -13,14 +13,12 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
-
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
-
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 type (
@@ -30,7 +28,7 @@ type (
 
 		// context is an atomic pointer to the current WAF context.
 		// Makes sure the calls to context.Run are safe.
-		context atomic.Pointer[waf.Context]
+		context atomic.Pointer[libddwaf.Context]
 		// limiter comes from the WAF feature and is used to limit the number of events as a whole.
 		limiter limiter.Limiter
 		// events is where we store WAF events received from the WAF over the course of the request.
@@ -55,7 +53,7 @@ type (
 
 	// RunEvent is the type of event that should be emitted to child operations to run the WAF
 	RunEvent struct {
-		waf.RunAddressData
+		libddwaf.RunAddressData
 		dyngo.Operation
 	}
 
@@ -80,7 +78,7 @@ func (op *ContextOperation) Finish() {
 	op.ServiceEntrySpanOperation.Finish()
 }
 
-func (op *ContextOperation) SwapContext(ctx *waf.Context) *waf.Context {
+func (op *ContextOperation) SwapContext(ctx *libddwaf.Context) *libddwaf.Context {
 	return op.context.Swap(ctx)
 }
 
