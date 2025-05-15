@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"path"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -40,32 +42,33 @@ var (
 // Config holds the configuration for the request mirror server.
 type Config struct {
 	httptrace.ServeConfig
+	// Hijack is a flag to indicate if the server should hijack the connection and close it before sending a response to the client.
+	// This is useful to reduce the number of open connections and avoid sending a response that will be ignored anyway.
+	Hijack *bool
 }
 
 var requestsCount atomic.Uint32
 
 // HTTPRequestMirrorHandler is the handler for the request mirror server.
 // It is made to receive requests from proxies supporting the request mirror feature from the k8s gateway API specification.
+// It will parse the request body and send it to the WAF for analysis.
+// The resulting [http.Handler] should not to be registered with the [httptrace.ServeMux] but instead with a standard [http.ServeMux].
 func HTTPRequestMirrorHandler(config Config) http.Handler {
 	if config.ServeConfig.SpanOpts == nil {
 		config.ServeConfig.SpanOpts = []tracer.StartSpanOption{
 			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+			tracer.Tag(ext.Component, "k8s.io/gateway-api"),
 		}
 	}
 
+	if config.Hijack == nil {
+		config.Hijack = ptr.To[bool](true)
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Force the connection to be closed so we don't send a response
-		wr, ok := w.(http.Hijacker)
-		if !ok {
-			panic(fmt.Errorf("%T does not support http.Hijack interface", w))
+		if config.Hijack != nil && *config.Hijack {
+			defer hijackConnection(w).Close()
 		}
-
-		conn, _, err := wr.Hijack()
-		if err != nil {
-			panic(fmt.Errorf("failed to hijack connection: %v", err))
-		}
-
-		defer conn.Close()
 
 		requestsCount.Add(1)
 
@@ -114,6 +117,21 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 	})
 }
 
+// hijackConnection hijacks the connection from the http.ResponseWriter if possible. Panics otherwise.
+func hijackConnection(w http.ResponseWriter) net.Conn {
+	wr, ok := w.(http.Hijacker)
+	if !ok {
+		panic(fmt.Errorf("%T does not support http.Hijacker interface", w))
+	}
+
+	conn, _, err := wr.Hijack()
+	if err != nil {
+		panic(fmt.Errorf("failed to hijack connection: %v", err))
+	}
+
+	return conn
+}
+
 // parseBody parses the request body based on the list of content types provided in the Content-Type header.
 // It returns the parsed body as an interface{} or an error if parsing fails.
 func parseBody(contentType string, reader io.Reader) (any, error) {
@@ -132,7 +150,6 @@ func parseBody(contentType string, reader io.Reader) (any, error) {
 		switch {
 		// Handle cases like application/vnd.api+json: https://jsonapi.org/
 		case mimeType == "application/json" || strings.HasSuffix(mimeType, "+json"):
-			body = make(map[string]any)
 			err = json.NewDecoder(reader).Decode(&body)
 		}
 
