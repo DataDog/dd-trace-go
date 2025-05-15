@@ -735,8 +735,6 @@ github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-rc.15 h1:u4
 github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-rc.15/go.mod h1:Cid8CD+7lVEb6W+amuU69CY0Tzn4xUIPJUnKTkbeMxc=
 github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-rc.15 h1:iborM2P+SINBu7xW8QEYM5yKqSkPm1JsZ7Qrh97F8Sg=
 github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-rc.15/go.mod h1:mTbnApUAq8Et25r+0qOjEsoOSDX2Hfd76K/CTjvjHwQ=
-github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-rc.15 h1:SgEQFYFbe9W5Xkf3ZQHkEAM6j2iZrnjlj0KVe4LSoTg=
-github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-rc.15/go.mod h1:l5aDqgfpaRzEfY4a9/I86Gw7PKr08cUXbSRtF46Iiak=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.15 h1:+MaLAxBzG9niz5A6vQn2llWK7BlMIKtcAqerPYEWvJU=
 github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.15/go.mod h1:WBtf7TA9bWr5uA8DjOyw1qlSKe3bw9gN5nc0Ta9dHFE=
 github.com/DataDog/go-libddwaf/v3 v3.5.4 h1:cLV5lmGhrUBnHG50EUXdqPQAlJdVCp9n3aQ5bDWJEAg=
@@ -1855,8 +1853,8 @@ go.opentelemetry.io/otel/exporters/prometheus v0.53.0 h1:QXobPHrwiGLM4ufrY3EOmDP
 go.opentelemetry.io/otel/exporters/prometheus v0.53.0/go.mod h1:WOAXGr3D00CfzmFxtTV1eR0GpoHuPEu+HJT8UWW2SIU=
 go.opentelemetry.io/otel/metric v1.35.0 h1:0znxYu2SNyuMSQT4Y9WDWej0VpcsxkuklLa4/siN90M=
 go.opentelemetry.io/otel/metric v1.35.0/go.mod h1:nKVFgxBZ2fReX6IlyW28MgZojkoAkJGaE8CpgeAU3oE=
-go.opentelemetry.io/otel/sdk v1.34.0 h1:95zS4k/2GOy069d321O8jWgYsW3MzVV+KuSPKp7Wr1A=
-go.opentelemetry.io/otel/sdk v1.34.0/go.mod h1:0e/pNiaMAqaykJGKbi+tSjWfNNHMTxoC9qANsCzbyxU=
+go.opentelemetry.io/otel/sdk v1.35.0 h1:iPctf8iprVySXSKJffSS79eOjl9pvxV9ZqOWT0QejKY=
+go.opentelemetry.io/otel/sdk v1.35.0/go.mod h1:+ga1bZliga3DxJ3CQGg3updiaAJoNECOgJREo9KHGQg=
 go.opentelemetry.io/otel/sdk/metric v1.35.0 h1:1RriWBmCKgkeHEhM7a2uMjMUfP7MsOF5JpUCaEqEI9o=
 go.opentelemetry.io/otel/sdk/metric v1.35.0/go.mod h1:is6XYCUMpcKi+ZsOvfluY5YstFnhW0BidkR+gL+qN+w=
 go.opentelemetry.io/otel/trace v1.6.3/go.mod h1:GNJQusJlUgZl9/TQBPKU/Y/ty+0iVB5fjhKeJGZPGFs=

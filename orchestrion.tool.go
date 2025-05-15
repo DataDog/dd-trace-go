@@ -46,9 +46,8 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2"                          // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"                           // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2"                      // integration
-	_ "github.com/DataDog/dd-trace-go/orchestrion/all/v2"
-	_ "github.com/DataDog/dd-trace-go/v2/contrib/os"     // integration
-	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer" // integration
-	_ "github.com/DataDog/dd-trace-go/v2/orchestrion"    // integration
-	_ "github.com/DataDog/dd-trace-go/v2/profiler"       // integration
+	_ "github.com/DataDog/dd-trace-go/v2/contrib/os"                                       // integration
+	_ "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"                                   // integration
+	_ "github.com/DataDog/dd-trace-go/v2/orchestrion"                                      // integration
+	_ "github.com/DataDog/dd-trace-go/v2/profiler"                                         // integration
 )

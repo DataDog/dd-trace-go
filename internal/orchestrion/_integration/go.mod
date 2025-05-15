@@ -67,7 +67,7 @@ require (
 	google.golang.org/api v0.213.0
 	google.golang.org/grpc v1.71.1
 	google.golang.org/grpc/examples v0.0.0-20250110041721-2d4daf347590
-	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-beta.16.0.20250226102257-e25fa974acda
+	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-rc.28
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 	gotest.tools/v3 v3.5.2
@@ -131,7 +131,6 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-rc.15 // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-rc.15 // indirect
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-rc.15 // indirect
-	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.0.0-rc.15 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250319104955-81009b9bad14 // indirect
 	github.com/DataDog/go-sqllexer v0.1.3 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
