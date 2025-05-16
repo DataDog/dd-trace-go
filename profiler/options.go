@@ -54,7 +54,7 @@ const (
 	// DefaultUploadTimeout specifies the default timeout for uploading profiles.
 	// It can be overwritten using the DD_PROFILING_UPLOAD_TIMEOUT env variable
 	// or the WithUploadTimeout option.
-	DefaultUploadTimeout = 10 * time.Second
+	DefaultUploadTimeout = 10 * time.Second // <--
 )
 
 const (
@@ -195,8 +195,8 @@ func defaultConfig() (*config, error) {
 		cpuDuration:          DefaultDuration,
 		blockRate:            DefaultBlockRate,
 		mutexFraction:        DefaultMutexFraction,
-		uploadTimeout:        DefaultUploadTimeout,
-		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
+		uploadTimeout:        DefaultUploadTimeout, // <--
+		maxGoroutinesWait:    1000,                 // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
