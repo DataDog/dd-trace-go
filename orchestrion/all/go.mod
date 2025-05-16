@@ -333,3 +333,5 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../contrib/valkey-io/valkey-go
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )
+
+replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
