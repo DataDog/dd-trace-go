@@ -6,7 +6,11 @@
 package httptrace
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
+	"runtime"
+	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -65,6 +69,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
+		setCodeOriginTags(span)
 		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
@@ -91,4 +96,94 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 		handled = secHandled
 	}
 	return rw, rt, afterHandle, handled
+}
+
+const (
+	tagCodeOriginType           = "_dd.code_origin.type"
+	tagCodeOriginFrameFile      = "_dd.code_origin.frames.%d.file"
+	tagCodeOriginFrameLine      = "_dd.code_origin.frames.%d.line"
+	tagCodeOriginFrameType      = "_dd.code_origin.frames.%d.type"
+	tagCodeOriginFrameMethod    = "_dd.code_origin.frames.%d.method"
+	tagCodeOriginFrameSignature = "_dd.code_origin.frames.%d.signature"
+)
+
+func setCodeOriginTags(span *tracer.Span) {
+	if !cfg.codeOriginEnabled {
+		return
+	}
+	span.SetTag(tagCodeOriginType, "exit")
+
+	frameN := 0
+	pcs := make([]uintptr, 32)
+	n := runtime.Callers(2, pcs) // skip 2 frames: Callers + this function
+	pcs = pcs[:n]
+
+	frames := runtime.CallersFrames(pcs)
+	for {
+		frame, more := frames.Next()
+		fmt.Printf("got frame: %s:%d | %s\n", frame.File, frame.Line, frame.Function)
+
+		if isUserCode(frame) {
+			span.SetTag(frameTag(tagCodeOriginFrameFile, frameN), frame.File)
+			span.SetTag(frameTag(tagCodeOriginFrameLine, frameN), strconv.Itoa(frame.Line))
+
+			fn, ok := parseFunction(frame.Function)
+			if ok {
+				if fn.receiver != "" {
+					span.SetTag(frameTag(tagCodeOriginFrameType, frameN), fn.pkg+"."+fn.receiver)
+					span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.name)
+				} else {
+					span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.pkg+"."+fn.name)
+				}
+			} else {
+				instr.Logger().Debug("instrumentation/httptrace/setCodeOriginTags: failed to extract function info from frame: %s", frame.Function)
+			}
+
+			frameN++
+			if frameN >= cfg.codeOriginMaxUserFrames {
+				break
+			}
+		}
+		if !more {
+			break
+		}
+	}
+}
+
+func isUserCode(frame runtime.Frame) bool {
+	return !isStdLib(frame.File) && !isThirdParty(frame.File)
+}
+
+func isStdLib(path string) bool {
+	// TODO
+	return false
+}
+
+func isThirdParty(path string) bool {
+	// TODO
+	return false
+}
+
+func frameTag(tag string, n int) string {
+	return fmt.Sprintf(tag, n)
+}
+
+var funcPattern = regexp.MustCompile(`^(?P<Package>[\w./-]+)(?:\.\((?P<Receiver>[^)]+)\))?\.(?P<Method>\w+)$`)
+
+type funcInfo struct {
+	pkg      string
+	receiver string
+	name     string
+}
+
+func parseFunction(fn string) (funcInfo, bool) {
+	match := funcPattern.FindStringSubmatch(fn)
+	if match == nil {
+		return funcInfo{}, false
+	}
+	return funcInfo{
+		pkg:      match[1],
+		receiver: match[2],
+		name:     match[3],
+	}, true
 }
