@@ -25,7 +25,7 @@ import (
 )
 
 // outChannelSize specifies the size of the profile output channel.
-const outChannelSize = 5
+const outChannelSize = 5 // <--
 
 // customProfileLabelLimit is the maximum number of pprof labels which can
 // be used as custom attributes in the profiler UI
@@ -200,7 +200,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	//
 	// see similar discussion: https://github.com/golang/go/issues/39177
 	if cfg.uploadTimeout <= 0 {
-		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout)
+		return nil, fmt.Errorf("invalid upload timeout, must be > 0: %s", cfg.uploadTimeout) // <-- mentioned in doRequest
 	}
 	for pt := range cfg.types {
 		if _, ok := profileTypes[pt]; !ok {
@@ -236,7 +236,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 
 	p := profiler{
 		cfg:    cfg,
-		out:    make(chan batch, outChannelSize),
+		out:    make(chan batch, outChannelSize), // <-- 5
 		exit:   make(chan struct{}),
 		met:    newMetrics(),
 		deltas: make(map[ProfileType]*fastDeltaProfiler),
@@ -444,6 +444,9 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 // enqueueUpload pushes a batch of profiles onto the queue to be uploaded. If there is no room, it will
 // evict the oldest profile to make some. Typically a batch would be one of each enabled profile.
 func (p *profiler) enqueueUpload(bat batch) {
+	// explanation: p.out is a channel with a capacity of 5. we keep buffering
+	// profile batches into the channel until it's full. After that, we start
+	// evicting the oldest profile batches until there's room in the channel.
 	for {
 		select {
 		case p.out <- bat:
@@ -465,6 +468,18 @@ func (p *profiler) enqueueUpload(bat batch) {
 
 // send takes profiles from the output queue and uploads them.
 func (p *profiler) send() {
+	// explanation: this loop drains the p.out channel and uploads the profiles.
+	// in the worst case our uploadFunc takes a long time to complete [1], so
+	// p.out could hold 5 profiles. together with the profile held by uploadFunc
+	// and the profile currently being collected, this would result in 7
+	// profiles being buffered in memory. profiles are typically ~5 MiB (we have
+	// a hard limit of 30 MiB on the intake queue IIRC), so I'd be very
+	// surprised if this ends up buffering more than 100 MiB of profiles in
+	// practice even if the agent endpoint is down.
+	//
+	// [1] uploadFunc should not take longer than 20 seconds (2 attempts with
+	// 10s timeout) and our profile production rate is one per 60s. So this case
+	// should not happen, but let's entertain the possibility that it does.
 	for {
 		select {
 		case <-p.exit:

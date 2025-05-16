@@ -25,7 +25,7 @@ import (
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
-const maxRetries = 2
+const maxRetries = 2 // <-- this should probably be renamed to maxUploadAttempts
 
 var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-based profiling deployments " +
 	"require Datadog Agent >= 7.20")
@@ -34,6 +34,9 @@ var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-bas
 func (p *profiler) upload(bat batch) error {
 	statsd := p.cfg.statsd
 	var err error
+	// explanation: this is the profiler.uploadFunc that is called by the
+	// profiler.send. It retries the upload of a profile up to 2 times before
+	// giving up.
 	for i := 0; i < maxRetries; i++ {
 		select {
 		case <-p.exit:
@@ -96,6 +99,7 @@ func (p *profiler) doRequest(bat batch) error {
 	funcExit := make(chan struct{})
 	defer close(funcExit)
 	// uploadTimeout is guaranteed to be >= 0, see newProfiler.
+	// p.cfg.uploadTimeout is 10 seconds by default
 	ctx, cancel := context.WithTimeout(context.Background(), p.cfg.uploadTimeout)
 	go func() {
 		select {
