@@ -156,8 +156,9 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // for the same span.
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
-		spanID: span.spanID,
-		span:   span,
+		spanID:    span.spanID,
+		span:      span,
+		spanLinks: span.spanLinks,
 	}
 
 	context.traceID.SetLower(span.traceID)

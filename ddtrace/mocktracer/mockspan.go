@@ -39,7 +39,7 @@ func MockSpan(s *tracer.Span) *Span {
 	if s == nil {
 		return nil
 	}
-	return &Span{sp: s, m: s.AsMap()}
+	return &Span{sp: s, m: s.AsMap(), links: s.Context().SpanLinks()}
 }
 
 func (s *Span) OperationName() string {
@@ -127,7 +127,8 @@ id: %d
 parent: %d
 trace: %v
 baggage: %#v
-`, s.OperationName(), s.Tags(), s.StartTime(), s.Duration(), sc.SpanID(), s.ParentID(), sc.TraceID(), baggage)
+links: %#v
+`, s.OperationName(), s.Tags(), s.StartTime(), s.Duration(), sc.SpanID(), s.ParentID(), sc.TraceID(), baggage, s.links)
 }
 
 func (s *Span) ParentID() uint64 {
@@ -215,14 +216,7 @@ func (s *Span) Unwrap() *tracer.Span {
 
 // Links returns the span's span links.
 func (s *Span) Links() []tracer.SpanLink {
-	payload := s.Tag("_dd.span_links")
-	if payload == nil {
-		return nil
-	}
-	// Unmarshal the JSON payload into the SpanLink slice.
-	var links []tracer.SpanLink
-	json.Unmarshal([]byte(payload.(string)), &links)
-	return links
+	return s.links
 }
 
 // SpanEvent represents a span event from a mockspan.

@@ -326,3 +326,27 @@ func TestTracerExtract(t *testing.T) {
 		})
 	})
 }
+
+func TestSpanLinks(t *testing.T) {
+	spanLink := tracer.SpanLink{
+		TraceID:     789,
+		TraceIDHigh: 0,
+		SpanID:      789,
+		Attributes:  map[string]string{"reason": "terminated_context", "context_headers": "datadog"},
+		Flags:       0,
+	}
+
+	t.Run("create span with links", func(t *testing.T) {
+		mt := Start()
+		defer mt.Stop()
+
+		span := mt.StartSpan("http.request", tracer.WithSpanLinks([]tracer.SpanLink{spanLink}))
+		span.Finish()
+
+		finishedSpans := mt.FinishedSpans()
+
+		assert.Len(t, finishedSpans, 1)
+		assert.Len(t, finishedSpans[0].Links(), 1)
+		assert.Equal(t, spanLink, finishedSpans[0].Links()[0])
+	})
+}

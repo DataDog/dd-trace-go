@@ -573,6 +573,7 @@ func (s *Span) AddLink(link SpanLink) {
 		return
 	}
 	s.spanLinks = append(s.spanLinks, link)
+	s.context.spanLinks = append(s.context.spanLinks, link)
 }
 
 // serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.
