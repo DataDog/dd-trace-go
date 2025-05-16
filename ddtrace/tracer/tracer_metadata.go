@@ -6,7 +6,7 @@ package tracer
 
 // Metadata represents the configuration of the tracer.
 //
-//go:generate msgp -unexported -marshal=true -o=tracer_metadata_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -unexported -marshal=true -o=tracer_metadata_msgp.go -tests=false
 type Metadata struct {
 	// Version of the schema.
 	SchemaVersion uint8 `msg:"schema_version"`
