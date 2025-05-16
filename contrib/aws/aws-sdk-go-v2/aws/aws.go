@@ -231,6 +231,8 @@ func tableName(requestInput middleware.InitializeInput) string {
 		return *params.TableName
 	case *dynamodb.UpdateItemInput:
 		return *params.TableName
+	case *dynamodb.DeleteItemInput:
+		return *params.TableName
 	}
 	return ""
 }
