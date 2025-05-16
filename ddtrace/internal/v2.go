@@ -49,7 +49,7 @@ func (ta TracerV2Adapter) Inject(context ddtrace.SpanContext, carrier interface{
 // StartSpan implements ddtrace.Tracer.
 func (ta TracerV2Adapter) StartSpan(operationName string, opts ...ddtrace.StartSpanOption) ddtrace.Span {
 	if _, ok := ta.Tracer.(*v2.NoopTracer); ok {
-		log.Warn("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
+		log.Debug("Tracer must be started before starting a span; Review the docs for more information: https://docs.datadoghq.com/tracing/trace_collection/library_config/go/")
 	}
 	s := ta.Tracer.StartSpan(operationName, ApplyV1Options(opts...))
 	return WrapSpan(s)
