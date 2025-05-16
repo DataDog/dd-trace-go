@@ -68,7 +68,7 @@ func generateRootYAML(rootDir string) error {
 			return nil
 		}
 
-		if entry.Name() != "orchestrion.yml" {
+		if entry.Name() != "orchestrion.yml" && entry.Name() != "orchestrion.tool.go" {
 			return nil
 		}
 
@@ -141,7 +141,7 @@ package tools
 
 import (
 	_ "github.com/DataDog/orchestrion"
-	_ "github.com/DataDog/dd-trace-go/v2" // integration
+	_ "gopkg.in/DataDog/dd-trace-go.v1" // integration
 )
 `
 )
@@ -156,12 +156,8 @@ func validateValidConfig(rootDir string) error {
 	if err := goCmd(tmp, "mod", "init", "github.com/DataDog/dd-trace-go.orchestrion"); err != nil {
 		return fmt.Errorf("init module: %w", err)
 	}
-	if err := goCmd(tmp, "mod", "edit", "-replace", "github.com/DataDog/dd-trace-go/v2="+rootDir); err != nil {
-		return fmt.Errorf("replace github.com/DataDog/dd-trace-go/v2: %w", err)
-	}
-	// TODO: Remove before shipping
-	if err := goCmd(tmp, "mod", "edit", "-require", "github.com/DataDog/orchestrion@v1.0.3-rc.1.0.20250109145419-86f02c486a31"); err != nil {
-		return fmt.Errorf("replace github.com/DataDog/orchestrion: %w", err)
+	if err := goCmd(tmp, "mod", "edit", "-replace", "gopkg.in/DataDog/dd-trace-go.v1="+rootDir); err != nil {
+		return fmt.Errorf("replace gopkg.in/DataDog/dd-trace-go.v1: %w", err)
 	}
 
 	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte(mainGo), 0o644); err != nil {
