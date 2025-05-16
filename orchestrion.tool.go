@@ -58,6 +58,5 @@ import (
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp"                           // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/valkey-go"                                // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"                                   // integration
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting"     // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/profiler"                                         // integration
 )
