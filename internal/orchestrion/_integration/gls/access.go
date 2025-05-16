@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	//go:linkname orchestrionGlsGet github.com/DataDog/dd-trace-go/v2/internal/orchestrion/__dd_orchestrion_gls_get
+	//go:linkname orchestrionGlsGet __dd_orchestrion_gls_get.V2
 	orchestrionGlsGet func() any
 
-	//go:linkname orchestrionGlsSet github.com/DataDog/dd-trace-go/v2/internal/orchestrion/__dd_orchestrion_gls_set
+	//go:linkname orchestrionGlsSet __dd_orchestrion_gls_set.V2
 	orchestrionGlsSet func(any)
 
 	get = func() any { return nil }
