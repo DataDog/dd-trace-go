@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-//go:generate msgp -unexported -marshal=false -o=civisibility_tslv_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=civisibility_tslv_msgp.go -tests=false
 
 package tracer
 

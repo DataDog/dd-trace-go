@@ -7,7 +7,6 @@ package appsec_test
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
@@ -17,27 +16,46 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/appsec-internal-go/apisec"
+	"github.com/DataDog/go-libddwaf/v4/timer"
+
 	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+
+	"github.com/DataDog/go-libddwaf/v4"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/stretchr/testify/mock"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCustomRules(t *testing.T) {
@@ -103,7 +121,7 @@ func TestCustomRules(t *testing.T) {
 				"waf_timeout:false",
 				"rate_limited:false",
 				"waf_error:false",
-				"waf_version:" + waf.Version(),
+				"waf_version:" + libddwaf.Version(),
 				"event_rules_version:1.4.2",
 				"input_truncated:false",
 			}).Get())
@@ -463,7 +481,7 @@ func TestBlocking(t *testing.T) {
 				"waf_timeout:false",
 				"rate_limited:false",
 				"waf_error:false",
-				"waf_version:" + waf.Version(),
+				"waf_version:" + libddwaf.Version(),
 				"event_rules_version:1.4.2",
 				"input_truncated:false",
 			}).Get())
@@ -475,7 +493,7 @@ func TestBlocking(t *testing.T) {
 func TestAPISecurity(t *testing.T) {
 	// Start and trace an HTTP server
 	t.Setenv(config.EnvEnabled, "true")
-	if wafOK, err := waf.Health(); !wafOK {
+	if wafOK, err := libddwaf.Usable(); !wafOK {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
 	mux := httptrace.NewServeMux()
@@ -661,7 +679,7 @@ func TestRASPLFI(t *testing.T) {
 
 			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", []string{
 				"rule_type:lfi",
-				"waf_version:" + waf.Version(),
+				"waf_version:" + libddwaf.Version(),
 				"event_rules_version:1.4.2",
 			}).Get())
 
@@ -672,7 +690,7 @@ func TestRASPLFI(t *testing.T) {
 			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", []string{
 				"block:success",
 				"rule_type:lfi",
-				"waf_version:" + waf.Version(),
+				"waf_version:" + libddwaf.Version(),
 				"event_rules_version:1.4.2",
 			}).Get())
 		})
@@ -872,28 +890,28 @@ func TestWafEventsInMetaStruct(t *testing.T) {
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
-	rules, err := internal.DefaultRuleset()
-	if err != nil {
-		b.Fatalf("error loading rules: %v", err)
-	}
-
-	var parsedRuleset map[string]any
-	err = json.Unmarshal(rules, &parsedRuleset)
-	if err != nil {
-		b.Fatalf("error parsing rules: %v", err)
-	}
-
-	handle, err := waf.NewHandle(parsedRuleset, internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	rules, err := internal.DefaultRulesetMap()
 	require.NoError(b, err)
+
+	builder, err := libddwaf.NewBuilder(internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	require.NoError(b, err)
+	defer builder.Close()
+
+	_, err = builder.AddOrUpdateConfig("default", rules)
+	require.NoError(b, err)
+
+	handle := builder.Build()
+	require.NotNil(b, handle)
+
 	for i := 0; i < b.N; i++ {
-		ctx, err := handle.NewContext()
+		ctx, err := handle.NewContext(timer.WithBudget(time.Second))
 		if err != nil || ctx == nil {
 			b.Fatal("nil context")
 		}
 
 		// Request WAF Run
 		_, err = ctx.Run(
-			waf.RunAddressData{
+			libddwaf.RunAddressData{
 				Persistent: map[string]any{
 					addresses.ClientIPAddr:            "1.1.1.1",
 					addresses.ServerRequestMethodAddr: "GET",
@@ -924,7 +942,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 
 		// Response WAF Run
 		_, err = ctx.Run(
-			waf.RunAddressData{
+			libddwaf.RunAddressData{
 				Persistent: map[string]any{
 					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
 						"content-type":   {"application/json"},
