@@ -160,6 +160,29 @@ func validateValidConfig(rootDir string) error {
 		return fmt.Errorf("replace gopkg.in/DataDog/dd-trace-go.v1: %w", err)
 	}
 
+	cmd := exec.Command("go", "list", "-deps", "-f={{ with .Module }}-require={{ .Path }}@{{ .Version }}{{ end }}", rootDir+"/...")
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("listing dependencies: %w", err)
+	}
+	lines := bytes.Split(out, []byte{'\n'})
+	dedup := make(map[string]struct{})
+	for _, line := range lines {
+		if !bytes.HasPrefix(line, []byte("-require=github.com/DataDog/dd-trace-go/")) {
+			continue
+		}
+		dedup[string(line)] = struct{}{}
+	}
+	args := make([]string, 0, len(dedup)+1)
+	args = append(args, "edit")
+	for flag := range dedup {
+		fmt.Println("applying", flag)
+		args = append(args, flag)
+	}
+	if err = goCmd(tmp, "mod", args...); err != nil {
+		return fmt.Errorf("require github.com/DataDog/dd-trace-go v2 packages: %w", err)
+	}
+
 	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte(mainGo), 0o644); err != nil {
 		return fmt.Errorf("writing main.go: %w", err)
 	}
