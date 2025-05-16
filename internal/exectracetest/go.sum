@@ -18,10 +18,10 @@ github.com/DataDog/datadog-agent/pkg/version v0.64.2 h1:clAPToUGyhFWJIfN6pBR808Y
 github.com/DataDog/datadog-agent/pkg/version v0.64.2/go.mod h1:DgOVsfSRaNV4GZNl/qgoZjG3hJjoYUNWPPhbfTfTqtY=
 github.com/DataDog/datadog-go/v5 v5.6.0 h1:2oCLxjF/4htd55piM75baflj/KoE6VYS7alEUqFvRDw=
 github.com/DataDog/datadog-go/v5 v5.6.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.15 h1:h/UbRKVKKb86StwqQbi9ISv9I81n9e06dyH5xVTqMjc=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.15/go.mod h1:G3GglgPLRdyPMkD92g9QcZGLcrzrNr07lvVHN0unhIc=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.15 h1:+MaLAxBzG9niz5A6vQn2llWK7BlMIKtcAqerPYEWvJU=
-github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.15/go.mod h1:WBtf7TA9bWr5uA8DjOyw1qlSKe3bw9gN5nc0Ta9dHFE=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.16 h1:gEv6hTw//pjHpPrQKxs30Rclh8c1aNgZkG30tl8mLc0=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.0.0-rc.16/go.mod h1:wUDBQy4GxrK3xKHkD8mNLlo7sdvEMP/DxyWF5DnjodA=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.16 h1:ccm+ES/r1B76GV4wGj1Y2RreCEhb2NDRp2ts4FJdDV0=
+github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.16/go.mod h1:WBtf7TA9bWr5uA8DjOyw1qlSKe3bw9gN5nc0Ta9dHFE=
 github.com/DataDog/go-libddwaf/v3 v3.5.4 h1:cLV5lmGhrUBnHG50EUXdqPQAlJdVCp9n3aQ5bDWJEAg=
 github.com/DataDog/go-libddwaf/v3 v3.5.4/go.mod h1:HoLUHdj0NybsPBth/UppTcg8/DKA4g+AXuk8cZ6nuoo=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250319104955-81009b9bad14 h1:tc5aVw7OcMyfVmJnrY4IOeiV1RTSaBuJBqF14BXxzIo=
@@ -60,8 +60,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 h1:8EXxF+tCLqaVk8AOC29zl2mnhQjwyLxxOTuhUazWRsg=
 github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4/go.mod h1:I5sHm0Y0T1u5YjlyqC5GVArM7aNZRUYtTjmJ8mPJFds=
-github.com/ebitengine/purego v0.8.2 h1:jPPGWs2sZ1UgOSgD2bClL0MJIqu58nOmIcBuXr62z1I=
-github.com/ebitengine/purego v0.8.2/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/ebitengine/purego v0.8.3 h1:K+0AjQp63JEZTEMZiwsI9g0+hAMNohwUOtY0RPGexmc=
+github.com/ebitengine/purego v0.8.3/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/go-logr/logr v1.4.2 h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=
 github.com/go-logr/logr v1.4.2/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=
