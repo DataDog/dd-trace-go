@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       go-libddwaf-ref:
-        description: A git ref to update github.com/DataDog/go-libddwaf/v3 to. No-op if empty.
+        description: A git ref to update github.com/DataDog/go-libddwaf/v4 to. No-op if empty.
         required: false
         type: string
   push:
@@ -60,12 +60,12 @@ jobs:
       - name: Install requested go-libddwaf version
         if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
         run: |-
-          go get -u -t github.com/DataDog/go-libddwaf/v3@${{ inputs.go-libddwaf-ref }}
+          go get -u -t github.com/DataDog/go-libddwaf/v4@${{ inputs.go-libddwaf-ref }}
           go mod tidy
 
       - name: Compile dd-trace-go
         run: go build $PACKAGES
-          
+
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -82,7 +82,7 @@ jobs:
       matrix:
         chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks     
+    if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -115,6 +115,7 @@ jobs:
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
     runs-on: ubuntu-latest
+    if: inputs.go-libddwaf-ref == ''
     env:
       # Users may build our library with GOTOOLCHAIN=local. If they do, and our
       # go.mod file specifies a newer Go version than their local toolchain, their
