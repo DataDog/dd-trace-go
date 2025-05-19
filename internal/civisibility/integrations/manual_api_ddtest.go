@@ -15,13 +15,16 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
+	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Test
@@ -29,13 +32,29 @@ import (
 // Ensures that tslvTest implements the Test interface.
 var _ Test = (*tslvTest)(nil)
 
-// tslvTest implements the DdTest interface and represents an individual test within a suite.
-type tslvTest struct {
-	ciVisibilityCommon
-	testID uint64
-	suite  *tslvTestSuite
-	name   string
-}
+type (
+	// tslvTest implements the DdTest interface and represents an individual test within a suite.
+	tslvTest struct {
+		ciVisibilityCommon
+		testID uint64
+		suite  *tslvTestSuite
+		name   string
+	}
+
+	// tslvTestDelayed is a struct that represents a delayed test close operation.
+	tslvTestDelayed struct {
+		*tslvTest
+		finishTime time.Time
+	}
+)
+
+var (
+	finishedTests      []*tslvTestDelayed
+	finishedTestsMutex sync.Mutex
+
+	globalTestEventStartHook  func(interface{})
+	globalTestEventFinishHook func(interface{})
+)
 
 // createTest initializes a new test within a given suite.
 func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
@@ -132,12 +151,22 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 		t.span.SetTag(constants.TestSkipReason, defaults.skipReason)
 	}
 
-	// If we have a global test event finish hook we call it here.
 	if globalTestEventFinishHook != nil {
-		globalTestEventFinishHook(t)
+		// delayed close
+		finishedTestsMutex.Lock()
+		defer finishedTestsMutex.Unlock()
+		finishedTests = append(finishedTests, &tslvTestDelayed{
+			tslvTest:   t,
+			finishTime: defaults.finishTime,
+		})
+	} else {
+		t.internalClose(tracer.FinishTime(defaults.finishTime))
 	}
+}
 
-	t.span.Finish(tracer.FinishTime(defaults.finishTime))
+// internalClose is a helper function to close the test and report the telemetry event.
+func (t *tslvTest) internalClose(options ...tracer.FinishOption) {
+	t.span.Finish(options...)
 	t.closed = true
 
 	// Creating telemetry event finished
@@ -326,4 +355,49 @@ func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
 	for k, v := range data {
 		t.span.SetTag(fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
 	}
+}
+
+// SetGlobalTestEventStartHook sets a global hook to be called when a test event is started.
+
+//go:linkname SetGlobalTestEventStartHook
+func SetGlobalTestEventStartHook(hook func(interface{})) {
+	globalTestEventStartHook = hook
+}
+
+// SetGlobalTestEventFinishHook sets a global hook to be called when a test event is finished.
+//
+//go:linkname SetGlobalTestEventFinishHook
+func SetGlobalTestEventFinishHook(hook func(interface{})) {
+	globalTestEventFinishHook = hook
+}
+
+func init() {
+	PushCiVisibilityCloseAction(func() {
+		finishedTestsMutex.Lock()
+		defer finishedTestsMutex.Unlock()
+		if len(finishedTests) > 0 {
+			// If we have a global test event finish hook, we call it here.
+			if globalTestEventFinishHook != nil {
+				log.Debug("Calling global test event finish hook")
+				globalTestEventFinishHook(finishedTests)
+			}
+
+			// Close all tests that were delayed.
+			log.Debug("Closing delayed tests")
+			for _, test := range finishedTests {
+				test.mutex.Lock()
+				if !test.closed {
+					test.internalClose(tracer.FinishTime(test.finishTime))
+				}
+				test.mutex.Unlock()
+			}
+
+			// Clear the finished tests slice.
+			finishedTests = nil
+		}
+
+		// Reset the global hooks to avoid memory leaks.
+		globalTestEventStartHook = nil
+		globalTestEventFinishHook = nil
+	})
 }
