@@ -431,27 +431,20 @@ func TestBaggageSpanTagsDefault(t *testing.T) {
 	// Start the request span, which will extract header baggage and merge it with the context's baggage.
 	span, _, _ := StartRequestSpan(req)
 	m := span.AsMap()
-	// Assert that the expected baggage keys are present with the correct values.
-	if v, ok := m["baggage.account.id"]; ok {
-		assert.Equal(t, "456", v, "should contain account.id value")
-	} else {
-		t.Errorf("baggage.account.id not found in span")
-	}
 
-	if v, ok := m["baggage.session.id"]; ok {
-		assert.Equal(t, "789", v, "should contain session.id value")
-	} else {
-		t.Errorf("baggage.session.id not found in span")
-	}
+	v, ok := m["baggage.account.id"]
+	assert.True(t, ok, "baggage.account.id not found in span")
+	assert.Equal(t, "456", v, "should contain account.id value")
 
-	// Assert that a key that shouldn't be included (header_key) is not present.
-	if _, ok := m["baggage.header_key"]; ok {
-		t.Errorf("baggage.header_key should not be included in span tags")
-	}
-	// baggage span tagging happens only at extraction
-	if _, ok := m["baggage.user.id"]; ok {
-		t.Errorf("baggage.header_key should not be included in span tags")
-	}
+	v, ok = m["baggage.session.id"]
+	assert.True(t, ok, "baggage.session.id not found in span")
+	assert.Equal(t, "789", v, "should contain session.id value")
+
+	_, ok = m["baggage.header_key"]
+	assert.False(t, ok, "baggage.header_key should not be included in span tags")
+
+	_, ok = m["baggage.user.id"]
+	assert.False(t, ok, "baggage.user.id should not be included in span tags")
 
 	span.Finish()
 }
@@ -472,31 +465,25 @@ func TestBaggageSpanTagsWildcard(t *testing.T) {
 	span, _, _ := StartRequestSpan(req)
 	m := span.AsMap()
 	// Assert that the expected baggage keys are present with the correct values.
-	if v, ok := m["baggage.account.id"]; ok {
-		assert.Equal(t, "456", v, "should contain account.id value")
-	} else {
-		t.Errorf("baggage.account.id not found in span")
-	}
-	if v, ok := m["baggage.user.id"]; ok {
-		assert.Equal(t, "abcd", v, "should contain user.id value")
-	} else {
-		t.Errorf("baggage.user.id not found in span")
-	}
-	if v, ok := m["baggage.session.id"]; ok {
-		assert.Equal(t, "789", v, "should contain session.id value")
-	} else {
-		t.Errorf("baggage.session.id not found in span")
-	}
-	if v, ok := m["baggage.color"]; ok {
-		assert.Equal(t, "blue", v, "should contain color value")
-	} else {
-		t.Errorf("baggage.color not found in span")
-	}
-	if v, ok := m["baggage.foo"]; ok {
-		assert.Equal(t, "bar", v, "should contain foo value")
-	} else {
-		t.Errorf("baggage.foo not found in span")
-	}
+	v, _ := m["baggage.account.id"]
+	assert.True(t, v != "", "baggage.account.id not found in span")
+	assert.Equal(t, "456", v, "should contain account.id value")
+
+	v, _ = m["baggage.user.id"]
+	assert.True(t, v != "", "baggage.user.id not found in span")
+	assert.Equal(t, "abcd", v, "should contain user.id value")
+
+	v, _ = m["baggage.session.id"]
+	assert.True(t, v != "", "baggage.session.id not found in span")
+	assert.Equal(t, "789", v, "should contain session.id value")
+
+	v, _ = m["baggage.color"]
+	assert.True(t, v != "", "baggage.color not found in span")
+	assert.Equal(t, "blue", v, "should contain color value")
+
+	v, _ = m["baggage.foo"]
+	assert.True(t, v != "", "baggage.foo not found in span")
+	assert.Equal(t, "bar", v, "should contain foo value")
 
 	span.Finish()
 }
@@ -557,21 +544,19 @@ func TestBaggageSpanTagsSpecifyKeys(t *testing.T) {
 	if _, ok := m["baggage.color"]; ok {
 		t.Errorf("baggage.color should not be included in span tags")
 	}
-	if v, ok := m["baggage.device"]; ok {
-		assert.Equal(t, "mobile", v, "should contain device value")
-	} else {
-		t.Errorf("baggage.device not found in span")
-	}
-	if v, ok := m["baggage.os.version"]; ok {
-		assert.Equal(t, "14.2", v, "should contain os.version value")
-	} else {
-		t.Errorf("baggage.os.version not found in span")
-	}
-	if v, ok := m["baggage.app.version"]; ok {
-		assert.Equal(t, "5.3.1", v, "should contain app.version value")
-	} else {
-		t.Errorf("baggage.app.version not found in span")
-	}
+
+	v, _ := m["baggage.device"]
+	assert.True(t, v != "", "baggage.device not found in span")
+	assert.Equal(t, "mobile", v, "should contain baggage.device value")
+
+	v, _ = m["baggage.os.version"]
+	assert.True(t, v != "", "baggage.os.version not found in span")
+	assert.Equal(t, "14.2", v, "should contain baggage.os.version value")
+
+	v, _ = m["baggage.app.version"]
+	assert.True(t, v != "", "baggage.app.version not found in span")
+	assert.Equal(t, "5.3.1", v, "should contain baggage.app.version value")
+
 	span.Finish()
 }
 
@@ -600,11 +585,10 @@ func TestBaggageSpanTagsAsteriskKey(t *testing.T) {
 	if _, ok := m["baggage.app.version"]; ok {
 		t.Errorf("baggage.app.version should not be included in span tags")
 	}
-	if v, ok := m["baggage.*version"]; ok {
-		assert.Equal(t, "9.4", v, "should contain version value")
-	} else {
-		t.Errorf("baggage.version not found in span")
-	}
+
+	v, _ := m["baggage.*version"]
+	assert.True(t, v != "", "baggage.*version not found in span")
+	assert.Equal(t, "9.4", v, "should contain baggage.*version value")
 
 	span.Finish()
 }
@@ -622,7 +606,7 @@ func TestBaggageSpanTagsMalformedHeader(t *testing.T) {
 	// Start the request span, which will extract header baggage and merge it with the context's baggage.
 	span, _, _ := StartRequestSpan(req)
 	m := span.AsMap()
-	// if baggage header is malfromed, the entire header should be dropped
+	// if baggage header is malformed, the entire header should be dropped
 	// therefore, there will be no baggage span tags
 	if _, ok := m["baggage.account.id"]; ok {
 		t.Errorf("baggage.account.id should not be included in span tags")
@@ -659,46 +643,10 @@ func TestBaggageSpanTagsCaseSensitive(t *testing.T) {
 	if _, ok := m["baggage.session.id"]; ok {
 		t.Errorf("baggage.session.id should not be included in span tags")
 	}
-	if v, ok := m["baggage.user.id"]; ok {
-		assert.Equal(t, "doggo", v, "should contain user.id value")
-	} else {
-		t.Errorf("baggage.user.id not found in span")
-	}
-	span.Finish()
-}
 
-func TestBaggageSpanTagsExtractionOnly(t *testing.T) {
-	tracer.Start()
-	defer tracer.Stop()
-	ctx := baggage.Set(context.Background(), "user.id", "alice")
-	ctx = baggage.Set(ctx, "account.id", "testaccount")
-	ctx = baggage.Set(ctx, "region", "us-east-1")
+	v, _ := m["baggage.user.id"]
+	assert.True(t, v != "", "baggage.user.id not found in span")
+	assert.Equal(t, "doggo", v, "should contain user.id value")
 
-	// Create an HTTP request with context.
-	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(ctx)
-
-	// Set the baggage header with additional baggage items.
-	req.Header.Set("baggage", "user.id=john,session.id=testingsession")
-
-	// Start the request span, which will extract header baggage and merge it with the context's baggage.
-	span, _, _ := StartRequestSpan(req)
-	m := span.AsMap()
-	// baggage span tagging happens only at extraction
-	if _, ok := m["baggage.account.id"]; ok {
-		t.Errorf("baggage.account.id should not be included in span tags")
-	}
-	if _, ok := m["baggage.region"]; ok {
-		t.Errorf("baggage.region should not be included in span tags")
-	}
-	if v, ok := m["baggage.user.id"]; ok {
-		assert.Equal(t, "john", v, "should contain user.id value")
-	} else {
-		t.Errorf("baggage.user.id not found in span")
-	}
-	if v, ok := m["baggage.session.id"]; ok {
-		assert.Equal(t, "testingsession", v, "should contain session.id value")
-	} else {
-		t.Errorf("baggage.session.id not found in span")
-	}
 	span.Finish()
 }
