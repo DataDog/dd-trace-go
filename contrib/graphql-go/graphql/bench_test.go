@@ -128,7 +128,7 @@ func BenchmarkGraphQL(b *testing.B) {
 
 	b.Run("version_baseline", func(b *testing.B) {
 		for name, tc := range testCases {
-			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
+			b.Run(fmt.Sprintf("scenario_%s", name), func(b *testing.B) {
 				b.StopTimer()
 				b.ReportAllocs()
 				schema, err := graphql.NewSchema(graphql.SchemaConfig{Query: rootQuery})
@@ -150,7 +150,7 @@ func BenchmarkGraphQL(b *testing.B) {
 
 	b.Run("version_dyngo", func(b *testing.B) {
 		for name, tc := range testCases {
-			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
+			b.Run(fmt.Sprintf("scenario_%s", name), func(b *testing.B) {
 				b.StopTimer()
 				b.ReportAllocs()
 				opts := []Option{WithService("test-graphql-service")}
