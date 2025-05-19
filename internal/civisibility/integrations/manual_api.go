@@ -300,8 +300,8 @@ type Test interface {
 	SetBenchmarkData(measureType string, data map[string]any)
 }
 
-var globalTestEventStartHook func(interface{}) = nil
-var globalTestEventFinishHook func(interface{}) = nil
+var globalTestEventStartHook func(interface{})
+var globalTestEventFinishHook func(interface{})
 
 // SetGlobalTestEventStartHook sets a global hook to be called when a test event is started.
 
