@@ -52,8 +52,8 @@ var (
 	finishedTests      []*tslvTestDelayed
 	finishedTestsMutex sync.Mutex
 
-	globalTestEventStartHook  func(interface{})
-	globalTestEventFinishHook func(interface{})
+	globalTestEventStartHook func(any)
+	globalEventFinishHook    func([]any)
 )
 
 // createTest initializes a new test within a given suite.
@@ -151,7 +151,7 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 		t.span.SetTag(constants.TestSkipReason, defaults.skipReason)
 	}
 
-	if globalTestEventFinishHook != nil {
+	if globalEventFinishHook != nil {
 		// delayed close
 		finishedTestsMutex.Lock()
 		defer finishedTestsMutex.Unlock()
@@ -360,15 +360,15 @@ func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
 // SetGlobalTestEventStartHook sets a global hook to be called when a test event is started.
 
 //go:linkname SetGlobalTestEventStartHook
-func SetGlobalTestEventStartHook(hook func(interface{})) {
+func SetGlobalTestEventStartHook(hook func(any)) {
 	globalTestEventStartHook = hook
 }
 
-// SetGlobalTestEventFinishHook sets a global hook to be called when a test event is finished.
+// SetGlobalEventFinishHook sets a global hook to be called when all test events are finished.
 //
-//go:linkname SetGlobalTestEventFinishHook
-func SetGlobalTestEventFinishHook(hook func(interface{})) {
-	globalTestEventFinishHook = hook
+//go:linkname SetGlobalEventFinishHook
+func SetGlobalEventFinishHook(hook func([]any)) {
+	globalEventFinishHook = hook
 }
 
 func init() {
@@ -376,10 +376,16 @@ func init() {
 		finishedTestsMutex.Lock()
 		defer finishedTestsMutex.Unlock()
 		if len(finishedTests) > 0 {
+			// Create a slice with the tests
+			tests := make([]any, len(finishedTests))
+			for i, test := range finishedTests {
+				tests[i] = test.tslvTest
+			}
+
 			// If we have a global test event finish hook, we call it here.
-			if globalTestEventFinishHook != nil {
+			if globalEventFinishHook != nil {
 				log.Debug("Calling global test event finish hook")
-				globalTestEventFinishHook(finishedTests)
+				globalEventFinishHook(tests)
 			}
 
 			// Close all tests that were delayed.
@@ -398,6 +404,6 @@ func init() {
 
 		// Reset the global hooks to avoid memory leaks.
 		globalTestEventStartHook = nil
-		globalTestEventFinishHook = nil
+		globalEventFinishHook = nil
 	})
 }
