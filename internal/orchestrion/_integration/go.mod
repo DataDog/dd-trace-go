@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.1.0-dev.1.0.20250516085800-18b868954378
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.2
 	github.com/DataDog/go-libddwaf/v4 v4.1.0
-	github.com/DataDog/orchestrion v1.4.0-rc.3
+	github.com/DataDog/orchestrion v1.4.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5
