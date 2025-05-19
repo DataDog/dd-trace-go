@@ -91,6 +91,9 @@ func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span *tracer.Span, translateFn func(E) TE) (chan E, chan error) {
 	// if the user has selected a delivery channel, we will wrap it and
 	// wait for the delivery event to finish the span
+	if deliveryChan == nil {
+		return nil, nil
+	}
 	wrapped := make(chan E)
 	errChan := make(chan error, 1)
 	go func() {
@@ -99,6 +102,14 @@ func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span 
 		case evt := <-wrapped:
 			tEvt := translateFn(evt)
 			if msg, ok := tEvt.KafkaMessage(); ok {
+				// delivery errors are returned via TopicPartition.Error
+				var tPartitionError = msg.GetTopicPartition().GetError()
+				err = tPartitionError.Error()
+				if tPartitionError.IsUnknownServerError() {
+					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
+						"broker logs for more information. Tracer message header injection for Kafka is disabled.", err)
+					tr.dsmEnabled = false
+				}
 				tr.TrackProduceOffsets(msg)
 			}
 			deliveryChan <- evt
