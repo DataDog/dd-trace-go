@@ -65,9 +65,8 @@ func newConfig() config {
 				key := strings.TrimSpace(part)
 				if key == "" {
 					continue
-				} else {
-					c.baggageTagKeys[key] = struct{}{}
 				}
+				c.baggageTagKeys[key] = struct{}{}
 			}
 		}
 	} else {
