@@ -26,6 +26,7 @@ aspects:
           imports:
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            errors: errors
           lang: go1.18
           template: |-
             const __dd_ckgoVersion = kafkatrace.CKGoVersion1
@@ -154,11 +155,16 @@ aspects:
               error
             }
 
-            func (w __dd_wTopicPartitionError) IsGenericServerError() bool {
+            func (w __dd_wTopicPartitionError) IsUnknownServerError() bool {
               if w.error == nil {
                 return false
               }
-              return w.error.(Error).Code() == ErrUnknown
+              var kafkaErr kafka.Error
+              if errors.As(w.error, &kafkaErr) {
+                return kafkaErr.Code() == kafkaErr.Code()
+              }
+
+              return false
             }
 
             func (w __dd_wTopicPartitionError) Error() error {

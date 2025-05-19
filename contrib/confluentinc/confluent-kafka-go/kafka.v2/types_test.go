@@ -12,19 +12,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestTopicPartitionErrorIsGenericServerError(t *testing.T) {
+func TestTopicPartitionErrorIsUnknownServerError(t *testing.T) {
 	t.Run("nil error returns false", func(t *testing.T) {
 		wErr := wTopicPartitionError{nil}
-		assert.False(t, wErr.IsGenericServerError())
+		assert.False(t, wErr.IsUnknownServerError())
 	})
 
-	t.Run("generic server error returns true", func(t *testing.T) {
+	t.Run("unknown server error returns true", func(t *testing.T) {
 		wErr := wTopicPartitionError{kafka.NewError(kafka.ErrUnknown, "unknown error", false)}
-		assert.True(t, wErr.IsGenericServerError())
+		assert.True(t, wErr.IsUnknownServerError())
 	})
 
-	t.Run("non-generic error returns false", func(t *testing.T) {
+	t.Run("non-unknown error returns false", func(t *testing.T) {
 		wErr := wTopicPartitionError{kafka.NewError(kafka.ErrInvalidArg, "invalid argument", false)}
-		assert.False(t, wErr.IsGenericServerError())
+		assert.False(t, wErr.IsUnknownServerError())
 	})
 }

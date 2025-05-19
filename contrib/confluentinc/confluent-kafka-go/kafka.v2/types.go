@@ -6,6 +6,7 @@
 package kafka
 
 import (
+	"errors"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 
 	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
@@ -134,11 +135,16 @@ type wTopicPartitionError struct {
 	error
 }
 
-func (w wTopicPartitionError) IsGenericServerError() bool {
+func (w wTopicPartitionError) IsUnknownServerError() bool {
 	if w.error == nil {
 		return false
 	}
-	return w.error.(kafka.Error).Code() == kafka.ErrUnknown
+	var kafkaErr kafka.Error
+	if errors.As(w.error, &kafkaErr) {
+		return kafkaErr.Code() == kafkaErr.Code()
+	}
+
+	return false
 }
 
 func (w wTopicPartitionError) Error() error {

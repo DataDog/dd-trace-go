@@ -39,6 +39,15 @@ func WrapProduceEventsChannel[E any, TE Event](tr *Tracer, in chan E, translateF
 		for evt := range in {
 			tEvt := translateFn(evt)
 			if msg, ok := tEvt.KafkaMessage(); ok {
+				// delivery errors are returned via TopicPartition.Error
+				var tPartitionError = msg.GetTopicPartition().GetError()
+				var err = tPartitionError.Error()
+				if tPartitionError.IsUnknownServerError() {
+					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
+						"broker logs for more information. Tracer message header injection for Kafka is disabled.", err)
+					tr.dsmEnabled = false
+				}
+
 				tr.TrackProduceOffsets(msg)
 			}
 			out <- evt
@@ -90,19 +99,9 @@ func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span 
 		case evt := <-wrapped:
 			tEvt := translateFn(evt)
 			if msg, ok := tEvt.KafkaMessage(); ok {
-				// delivery errors are returned via TopicPartition.Error
-				var tPartitionError = msg.GetTopicPartition().GetError()
-				err = tPartitionError.Error()
-				if tPartitionError.IsGenericServerError() {
-					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
-						"broker logs for more information. Tracer message header injection for Kafka is disabled.", err)
-					tr.dsmEnabled = false
-				}
 				tr.TrackProduceOffsets(msg)
 			}
-			if deliveryChan != nil {
-				deliveryChan <- evt
-			}
+			deliveryChan <- evt
 		case e := <-errChan:
 			err = e
 		}
