@@ -126,7 +126,7 @@ func BenchmarkGraphQL(b *testing.B) {
 		},
 	}
 
-	b.Run("version=baseline", func(b *testing.B) {
+	b.Run("version_baseline", func(b *testing.B) {
 		for name, tc := range testCases {
 			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
 				b.StopTimer()
@@ -148,7 +148,7 @@ func BenchmarkGraphQL(b *testing.B) {
 		}
 	})
 
-	b.Run("version=dyngo", func(b *testing.B) {
+	b.Run("version_dyngo", func(b *testing.B) {
 		for name, tc := range testCases {
 			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
 				b.StopTimer()
