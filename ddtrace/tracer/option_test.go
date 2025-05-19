@@ -1919,7 +1919,7 @@ func optsTestConsumer(opts ...StartSpanOption) {
 }
 
 func BenchmarkConfig(b *testing.B) {
-	b.Run("scenario=none", func(b *testing.B) {
+	b.Run("scenario_none", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			optsTestConsumer(
@@ -1929,7 +1929,7 @@ func BenchmarkConfig(b *testing.B) {
 			)
 		}
 	})
-	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+	b.Run("scenario_WithStartSpanConfig", func(b *testing.B) {
 		b.ReportAllocs()
 		cfg := NewStartSpanConfig(
 			ServiceName("SomeService"),
@@ -1946,7 +1946,7 @@ func BenchmarkConfig(b *testing.B) {
 }
 
 func BenchmarkStartSpanConfig(b *testing.B) {
-	b.Run("scenario=none", func(b *testing.B) {
+	b.Run("scenario_none", func(b *testing.B) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(b, err)
@@ -1961,7 +1961,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 
 		}
 	})
-	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+	b.Run("scenario_WithStartSpanConfig", func(b *testing.B) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(b, err)
