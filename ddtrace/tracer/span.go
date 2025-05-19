@@ -22,7 +22,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -920,9 +919,6 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.spanEvents = append(s.spanEvents, event)
 }
 
-// linkname used in internal/civisibility/integrations/manual_api_common.go
-
-//go:linkname getMeta
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -930,7 +926,6 @@ func getMeta(s *Span, key string) (string, bool) {
 	return val, ok
 }
 
-//go:linkname getMetric
 func getMetric(s *Span, key string) (float64, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
