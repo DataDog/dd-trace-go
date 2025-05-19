@@ -357,6 +357,15 @@ func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
 	}
 }
 
+// close closes the test and reports the telemetry event.
+func (d *tslvTestDelayed) close() {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	if !d.closed {
+		d.internalClose(tracer.FinishTime(d.finishTime))
+	}
+}
+
 // SetGlobalTestEventStartHook sets a global hook to be called when a test event is started.
 
 //go:linkname SetGlobalTestEventStartHook
@@ -382,24 +391,23 @@ func init() {
 				tests[i] = test.tslvTest
 			}
 
+			// Close all tests that were delayed in a defer function to ensure they are closed even if the hook panics.
+			defer func() {
+				// Close all tests that were delayed.
+				log.Debug("Closing delayed tests")
+				for _, test := range finishedTests {
+					test.close()
+				}
+
+				// Clear the finished tests slice.
+				finishedTests = nil
+			}()
+
 			// If we have a global test event finish hook, we call it here.
 			if globalEventFinishHook != nil {
-				log.Debug("Calling global test event finish hook")
+				log.Debug("Calling global tests event finish hook")
 				globalEventFinishHook(tests)
 			}
-
-			// Close all tests that were delayed.
-			log.Debug("Closing delayed tests")
-			for _, test := range finishedTests {
-				test.mutex.Lock()
-				if !test.closed {
-					test.internalClose(tracer.FinishTime(test.finishTime))
-				}
-				test.mutex.Unlock()
-			}
-
-			// Clear the finished tests slice.
-			finishedTests = nil
 		}
 
 		// Reset the global hooks to avoid memory leaks.
