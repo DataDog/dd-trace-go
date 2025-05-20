@@ -24,7 +24,6 @@ aspects:
           type: "*ConfigMap"
       - inject-declarations:
           imports:
-            kafka: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
             errors: errors
@@ -160,9 +159,9 @@ aspects:
               if w.error == nil {
                 return false
               }
-              var kafkaErr kafka.Error
+              var kafkaErr Error
               if errors.As(w.error, &kafkaErr) {
-                return kafkaErr.Code() == kafka.ErrUnknown
+                return kafkaErr.Code() == ErrUnknown
               }
 
               return false
