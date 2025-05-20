@@ -919,10 +919,19 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.spanEvents = append(s.spanEvents, event)
 }
 
+// used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	val, ok := s.meta[key]
+	return val, ok
+}
+
+// used in internal/civisibility/integrations/manual_api_common.go using linkname
+func getMetric(s *Span, key string) (float64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	val, ok := s.metrics[key]
 	return val, ok
 }
 
