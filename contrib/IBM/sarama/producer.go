@@ -33,7 +33,7 @@ func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
 	if err != nil {
-		handleUnknownError(p.cfg, err)
+		handleUnknownError(err)
 	}
 	if err == nil && p.cfg.dataStreamsEnabled {
 		tracer.TrackKafkaProduceOffset(msg.Topic, partition, offset)
@@ -179,7 +179,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 					}
 				}
 
-				handleUnknownError(cfg, err)
+				handleUnknownError(err)
 
 				wrapped.errors <- err
 			}
@@ -188,11 +188,10 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 	return wrapped
 }
 
-func handleUnknownError(cfg *config, err error) {
+func handleUnknownError(err error) {
 	if errors.Is(err, sarama.ErrUnknown) {
 		instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
-			"broker logs for more information. Tracer message header injection for Kafka is disabled.", err)
-		cfg.headerInjectionEnabled = false
+			"broker logs for more information. The tracer requires support for Kafka headers to function.", err)
 	}
 }
 
@@ -219,7 +218,7 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span := tracer.StartSpan(cfg.producerSpanName, opts...)
-	if version.IsAtLeast(sarama.V0_11_0_0) && cfg.headerInjectionEnabled {
+	if version.IsAtLeast(sarama.V0_11_0_0) {
 		// re-inject the span context so consumers can pick it up
 		tracer.Inject(span.Context(), carrier)
 	}
@@ -243,7 +242,7 @@ func getProducerSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, b
 }
 
 func setProduceCheckpoint(p *config, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
-	if msg == nil || !p.checkpointsEnabled() {
+	if msg == nil || !p.dataStreamsEnabled {
 		return
 	}
 	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}

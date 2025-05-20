@@ -39,13 +39,10 @@ func WrapProduceEventsChannel[E any, TE Event](tr *Tracer, in chan E, translateF
 		for evt := range in {
 			tEvt := translateFn(evt)
 			if msg, ok := tEvt.KafkaMessage(); ok {
-				// delivery errors are returned via TopicPartition.Error
 				var tPartitionError = msg.GetTopicPartition().GetError()
-				var err = tPartitionError.Error()
 				if tPartitionError.IsUnknownServerError() {
-					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
-						"broker logs for more information. Tracer message header injection for Kafka is disabled.", err)
-					tr.headerInjectionDisabled = true
+					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at " +
+						"broker logs for more information. The tracer requires support for Kafka headers to function.")
 				}
 
 				tr.TrackProduceOffsets(msg)
@@ -84,9 +81,7 @@ func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 	}
 	span, _ := tracer.StartSpanFromContext(tr.ctx, tr.producerSpanName, opts...)
 	// inject the span context so consumers can pick it up
-	if tr.HeaderInjectionEnabled() {
-		tracer.Inject(span.Context(), carrier)
-	}
+	tracer.Inject(span.Context(), carrier)
 	return span
 }
 
@@ -108,9 +103,8 @@ func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span 
 				var tPartitionError = msg.GetTopicPartition().GetError()
 				err = tPartitionError.Error()
 				if tPartitionError.IsUnknownServerError() {
-					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
-						"broker logs for more information. Tracer message header injection for Kafka is disabled.", err)
-					tr.headerInjectionDisabled = true
+					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at " +
+						"broker logs for more information. The tracer requires support for Kafka headers to function.")
 				}
 				tr.TrackProduceOffsets(msg)
 			}

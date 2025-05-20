@@ -17,28 +17,23 @@ import (
 )
 
 type Tracer struct {
-	PrevSpan                *tracer.Span
-	ctx                     context.Context
-	consumerServiceName     string
-	producerServiceName     string
-	consumerSpanName        string
-	producerSpanName        string
-	analyticsRate           float64
-	bootstrapServers        string
-	groupID                 string
-	tagFns                  map[string]func(msg Message) interface{}
-	dsmEnabled              bool
-	headerInjectionDisabled bool
-	ckgoVersion             CKGoVersion
-	librdKafkaVersion       int
+	PrevSpan            *tracer.Span
+	ctx                 context.Context
+	consumerServiceName string
+	producerServiceName string
+	consumerSpanName    string
+	producerSpanName    string
+	analyticsRate       float64
+	bootstrapServers    string
+	groupID             string
+	tagFns              map[string]func(msg Message) interface{}
+	dsmEnabled          bool
+	ckgoVersion         CKGoVersion
+	librdKafkaVersion   int
 }
 
 func (tr *Tracer) DSMEnabled() bool {
-	return tr.dsmEnabled && !tr.headerInjectionDisabled
-}
-
-func (tr *Tracer) HeaderInjectionEnabled() bool {
-	return !tr.headerInjectionDisabled
+	return tr.dsmEnabled
 }
 
 type Option interface {
