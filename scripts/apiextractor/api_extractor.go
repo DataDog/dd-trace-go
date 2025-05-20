@@ -438,6 +438,8 @@ func formatReceiver(expr ast.Expr) string {
 
 func formatExpr(expr ast.Expr) string {
 	switch t := expr.(type) {
+	case *ast.BasicLit:
+		return t.Value
 	case *ast.Ident:
 		return t.Name
 	case *ast.StarExpr:

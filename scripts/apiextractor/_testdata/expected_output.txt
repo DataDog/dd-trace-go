@@ -9,6 +9,11 @@ func DummyFunc()
 func DummyFuncWithParams(int, string)
 
 // Types
+type ArrayTestType struct {
+	FixedArray [16]byte
+	MultiDimArray [2][3]int
+}
+
 type DummyInterface interface {
 	func ExportedMethod()
 }
