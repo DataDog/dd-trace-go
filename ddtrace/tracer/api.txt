@@ -295,7 +295,7 @@ type SpanContext interface {
 	func (*SpanContext) SpanID() (uint64)
 	func (*SpanContext) SpanLinks() ([]SpanLink)
 	func (*SpanContext) TraceID() (string)
-	func (*SpanContext) TraceIDBytes() ([&ast.BasicLit{ValuePos:304432, Kind:5, Value:"16"}]byte)
+	func (*SpanContext) TraceIDBytes() ([16]byte)
 	func (*SpanContext) TraceIDLower() (uint64)
 	func (*SpanContext) TraceIDUpper() (uint64)
 }
@@ -305,7 +305,7 @@ func (*SpanContext) SamplingPriority() (int, bool)
 func (*SpanContext) SpanID() (uint64)
 func (*SpanContext) SpanLinks() ([]SpanLink)
 func (*SpanContext) TraceID() (string)
-func (*SpanContext) TraceIDBytes() ([&ast.BasicLit{ValuePos:304432, Kind:5, Value:"16"}]byte)
+func (*SpanContext) TraceIDBytes() ([16]byte)
 func (*SpanContext) TraceIDLower() (uint64)
 func (*SpanContext) TraceIDUpper() (uint64)
 
