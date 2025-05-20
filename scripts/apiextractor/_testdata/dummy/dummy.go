@@ -40,5 +40,11 @@ func DummyFuncWithParams(_ int, _ string) {
 	dummyUnexportedFunc()
 }
 
+// ArrayTestType is a type containing array fields for testing array type formatting
+type ArrayTestType struct {
+	FixedArray    [16]byte
+	MultiDimArray [2][3]int
+}
+
 // dummyUnexportedFunc is an unexported function
 func dummyUnexportedFunc() {}
