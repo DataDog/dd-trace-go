@@ -29,7 +29,7 @@ type syncProducer struct {
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	span := startProducerSpan(p.cfg, p.version, msg)
-	setProduceCheckpoint(p.cfg, msg, p.version)
+	setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
 	if err != nil {
@@ -47,7 +47,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// treated individually, so we create a span for each one
 	spans := make([]*tracer.Span, len(msgs))
 	for i, msg := range msgs {
-		setProduceCheckpoint(p.cfg, msg, p.version)
+		setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
 		spans[i] = startProducerSpan(p.cfg, p.version, msg)
 	}
 	err := p.SyncProducer.SendMessages(msgs)
@@ -137,7 +137,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			select {
 			case msg := <-wrapped.input:
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
-				setProduceCheckpoint(cfg, msg, saramaConfig.Version)
+				setProduceCheckpoint(cfg.dataStreamsEnabled, msg, saramaConfig.Version)
 
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
@@ -241,8 +241,8 @@ func getProducerSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, b
 	return spanctx, true
 }
 
-func setProduceCheckpoint(p *config, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
-	if msg == nil || !p.dataStreamsEnabled {
+func setProduceCheckpoint(enabled bool, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
+	if !enabled || msg == nil {
 		return
 	}
 	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
