@@ -24,6 +24,7 @@ aspects:
           type: "*ConfigMap"
       - inject-declarations:
           imports:
+            kafka: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafka
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
             errors: errors
