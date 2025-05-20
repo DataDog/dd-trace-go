@@ -53,18 +53,15 @@ func LoadFromEnv() {
 	removeFakeServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
 }
 
+func ReloadConfig() {
+	LoadFromEnv()
+	globalconfig.SetServiceName(os.Getenv("DD_SERVICE"))
+}
+
 func GetConfig() Config {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if testMode == nil {
-		v := internal.BoolEnv("__DD_TRACE_NAMING_SCHEMA_TEST", false)
-		testMode = &v
-	}
-	if *testMode {
-		LoadFromEnv()
-		globalconfig.SetServiceName(os.Getenv("DD_SERVICE"))
-	}
 	return Config{
 		NamingSchemaVersion:    GetVersion(),
 		RemoveFakeServiceNames: removeFakeServiceNames,

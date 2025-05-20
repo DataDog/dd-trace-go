@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2/testcases"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -136,9 +137,6 @@ func TestIntegrations(t *testing.T) {
 		},
 	}
 
-	// this is used so the environment variables are reloaded every time the tracer is started.
-	t.Setenv("__DD_TRACE_NAMING_SCHEMA_TEST", "true")
-	
 	for _, ig := range integrations {
 		for _, tc := range testCases {
 			testName := fmt.Sprintf("contrib/%s/%s", ig.Name(), tc.name)
@@ -164,6 +162,7 @@ func TestIntegrations(t *testing.T) {
 					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
 					ig.WithService(tc.integrationServiceName)
 				}
+				instrumentation.ReloadConfig()
 
 				ig.Init(t)
 				ig.GenSpans(t)
