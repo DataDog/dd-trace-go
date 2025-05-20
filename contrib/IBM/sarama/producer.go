@@ -138,7 +138,6 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			case msg := <-wrapped.input:
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
 				setProduceCheckpoint(cfg.dataStreamsEnabled, msg, saramaConfig.Version)
-
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spanID := span.Context().SpanID()
@@ -180,7 +179,6 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				}
 
 				handleUnknownError(err)
-
 				wrapped.errors <- err
 			}
 		}
