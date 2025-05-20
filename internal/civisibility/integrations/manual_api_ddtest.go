@@ -159,9 +159,9 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 			tslvTest:   t,
 			finishTime: defaults.finishTime,
 		})
-	} else {
-		t.internalClose(tracer.FinishTime(defaults.finishTime))
+		return
 	}
+	t.internalClose(tracer.FinishTime(defaults.finishTime))
 }
 
 // internalClose is a helper function to close the test and report the telemetry event.
