@@ -141,7 +141,7 @@ func (w wTopicPartitionError) IsUnknownServerError() bool {
 	}
 	var kafkaErr kafka.Error
 	if errors.As(w.error, &kafkaErr) {
-		return kafkaErr.Code() == kafkaErr.Code()
+		return kafkaErr.Code() == kafka.ErrUnknown
 	}
 
 	return false
