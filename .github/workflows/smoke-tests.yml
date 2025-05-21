@@ -65,18 +65,22 @@ jobs:
 
       - name: Compile dd-trace-go
         run: go build $PACKAGES
-
+          
       - name: Compute Matrix
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
+          go run ./internal/contrib/matrix       >> "${GITHUB_OUTPUT}"
 
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
     #  latest minor version and see if dd-trace-go still compiles.
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'go get -u smoke test'
+    needs: setup-env
+    strategy:
+      matrix:
+        chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     env:
@@ -90,23 +94,11 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: "stable"
-          cache: true
-      - name: go get -u
-        run: |-
-          go get -u -t $PACKAGES
-          go mod tidy
-          for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
-      - name: Install requested go-libddwaf version
-        if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
-        run: |-
-          go get -u -t github.com/DataDog/go-libddwaf/v3@${{ inputs.go-libddwaf-ref }}
-          go mod tidy
-      - name: Compile dd-trace-go
-        run: go build $PACKAGES
-      - name: Test contribs (v2)
+      - name: Test contribs
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
         run: ./scripts/ci-test-contrib.sh smoke ${{ toJson(matrix.chunk) }}
 
