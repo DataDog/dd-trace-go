@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	// File paths are supported on linux only
 	localFilePath   = "/etc/datadog-agent/application_monitoring.yaml"
 	managedFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
 
