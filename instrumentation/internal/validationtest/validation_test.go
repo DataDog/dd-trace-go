@@ -16,8 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2/testcases"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	validationtest "github.com/DataDog/dd-trace-go/v2/internal/contrib/validationtest/contrib"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -94,8 +95,8 @@ func TestIntegrations(t *testing.T) {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 	integrations := []Integration{
-		validationtest.NewMemcache(),
-		validationtest.NewDNS(),
+		testcases.NewMemcache(),
+		testcases.NewDNS(),
 	}
 
 	testCases := []struct {
@@ -149,10 +150,11 @@ func TestIntegrations(t *testing.T) {
 				}
 
 				// also include the testCase start options within the tracer config
-				tracer.Start(
+				err := tracer.Start(
 					tracer.WithAgentAddr(agentAddr),
 					tracer.WithHTTPClient(tracerHTTPClient()),
 				)
+				require.NoError(t, err)
 				defer tracer.Stop()
 
 				if tc.integrationServiceName != "" {
@@ -160,6 +162,7 @@ func TestIntegrations(t *testing.T) {
 					t.Setenv(fmt.Sprintf("DD_%s_SERVICE", strings.ToUpper(componentName)), tc.integrationServiceName)
 					ig.WithService(tc.integrationServiceName)
 				}
+				instrumentation.ReloadConfig()
 
 				ig.Init(t)
 				ig.GenSpans(t)

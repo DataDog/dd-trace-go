@@ -3,6 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
+//go:build ignore
+// +build ignore
+
+// This tool outputs a JSON encoded array that can be used as a matrix input to GitHub workflows.
+// Rather than testing all contribs under one job, we would rather parallelize the jobs
+// by using a matrix.
+// The `APM Larger Runners` group shares around 50 runners. We should not use all 50.
+// TODO: can we find an optimal number of runners that will make the test efficient without
+// creating too much cost?
 package main
 
 import (
@@ -15,12 +24,8 @@ import (
 	"regexp"
 )
 
-// Outputs a JSON encoded array that can be used as a matrix input to GitHub workflows.
-// Rather than testing all contribs under one job, we would rather parallelize the jobs
-// by using a matrix.
-// The `APM Larger Runners` group shares around 50 runners. We should not use all 50.
-// TODO: can we find an optimal number of runners that will make the test efficient without
-// creating too much cost?
+const numRunners = 6
+
 func main() {
 	cmd := exec.Command("go", "list", "-m", "-json")
 	var stdout bytes.Buffer
@@ -30,7 +35,6 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	numRunners := 6
 	contribs := make([]string, numRunners)
 	i := 0
 	dec := json.NewDecoder(&stdout)
@@ -41,10 +45,9 @@ func main() {
 		if err := dec.Decode(&pkg); err != nil {
 			continue
 		}
-		// we want to only count packages in the contrib directory, and exclude the internal package
+		// we want to only count packages in the contrib directory
 		validContrib := regexp.MustCompile(`/contrib/.*/`).FindStringSubmatch(pkg.Path)
-		internalContrib := regexp.MustCompile(`/internal/contrib/`).MatchString(pkg.Path)
-		if validContrib == nil || internalContrib {
+		if validContrib == nil {
 			continue
 		}
 		contribs[i] += "." + validContrib[0] + " "
