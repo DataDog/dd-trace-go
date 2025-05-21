@@ -41,7 +41,7 @@ var labstackEchoV4 = harness.TestCase{
 		return mt.FinishedSpans()
 	},
 	WantServiceNameV0: harness.ServiceNameAssertions{
-		Defaults:        []string{"http.router"},
+		Defaults:        []string{"echo"},
 		DDService:       []string{harness.TestDDService},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
