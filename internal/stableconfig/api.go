@@ -8,6 +8,7 @@
 package stableconfig
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -24,7 +25,7 @@ func Bool(env string, def bool) (value bool, origin telemetry.Origin, err error)
 		if val, err := strconv.ParseBool(v); err == nil {
 			return val, o, nil
 		}
-		err = fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, v, o)
+		err = errors.Join(err, fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, v, o))
 	}
 	return def, telemetry.OriginDefault, err
 }
