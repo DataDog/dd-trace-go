@@ -6,9 +6,9 @@
 package profiler
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"runtime"
 	"time"
@@ -59,7 +59,7 @@ func (m *metrics) reset(now time.Time) {
 	m.snapshot.NumGoroutine = runtime.NumGoroutine()
 }
 
-func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
+func (m *metrics) report(now time.Time, w io.Writer) error {
 	period := now.Sub(m.collectedAt)
 	if period <= 0 {
 		// It is technically possible, though very unlikely, for period
@@ -85,7 +85,7 @@ func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
 		return err
 	}
 
-	_, err = buf.Write(data)
+	_, err = w.Write(data)
 	return err
 }
 
