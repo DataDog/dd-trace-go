@@ -27,7 +27,6 @@ var (
 	mu                     sync.Mutex
 	activeNamingSchema     int32
 	removeFakeServiceNames bool
-	testMode               *bool
 )
 
 type Config struct {
