@@ -42,8 +42,8 @@ var (
 
 func FindV1Version() (string, bool, bool) {
 	once.Do(func() {
-		info, _ := debug.ReadBuildInfo()
-		if info == nil {
+		info, ok := debug.ReadBuildInfo()
+		if !ok {
 			return
 		}
 		v1Tag = findV1Version(info.Deps)
