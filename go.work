@@ -42,6 +42,7 @@ use (
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
 	./contrib/k8s.io/client-go
+	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
 	./contrib/log/slog
 	./contrib/miekg/dns
@@ -65,7 +66,6 @@ use (
 	./internal/exectracetest
 	./internal/orchestrion/_integration
 	./internal/setup-smoke-test
-	./internal/tools
 	./internal/traceprof/traceproftest
 	./orchestrion/all
 	./scripts/apiextractor

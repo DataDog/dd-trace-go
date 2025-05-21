@@ -172,7 +172,7 @@ func TestTracerStart(t *testing.T) {
 	t.Run("normal", func(t *testing.T) {
 		Start()
 		defer Stop()
-		if _, ok := GetGlobalTracer().(*tracer); !ok {
+		if _, ok := getGlobalTracer().(*tracer); !ok {
 			t.Fail()
 		}
 	})
@@ -181,10 +181,10 @@ func TestTracerStart(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		Start()
 		defer Stop()
-		if _, ok := GetGlobalTracer().(*tracer); ok {
+		if _, ok := getGlobalTracer().(*tracer); ok {
 			t.Fail()
 		}
-		if _, ok := GetGlobalTracer().(*NoopTracer); !ok {
+		if _, ok := getGlobalTracer().(*NoopTracer); !ok {
 			t.Fail()
 		}
 	})
@@ -193,10 +193,10 @@ func TestTracerStart(t *testing.T) {
 		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		Start()
 		defer Stop()
-		if _, ok := GetGlobalTracer().(*tracer); ok {
+		if _, ok := getGlobalTracer().(*tracer); ok {
 			t.Fail()
 		}
-		if _, ok := GetGlobalTracer().(*NoopTracer); !ok {
+		if _, ok := getGlobalTracer().(*NoopTracer); !ok {
 			t.Fail()
 		}
 	})
@@ -210,7 +210,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		GetGlobalTracer().(*tracer).pushChunk(&Chunk{spans: []*Span{}})
+		getGlobalTracer().(*tracer).pushChunk(&Chunk{spans: []*Span{}})
 
 		Stop()
 		Stop()
@@ -797,9 +797,9 @@ func TestTracerStartSpanOptions(t *testing.T) {
 func TestTracerStartSpanOptions128(t *testing.T) {
 	tracer, err := newTracer()
 	assert.NoError(t, err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
-	defer SetGlobalTracer(&NoopTracer{})
+	defer setGlobalTracer(&NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
@@ -1251,7 +1251,7 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 
 		// the tracer must create child spans
 		tracer, err := newTracer(withTransport(newDefaultTransport()))
-		SetGlobalTracer(tracer)
+		setGlobalTracer(tracer)
 		defer tracer.Stop()
 		assert.Nil(err)
 		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -2319,7 +2319,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	if err != nil {
 		return tracer, transport, nil, nil, err
 	}
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		if n < 0 {
 			tick <- time.Now()
@@ -2342,7 +2342,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		}
 	}
 	return tracer, transport, flushFunc, func() {
-		SetGlobalTracer(&NoopTracer{})
+		setGlobalTracer(&NoopTracer{})
 		tracer.Stop()
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
@@ -2522,8 +2522,8 @@ func TestUserMonitoring(t *testing.T) {
 	tr, err := newTracer()
 	defer tr.Stop()
 	assert.NoError(t, err)
-	SetGlobalTracer(tr)
-	defer SetGlobalTracer(&NoopTracer{})
+	setGlobalTracer(tr)
+	defer setGlobalTracer(&NoopTracer{})
 
 	t.Run("root", func(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")

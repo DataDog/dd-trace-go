@@ -8,7 +8,7 @@ package addresses
 import (
 	"math"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 type RASPRuleType uint8
@@ -42,8 +42,8 @@ func (r RASPRuleType) String() string {
 }
 
 // RASPRuleTypeFromAddressSet returns the RASPRuleType for the given address set if it has a RASP address.
-func RASPRuleTypeFromAddressSet(addressSet waf.RunAddressData) (RASPRuleType, bool) {
-	if addressSet.Scope != waf.RASPScope {
+func RASPRuleTypeFromAddressSet(addressSet libddwaf.RunAddressData) (RASPRuleType, bool) {
+	if addressSet.TimerKey != RASPScope {
 		return math.MaxUint8, false
 	}
 
