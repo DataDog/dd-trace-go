@@ -239,7 +239,7 @@ jobs:
         ports:
           - 9204:9200
       mongo:
-        image: circleci/mongo:latest-ram
+        image: mongo:3
         ports:
           - 27017:27017
       memcached:
