@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -93,6 +95,7 @@ type profiler struct {
 	wg              sync.WaitGroup    // wg waits for all goroutines to exit when stopping.
 	met             *metrics          // metric collector state
 	deltas          map[ProfileType]*fastDeltaProfiler
+	compressors     map[ProfileType]compressor
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
@@ -235,15 +238,31 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	cfg.tags = immutable.NewStringSlice(tags)
 
 	p := profiler{
-		cfg:    cfg,
-		out:    make(chan batch, outChannelSize),
-		exit:   make(chan struct{}),
-		met:    newMetrics(),
-		deltas: make(map[ProfileType]*fastDeltaProfiler),
+		cfg:         cfg,
+		out:         make(chan batch, outChannelSize),
+		exit:        make(chan struct{}),
+		met:         newMetrics(),
+		deltas:      make(map[ProfileType]*fastDeltaProfiler),
+		compressors: make(map[ProfileType]compressor),
 	}
-	for pt := range cfg.types {
-		if d := profileTypes[pt].DeltaValues; len(d) > 0 {
-			p.deltas[pt] = newFastDeltaProfiler(d...)
+	types := slices.Collect(maps.Keys(cfg.types))
+	// We need to manually add executionTrace to the list of profile types to be
+	// initialized for compression, because it's not part of the cfg.types map.
+	// Instead it gets added dynamically in profiler.collect.
+	if p.cfg.traceConfig.Enabled {
+		types = append(types, executionTrace)
+	}
+	for _, pt := range types {
+		isDelta := len(profileTypes[pt].DeltaValues) > 0
+		in, out := legacyCompressionStrategy(pt, isDelta)
+		compressor, err := newCompressionPipeline(in, out)
+		if err != nil {
+			return nil, err
+		}
+		p.compressors[pt] = compressor
+
+		if isDelta {
+			p.deltas[pt] = newFastDeltaProfiler(compressor, profileTypes[pt].DeltaValues...)
 		}
 	}
 	p.uploadFunc = p.upload
