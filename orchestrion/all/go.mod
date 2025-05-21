@@ -42,7 +42,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-rc.16
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-rc.16
 	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.16
-	github.com/DataDog/orchestrion v1.4.0-rc.3
+	github.com/DataDog/orchestrion v1.4.0
 )
 
 require (
