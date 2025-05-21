@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	testelasticsearch "github.com/testcontainers/testcontainers-go/modules/elasticsearch"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -50,7 +51,7 @@ func (b *base) Setup(ctx context.Context, t *testing.T, image string, newClient 
 		testcontainers.WithEnv(map[string]string{
 			"xpack.security.enabled": "false",
 		}),
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategyAndDeadline(time.Minute, wait.ForLog(`.*("message":\s?"started(\s|")?.*|]\sstarted\n)`).AsRegexp()),
 		// attempt to reuse this container

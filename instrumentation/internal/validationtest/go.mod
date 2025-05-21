@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/internal/contrib/validationtest
+module github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2
 
 go 1.23.0
 

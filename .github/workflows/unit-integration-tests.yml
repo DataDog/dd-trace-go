@@ -125,7 +125,7 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./internal/contrib/matrix       >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
 
   test-contrib-matrix:
     needs: set-up
@@ -248,7 +248,7 @@ jobs:
         ports:
           - 9204:9200
       mongo:
-        image: circleci/mongo:latest-ram
+        image: mongo:3
         ports:
           - 27017:27017
       memcached:
@@ -293,7 +293,7 @@ jobs:
       - name: Test Contrib
         if: always()
         run: |
-          ./.github/workflows/apps/test-contrib-submodules.sh default ${{ toJson(matrix.chunk) }}
+          ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
 
   test-contrib:
     needs:
@@ -347,11 +347,7 @@ jobs:
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
         run: |
-            mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
-            cd ./internal/exectracetest
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-exectrace.xml -- -v -race -coverprofile=coverage.txt -covermode=atomic
+            ./scripts/ci-test-core.sh
 
   upload-test-results:
     needs:

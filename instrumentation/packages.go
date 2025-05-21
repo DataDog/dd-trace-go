@@ -650,7 +650,7 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "HTTPROUTER",
 		naming: map[Component]componentNames{
 			ComponentServer: {
-				useDDServiceV0:     false,
+				useDDServiceV0:     true,
 				buildServiceNameV0: staticName("http.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
@@ -706,7 +706,7 @@ var packages = map[Package]PackageInfo{
 			ComponentDefault: {
 				useDDServiceV0:     false,
 				buildServiceNameV0: staticName("vault"),
-				buildOpNameV0:      staticName("vault.command"),
+				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("vault.query"),
 			},
 		},

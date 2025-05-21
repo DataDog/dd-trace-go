@@ -7,6 +7,11 @@ package namingschematest
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,19 +25,24 @@ import (
 )
 
 const (
-	testGroupID       = "gosegtest"
-	testTopic         = "gosegtest"
+	testGroupID       = "segmentio-kafka-namingschematest"
+	testTopic         = "segmentio-kafka-namingschematest"
 	testReaderMaxWait = 10 * time.Millisecond
+)
+
+var (
+	kafkaBrokers = []string{"localhost:9092", "localhost:9093", "localhost:9094"}
 )
 
 type readerOpFn func(t *testing.T, r *segmentiotracer.Reader)
 
 func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t *testing.T, w *segmentiotracer.KafkaWriter), readerOp readerOpFn, writerOpts []segmentiotracer.Option, readerOpts []segmentiotracer.Option) ([]*mocktracer.Span, []kafka.Message) {
+	_ = createTopic(t)
 	writtenMessages := []kafka.Message{}
 
 	// add some dummy values to broker/addr to test bootstrap servers.
 	kw := &kafka.Writer{
-		Addr:         kafka.TCP("localhost:9092", "localhost:9093", "localhost:9094"),
+		Addr:         kafka.TCP(kafkaBrokers...),
 		Topic:        testTopic,
 		RequiredAcks: kafka.RequireOne,
 		Completion: func(messages []kafka.Message, err error) {
@@ -45,7 +55,7 @@ func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t
 	require.NoError(t, err)
 
 	r := segmentiotracer.NewReader(kafka.ReaderConfig{
-		Brokers: []string{"localhost:9092", "localhost:9093", "localhost:9094"},
+		Brokers: kafkaBrokers,
 		GroupID: testGroupID,
 		Topic:   testTopic,
 		MaxWait: testReaderMaxWait,
@@ -107,7 +117,7 @@ var segmentioKafkaGo = harness.TestCase{
 	GenSpans: segmentioKafkaGoGenSpans(),
 	WantServiceNameV0: harness.ServiceNameAssertions{
 		Defaults:        harness.RepeatString("kafka", 2),
-		DDService:       harness.RepeatString(harness.TestDDService, 2),
+		DDService:       []string{"kafka", harness.TestDDService},
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 2),
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
@@ -120,4 +130,102 @@ var segmentioKafkaGo = harness.TestCase{
 		assert.Equal(t, "kafka.send", spans[0].OperationName())
 		assert.Equal(t, "kafka.process", spans[1].OperationName())
 	},
+}
+
+func createTopic(t *testing.T) func() {
+	conn, err := kafka.Dial("tcp", "localhost:9092")
+	require.NoError(t, err)
+
+	defer conn.Close()
+
+	controller, err := conn.Controller()
+	require.NoError(t, err)
+
+	controllerConn, err := kafka.Dial("tcp", net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port)))
+	require.NoError(t, err)
+
+	if err := controllerConn.DeleteTopics(testTopic); err != nil && !errors.Is(err, kafka.UnknownTopicOrPartition) {
+		log.Fatalf("failed to delete topic: %v", err)
+	}
+	topicConfigs := []kafka.TopicConfig{
+		{
+			Topic:             testTopic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		},
+	}
+	err = controllerConn.CreateTopics(topicConfigs...)
+	require.NoError(t, err)
+
+	err = ensureTopicReady()
+	require.NoError(t, err)
+
+	return func() {
+		if err := controllerConn.DeleteTopics(testTopic); err != nil {
+			log.Printf("failed to delete topic: %v", err)
+		}
+		if err := controllerConn.Close(); err != nil {
+			log.Printf("failed to close controller connection: %v", err)
+		}
+	}
+}
+
+func ensureTopicReady() error {
+	const (
+		maxRetries = 10
+		retryDelay = 100 * time.Millisecond
+	)
+	writer := testWriter()
+	defer writer.Close()
+	reader := testReader()
+	defer reader.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var (
+		retryCount int
+		err        error
+	)
+	for retryCount < maxRetries {
+		err = writer.WriteMessages(ctx, kafka.Message{Key: []byte("some-key"), Value: []byte("some-value")})
+		if err == nil {
+			break
+		}
+		// This error happens sometimes with brand-new topics, as there is a delay between when the topic is created
+		// on the broker, and when the topic can actually be written to.
+		if errors.Is(err, kafka.UnknownTopicOrPartition) {
+			retryCount++
+			log.Printf("topic not ready yet, retrying produce in %s (retryCount: %d)\n", retryDelay, retryCount)
+			time.Sleep(retryDelay)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("timeout waiting for topic to be ready: %w", err)
+	}
+	// read the message to ensure we don't pollute tests
+	_, err = reader.ReadMessage(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func testWriter() *kafka.Writer {
+	return &kafka.Writer{
+		Addr:         kafka.TCP(kafkaBrokers...),
+		Topic:        testTopic,
+		RequiredAcks: kafka.RequireOne,
+		Balancer:     &kafka.LeastBytes{},
+	}
+}
+
+func testReader() *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers:  kafkaBrokers,
+		GroupID:  testGroupID,
+		Topic:    testTopic,
+		MaxWait:  10 * time.Millisecond,
+		MaxBytes: 10e6, // 10MB
+	})
 }

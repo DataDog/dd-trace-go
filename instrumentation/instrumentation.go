@@ -39,6 +39,11 @@ func Load(pkg Package) *Instrumentation {
 	}
 }
 
+// ReloadConfig reloads config read from environment variables. This is useful for tests.
+func ReloadConfig() {
+	namingschema.ReloadConfig()
+}
+
 // Instrumentation represents instrumentation for a package.
 type Instrumentation struct {
 	pkg    Package
