@@ -16,10 +16,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-// BoolStableConfig returns a boolean config value from managed file-based config, environment variable,
+// Bool returns a boolean config value from managed file-based config, environment variable,
 // or local file-based config, in that order. If none provide a valid boolean, it returns the default.
 // Also returns the value's origin and any parse error encountered.
-func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin, err error) {
+func Bool(env string, def bool) (value bool, origin telemetry.Origin, err error) {
 	for o, v := range stableConfigByPriority(env) {
 		if val, err := strconv.ParseBool(v); err == nil {
 			return val, o, nil
@@ -29,9 +29,9 @@ func BoolStableConfig(env string, def bool) (value bool, origin telemetry.Origin
 	return def, telemetry.OriginDefault, err
 }
 
-// StringStableConfig returns a string config value from managed file-based config, environment variable,
+// String returns a string config value from managed file-based config, environment variable,
 // or local file-based config, in that order. If none are set, it returns the default value and origin.
-func StringStableConfig(env string, def string) (string, telemetry.Origin) {
+func String(env string, def string) (string, telemetry.Origin) {
 	for origin, value := range stableConfigByPriority(env) {
 		return value, origin
 	}

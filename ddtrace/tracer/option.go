@@ -455,7 +455,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
 	// TODO: APMAPI-1358
-	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.BoolStableConfig("DD_DATA_STREAMS_ENABLED", false)
+	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -470,7 +470,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// if it's explicitly set, and don't require both variables to be configured.
 
 	// TODO: APMAPI-1358
-	c.dynamicInstrumentationEnabled, _, _ = stableconfig.BoolStableConfig("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -601,7 +601,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 	// TODO: APMAPI-1358
-	if tracingEnabled, _, _ := stableconfig.BoolStableConfig("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
+	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
 

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBoolStableConfig(t *testing.T) {
+func TestBool(t *testing.T) {
 	// Test typical operation with valid files
 	t.Run("valid configurations", func(t *testing.T) {
 		tests := []struct {
@@ -92,7 +92,7 @@ func TestBoolStableConfig(t *testing.T) {
 					t.Setenv(tt.key, tt.envValue)
 				}
 
-				val, origin, err := BoolStableConfig(tt.key, tt.defaultValue)
+				val, origin, err := Bool(tt.key, tt.defaultValue)
 				assert.Equal(t, tt.expectedValue, val)
 				assert.Equal(t, tt.expectedOrigin, origin)
 				assert.Equal(t, tt.expectedErr, err)
@@ -180,7 +180,7 @@ func TestBoolStableConfig(t *testing.T) {
 					t.Setenv(tt.key, tt.envValue)
 				}
 
-				val, origin, err := BoolStableConfig(tt.key, tt.defaultValue)
+				val, origin, err := Bool(tt.key, tt.defaultValue)
 				assert.Equal(t, tt.expectedValue, val)
 				assert.Equal(t, tt.expectedOrigin, origin)
 				if tt.expectedErr != "" {
@@ -193,7 +193,7 @@ func TestBoolStableConfig(t *testing.T) {
 	})
 }
 
-func TestStringStableConfig(t *testing.T) {
+func TestString(t *testing.T) {
 	// Yaml content for local and managed files
 	localYaml := `
 apm_configuration_default:
@@ -216,14 +216,14 @@ apm_configuration_default:
 	defer os.Remove(tempManagedPath)
 
 	t.Run("default", func(t *testing.T) {
-		val, origin := StringStableConfig("UNKNOWN_KEY", "default")
+		val, origin := String("UNKNOWN_KEY", "default")
 		assert.Equal(t, "default", val)
 		assert.Equal(t, telemetry.OriginDefault, origin)
 	})
 	t.Run("localStableconfig only", func(t *testing.T) {
 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
-		val, origin := StringStableConfig("DD_KEY", "default")
+		val, origin := String("DD_KEY", "default")
 		assert.Equal(t, "local", val)
 		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
 	})
@@ -231,7 +231,7 @@ apm_configuration_default:
 		t.Setenv("DD_KEY", "env")
 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
-		val, origin := StringStableConfig("DD_KEY", "default")
+		val, origin := String("DD_KEY", "default")
 		assert.Equal(t, "env", val)
 		assert.Equal(t, telemetry.OriginEnvVar, origin)
 	})
@@ -244,7 +244,7 @@ apm_configuration_default:
 		ManagedConfig = newStableConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
 		defer func() { ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig) }()
 
-		val, origin := StringStableConfig("DD_KEY", "default")
+		val, origin := String("DD_KEY", "default")
 		assert.Equal(t, "managed", val)
 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
 	})
