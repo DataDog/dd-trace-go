@@ -29,6 +29,12 @@ var gocqlTest = harness.TestCase{
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
+		nonTraced, err := gocql.NewSession(*gocql.NewCluster("127.0.0.1:9042"))
+		require.NoError(t, err)
+		// Ensures test keyspace and table person exists.
+		require.NoError(t, nonTraced.Query("CREATE KEYSPACE if not exists trace WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor': 1}").Exec())
+		require.NoError(t, nonTraced.Query("CREATE TABLE if not exists trace.person (name text PRIMARY KEY, age int, description text)").Exec())
+
 		cluster := gocqltrace.NewCluster([]string{"127.0.0.1:9042"}, opts...)
 		cluster.ConnectTimeout = 2 * time.Second
 		cluster.Timeout = 2 * time.Second

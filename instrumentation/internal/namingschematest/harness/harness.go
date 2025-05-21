@@ -45,8 +45,6 @@ func RunTest(t *testing.T, tc TestCase) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
-	t.Setenv("__DD_TRACE_NAMING_SCHEMA_TEST", "1")
-	t.Setenv("__DD_TRACE_SQL_TEST", "1")
 
 	t.Run(strings.ReplaceAll(string(tc.Name), "/", "_"), func(t *testing.T) {
 		t.Run("ServiceName", func(t *testing.T) {
@@ -54,18 +52,21 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v0_defaults", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", "")
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.Defaults)
 			})
 			t.Run("v0_dd_service", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.DDService)
 			})
 			t.Run("v0_dd_service_and_override", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, TestServiceOverride)
 				assertServiceNames(t, spans, tc.WantServiceNameV0.ServiceOverride)
 			})
@@ -74,18 +75,21 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Run("v1_defaults", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", "")
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, tc.WantServiceNameV0.Defaults)
 			})
 			t.Run("v1_dd_service", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, "")
 				assertServiceNames(t, spans, RepeatString(TestDDService, len(tc.WantServiceNameV0.DDService)))
 			})
 			t.Run("v1_dd_service_and_override", func(t *testing.T) {
 				t.Setenv("DD_SERVICE", TestDDService)
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, TestServiceOverride)
 				assertServiceNames(t, spans, RepeatString(TestServiceOverride, len(tc.WantServiceNameV0.ServiceOverride)))
 			})
@@ -94,11 +98,13 @@ func RunTest(t *testing.T, tc TestCase) {
 		t.Run("SpanName", func(t *testing.T) {
 			t.Run("v0", func(t *testing.T) {
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, "")
 				tc.AssertOpV0(t, spans)
 			})
 			t.Run("v1", func(t *testing.T) {
 				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
+				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, "")
 				tc.AssertOpV1(t, spans)
 			})

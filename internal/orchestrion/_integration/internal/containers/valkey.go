@@ -15,6 +15,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	testvalkey "github.com/testcontainers/testcontainers-go/modules/valkey"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -29,7 +30,7 @@ func StartValkeyTestContainer(t testing.TB) (*testvalkey.ValkeyContainer, string
 	}
 
 	opts := []testcontainers.ContainerCustomizer{
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategy(
 			wait.ForAll(

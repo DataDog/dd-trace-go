@@ -7,16 +7,7 @@ package httprouter
 
 import (
 	"github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-type routerConfig struct {
-	serviceName   string
-	spanOpts      []tracer.StartSpanOption
-	analyticsRate float64
-	headerTags    instrumentation.HeaderTags
-}
 
 // RouterOption represents an option that can be passed to New.
 type RouterOption = tracing.Option
