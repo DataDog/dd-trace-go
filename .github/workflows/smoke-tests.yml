@@ -70,7 +70,7 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./internal/contrib/matrix       >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
 
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
