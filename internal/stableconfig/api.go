@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"net"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -37,6 +39,22 @@ func String(env string, def string) (string, telemetry.Origin) {
 		return value, origin
 	}
 	return def, telemetry.OriginDefault
+}
+
+func Int(env string, def int) (v int, o telemetry.Origin) {
+	return
+}
+
+func Float(env string, def float64) (v float64, o telemetry.Origin) {
+	return
+}
+
+func Duration(env string, def time.Duration) (v time.Duration, o telemetry.Origin) {
+	return
+}
+
+func IP(env string, def net.IP) (v net.IP, o telemetry.Origin) {
+	return
 }
 
 func stableConfigByPriority(env string) iter.Seq2[telemetry.Origin, string] {
