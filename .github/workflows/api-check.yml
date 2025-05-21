@@ -1,0 +1,34 @@
+name: API Stability Check
+
+on:
+  pull_request:
+    paths:
+      - 'ddtrace/tracer/**'
+      - 'scripts/apiextractor/**'
+      - '.github/workflows/api-check.yml'
+
+jobs:
+  check-api-stability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Generate current API for ddtrace/tracer
+        run: |
+          go run ./scripts/apiextractor/api_extractor.go ./ddtrace/tracer > current_api.txt
+
+      - name: Compare with committed API
+        run: |
+          if ! diff -u ./ddtrace/tracer/api.txt current_api.txt; then
+            echo "❌ API changes detected but api.txt not updated!"
+            echo "Please run 'go run ./scripts/apiextractor/api_extractor.go ./ddtrace/tracer > ./ddtrace/tracer/api.txt'"
+            echo "and commit the changes."
+            exit 1
+          fi
+          echo "✅ API is stable"
