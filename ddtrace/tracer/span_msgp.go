@@ -157,13 +157,13 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "spanLinks")
 				return
 			}
-			if cap(z.spanLinks) >= int(zb0004) {
-				z.spanLinks = (z.spanLinks)[:zb0004]
+			if cap(z.links()) >= int(zb0004) {
+				z.context.spanLinks = (z.links())[:zb0004]
 			} else {
-				z.spanLinks = make([]SpanLink, zb0004)
+				z.context.spanLinks = make([]SpanLink, zb0004)
 			}
-			for za0005 := range z.spanLinks {
-				err = z.spanLinks[za0005].DecodeMsg(dc)
+			for za0005 := range z.links() {
+				err = z.links()[za0005].DecodeMsg(dc)
 				if err != nil {
 					err = msgp.WrapError(err, "spanLinks", za0005)
 					return
@@ -213,7 +213,7 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 		zb0001Len--
 		zb0001Mask |= 0x100
 	}
-	if z.spanLinks == nil {
+	if len(z.links()) == 0 {
 		zb0001Len--
 		zb0001Mask |= 0x2000
 	}
@@ -393,13 +393,13 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 			if err != nil {
 				return
 			}
-			err = en.WriteArrayHeader(uint32(len(z.spanLinks)))
+			err = en.WriteArrayHeader(uint32(len(z.links())))
 			if err != nil {
 				err = msgp.WrapError(err, "spanLinks")
 				return
 			}
-			for za0005 := range z.spanLinks {
-				err = z.spanLinks[za0005].EncodeMsg(en)
+			for za0005 := range z.links() {
+				err = z.links()[za0005].EncodeMsg(en)
 				if err != nil {
 					err = msgp.WrapError(err, "spanLinks", za0005)
 					return
@@ -446,8 +446,8 @@ func (z *Span) Msgsize() (s int) {
 		}
 	}
 	s += 8 + msgp.Uint64Size + 9 + msgp.Uint64Size + 10 + msgp.Uint64Size + 6 + msgp.Int32Size + 11 + msgp.ArrayHeaderSize
-	for za0005 := range z.spanLinks {
-		s += z.spanLinks[za0005].Msgsize()
+	for za0005 := range z.links() {
+		s += z.links()[za0005].Msgsize()
 	}
 	s += 12 + msgp.ArrayHeaderSize
 	for za0006 := range z.spanEvents {
