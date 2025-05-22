@@ -28,11 +28,7 @@ matrix:
   extends: .benchmark
   parallel:
     matrix:
-      - DIRECTORY: 
-        - "./ddtrace"
-      - DIRECTORY: 
-        - "./contrib/net/http"
-      - DIRECTORY: 
-        - "./internal/appsec"
-      - DIRECTORY: 
-        - "./contrib/graphql-go/graphql"
+      - DIRECTORY: "./ddtrace"
+      - DIRECTORY: "./contrib/net/http"
+      - DIRECTORY: "./internal/appsec"
+      - DIRECTORY: "./contrib/graphql-go/graphql"
