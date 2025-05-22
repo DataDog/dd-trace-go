@@ -6,7 +6,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -205,16 +204,11 @@ func parseBoolEnvVar(env string) (enabled bool, set bool, err error) {
 
 // NewConfig returns a fresh appsec configuration read from the env
 func (c *StartConfig) NewConfig() (*Config, error) {
-	var rules any
 	data, err := internal.RulesFromEnv()
 	if err != nil {
 		return nil, fmt.Errorf("reading WAF rules from environment: %w", err)
 	}
-	if err := json.Unmarshal(data, &rules); err != nil {
-		return nil, fmt.Errorf("parsing WAF rules from environment: %w", err)
-	}
-
-	manager, err := NewWAFManager(internal.NewObfuscatorConfig(), rules)
+	manager, err := NewWAFManager(internal.NewObfuscatorConfig(), data)
 	if err != nil {
 		return nil, err
 	}
