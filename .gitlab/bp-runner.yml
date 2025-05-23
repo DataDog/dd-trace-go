@@ -1,0 +1,25 @@
+# Setup benchmarks to be run using bp-runner. There are 48 available cores, the first
+# 24 of which are reserved for setup. We use the remaining 24 to allocate resources
+# to run our benchmarks.
+
+experiments:
+  - name: run-benchmarks
+    steps:
+      - name: benchmarks
+        cpus: 23-26
+        run: shell
+        script: export DIRECTORY=$BP_DIRECTORY && /platform/steps/run-benchmarks.sh
+
+  - name: run-macrobenchmarks
+    steps:
+      - name: macrobenchmarks
+        cpus: 27-37
+        run: shell
+        script: export DIRECTORY=$BP_DIRECTORY && /platform/steps/run-benchmarks.sh
+
+  - name: run-test-apps
+    steps:
+      - name: test-apps
+        cpus: 38-47
+        run: shell
+        script: export DIRECTORY=$BP_DIRECTORY && /platform/steps/run-benchmarks.sh
