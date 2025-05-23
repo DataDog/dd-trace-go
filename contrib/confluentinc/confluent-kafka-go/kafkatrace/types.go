@@ -39,11 +39,16 @@ type OffsetsCommitted interface {
 	GetOffsets() []TopicPartition
 }
 
+type TopicPartitionError interface {
+	Error() error
+	IsUnknownServerError() bool
+}
+
 type TopicPartition interface {
 	GetTopic() string
 	GetPartition() int32
 	GetOffset() int64
-	GetError() error
+	GetError() TopicPartitionError
 }
 
 type Event interface {
