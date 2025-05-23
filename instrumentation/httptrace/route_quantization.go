@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+// QuantizeURL quantizes a URL path into a more generic form that resembles a route.
+func QuantizeURL(path string) string {
+	var quantizer urlQuantizer
+	return quantizer.Quantize(path)
+}
+
 // urlQuantizer is responsible for quantizing URLs paths into a more generic form that resembles a route
 // in case a handler pattern is not available. net/http was the last framework where we did not have access to it
 // until go 1.22. Now this algorithm is only used in proxy implementations where handlers don't make sense.
