@@ -1,5 +1,5 @@
-github.com/DataDog/appsec-internal-go v1.11.2 h1:Q00pPMQzqMIw7jT2ObaORIxBzSly+deS0Ely9OZ/Bj0=
-github.com/DataDog/appsec-internal-go v1.11.2/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
+github.com/DataDog/appsec-internal-go v1.12.0 h1:pfeFYcCQ5r0qGLsnzeQKfKLfkCqqwsULG7g5y7ziKu8=
+github.com/DataDog/appsec-internal-go v1.12.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.0-rc.1 h1:XHITEDEb6NVc9n+myS8KJhdK0vKOvY0BTWSFrFynm4s=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.0-rc.1/go.mod h1:lzCtnMSGZm/3RMk5RBRW/6IuK1TNbDXx1ttHTxN5Ykc=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.0-rc.1 h1:63L66uiNazsZs1DCmb5aDv/YAkCqn6xKqc0aYeATkQ8=

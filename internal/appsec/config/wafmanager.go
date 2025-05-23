@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/json"
 	"runtime"
 	"sync"
 
@@ -19,7 +20,7 @@ type (
 	// WAFManager holds a [libddwaf.Builder] and allows managing its configuration.
 	WAFManager struct {
 		builder      *libddwaf.Builder
-		initRules    any
+		initRules    []byte
 		rulesVersion string
 		closed       bool
 		mu           sync.RWMutex
@@ -30,28 +31,21 @@ const defaultRulesPath = "ASM_DD/default"
 
 // NewWAFManager creates a new [WAFManager] with the provided [appsec.ObfuscatorConfig] and initial
 // rules (if any).
-func NewWAFManager(obfuscator appsec.ObfuscatorConfig, defaultRules any) (*WAFManager, error) {
+func NewWAFManager(obfuscator appsec.ObfuscatorConfig, defaultRules []byte) (*WAFManager, error) {
 	builder, err := libddwaf.NewBuilder(obfuscator.KeyRegex, obfuscator.ValueRegex)
 	if err != nil {
 		return nil, err
 	}
 
-	rulesVersion := ""
-	if defaultRules != nil {
-		diag, err := builder.AddOrUpdateConfig(defaultRulesPath, defaultRules)
-		if err != nil {
-			builder.Close()
-			return nil, err
-		}
-		diag.EachFeature(logLocalDiagnosticMessages)
-		rulesVersion = diag.Version
+	mgr := &WAFManager{
+		builder:   builder,
+		initRules: defaultRules,
 	}
 
-	mgr := &WAFManager{
-		builder:      builder,
-		initRules:    defaultRules,
-		rulesVersion: rulesVersion,
+	if err := mgr.RestoreDefaultConfig(); err != nil {
+		return nil, err
 	}
+
 	// Attach a finalizer to close the builder when it is garbage collected, in case
 	// [WAFManager.Close] is not called explicitly by the user. The call to [libddwaf.Builder.Close]
 	// is safe to make multiple times.
@@ -151,7 +145,12 @@ func (m *WAFManager) RestoreDefaultConfig() error {
 	if m.initRules == nil {
 		return nil
 	}
-	_, err := m.AddOrUpdateConfig(defaultRulesPath, m.initRules)
+	var rules map[string]any
+	if err := json.Unmarshal(m.initRules, &rules); err != nil {
+		return err
+	}
+	diag, err := m.AddOrUpdateConfig(defaultRulesPath, rules)
+	diag.EachFeature(logLocalDiagnosticMessages)
 	return err
 }
 
