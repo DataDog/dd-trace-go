@@ -6,8 +6,13 @@
 package httptrace
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
-
+	"reflect"
+	"runtime"
+	"strconv"
+	
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
@@ -38,6 +43,8 @@ type ServeConfig struct {
 	SpanOpts []tracer.StartSpanOption
 	// isStatusError allows customization of error code determination.
 	IsStatusError func(int) bool
+	// Handler is the http handler (used to extract information for code origins).
+	Handler http.Handler
 }
 
 // BeforeHandle contains functionality that should be executed before a http.Handler runs.
@@ -65,6 +72,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
+		setCodeOriginTags(span, cfg.Handler)
 		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
@@ -91,4 +99,85 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 		handled = secHandled
 	}
 	return rw, rt, afterHandle, handled
+}
+
+const (
+	tagCodeOriginType           = "_dd.code_origin.type"
+	tagCodeOriginFrameFile      = "_dd.code_origin.frames.%d.file"
+	tagCodeOriginFrameLine      = "_dd.code_origin.frames.%d.line"
+	tagCodeOriginFrameType      = "_dd.code_origin.frames.%d.type"
+	tagCodeOriginFrameMethod    = "_dd.code_origin.frames.%d.method"
+	tagCodeOriginFrameSignature = "_dd.code_origin.frames.%d.signature"
+)
+
+func setCodeOriginTags(span *tracer.Span, handler http.Handler) {
+	if !cfg.codeOriginEnabled || handler == nil {
+		return
+	}
+	span.SetTag(tagCodeOriginType, "entry")
+
+	file, line, err := getSourceLocation(handler)
+	if err != nil {
+		instr.Logger().Debug("instrumentation/httptrace/setCodeOriginTags: failed to extract handler information: %v", err)
+		return
+	}
+
+	span.SetTag(fmt.Sprintf(tagCodeOriginFrameFile, 0), file)
+	span.SetTag(fmt.Sprintf(tagCodeOriginFrameLine, 0), strconv.Itoa(line))
+
+	//frames := runtime.CallersFrames(pcs)
+	//for {
+	//	frame, more := frames.Next()
+	//	fmt.Printf("got frame: %s:%d | %s\n", frame.File, frame.Line, frame.Function)
+	//
+	//	if isUserCode(frame) {
+	//		span.SetTag(frameTag(tagCodeOriginFrameFile, frameN), frame.File)
+	//		span.SetTag(frameTag(tagCodeOriginFrameLine, frameN), strconv.Itoa(frame.Line))
+	//
+	//		fn, ok := parseFunction(frame.Function)
+	//		if ok {
+	//			if fn.receiver != "" {
+	//				span.SetTag(frameTag(tagCodeOriginFrameType, frameN), fn.pkg+"."+fn.receiver)
+	//				span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.name)
+	//			} else {
+	//				span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.pkg+"."+fn.name)
+	//			}
+	//		} else {
+	//			instr.Logger().Debug("instrumentation/httptrace/setCodeOriginTags: failed to extract function info from frame: %s", frame.Function)
+	//		}
+	//
+	//		frameN++
+	//		if frameN >= cfg.codeOriginMaxUserFrames {
+	//			break
+	//		}
+	//	}
+	//	if !more {
+	//		break
+	//	}
+	//}
+}
+
+func getSourceLocation(h http.Handler) (string, int, error) {
+	var fn interface{}
+
+	switch v := h.(type) {
+	case http.HandlerFunc:
+		fn = v
+	default:
+		method := reflect.ValueOf(h).MethodByName("ServeHTTP")
+		if !method.IsValid() {
+			return "", 0, fmt.Errorf("no ServeHTTP method found")
+		}
+		fn = method.Interface().(func(http.ResponseWriter, *http.Request))
+	}
+
+	ptr := reflect.ValueOf(fn).Pointer()
+
+	fnInfo := runtime.FuncForPC(ptr)
+	if fnInfo == nil {
+		return "", 0, errors.New("no function info found")
+	}
+
+	file, line := fnInfo.FileLine(ptr)
+	return file, line, nil
 }
