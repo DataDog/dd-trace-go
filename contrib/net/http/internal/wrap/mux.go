@@ -46,7 +46,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// get the resource associated to this request
-	_, pttrn := mux.Handler(r)
+	h, pttrn := mux.Handler(r)
 	route := pattern.Route(pttrn)
 	resource := mux.cfg.ResourceNamer(r)
 	if resource == "" {
@@ -63,5 +63,6 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Route:         route,
 		IsStatusError: mux.cfg.IsStatusError,
 		RouteParams:   pattern.PathParameters(pttrn, r),
+		Handler:       h,
 	})
 }

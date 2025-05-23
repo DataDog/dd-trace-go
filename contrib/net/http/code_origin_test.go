@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,13 +25,18 @@ func testHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hello World"))
 }
 
-type customHandler struct{}
+type CustomHandler struct{}
 
-func (h *customHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	testHandler(w, r)
 }
 
 func TestCodeOriginForSpans(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	testFilePath, err := filepath.Abs(filename)
+	require.NoError(t, err)
+
 	testCases := []struct {
 		name       string
 		disabled   bool
@@ -50,9 +57,9 @@ func TestCodeOriginForSpans(t *testing.T) {
 				return http.HandlerFunc(testHandler)
 			},
 			wantTags: map[string]any{
-				"_dd.code_origin.type":          "exit",
-				"_dd.code_origin.frames.0.file": "code_origin_test.go",
-				"_dd.code_origin.frames.0.line": "21",
+				"_dd.code_origin.type":          "entry",
+				"_dd.code_origin.frames.0.file": testFilePath,
+				"_dd.code_origin.frames.0.line": "23",
 			},
 		},
 		{
@@ -63,20 +70,20 @@ func TestCodeOriginForSpans(t *testing.T) {
 				return mux
 			},
 			wantTags: map[string]any{
-				"_dd.code_origin.type":          "exit",
-				"_dd.code_origin.frames.0.file": "code_origin_test.go",
-				"_dd.code_origin.frames.0.line": "21",
+				"_dd.code_origin.type":          "entry",
+				"_dd.code_origin.frames.0.file": testFilePath,
+				"_dd.code_origin.frames.0.line": "23",
 			},
 		},
 		{
 			name: "CustomHandler",
 			getHandler: func() http.Handler {
-				return &customHandler{}
+				return &CustomHandler{}
 			},
 			wantTags: map[string]any{
-				"_dd.code_origin.type":          "exit",
-				"_dd.code_origin.frames.0.file": "code_origin_test.go",
-				"_dd.code_origin.frames.0.line": "21",
+				"_dd.code_origin.type":          "entry",
+				"_dd.code_origin.frames.0.file": testFilePath,
+				"_dd.code_origin.frames.0.line": "23",
 			},
 		},
 	}
