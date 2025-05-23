@@ -31,8 +31,10 @@ var roundTripperConfig = config.RoundTripperConfig{
 			}
 		}(),
 		IgnoreRequest: func(*http.Request) bool { return false },
-		ResourceNamer: func(req *http.Request) string { return fmt.Sprintf("%s %s", req.Method, req.URL.Path) },
-		ServiceName:   config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
+		ResourceNamer: func(req *http.Request) string {
+			return fmt.Sprintf("%s %s", req.Method, httptrace.QuantizeURL(req.URL.Path))
+		},
+		ServiceName: config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
 	},
 	IsStatusError: func() func(int) bool {
 		envVal := os.Getenv(config.EnvClientErrorStatuses)

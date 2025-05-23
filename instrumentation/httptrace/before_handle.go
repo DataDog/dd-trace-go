@@ -72,8 +72,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if appsec.Enabled() {
 		route := cfg.Route
 		if route == "" {
-			var quantizer urlQuantizer
-			route = quantizer.Quantize(r.URL.EscapedPath())
+			route = QuantizeURL(r.URL.EscapedPath())
 		}
 		appsecConfig := &httpsec.Config{
 			Framework:   cfg.Framework,
