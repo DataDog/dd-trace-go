@@ -2783,3 +2783,25 @@ type customLogger struct{ l *llog.Logger }
 func (c customLogger) Log(msg string) {
 	c.l.Print(msg)
 }
+
+func TestPPROFLabelRootSpanRace(t *testing.T) {
+	tracer, _, _, stop := startTestTracer(t)
+	defer stop()
+	parent := tracer.StartSpan("parent")
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			tracer.StartSpan("child", ChildOf(parent.Context()))
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			parent.SetTag(ext.ResourceName, "x")
+		}
+	}()
+	wg.Wait()
+}
