@@ -631,18 +631,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 		if !cfg.FinishTime.IsZero() {
 			t = cfg.FinishTime.UnixNano()
 		}
-		if cfg.NoDebugStack {
-			s.mu.Lock()
-			// We don't lock spans when flushing, so we could have a data race when
-			// modifying a span as it's being flushed. This protects us against that
-			// race, since spans are marked `finished` before we flush them.
-			if s.finished {
-				s.mu.Unlock()
-				return
-			}
-			delete(s.meta, ext.ErrorStack)
-			s.mu.Unlock()
-		}
 		if cfg.Error != nil {
 			s.mu.Lock()
 			s.setTagError(cfg.Error, errorConfig{

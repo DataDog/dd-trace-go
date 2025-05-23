@@ -164,8 +164,24 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		}
 	}
+	fc := &tracer.FinishConfig{}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		opt(fc)
+	}
+	if fc.NoDebugStack {
+		// This is a workaround to ensure that the error stack is not set when NoDebugStack is true.
+		// This is required because the error stack is set when we call `s.SetTag(ext.Error, err)` just
+		// a few lines above.
+		// This is also caused by the fact that the error stack generation is controlled by `tracer.WithDebugStack` (globally)
+		// or `tracer.NoDebugStack` (per span, but only when we finish the span). These two options don't allow to control
+		// the error stack generation per span that happens in `FinishRequestSpan` before calling `s.Finish`.
+		s.SetTag("error.stack", "")
+	}
 	s.SetTag(ext.HTTPCode, statusStr)
-	s.Finish(opts...)
+	s.Finish(tracer.WithFinishConfig(fc))
 }
 
 // URLFromRequest returns the full URL from the HTTP request. If queryString is true, params are collected and they are obfuscated either by the default query string obfuscator or the custom obfuscator provided by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)

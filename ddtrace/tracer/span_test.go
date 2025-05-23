@@ -1413,3 +1413,18 @@ func TestStatsAfterFinish(t *testing.T) {
 		assert.Empty(t, peerTags)
 	})
 }
+
+func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	sp := tracer.StartSpan("test-error-stack")
+	sp.SetTag("error.stack", "boom")
+	sp.Finish(
+		WithError(errors.New("test error")),
+		NoDebugStack(),
+	)
+
+	assert.Equal(t, "boom", sp.meta["error.stack"])
+}
