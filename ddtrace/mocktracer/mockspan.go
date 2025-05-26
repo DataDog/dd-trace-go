@@ -160,8 +160,10 @@ func (msa MockspanV2Adapter) Tag(k string) interface{} {
 		}
 		return int(v.(float64))
 	case ext.ErrorStack:
-		v := msa.Span.Tag(k)
-		if v == nil {
+		switch v := msa.Span.Tag(k); v {
+		case nil:
+			fallthrough
+		case "":
 			// If ext.ErrorStack is not set, but ext.Error is, then we can assume that the
 			// stack trace is disabled.
 			if msa.Span.Tag(ext.ErrorMsg) != nil {
@@ -170,8 +172,9 @@ func (msa MockspanV2Adapter) Tag(k string) interface{} {
 
 			// Otherwise, we can assume that the error is not set.
 			return nil
+		default:
+			return v
 		}
-		return v
 	}
 
 	return msa.Span.Tag(k)
@@ -184,7 +187,11 @@ func (msa MockspanV2Adapter) Tags() map[string]interface{} {
 	if _, hasError = tags[ext.ErrorMsg]; hasError {
 		tags[ext.Error] = errors.New(tags[ext.ErrorMsg].(string))
 	}
-	if _, ok := tags[ext.ErrorStack]; !ok && hasError {
+	es, ok := tags[ext.ErrorStack]
+	if !ok && hasError {
+		tags[ext.ErrorStack] = "<debug stack disabled>"
+	}
+	if v, ok := es.(string); ok && v == "" && hasError {
 		tags[ext.ErrorStack] = "<debug stack disabled>"
 	}
 	return tags
