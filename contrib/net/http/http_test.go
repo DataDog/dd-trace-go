@@ -261,7 +261,7 @@ func TestNoStack(t *testing.T) {
 	assert.Equal(1, len(spans))
 	s := spans[0]
 	assert.Equal(spans[0].Tags()[ext.ErrorMsg], "500: Internal Server Error")
-	assert.Equal(nil, s.Tags()[ext.ErrorStack])
+	assert.Empty(s.Tags()[ext.ErrorStack])
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
 	assert.Equal("net/http", s.Integration())
