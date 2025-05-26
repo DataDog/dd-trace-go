@@ -96,7 +96,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							Tags: map[string]any{
 								"name":     "graphql.request",
 								"resource": "graphql.request",
-								"service":  "graphql",
+								"service":  "graphql.server",
 							},
 							Meta: map[string]string{
 								"component":     "graph-gophers/graphql-go",
@@ -107,7 +107,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.field",
 										"resource": "graphql.field",
-										"service":  "graphql",
+										"service":  "graphql.server",
 									},
 									Meta: map[string]string{
 										"component":     "graph-gophers/graphql-go",
