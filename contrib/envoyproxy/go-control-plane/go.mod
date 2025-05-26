@@ -5,8 +5,10 @@ go 1.23.0
 require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.1.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
+	github.com/DataDog/go-libddwaf/v4 v4.1.1
 	github.com/envoyproxy/go-control-plane v0.13.1
 	github.com/gorilla/mux v1.8.1
+	github.com/json-iterator/go v1.1.12
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.12.0
 	google.golang.org/grpc v1.70.0
@@ -23,7 +25,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
-	github.com/DataDog/go-libddwaf/v4 v4.1.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
 	github.com/DataDog/go-sqllexer v0.1.6 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
@@ -44,7 +45,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240226150601-1dcf7310316a // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
