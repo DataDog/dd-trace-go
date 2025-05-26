@@ -394,8 +394,6 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/v2 => github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.19
-
 // Retract experimental versions
 retract (
 	v1.999.0-rc.9
