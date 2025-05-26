@@ -65,6 +65,7 @@ func TestNamingSchema(t *testing.T) {
 		hashicorpConsul,
 		hashicorpVault,
 		graphGophersGraphQLGo,
+		graphqlGo,
 		gorillaMux,
 	}
 	for _, tc := range testCases {
