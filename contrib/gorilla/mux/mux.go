@@ -18,6 +18,11 @@ import (
 type Router struct {
 	*mux.Router
 	wrappedRouter *v2.Router
+
+	// Due to the way we wrap v2 API, we need to keep reference to the original options
+	// to be able to wrap the router on the fly with the same options.
+	realRouter *v2.Router
+	opts       []RouterOption
 }
 
 // StrictSlash defines the trailing slash behavior for new routes. The initial
@@ -70,7 +75,11 @@ func (r *Router) UseEncodedPath() *Router {
 
 // NewRouter returns a new router instance traced with the global tracer.
 func NewRouter(opts ...RouterOption) *Router {
-	return WrapRouter(mux.NewRouter(), opts...)
+	r := v2.NewRouter(opts...)
+	return &Router{
+		Router: r.Router,
+		opts:   opts,
+	}
 }
 
 // ServeHTTP dispatches the request to the handler
@@ -81,14 +90,23 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if r.wrappedRouter == nil {
 		// If this field is nil, it means that the router has not been created
 		// with WrapRouter. We wrap the assigned router on the fly with no options.
-		r.wrappedRouter = v2.WrapRouter(r.Router)
+		r.wrappedRouter = v2.WrapRouter(r.Router, r.opts...)
 	}
-	r.wrappedRouter.ServeHTTP(w, req)
+	// We consolidate the router that should be used to serve the request.
+	// This is done to allow for assigning a sub-router to the main router.
+	if r.realRouter == nil {
+		r.realRouter = r.wrappedRouter
+	}
+	r.realRouter.ServeHTTP(w, req)
 }
 
 // WrapRouter returns the given router wrapped with the tracing of the HTTP
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	r := v2.WrapRouter(router, opts...)
-	return &Router{router, r}
+	return &Router{
+		Router:        router,
+		wrappedRouter: r,
+		opts:          opts,
+	}
 }

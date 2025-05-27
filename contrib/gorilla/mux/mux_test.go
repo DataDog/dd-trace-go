@@ -18,6 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -112,6 +113,97 @@ func TestHttpTracer(t *testing.T) {
 	}
 }
 
+func TestAssignedSubRouter(t *testing.T) {
+	for _, ht := range []struct {
+		name         string
+		code         int
+		method       string
+		url          string
+		wantResource string
+		wantErr      string
+		wantRoute    string
+	}{
+		{
+			name:         "200",
+			code:         http.StatusOK,
+			method:       "GET",
+			url:          "/200",
+			wantResource: "GET /200",
+			wantRoute:    "/200",
+		},
+		{
+			name:         "users/{id}",
+			code:         http.StatusOK,
+			method:       "GET",
+			url:          "/users/123",
+			wantResource: "GET /users/{id}",
+			wantRoute:    "/users/{id}",
+		},
+		{
+			name:         "404",
+			code:         http.StatusNotFound,
+			method:       "GET",
+			url:          "/not_a_real_route",
+			wantResource: "GET unknown",
+			wantRoute:    "",
+		},
+		{
+			name:         "405",
+			code:         http.StatusMethodNotAllowed,
+			method:       "POST",
+			url:          "/405",
+			wantResource: "POST unknown",
+			wantRoute:    "",
+		},
+		{
+			name:         "500",
+			code:         http.StatusInternalServerError,
+			method:       "GET",
+			url:          "/500",
+			wantResource: "GET /500",
+			wantErr:      "500: Internal Server Error",
+			wantRoute:    "/500",
+		},
+	} {
+		t.Run(ht.name, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			codeStr := strconv.Itoa(ht.code)
+
+			// Send and verify a request
+			r := httptest.NewRequest(ht.method, ht.url, nil)
+			w := httptest.NewRecorder()
+			subRouter().ServeHTTP(w, r)
+			assert.Equal(ht.code, w.Code)
+			assert.Equal(codeStr+"!\n", w.Body.String())
+
+			spans := mt.FinishedSpans()
+			assert.Equal(1, len(spans))
+
+			s := spans[0]
+			assert.Equal("http.request", s.OperationName())
+			assert.Equal("my-service", s.Tag(ext.ServiceName))
+			assert.Equal(codeStr, s.Tag(ext.HTTPCode))
+			assert.Equal(ht.method, s.Tag(ext.HTTPMethod))
+			assert.Equal("http://example.com"+ht.url, s.Tag(ext.HTTPURL))
+			assert.Equal(ht.wantResource, s.Tag(ext.ResourceName))
+			assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
+			assert.Equal("gorilla/mux", s.Tag(ext.Component))
+			assert.Equal("gorilla/mux", s.Integration())
+			if ht.wantRoute != "" {
+				assert.Equal(ht.wantRoute, s.Tag(ext.HTTPRoute))
+			} else {
+				assert.NotContains(s.Tags(), ext.HTTPRoute)
+			}
+
+			if ht.wantErr != "" {
+				assert.Equal(ht.wantErr, s.Tag(ext.Error).(error).Error())
+			}
+		})
+	}
+}
+
 func TestDomain(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -124,6 +216,7 @@ func TestDomain(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
+	assert.Equal("my-service", spans[0].Tag(ext.ServiceName))
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
 }
 
@@ -360,14 +453,27 @@ func TestResourceNamer(t *testing.T) {
 }
 
 func router() http.Handler {
-	mux := NewRouter(WithServiceName("my-service"))
-	mux.Handle("/200", okHandler())
-	mux.Handle("/500", errorHandler(http.StatusInternalServerError))
-	mux.Handle("/405", okHandler()).Methods("GET")
-	mux.Handle("/users/{id}", okHandler())
-	mux.NotFoundHandler = errorHandler(http.StatusNotFound)
-	mux.MethodNotAllowedHandler = errorHandler(http.StatusMethodNotAllowed)
-	return mux
+	r := NewRouter(WithServiceName("my-service"))
+	r.Handle("/200", okHandler())
+	r.Handle("/500", errorHandler(http.StatusInternalServerError))
+	r.Handle("/405", okHandler()).Methods("GET")
+	r.Handle("/users/{id}", okHandler())
+	r.NotFoundHandler = errorHandler(http.StatusNotFound)
+	r.MethodNotAllowedHandler = errorHandler(http.StatusMethodNotAllowed)
+	return r
+}
+
+func subRouter() http.Handler {
+	r := NewRouter(WithServiceName("my-service"))
+	sub := mux.NewRouter()
+	sub.Handle("/200", okHandler())
+	sub.Handle("/500", errorHandler(http.StatusInternalServerError))
+	sub.Handle("/405", okHandler()).Methods("GET")
+	sub.Handle("/users/{id}", okHandler())
+	sub.NotFoundHandler = errorHandler(http.StatusNotFound)
+	sub.MethodNotAllowedHandler = errorHandler(http.StatusMethodNotAllowed)
+	r.Router = sub
+	return r
 }
 
 func errorHandler(code int) http.Handler {
