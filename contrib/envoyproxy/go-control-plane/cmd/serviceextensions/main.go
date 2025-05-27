@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -26,6 +27,7 @@ import (
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // AppsecCalloutExtensionService defines the struct that follows the ExternalProcessorServer interface.
@@ -140,12 +142,18 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 }
 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
+	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
+	if err != nil {
+		return fmt.Errorf("failed to load key pair: %v", err)
+	}
+
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
 		return fmt.Errorf("gRPC server: %v", err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
+	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
 
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
