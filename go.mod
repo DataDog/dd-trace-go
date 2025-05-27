@@ -160,10 +160,7 @@ require (
 	modernc.org/sqlite v1.28.0
 )
 
-require (
-	github.com/Masterminds/semver/v3 v3.2.1
-	github.com/redis/rueidis v1.0.56
-)
+require github.com/Masterminds/semver/v3 v3.3.1
 
 require (
 	cloud.google.com/go v0.112.1 // indirect
@@ -363,9 +360,12 @@ require (
 	golang.org/x/arch v0.4.0 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
+	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/oauth2 v0.24.0 // indirect
 	golang.org/x/term v0.31.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto v0.0.0-20240325203815-454cdb8f5daa // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250409194420-de1ac958c67a // indirect
