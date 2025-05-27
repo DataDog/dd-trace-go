@@ -289,7 +289,7 @@ func TestNoDebugStack(t *testing.T) {
 	assert.Equal(1, len(spans))
 	s := spans[0]
 	assert.Equal(s.Tags()[ext.ErrorMsg], "500: Internal Server Error")
-	assert.Nil(spans[0].Tags()[ext.ErrorStack])
+	assert.Empty(spans[0].Tags()[ext.ErrorStack])
 }
 
 // TestImplementingMethods is a regression tests asserting that all the mux.Router methods

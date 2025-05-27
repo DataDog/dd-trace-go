@@ -8,15 +8,17 @@ package waf
 import (
 	"maps"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
-	"github.com/stretchr/testify/require"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -29,47 +31,38 @@ const (
 // Test that internal functions used to set span tags use the correct types
 func TestTagsTypes(t *testing.T) {
 	th := make(trace.TestTagSetter)
-	wafDiags := waf.Diagnostics{
-		Version: "1.3.0",
-		Rules: &waf.DiagnosticEntry{
-			Loaded: []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"},
-			Failed: []string{"1337"},
-			Errors: map[string][]string{"test": {"1", "2"}},
+	AddRulesMonitoringTags(&th)
+
+	metrics := &emitter.ContextMetrics{
+		SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
+			addresses.WAFScope:  {libddwaf.DurationTimeKey: &atomic.Int64{}},
+			addresses.RASPScope: {libddwaf.DurationTimeKey: &atomic.Int64{}},
 		},
 	}
+	metrics.SumDurations[addresses.WAFScope][libddwaf.DurationTimeKey].Store(int64(time.Millisecond))
+	metrics.SumDurations[addresses.RASPScope][libddwaf.DurationTimeKey].Store(int64(time.Millisecond))
+	metrics.SumWAFTimeouts.Store(1)
+	metrics.SumRASPTimeouts[addresses.RASPRuleTypeLFI].Store(2)
 
-	AddRulesMonitoringTags(&th, wafDiags)
-
-	AddWAFMonitoringTags(&th, &emitter.ContextMetrics{}, "1.2.3", waf.Stats{
-		Timers: map[string]time.Duration{
-			"waf.duration":      10 * time.Microsecond,
-			"rasp.duration":     10 * time.Microsecond,
-			"waf.duration_ext":  20 * time.Microsecond,
-			"rasp.duration_ext": 20 * time.Microsecond,
-		},
-		TimeoutCount:     0,
-		TimeoutRASPCount: 2,
-		Truncations: map[waf.TruncationReason][]int{
-			waf.ObjectTooDeep: {1, 2, 3},
-		},
+	AddWAFMonitoringTags(&th, metrics, "1.2.3", map[libddwaf.TruncationReason][]int{
+		libddwaf.ObjectTooDeep: {1, 2, 3},
+	}, map[timer.Key]time.Duration{
+		addresses.WAFScope:  10 * time.Millisecond,
+		addresses.RASPScope: 10 * time.Millisecond,
 	})
 
 	tags := th.Tags()
-	_, ok := tags[eventRulesErrorsTag].(string)
-	require.True(t, ok)
 
 	var expectedTags = []string{
-		eventRulesLoadedTag,
-		eventRulesFailedTag,
-		eventRulesErrorsTag,
 		eventRulesVersionTag,
 		wafDurationTag,
 		wafDurationExtTag,
 		raspDurationTag,
 		raspDurationExtTag,
 		wafVersionTag,
+		wafTimeoutTag,
 		raspTimeoutTag,
-		truncationTagPrefix + waf.ObjectTooDeep.String(),
+		truncationTagPrefix + libddwaf.ObjectTooDeep.String(),
 		ext.ManualKeep,
 	}
 
