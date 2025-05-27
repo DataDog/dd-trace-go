@@ -154,9 +154,9 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 
 func defaultBaggageTagKeys() map[string]struct{} {
 	return map[string]struct{}{
-		"user.id":    struct{}{},
-		"account.id": struct{}{},
-		"session.id": struct{}{},
+		"user.id":    {},
+		"account.id": {},
+		"session.id": {},
 	}
 }
 
