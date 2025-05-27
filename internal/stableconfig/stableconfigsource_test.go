@@ -263,7 +263,7 @@ func TestFileSizeLimits(t *testing.T) {
 	})
 }
 
-func TestParseFileWindows(t *testing.T) {
+func TestParseFileNonLinux(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		t.Skip("This test for non-linux platforms")
 	}
@@ -272,21 +272,21 @@ func TestParseFileWindows(t *testing.T) {
 	tl := &testLogger{}
 	defer log.UseLogger(tl)()
 
-	// Test that we don't log warnings for non-existent files on Windows
+	// Test that we don't log warnings for non-existent files on non-Linux systems
 	config := parseFile(localFilePath)
 	assert.NotNil(t, config)
 	assert.Empty(t, config.Config)
-	assert.Empty(t, tl.String(), "Should not log warnings for non-existent files on Windows")
+	assert.Empty(t, tl.String(), "Should not log warnings for non-existent files on non-Linux systems")
 
 	// Test that we do log warnings for other errors
-	// Create a directory with the same name to cause a different error
-	err := os.MkdirAll(localFilePath, 0755)
+	filePath := "test.yml"
+	err := os.MkdirAll(filePath, 0755)
 	assert.NoError(t, err)
-	defer os.RemoveAll(localFilePath)
+	defer os.RemoveAll(filePath)
 
 	tl.Reset()
-	config = parseFile(localFilePath)
+	config = parseFile(filePath)
 	assert.NotNil(t, config)
 	assert.Empty(t, config.Config)
-	assert.Contains(t, tl.String(), "Failed to stat stable config file", "Should log warnings for non-IsNotExist errors")
+	assert.Contains(t, tl.String(), "Failed to read stable config file", "Should log warnings for non-IsNotExist errors")
 }
