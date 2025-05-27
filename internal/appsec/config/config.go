@@ -6,6 +6,7 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
