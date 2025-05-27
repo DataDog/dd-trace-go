@@ -22,6 +22,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -618,6 +619,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	capa := c.allCapabilities()
+	pTags := processtags.Get()
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -637,6 +639,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Service:       c.ServiceName,
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
+				ProcessTags:   pTags.Slice(),
 			},
 			Capabilities: capa.Bytes(),
 		},

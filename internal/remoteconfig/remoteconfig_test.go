@@ -9,6 +9,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"reflect"
 	"strings"
@@ -347,6 +349,9 @@ func TestSubscribe(t *testing.T) {
 }
 
 func TestNewUpdateRequest(t *testing.T) {
+	t.Setenv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", "true")
+	processtags.ResetConfig()
+
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test-svc"
 	cfg.Env = "test-env"
@@ -370,14 +375,15 @@ func TestNewUpdateRequest(t *testing.T) {
 	err = json.Unmarshal(b.Bytes(), &req)
 	require.NoError(t, err)
 
-	require.Equal(t, []string{"my-product", "my-second-product"}, req.Client.Products)
-	require.Equal(t, []uint8([]byte{0x10, 0x2}), req.Client.Capabilities)
-	require.Equal(t, "go", req.Client.ClientTracer.Language)
-	require.Equal(t, "test-svc", req.Client.ClientTracer.Service)
-	require.Equal(t, "test-env", req.Client.ClientTracer.Env)
-	require.Equal(t, "tracer-version", req.Client.ClientTracer.TracerVersion)
-	require.Equal(t, "app-version", req.Client.ClientTracer.AppVersion)
-	require.True(t, req.Client.IsTracer)
+	assert.Equal(t, []string{"my-product", "my-second-product"}, req.Client.Products)
+	assert.Equal(t, []uint8([]byte{0x10, 0x2}), req.Client.Capabilities)
+	assert.Equal(t, "go", req.Client.ClientTracer.Language)
+	assert.Equal(t, "test-svc", req.Client.ClientTracer.Service)
+	assert.Equal(t, "test-env", req.Client.ClientTracer.Env)
+	assert.Equal(t, "tracer-version", req.Client.ClientTracer.TracerVersion)
+	assert.Equal(t, "app-version", req.Client.ClientTracer.AppVersion)
+	assert.True(t, req.Client.IsTracer)
+	assert.NotEmpty(t, req.Client.ClientTracer.ProcessTags)
 }
 
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
@@ -449,3 +455,5 @@ func TestAsync(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TODO: add process tags test

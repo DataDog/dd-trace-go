@@ -234,7 +234,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	// Given we use a constant PayloadAggregationKey there should only ever be 1 of these, but to be forward
 	// compatible in case this ever changes we can just iterate through all of them.
 	for _, csp := range csps {
-		csp.ProcessTags = processtags.ProcessTags()
+		csp.ProcessTags = processtags.Get().String()
 		flushedBuckets += len(csp.Stats)
 		if err := c.cfg.transport.sendStats(csp, obfVersion); err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)

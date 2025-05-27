@@ -11,6 +11,23 @@ import (
 )
 
 func TestProcessTags(t *testing.T) {
-	pTags := ProcessTags()
-	assert.NotEmpty(t, pTags)
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", "true")
+		ResetConfig()
+
+		p := Get()
+		assert.NotNil(t, p)
+		assert.NotEmpty(t, p.String())
+		assert.NotEmpty(t, p.Slice())
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", "false")
+		ResetConfig()
+
+		p := Get()
+		assert.Nil(t, p)
+		assert.Empty(t, p.String())
+		assert.Empty(t, p.Slice())
+	})
 }

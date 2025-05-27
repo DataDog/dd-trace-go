@@ -489,7 +489,7 @@ func (t *trace) setTraceTags(s *Span) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
-	if pTags := processtags.ProcessTags(); pTags != "" {
+	if pTags := processtags.Get().String(); pTags != "" {
 		s.setMeta(keyProcessTags, pTags)
 	}
 }
