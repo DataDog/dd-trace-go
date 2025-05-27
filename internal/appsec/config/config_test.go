@@ -42,7 +42,7 @@ func TestSCAEnabled(t *testing.T) {
 			name:              "parsing error",
 			envVarVal:         "not a boolean string representation [at {all!}]",
 			telemetryExpected: false,
-			telemetryLog:      "appsec: could not parse DD_APPSEC_SCA_ENABLED value `not a boolean string representation [at {all!}]` as a boolean value",
+			telemetryLog:      "appsec: non-boolean value for DD_APPSEC_SCA_ENABLED: 'not a boolean string representation [at {all!}]' in env_var configuration, dropping",
 			expectedValue:     false,
 		},
 	} {
