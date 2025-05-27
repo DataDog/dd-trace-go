@@ -161,10 +161,8 @@ require (
 )
 
 require (
-	github.com/Masterminds/semver/v3 v3.3.1
-	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/oauth2 v0.25.0 // indirect
-	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	github.com/Masterminds/semver/v3 v3.2.1
+	github.com/redis/rueidis v1.0.56
 )
 
 require (
