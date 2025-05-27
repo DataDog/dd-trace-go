@@ -38,6 +38,17 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.Ru
 		})
 	}
 
+	if log.DebugEnabled() {
+		names := make([]string, 0, len(addrs.Persistent)+len(addrs.Ephemeral))
+		for k := range addrs.Persistent {
+			names = append(names, k)
+		}
+		for k := range addrs.Ephemeral {
+			names = append(names, k)
+		}
+		log.Debug("appsec: WAF run with addresses: %s", names)
+	}
+
 	result, err := ctx.Run(addrs)
 	if errors.Is(err, waferrors.ErrTimeout) {
 		log.Debug("appsec: WAF timeout value reached: %v", err)
@@ -67,7 +78,12 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.Ru
 func RunSimple(ctx context.Context, addrs libddwaf.RunAddressData, errorLog string) error {
 	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
-		log.Error("%s", errorLog)
+		// If the context is not nil, we are expected to be in manual instrumentation
+		if ctx != nil {
+			log.Error("%s", errorLog)
+		} else {
+			log.Debug("%s", errorLog)
+		}
 		return nil
 	}
 

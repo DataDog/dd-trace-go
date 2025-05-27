@@ -1,0 +1,40 @@
+{
+    "version": "2.2",
+    "metadata": {
+        "rules_version": "1.4.2"
+    },
+    "rules": [
+        {
+            "id": "crs-933-130-block",
+            "name": "PHP Injection Attack: Global Variables Found",
+            "tags": {
+                "type": "php_code_injection",
+                "crs_id": "933130",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.body"
+                            }
+                        ],
+                        "list": [
+                            "$globals"
+                        ]
+                    },
+                    "operator": "phrase_match"
+                }
+            ],
+            "transformers": [
+                "lowercase"
+            ],
+            "on_match": [
+                "block"
+            ]
+        }
+    ],
+    "rules_data": []
+}

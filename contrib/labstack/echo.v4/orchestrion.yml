@@ -23,3 +23,21 @@ aspects:
               e.Use(echotrace.Middleware())
               return e
             }()
+
+  - id: Appsec - Scan Parsed Request Body
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/labstack/echo/v4.DefaultBinder'
+          - name: BindBody
+    advice:
+      - prepend-statements:
+          imports:
+            httpsec: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec
+          template: |-
+            defer func() {
+                if {{ .Function.Result 0 }} != nil {
+                    return
+                }
+                {{ .Function.Result 0 }} = httpsec.MonitorParsedBody(nil, {{ .Function.Argument 1 }})
+            }()
