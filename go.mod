@@ -124,7 +124,10 @@ require (
 	modernc.org/sqlite v1.28.0
 )
 
-require github.com/redis/rueidis v1.0.56
+require (
+	github.com/Masterminds/semver/v3 v3.2.1
+	github.com/redis/rueidis v1.0.56
+)
 
 require (
 	cloud.google.com/go v0.112.1 // indirect
