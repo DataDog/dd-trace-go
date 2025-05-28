@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"io"
 	"math/rand"
 	"mime/multipart"
@@ -154,6 +155,7 @@ type uploadEvent struct {
 	Info             struct {
 		Profiler profilerInfo `json:"profiler"`
 	} `json:"info"`
+	ProcessTags string `json:"process_tags,omitempty"`
 }
 
 // profilerInfo holds profiler-specific information which should be attached to
@@ -186,6 +188,7 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		Tags:             strings.Join(tags, ","),
 		EndpointCounts:   bat.endpointCounts,
 		CustomAttributes: bat.customAttributes,
+		ProcessTags:      processtags.Get().String(),
 	}
 
 	// DD_PROFILING_ENABLED is only used to enable profiling when added with
