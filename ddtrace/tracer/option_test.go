@@ -743,6 +743,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:3333"}, c.agentURL)
 		})
 
+		t.Run("code-full-UDS", func(t *testing.T) {
+			tracer, err := newTracer(WithAgentURL("unix:///var/run/datadog/apm.socket"))
+			assert.Nil(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "UDS__var_run_datadog_apm.socket"}, c.agentURL)
+		})
+
 		t.Run("code-override-full-URL-error", func(t *testing.T) {
 			tp := new(log.RecordLogger)
 			// Have to use UseLogger directly before tracer logger is set
