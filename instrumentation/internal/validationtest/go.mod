@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/internal/contrib/validationtest
+module github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2
 
 go 1.23.0
 
@@ -12,7 +12,7 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.11.2 // indirect
+	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.64.0-rc.1 // indirect

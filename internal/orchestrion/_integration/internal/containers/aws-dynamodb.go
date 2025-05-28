@@ -14,6 +14,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
@@ -37,7 +38,7 @@ func StartDynamoDBTestContainer(t testing.TB) (testcontainers.Container, string,
 			},
 		},
 		Started: true,
-		Logger:  testcontainers.TestLogger(t),
+		Logger:  tclog.TestLogger(t),
 	}
 
 	ctx := context.Background()

@@ -48,16 +48,23 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
 
+	coverageInitialized := false
 	settings := integrations.GetSettings()
 	if settings != nil {
 		if settings.CodeCoverage {
 			// Initialize the runtime coverage if enabled.
 			coverage.InitializeCoverage(m)
+			coverageInitialized = true
 		}
 		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
 			// Set the test management tag if enabled.
 			session.SetTag(constants.TestManagementEnabled, "true")
 		}
+	}
+
+	// Check if the coverage was enabled by not initialized
+	if !coverageInitialized && testing.CoverMode() != "" {
+		coverage.InitializeCoverage(m)
 	}
 
 	ddm := (*M)(m)
@@ -77,12 +84,8 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-
-			var cov float64
 			// let's try first with our coverage package
-			if coverage.CanCollect() {
-				cov = coverage.GetCoverage()
-			}
+			cov := coverage.GetCoverage()
 			if cov == 0 {
 				// if not we try we the default testing package
 				cov = testing.Coverage()

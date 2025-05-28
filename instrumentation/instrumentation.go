@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -37,6 +38,11 @@ func Load(pkg Package) *Instrumentation {
 		logger: newLogger(pkg),
 		info:   info,
 	}
+}
+
+// ReloadConfig reloads config read from environment variables. This is useful for tests.
+func ReloadConfig() {
+	namingschema.ReloadConfig()
 }
 
 // Instrumentation represents instrumentation for a package.
@@ -104,7 +110,9 @@ func (i *Instrumentation) AppSecRASPEnabled() bool {
 }
 
 func (i *Instrumentation) DataStreamsEnabled() bool {
-	return internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+	// TODO: APMAPI-1358
+	v, _, _ := stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
+	return v
 }
 
 // TracerInitialized returns whether the global tracer has been initialized or not.

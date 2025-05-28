@@ -97,7 +97,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil {
 			instr.Logger().Debug("Error: %v", err)
 		} else {
-			opts = append(opts, tracer.Tag(k, v))
+			if v != "" {
+				opts = append(opts, tracer.Tag(k, v))
+			}
 		}
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
@@ -230,6 +232,8 @@ func tableName(requestInput middleware.InitializeInput) string {
 	case *dynamodb.ScanInput:
 		return *params.TableName
 	case *dynamodb.UpdateItemInput:
+		return *params.TableName
+	case *dynamodb.DeleteItemInput:
 		return *params.TableName
 	}
 	return ""

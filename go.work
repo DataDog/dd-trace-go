@@ -60,9 +60,9 @@ use (
 	./contrib/valkey-io/valkey-go
 	./contrib/valyala/fasthttp
 	./instrumentation/internal/namingschematest
+	./instrumentation/internal/validationtest
 	./instrumentation/testutils/grpc
 	./internal/apps
-	./internal/contrib/validationtest
 	./internal/exectracetest
 	./internal/orchestrion/_integration
 	./internal/setup-smoke-test

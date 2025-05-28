@@ -654,7 +654,7 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "HTTPROUTER",
 		naming: map[Component]componentNames{
 			ComponentServer: {
-				useDDServiceV0:     false,
+				useDDServiceV0:     true,
 				buildServiceNameV0: staticName("http.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
@@ -710,7 +710,7 @@ var packages = map[Package]PackageInfo{
 			ComponentDefault: {
 				useDDServiceV0:     false,
 				buildServiceNameV0: staticName("vault"),
-				buildOpNameV0:      staticName("vault.command"),
+				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("vault.query"),
 			},
 		},
@@ -720,8 +720,8 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "GRAPHQL",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName("graphql"),
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("graphql.server"),
 			},
 		},
 	},
@@ -731,7 +731,7 @@ var packages = map[Package]PackageInfo{
 		naming: map[Component]componentNames{
 			ComponentDefault: {
 				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("graphql"),
+				buildServiceNameV0: staticName("graphql.server"),
 				buildOpNameV0:      staticName("graphql.request"),
 				buildOpNameV1:      staticName("graphql.server.request"),
 			},

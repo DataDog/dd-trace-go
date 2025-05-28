@@ -113,8 +113,7 @@ var hashicorpVault = harness.TestCase{
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
-		// According to v1 tests, this should be "http.request"
-		assert.Equal(t, "vault.command", spans[0].OperationName())
+		assert.Equal(t, "http.request", spans[0].OperationName())
 	},
 	AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)

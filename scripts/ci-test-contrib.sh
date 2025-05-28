@@ -10,8 +10,10 @@ set +e
 
 if [ $# -eq 2 ]; then
   CONTRIBS="$2"
+  INSTRUMENTATION_SUBMODULES=""
 else
   CONTRIBS=$(find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \;)
+  INSTRUMENTATION_SUBMODULES=$(find ./instrumentation -mindepth 2 -type f -name go.mod -exec dirname {} \;)
 fi
 
 report_error=0
@@ -22,6 +24,16 @@ for contrib in $CONTRIBS; do
   cd $contrib
   [[ "$1" = "smoke" ]] && go get -u -t ./...
   gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-$contrib_id.xml -- ./... -v -race -coverprofile=coverage-$contrib_id.txt -covermode=atomic
+  [[ $? -ne 0 ]] && report_error=1
+  cd -
+done
+
+for mod in $INSTRUMENTATION_SUBMODULES; do
+  echo "Testing instrumentation submodule: $mod"
+  mod_id=$(echo $mod | sed 's/^\.\///g;s/[\/\.]/_/g')
+  cd $mod
+  [[ "$1" = "smoke" ]] && go get -u -t ./...
+  gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-$mod_id.xml -- ./... -v -race -coverprofile=coverage-$mod_id.txt -covermode=atomic
   [[ $? -ne 0 ]] && report_error=1
   cd -
 done

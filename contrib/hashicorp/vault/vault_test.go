@@ -135,6 +135,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 
 		// Mount operation
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal("/v1/sys/mounts/ns1/ns2/secret", span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodPost, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPost+" /v1/sys/mounts/ns1/ns2/secret", span.Tag(ext.ResourceName))
@@ -165,6 +166,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		span := spans[1]
 
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodPut, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
@@ -202,6 +204,7 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(secret.Data["Key1"], data["Key1"])
 		assert.Equal(secret.Data["Key2"], data["Key2"])
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
@@ -248,6 +251,7 @@ func TestReadError(t *testing.T) {
 
 	// Read key error
 	assert.Equal("vault", span.Tag(ext.ServiceName))
+	assert.Equal("http.request", span.OperationName())
 	assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 	assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 	assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
@@ -298,6 +302,8 @@ func TestNamespace(t *testing.T) {
 		span := spans[0]
 
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodPut, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
@@ -333,6 +339,7 @@ func TestNamespace(t *testing.T) {
 		span := spans[1]
 
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
