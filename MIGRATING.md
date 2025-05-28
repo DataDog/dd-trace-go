@@ -73,6 +73,36 @@ The following constants and functions have been removed:
 * `ddtrace/tracer.WithPrioritySampling`; priority sampling is enabled by default.
 * `ddtrace/tracer.WithHTTPRoundTripper`; use `WithHTTPClient` instead.
 
+### StartChild
+
+Child spans can be started with StartChild rather than ChildOf. Before:
+
+```go
+import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+func main() {
+  tracer.Start()
+	defer tracer.Stop()
+
+	parent := tracer.StartSpan("op").Context()
+	child := tracer.StartSpan("op", tracer.ChildOf(parent))
+}
+```
+
+Becomes:
+
+```go
+import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+
+func main() {
+  tracer.Start()
+	defer tracer.Stop()
+
+	parent := tracer.StartSpan("op")
+	child := parent.StartChild("op")
+}
+```
+
 ## Trace IDs
 
 Rather than a `uint64`, trace IDs are now represented as a `string`. This change will allow support for 128-bit trace IDs. Old behavior may still be accessed by using the new `TraceIDLower()` method, though switching to 128-bit IDs is recommended. Before:
