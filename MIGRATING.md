@@ -94,6 +94,10 @@ fmt.Printf("traceID: %s\n", sp.Context().TraceID()) //recommended for using 128-
 fmt.Printf("traceID: %d\n", sp.Context().TraceIDLower()) // for maintaining old behavior with 64-bit IDs
 ```
 
+## Span Links API
+
+`Span.AddSpanLink` has been renamed to `Span.AddLink`.
+
 ## Sampling API simplified
 
 The following functions have been removed in favour of `SpanSamplingRules` and `TraceSamplingRules`:
