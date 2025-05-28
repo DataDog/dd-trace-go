@@ -61,7 +61,17 @@ var ctx *tracer.SpanContext = sp.Context()
 
 ### Deprecated ddtrace interfaces
 
-Along with `Span`, all the interfaces in `ddtrace` have been removed, except for `SpanContext`. They've been replaced by specific types placed in `ddtrace/tracer`.
+Along with `Span`, all the interfaces in `ddtrace` have been removed, except for `SpanContext`. They've been replaced by specific types placed, except for `Tracer`, and moved into `ddtrace/tracer`.
+
+### Deprecated constants and options
+
+The following constants and functions have been removed:
+
+* `ddtrace/ext.AppTypeWeb`
+* `ddtrace/ext.CassandraQuery`
+* `ddtrace/ext.CassandraBatch`
+* `ddtrace/tracer.WithPrioritySampling`; priority sampling is enabled by default.
+* `ddtrace/tracer.WithHTTPRoundTripper`; use `WithHTTPClient` instead.
 
 ## WithService
 
