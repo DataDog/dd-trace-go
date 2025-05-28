@@ -261,7 +261,7 @@ func TestNoStack(t *testing.T) {
 	assert.Equal(1, len(spans))
 	s := spans[0]
 	assert.Equal(spans[0].Tags()[ext.ErrorMsg], "500: Internal Server Error")
-	assert.Equal(nil, s.Tags()[ext.ErrorStack])
+	assert.Empty(s.Tags()[ext.ErrorStack])
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
 	assert.Equal("net/http", s.Integration())
@@ -349,11 +349,9 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
-			r := httptest.NewRequest("GET", "/", nil)
-			w := httptest.NewRecorder()
 			defer wg.Done()
-			w = httptest.NewRecorder()
-			r = httptest.NewRequest("GET", "/", nil)
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/", nil)
 			mux.ServeHTTP(w, r)
 		}()
 	}
@@ -500,6 +498,65 @@ func TestIgnoreRequestOption(t *testing.T) {
 	}
 }
 
+func TestStatusCheck(t *testing.T) {
+	tests := []struct {
+		url           string
+		expectedError bool
+		handler       http.Handler
+	}{
+		{
+			url:           "/200",
+			expectedError: false,
+			handler:       http.HandlerFunc(handler200),
+		},
+		{
+			url:           "/400",
+			expectedError: true,
+			handler:       http.HandlerFunc(handler400),
+		},
+		{
+			url:           "/404",
+			expectedError: false,
+			handler:       http.HandlerFunc(handler404),
+		},
+	}
+	statusCheck := func(statusCode int) bool {
+		return statusCode >= 400 && statusCode != http.StatusNotFound
+	}
+	for _, test := range tests {
+		t.Run("servemux"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			mux := NewServeMux(WithStatusCheck(statusCheck))
+			mux.HandleFunc("/200", handler200)
+			mux.HandleFunc("/400", handler400)
+			mux.HandleFunc("/404", handler404)
+
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.expectedError, spans[0].Tag(ext.ErrorMsg) != nil)
+		})
+		t.Run("wraphandler"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			f := test.handler
+
+			handler := WrapHandler(f, "my-service", "my-resource", WithStatusCheck(statusCheck))
+			handler.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.expectedError, spans[0].Tag(ext.ErrorMsg) != nil)
+		})
+	}
+}
+
 func router(muxOpts ...Option) http.Handler {
 	defaultOpts := []Option{
 		WithService("my-service"),
@@ -521,6 +578,10 @@ func handler500(w http.ResponseWriter, _ *http.Request) {
 
 func handler400(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "400!", http.StatusBadRequest)
+}
+
+func handler404(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "404!", http.StatusNotFound)
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {

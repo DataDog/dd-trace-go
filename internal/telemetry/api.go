@@ -54,11 +54,13 @@ const (
 
 //goland:noinspection GoVarAndConstTypeMayBeOmitted Goland is having a hard time with the following const block, it keeps deleting the type
 const (
-	OriginDefault      Origin = transport.OriginDefault
-	OriginCode         Origin = transport.OriginCode
-	OriginDDConfig     Origin = transport.OriginDDConfig
-	OriginEnvVar       Origin = transport.OriginEnvVar
-	OriginRemoteConfig Origin = transport.OriginRemoteConfig
+	OriginDefault             Origin = transport.OriginDefault
+	OriginCode                Origin = transport.OriginCode
+	OriginDDConfig            Origin = transport.OriginDDConfig
+	OriginEnvVar              Origin = transport.OriginEnvVar
+	OriginRemoteConfig        Origin = transport.OriginRemoteConfig
+	OriginLocalStableConfig   Origin = transport.OriginLocalStableConfig
+	OriginManagedStableConfig Origin = transport.OriginManagedStableConfig
 )
 
 // LogLevel describes the level of a log message

@@ -18,6 +18,7 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	testcassandra "github.com/testcontainers/testcontainers-go/modules/cassandra"
 )
 
@@ -34,7 +35,7 @@ func (b *base) setup(ctx context.Context, t *testing.T) {
 	var err error
 	b.container, err = testcassandra.Run(ctx,
 		"cassandra:4.1",
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 	)
 	containers.AssertTestContainersError(t, err)

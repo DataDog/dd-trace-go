@@ -359,6 +359,7 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 		b.Errorf("Failed to create request: %v", err)
 		return
 	}
+	log.UseLogger(log.DiscardLogger{})
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName("SomeService"),
 		tracer.ResourceName("SomeResource"),

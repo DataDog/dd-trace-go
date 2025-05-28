@@ -363,7 +363,7 @@ func TestIntegrationEnabled(t *testing.T) {
 	if _, err = os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, _ error) error {
 		if filepath.Base(path) != "go.mod" || strings.Contains(path, fmt.Sprintf("%cinternal", os.PathSeparator)) {
 			return nil
 		}
@@ -741,6 +741,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:3333"}, c.agentURL)
+		})
+
+		t.Run("code-full-UDS", func(t *testing.T) {
+			tracer, err := newTracer(WithAgentURL("unix:///var/run/datadog/apm.socket"))
+			assert.Nil(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "UDS__var_run_datadog_apm.socket"}, c.agentURL)
 		})
 
 		t.Run("code-override-full-URL-error", func(t *testing.T) {
@@ -1919,7 +1927,7 @@ func optsTestConsumer(opts ...StartSpanOption) {
 }
 
 func BenchmarkConfig(b *testing.B) {
-	b.Run("scenario=none", func(b *testing.B) {
+	b.Run("scenario_none", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			optsTestConsumer(
@@ -1929,7 +1937,7 @@ func BenchmarkConfig(b *testing.B) {
 			)
 		}
 	})
-	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+	b.Run("scenario_WithStartSpanConfig", func(b *testing.B) {
 		b.ReportAllocs()
 		cfg := NewStartSpanConfig(
 			ServiceName("SomeService"),
@@ -1946,7 +1954,7 @@ func BenchmarkConfig(b *testing.B) {
 }
 
 func BenchmarkStartSpanConfig(b *testing.B) {
-	b.Run("scenario=none", func(b *testing.B) {
+	b.Run("scenario_none", func(b *testing.B) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(b, err)
@@ -1961,7 +1969,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 
 		}
 	})
-	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+	b.Run("scenario_WithStartSpanConfig", func(b *testing.B) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(b, err)

@@ -17,6 +17,7 @@ func TestSCAEnabled(t *testing.T) {
 		name              string
 		envVarVal         string
 		telemetryExpected bool
+		telemetryLog      string
 		expectedValue     bool
 	}{
 		{
@@ -41,6 +42,7 @@ func TestSCAEnabled(t *testing.T) {
 			name:              "parsing error",
 			envVarVal:         "not a boolean string representation [at {all!}]",
 			telemetryExpected: false,
+			telemetryLog:      "appsec: non-boolean value for DD_APPSEC_SCA_ENABLED: 'not a boolean string representation [at {all!}]' in env_var configuration, dropping",
 			expectedValue:     false,
 		},
 	} {
@@ -51,6 +53,9 @@ func TestSCAEnabled(t *testing.T) {
 
 			telemetryClient := new(telemetrytest.MockClient)
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
+			if tc.telemetryLog != "" {
+				telemetryClient.On("Log", telemetry.LogError, tc.telemetryLog, []telemetry.LogOption(nil)).Return()
+			}
 			defer telemetry.MockClient(telemetryClient)()
 
 			registerSCAAppConfigTelemetry()
@@ -60,6 +65,9 @@ func TestSCAEnabled(t *testing.T) {
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 1)
 			} else {
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 0)
+			}
+			if tc.telemetryLog != "" {
+				telemetryClient.AssertCalled(t, "Log", telemetry.LogError, tc.telemetryLog, []telemetry.LogOption(nil))
 			}
 		})
 	}

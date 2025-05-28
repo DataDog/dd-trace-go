@@ -497,7 +497,7 @@ func TestTextMapPropagator(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
-			SetGlobalTracer(tracer)
+			setGlobalTracer(tracer)
 			child := tracer.StartSpan("test")
 			for k, v := range tc.tags {
 				child.Context().trace.setPropagatingTag(k, v)
@@ -2490,11 +2490,11 @@ func TestMalformedTID(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer()
 	assert.Nil(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
-	defer SetGlobalTracer(&NoopTracer{})
+	defer setGlobalTracer(&NoopTracer{})
 
-	t.Run("datadog, short tid", func(t *testing.T) {
+	t.Run("datadog, short tid", func(_ *testing.T) {
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
@@ -2507,7 +2507,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.NotContains(root.meta, keyTraceID128)
 	})
 
-	t.Run("datadog, malformed tid", func(t *testing.T) {
+	t.Run("datadog, malformed tid", func(_ *testing.T) {
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
@@ -2520,7 +2520,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.NotContains(root.meta, keyTraceID128)
 	})
 
-	t.Run("datadog, valid tid", func(t *testing.T) {
+	t.Run("datadog, valid tid", func(_ *testing.T) {
 		headers := TextMapCarrier(map[string]string{
 			DefaultTraceIDHeader:  "1234567890123456789",
 			DefaultParentIDHeader: "987654321",
@@ -2776,4 +2776,102 @@ func TestInjectBaggageMaxBytes(t *testing.T) {
 	headerValue := headers.Get("baggage")
 	headerSize := len([]byte(headerValue))
 	assert.LessOrEqual(headerSize, baggageMaxBytes)
+}
+
+func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
+	t.Run("missing equal sign", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "key1,key2=value2",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		// since the header is malformed, we should not have any baggage items
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
+	t.Run("missing value", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "key1=value1,key2=",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		// since the header is malformed, we should not have any baggage items
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
+	t.Run("missing key", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "key1=value1,=value2",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		// since the header is malformed, we should not have any baggage items
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
+	t.Run("missing key and value", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "=,key1=value1",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		// since the header is malformed, we should not have any baggage items
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
+	t.Run("missing key-value pair", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "key1=value1,",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		// since the header is malformed, we should not have any baggage items
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
 }
