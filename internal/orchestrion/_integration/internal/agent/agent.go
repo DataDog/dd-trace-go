@@ -69,7 +69,7 @@ func New(t *testing.T) *MockAgent {
 	return &MockAgent{T: t}
 }
 
-func (m *MockAgent) Start(t *testing.T) {
+func (m *MockAgent) Start(t *testing.T) string {
 	m.T.Log("mockagent: starting")
 
 	srv := httptest.NewServer(m)
@@ -87,6 +87,8 @@ func (m *MockAgent) Start(t *testing.T) {
 		tracer.WithLogger(testLogger{t}),
 	)
 	t.Cleanup(tracer.Stop)
+
+	return srvURL.Host
 }
 
 func (m *MockAgent) Traces(t *testing.T) trace.Traces {

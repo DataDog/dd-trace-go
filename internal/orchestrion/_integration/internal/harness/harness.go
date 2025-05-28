@@ -9,9 +9,10 @@ import (
 	"context"
 	"testing"
 
-	agent "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/DataDog/orchestrion/runtime/built"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,7 +60,7 @@ func Run(t *testing.T, tc TestCase) {
 
 	t.Log("Running setup")
 	tc.Setup(ctx, t)
-	mockAgent.Start(t)
+	agentHost := mockAgent.Start(t)
 
 	t.Log("Running test")
 	tc.Run(ctx, t)
@@ -70,7 +71,29 @@ func Run(t *testing.T, tc TestCase) {
 		t.Logf("[%d] Trace contains a total of %d spans:\n%v", i, tr.NumSpans(), tr)
 	}
 
+	// Make sure we don't create spans from dd-trace-go
+	for _, span := range got {
+		assertNoInternalSpan(t, span, agentHost)
+	}
+
 	for _, expected := range tc.ExpectedTraces() {
 		expected.RequireAnyMatch(t, got)
+	}
+}
+
+func assertNoInternalSpan(t *testing.T, trace *trace.Trace, agentHost string) {
+	t.Helper()
+	if trace == nil {
+		return
+	}
+
+	// Make sure no spans are created from a connection to the agent
+	assert.NotContains(t, trace.Meta["http.url"], agentHost, "trace should not contain the agent host URL: %s", trace.String())
+
+	// Make sure no spans are created from any agentless http call
+	assert.NotContains(t, trace.Meta["http.url"], "datadoghq", "trace should not contain a datadog URL: %s", trace.String())
+
+	for _, span := range trace.Children {
+		assertNoInternalSpan(t, span, agentHost)
 	}
 }
