@@ -28,7 +28,7 @@ import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 It is important to note that when using our contrib libraries, import URLs may be impacted differently. This will be covered in the next section:
 
-## Independent Contrib Packages
+### Independent Contrib Packages
 
 This version upgrade comes with a large overhaul of what was previously one single package that held all of our integrations. In v2, we introduce independent packages for each of our contribs, which will prevent false-positives in security scanners that were caused by indirect dependencies. As a result, importing contribs will also change. Before:
 
