@@ -113,6 +113,22 @@ Also, `ext.SamplingPriority` tag is deprecated. Use `ext.ManualKeep` and `ext.Ma
 
 A support package to create contribs without depending on internal packages is available in `instrumentation`. Please refer to [`instrumentation` godoc page](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/instrumentation) and existing contribs for more detail.
 
+## Updated User Monitoring SDK for Appsec
+
+`appsec` package offers a new API for user monitoring; essentially deprecating login success & failure event functions, replacing them with versions that accept a `login` field, which is to be used by user monitoring rules (ATO monitoring & protection). Before:
+
+```go
+appsec.TrackUserLoginSuccessEvent(...)
+appsec.TrackUserLoginFailureEvent(...)
+```
+
+Becomes:
+
+```go
+appsec.TrackUserLoginSuccess(...)
+appsec.TrackUserLoginFailure(...)
+```
+
 ## Further reading 
 
 * package level documentation of the [`tracer` package](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) for a better overview.
