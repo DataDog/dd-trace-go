@@ -69,7 +69,11 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 
 	// If we don't have the base commit from the tags, then let's try to calculate it using the git CLI
 	if baseCommitSha == "" {
-		// TODO: call the git CLI to get the base commit SHA (it will be added later)
+		var err error
+		baseCommitSha, err = utils.GetBaseBranchSha("master") // using "master" as default branch
+		if err != nil {
+			logger.Debug("civisibility.ImpactedTests: Failed to get base commit SHA from git CLI: %s", err)
+		}
 	}
 
 	// Extract the modified files
