@@ -90,6 +90,21 @@ fmt.Printf("traceID: %s\n", sp.Context().TraceID()) //recommended for using 128-
 fmt.Printf("traceID: %d\n", sp.Context().TraceIDLower()) // for maintaining old behavior with 64-bit IDs
 ```
 
+## Sampling API simplified
+
+The following functions have been removed in favour of `SpanSamplingRules` and `TraceSamplingRules`:
+
+* `NameRule`
+* `NameServiceRule`
+* `RateRule`
+* `ServiceRule`
+* `SpanNameServiceMPSRule`
+* `SpanNameServiceRule`
+* `SpanTagsResourceRule`
+* `TagsResourceRule`
+
+Also, `ext.SamplingPriority` tag is deprecated. Use `ext.ManualKeep` and `ext.ManualDrop` instead.
+
 ## Further reading 
 
 * package level documentation of the [`tracer` package](https://godoc.org/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) for a better overview.
