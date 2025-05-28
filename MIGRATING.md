@@ -133,6 +133,10 @@ appsec.TrackUserLoginSuccess(...)
 appsec.TrackUserLoginFailure(...)
 ```
 
+## API Security sampling
+
+The API Security sampler now takes decisions specific to a given endpoint (method + route + response status code) instead of using a simplistic sampling rate. This allows for improved coverage and accuracy of schema extraction as part of API Security.
+
 ## Opentracing deprecation
 
 `opentracer` is in "Maintenance" mode and limited support was offered in `v1`. We recommend to use OpenTelemetry or ddtrace/tracer directly. For additional details, please see our [Support Policy](https://github.com/DataDog/dd-trace-go?tab=readme-ov-file#go-support-policy).
