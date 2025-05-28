@@ -568,7 +568,7 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 
 	// Step 1c - Default branch (using the provided defaultBranch parameter)
 	if defaultBranch == "" {
-		defaultBranch = "master" // fallback
+		defaultBranch = "main" // fallback
 	}
 
 	// Step 2 - build candidate branches list and fetch them from remote
