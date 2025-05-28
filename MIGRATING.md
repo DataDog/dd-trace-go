@@ -59,6 +59,10 @@ var sp *tracer.Span = tracer.StartSpan("opname")
 var ctx *tracer.SpanContext = sp.Context()
 ```
 
+### Deprecated ddtrace interfaces
+
+Along with `Span`, all the interfaces in `ddtrace` have been removed, except for `SpanContext`. They've been replaced by specific types placed in `ddtrace/tracer`.
+
 ## WithService
 
 The previously deprecated `tracer.WithServiceName()` has been fully removed and replaced with the method `tracer.WithService()`. If you would like to specify a service name upon starting the tracer, you would have before:
