@@ -582,7 +582,9 @@ func (t *trace) finishedOne(s *Span) {
 }
 
 func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
-	tr.SubmitChunk(ch)
+	if mtr, ok := tr.(interface{ SubmitChunk(*Chunk) }); ok {
+		mtr.SubmitChunk(ch)
+	}
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
