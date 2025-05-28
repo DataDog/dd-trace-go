@@ -189,6 +189,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 				},
 				Timeout: 10 * time.Second,
 			})
+			// TODO(darccio): use internal.UnixDataSocketURL instead
 			agentURL = &url.URL{
 				Scheme: "http",
 				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(agentURL.Path)),
