@@ -90,9 +90,7 @@ fmt.Printf("traceID: %s\n", sp.Context().TraceID()) //recommended for using 128-
 fmt.Printf("traceID: %d\n", sp.Context().TraceIDLower()) // for maintaining old behavior with 64-bit IDs
 ```
 
-## Further reading
-
-The new version of the tracer also comes with a lot of new features, such as support for distributed tracing and distributed sampling priority. 
+## Further reading 
 
 * package level documentation of the [`tracer` package](https://godoc.org/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) for a better overview.
 * [official documentation](https://docs.datadoghq.com/tracing/setup/go/)
