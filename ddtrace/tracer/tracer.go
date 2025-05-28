@@ -68,12 +68,6 @@ type Tracer interface {
 	// Inject injects a span context into the given carrier.
 	Inject(context *SpanContext, carrier interface{}) error
 
-	// Submit submits a span to the tracer.
-	Submit(s *Span)
-
-	// SubmitChunk submits a trace chunk to the tracer.
-	SubmitChunk(c *Chunk)
-
 	// TracerConf returns a snapshot of the current configuration of the tracer.
 	TracerConf() TracerConf
 
