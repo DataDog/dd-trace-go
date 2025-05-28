@@ -381,7 +381,6 @@ type Tracer interface {
 	func Inject(*SpanContext, interface{}) (error)
 	func StartSpan(string, ...StartSpanOption) (*Span)
 	func Stop()
-	func Submit(*Span)
 	func SubmitChunk(*Chunk)
 	func TracerConf() (TracerConf)
 }
