@@ -55,7 +55,7 @@ func WithAnalyticsRate(rate float64) RouterOption {
 // obtain the resource name for a given request.
 func WithResourceNamer(namer func(router *Router, req *http.Request) string) RouterOption {
 	wrap := func(router *v2.Router, req *http.Request) string {
-		return namer(&Router{Router: router.Router, wrappedRouter: router}, req)
+		return namer(router, req)
 	}
 	return v2.WithResourceNamer(wrap)
 }
