@@ -133,6 +133,10 @@ appsec.TrackUserLoginSuccess(...)
 appsec.TrackUserLoginFailure(...)
 ```
 
+## Opentracing deprecation
+
+`opentracer` is in "Maintenance" mode and limited support was offered in `v1`. We recommend to use OpenTelemetry or ddtrace/tracer directly. For additional details, please see our [Support Policy](https://github.com/DataDog/dd-trace-go?tab=readme-ov-file#go-support-policy).
+
 ## Further reading 
 
 * package level documentation of the [`tracer` package](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) for a better overview.
