@@ -540,6 +540,51 @@ func getParentGitFolder(innerFolder string) (string, error) {
 	return "", nil
 }
 
+// isDefaultBranch checks if a branch is the default branch
+func isDefaultBranch(branch, defaultBranch, remoteName string) bool {
+	return branch == defaultBranch || branch == remoteName+"/"+defaultBranch
+}
+
+// detectDefaultBranch detects the default branch using git symbolic-ref
+func detectDefaultBranch(remoteName string) (string, error) {
+	// Try to get the default branch using symbolic-ref
+	defaultRef, err := execGitString(telemetry.NotSpecifiedCommandsType, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remoteName+"/HEAD")
+	if err == nil && defaultRef != "" {
+		// Remove the remote prefix to get just the branch name
+		defaultBranch := removeRemotePrefix(defaultRef, remoteName)
+		if defaultBranch != "" {
+			log.Debug("civisibility.git: detected default branch from symbolic-ref: %s", defaultBranch)
+			return defaultBranch, nil
+		}
+	}
+
+	log.Debug("civisibility.git: could not get symbolic-ref, trying to find a fallback (main, master)...")
+
+	// Fallback to checking for main/master
+	fallbackBranch := findFallbackDefaultBranch(remoteName)
+	if fallbackBranch != "" {
+		return fallbackBranch, nil
+	}
+
+	return "", errors.New("could not detect default branch")
+}
+
+// findFallbackDefaultBranch tries to find main or master as fallback default branches
+func findFallbackDefaultBranch(remoteName string) string {
+	fallbackBranches := []string{"main", "master"}
+
+	for _, fallback := range fallbackBranches {
+		// Check if the remote branch exists
+		_, err := execGitString(telemetry.NotSpecifiedCommandsType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+fallback)
+		if err == nil {
+			log.Debug("civisibility.git: found fallback default branch: %s", fallback)
+			return fallback
+		}
+	}
+
+	return ""
+}
+
 // GetBaseBranchSha detects the base branch SHA using the algorithm from algorithm.md
 func GetBaseBranchSha(defaultBranch string) (string, error) {
 	if !isGitFound() {
@@ -566,9 +611,15 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 		return "", nil
 	}
 
-	// Step 1c - Default branch (using the provided defaultBranch parameter)
-	if defaultBranch == "" {
-		defaultBranch = "main" // fallback
+	// Step 1c - Detect default branch automatically
+	detectedDefaultBranch, err := detectDefaultBranch(remoteName)
+	if err != nil {
+		// Fallback to the provided parameter if detection fails
+		if defaultBranch == "" {
+			defaultBranch = "main" // ultimate fallback
+		}
+		log.Debug("civisibility.git: failed to detect default branch, using fallback: %s", defaultBranch)
+		detectedDefaultBranch = defaultBranch
 	}
 
 	// Step 2 - build candidate branches list and fetch them from remote
@@ -614,7 +665,7 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 		return "", fmt.Errorf("failed to compute branch metrics: %w", err)
 	}
 
-	baseSha := findBestBranch(metrics, defaultBranch, remoteName)
+	baseSha := findBestBranch(metrics, detectedDefaultBranch, remoteName)
 	if baseSha == "" {
 		return "", errors.New("failed to find best base branch")
 	}
@@ -772,7 +823,7 @@ func findBestBranch(metrics map[string]branchMetrics, defaultBranch, remoteName 
 	}
 
 	var bestBranch string
-	bestScore := []int{int(^uint(0) >> 1), 1} // [ahead, is_not_default] - max int, not default
+	bestScore := []int{int(^uint(0) >> 1), 1, 1} // [ahead, is_not_default, is_remote_prefixed] - max int, not default, remote prefixed
 
 	for branch, data := range metrics {
 		isDefault := 0
@@ -782,10 +833,18 @@ func findBestBranch(metrics map[string]branchMetrics, defaultBranch, remoteName 
 			isDefault = 1
 		}
 
-		score := []int{data.ahead, isDefault}
+		// Check if this branch is remote-prefixed (prefer exact branch names)
+		isRemotePrefixed := 0
+		if strings.HasPrefix(branch, remoteName+"/") {
+			isRemotePrefixed = 1
+		}
 
-		// Compare scores: prefer smaller ahead count, then prefer default branch
-		if score[0] < bestScore[0] || (score[0] == bestScore[0] && score[1] < bestScore[1]) {
+		score := []int{data.ahead, isDefault, isRemotePrefixed}
+
+		// Compare scores: prefer smaller ahead count, then prefer default branch, then prefer exact branch names
+		if score[0] < bestScore[0] ||
+			(score[0] == bestScore[0] && score[1] < bestScore[1]) ||
+			(score[0] == bestScore[0] && score[1] == bestScore[1] && score[2] < bestScore[2]) {
 			bestScore = score
 			bestBranch = branch
 		}
@@ -795,9 +854,4 @@ func findBestBranch(metrics map[string]branchMetrics, defaultBranch, remoteName 
 		return metrics[bestBranch].baseSha
 	}
 	return ""
-}
-
-// isDefaultBranch checks if a branch is the default branch
-func isDefaultBranch(branch, defaultBranch, remoteName string) bool {
-	return branch == defaultBranch || branch == remoteName+"/"+defaultBranch
 }

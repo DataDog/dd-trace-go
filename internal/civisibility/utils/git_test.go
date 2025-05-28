@@ -217,6 +217,9 @@ func TestFindBestBranch(t *testing.T) {
 	assert.Contains(t, []string{"sha1", "sha3"}, result, "Should prefer a default branch when ahead counts are equal")
 
 	// Test 3: Prefer exact default branch name over remote prefixed one
+	// This test is important to ensure deterministic behavior when both "main" and "origin/main"
+	// are considered default branches with equal ahead counts. Without proper tie-breaking,
+	// Go's non-deterministic map iteration can cause flaky test results.
 	metrics = map[string]branchMetrics{
 		"main": {
 			behind:  10,
@@ -348,5 +351,105 @@ func TestBaseLikeBranchFilter(t *testing.T) {
 	for _, test := range testCases {
 		result := baseLikeBranchFilter.MatchString(test.branch)
 		assert.Equal(t, test.expected, result, "Failed for branch: %s", test.branch)
+	}
+}
+
+func TestDetectDefaultBranch(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping default branch detection test")
+	}
+
+	// Test with a real remote name
+	remoteName, err := getRemoteName()
+	if err != nil {
+		t.Skip("Could not get remote name, skipping test")
+	}
+
+	defaultBranch, err := detectDefaultBranch(remoteName)
+
+	// The function should either succeed or fail gracefully
+	if err != nil {
+		// If it fails, it should be because no default branch could be detected
+		assert.Contains(t, err.Error(), "could not detect default branch")
+		assert.Equal(t, "", defaultBranch)
+	} else {
+		// If it succeeds, we should get a valid branch name
+		assert.NotEmpty(t, defaultBranch, "Default branch should not be empty when detection succeeds")
+		// Common default branch names
+		assert.Contains(t, []string{"main", "master", "develop", "dev"}, defaultBranch,
+			"Default branch should be a common name, got: %s", defaultBranch)
+	}
+}
+
+func TestFindFallbackDefaultBranch(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping fallback default branch test")
+	}
+
+	// Test with a real remote name
+	remoteName, err := getRemoteName()
+	if err != nil {
+		t.Skip("Could not get remote name, skipping test")
+	}
+
+	fallbackBranch := findFallbackDefaultBranch(remoteName)
+
+	// The function should either return a valid branch or empty string
+	if fallbackBranch != "" {
+		assert.Contains(t, []string{"main", "master"}, fallbackBranch,
+			"Fallback branch should be main or master, got: %s", fallbackBranch)
+	}
+	// If empty string, that's also acceptable - it means neither main nor master exists
+}
+
+func TestFindFallbackDefaultBranchWithNonExistentRemote(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping fallback default branch test")
+	}
+
+	// Test with a non-existent remote
+	fallbackBranch := findFallbackDefaultBranch("nonexistent")
+
+	// Should return empty string since the remote doesn't exist
+	assert.Equal(t, "", fallbackBranch, "Should return empty string for non-existent remote")
+}
+
+func TestDetectDefaultBranchWithNonExistentRemote(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping default branch detection test")
+	}
+
+	// Test with a non-existent remote
+	defaultBranch, err := detectDefaultBranch("nonexistent")
+
+	// Should fail to detect
+	assert.Error(t, err)
+	assert.Equal(t, "", defaultBranch)
+	assert.Contains(t, err.Error(), "could not detect default branch")
+}
+
+func TestGetBaseBranchShaWithAutoDetection(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping base branch SHA test with auto-detection")
+	}
+
+	// Test with empty string to force auto-detection
+	sha, err := GetBaseBranchSha("")
+
+	// The result depends on the repository state:
+	// - If current branch is already a base-like branch, should return empty
+	// - If no candidates found, should return error
+	// - If candidates found, should return a valid SHA
+
+	if err != nil {
+		// Error is acceptable if we're on a base branch or no candidates found
+		t.Logf("GetBaseBranchSha returned error (acceptable): %v", err)
+	} else if sha == "" {
+		// Empty SHA is acceptable if we're on a base branch
+		t.Logf("GetBaseBranchSha returned empty SHA (current branch is likely a base branch)")
+	} else {
+		// Valid SHA should be 40 characters long
+		assert.Len(t, sha, 40, "SHA should be 40 characters long")
+		assert.Regexp(t, "^[a-f0-9]{40}$", sha, "SHA should be valid hex string")
 	}
 }
