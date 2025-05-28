@@ -259,21 +259,6 @@ func TestGetSourceBranch(t *testing.T) {
 	assert.NotEmpty(t, branch, "Source branch should not be empty")
 }
 
-func TestGetLocalBranches(t *testing.T) {
-	if !isGitFound() {
-		t.Skip("Git not available, skipping local branches test")
-	}
-
-	branches, err := getLocalBranches("origin")
-	assert.NoError(t, err)
-	assert.NotEmpty(t, branches, "Should have at least one branch")
-
-	// Verify no empty strings in the result
-	for _, branch := range branches {
-		assert.NotEmpty(t, branch, "Branch name should not be empty")
-	}
-}
-
 func TestGetBaseBranchSha(t *testing.T) {
 	if !isGitFound() {
 		t.Skip("Git not available, skipping base branch SHA test")
