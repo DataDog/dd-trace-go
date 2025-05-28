@@ -8,6 +8,7 @@ package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 
 import (
 	"net/http"
+	"sync/atomic"
 
 	v2 "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 
@@ -22,6 +23,7 @@ type Router struct {
 	// Due to the way we wrap v2 API, we need to keep reference to the original options
 	// to be able to wrap the router on the fly with the same options.
 	realRouter *v2.Router
+	resolved   atomic.Uint32
 	opts       []RouterOption
 }
 
@@ -87,15 +89,17 @@ func NewRouter(opts ...RouterOption) *Router {
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	if r.wrappedRouter == nil {
-		// If this field is nil, it means that the router has not been created
-		// with WrapRouter. We wrap the assigned router on the fly with no options.
-		r.wrappedRouter = v2.WrapRouter(r.Router, r.opts...)
-	}
-	// We consolidate the router that should be used to serve the request.
-	// This is done to allow for assigning a sub-router to the main router.
-	if r.realRouter == nil {
-		r.realRouter = r.wrappedRouter
+	if r.resolved.CompareAndSwap(0, 1) {
+		if r.wrappedRouter == nil {
+			// If this field is nil, it means that the router has not been created
+			// with WrapRouter. We wrap the assigned router on the fly with no options.
+			r.wrappedRouter = v2.WrapRouter(r.Router, r.opts...)
+		}
+		// We consolidate the router that should be used to serve the request.
+		// This is done to allow for assigning a sub-router to the main router.
+		if r.realRouter == nil {
+			r.realRouter = r.wrappedRouter
+		}
 	}
 	r.realRouter.ServeHTTP(w, req)
 }
