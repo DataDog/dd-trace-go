@@ -8,7 +8,7 @@ As is common and recommended in the Go community, the best way to approach migra
 
 We have also provided a new migration tool to help with the most essential changes made in v2, which you can read about [here](./tools/v2fix/README.md).
 
-Our [godoc page](https://godoc.org/github.com/DataDog/dd-trace-go/v2/ddtrace) should deem helpful during this process. We also have the [official documentation](https://docs.datadoghq.com/tracing/setup/go/), which contains a couple of examples.
+Our [godoc page](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace) should deem helpful during this process. We also have the [official documentation](https://docs.datadoghq.com/tracing/setup/go/), which contains a couple of examples.
 
 This document will further outline some _before_ and _after_ examples.
 
@@ -115,5 +115,5 @@ A support package to create contribs without depending on internal packages is a
 
 ## Further reading 
 
-* package level documentation of the [`tracer` package](https://godoc.org/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) for a better overview.
+* package level documentation of the [`tracer` package](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) for a better overview.
 * [official documentation](https://docs.datadoghq.com/tracing/setup/go/)
