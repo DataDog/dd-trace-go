@@ -59,7 +59,7 @@ var sp *tracer.Span = tracer.StartSpan("opname")
 var ctx *tracer.SpanContext = sp.Context()
 ```
 
-## WithService()
+## WithService
 
 The previously deprecated `tracer.WithServiceName()` has been fully removed and replaced with the method `tracer.WithService()`. If you would like to specify a service name upon starting the tracer, you would have before:
 
