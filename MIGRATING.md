@@ -73,20 +73,6 @@ The following constants and functions have been removed:
 * `ddtrace/tracer.WithPrioritySampling`; priority sampling is enabled by default.
 * `ddtrace/tracer.WithHTTPRoundTripper`; use `WithHTTPClient` instead.
 
-## WithService
-
-The previously deprecated `tracer.WithServiceName()` has been fully removed and replaced with the method `tracer.WithService()`. If you would like to specify a service name upon starting the tracer, you would have before:
-
-```go
-tracer.Start(tracer.WithServiceName("service"))
-```
-
-After:
-
-```go
-tracer.Start(tracer.WithService("service"))
-```
-
 ## Trace IDs
 
 Rather than a `uint64`, trace IDs are now represented as a `string`. This change will allow support for 128-bit trace IDs. Old behavior may still be accessed by using the new `TraceIDLower()` method, though switching to 128-bit IDs is recommended. Before:
@@ -107,6 +93,20 @@ fmt.Printf("traceID: %d\n", sp.Context().TraceIDLower()) // for maintaining old 
 ## Span Links API
 
 `Span.AddSpanLink` has been renamed to `Span.AddLink`.
+
+## WithService
+
+The previously deprecated `tracer.WithServiceName()` has been fully removed and replaced with the method `tracer.WithService()`. If you would like to specify a service name upon starting the tracer, you would have before:
+
+```go
+tracer.Start(tracer.WithServiceName("service"))
+```
+
+After:
+
+```go
+tracer.Start(tracer.WithService("service"))
+```
 
 ## Sampling API simplified
 
