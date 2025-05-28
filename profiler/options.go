@@ -459,7 +459,7 @@ func WithUDS(socketPath string) Option {
 		// will be interpreted as part of the request path and the
 		// request will fail.  Clean up the path here so we get
 		// something resembling the desired path in any profiler logs.
-		// TODO(darccio): use internal.UDSURL instead
+		// TODO(darccio): use internal.UnixDataSocketURL instead
 		cleanPath := fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(socketPath))
 		c.agentURL = "http://" + cleanPath + "/profiling/v1/input"
 		WithHTTPClient(&http.Client{

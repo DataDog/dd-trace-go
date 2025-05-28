@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-func UDSURL(path string) *url.URL {
+func UnixDataSocketURL(path string) *url.URL {
 	return &url.URL{
 		Scheme: "http",
 		Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(path)),

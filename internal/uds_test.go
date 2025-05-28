@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestUDSURL(t *testing.T) {
+func TestUnixDataSocketURL(t *testing.T) {
 	tests := []struct {
 		name     string
 		path     string
@@ -142,7 +142,7 @@ func TestUDSURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, UDSURL(tt.path))
+			assert.Equal(t, tt.expected, UnixDataSocketURL(tt.path))
 		})
 	}
 }
