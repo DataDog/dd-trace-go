@@ -109,6 +109,10 @@ The following functions have been removed in favour of `SpanSamplingRules` and `
 
 Also, `ext.SamplingPriority` tag is deprecated. Use `ext.ManualKeep` and `ext.ManualDrop` instead.
 
+## Contrib API
+
+A support package to create contribs without depending on internal packages is available in `instrumentation`. Please refer to [`instrumentation` godoc page](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/instrumentation) and existing contribs for more detail.
+
 ## Further reading 
 
 * package level documentation of the [`tracer` package](https://godoc.org/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) for a better overview.
