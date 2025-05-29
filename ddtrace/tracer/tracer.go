@@ -314,11 +314,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-// NewUnstartedTracer returns a new Tracer instance without starting it. This is
-func NewUnstartedTracer(opts ...StartOption) (Tracer, error) {
-	return newUnstartedTracer(opts...)
-}
-
 func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	c, err := newConfig(opts...)
 	if err != nil {
@@ -525,16 +520,11 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // Chunk holds information about a trace chunk to be flushed, including its spans.
 // The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
+//
+// It's exported for supporting `mocktracer`.
 type Chunk struct {
 	spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
-}
-
-func NewChunk(spans []*Span, willSend bool) *Chunk {
-	return &Chunk{
-		spans:    spans,
-		willSend: willSend,
-	}
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
