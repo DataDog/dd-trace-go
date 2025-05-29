@@ -39,6 +39,12 @@ func WrapProduceEventsChannel[E any, TE Event](tr *Tracer, in chan E, translateF
 		for evt := range in {
 			tEvt := translateFn(evt)
 			if msg, ok := tEvt.KafkaMessage(); ok {
+				var tPartitionError = msg.GetTopicPartition().GetError()
+				if tPartitionError.IsUnknownServerError() {
+					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at " +
+						"broker logs for more information. The tracer requires support for Kafka headers to function.")
+				}
+
 				tr.TrackProduceOffsets(msg)
 			}
 			out <- evt
@@ -94,7 +100,12 @@ func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span 
 			tEvt := translateFn(evt)
 			if msg, ok := tEvt.KafkaMessage(); ok {
 				// delivery errors are returned via TopicPartition.Error
-				err = msg.GetTopicPartition().GetError()
+				var tPartitionError = msg.GetTopicPartition().GetError()
+				err = tPartitionError.Error()
+				if tPartitionError.IsUnknownServerError() {
+					instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at " +
+						"broker logs for more information. The tracer requires support for Kafka headers to function.")
+				}
 				tr.TrackProduceOffsets(msg)
 			}
 			deliveryChan <- evt

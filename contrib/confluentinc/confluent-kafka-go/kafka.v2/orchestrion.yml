@@ -26,6 +26,7 @@ aspects:
           imports:
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            errors: errors
           lang: go1.18
           template: |-
             const __dd_ckgoVersion = kafkatrace.CKGoVersion2
@@ -124,8 +125,8 @@ aspects:
               return int64(w.Offset)
             }
 
-            func (w __dd_wTopicPartition) GetError() error {
-              return w.Error
+            func (w __dd_wTopicPartition) GetError() kafkatrace.TopicPartitionError {
+              return __dd_wTopicPartitionError{w.Error}
             }
 
             type __dd_wEvent struct {
@@ -148,6 +149,26 @@ aspects:
                 return __dd_wrapOffsetsCommitted(oc), true
               }
               return nil, false
+            }
+
+            type __dd_wTopicPartitionError struct {
+              error
+            }
+
+            func (w __dd_wTopicPartitionError) IsUnknownServerError() bool {
+              if w.error == nil {
+                return false
+              }
+              var kafkaErr Error
+              if errors.As(w.error, &kafkaErr) {
+                return kafkaErr.Code() == ErrUnknown
+              }
+
+              return false
+            }
+
+            func (w __dd_wTopicPartitionError) Error() error {
+              return w.error
             }
 
             type __dd_wOffsetsCommitted struct {

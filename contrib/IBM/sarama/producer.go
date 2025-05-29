@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"context"
+	"errors"
 	"math"
 
 	"github.com/IBM/sarama"
@@ -31,6 +32,9 @@ func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32
 	setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
+	if err != nil {
+		handleUnknownError(err)
+	}
 	if err == nil && p.cfg.dataStreamsEnabled {
 		tracer.TrackKafkaProduceOffset(msg.Topic, partition, offset)
 	}
@@ -173,11 +177,20 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 						span.Finish(tracer.WithError(err))
 					}
 				}
+
+				handleUnknownError(err)
 				wrapped.errors <- err
 			}
 		}
 	}()
 	return wrapped
+}
+
+func handleUnknownError(err error) {
+	if errors.Is(err, sarama.ErrUnknown) {
+		instr.Logger().Error("Kafka Broker responded with UNKNOWN_SERVER_ERROR (-1). Please look at "+
+			"broker logs for more information. The tracer requires support for Kafka headers to function.", err)
+	}
 }
 
 func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.ProducerMessage) *tracer.Span {
