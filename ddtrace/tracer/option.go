@@ -51,7 +51,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", false},
 	"github.com/emicklei/go-restful":                {"go-restful", false},
 	"github.com/emicklei/go-restful/v3":             {"go-restful v3", false},
-	"github.com/garyburd/redigo":                    {"Redigo (dep)", false},
+	"github.com/gomodule/redigo":                    {"Redigo (dep)", false},
 	"github.com/gin-gonic/gin":                      {"Gin", false},
 	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", false},
 	"github.com/go-chi/chi":                         {"chi", false},

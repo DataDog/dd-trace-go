@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package redigo provides functions to trace the garyburd/redigo package (https://github.com/garyburd/redigo).
+// Package redigo provides functions to trace the gomodule/redigo package (https://github.com/gomodule/redigo).
 package redigo
 
 import (
@@ -21,14 +21,14 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 
-	redis "github.com/garyburd/redigo/redis"
+	redis "github.com/gomodule/redigo/redis"
 )
 
-const componentName = "garyburd/redigo"
+const componentName = "gomodule/redigo"
 
 func init() {
 	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/garyburd/redigo")
+	tracer.MarkIntegrationImported("github.com/gomodule/redigo")
 }
 
 // Conn is an implementation of the redis.Conn interface that supports tracing
@@ -67,7 +67,7 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
-	log.Debug("contrib/garyburd/redigo: Dialing %s %s, %#v", network, address, cfg)
+	log.Debug("contrib/gomodule/redigo: Dialing %s %s, %#v", network, address, cfg)
 	c, err := redis.Dial(network, address, dialOpts...)
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 // The returned redis.Conn is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
-	log.Debug("contrib/garyburd/redigo: Dialing %s, %#v", rawurl, cfg)
+	log.Debug("contrib/gomodule/redigo: Dialing %s, %#v", rawurl, cfg)
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		return Conn{}, err
@@ -150,7 +150,7 @@ func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, e
 		span.SetTag(ext.ResourceName, commandName)
 	} else {
 		// When the command argument to the Do method is "", then the Do method will flush the output buffer
-		// See https://godoc.org/github.com/garyburd/redigo/redis#hdr-Pipelining
+		// See https://godoc.org/github.com/gomodule/redigo/redis#hdr-Pipelining
 		span.SetTag(ext.ResourceName, "redigo.Conn.Flush")
 	}
 	var b bytes.Buffer
