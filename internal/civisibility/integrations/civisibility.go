@@ -15,10 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-<<<<<<< HEAD
-=======
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
->>>>>>> main
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"

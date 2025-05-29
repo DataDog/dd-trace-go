@@ -8,18 +8,12 @@
 package stableconfig
 
 import (
-<<<<<<< HEAD
-	"os"
-	"testing"
-
-=======
 	"bytes"
 	"os"
 	"runtime"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
->>>>>>> main
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,8 +26,6 @@ apm_configuration_default:
 `
 )
 
-<<<<<<< HEAD
-=======
 // testLogger implements a mock Logger that captures output
 type testLogger struct {
 	buf bytes.Buffer
@@ -51,7 +43,6 @@ func (l *testLogger) Reset() {
 	l.buf.Reset()
 }
 
->>>>>>> main
 func TestFileContentsToConfig(t *testing.T) {
 	t.Run("simple failure", func(t *testing.T) {
 		data := `
