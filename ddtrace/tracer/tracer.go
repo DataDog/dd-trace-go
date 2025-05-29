@@ -314,11 +314,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-// NewUnstartedTracer returns a new Tracer instance without starting it. This is
-func NewUnstartedTracer(opts ...StartOption) (Tracer, error) {
-	return newUnstartedTracer(opts...)
-}
-
 func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	c, err := newConfig(opts...)
 	if err != nil {
