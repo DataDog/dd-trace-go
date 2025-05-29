@@ -1429,7 +1429,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 	}
 
 	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
-	tracer1.awaitPayload(t, count*2)
+	tracer1.awaitPayload(t, count)
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -2782,4 +2782,33 @@ type customLogger struct{ l *llog.Logger }
 
 func (c customLogger) Log(msg string) {
 	c.l.Print(msg)
+}
+
+// TestEmptyChunksNotSent verifies that empty trace chunks are not
+// sent to the trace writer when P0 dropping and stats computation are enabled.
+func TestEmptyChunksNotSent(t *testing.T) {
+	assert := assert.New(t)
+
+	// Use the same setup as the working "dropped_stats" test but add stats computation
+	tracer, transport, _, stop, err := startTestTracer(t, WithStatsComputation(true))
+	assert.NoError(err)
+	defer stop()
+
+	tracer.config.statsComputationEnabled = true
+	tracer.config.agent.DropP0s = true
+	tracer.config.agent.Stats = true
+	tracer.prioritySampling.defaultRate = 0
+	tracer.config.serviceName = "test_service"
+
+	span := tracer.StartSpan("name_1")
+	child := tracer.StartSpan("name_2", ChildOf(span.Context()))
+	child.Finish()
+	span.Finish()
+
+	tracer.Flush()
+
+	traces := transport.Traces()
+	assert.Empty(traces, "No traces should be sent when all spans are dropped")
+
+	assert.Equal(decisionNone, span.context.trace.samplingDecision)
 }
