@@ -378,7 +378,7 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/somePath", nil)
 	r.Header.Set("baggage", "key1=value1,key2=value2")
-	s, _, _ := StartRequestSpan(r)
+	s, ctx, _ := StartRequestSpan(r)
 	s.Finish()
 	spanBm := make(map[string]string)
 	s.Context().ForeachBaggageItem(func(k, v string) bool {
@@ -387,6 +387,9 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	})
 	assert.Equal(t, "value1", spanBm["key1"])
 	assert.Equal(t, "value2", spanBm["key2"])
+	baggageMap := baggage.All(ctx)
+	assert.Equal(t, "value1", baggageMap["key1"], "should propagate baggage from header to context")
+	assert.Equal(t, "value2", baggageMap["key2"], "should propagate baggage from header to context")
 }
 
 func TestStartRequestSpanMergedBaggage(t *testing.T) {
@@ -414,4 +417,29 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	assert.Equal(t, "pre_value", mergedBaggage["pre_key"], "should contain pre-set baggage")
 	assert.Equal(t, "header_value", mergedBaggage["header_key"], "should contain header baggage")
 	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
+}
+
+func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
+	// ensure we’re using datadog,tracecontext,baggage
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+	tracer.Start()
+	defer tracer.Stop()
+	// only a baggage header, no real trace/span IDs
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+	req.Header.Set("baggage", "foo=bar")
+
+	span, ctx, _ := StartRequestSpan(req)
+	span.Finish()
+
+	sc := span.Context()
+	lower := sc.TraceIDLower()
+	assert.NotZero(
+		t,
+		lower,
+		"expected a new non‐zero TraceIDLower when only baggage header is present",
+	)
+
+	// and we should still propagate the baggage
+	baggageMap := baggage.All(ctx)
+	assert.Equal(t, "bar", baggageMap["foo"], "should propagate baggage even when it's the only header")
 }
