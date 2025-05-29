@@ -71,6 +71,7 @@ var (
 func ensureSettingsInitialization(serviceName string) {
 	settingsInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing settings")
+		defer log.Debug("civisibility: settings initialization complete")
 
 		// Create the CI Visibility client
 		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
@@ -93,23 +94,26 @@ func ensureSettingsInitialization(serviceName string) {
 
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
-		if err != nil {
+		if err != nil || ciSettings == nil {
 			log.Error("civisibility: error getting CI visibility settings: %v", err)
-		} else if ciSettings != nil {
-			ciVisibilitySettings = *ciSettings
+			log.Debug("civisibility: no need to wait for the git upload to finish")
+			// Enqueue a close action to wait for the upload to finish before finishing the process
+			PushCiVisibilityCloseAction(func() {
+				<-uploadChannel
+			})
+			return
 		}
 
 		// check if we need to wait for the upload to finish and repeat the settings request or we can just continue
-		if ciVisibilitySettings.RequireGit {
+		if ciSettings.RequireGit {
 			log.Debug("civisibility: waiting for the git upload to finish and repeating the settings request")
 			<-uploadChannel
 			ciSettings, err = ciVisibilityClient.GetSettings()
 			if err != nil {
 				log.Error("civisibility: error getting CI visibility settings: %v", err)
-			} else if ciSettings != nil {
-				ciVisibilitySettings = *ciSettings
+				return
 			}
-		} else if ciVisibilitySettings.ImpactedTestsEnabled {
+		} else if ciSettings.ImpactedTestsEnabled {
 			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
 			<-uploadChannel
 		} else {
@@ -119,14 +123,48 @@ func ensureSettingsInitialization(serviceName string) {
 				<-uploadChannel
 			})
 		}
+
+		// check if we need to disable EFD because known tests is not enabled
+		if !ciSettings.KnownTestsEnabled {
+			// "known_tests_enabled" parameter works as a kill-switch for EFD, so if “known_tests_enabled” is false it
+			// will disable EFD even if “early_flake_detection.enabled” is set to true (which should not happen normally,
+			// the backend should disable both of them in that case)
+			ciSettings.EarlyFlakeDetection.Enabled = false
+		}
+
+		// check if flaky test retries is disabled by env-vars
+		if ciSettings.FlakyTestRetriesEnabled && !internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true) {
+			log.Warn("civisibility: flaky test retries was disabled by the environment variable")
+			ciSettings.FlakyTestRetriesEnabled = false
+		}
+
+		// check if test management is disabled by env-vars
+		if ciSettings.TestManagement.Enabled && !internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+			log.Warn("civisibility: test management was disabled by the environment variable")
+			ciSettings.TestManagement.Enabled = false
+		}
+
+		// overwrite the test management attempt to fix retries with the env var if set
+		testManagementAttemptToFixRetriesEnv := internal.IntEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, -1)
+		if testManagementAttemptToFixRetriesEnv != -1 {
+			ciSettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
+		}
+
+		// set the ciVisibilitySettings with the settings from the backend
+		ciVisibilitySettings = *ciSettings
 	})
 }
 
 // ensureAdditionalFeaturesInitialization initialize all the additional features
-func ensureAdditionalFeaturesInitialization(serviceName string) {
+func ensureAdditionalFeaturesInitialization(_ string) {
 	additionalFeaturesInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing additional features")
-		ensureSettingsInitialization(serviceName)
+		defer log.Debug("civisibility: additional features initialization complete")
+
+		// get a copy of the settings instance
+		currentSettings := *GetSettings()
+
+		// if there's no ciVisibilityClient then we don't need to do anything
 		if ciVisibilityClient == nil {
 			return
 		}
@@ -157,13 +195,26 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 			additionalTags[key] = value
 		}
 
+		// if flaky test retries is enabled then let's load the flaky retries settings
+		if currentSettings.FlakyTestRetriesEnabled {
+			totalRetriesCount := (int64)(internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, DefaultFlakyTotalRetryCount))
+			retryCount := (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, DefaultFlakyRetryCount))
+			ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{
+				RetryCount:               retryCount,
+				TotalRetryCount:          totalRetriesCount,
+				RemainingTotalRetryCount: totalRetriesCount,
+			}
+			log.Debug("civisibility: automatic test retries enabled [retryCount: %v, totalRetryCount: %v]", retryCount, totalRetriesCount)
+		}
+
 		// wait group to wait for all the additional features to be loaded
 		var wg sync.WaitGroup
 
-		wg.Add(1)
-		go func() {
-			// if early flake detection is enabled then we run the known tests request
-			if ciVisibilitySettings.KnownTestsEnabled {
+		// if early flake detection is enabled then we run the known tests request
+		if currentSettings.KnownTestsEnabled {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
 				ciEfdData, err := ciVisibilityClient.GetKnownTests()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility known tests data: %v", err)
@@ -171,41 +222,14 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 					ciVisibilityKnownTests = *ciEfdData
 					log.Debug("civisibility: known tests data loaded.")
 				}
-			} else {
-				// "known_tests_enabled" parameter works as a kill-switch for EFD, so if “known_tests_enabled” is false it
-				// will disable EFD even if “early_flake_detection.enabled” is set to true (which should not happen normally,
-				// the backend should disable both of them in that case)
-				ciVisibilitySettings.EarlyFlakeDetection.Enabled = false
-			}
-			wg.Done()
-		}()
+			}()
+		}
 
-		wg.Add(1)
-		go func() {
-			// if flaky test retries is enabled then let's load the flaky retries settings
-			if ciVisibilitySettings.FlakyTestRetriesEnabled {
-				flakyRetryEnabledByEnv := internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true)
-				if flakyRetryEnabledByEnv {
-					totalRetriesCount := (int64)(internal.IntEnv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, DefaultFlakyTotalRetryCount))
-					retryCount := (int64)(internal.IntEnv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, DefaultFlakyRetryCount))
-					ciVisibilityFlakyRetriesSettings = FlakyRetriesSetting{
-						RetryCount:               retryCount,
-						TotalRetryCount:          totalRetriesCount,
-						RemainingTotalRetryCount: totalRetriesCount,
-					}
-					log.Debug("civisibility: automatic test retries enabled [retryCount: %v, totalRetryCount: %v]", retryCount, totalRetriesCount)
-				} else {
-					log.Warn("civisibility: flaky test retries was disabled by the environment variable")
-					ciVisibilitySettings.FlakyTestRetriesEnabled = false
-				}
-			}
-			wg.Done()
-		}()
-
-		wg.Add(1)
-		go func() {
-			// if ITR is enabled then we do the skippable tests request
-			if ciVisibilitySettings.TestsSkipping {
+		// if ITR is enabled then we do the skippable tests request
+		if currentSettings.TestsSkipping {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
 				// get the skippable tests
 				correlationID, skippableTests, err := ciVisibilityClient.GetSkippableTests()
 				if err != nil {
@@ -215,59 +239,39 @@ func ensureAdditionalFeaturesInitialization(serviceName string) {
 					setAdditionalTags(constants.ItrCorrelationIDTag, correlationID)
 					ciVisibilitySkippables = skippableTests
 				}
-			}
-			wg.Done()
-		}()
+			}()
+		}
 
-		wg.Add(1)
-		go func() {
-			// if test management is enabled then we check if it was disabled by the environment variable
-			if ciVisibilitySettings.TestManagement.Enabled {
-				testManagementEnabledByEnv := internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true)
-				testManagementAttemptToFixRetriesEnv := internal.IntEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, -1)
-				if testManagementEnabledByEnv {
-					if testManagementAttemptToFixRetriesEnv != -1 {
-						ciVisibilitySettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
-					}
-
-					testManagementTests, err := ciVisibilityClient.GetTestManagementTests()
-					if err != nil {
-						log.Error("civisibility: error getting CI visibility test management tests: %v", err)
-					} else if testManagementTests != nil {
-						ciVisibilityTestManagementTests = *testManagementTests
-						log.Debug("civisibility: test management loaded [attemptToFixRetries: %v]", ciVisibilitySettings.TestManagement.AttemptToFixRetries)
-					}
-				} else {
-					ciVisibilitySettings.TestManagement.Enabled = false
-					log.Warn("civisibility: test management was disabled by the environment variable")
+		// if test management is enabled then we do the test management request
+		if currentSettings.TestManagement.Enabled {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				testManagementTests, err := ciVisibilityClient.GetTestManagementTests()
+				if err != nil {
+					log.Error("civisibility: error getting CI visibility test management tests: %v", err)
+				} else if testManagementTests != nil {
+					ciVisibilityTestManagementTests = *testManagementTests
+					log.Debug("civisibility: test management loaded [attemptToFixRetries: %v]", currentSettings.TestManagement.AttemptToFixRetries)
 				}
-			}
-			wg.Done()
-		}()
+			}()
+		}
 
-		wg.Add(1)
-		go func() {
-			// if wheter the settings response or the env var is true we load the impacted tests analyzer
-			if ciVisibilitySettings.ImpactedTestsEnabled ||
-				internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, false) {
-				var iTests *impactedtests.ImpactedTestAnalyzer
-				var err error
-				if ciVisibilitySettings.ImpactedTestsEnabled {
-					// backend returned enabled = true, we pass the client to the analyzer for backend requests
-					iTests, err = impactedtests.NewImpactedTestAnalyzer(ciVisibilityClient)
-				} else {
-					// only local diff (not using the backend response)
-					iTests, err = impactedtests.NewImpactedTestAnalyzer(nil)
-				}
+		// if wheter the settings response or the env var is true we load the impacted tests analyzer
+		if currentSettings.ImpactedTestsEnabled ||
+			internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, false) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				iTests, err := impactedtests.NewImpactedTestAnalyzer()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %v", err)
 				} else {
 					ciVisibilityImpactedTestsAnalyzer = iTests
 					log.Debug("civisibility: impacted tests analyzer loaded")
 				}
-			}
-			wg.Done()
-		}()
+			}()
+		}
 
 		// wait for all the additional features to be loaded
 		wg.Wait()

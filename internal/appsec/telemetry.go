@@ -6,23 +6,24 @@
 package appsec
 
 import (
+	"errors"
 	"runtime"
-
-	waf "github.com/DataDog/go-libddwaf/v3"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/waferrors"
 )
 
 var (
-	wafSupported, _ = waf.SupportsTarget()
-	wafHealthy, _   = waf.Health()
-	staticConfigs   = []telemetry.Configuration{
+	wafUsable, wafError = libddwaf.Usable()
+	wafSupported        = !errors.As(wafError, &waferrors.UnsupportedOSArchError{}) && !errors.As(wafError, &waferrors.UnsupportedGoVersionError{})
+	staticConfigs       = []telemetry.Configuration{
 		{Name: "goos", Value: runtime.GOOS, Origin: telemetry.OriginCode},
 		{Name: "goarch", Value: runtime.GOARCH, Origin: telemetry.OriginCode},
 		{Name: "cgo_enabled", Value: cgoEnabled, Origin: telemetry.OriginCode},
 		{Name: "waf_supports_target", Value: wafSupported, Origin: telemetry.OriginCode},
-		{Name: "waf_healthy", Value: wafHealthy, Origin: telemetry.OriginCode},
+		{Name: "waf_healthy", Value: wafUsable, Origin: telemetry.OriginCode},
 	}
 )
 

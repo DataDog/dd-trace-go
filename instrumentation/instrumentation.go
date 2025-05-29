@@ -40,9 +40,9 @@ func Load(pkg Package) *Instrumentation {
 	}
 }
 
-func Register(_ string, info *PackageInfo) error {
-	info.external = true
-	return nil
+// ReloadConfig reloads config read from environment variables. This is useful for tests.
+func ReloadConfig() {
+	namingschema.ReloadConfig()
 }
 
 // Instrumentation represents instrumentation for a package.

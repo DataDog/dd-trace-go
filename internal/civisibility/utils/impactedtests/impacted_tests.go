@@ -15,7 +15,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -50,7 +49,7 @@ var diffHeaderRegex = regexp.MustCompile(`^diff --git a\/(?P<fileA>.+) b\/(?P<fi
 var lineChangeRegex = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@`)
 
 // NewImpactedTestAnalyzer creates a new instance of ImpactedTestAnalyzer.
-func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
+func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 	ciTags := utils.GetCITags()
 
 	// Get the current commit SHA
@@ -68,6 +67,15 @@ func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
 		baseCommitSha = ciTags[constants.GitPrBaseBranch]
 	}
 
+	// If we don't have the base commit from the tags, then let's try to calculate it using the git CLI
+	if baseCommitSha == "" {
+		var err error
+		baseCommitSha, err = utils.GetBaseBranchSha("") // empty string triggers auto-detection
+		if err != nil {
+			logger.Debug("civisibility.ImpactedTests: Failed to get base commit SHA from git CLI: %s", err)
+		}
+	}
+
 	// Extract the modified files
 	var modifiedFiles []fileWithBitmap
 
@@ -75,34 +83,6 @@ func NewImpactedTestAnalyzer(client net.Client) (*ImpactedTestAnalyzer, error) {
 	if len(baseCommitSha) > 0 {
 		logger.Debug("civisibility.ImpactedTests: PR detected. Retrieving diff lines from Git CLI from BaseCommit %s", baseCommitSha)
 		modifiedFiles = getGitDiffFrom(baseCommitSha, currentCommitSha)
-	}
-
-	if modifiedFiles == nil && client != nil {
-		// Milestone 1 : Retrieve diff files from Backend
-		if impactedTestData, err := client.GetImpactedTests(); err == nil && impactedTestData != nil {
-			// set the new base commit SHA
-			baseCommitSha = impactedTestData.BaseSha
-
-			// First we try to use the base commit SHA from the backend for the diff
-			if len(impactedTestData.BaseSha) > 0 {
-				logger.Debug("civisibility.ImpactedTests: Retrieving diff lines from Git CLI from BaseCommit %s", baseCommitSha)
-				modifiedFiles = getGitDiffFrom(baseCommitSha, currentCommitSha)
-			}
-
-			// If we don't have any modified files, we use the ones from the backend
-			if modifiedFiles == nil {
-				logger.Debug("civisibility.ImpactedTests: Found %d files from CI", len(impactedTestData.Files))
-				for _, file := range impactedTestData.Files {
-					if file == "" {
-						continue
-					}
-					modifiedFiles = append(modifiedFiles, fileWithBitmap{file: file})
-				}
-			}
-
-		} else {
-			logger.Debug("civisibility.ImpactedTests: Failed to get impacted test data from backend: %s", err)
-		}
 	}
 
 	if modifiedFiles == nil {

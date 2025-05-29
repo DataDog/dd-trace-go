@@ -6,14 +6,16 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 func init() {
@@ -132,19 +134,17 @@ func WithBlockingUnavailable(unavailable bool) StartOption {
 
 // Config is the AppSec configuration.
 type Config struct {
-	// rules loaded via the env var DD_APPSEC_RULES. When not set, the builtin rules will be used
-	// and live-updated with remote configuration.
-	RulesManager *RulesManager
-	// Maximum WAF execution time
+	*WAFManager
+
+	// WAFTimeout is the maximum WAF execution time
 	WAFTimeout time.Duration
-	// AppSec trace rate limit (traces per second).
+	// TraceRateLimit is the AppSec trace rate limit (traces per second).
 	TraceRateLimit int64
-	// Obfuscator configuration
-	Obfuscator internal.ObfuscatorConfig
 	// APISec configuration
 	APISec internal.APISecConfig
 	// RC is the remote configuration client used to receive product configuration updates. Nil if RC is disabled (default)
-	RC   *remoteconfig.ClientConfig
+	RC *remoteconfig.ClientConfig
+	// RASP determines whether RASP features are enabled or not.
 	RASP bool
 	// SupportedAddresses are the addresses that the AppSec listener will bind to.
 	SupportedAddresses AddressSet
@@ -152,6 +152,8 @@ type Config struct {
 	MetaStructAvailable bool
 	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
 	BlockingUnavailable bool
+	// TracingAsTransport is true if APM is disabled and manually force keeping a trace is the only way for it to be sent.
+	TracingAsTransport bool
 }
 
 // AddressSet is a set of WAF addresses.
@@ -192,25 +194,24 @@ func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
 
 // NewConfig returns a fresh appsec configuration read from the env
 func (c *StartConfig) NewConfig() (*Config, error) {
-	rules, err := internal.RulesFromEnv()
+	data, err := internal.RulesFromEnv()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading WAF rules from environment: %w", err)
 	}
-
-	r, err := NewRulesManager(rules)
+	manager, err := NewWAFManager(internal.NewObfuscatorConfig(), data)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Config{
-		RulesManager:        r,
+		WAFManager:          manager,
 		WAFTimeout:          internal.WAFTimeoutFromEnv(),
 		TraceRateLimit:      int64(internal.RateLimitFromEnv()),
-		Obfuscator:          internal.NewObfuscatorConfig(),
 		APISec:              internal.NewAPISecConfig(c.APISecOptions...),
 		RASP:                internal.RASPEnabled(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
 		BlockingUnavailable: c.BlockingUnavailable,
+		TracingAsTransport:  !sharedinternal.BoolEnv("DD_APM_TRACING_ENABLED", true),
 	}, nil
 }

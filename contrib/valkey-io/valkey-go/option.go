@@ -24,7 +24,7 @@ func defaultConfig() *config {
 	return &config{
 		// Do not include the raw command by default since it could contain sensitive data.
 		rawCommand:  options.GetBoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
-		serviceName: instr.ServiceName(instrumentation.ComponentClient, nil),
+		serviceName: instr.ServiceName(instrumentation.ComponentDefault, nil),
 		errCheck: func(err error) bool {
 			return err != nil && !valkey.IsValkeyNil(err)
 		},

@@ -16,6 +16,8 @@ func TestNamingSchema(t *testing.T) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
+	t.Setenv("__DD_TRACE_SQL_TEST", "true")
+
 	testCases := []harness.TestCase{
 		gqlgen,
 		awsSDKV1,
@@ -63,6 +65,7 @@ func TestNamingSchema(t *testing.T) {
 		hashicorpConsul,
 		hashicorpVault,
 		graphGophersGraphQLGo,
+		graphqlGo,
 		gorillaMux,
 	}
 	for _, tc := range testCases {

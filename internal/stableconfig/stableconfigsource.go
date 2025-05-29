@@ -10,8 +10,8 @@ package stableconfig
 import (
 	"os"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"gopkg.in/yaml.v3"
 )
 

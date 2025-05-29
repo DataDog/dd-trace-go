@@ -8,9 +8,18 @@
 package stableconfig
 
 import (
+<<<<<<< HEAD
 	"os"
 	"testing"
 
+=======
+	"bytes"
+	"os"
+	"runtime"
+	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+>>>>>>> main
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,6 +32,26 @@ apm_configuration_default:
 `
 )
 
+<<<<<<< HEAD
+=======
+// testLogger implements a mock Logger that captures output
+type testLogger struct {
+	buf bytes.Buffer
+}
+
+func (l *testLogger) Log(msg string) {
+	l.buf.WriteString(msg)
+}
+
+func (l *testLogger) String() string {
+	return l.buf.String()
+}
+
+func (l *testLogger) Reset() {
+	l.buf.Reset()
+}
+
+>>>>>>> main
 func TestFileContentsToConfig(t *testing.T) {
 	t.Run("simple failure", func(t *testing.T) {
 		data := `
@@ -241,4 +270,32 @@ func TestFileSizeLimits(t *testing.T) {
 		scfg := parseFile("test.yml")
 		assert.True(t, scfg.isEmpty()) // file parsing succeeded
 	})
+}
+
+func TestParseFileNonLinux(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("This test for non-linux platforms")
+	}
+
+	// Capture log output
+	tl := &testLogger{}
+	defer log.UseLogger(tl)()
+
+	// Test that we don't log warnings for non-existent files on non-Linux systems
+	config := parseFile(localFilePath)
+	assert.NotNil(t, config)
+	assert.Empty(t, config.Config)
+	assert.Empty(t, tl.String(), "Should not log warnings for non-existent files on non-Linux systems")
+
+	// Test that we do log warnings for other errors
+	filePath := "test.yml"
+	err := os.MkdirAll(filePath, 0755)
+	assert.NoError(t, err)
+	defer os.RemoveAll(filePath)
+
+	tl.Reset()
+	config = parseFile(filePath)
+	assert.NotNil(t, config)
+	assert.Empty(t, config.Config)
+	assert.Contains(t, tl.String(), "Failed to read stable config file", "Should log warnings for non-IsNotExist errors")
 }

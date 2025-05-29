@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	ddbaggage "github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
+	"github.com/Masterminds/semver/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -47,12 +48,21 @@ func TestHttpDistributedTrace(t *testing.T) {
 
 	p := <-payloads
 	assert.Len(p, 2)
-	assert.Equal("server.request", p[0][0]["name"])
-	assert.Equal("internal", p[1][0]["name"])
-	assert.Equal("client.request", p[1][1]["name"])
+	expected := expectedSpanNames()
+	assert.Equal(expected[0], p[0][0]["name"])
+	assert.Equal(expected[1], p[1][0]["name"])
+	assert.Equal(expected[2], p[1][1]["name"])
 	assert.Equal("testOperation", p[0][0]["resource"])
 	assert.Equal("testRootSpan", p[1][0]["resource"])
 	assert.Equal("HTTP GET", p[1][1]["resource"])
+}
+
+func expectedSpanNames() []string {
+	v := semver.MustParse(otelhttp.Version())
+	if v.Compare(semver.MustParse("0.60.0")) <= 0 {
+		return []string{"server.request", "internal", "client.request"}
+	}
+	return []string{"http.server.request", "internal", "http.client.request"}
 }
 
 // setupBaggageContext creates a context with both OpenTelemetry and Datadog baggage

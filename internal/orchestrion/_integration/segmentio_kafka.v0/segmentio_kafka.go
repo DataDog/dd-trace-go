@@ -148,7 +148,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
-						"component": "segmentio/kafka-go",
+						"component": "segmentio/kafka.go.v0",
 					},
 					Children: trace.Traces{
 						{
@@ -160,7 +160,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
-								"component": "segmentio/kafka-go",
+								"component": "segmentio/kafka.go.v0",
 							},
 						},
 					},
@@ -174,7 +174,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
-						"component": "segmentio/kafka-go",
+						"component": "segmentio/kafka.go.v0",
 					},
 					Children: trace.Traces{
 						{
@@ -186,7 +186,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
-								"component": "segmentio/kafka-go",
+								"component": "segmentio/kafka.go.v0",
 							},
 						},
 					},
@@ -200,7 +200,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
-						"component": "segmentio/kafka-go",
+						"component": "segmentio/kafka.go.v0",
 					},
 					Children: nil,
 				},

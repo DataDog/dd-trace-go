@@ -582,7 +582,7 @@ func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
@@ -677,7 +677,7 @@ func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -725,7 +725,7 @@ func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -1348,7 +1348,7 @@ func TestStatsAfterFinish(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		defer tracer.Stop()
-		SetGlobalTracer(tracer)
+		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
 		tracer.config.transport = transport
@@ -1384,7 +1384,7 @@ func TestStatsAfterFinish(t *testing.T) {
 		)
 		assert.NoError(t, err)
 		defer tracer.Stop()
-		SetGlobalTracer(tracer)
+		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
 		tracer.config.transport = transport
@@ -1412,4 +1412,19 @@ func TestStatsAfterFinish(t *testing.T) {
 		peerTags := stats[0].Stats[0].Stats[0].PeerTags
 		assert.Empty(t, peerTags)
 	})
+}
+
+func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	sp := tracer.StartSpan("test-error-stack")
+	sp.SetTag("error.stack", "boom")
+	sp.Finish(
+		WithError(errors.New("test error")),
+		NoDebugStack(),
+	)
+
+	assert.Equal(t, "boom", sp.meta["error.stack"])
 }

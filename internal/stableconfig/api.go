@@ -56,7 +56,6 @@ func Duration(env string, def time.Duration) (v time.Duration, o telemetry.Origi
 func IP(env string, def net.IP) (v net.IP, o telemetry.Origin) {
 	return
 }
-
 func stableConfigByPriority(env string) iter.Seq2[telemetry.Origin, string] {
 	return func(yield func(telemetry.Origin, string) bool) {
 		if v := ManagedConfig.Get(env); v != "" && !yield(telemetry.OriginManagedStableConfig, v) {
