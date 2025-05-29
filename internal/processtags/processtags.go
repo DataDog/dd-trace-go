@@ -17,6 +17,12 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+const (
+	tagEntrypointName    = "entrypoint.name"
+	tagEntrypointBasedir = "entrypoint.basedir"
+	tagEntrypointWorkdir = "entrypoint.workdir"
+)
+
 var (
 	enabled bool
 	pTags   *ProcessTags
@@ -103,14 +109,14 @@ func collectInitialProcessTags() map[string]string {
 		log.Debug("failed to get binary path: %v", err)
 	} else {
 		baseDirName := filepath.Base(filepath.Dir(execPath))
-		tags["entrypoint.name"] = filepath.Base(execPath)
-		tags["entrypoint.basedir"] = baseDirName
+		tags[tagEntrypointName] = filepath.Base(execPath)
+		tags[tagEntrypointBasedir] = baseDirName
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Debug("failed to get working directory: %v", err)
 	} else {
-		tags["workdir"] = filepath.Base(wd)
+		tags[tagEntrypointWorkdir] = filepath.Base(wd)
 	}
 	return tags
 }
