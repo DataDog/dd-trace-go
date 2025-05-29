@@ -530,13 +530,6 @@ type Chunk struct {
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
-func NewChunk(spans []*Span, willSend bool) *Chunk {
-	return &Chunk{
-		spans:    spans,
-		willSend: willSend,
-	}
-}
-
 // sampleChunk applies single-span sampling to the provided trace.
 func (t *tracer) sampleChunk(c *Chunk) {
 	if len(c.spans) > 0 {
