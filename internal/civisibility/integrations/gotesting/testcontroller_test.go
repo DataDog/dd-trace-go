@@ -1052,28 +1052,6 @@ func setUpHTTPServer(
 			response.Data.Attributes = *testManagementData
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
-		} else if r.URL.Path == "/api/v2/ci/tests/diffs" {
-			body, _ := io.ReadAll(r.Body)
-			fmt.Printf("MockApi received body: %s\n", body)
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                             `json:"id"`
-					Type       string                             `json:"type"`
-					Attributes net.ImpactedTestsDetectionResponse `json:"attributes"`
-				} `json:"data,omitempty"`
-			}{}
-			response.Data.Type = "ci_app_libraries_tests"
-			/*
-				response.Data.Attributes = net.ImpactedTestsDetectionResponse{
-					BaseSha: "e5cfb7b3dd02d4116b9dd3dd2dd4e39d11e0b61d",
-					Files: []string{
-						"internal/civisibility/integrations/gotesting/testing_test.go",
-					},
-				}
-			*/
-			fmt.Printf("MockApi sending response: %v\n", response)
-			json.NewEncoder(w).Encode(&response)
 		} else {
 			http.NotFound(w, r)
 		}
