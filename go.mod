@@ -91,3 +91,14 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250212204824-5a70512c5d8b // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+// This is a temporary fix to avoid the following error:
+//   github.com/containerd/containerd@v1.7.27 requires
+//   github.com/containerd/aufs@v1.0.0 requires
+//   github.com/containerd/containerd@v1.5.0-beta.3 requires
+//   github.com/Microsoft/hcsshim@v0.8.15 requires
+//   github.com/containerd/containerd@v1.5.0-beta.1 requires
+//   github.com/Microsoft/hcsshim/test@v0.0.0-20201218223536-d3e5debf77da requires
+//   github.com/docker/distribution@v0.0.0-20190905152932-14b96e55d84c requires
+//   github.com/garyburd/redigo@v0.0.0-20150301180006-535138d7bcd7: invalid version: (a git error)
+replace github.com/garyburd/redigo v0.0.0-20150301180006-535138d7bcd7 => github.com/garyburd/redigo v1.6.4
