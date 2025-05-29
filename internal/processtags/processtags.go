@@ -8,6 +8,7 @@ package processtags
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -29,7 +30,7 @@ var (
 )
 
 func init() {
-	ResetConfig()
+	Reload()
 }
 
 type ProcessTags struct {
@@ -59,7 +60,7 @@ func (p *ProcessTags) Slice() []string {
 	return p.slice
 }
 
-func (p *ProcessTags) mergeTags(newTags map[string]string) {
+func (p *ProcessTags) merge(newTags map[string]string) {
 	if len(newTags) == 0 {
 		return
 	}
@@ -73,10 +74,18 @@ func (p *ProcessTags) mergeTags(newTags map[string]string) {
 		p.tags[k] = v
 	}
 
+	// loop over the sorted map keys so the resulting string and slice versions are created consistently.
+	keys := make([]string, 0, len(p.tags))
+	for k := range p.tags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	tagsSlice := make([]string, 0, len(p.tags))
 	var b strings.Builder
 	first := true
-	for k, val := range p.tags {
+	for _, k := range keys {
+		val := p.tags[k]
 		if !first {
 			b.WriteByte(',')
 		}
@@ -89,20 +98,20 @@ func (p *ProcessTags) mergeTags(newTags map[string]string) {
 	p.str = b.String()
 }
 
-// ResetConfig initializes the configuration and process tags collection. This is useful for tests.
-func ResetConfig() {
+// Reload initializes the configuration and process tags collection. This is useful for tests.
+func Reload() {
 	enabled = internal.BoolEnv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", false)
 	if !enabled {
 		return
 	}
 	pTags = &ProcessTags{}
-	tags := collectInitialProcessTags()
+	tags := collect()
 	if len(tags) > 0 {
-		AddTags(tags)
+		Add(tags)
 	}
 }
 
-func collectInitialProcessTags() map[string]string {
+func collect() map[string]string {
 	tags := make(map[string]string)
 	execPath, err := os.Executable()
 	if err != nil {
@@ -121,18 +130,18 @@ func collectInitialProcessTags() map[string]string {
 	return tags
 }
 
-// Get returns the global process tags.
-func Get() *ProcessTags {
+// GlobalTags returns the global process tags.
+func GlobalTags() *ProcessTags {
 	if !enabled {
 		return nil
 	}
 	return pTags
 }
 
-// AddTags merges the given tags into the global processTags map.
-func AddTags(tags map[string]string) {
+// Add merges the given tags into the global processTags map.
+func Add(tags map[string]string) {
 	if !enabled {
 		return
 	}
-	pTags.mergeTags(tags)
+	pTags.merge(tags)
 }
