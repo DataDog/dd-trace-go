@@ -8,7 +8,6 @@ package profiler
 import (
 	"bytes"
 	"cmp"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
+	"github.com/klauspost/compress/gzip"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
@@ -399,19 +399,13 @@ func newFastDeltaProfiler(compressor compressor, v ...pprofutils.ValueType) *fas
 	return fd
 }
 
-func isGzipData(data []byte) bool {
-	return bytes.HasPrefix(data, []byte{0x1f, 0x8b})
-}
-
 func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
-	if isGzipData(data) {
-		if err := fdp.gzr.Reset(bytes.NewReader(data)); err != nil {
-			return nil, err
-		}
-		data, err = io.ReadAll(&fdp.gzr)
-		if err != nil {
-			return nil, fmt.Errorf("decompressing profile: %v", err)
-		}
+	if err := fdp.gzr.Reset(bytes.NewReader(data)); err != nil {
+		return nil, err
+	}
+	data, err = io.ReadAll(&fdp.gzr)
+	if err != nil {
+		return nil, fmt.Errorf("decompressing profile: %v", err)
 	}
 
 	fdp.buf.Reset()
