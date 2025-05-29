@@ -520,6 +520,8 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // Chunk holds information about a trace chunk to be flushed, including its spans.
 // The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
+//
+// It's exported for supporting `mocktracer`.
 type Chunk struct {
 	spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
