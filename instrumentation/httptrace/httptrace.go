@@ -85,6 +85,16 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		}
 	}
 
+	headerSpanCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+	if extractErr == nil && headerSpanCtx != nil {
+		ctx2 := r.Context()
+		headerSpanCtx.ForeachBaggageItem(func(k, v string) bool {
+			ctx2 = baggage.Set(ctx2, k, v)
+			return true
+		})
+		r = r.WithContext(ctx2)
+	}
+
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
 		func(ssCfg *tracer.StartSpanConfig) {
@@ -102,21 +112,11 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-			} else {
-				if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-					// If there are span links as a result of context extraction, add them as a StartSpanOption
-					if spanctx != nil && spanctx.SpanLinks() != nil {
-						tracer.WithSpanLinks(spanctx.SpanLinks())(ssCfg)
-					}
-					tracer.ChildOf(spanctx)(ssCfg)
-
-					ctx := r.Context()
-					spanctx.ForeachBaggageItem(func(k, v string) bool {
-						ctx = baggage.Set(ctx, k, v)
-						return true
-					})
-					r = r.WithContext(ctx)
+			} else if extractErr == nil && headerSpanCtx != nil {
+				if links := headerSpanCtx.SpanLinks(); links != nil {
+					tracer.WithSpanLinks(links)(ssCfg)
 				}
+				tracer.ChildOf(headerSpanCtx)(ssCfg)
 			}
 
 			for k, v := range ipTags {
@@ -126,9 +126,9 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	nopts = append(nopts, opts...)
 
-	var requestContext = r.Context()
+	requestContext := r.Context()
 	if inferredProxySpan != nil {
-		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, true)
+		requestContext = context.WithValue(requestContext, inferredSpanCreatedCtxKey{}, true)
 	}
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
