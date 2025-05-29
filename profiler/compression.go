@@ -51,13 +51,9 @@ func compressionStrategy(pt ProfileType, isDelta bool) (compression, compression
 		return legacyCompressionStrategy(pt, isDelta)
 	}
 	algorithm, levelStr, _ := strings.Cut(v, "-")
-	level := 0
-	if levelStr != "" {
-		// Don't bother checking the result. We'll get the default and
-		// we assume this is only going to get used internally
-		l, _ := strconv.Atoi(levelStr)
-		level = l
-	}
+	// Don't bother checking the error. We'll get zero which represents the
+	// default, and we we assume this is only going to get used internally
+	level, _ := strconv.Atoi(levelStr)
 	return inputCompression(pt, isDelta), compression{algorithm: compressionAlgorithm(algorithm), level: level}
 }
 
