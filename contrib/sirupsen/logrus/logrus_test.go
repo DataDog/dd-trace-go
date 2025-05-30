@@ -7,6 +7,8 @@ package logrus
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"testing"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -25,7 +27,10 @@ func TestFire(t *testing.T) {
 	e.Context = sctx
 	err := hook.Fire(e)
 
+	traceID := strconv.FormatUint(uint64(1234), 16)
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(1234), e.Data["dd.trace_id"])
-	assert.Equal(t, uint64(1234), e.Data["dd.span_id"])
+	// v2 generates 128-bit trace IDs, so we need to compare only the last second half
+	assert.True(t, strings.HasSuffix(e.Data["dd.trace_id"].(string), traceID))
+	spanID, _ := strconv.ParseUint(e.Data["dd.span_id"].(string), 10, 64)
+	assert.Equal(t, uint64(1234), spanID)
 }

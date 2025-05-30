@@ -12,49 +12,11 @@ import (
 	"context"
 	"os"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/ossec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	v2 "github.com/DataDog/dd-trace-go/v2/contrib/os"
 )
-
-const componentName = "os"
-
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("os")
-}
 
 // OpenFile is a [context.Context]-aware version of [os.OpenFile], that allows
 // the use of ASM rules to protect against Local File Inclusion (LFI) attacks.
 func OpenFile(ctx context.Context, path string, flag int, perm os.FileMode) (file *os.File, err error) {
-	parent, _ := dyngo.FromContext(ctx)
-	if parent != nil {
-		op := &ossec.OpenOperation{
-			Operation: dyngo.NewOperation(parent),
-		}
-
-		var block bool
-		dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
-			block = true
-		})
-
-		dyngo.StartOperation(op, ossec.OpenOperationArgs{
-			Path:  path,
-			Flags: flag,
-			Perms: perm,
-		})
-
-		defer dyngo.FinishOperation(op, ossec.OpenOperationRes[*os.File]{
-			File: &file,
-			Err:  &err,
-		})
-
-		if block {
-			return
-		}
-	}
-
-	return os.OpenFile(path, flag, perm)
+	return v2.OpenFile(ctx, path, flag, perm)
 }

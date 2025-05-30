@@ -6,26 +6,20 @@
 package elastic
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
+	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	elasticv3 "gopkg.in/olivere/elastic.v3"
 	elasticv5 "gopkg.in/olivere/elastic.v5"
 )
-
-const debug = false
 
 const (
 	elasticV5URL   = "http://127.0.0.1:9201"
@@ -140,7 +134,7 @@ func TestClientErrorCutoffV3(t *testing.T) {
 	assert.NoError(err)
 
 	span := mt.FinishedSpans()[0]
-	assert.Equal(`{"user": "`, span.Tag("elasticsearch.body"))
+	assert.True(strings.HasPrefix(span.Tag("elasticsearch.body").(string), `{"user": "`))
 }
 
 func TestClientErrorCutoffV5(t *testing.T) {
@@ -167,7 +161,7 @@ func TestClientErrorCutoffV5(t *testing.T) {
 	assert.Error(err)
 
 	span := mt.FinishedSpans()[0]
-	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
+	assert.True(strings.HasPrefix(span.Tag(ext.ErrorMsg).(string), `{"error":{`))
 }
 
 func TestClientV3(t *testing.T) {
@@ -231,7 +225,7 @@ func TestClientV3Failure(t *testing.T) {
 	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.Equal("*net.OpError", spans[0].Tag(ext.ErrorType))
 }
 
 func TestClientV5Failure(t *testing.T) {
@@ -260,7 +254,7 @@ func TestClientV5Failure(t *testing.T) {
 	checkPUTTrace(assert, mt, "127.0.0.1")
 
 	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.Equal("*net.OpError", spans[0].Tag(ext.ErrorType))
 }
 
 func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string) {
@@ -271,7 +265,7 @@ func checkPUTTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string)
 	assert.Equal("PUT", span.Tag("elasticsearch.method"))
 	assert.Equal(`{"user": "test", "message": "hello"}`, span.Tag("elasticsearch.body"))
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("olivere/elastic", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
 	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
@@ -284,7 +278,7 @@ func checkGETTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string)
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("GET", span.Tag("elasticsearch.method"))
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("olivere/elastic", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
 	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
@@ -298,40 +292,10 @@ func checkErrTrace(assert *assert.Assertions, mt mocktracer.Tracer, host string)
 	assert.NotEmpty(span.Tag(ext.Error))
 	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
 	assert.Equal("olivere/elastic", span.Tag(ext.Component))
-	assert.Equal(componentName, span.Integration())
+	assert.Equal("olivere/elastic", span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("elasticsearch", span.Tag(ext.DBSystem))
 	assert.Equal(host, span.Tag(ext.NetworkDestinationName))
-}
-
-func TestQuantize(t *testing.T) {
-	for _, tc := range []struct {
-		url, method string
-		expected    string
-	}{
-		{
-			url:      "/twitter/tweets",
-			method:   "POST",
-			expected: "POST /twitter/tweets",
-		},
-		{
-			url:      "/logs_2016_05/event/_search",
-			method:   "GET",
-			expected: "GET /logs_?_?/event/_search",
-		},
-		{
-			url:      "/twitter/tweets/123",
-			method:   "GET",
-			expected: "GET /twitter/tweets/?",
-		},
-		{
-			url:      "/logs_2016_05/event/123",
-			method:   "PUT",
-			expected: "PUT /logs_?_?/event/?",
-		},
-	} {
-		assert.Equal(t, tc.expected, quantize(tc.url, tc.method))
-	}
 }
 
 func TestResourceNamerSettings(t *testing.T) {
@@ -385,80 +349,6 @@ func TestResourceNamerSettings(t *testing.T) {
 	})
 }
 
-func TestPeek(t *testing.T) {
-	assert := assert.New(t)
-
-	for _, tt := range [...]struct {
-		max  int    // content length
-		txt  string // stream
-		n    int    // bytes to peek at
-		snip string // expected snippet
-		err  error  // expected error
-	}{
-		0: {
-			// extract 3 bytes from a content of length 7
-			txt:  "ABCDEFG",
-			max:  7,
-			n:    3,
-			snip: "ABC",
-		},
-		1: {
-			// extract 7 bytes from a content of length 7
-			txt:  "ABCDEFG",
-			max:  7,
-			n:    7,
-			snip: "ABCDEFG",
-		},
-		2: {
-			// extract 100 bytes from a content of length 9 (impossible scenario)
-			txt:  "ABCDEFG",
-			max:  9,
-			n:    100,
-			snip: "ABCDEFG",
-		},
-		3: {
-			// extract 5 bytes from a content of length 2 (impossible scenario)
-			txt:  "ABCDEFG",
-			max:  2,
-			n:    5,
-			snip: "AB",
-		},
-		4: {
-			txt:  "ABCDEFG",
-			max:  0,
-			n:    1,
-			snip: "A",
-		},
-		5: {
-			n:   4,
-			max: 4,
-			err: errors.New("empty stream"),
-		},
-		6: {
-			txt:  "ABCDEFG",
-			n:    4,
-			max:  -1,
-			snip: "ABCD",
-		},
-	} {
-		var readcloser io.ReadCloser
-		if tt.txt != "" {
-			readcloser = io.NopCloser(bytes.NewBufferString(tt.txt))
-		}
-		snip, rc, err := peek(readcloser, "", tt.max, tt.n)
-		assert.Equal(tt.err, err)
-		assert.Equal(tt.snip, snip)
-
-		if readcloser != nil {
-			// if a non-nil io.ReadCloser was sent, the returned io.ReadCloser
-			// must always return the entire original content.
-			all, err := io.ReadAll(rc)
-			assert.Nil(err)
-			assert.Equal(tt.txt, string(all))
-		}
-	}
-}
-
 func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...ClientOption) {
 		tc := NewHTTPClient(opts...)
@@ -495,9 +385,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -520,55 +408,8 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		tc := NewHTTPClient(opts...)
-		client, err := elasticv5.NewClient(
-			elasticv5.SetURL(elasticV5URL),
-			elasticv5.SetHttpClient(tc),
-			elasticv5.SetSniff(false),
-			elasticv5.SetHealthcheck(false),
-		)
-		require.NoError(t, err)
-
-		_, err = client.Index().
-			Index("twitter").Id("1").
-			Type("tweet").
-			BodyString(`{"user": "test", "message": "hello"}`).
-			Do(context.Background())
-		require.NoError(t, err)
-
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		return spans
-	}
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 1)
-		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"elastic.client"},
-		WithDDService:            []string{"elastic.client"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

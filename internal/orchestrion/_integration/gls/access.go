@@ -16,11 +16,11 @@ import (
 )
 
 var (
-	//go:linkname orchestrionGlsGet __dd_orchestrion_gls_get
+	//go:linkname orchestrionGlsGet __dd_orchestrion_gls_get.V2
 	orchestrionGlsGet func() any
 
-	//go:linkname orhcestrionGlsSet __dd_orchestrion_gls_set
-	orhcestrionGlsSet func(any)
+	//go:linkname orchestrionGlsSet __dd_orchestrion_gls_set.V2
+	orchestrionGlsSet func(any)
 
 	get = func() any { return nil }
 	set = func(any) {}
@@ -30,8 +30,8 @@ func init() {
 	if orchestrionGlsGet != nil {
 		get = orchestrionGlsGet
 	}
-	if orhcestrionGlsSet != nil {
-		set = orhcestrionGlsSet
+	if orchestrionGlsSet != nil {
+		set = orchestrionGlsSet
 	}
 }
 

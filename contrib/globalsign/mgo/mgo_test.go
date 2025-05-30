@@ -11,12 +11,11 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/stretchr/testify/assert"
@@ -62,7 +61,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mockt
 	for _, val := range spans {
 		if val.OperationName() == "mongodb.query" {
 			assert.Equal("globalsign/mgo", val.Tag(ext.Component))
-			assert.Equal(componentName, val.Integration())
+			assert.Equal("globalsign/mgo", val.Integration())
 			assert.Equal("MyCollection", val.Tag(ext.MongoDBCollection))
 			assert.Equal("localhost", val.Tag(ext.NetworkDestinationName))
 		}
@@ -533,9 +532,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -558,34 +555,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []DialOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		session, err := Dial("localhost:27017", opts...)
-		require.NoError(t, err)
-		err = session.
-			DB("my_db").
-			C("MyCollection").
-			Insert(bson.D{bson.DocElem{Name: "entity", Value: bson.DocElem{Name: "index", Value: 0}}})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewMongoDBTest(genSpans, "mongodb")(t)
 }
 
 func TestIssue2165(t *testing.T) {

@@ -6,867 +6,27 @@
 package tracer
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"math"
-	"net"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
-	"runtime/debug"
-	"strconv"
-	"strings"
 	"time"
 
-	"golang.org/x/mod/semver"
-
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	appsecconfig "gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
-
-	"github.com/DataDog/datadog-go/v5/statsd"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
 )
-
-var contribIntegrations = map[string]struct {
-	name     string // user readable name for startup logs
-	imported bool   // true if the user has imported the integration
-}{
-	"github.com/99designs/gqlgen":                   {"gqlgen", false},
-	"github.com/aws/aws-sdk-go":                     {"AWS SDK", false},
-	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", false},
-	"github.com/bradfitz/gomemcache":                {"Memcache", false},
-	"cloud.google.com/go/pubsub.v1":                 {"Pub/Sub", false},
-	"github.com/confluentinc/confluent-kafka-go":    {"Kafka (confluent)", false},
-	"github.com/confluentinc/confluent-kafka-go/v2": {"Kafka (confluent) v2", false},
-	"database/sql":                                  {"SQL", false},
-	"github.com/dimfeld/httptreemux/v5":             {"HTTP Treemux", false},
-	"github.com/elastic/go-elasticsearch/v6":        {"Elasticsearch v6", false},
-	"github.com/emicklei/go-restful":                {"go-restful", false},
-	"github.com/emicklei/go-restful/v3":             {"go-restful v3", false},
-	"github.com/garyburd/redigo":                    {"Redigo (dep)", false},
-	"github.com/gin-gonic/gin":                      {"Gin", false},
-	"github.com/globalsign/mgo":                     {"MongoDB (mgo)", false},
-	"github.com/go-chi/chi":                         {"chi", false},
-	"github.com/go-chi/chi/v5":                      {"chi v5", false},
-	"github.com/go-pg/pg/v10":                       {"go-pg v10", false},
-	"github.com/go-redis/redis":                     {"Redis", false},
-	"github.com/go-redis/redis/v7":                  {"Redis v7", false},
-	"github.com/go-redis/redis/v8":                  {"Redis v8", false},
-	"go.mongodb.org/mongo-driver":                   {"MongoDB", false},
-	"github.com/gocql/gocql":                        {"Cassandra", false},
-	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
-	"github.com/gomodule/redigo":                    {"Redigo", false},
-	"google.golang.org/api":                         {"Google API", false},
-	"google.golang.org/grpc":                        {"gRPC", false},
-	"gopkg.in/jinzhu/gorm.v1":                       {"Gorm (gopkg)", false},
-	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
-	"gorm.io/gorm.v1":                               {"Gorm v1", false},
-	"github.com/graph-gophers/graphql-go":           {"GraphQL", false},
-	"github.com/hashicorp/consul/api":               {"Consul", false},
-	"github.com/hashicorp/vault/api":                {"Vault", false},
-	"github.com/jinzhu/gorm":                        {"Gorm", false},
-	"github.com/jmoiron/sqlx":                       {"SQLx", false},
-	"github.com/julienschmidt/httprouter":           {"HTTP Router", false},
-	"k8s.io/client-go/kubernetes":                   {"Kubernetes", false},
-	"github.com/labstack/echo":                      {"echo", false},
-	"github.com/labstack/echo/v4":                   {"echo v4", false},
-	"github.com/miekg/dns":                          {"miekg/dns", false},
-	"net/http":                                      {"HTTP", false},
-	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
-	"gopkg.in/olivere/elastic.v3":                   {"Elasticsearch v3", false},
-	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
-	"github.com/redis/rueidis":                      {"Rueidis", false},
-	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
-	"github.com/IBM/sarama":                         {"IBM sarama", false},
-	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
-	"github.com/sirupsen/logrus":                    {"Logrus", false},
-	"github.com/syndtr/goleveldb":                   {"LevelDB", false},
-	"github.com/tidwall/buntdb":                     {"BuntDB", false},
-	"github.com/twitchtv/twirp":                     {"Twirp", false},
-	"github.com/urfave/negroni":                     {"Negroni", false},
-	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
-	"github.com/zenazn/goji":                        {"Goji", false},
-	"log/slog":                                      {"log/slog", false},
-	"github.com/uptrace/bun":                        {"Bun", false},
-	"github.com/valkey-io/valkey-go":                {"Valkey", false},
-}
 
 var (
-	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
-	// Replaced in tests
-	defaultSocketDSD = "/var/run/datadog/dsd.socket"
-
-	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
-	defaultStatsdPort = "8125"
-
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 128
-
-	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
-	defaultRateLimit = 100.0
 )
 
-// config holds the tracer configuration.
-type config struct {
-	// debug, when true, writes details to logs.
-	debug bool
-
-	// appsecStartOptions controls the options used when starting appsec features.
-	appsecStartOptions []appsecconfig.StartOption
-
-	// agent holds the capabilities of the agent and determines some
-	// of the behaviour of the tracer.
-	agent agentFeatures
-
-	// integrations reports if the user has instrumented a Datadog integration and
-	// if they have a version of the library available to integrate.
-	integrations map[string]integrationConfig
-
-	// featureFlags specifies any enabled feature flags.
-	featureFlags map[string]struct{}
-
-	// logToStdout reports whether we should log all traces to the standard
-	// output instead of using the agent. This is used in Lambda environments.
-	logToStdout bool
-
-	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
-	// failure.
-	sendRetries int
-
-	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
-	retryInterval time.Duration
-
-	// logStartup, when true, causes various startup info to be written
-	// when the tracer starts.
-	logStartup bool
-
-	// serviceName specifies the name of this application.
-	serviceName string
-
-	// universalVersion, reports whether span service name and config service name
-	// should match to set application version tag. False by default
-	universalVersion bool
-
-	// version specifies the version of this application
-	version string
-
-	// env contains the environment that this application will run under.
-	env string
-
-	// sampler specifies the sampler that will be used for sampling traces.
-	sampler Sampler
-
-	// agentURL is the agent URL that receives traces from the tracer.
-	agentURL *url.URL
-
-	// originalAgentURL is the agent URL that receives traces from the tracer and does not get changed.
-	originalAgentURL *url.URL
-
-	// serviceMappings holds a set of service mappings to dynamically rename services
-	serviceMappings map[string]string
-
-	// globalTags holds a set of tags that will be automatically applied to
-	// all spans.
-	globalTags dynamicConfig[map[string]interface{}]
-
-	// transport specifies the Transport interface which will be used to send data to the agent.
-	transport transport
-
-	// httpClientTimeout specifies the timeout for the HTTP client.
-	httpClientTimeout time.Duration
-
-	// propagator propagates span context cross-process
-	propagator Propagator
-
-	// httpClient specifies the HTTP client to be used by the agent's transport.
-	httpClient *http.Client
-
-	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
-	// and is added as a special tag to the root span of traces.
-	hostname string
-
-	// logger specifies the logger to use when printing errors. If not specified, the "log" package
-	// will be used.
-	logger ddtrace.Logger
-
-	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
-	runtimeMetrics bool
-
-	// runtimeMetricsV2 specifies whether collection of runtime metrics v2 is enabled.
-	runtimeMetricsV2 bool
-
-	// dogstatsdAddr specifies the address to connect for sending metrics to the
-	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
-	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
-	dogstatsdAddr string
-
-	// statsdClient is set when a user provides a custom statsd client for tracking metrics
-	// associated with the runtime and the tracer.
-	statsdClient internal.StatsdClient
-
-	// spanRules contains user-defined rules to determine the sampling rate to apply
-	// to a single span without affecting the entire trace
-	spanRules []SamplingRule
-
-	// traceRules contains user-defined rules to determine the sampling rate to apply
-	// to the entire trace if any spans satisfy the criteria
-	traceRules []SamplingRule
-
-	// tickChan specifies a channel which will receive the time every time the tracer must flush.
-	// It defaults to time.Ticker; replaced in tests.
-	tickChan <-chan time.Time
-
-	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
-	// errors will record a stack trace when this option is set.
-	noDebugStack bool
-
-	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
-	profilerHotspots bool
-
-	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
-	profilerEndpoints bool
-
-	// enabled reports whether tracing is enabled.
-	enabled dynamicConfig[bool]
-
-	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
-	enableHostnameDetection bool
-
-	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
-	spanAttributeSchemaVersion int
-
-	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
-	peerServiceDefaultsEnabled bool
-
-	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
-	peerServiceMappings map[string]string
-
-	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
-	debugAbandonedSpans bool
-
-	// spanTimeout represents how old a span can be before it should be logged as a possible
-	// misconfiguration
-	spanTimeout time.Duration
-
-	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
-	// partial flush, or 0 if partial flushing is disabled.
-	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
-	partialFlushMinSpans int
-
-	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
-	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
-	partialFlushEnabled bool
-
-	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
-	statsComputationEnabled bool
-
-	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
-	dataStreamsMonitoringEnabled bool
-
-	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
-	// Only used for telemetry currently.
-	orchestrionCfg orchestrionConfig
-
-	// traceSampleRate holds the trace sample rate.
-	traceSampleRate dynamicConfig[float64]
-
-	// traceSampleRules holds the trace sampling rules
-	traceSampleRules dynamicConfig[[]SamplingRule]
-
-	// headerAsTags holds the header as tags configuration.
-	headerAsTags dynamicConfig[[]string]
-
-	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
-	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
-	dynamicInstrumentationEnabled bool
-
-	// globalSampleRate holds sample rate read from environment variables.
-	globalSampleRate float64
-
-	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
-	ciVisibilityEnabled bool
-
-	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
-	ciVisibilityAgentless bool
-
-	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
-	logDirectory string
-
-	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
-	tracingAsTransport bool
-
-	// traceRateLimitPerSecond specifies the rate limit for traces.
-	traceRateLimitPerSecond float64
-}
-
-// orchestrionConfig contains Orchestrion configuration.
-type orchestrionConfig struct {
-	// Enabled indicates whether this tracer was instanciated via Orchestrion.
-	Enabled bool `json:"enabled"`
-
-	// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
-	Metadata map[string]string `json:"metadata,omitempty"`
-}
-
-// HasFeature reports whether feature f is enabled.
-func (c *config) HasFeature(f string) bool {
-	_, ok := c.featureFlags[strings.TrimSpace(f)]
-	return ok
-}
-
 // StartOption represents a function that can be provided as a parameter to Start.
-type StartOption func(*config)
-
-// maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
-const maxPropagatedTagsLength = 512
-
-// partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
-const partialFlushMinSpansDefault = 1000
-
-// newConfig renders the tracer configuration based on defaults, environment variables
-// and passed user opts.
-func newConfig(opts ...StartOption) *config {
-	c := new(config)
-	c.sampler = NewAllSampler()
-	sampleRate := math.NaN()
-	if r := getDDorOtelConfig("sampleRate"); r != "" {
-		var err error
-		sampleRate, err = strconv.ParseFloat(r, 64)
-		if err != nil {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
-			sampleRate = math.NaN()
-		} else if sampleRate < 0.0 || sampleRate > 1.0 {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
-			sampleRate = math.NaN()
-		}
-	}
-	c.globalSampleRate = sampleRate
-	c.httpClientTimeout = time.Second * 10 // 10 seconds
-
-	c.traceRateLimitPerSecond = defaultRateLimit
-	origin := telemetry.OriginDefault
-	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
-		l, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err)
-		} else if l < 0.0 {
-			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
-		} else {
-			c.traceRateLimitPerSecond = l
-			origin = telemetry.OriginEnvVar
-		}
-	}
-
-	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
-
-	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
-		log.Warn("OTEL_LOGS_EXPORTER is not supported")
-	}
-	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
-		globalconfig.SetAnalyticsRate(1.0)
-	}
-	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
-		var err error
-		c.hostname, err = os.Hostname()
-		if err != nil {
-			log.Warn("unable to look up hostname: %v", err)
-		}
-	}
-	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
-		c.hostname = v
-	}
-	if v := os.Getenv("DD_ENV"); v != "" {
-		c.env = v
-	}
-	if v := os.Getenv("DD_TRACE_FEATURES"); v != "" {
-		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
-			return r == ',' || r == ' '
-		})...)(c)
-	}
-	if v := getDDorOtelConfig("service"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
-	}
-	if ver := os.Getenv("DD_VERSION"); ver != "" {
-		c.version = ver
-	}
-	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
-	}
-	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
-	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
-		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
-		// Required to ensure that the startup header tags are set on reset.
-		c.headerAsTags.startup = c.headerAsTags.current
-	}
-	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
-		tags := internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-		for key, val := range tags {
-			WithGlobalTag(key, val)(c)
-		}
-		// TODO: should we track the origin of these tags individually?
-		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
-	}
-	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
-		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-		c.logToStdout = true
-	}
-	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
-	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", false)
-	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
-	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(b bool) bool { return true }, equal[bool])
-	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
-		c.enabled.cfgOrigin = telemetry.OriginEnvVar
-	}
-	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
-	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
-	if compatMode := os.Getenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
-		if semver.IsValid(compatMode) {
-			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
-		} else {
-			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
-		}
-	}
-	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	if c.debugAbandonedSpans {
-		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
-	}
-	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
-	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
-	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
-	if c.partialFlushMinSpans <= 0 {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	} else if c.partialFlushMinSpans >= traceMaxSize {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	}
-	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
-	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
-	// if it's explicitly set, and don't require both variables to be configured.
-
-	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-
-	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
-	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
-		namingschema.SetVersion(v)
-		c.spanAttributeSchemaVersion = int(v)
-	} else {
-		v := namingschema.SetDefaultVersion()
-		c.spanAttributeSchemaVersion = int(v)
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
-	}
-	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
-	// These default service names are always disabled for v1 onwards.
-	namingschema.SetUseGlobalServiceName(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
-
-	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
-	c.peerServiceDefaultsEnabled = true
-	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
-		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	}
-	c.peerServiceMappings = make(map[string]string)
-	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
-	}
-	c.retryInterval = time.Millisecond
-	for _, fn := range opts {
-		fn(c)
-	}
-	if c.agentURL == nil {
-		c.agentURL = internal.AgentURLFromEnv()
-	}
-	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
-	if c.httpClient == nil {
-		if c.agentURL.Scheme == "unix" {
-			// If we're connecting over UDS we can just rely on the agent to provide the hostname
-			log.Debug("connecting to agent over unix, do not set hostname on any traces")
-			c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
-			c.agentURL = &url.URL{
-				Scheme: "http",
-				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
-			}
-		} else {
-			c.httpClient = defaultHTTPClient(c.httpClientTimeout)
-		}
-	}
-	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
-	globalTags := c.globalTags.get()
-	if c.env == "" {
-		if v, ok := globalTags["env"]; ok {
-			if e, ok := v.(string); ok {
-				c.env = e
-			}
-		}
-	}
-	if c.version == "" {
-		if v, ok := globalTags["version"]; ok {
-			if ver, ok := v.(string); ok {
-				c.version = ver
-			}
-		}
-	}
-	if c.serviceName == "" {
-		if v, ok := globalTags["service"]; ok {
-			if s, ok := v.(string); ok {
-				c.serviceName = s
-				globalconfig.SetServiceName(s)
-			}
-		} else {
-			// There is not an explicit service set, default to binary name.
-			// In this case, don't set a global service name so the contribs continue using their defaults.
-			c.serviceName = filepath.Base(os.Args[0])
-		}
-	}
-	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
-	}
-	if c.propagator == nil {
-		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
-		max := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
-		if max < 0 {
-			log.Warn("Invalid value %d for %s. Setting to 0.", max, envKey)
-			max = 0
-		}
-		if max > maxPropagatedTagsLength {
-			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", max, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
-			max = maxPropagatedTagsLength
-		}
-		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: max,
-		})
-	}
-	if c.logger != nil {
-		log.UseLogger(c.logger)
-	}
-	if c.debug {
-		log.SetLevel(log.LevelDebug)
-	}
-
-	// Check if CI Visibility mode is enabled
-	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
-		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
-		c.ciVisibilityAgentless = ciTransport.agentless
-	}
-
-	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
-	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		c.loadContribIntegrations([]*debug.Module{})
-	} else {
-		c.loadContribIntegrations(info.Deps)
-	}
-	if c.statsdClient == nil {
-		// configure statsd client
-		addr := resolveDogstatsdAddr(c)
-		globalconfig.SetDogstatsdAddr(addr)
-		c.dogstatsdAddr = addr
-	}
-	// Re-initialize the globalTags config with the value constructed from the environment and start options
-	// This allows persisting the initial value of globalTags for future resets and updates.
-	globalTagsOrigin := c.globalTags.cfgOrigin
-	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
-
-	if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
-		// Enable tracing as transport layer mode
-		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
-		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
-		// to let the backend know that it needs to keep APM UI disabled.
-		c.globalSampleRate = 1.0
-		c.traceRateLimitPerSecond = 1.0 / 60
-		c.tracingAsTransport = true
-		WithGlobalTag("_dd.apm.enabled", 0)(c)
-		// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
-		// tell the agent we computed them, so it doesn't do it either.
-		c.runtimeMetrics = false
-		c.runtimeMetricsV2 = false
-	}
-
-	return c
-}
-
-// resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
-// address and the agent-reported port. If the agent reports a port, it will be used
-// instead of the user-defined address' port. UDS paths are honored regardless of the
-// agent-reported port.
-func resolveDogstatsdAddr(c *config) string {
-	addr := c.dogstatsdAddr
-	if addr == "" {
-		// no config defined address; use host and port from env vars
-		// or default to localhost:8125 if not set
-		addr = defaultDogstatsdAddr()
-	}
-	agentport := c.agent.StatsdPort
-	if agentport == 0 {
-		// the agent didn't report a port; use the already resolved address as
-		// features are loaded from the trace-agent, which might be not running
-		return addr
-	}
-	// the agent reported a port
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		// parsing the address failed; use the already resolved address as is
-		return addr
-	}
-	if host == "unix" {
-		// no need to change the address because it's a UDS connection
-		// and these don't have ports
-		return addr
-	}
-	if host == "" {
-		// no host was provided; use the default hostname
-		host = defaultHostname
-	}
-	// use agent-reported address if it differs from the user-defined TCP-based protocol URI
-	// we have a valid host:port address; replace the port because the agent knows better
-	addr = net.JoinHostPort(host, strconv.Itoa(agentport))
-	return addr
-}
-
-func newStatsdClient(c *config) (internal.StatsdClient, error) {
-	if c.statsdClient != nil {
-		return c.statsdClient, nil
-	}
-	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
-}
-
-// udsClient returns a new http.Client which connects using the given UDS socket path.
-func udsClient(socketPath string, timeout time.Duration) *http.Client {
-	if timeout == 0 {
-		timeout = defaultHTTPTimeout
-	}
-	return &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
-					Name: socketPath,
-					Net:  "unix",
-				}).String())
-			},
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-		Timeout: timeout,
-	}
-}
-
-// defaultDogstatsdAddr returns the default connection address for Dogstatsd.
-func defaultDogstatsdAddr() string {
-	envHost, envPort := os.Getenv("DD_DOGSTATSD_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
-	if envHost == "" {
-		envHost = os.Getenv("DD_AGENT_HOST")
-	}
-	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
-		// socket exists and user didn't specify otherwise via env vars
-		return "unix://" + defaultSocketDSD
-	}
-	host, port := defaultHostname, defaultStatsdPort
-	if envHost != "" {
-		host = envHost
-	}
-	if envPort != "" {
-		port = envPort
-	}
-	return net.JoinHostPort(host, port)
-}
-
-type integrationConfig struct {
-	Instrumented bool   `json:"instrumented"`      // indicates if the user has imported and used the integration
-	Available    bool   `json:"available"`         // indicates if the user is using a library that can be used with DataDog integrations
-	Version      string `json:"available_version"` // if available, indicates the version of the library the user has
-}
-
-// agentFeatures holds information about the trace-agent's capabilities.
-// When running WithLambdaMode, a zero-value of this struct will be used
-// as features.
-type agentFeatures struct {
-	// DropP0s reports whether it's ok for the tracer to not send any
-	// P0 traces to the agent.
-	DropP0s bool
-
-	// Stats reports whether the agent can receive client-computed stats on
-	// the /v0.6/stats endpoint.
-	Stats bool
-
-	// StatsdPort specifies the Dogstatsd port as provided by the agent.
-	// If it's the default, it will be 0, which means 8125.
-	StatsdPort int
-
-	// featureFlags specifies all the feature flags reported by the trace-agent.
-	featureFlags map[string]struct{}
-
-	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
-	peerTags []string
-
-	// defaultEnv is the trace-agent's default env, used for stats calculation if no env override is present
-	defaultEnv string
-
-	// metaStructAvailable reports whether the trace-agent can receive spans with the `meta_struct` field.
-	metaStructAvailable bool
-
-	// obfuscationVersion reports the trace-agent's version of obfuscation logic. A value of 0 means this field wasn't present.
-	obfuscationVersion int
-
-	// spanEvents reports whether the trace-agent can receive spans with the `span_events` field.
-	spanEventsAvailable bool
-}
-
-// HasFlag reports whether the agent has set the feat feature flag.
-func (a *agentFeatures) HasFlag(feat string) bool {
-	_, ok := a.featureFlags[feat]
-	return ok
-}
-
-// loadAgentFeatures queries the trace-agent for its capabilities and updates
-// the tracer's behaviour.
-func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
-	if agentDisabled {
-		// there is no agent; all features off
-		return
-	}
-	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
-	if err != nil {
-		log.Error("Loading features: %v", err)
-		return
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		// agent is older than 7.28.0, features not discoverable
-		return
-	}
-	defer resp.Body.Close()
-	type infoResponse struct {
-		Endpoints          []string `json:"endpoints"`
-		ClientDropP0s      bool     `json:"client_drop_p0s"`
-		FeatureFlags       []string `json:"feature_flags"`
-		PeerTags           []string `json:"peer_tags"`
-		SpanMetaStruct     bool     `json:"span_meta_structs"`
-		ObfuscationVersion int      `json:"obfuscation_version"`
-		SpanEvents         bool     `json:"span_events"`
-		Config             struct {
-			StatsdPort int `json:"statsd_port"`
-		} `json:"config"`
-	}
-
-	var info infoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err)
-		return
-	}
-
-	features.DropP0s = info.ClientDropP0s
-	features.StatsdPort = info.Config.StatsdPort
-	features.metaStructAvailable = info.SpanMetaStruct
-	features.peerTags = info.PeerTags
-	features.obfuscationVersion = info.ObfuscationVersion
-	features.spanEventsAvailable = info.SpanEvents
-	for _, endpoint := range info.Endpoints {
-		switch endpoint {
-		case "/v0.6/stats":
-			features.Stats = true
-		}
-	}
-	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
-	for _, flag := range info.FeatureFlags {
-		features.featureFlags[flag] = struct{}{}
-	}
-	return features
-}
+type StartOption = v2.StartOption
 
 // MarkIntegrationImported labels the given integration as imported
 func MarkIntegrationImported(integration string) bool {
-	s, ok := contribIntegrations[integration]
-	if !ok {
-		return false
-	}
-	s.imported = true
-	contribIntegrations[integration] = s
-	return true
-}
-
-func (c *config) loadContribIntegrations(deps []*debug.Module) {
-	integrations := map[string]integrationConfig{}
-	for _, s := range contribIntegrations {
-		integrations[s.name] = integrationConfig{
-			Instrumented: s.imported,
-		}
-	}
-	for _, d := range deps {
-		p := d.Path
-		s, ok := contribIntegrations[p]
-		if !ok {
-			continue
-		}
-		conf := integrations[s.name]
-		conf.Available = true
-		conf.Version = d.Version
-		integrations[s.name] = conf
-	}
-	c.integrations = integrations
-}
-
-func (c *config) canComputeStats() bool {
-	return c.agent.Stats && (c.HasFeature("discovery") || c.statsComputationEnabled)
-}
-
-func (c *config) canDropP0s() bool {
-	return c.canComputeStats() && c.agent.DropP0s
-}
-
-func statsTags(c *config) []string {
-	tags := []string{
-		"lang:go",
-		"lang_version:" + runtime.Version(),
-	}
-	if c.env != "" {
-		tags = append(tags, "env:"+c.env)
-	}
-	if c.hostname != "" {
-		tags = append(tags, "host:"+c.hostname)
-	}
-	for k, v := range c.globalTags.get() {
-		if vstr, ok := v.(string); ok {
-			tags = append(tags, k+":"+vstr)
-		}
-	}
-	globalconfig.SetStatsTags(tags)
-	tags = append(tags, "tracer_version:"+version.Tag)
-	if c.serviceName != "" {
-		tags = append(tags, "service:"+c.serviceName)
-	}
-	return tags
-}
-
-// withNoopStats is used for testing to disable statsd client
-func withNoopStats() StartOption {
-	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClientDirect{}
-	}
+	return v2.MarkIntegrationImported(integration)
 }
 
 // WithAppSecEnabled specifies whether AppSec features should be activated
@@ -879,28 +39,14 @@ func withNoopStats() StartOption {
 // Using this option to explicitly disable appsec also prevents it from being
 // remote activated.
 func WithAppSecEnabled(enabled bool) StartOption {
-	mode := appsecconfig.ForcedOff
-	if enabled {
-		mode = appsecconfig.ForcedOn
-	}
-	return func(c *config) {
-		c.appsecStartOptions = append(c.appsecStartOptions, appsecconfig.WithEnablementMode(mode))
-	}
+	return v2.WithAppSecEnabled(enabled)
 }
 
 // WithFeatureFlags specifies a set of feature flags to enable. Please take into account
 // that most, if not all features flags are considered to be experimental and result in
 // unexpected bugs.
 func WithFeatureFlags(feats ...string) StartOption {
-	return func(c *config) {
-		if c.featureFlags == nil {
-			c.featureFlags = make(map[string]struct{}, len(feats))
-		}
-		for _, f := range feats {
-			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
-		}
-		log.Info("FEATURES enabled: %v", feats)
-	}
+	return v2.WithFeatureFlags(feats...)
 }
 
 // WithLogger sets logger as the tracer's error printer.
@@ -908,9 +54,7 @@ func WithFeatureFlags(feats ...string) StartOption {
 // If JSON logging format is required, it's possible to wrap tracer logs using an existing JSON logger with this
 // function. To learn more about this possibility, please visit: https://github.com/DataDog/dd-trace-go/issues/2152#issuecomment-1790586933
 func WithLogger(logger ddtrace.Logger) StartOption {
-	return func(c *config) {
-		c.logger = logger
-	}
+	return v2.WithLogger(logger)
 }
 
 // WithPrioritySampling is deprecated, and priority sampling is enabled by default.
@@ -919,57 +63,43 @@ func WithLogger(logger ddtrace.Logger) StartOption {
 // To learn more about priority sampling, please visit:
 // https://docs.datadoghq.com/tracing/getting_further/trace_sampling_and_storage/#priority-sampling-for-distributed-tracing
 func WithPrioritySampling() StartOption {
-	return func(c *config) {
-		// This is now enabled by default.
-	}
+	return nil
 }
 
 // WithDebugStack can be used to globally enable or disable the collection of stack traces when
 // spans finish with errors. It is enabled by default. This is a global version of the NoDebugStack
 // FinishOption.
 func WithDebugStack(enabled bool) StartOption {
-	return func(c *config) {
-		c.noDebugStack = !enabled
-	}
+	return v2.WithDebugStack(enabled)
 }
 
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
-	return func(c *config) {
-		c.debug = enabled
-	}
+	return v2.WithDebugMode(enabled)
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
 // This option is only required if the the Datadog Lambda Extension is not
 // running.
 func WithLambdaMode(enabled bool) StartOption {
-	return func(c *config) {
-		c.logToStdout = enabled
-	}
+	return v2.WithLambdaMode(enabled)
 }
 
 // WithSendRetries enables re-sending payloads that are not successfully
 // submitted to the agent.  This will cause the tracer to retry the send at
 // most `retries` times.
 func WithSendRetries(retries int) StartOption {
-	return func(c *config) {
-		c.sendRetries = retries
-	}
+	return v2.WithSendRetries(retries)
 }
 
 // WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
 func WithRetryInterval(interval int) StartOption {
-	return func(c *config) {
-		c.retryInterval = time.Duration(interval) * time.Second
-	}
+	return v2.WithRetryInterval(interval)
 }
 
 // WithPropagator sets an alternative propagator to be used by the tracer.
 func WithPropagator(p Propagator) StartOption {
-	return func(c *config) {
-		c.propagator = p
-	}
+	return v2.WithPropagator(&propagatorV1Adapter{propagator: p})
 }
 
 // WithServiceName is deprecated. Please use WithService.
@@ -977,118 +107,79 @@ func WithPropagator(p Propagator) StartOption {
 // to WithService, please note that WithService will determine the service name of
 // server and framework integrations.
 func WithServiceName(name string) StartOption {
-	return func(c *config) {
-		c.serviceName = name
-		if globalconfig.ServiceName() != "" {
-			log.Warn("ddtrace/tracer: deprecated config WithServiceName should not be used " +
-				"with `WithService` or `DD_SERVICE`; integration service name will not be set.")
-		}
-		globalconfig.SetServiceName("")
-	}
+	return v2.WithService(name)
 }
 
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
-	return func(c *config) {
-		c.serviceName = name
-		globalconfig.SetServiceName(c.serviceName)
-	}
+	return v2.WithService(name)
 }
 
 // WithGlobalServiceName causes contrib libraries to use the global service name and not any locally defined service name.
 // This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
 func WithGlobalServiceName(enabled bool) StartOption {
-	return func(_ *config) {
-		namingschema.SetUseGlobalServiceName(enabled)
-	}
+	return v2.WithGlobalServiceName(enabled)
 }
 
 // WithAgentAddr sets the address where the agent is located. The default is
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
-	return func(c *config) {
-		c.agentURL = &url.URL{
-			Scheme: "http",
-			Host:   addr,
-		}
-	}
+	return v2.WithAgentAddr(addr)
 }
 
 // WithAgentTimeout sets the timeout for the agent connection. Timeout is in seconds.
 func WithAgentTimeout(timeout int) StartOption {
-	return func(c *config) {
-		c.httpClientTimeout = time.Duration(timeout) * time.Second
-	}
+	return v2.WithAgentTimeout(timeout)
 }
 
 // WithEnv sets the environment to which all traces started by the tracer will be submitted.
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
-	return func(c *config) {
-		c.env = env
-	}
+	return v2.WithEnv(env)
 }
 
 // WithServiceMapping determines service "from" to be renamed to service "to".
 // This option is is case sensitive and can be used multiple times.
 func WithServiceMapping(from, to string) StartOption {
-	return func(c *config) {
-		if c.serviceMappings == nil {
-			c.serviceMappings = make(map[string]string)
-		}
-		c.serviceMappings[from] = to
-	}
+	return v2.WithServiceMapping(from, to)
 }
 
 // WithPeerServiceDefaults sets default calculation for peer.service.
 // Related documentation: https://docs.datadoghq.com/tracing/guide/inferred-service-opt-in/?tab=go#apm-tracer-configuration
 func WithPeerServiceDefaults(enabled bool) StartOption {
-	return func(c *config) {
-		c.peerServiceDefaultsEnabled = enabled
-	}
+	return v2.WithPeerServiceDefaults(enabled)
 }
 
 // WithPeerServiceMapping determines the value of the peer.service tag "from" to be renamed to service "to".
 func WithPeerServiceMapping(from, to string) StartOption {
-	return func(c *config) {
-		if c.peerServiceMappings == nil {
-			c.peerServiceMappings = make(map[string]string)
-		}
-		c.peerServiceMappings[from] = to
-	}
+	return v2.WithPeerServiceMapping(from, to)
 }
 
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v interface{}) StartOption {
-	return func(c *config) {
-		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]interface{}{}, telemetry.OriginDefault)
-		}
-		c.globalTags.Lock()
-		defer c.globalTags.Unlock()
-		c.globalTags.current[k] = v
-	}
+	return v2.WithGlobalTag(k, v)
 }
 
-// initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]interface{}, origin telemetry.Origin) {
-	apply := func(map[string]interface{}) bool {
-		// always set the runtime ID on updates
-		c.globalTags.current[ext.RuntimeID] = globalconfig.RuntimeID()
-		return true
-	}
-	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
-	c.globalTags.cfgOrigin = origin
+type samplerV1Adapter struct {
+	sampler Sampler
+}
+
+// Sample implements tracer.Sampler.
+func (sa *samplerV1Adapter) Sample(span *v2.Span) bool {
+	s := internal.WrapSpan(span)
+	return sa.sampler.Sample(s)
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default
 // an all-permissive sampler is used.
 func WithSampler(s Sampler) StartOption {
-	return func(c *config) {
-		c.sampler = s
-	}
+	return v2.WithSampler(&samplerV1Adapter{sampler: s})
 }
+
+const (
+	defaultHTTPTimeout = 2 * time.Second // defines the current timeout before giving up with the send process
+)
 
 // WithHTTPRoundTripper is deprecated. Please consider using WithHTTPClient instead.
 // The function allows customizing the underlying HTTP transport for emitting spans.
@@ -1101,49 +192,28 @@ func WithHTTPRoundTripper(r http.RoundTripper) StartOption {
 
 // WithHTTPClient specifies the HTTP client to use when emitting spans to the agent.
 func WithHTTPClient(client *http.Client) StartOption {
-	return func(c *config) {
-		c.httpClient = client
-	}
+	return v2.WithHTTPClient(client)
 }
 
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
-	return func(c *config) {
-		c.agentURL = &url.URL{
-			Scheme: "unix",
-			Path:   socketPath,
-		}
-	}
+	return v2.WithUDS(socketPath)
 }
 
 // WithAnalytics allows specifying whether Trace Search & Analytics should be enabled
 // for integrations.
 func WithAnalytics(on bool) StartOption {
-	return func(cfg *config) {
-		if on {
-			globalconfig.SetAnalyticsRate(1.0)
-		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the global sampling rate for sampling APM events.
 func WithAnalyticsRate(rate float64) StartOption {
-	return func(_ *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			globalconfig.SetAnalyticsRate(rate)
-		} else {
-			globalconfig.SetAnalyticsRate(math.NaN())
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithRuntimeMetrics enables automatic collection of runtime metrics every 10 seconds.
 func WithRuntimeMetrics() StartOption {
-	return func(cfg *config) {
-		cfg.runtimeMetrics = true
-	}
+	return v2.WithRuntimeMetrics()
 }
 
 // WithDogstatsdAddress specifies the address to connect to for sending metrics to the Datadog
@@ -1155,65 +225,61 @@ func WithRuntimeMetrics() StartOption {
 //
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddress(addr string) StartOption {
-	return func(cfg *config) {
-		cfg.dogstatsdAddr = addr
-		globalconfig.SetDogstatsdAddr(addr)
-	}
+	return v2.WithDogstatsdAddr(addr)
 }
 
 // WithSamplingRules specifies the sampling rates to apply to spans based on the
 // provided rules.
 func WithSamplingRules(rules []SamplingRule) StartOption {
-	return func(cfg *config) {
-		for _, rule := range rules {
-			if rule.ruleType == SamplingRuleSpan {
-				cfg.spanRules = append(cfg.spanRules, rule)
-			} else {
-				cfg.traceRules = append(cfg.traceRules, rule)
-			}
+	rr := make([]v2.SamplingRule, len(rules))
+	for i, r := range rules {
+		var ssr []v2.SamplingRule
+		if r.ruleType == SamplingRuleSpan {
+			ssr = v2.SpanSamplingRules(v2.Rule{
+				Rate: r.Rate,
+			})
+		} else {
+			ssr = v2.TraceSamplingRules(v2.Rule{
+				Rate: r.Rate,
+			})
 		}
+		rr[i] = ssr[0]
+		rr[i].MaxPerSecond = r.MaxPerSecond
+		rr[i].Name = r.Name
+		rr[i].Resource = r.Resource
+		rr[i].Service = r.Service
+		rr[i].Tags = r.Tags
 	}
+	return v2.WithSamplingRules(rr)
 }
 
 // WithServiceVersion specifies the version of the service that is running. This will
 // be included in spans from this service in the "version" tag, provided that
 // span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
-	return func(cfg *config) {
-		cfg.version = version
-		cfg.universalVersion = false
-	}
+	return v2.WithServiceVersion(version)
 }
 
 // WithUniversalVersion specifies the version of the service that is running, and will be applied to all spans,
 // regardless of whether span service name and config service name match.
 // See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
 func WithUniversalVersion(version string) StartOption {
-	return func(c *config) {
-		c.version = version
-		c.universalVersion = true
-	}
+	return v2.WithUniversalVersion(version)
 }
 
 // WithHostname allows specifying the hostname with which to mark outgoing traces.
 func WithHostname(name string) StartOption {
-	return func(c *config) {
-		c.hostname = name
-	}
+	return v2.WithHostname(name)
 }
 
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
-	return func(c *config) {
-		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(b bool) bool { return true }, equal[bool])
-	}
+	return v2.WithTraceEnabled(enabled)
 }
 
 // WithLogStartup allows enabling or disabling the startup log.
 func WithLogStartup(enabled bool) StartOption {
-	return func(c *config) {
-		c.logStartup = enabled
-	}
+	return v2.WithLogStartup(enabled)
 }
 
 // WithProfilerCodeHotspots enables the code hotspots integration between the
@@ -1223,9 +289,7 @@ func WithLogStartup(enabled bool) StartOption {
 // enabled value defaults to the value of the
 // DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
-	return func(c *config) {
-		c.profilerHotspots = enabled
-	}
+	return v2.WithProfilerCodeHotspots(enabled)
 }
 
 // WithProfilerEndpoints enables the endpoints integration between the tracer
@@ -1236,9 +300,7 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // the value of the DD_PROFILING_ENDPOINT_COLLECTION_ENABLED env variable or
 // true.
 func WithProfilerEndpoints(enabled bool) StartOption {
-	return func(c *config) {
-		c.profilerEndpoints = enabled
-	}
+	return v2.WithProfilerEndpoints(enabled)
 }
 
 // WithDebugSpansMode enables debugging old spans that may have been
@@ -1250,10 +312,7 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 // This feature is disabled by default. Turning on this debug mode may
 // be expensive, so it should only be enabled for debugging purposes.
 func WithDebugSpansMode(timeout time.Duration) StartOption {
-	return func(c *config) {
-		c.debugAbandonedSpans = true
-		c.spanTimeout = timeout
-	}
+	return v2.WithDebugSpansMode(timeout)
 }
 
 // WithPartialFlushing enables flushing of partially finished traces.
@@ -1264,10 +323,7 @@ func WithDebugSpansMode(timeout time.Duration) StartOption {
 // unless overriden with DD_TRACE_PARTIAL_FLUSH_MIN_SPANS. Partial flushing
 // is disabled by default.
 func WithPartialFlushing(numSpans int) StartOption {
-	return func(c *config) {
-		c.partialFlushEnabled = true
-		c.partialFlushMinSpans = numSpans
-	}
+	return v2.WithPartialFlushing(numSpans)
 }
 
 // WithStatsComputation enables client-side stats computation, allowing
@@ -1276,18 +332,7 @@ func WithPartialFlushing(numSpans int) StartOption {
 // This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED to true.
 // Client-side stats is off by default.
 func WithStatsComputation(enabled bool) StartOption {
-	return func(c *config) {
-		c.statsComputationEnabled = enabled
-	}
-}
-
-// WithOrchestrion configures Orchestrion's auto-instrumentation metadata.
-// This option is only intended to be used by Orchestrion https://github.com/DataDog/orchestrion
-func WithOrchestrion(metadata map[string]string) StartOption {
-	return func(c *config) {
-		c.orchestrionCfg.Enabled = true
-		c.orchestrionCfg.Metadata = metadata
-	}
+	return v2.WithStatsComputation(enabled)
 }
 
 // StartSpanOption is a configuration option for StartSpan. It is aliased in order
@@ -1299,7 +344,10 @@ type StartSpanOption = ddtrace.StartSpanOption
 func Tag(k string, v interface{}) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]interface{}{}
+			cfg.Tags = make(map[string]interface{})
+		}
+		if k == ext.SamplingPriority {
+			k = "_sampling_priority_v1shim"
 		}
 		cfg.Tags[k] = v
 	}
@@ -1351,13 +399,6 @@ func WithSpanID(id uint64) StartSpanOption {
 func ChildOf(ctx ddtrace.SpanContext) StartSpanOption {
 	return func(cfg *ddtrace.StartSpanConfig) {
 		cfg.Parent = ctx
-	}
-}
-
-// withContext associates the ctx with the span.
-func withContext(ctx context.Context) StartSpanOption {
-	return func(cfg *ddtrace.StartSpanConfig) {
-		cfg.Context = ctx
 	}
 }
 
@@ -1426,99 +467,55 @@ func StackFrames(n, skip uint) FinishOption {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
-	return func(c *config) {
-		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
-		setHeaderTags(headerAsTags)
-	}
-}
-
-// setHeaderTags sets the global header tags.
-// Always resets the global value and returns true.
-func setHeaderTags(headerAsTags []string) bool {
-	globalconfig.ClearHeaderTags()
-	for _, h := range headerAsTags {
-		header, tag := normalizer.HeaderTag(h)
-		if len(header) == 0 || len(tag) == 0 {
-			log.Debug("Header-tag input is in unsupported format; dropping input value %v", h)
-			continue
-		}
-		globalconfig.SetHeaderTag(header, tag)
-	}
-	return true
+	return v2.WithHeaderTags(headerAsTags)
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.
 // This configuration can be set by combining one or several UserMonitoringOption with a call to SetUser().
-type UserMonitoringConfig struct {
-	PropagateID bool
-	Login       string
-	Org         string
-	Email       string
-	Name        string
-	Role        string
-	SessionID   string
-	Scope       string
-	Metadata    map[string]string
-}
+type UserMonitoringConfig = v2.UserMonitoringConfig
 
 // UserMonitoringOption represents a function that can be provided as a parameter to SetUser.
-type UserMonitoringOption func(*UserMonitoringConfig)
+type UserMonitoringOption = v2.UserMonitoringOption
 
 // WithUserMetadata returns the option setting additional metadata of the authenticated user.
 // This can be used multiple times and the given data will be tracked as `usr.{key}=value`.
 func WithUserMetadata(key, value string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Metadata[key] = value
-	}
+	return v2.WithUserMetadata(key, value)
 }
 
 // WithUserLogin returns the option setting the login of the authenticated user.
 func WithUserLogin(login string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Login = login
-	}
+	return v2.WithUserLogin(login)
 }
 
 // WithUserOrg returns the option setting the organization of the authenticated user.
 func WithUserOrg(org string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Org = org
-	}
+	return v2.WithUserOrg(org)
 }
 
 // WithUserEmail returns the option setting the email of the authenticated user.
 func WithUserEmail(email string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Email = email
-	}
+	return v2.WithUserEmail(email)
 }
 
 // WithUserName returns the option setting the name of the authenticated user.
 func WithUserName(name string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Name = name
-	}
+	return v2.WithUserName(name)
 }
 
 // WithUserSessionID returns the option setting the session ID of the authenticated user.
 func WithUserSessionID(sessionID string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.SessionID = sessionID
-	}
+	return v2.WithUserSessionID(sessionID)
 }
 
 // WithUserRole returns the option setting the role of the authenticated user.
 func WithUserRole(role string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Role = role
-	}
+	return v2.WithUserRole(role)
 }
 
 // WithUserScope returns the option setting the scope (authorizations) of the authenticated user.
 func WithUserScope(scope string) UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.Scope = scope
-	}
+	return v2.WithUserScope(scope)
 }
 
 // WithPropagation returns the option allowing the user id to be propagated through distributed traces.
@@ -1526,7 +523,25 @@ func WithUserScope(scope string) UserMonitoringOption {
 // This option should only be used if you are certain that the user id passed to `SetUser()` does not contain any
 // personal identifiable information or any kind of sensitive data, as it will be leaked to other services.
 func WithPropagation() UserMonitoringOption {
-	return func(cfg *UserMonitoringConfig) {
-		cfg.PropagateID = true
-	}
+	return v2.WithPropagation()
+}
+
+// ApplyV1Options consumes a list of v1 StartSpanOptions and returns a function
+// that can be used to set the corresponding v2 StartSpanConfig fields.
+// This is used to adapt the v1 StartSpanOptions to the v2 StartSpanConfig.
+func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
+	return internal.ApplyV1Options(opts...)
+}
+
+// ApplyV1Options consumes a list of v1 FinishOption and returns a function
+// that can be used to set the corresponding v2 FinishConfig fields.
+// This is used to adapt the v1 FinishConfig to the v2 FinishConfig.
+func ApplyV1FinishOptions(opts ...ddtrace.FinishOption) v2.FinishOption {
+	return internal.ApplyV1FinishOptions(opts...)
+}
+
+// WrapSpanV2 wraps a v2.Span into a ddtrace.Span.
+// This is not intended for external use. It'll be removed when v1 is deprecated.
+func WrapSpanV2(span *v2.Span) ddtrace.Span {
+	return &internal.SpanV2Adapter{Span: span}
 }

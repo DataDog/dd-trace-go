@@ -8,29 +8,15 @@ package pgx
 import (
 	"context"
 
+	v2 "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func NewPool(ctx context.Context, connString string, opts ...Option) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		return nil, err
-	}
-	return NewPoolWithConfig(ctx, config, opts...)
+	return v2.NewPool(ctx, connString, opts...)
 }
 
 func NewPoolWithConfig(ctx context.Context, config *pgxpool.Config, opts ...Option) (*pgxpool.Pool, error) {
-	// pgxpool.NewWithConfig panics if the config was not created using pgxpool.ParseConfig, which should ensure everything
-	// is properly initialized, so it doesn't make sense to check for a nil config here.
-
-	tracer := wrapPgxTracer(config.ConnConfig.Tracer, opts...)
-	config.ConnConfig.Tracer = tracer
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	if tracer.cfg.poolStats && tracer.cfg.statsdClient != nil {
-		go pollPoolStats(tracer.cfg.statsdClient, pool)
-	}
-	return pool, nil
+	return v2.NewPoolWithConfig(ctx, config, opts...)
 }
