@@ -100,7 +100,7 @@ type RequestHandler struct {
 // This also permits orchestrion to disable tracing on this client.
 // See https://golang.org/pkg/net/http/#DefaultTransport .
 // Except we use a higher timeout for this
-var defaultHttpClient = &http.Client{
+var defaultHTTPClient = http.Client{
 	Timeout: 45 * time.Second,
 	Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -119,7 +119,7 @@ var defaultHttpClient = &http.Client{
 // NewRequestHandler creates a new RequestHandler with a default HTTP client.
 func NewRequestHandler() *RequestHandler {
 	return &RequestHandler{
-		Client: defaultHttpClient,
+		Client: &defaultHTTPClient,
 	}
 }
 

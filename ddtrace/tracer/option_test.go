@@ -34,7 +34,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
