@@ -38,7 +38,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.0.0-rc.20
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.0.0-rc.20
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.0.0-rc.20
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.20
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-rc.22
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.0.0-rc.20
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.0.0-rc.20
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.0.0-rc.20
@@ -46,8 +46,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2 v2.0.0-rc.20
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.0.0-rc.20
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.0.0-rc.20
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-rc.20
-	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.20
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.0.0-rc.22
+	github.com/DataDog/dd-trace-go/v2 v2.0.0-rc.22
 	github.com/IBM/sarama v1.42.1
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
