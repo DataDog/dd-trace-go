@@ -9,7 +9,7 @@ import (
 	"context"
 	"testing"
 
-	agent "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
