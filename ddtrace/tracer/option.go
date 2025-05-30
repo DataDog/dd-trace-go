@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/orchestrion/runtime/built"
 	"golang.org/x/mod/semver"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -505,7 +506,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.agentURL = internal.AgentURLFromEnv()
 	}
 	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
-	if c.httpClient == nil {
+	if c.httpClient == nil || built.WithOrchestrion {
+		if built.WithOrchestrion && c.httpClient != nil {
+			log.Error("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
+		}
 		if c.agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")

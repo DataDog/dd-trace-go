@@ -81,7 +81,6 @@ func (m *MockAgent) Start(t *testing.T) string {
 
 	tracer.Start(
 		tracer.WithAgentAddr(srvURL.Host),
-		tracer.WithHTTPClient(&internalClient),
 		tracer.WithSampler(tracer.NewAllSampler()),
 		tracer.WithLogStartup(false),
 		tracer.WithLogger(testLogger{t}),
@@ -137,19 +136,3 @@ type testLogger struct {
 func (l testLogger) Log(msg string) {
 	l.T.Log(msg)
 }
-
-var (
-	defaultTransport, _ = http.DefaultTransport.(*http.Transport)
-	// A copy of the default transport, except it will be marked internal by orchestrion, so it is not traced.
-	internalTransport = &http.Transport{
-		Proxy:                 defaultTransport.Proxy,
-		DialContext:           defaultTransport.DialContext,
-		ForceAttemptHTTP2:     defaultTransport.ForceAttemptHTTP2,
-		MaxIdleConns:          defaultTransport.MaxIdleConns,
-		IdleConnTimeout:       defaultTransport.IdleConnTimeout,
-		TLSHandshakeTimeout:   defaultTransport.TLSHandshakeTimeout,
-		ExpectContinueTimeout: defaultTransport.ExpectContinueTimeout,
-	}
-
-	internalClient = http.Client{Transport: internalTransport}
-)
