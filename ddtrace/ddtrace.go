@@ -9,7 +9,7 @@
 // Additionally, package "ext" provides a set of tag names and values specific to Datadog's APM product.
 //
 // To get started, visit the documentation for any of the packages you'd like to begin
-// with by accessing the subdirectories of this package: https://godoc.org/github.com/DataDog/dd-trace-go/v2/ddtrace#pkg-subdirectories.
+// with by accessing the subdirectories of this package: https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace#pkg-subdirectories.
 package ddtrace // import "github.com/DataDog/dd-trace-go/v2/ddtrace"
 
 // SpanContext represents a span state that can propagate to descendant spans
