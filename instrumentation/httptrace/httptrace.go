@@ -113,7 +113,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 					ctx := r.Context()
 					spanctx.ForeachBaggageItem(func(k, v string) bool {
 						ctx = baggage.Set(ctx, k, v)
-						if cfg.shouldTagBaggageKey(k) {
+						if cfg.tagBaggageKey(k) {
 							ssCfg.Tags["baggage."+k] = v
 						}
 						return true

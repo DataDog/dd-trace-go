@@ -40,7 +40,7 @@ type config struct {
 	isStatusError                func(statusCode int) bool
 	inferredProxyServicesEnabled bool
 	allowAllBaggage              bool                // tag all baggage items when true (DD_TRACE_BAGGAGE_TAG_KEYS="*").
-	baggageTagKeys               map[string]struct{} // holds specific baggage keys to tag when; it's a map[string]struct{} for O(1) lookups.
+	baggageTagKeys               map[string]struct{} // when allowAllBaggage is false, only tag baggage items whose keys are listed here.
 }
 
 // ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
@@ -160,8 +160,8 @@ func defaultBaggageTagKeys() map[string]struct{} {
 	}
 }
 
-// shouldTagBaggageKey returns true if we should tag this baggage key.
-func (c *config) shouldTagBaggageKey(key string) bool {
+// tagBaggageKey returns true if we should tag this baggage key.
+func (c *config) tagBaggageKey(key string) bool {
 	if c.allowAllBaggage {
 		return true
 	}
