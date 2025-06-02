@@ -18,6 +18,9 @@ import (
 )
 
 func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Origin, err error) (bool, telemetry.Origin, error) {
+	if env == "DD_APPSEC_SCA_ENABLED" && origin == telemetry.OriginDefault {
+		return value, origin, err
+	}
 	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
 	return value, origin, err
 }
