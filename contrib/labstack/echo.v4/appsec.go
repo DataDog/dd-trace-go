@@ -8,6 +8,7 @@ package echo
 import (
 	"net/http"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
@@ -17,6 +18,9 @@ import (
 
 func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		// Hijack the context with monitoring methods...
+		c = appsecContext{c}
+
 		params := make(map[string]string)
 		for _, n := range c.ParamNames() {
 			params[n] = c.Param(n)
@@ -58,4 +62,50 @@ type statusResponseWriter struct {
 // Status returns the status code of the response
 func (w *statusResponseWriter) Status() int {
 	return w.Response.Status
+}
+
+type appsecContext struct {
+	echo.Context
+}
+
+func (c appsecContext) Bind(i any) error {
+	if err := c.Context.Bind(i); err != nil {
+		return err
+	}
+	return appsec.MonitorParsedHTTPBody(c.Request().Context(), i)
+}
+
+func (c appsecContext) JSON(code int, i any) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.JSON(code, i)
+}
+
+func (c appsecContext) JSONPretty(code int, i any, indent string) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.JSONPretty(code, i, indent)
+}
+
+func (c appsecContext) JSONP(code int, callback string, i any) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.JSONP(code, callback, i)
+}
+
+func (c appsecContext) XML(code int, i any) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.XML(code, i)
+}
+
+func (c appsecContext) XMLPretty(code int, i any, indent string) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.XMLPretty(code, i, indent)
 }
