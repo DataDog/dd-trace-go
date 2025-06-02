@@ -6,16 +6,14 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
@@ -28,13 +26,13 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
-	val, defined, err := parseBoolEnvVar(EnvSCAEnabled)
+	val, origin, err := stableconfig.Bool(EnvSCAEnabled, false)
 	if err != nil {
 		log.Error("appsec: %v", err)
 		return
 	}
-	if defined {
-		telemetry.RegisterAppConfig(EnvSCAEnabled, val, telemetry.OriginEnvVar)
+	if origin != telemetry.OriginDefault {
+		telemetry.RegisterAppConfig(EnvSCAEnabled, val, origin)
 	}
 }
 
@@ -186,35 +184,21 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // If the [EnvEnabled] variable is set to a value that is not a valid boolean (according to
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
-	return parseBoolEnvVar(EnvEnabled)
-}
-
-// Return true when the given environment variable is defined and set to true (as of strconv's
-// parsing rules). When false, it also returns whether the env var was actually set or not.
-// In case of a parsing error, it returns a detailed error.
-func parseBoolEnvVar(env string) (enabled bool, set bool, err error) {
-	str, set := os.LookupEnv(env)
-	if str == "" {
-		return false, set, nil
-	} else if enabled, err = strconv.ParseBool(str); err != nil {
-		return false, set, fmt.Errorf("could not parse %s value `%s` as a boolean value", env, str)
+	// TODO: APMAPI-1358
+	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
+	if origin != telemetry.OriginDefault {
+		set = true
 	}
-
-	return enabled, set, nil
+	return enabled, set, err
 }
 
 // NewConfig returns a fresh appsec configuration read from the env
 func (c *StartConfig) NewConfig() (*Config, error) {
-	var rules any
 	data, err := internal.RulesFromEnv()
 	if err != nil {
 		return nil, fmt.Errorf("reading WAF rules from environment: %w", err)
 	}
-	if err := json.Unmarshal(data, &rules); err != nil {
-		return nil, fmt.Errorf("parsing WAF rules from environment: %w", err)
-	}
-
-	manager, err := NewWAFManager(internal.NewObfuscatorConfig(), rules)
+	manager, err := NewWAFManager(internal.NewObfuscatorConfig(), data)
 	if err != nil {
 		return nil, err
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -214,10 +215,12 @@ func defaultConfig() (*config, error) {
 	}
 	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
 	// the Datadog admission controller, so we set it to true.
-	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+	// TODO: APMAPI-1358
+	if v, _ := stableconfig.String("DD_PROFILING_ENABLED", ""); v == "auto" {
 		c.enabled = true
 	} else {
-		c.enabled = internal.BoolEnv("DD_PROFILING_ENABLED", true)
+		// TODO: APMAPI-1358
+		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -459,7 +462,7 @@ func WithUDS(socketPath string) Option {
 		// will be interpreted as part of the request path and the
 		// request will fail.  Clean up the path here so we get
 		// something resembling the desired path in any profiler logs.
-		// TODO: copied from ddtrace/tracer, but is this correct?
+		// TODO(darccio): use internal.UnixDataSocketURL instead
 		cleanPath := fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(socketPath))
 		c.agentURL = "http://" + cleanPath + "/profiling/v1/input"
 		WithHTTPClient(&http.Client{

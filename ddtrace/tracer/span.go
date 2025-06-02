@@ -631,18 +631,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 		if !cfg.FinishTime.IsZero() {
 			t = cfg.FinishTime.UnixNano()
 		}
-		if cfg.NoDebugStack {
-			s.mu.Lock()
-			// We don't lock spans when flushing, so we could have a data race when
-			// modifying a span as it's being flushed. This protects us against that
-			// race, since spans are marked `finished` before we flush them.
-			if s.finished {
-				s.mu.Unlock()
-				return
-			}
-			delete(s.meta, ext.ErrorStack)
-			s.mu.Unlock()
-		}
 		if cfg.Error != nil {
 			s.mu.Lock()
 			s.setTagError(cfg.Error, errorConfig{
@@ -975,6 +963,8 @@ const (
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
 	keyBaseService = "_dd.base_service"
+	// keyProcessTags contains a list of process tags to indentify the service.
+	keyProcessTags = "_dd.tags.process"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

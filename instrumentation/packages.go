@@ -720,8 +720,8 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "GRAPHQL",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName("graphql"),
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("graphql.server"),
 			},
 		},
 	},
@@ -731,7 +731,7 @@ var packages = map[Package]PackageInfo{
 		naming: map[Component]componentNames{
 			ComponentDefault: {
 				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("graphql"),
+				buildServiceNameV0: staticName("graphql.server"),
 				buildOpNameV0:      staticName("graphql.request"),
 				buildOpNameV1:      staticName("graphql.server.request"),
 			},

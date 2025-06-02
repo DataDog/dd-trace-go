@@ -33,6 +33,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.1.0-dev
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.1.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.1.0-dev
@@ -74,6 +75,8 @@ require (
 	github.com/gocql/gocql v1.6.0
 	github.com/gofiber/fiber/v2 v2.52.5
 	github.com/graph-gophers/graphql-go v1.5.0
+	github.com/graphql-go/graphql v0.8.1
+	github.com/graphql-go/handler v0.2.4
 	github.com/hashicorp/consul/api v1.24.0
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/julienschmidt/httprouter v1.3.0
@@ -95,7 +98,7 @@ require (
 	cloud.google.com/go v0.112.1 // indirect
 	cloud.google.com/go/compute/metadata v0.5.2 // indirect
 	cloud.google.com/go/iam v1.1.7 // indirect
-	github.com/DataDog/appsec-internal-go v1.11.2 // indirect
+	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.64.0-rc.1 // indirect
@@ -387,3 +390,5 @@ replace github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 => ../../../con
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../testutils/grpc
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+replace github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 => ../../../contrib/graphql-go/graphql
