@@ -6,6 +6,6 @@ experiments:
   - name: run-benchmarks
     steps:
       - name: benchmarks
-        cpus: 23-27
+        cpus: 23-47
         run: shell
-        script: export DIRECTORY=$BP_DIRECTORY && /platform/steps/run-benchmarks.sh
+        script: export TEST_NAME=$TEST_NAME && /platform/steps/run-benchmarks.sh
