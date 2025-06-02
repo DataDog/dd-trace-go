@@ -21,3 +21,9 @@ jobs:
         with:
           initial-delay-seconds: "1000"  # smoke tests takes approx 20 mn to finish
           max-retries: "60"
+          ignored-name-patterns: |
+            devflow/merge
+
+# Reason for ignored-name-patterns:
+#
+# * devflow/merge: technical job used by the merge queue, do not remove it.
