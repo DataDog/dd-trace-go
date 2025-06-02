@@ -17,6 +17,7 @@ variables:
 generate_matrix:
   stage: generate
   image: alpine
+  tags: ["runner:apm-k8s-tweaked-metal"]
   script:
     - |
       echo "---" > generated_benchmark_matrix.yml
@@ -47,6 +48,7 @@ generate_matrix:
 
 trigger_child_pipeline:
   stage: trigger_benchmarks
+  tags: ["runner:apm-k8s-tweaked-metal"]
   trigger:
     include:
       - artifact: generated_benchmark_matrix.yml
