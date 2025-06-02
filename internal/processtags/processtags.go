@@ -18,10 +18,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+const envProcessTagsEnabled = "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED"
+
 const (
 	tagEntrypointName    = "entrypoint.name"
 	tagEntrypointBasedir = "entrypoint.basedir"
 	tagEntrypointWorkdir = "entrypoint.workdir"
+	tagEntrypointType    = "entrypoint.type"
+)
+
+const (
+	entrypointTypeExecutable = "executable"
 )
 
 var (
@@ -100,7 +107,7 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
 func Reload() {
-	enabled = internal.BoolEnv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", false)
+	enabled = internal.BoolEnv(envProcessTagsEnabled, false)
 	if !enabled {
 		return
 	}
@@ -120,6 +127,7 @@ func collect() map[string]string {
 		baseDirName := filepath.Base(filepath.Dir(execPath))
 		tags[tagEntrypointName] = filepath.Base(execPath)
 		tags[tagEntrypointBasedir] = baseDirName
+		tags[tagEntrypointType] = entrypointTypeExecutable
 	}
 	wd, err := os.Getwd()
 	if err != nil {

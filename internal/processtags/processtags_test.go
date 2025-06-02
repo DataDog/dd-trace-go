@@ -7,6 +7,8 @@ package processtags
 
 import (
 	"github.com/stretchr/testify/assert"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -15,10 +17,14 @@ func TestProcessTags(t *testing.T) {
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 		Reload()
 
+		wantTagsRe := regexp.MustCompile(`^entrypoint\.basedir:[a-zA-Z0-9._-]+,entrypoint\.name:[a-zA-Z0-9._-]+,entrypoint.type:executable,entrypoint\.workdir:[a-zA-Z0-9._-]+$`)
 		p := GlobalTags()
 		assert.NotNil(t, p)
 		assert.NotEmpty(t, p.String())
+		assert.Regexp(t, wantTagsRe, p.String(), "wrong string serialized tags")
+
 		assert.NotEmpty(t, p.Slice())
+		assert.Regexp(t, wantTagsRe, strings.Join(p.Slice(), ","), "wrong slice serialized tags")
 	})
 
 	t.Run("disabled", func(t *testing.T) {
