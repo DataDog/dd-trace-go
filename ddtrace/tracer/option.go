@@ -510,7 +510,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if orchestrion.Enabled() && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
 			// TODO(eliott.bouhana): remove once dd:no-span is implemented
-			log.Error("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
+			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
 		}
 		if c.agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
