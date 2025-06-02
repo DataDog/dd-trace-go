@@ -68,12 +68,6 @@ type Tracer interface {
 	// Inject injects a span context into the given carrier.
 	Inject(context *SpanContext, carrier interface{}) error
 
-	// Submit submits a span to the tracer.
-	Submit(s *Span)
-
-	// SubmitChunk submits a trace chunk to the tracer.
-	SubmitChunk(c *Chunk)
-
 	// TracerConf returns a snapshot of the current configuration of the tracer.
 	TracerConf() TracerConf
 
@@ -320,11 +314,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-// NewUnstartedTracer returns a new Tracer instance without starting it. This is
-func NewUnstartedTracer(opts ...StartOption) (Tracer, error) {
-	return newUnstartedTracer(opts...)
-}
-
 func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	c, err := newConfig(opts...)
 	if err != nil {
@@ -493,7 +482,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		select {
 		case trace := <-t.out:
 			t.sampleChunk(trace)
-			t.traceWriter.add(trace.spans)
+			if len(trace.spans) > 0 {
+				t.traceWriter.add(trace.spans)
+			}
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -518,7 +509,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				select {
 				case trace := <-t.out:
 					t.sampleChunk(trace)
-					t.traceWriter.add(trace.spans)
+					if len(trace.spans) > 0 {
+						t.traceWriter.add(trace.spans)
+					}
 				default:
 					break loop
 				}
@@ -531,16 +524,11 @@ func (t *tracer) worker(tick <-chan time.Time) {
 // Chunk holds information about a trace chunk to be flushed, including its spans.
 // The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
+//
+// It's exported for supporting `mocktracer`.
 type Chunk struct {
 	spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
-}
-
-func NewChunk(spans []*Span, willSend bool) *Chunk {
-	return &Chunk{
-		spans:    spans,
-		willSend: willSend,
-	}
 }
 
 // sampleChunk applies single-span sampling to the provided trace.

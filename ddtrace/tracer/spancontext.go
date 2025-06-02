@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -488,6 +489,9 @@ func (t *trace) setTraceTags(s *Span) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
+	if pTags := processtags.GlobalTags().String(); pTags != "" {
+		s.setMeta(keyProcessTags, pTags)
+	}
 }
 
 // finishedOne acknowledges that another span in the trace has finished, and checks
@@ -582,7 +586,9 @@ func (t *trace) finishedOne(s *Span) {
 }
 
 func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
-	tr.SubmitChunk(ch)
+	if mtr, ok := tr.(interface{ SubmitChunk(*Chunk) }); ok {
+		mtr.SubmitChunk(ch)
+	}
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 

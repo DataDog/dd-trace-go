@@ -261,25 +261,16 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		if currentSettings.ImpactedTestsEnabled ||
 			internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, false) {
 			wg.Add(1)
-			go func(impactedTestsEnabled bool) {
+			go func() {
 				defer wg.Done()
-
-				var iTests *impactedtests.ImpactedTestAnalyzer
-				var err error
-				if impactedTestsEnabled {
-					// backend returned enabled = true, we pass the client to the analyzer for backend requests
-					iTests, err = impactedtests.NewImpactedTestAnalyzer(ciVisibilityClient)
-				} else {
-					// only local diff (not using the backend response)
-					iTests, err = impactedtests.NewImpactedTestAnalyzer(nil)
-				}
+				iTests, err := impactedtests.NewImpactedTestAnalyzer()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %v", err)
 				} else {
 					ciVisibilityImpactedTestsAnalyzer = iTests
 					log.Debug("civisibility: impacted tests analyzer loaded")
 				}
-			}(currentSettings.ImpactedTestsEnabled)
+			}()
 		}
 
 		// wait for all the additional features to be loaded
