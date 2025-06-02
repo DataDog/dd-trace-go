@@ -48,7 +48,6 @@ generate_matrix:
 
 trigger_child_pipeline:
   stage: trigger_benchmarks
-  tags: ["runner:apm-k8s-tweaked-metal"]
   trigger:
     include:
       - artifact: generated_benchmark_matrix.yml
