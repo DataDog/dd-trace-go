@@ -1,5 +1,4 @@
 .benchmark:
-  stage: benchmarks
   image: $BASE_CI_IMAGE
   when: on_success
   timeout: 1h

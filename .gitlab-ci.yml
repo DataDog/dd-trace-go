@@ -1,6 +1,6 @@
 stages:
   - generate
-  - benchmarks
+  - trigger_benchmarks
   - macrobenchmarks
   - test-apps
 
@@ -12,11 +12,24 @@ variables:
   FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
   BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkWorstCaseScenarioFloodLogging|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkWorstCaseScenarioFloodMetrics"
 
+# In order to run benchmarks in parallel, we generate a matrix of test names based on the BENCHMARK_TARGETS variable.
+# This will be used in tandem with bp-runner in benchmarks.yml.
 generate_matrix:
   stage: generate
   image: alpine
   script:
     - |
+      echo "---" > generated_benchmark_matrix.yml
+      echo "include:" >> generated_benchmark_matrix.yml
+      echo "  - project: '${CI_PROJECT_PATH}'" >> generated_benchmark_matrix.yml
+      echo "    ref: '${CI_COMMIT_SHA}'" >> generated_benchmark_matrix.yml
+      echo "    file: '.gitlab/benchmarks.yml'" >> generated_benchmark_matrix.yml
+      echo "" >> generated_benchmark_matrix.yml
+
+      echo "stages:" >> generated_benchmark_matrix.yml
+      echo "  - benchmarks" >> generated_benchmark_matrix.yml
+      echo "" >> generated_benchmark_matrix.yml
+
       echo "benchmark_matrix:" >> generated_benchmark_matrix.yml
       echo "  extends: .benchmark" >> generated_benchmark_matrix.yml
       echo "  stage: benchmarks" >> generated_benchmark_matrix.yml
@@ -24,16 +37,24 @@ generate_matrix:
       echo "    matrix:" >> generated_benchmark_matrix.yml
       echo "      - BENCHMARK_NAME:" >> generated_benchmark_matrix.yml
       echo "$BENCHMARK_TARGETS" | tr '|' '\n' | while IFS= read -r benchmark_name; do
-        printf "      - \"%s\"\n" "$benchmark_name" >> generated_benchmark_matrix.yml
+        printf "        - \"%s\"\n" "$benchmark_name" >> generated_benchmark_matrix.yml
       done
+      echo "" >> generated_benchmark_matrix.yml
   artifacts:
     paths:
       - generated_benchmark_matrix.yml
     expire_in: 1 hour # Artifact is temporary, needed only for the current pipeline
 
+trigger_child_pipeline:
+  stage: trigger_benchmarks
+  trigger:
+    include:
+      - artifact: generated_benchmark_matrix.yml
+        job: generate_matrix
+    strategy: depend
+  needs:
+    - generate_matrix
+
 include:
-  - local: ".gitlab/benchmarks.yml"
-  - artifact: generated_matrix_part.yml
-    job: generate_matrix_config  
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
