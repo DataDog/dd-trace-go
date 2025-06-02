@@ -6,7 +6,7 @@
 // Package graphql provides functions to trace the graph-gophers/graphql-go package (https://github.com/graph-gophers/graphql-go).
 //
 // We use the tracing mechanism available in the
-// https://godoc.org/github.com/graph-gophers/graphql-go/trace subpackage.
+// https://pkg.go.dev/github.com/graph-gophers/graphql-go/trace subpackage.
 // Create a new Tracer with `NewTracer` and pass it as an additional option to
 // `MustParseSchema`.
 package graphql // import "github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2"

@@ -14,6 +14,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,4 +40,19 @@ func TestStartStop(t *testing.T) {
 	os.Unsetenv(config.EnvEnabled)
 	testutils.StartAppSec(t)
 	appsec.Stop()
+}
+
+func TestDetectLibDL(t *testing.T) {
+	client := new(telemetrytest.RecordClient)
+	restore := telemetry.MockClient(client)
+	defer restore()
+
+	appsec.Start()
+	if !appsec.Enabled() {
+		t.Skip("AppSec is not enabled")
+	}
+
+	defer appsec.Stop()
+
+	telemetrytest.CheckConfig(t, client.Configuration, "libdl_present", true)
 }
