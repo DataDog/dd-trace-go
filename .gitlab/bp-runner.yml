@@ -6,20 +6,6 @@ experiments:
   - name: run-benchmarks
     steps:
       - name: benchmarks
-        cpus: 23-26
-        run: shell
-        script: export DIRECTORY=$BP_DIRECTORY && /platform/steps/run-benchmarks.sh
-
-  - name: run-macrobenchmarks
-    steps:
-      - name: macrobenchmarks
-        cpus: 27-37
-        run: shell
-        script: export DIRECTORY=$BP_DIRECTORY && /platform/steps/run-benchmarks.sh
-
-  - name: run-test-apps
-    steps:
-      - name: test-apps
-        cpus: 38-47
+        cpus: 23-27
         run: shell
         script: export DIRECTORY=$BP_DIRECTORY && /platform/steps/run-benchmarks.sh
