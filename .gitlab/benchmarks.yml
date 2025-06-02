@@ -13,6 +13,12 @@
     git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
     git clone --branch hannahkm/parallelize-ddtracego https://github.com/DataDog/benchmarking-platform /platform && cd /platform
     ./steps/capture-hardware-software-info.sh
+    echo "--- Debugging URL formation ---"
+    echo "1. CI_PROJECT_URL='${CI_PROJECT_URL}'"
+    echo "2. CI_COMMIT_BRANCH='${CI_COMMIT_BRANCH}'"
+    THE_FULL_URL_ARGUMENT="${CI_PROJECT_URL:-.}/-/blob/${CI_COMMIT_BRANCH:-.}/.gitlab/bp-runner.yml"
+    echo "3. Constructed URL for bp-runner='${THE_FULL_URL_ARGUMENT}'"
+    echo "--- End Debugging ---"
     BP_DIRECTORY=$DIRECTORY bp-runner "${CI_PROJECT_URL:-.}/-/blob/${CI_COMMIT_BRANCH:-.}/.gitlab/bp-runner.yml" --debug -t
     ./steps/analyze-results.sh
     ./steps/upload-results-to-s3.sh || :
