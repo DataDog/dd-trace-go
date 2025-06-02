@@ -8,7 +8,7 @@ As is common and recommended in the Go community, the best way to approach migra
 
 We have also provided a new migration tool to help with the most essential changes made in v2, which you can read about [here](./tools/v2fix/README.md).
 
-Our [godoc page](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace) should deem helpful during this process. We also have the [official documentation](https://docs.datadoghq.com/tracing/setup/go/), which contains a couple of examples.
+Our [godoc page](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace) should be helpful during this process. We also have the [official documentation](https://docs.datadoghq.com/tracing/setup/go/), which contains a couple of examples.
 
 This document will further outline some _before_ and _after_ examples.
 
@@ -61,7 +61,7 @@ var ctx *tracer.SpanContext = sp.Context()
 
 ### Deprecated ddtrace interfaces
 
-Along with `Span`, all the interfaces in `ddtrace` have been removed, except for `SpanContext`. They've been replaced by specific types placed, except for `Tracer`, and moved into `ddtrace/tracer`.
+All the interfaces in `ddtrace` have been removed in favor of struct types, except for `SpanContext`. The new types have moved into `ddtrace/tracer`.
 
 ### Deprecated constants and options
 
