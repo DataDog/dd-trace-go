@@ -1,4 +1,5 @@
 stages:
+  - generate
   - benchmarks
   - macrobenchmarks
   - test-apps
@@ -10,7 +11,29 @@ variables:
   KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
   FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
   BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkWorstCaseScenarioFloodLogging|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkWorstCaseScenarioFloodMetrics"
+
+generate_matrix:
+  stage: generate
+  image: alpine
+  script:
+    - |
+      echo "benchmark_matrix:" >> generated_benchmark_matrix.yml
+      echo "  extends: .benchmark" >> generated_benchmark_matrix.yml
+      echo "  stage: benchmarks" >> generated_benchmark_matrix.yml
+      echo "  parallel:" >> generated_benchmark_matrix.yml
+      echo "    matrix:" >> generated_benchmark_matrix.yml
+      echo "      - BENCHMARK_NAME:" >> generated_benchmark_matrix.yml
+      echo "$BENCHMARK_TARGETS" | tr '|' '\n' | while IFS= read -r benchmark_name; do
+        printf "      - \"%s\"\n" "$benchmark_name" >> generated_benchmark_matrix.yml
+      done
+  artifacts:
+    paths:
+      - generated_benchmark_matrix.yml
+    expire_in: 1 hour # Artifact is temporary, needed only for the current pipeline
+
 include:
-  - ".gitlab/benchmarks.yml"
-  - ".gitlab/macrobenchmarks.yml"
-  - ".gitlab/test-apps.yml"
+  - local: ".gitlab/benchmarks.yml"
+  - artifact: generated_matrix_part.yml
+    job: generate_matrix_config  
+  - local: ".gitlab/macrobenchmarks.yml"
+  - local: ".gitlab/test-apps.yml"

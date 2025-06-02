@@ -13,7 +13,7 @@
     git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
     git clone --branch hannahkm/parallelize-ddtracego https://github.com/DataDog/benchmarking-platform /platform && cd /platform
     ./steps/capture-hardware-software-info.sh
-    BP_DIRECTORY=$DIRECTORY bp-runner "${CI_PROJECT_DIR:-.}/.gitlab/bp-runner.yml" --debug -t
+    TEST_NAME=$BENCHMARK_NAME bp-runner "${CI_PROJECT_DIR:-.}/.gitlab/bp-runner.yml" --debug -t
     ./steps/analyze-results.sh
     ./steps/upload-results-to-s3.sh || :
     ./steps/post-pr-comment.sh || :
@@ -23,13 +23,3 @@
     paths:
       - reports/
     expire_in: 3 months
-
-benchmark_matrix:
-  extends: .benchmark
-  parallel:
-    matrix:
-      - DIRECTORY:
-        - "./ddtrace"
-        - "./internal/appsec"
-        - "./contrib/net/http"
-        - "./contrib/graphql-go/graphql"
