@@ -1044,7 +1044,7 @@ func TestSpanProcessTags(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
+			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
 			processtags.Reload()
 			tracer, transport, flush, stop, err := startTestTracer(t)
 			assert.NoError(t, err)

@@ -12,7 +12,7 @@ import (
 
 func TestProcessTags(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", "true")
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 		Reload()
 
 		p := GlobalTags()
@@ -22,7 +22,7 @@ func TestProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", "false")
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
 		Reload()
 
 		p := GlobalTags()

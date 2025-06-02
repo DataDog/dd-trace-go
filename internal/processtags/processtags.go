@@ -100,7 +100,7 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
 func Reload() {
-	enabled = internal.BoolEnv("DD_EXPERIMENTAL_COLLECT_PROCESS_TAGS_ENABLED", false)
+	enabled = internal.BoolEnv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", false)
 	if !enabled {
 		return
 	}
