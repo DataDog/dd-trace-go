@@ -41,6 +41,7 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.
 		addresses.ServerRequestQueryAddr,
 		addresses.ServerRequestPathParamsAddr,
 		addresses.ServerRequestBodyAddr,
+		addresses.ServerResponseBodyAddr,
 		addresses.ServerResponseStatusAddr,
 		addresses.ServerResponseHeadersNoCookiesAddr) {
 		return nil, nil

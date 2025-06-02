@@ -113,20 +113,38 @@ func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	}
 }
 
-const monitorBodyErrorLog = `
+const (
+	monitorParsedBodyErrorLog = `
 "appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context:
 	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
 `
+	monitorResponseBodyErrorLog = `
+"appsec: http response body monitoring ignored: could not find the http handler instrumentation metadata in the request context:
+	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
+`
+)
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
-// get preciser error logs.
+// get more accurate error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
 	return waf.RunSimple(ctx,
 		addresses.NewAddressesBuilder().
 			WithRequestBody(body).
 			Build(),
-		monitorBodyErrorLog,
+		monitorParsedBodyErrorLog,
+	)
+}
+
+// MonitorResponseBody gets the response body through the in-app WAF.
+// This function should not be called when AppSec is disabled in order to get
+// more accurate error logs.
+func MonitorResponseBody(ctx context.Context, body any) error {
+	return waf.RunSimple(ctx,
+		addresses.NewAddressesBuilder().
+			WithResponseBody(body).
+			Build(),
+		monitorResponseBodyErrorLog,
 	)
 }
 
