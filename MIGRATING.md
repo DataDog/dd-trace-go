@@ -34,7 +34,7 @@ It is also important to note that when using our contrib libraries, import URLs 
 
 For customers that have large codebases and that are unable to immediately upgrade services to the v2 tracer, we are offering a special transitional version of the v1 tracer, the [v1 transitional version](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1@v1.74.0) which is essentially a wrapper that preserves the API from v1 but uses v2 under the hood.
 
-You should import only one version of the tracer for any given service (with the exception of the v1 transitional version), but your organization can import different versions of the tracer for different services as you perform your migration. Staggering the upgrade per service can minimize downtime and help ensure stability throughout your transition.
+It’s safe for different services within your organization to use different tracer versions during the transition, some can use v1 while others adopt v2. Staggering the upgrade per service can minimize downtime and help ensure stability throughout your transition.
 
 The transitional version is the only v1 version that allows both v1 and v2 to be imported in the same service, which enables you to migrate a service gradually. Using this v1 transitional version doesn’t require any code changes, but it also won’t support any new features introduced in v2.
 
