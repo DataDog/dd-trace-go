@@ -36,7 +36,7 @@ For customers that have large codebases and that are unable to immediately upgra
 
 You should import only one version of the tracer for any given service (with the exception of the v1 transitional version), but your organization can import different versions of the tracer for different services as you perform your migration. Staggering the upgrade per service can minimize downtime and help ensure stability throughout your transition.
 
-The transitional version can coexist with v2 in the same service, which enables you to migrate services gradually. Using this v1 transitional version doesn’t require any code changes, but it also won’t support any new features of the new v2 tracer.
+The transitional version is the only v1 version that allows both v1 and v2 to be imported in the same service, which enables you to migrate a service gradually. Using this v1 transitional version doesn’t require any code changes, but it also won’t support any new features introduced in v2.
 
 When using the v1 transitional version, it is possible to gradually migrate a codebase to v2 by replacing imports and adapting the instrumentation to the new API file by file.
 
