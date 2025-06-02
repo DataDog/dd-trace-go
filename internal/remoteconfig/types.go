@@ -25,6 +25,7 @@ type clientTracer struct {
 	Env           string   `json:"env,omitempty"`
 	AppVersion    string   `json:"app_version,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
+	ProcessTags   []string `json:"process_tags,omitempty"`
 }
 
 type configState struct {
