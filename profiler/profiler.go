@@ -254,7 +254,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 	for _, pt := range types {
 		isDelta := len(profileTypes[pt].DeltaValues) > 0
-		in, out := compressionStrategy(pt, isDelta)
+		in, out := compressionStrategy(pt, isDelta, p.cfg.compressionConfig)
 		compressor, err := newCompressionPipeline(in, out)
 		if err != nil {
 			return nil, err

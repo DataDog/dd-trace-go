@@ -30,7 +30,6 @@ import (
 	"cmp"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -45,12 +44,11 @@ func legacyCompressionStrategy(pt ProfileType, isDelta bool) (compression, compr
 	return inputCompression(pt, isDelta), legacyOutputCompression(pt, isDelta)
 }
 
-func compressionStrategy(pt ProfileType, isDelta bool) (compression, compression) {
-	v, ok := os.LookupEnv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS")
-	if !ok {
+func compressionStrategy(pt ProfileType, isDelta bool, config string) (compression, compression) {
+	if config == "" {
 		return legacyCompressionStrategy(pt, isDelta)
 	}
-	algorithm, levelStr, _ := strings.Cut(v, "-")
+	algorithm, levelStr, _ := strings.Cut(config, "-")
 	// Don't bother checking the error. We'll get zero which represents the
 	// default, and we we assume this is only going to get used internally
 	level, _ := strconv.Atoi(levelStr)
