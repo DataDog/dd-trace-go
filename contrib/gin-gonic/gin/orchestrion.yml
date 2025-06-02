@@ -25,3 +25,49 @@ aspects:
               e.Use(gintrace.Middleware(""))
               return e
             }()
+
+  - id: ResponseBody
+    join-point:
+      function-body:
+        one-of:
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: AsciiJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: IndentedJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: JSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: JSONP
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: PureJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: SecureJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: XML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: YAML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: TOML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ProtoBuf
+    advice:
+      - prepend-statements:
+          imports:
+            appsec: github.com/DataDog/dd-trace-go/v2/appsec
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $i := .Function.Argument 1 -}}
+            if __err__ := appsec.MonitorHTTPResponseBody({{ $c }}.Request.Context(), {{ $i }}); __err__ != nil {
+              c.Error(__err__)
+              return
+            }
