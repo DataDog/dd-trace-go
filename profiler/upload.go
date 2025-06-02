@@ -22,6 +22,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
@@ -154,6 +155,7 @@ type uploadEvent struct {
 	Info             struct {
 		Profiler profilerInfo `json:"profiler"`
 	} `json:"info"`
+	ProcessTags string `json:"process_tags,omitempty"`
 }
 
 // profilerInfo holds profiler-specific information which should be attached to
@@ -186,6 +188,7 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		Tags:             strings.Join(tags, ","),
 		EndpointCounts:   bat.endpointCounts,
 		CustomAttributes: bat.customAttributes,
+		ProcessTags:      processtags.GlobalTags().String(),
 	}
 
 	// DD_PROFILING_ENABLED is only used to enable profiling when added with

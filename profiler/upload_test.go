@@ -14,6 +14,7 @@ import (
 	"time"
 
 	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,5 +181,22 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		assert.NotContains(profile.tags, "git.commit.sha:123456789ABCD")
 		assert.NotContains(profile.tags, "git.repository_url:github.com/user/repo")
+	})
+}
+
+func TestProcessTags(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+
+		profile := doOneShortProfileUpload(t)
+		assert.NotEmpty(t, profile.event.ProcessTags)
+	})
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+
+		profile := doOneShortProfileUpload(t)
+		assert.Empty(t, profile.event.ProcessTags)
 	})
 }
