@@ -73,6 +73,8 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 		baseCommitSha, err = utils.GetBaseBranchSha("") // empty string triggers auto-detection
 		if err != nil {
 			logger.Debug("civisibility.ImpactedTests: Failed to get base commit SHA from git CLI: %s", err)
+			// Don't fail here - we might be on a base branch or in a scenario where
+			// base branch detection isn't possible. Return an analyzer with no modified files.
 		}
 	}
 
@@ -85,8 +87,10 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 		modifiedFiles = getGitDiffFrom(baseCommitSha, currentCommitSha)
 	}
 
+	// If we still don't have modified files, initialize with empty slice instead of failing
 	if modifiedFiles == nil {
-		return nil, fmt.Errorf("civisibility.ImpactedTests: no modified files found")
+		logger.Debug("civisibility.ImpactedTests: No modified files found - initializing with empty list")
+		modifiedFiles = []fileWithBitmap{}
 	}
 
 	logger.Debug("civisibility.ImpactedTests: loaded [from: %s to %s]: %v", baseCommitSha, currentCommitSha, modifiedFiles)
