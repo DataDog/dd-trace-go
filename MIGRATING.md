@@ -142,6 +142,42 @@ tracer.Start(tracer.WithService("service"))
 
 These functional options for `ddtrace/tracer.Tracer.StartSpan` and `ddtrace/tracer.Span.Finish` reduces the number of calls (in functional option form) in hot loops by giving the freedom to prepare a common span configuration in hot paths.
 
+Before:
+
+```go
+var err error
+span := tracer.StartSpan(
+	"operation",
+	ChildOf(parent.Context()),
+	Measured(),
+	ResourceName("resource"),
+	ServiceName(service),
+	SpanType(ext.SpanTypeWeb),
+	Tag("key", "value"),
+)
+defer span.Finish(tracer.NoDebugStack())
+```
+
+After:
+
+```go
+cfg := tracer.NewStartSpanConfig(
+	tracer.ChildOf(parent.Context()),
+	tracer.Measured(),
+	tracer.ResourceName("resource"),
+	tracer.ServiceName(service),
+	tracer.SpanType(ext.SpanTypeWeb),
+	tracer.Tag("key", "value"),
+)
+finishCfg := &FinishConfig{
+	NoDebugStack: true,
+}
+// [...]
+// Reuse the configuration in your hot path:
+span := tracer.StartSpan("operation", tracer.WithStartSpanConfig(cfg))
+defer span.Finish(tracer.WithFinishConfig(finishCfg))
+```
+
 ## Sampling API simplified
 
 The following functions have been removed in favour of `SpanSamplingRules` and `TraceSamplingRules`:
