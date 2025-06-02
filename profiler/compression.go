@@ -155,7 +155,7 @@ func newCompressionPipeline(in compression, out compression) (compressor, error)
 	}
 
 	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmZstd {
-		return &zstdRecompressor{level: getZstdLevelOrDefault(out.level)}, nil
+		return newZstdRecompressor(getZstdLevelOrDefault(out.level))
 	}
 
 	return nil, fmt.Errorf("unsupported recompression: %s -> %s", in, out)
@@ -188,6 +188,14 @@ func (r *passthroughCompressor) Close() error {
 	return nil
 }
 
+func newZstdRecompressor(level zstd.EncoderLevel) (*zstdRecompressor, error) {
+	zstdOut, err := zstd.NewWriter(io.Discard, zstd.WithEncoderLevel(level))
+	if err != nil {
+		return nil, err
+	}
+	return &zstdRecompressor{zstdOut: zstdOut, err: make(chan error)}, nil
+}
+
 type zstdRecompressor struct {
 	// err synchronizes finishing writes after closing pw and reports any
 	// error during recompression
@@ -198,23 +206,18 @@ type zstdRecompressor struct {
 }
 
 func (r *zstdRecompressor) Reset(w io.Writer) {
+	r.zstdOut.Reset(w)
 	pr, pw := io.Pipe()
-	// NB: we're assuming the level is valid
-	zstdOut, _ := zstd.NewWriter(w, zstd.WithEncoderLevel(r.level))
-	if r.err == nil {
-		r.err = make(chan error)
-	}
 	go func() {
 		gzr, err := kgzip.NewReader(pr)
 		if err != nil {
 			r.err <- err
 			return
 		}
-		_, err = io.Copy(zstdOut, gzr)
+		_, err = io.Copy(r.zstdOut, gzr)
 		r.err <- err
 	}()
 	r.pw = pw
-	r.zstdOut = zstdOut
 }
 
 func (r *zstdRecompressor) Write(p []byte) (int, error) {
