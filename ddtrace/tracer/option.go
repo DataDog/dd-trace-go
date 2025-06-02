@@ -510,6 +510,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
 			c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
+			// TODO(darccio): use internal.UnixDataSocketURL instead
 			c.agentURL = &url.URL{
 				Scheme: "http",
 				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
@@ -1012,11 +1013,13 @@ func WithAgentURL(agentURL string) StartOption {
 			return
 		}
 		switch u.Scheme {
-		case "unix", "http", "https":
+		case "http", "https":
 			c.agentURL = &url.URL{
 				Scheme: u.Scheme,
 				Host:   u.Host,
 			}
+		case "unix":
+			c.agentURL = internal.UnixDataSocketURL(u.Path)
 		default:
 			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}
