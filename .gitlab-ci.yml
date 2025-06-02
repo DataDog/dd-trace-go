@@ -16,7 +16,7 @@ variables:
 # This will be used in tandem with bp-runner in benchmarks.yml.
 generate_matrix:
   stage: generate
-  image: alpine
+  image: $BASE_CI_IMAGE
   tags: ["runner:apm-k8s-tweaked-metal"]
   script:
     - |
