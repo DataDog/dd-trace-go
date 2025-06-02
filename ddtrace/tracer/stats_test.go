@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
@@ -128,6 +130,41 @@ func TestConcentrator(t *testing.T) {
 			c.In <- ss1
 			c.Stop()
 			assert.NotEmpty(t, transport.Stats())
+		})
+
+		t.Run("processTagsEnabled", func(t *testing.T) {
+			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+			processtags.Reload()
+
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+
+			gotStats := transport.Stats()
+			require.Len(t, gotStats, 1)
+			assert.NotEmpty(t, gotStats[0].ProcessTags)
+		})
+		t.Run("processTagsDisabled", func(t *testing.T) {
+			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+			processtags.Reload()
+
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+
+			gotStats := transport.Stats()
+			require.Len(t, gotStats, 1)
+			assert.Empty(t, gotStats[0].ProcessTags)
 		})
 	})
 }
