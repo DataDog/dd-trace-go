@@ -61,7 +61,7 @@ var ctx *tracer.SpanContext = sp.Context()
 
 ### Deprecated ddtrace interfaces
 
-Along with `Span`, all the interfaces in `ddtrace` have been removed, except for `SpanContext`. They've been replaced by specific types placed, except for `Tracer`, and moved into `ddtrace/tracer`.
+All the interfaces in `ddtrace` have been removed in favor of struct types, except for `SpanContext`. The new types have moved into `ddtrace/tracer`.
 
 ### Deprecated constants and options
 
