@@ -41,8 +41,8 @@ func getHashKey(edgeTags []string, parentHash uint64) string {
 	return s.String()
 }
 
-func (c *hashCache) computeAndGet(key string, parentHash uint64, service, env string, edgeTags []string) uint64 {
-	hash := pathwayHash(nodeHash(service, env, edgeTags), parentHash)
+func (c *hashCache) computeAndGet(key string, parentHash uint64, service, env string, edgeTags, processTags []string) uint64 {
+	hash := pathwayHash(nodeHash(service, env, edgeTags, processTags), parentHash)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.m) >= maxHashCacheSize {
@@ -54,7 +54,7 @@ func (c *hashCache) computeAndGet(key string, parentHash uint64, service, env st
 	return hash
 }
 
-func (c *hashCache) get(service, env string, edgeTags []string, parentHash uint64) uint64 {
+func (c *hashCache) get(service, env string, edgeTags, processTags []string, parentHash uint64) uint64 {
 	key := getHashKey(edgeTags, parentHash)
 	c.mu.RLock()
 	if hash, ok := c.m[key]; ok {
@@ -62,7 +62,7 @@ func (c *hashCache) get(service, env string, edgeTags []string, parentHash uint6
 		return hash
 	}
 	c.mu.RUnlock()
-	return c.computeAndGet(key, parentHash, service, env, edgeTags)
+	return c.computeAndGet(key, parentHash, service, env, edgeTags, processTags)
 }
 
 func newHashCache() *hashCache {

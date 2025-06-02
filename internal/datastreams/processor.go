@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/sketches-go/ddsketch"
@@ -44,11 +45,13 @@ type statsPoint struct {
 	edgeLatency    int64
 	payloadSize    int64
 	serviceName    string
+	processTags    []string
 }
 
 type statsGroup struct {
 	service        string
 	edgeTags       []string
+	processTags    []string
 	hash           uint64
 	parentHash     uint64
 	pathwayLatency *ddsketch.DDSketch
@@ -417,6 +420,7 @@ func (p *Processor) flush(now time.Time) map[string]StatsPayload {
 				Lang:          "go",
 				TracerVersion: version.Tag,
 				Stats:         make([]StatsBucket, 0, 1),
+				ProcessTags:   processtags.GlobalTags().Slice(),
 			}
 		}
 		payload.Stats = append(payload.Stats, bucket)
@@ -468,8 +472,10 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 	if params.ServiceOverride != "" {
 		service = params.ServiceOverride
 	}
+	processTags := processtags.GlobalTags().Slice()
 	child := Pathway{
-		hash:         p.hashCache.get(service, p.env, edgeTags, parentHash),
+		// FIXME: possible inconsistency, processtags are read here but also in the flush method, values could differ if someone calls processtags.Add in the middle.
+		hash:         p.hashCache.get(service, p.env, edgeTags, processTags, parentHash),
 		pathwayStart: pathwayStart,
 		edgeStart:    now,
 	}

@@ -311,8 +311,8 @@ func TestSetCheckpoint(t *testing.T) {
 		env:        "env",
 		timeSource: time.Now,
 	}
-	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}), 0)
-	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}), hash1)
+	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, nil), 0)
+	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}, nil), hash1)
 
 	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
 	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))

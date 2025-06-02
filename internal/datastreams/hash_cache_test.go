@@ -14,11 +14,11 @@ import (
 
 func TestHashCache(t *testing.T) {
 	cache := newHashCache()
-	assert.Equal(t, pathwayHash(nodeHash("service", "env", []string{"type:kafka"}), 1234), cache.get("service", "env", []string{"type:kafka"}, 1234))
+	assert.Equal(t, pathwayHash(nodeHash("service", "env", []string{"type:kafka"}, nil), 1234), cache.get("service", "env", []string{"type:kafka"}, nil, 1234))
 	assert.Len(t, cache.m, 1)
-	assert.Equal(t, pathwayHash(nodeHash("service", "env", []string{"type:kafka"}), 1234), cache.get("service", "env", []string{"type:kafka"}, 1234))
+	assert.Equal(t, pathwayHash(nodeHash("service", "env", []string{"type:kafka"}, nil), 1234), cache.get("service", "env", []string{"type:kafka"}, nil, 1234))
 	assert.Len(t, cache.m, 1)
-	assert.Equal(t, pathwayHash(nodeHash("service", "env", []string{"type:kafka2"}), 1234), cache.get("service", "env", []string{"type:kafka2"}, 1234))
+	assert.Equal(t, pathwayHash(nodeHash("service", "env", []string{"type:kafka2"}, nil), 1234), cache.get("service", "env", []string{"type:kafka2"}, nil, 1234))
 	assert.Len(t, cache.m, 2)
 }
 
