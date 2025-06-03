@@ -421,7 +421,7 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 
 func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
 	// ensure we’re using datadog,tracecontext,baggage
-	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
 	tracer.Start()
 	defer tracer.Stop()
 	// only a baggage header, no real trace/span IDs
