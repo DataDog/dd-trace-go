@@ -1,4 +1,4 @@
-# Migration Guide
+# Migration guide
 
 This document outlines migrating from an older version of the Datadog tracer (v1.x.x) to v2.
 
@@ -10,7 +10,7 @@ We have also provided a new migration tool to help with the most essential chang
 
 Our [godoc page](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace) should be helpful during this process. We also have the [official documentation](https://docs.datadoghq.com/tracing/setup/go/), which contains a couple of examples.
 
-This document will further outline some _before_ and _after_ examples.
+Please follow this guide for migrating from v1 to v2 and creating new services using v2 directly. This document will further outline some _before_ and _after_ examples.
 
 ## Importing
 
@@ -26,9 +26,21 @@ Becomes:
 import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 ```
 
-It is important to note that when using our contrib libraries, import URLs may be impacted differently. This will be covered in the next section:
+It is important to run `go mod tidy` after changing any import.
 
-### Independent Contrib Packages
+It is also important to note that when using our contrib libraries, import URLs may be impacted differently. This will be covered in the section below [Independent contrib packages](#independent-contrib-packages).
+
+### Gradual code repair
+
+For customers that have large codebases and that are unable to immediately upgrade services to the v2 tracer, we are offering a special transitional version of the v1 tracer, the [v1 transitional version](https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1@v1.74.0) which is essentially a wrapper that preserves the API from v1 but uses v2 under the hood.
+
+It’s safe for different services within your organization to use different tracer versions during the transition, some can use v1 while others adopt v2. Staggering the upgrade per service can minimize downtime and help ensure stability throughout your transition.
+
+The transitional version is the only v1 version that allows both v1 and v2 to be imported in the same service, which enables you to migrate a service gradually. Using this v1 transitional version doesn’t require any code changes, but it also won’t support any new features introduced in v2.
+
+When using the v1 transitional version, it is possible to gradually migrate a codebase to v2 by replacing imports and adapting the instrumentation to the new API file by file.
+
+### Independent contrib packages
 
 This version upgrade comes with a large overhaul of what was previously one single package that held all of our integrations. In v2, we introduce independent packages for each of our contribs, which will prevent false-positives in security scanners that were caused by indirect dependencies. As a result, importing contribs will also change. Before:
 
@@ -59,7 +71,7 @@ var sp *tracer.Span = tracer.StartSpan("opname")
 var ctx *tracer.SpanContext = sp.Context()
 ```
 
-### Deprecated ddtrace interfaces
+### Deprecated `ddtrace` interfaces
 
 All the interfaces in `ddtrace` have been removed in favor of struct types, except for `SpanContext`. The new types have moved into `ddtrace/tracer`.
 
@@ -126,7 +138,7 @@ fmt.Printf("traceID: %d\n", sp.Context().TraceIDLower()) // for maintaining old 
 
 ## WithService
 
-The previously deprecated `tracer.WithServiceName()` has been fully removed and replaced with the method `tracer.WithService()`. If you would like to specify a service name upon starting the tracer, you would have before:
+The previously deprecated `tracer.WithServiceName` has been fully removed and replaced with the method `tracer.WithService`. If you would like to specify a service name upon starting the tracer, you would have before:
 
 ```go
 tracer.Start(tracer.WithServiceName("service"))
@@ -138,7 +150,29 @@ After:
 tracer.Start(tracer.WithService("service"))
 ```
 
-## NewStartSpanConfig, WithStartSpanConfig & WithFinishConfig
+## WithDogstatsdAddress
+
+`tracer.WithDogstatsdAddr` has been renamed as `tracer.WithDogstatsdAddress`. If you would like to specify a different DogStatsD address upon starting the tracer, you would have before:
+
+```go
+tracer.Start(tracer.WithDogstatsdAddr("10.1.0.12:4002"))
+```
+
+After:
+
+```go
+tracer.Start(tracer.WithDogstatsdAddress("10.1.0.12:4002"))
+```
+
+## WithAgentURL
+
+`tracer.WithAgentURL` sets the address by URL where the agent is located, in addition to the existing `WithAgentAddr` option. It is useful for setups where the agent is listening to a Unix Domain Socket:
+
+```go
+tracer.Start(tracer.WithAgentURL("unix:///var/run/datadog/apm.socket"))
+```
+
+## NewStartSpanConfig, WithStartSpanConfig, NewFinishConfig & WithFinishConfig
 
 These functional options for `ddtrace/tracer.Tracer.StartSpan` and `ddtrace/tracer.Span.Finish` reduces the number of calls (in functional option form) in hot loops by giving the freedom to prepare a common span configuration in hot paths.
 
@@ -169,9 +203,9 @@ cfg := tracer.NewStartSpanConfig(
 	tracer.SpanType(ext.SpanTypeWeb),
 	tracer.Tag("key", "value"),
 )
-finishCfg := &FinishConfig{
-	NoDebugStack: true,
-}
+finishCfg := tracer.NewFinishConfig(
+	NoDebugStack(),
+)
 // [...]
 // Reuse the configuration in your hot path:
 span := tracer.StartSpan("operation", tracer.WithStartSpanConfig(cfg))
@@ -197,7 +231,7 @@ Also, `ext.SamplingPriority` tag is deprecated. Use `ext.ManualKeep` and `ext.Ma
 
 A support package to create contribs without depending on internal packages is available in `instrumentation`. Please refer to [`instrumentation` godoc page](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/instrumentation) and existing contribs for more detail.
 
-## Updated User Monitoring SDK for Appsec
+## Updated User Monitoring SDK for `appsec`
 
 `appsec` package offers a new API for user monitoring; essentially deprecating login success & failure event functions, replacing them with versions that accept a `login` field, which is to be used by user monitoring rules (ATO monitoring & protection). Before:
 
@@ -220,6 +254,26 @@ The API Security sampler now takes decisions specific to a given endpoint (metho
 ## Opentracing deprecation
 
 `opentracer` is in "Maintenance" mode and limited support was offered in `v1`. We recommend to use OpenTelemetry or ddtrace/tracer directly. For additional details, please see our [Support Policy](https://github.com/DataDog/dd-trace-go?tab=readme-ov-file#go-support-policy).
+
+## SQLCommentInjectionMode deprecation for DBM
+
+`SQLCommentInjectionMode` values have been replaced by `DBMPropagationMode` values. Before:
+
+```go
+SQLInjectionUndefined // SQLInjectionUndefined represents the comment injection mode is not set. This is the same as SQLInjectionDisabled.
+SQLInjectionDisabled // SQLInjectionDisabled represents the comment injection mode where all injection is disabled.
+SQLInjectionModeService // SQLInjectionModeService represents the comment injection mode where only service tags (name, env, version) are injected.
+SQLInjectionModeFull // SQLInjectionModeFull represents the comment injection mode where both service tags and tracing tags. Tracing tags include span id, trace id and sampling priority.
+```
+
+After:
+
+```go
+DBMPropagationModeUndefined // DBMPropagationModeUndefined represents the dbm propagation mode not being set. This is the same as DBMPropagationModeDisabled.
+DBMPropagationModeDisabled // DBMPropagationModeDisabled represents the dbm propagation mode where all propagation is disabled.
+DBMPropagationModeService // DBMPropagationModeService represents the dbm propagation mode where only service tags (name, env, version) are propagated to dbm.
+DBMPropagationModeFull // DBMPropagationModeFull represents the dbm propagation mode where both service tags and tracing tags are propagated. Tracing tags include span id, trace id and the sampled flag.
+```
 
 ## Further reading 
 
