@@ -68,13 +68,6 @@ type appsecContext struct {
 	echo.Context
 }
 
-func (c appsecContext) Bind(i any) error {
-	if err := c.Context.Bind(i); err != nil {
-		return err
-	}
-	return appsec.MonitorParsedHTTPBody(c.Request().Context(), i)
-}
-
 func (c appsecContext) JSON(code int, i any) error {
 	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
 		return err
