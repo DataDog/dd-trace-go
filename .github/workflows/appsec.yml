@@ -37,6 +37,7 @@ env:
     ./contrib/go-chi/chi
     ./contrib/go-chi/chi.v5
     ./contrib/labstack/echo.v4
+    ./contrib/
     ./contrib/99designs/gqlgen
     ./contrib/graphql-go/graphql
     ./contrib/graph-gophers/graphql-go
@@ -326,7 +327,6 @@ jobs:
         if: always()
         run: sudo docker rm --force test.runner || echo "Could not remove container"
 
-  # TODO(darccio): revert to use main on release
   test-app-smoke-tests:
     name: Smoke Tests
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'

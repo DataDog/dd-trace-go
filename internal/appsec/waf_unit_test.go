@@ -13,6 +13,7 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/go-libddwaf/v4"
@@ -24,6 +25,10 @@ func TestDetectLibDL(t *testing.T) {
 	client := new(telemetrytest.RecordClient)
 	restore := telemetry.MockClient(client)
 	defer restore()
+
+	prevLevel := log.GetLevel()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(prevLevel)
 
 	if ok, _ := libddwaf.Usable(); !ok {
 		t.Skip("WAF is not usable, skipping test")
