@@ -90,23 +90,23 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.mongodb.org/mongo-driver v1.12.1
 	google.golang.org/api v0.169.0
-	google.golang.org/grpc v1.70.0
+	google.golang.org/grpc v1.71.1
 	gopkg.in/olivere/elastic.v5 v5.0.84
 )
 
 require (
 	cloud.google.com/go v0.112.1 // indirect
-	cloud.google.com/go/compute/metadata v0.5.2 // indirect
+	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/iam v1.1.7 // indirect
 	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
-	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.64.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.64.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/proto v0.64.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.64.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.64.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/log v0.64.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.64.0-rc.1 // indirect
-	github.com/DataDog/datadog-agent/pkg/version v0.64.0-rc.1 // indirect
+	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/proto v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/log v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/version v0.66.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.1.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20241206090539-a14610dc22b6 // indirect
@@ -179,7 +179,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
@@ -273,34 +273,34 @@ require (
 	go.einride.tech/aip v0.66.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/collector/component v0.120.0 // indirect
-	go.opentelemetry.io/collector/pdata v1.26.0 // indirect
-	go.opentelemetry.io/collector/pdata/pprofile v0.120.0 // indirect
-	go.opentelemetry.io/collector/semconv v0.120.0 // indirect
+	go.opentelemetry.io/collector/component v1.28.1 // indirect
+	go.opentelemetry.io/collector/pdata v1.28.1 // indirect
+	go.opentelemetry.io/collector/pdata/pprofile v0.122.1 // indirect
+	go.opentelemetry.io/collector/semconv v0.122.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
-	go.opentelemetry.io/otel v1.34.0 // indirect
-	go.opentelemetry.io/otel/metric v1.34.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.34.0 // indirect
-	go.opentelemetry.io/otel/trace v1.34.0 // indirect
+	go.opentelemetry.io/otel v1.35.0 // indirect
+	go.opentelemetry.io/otel/metric v1.35.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
+	go.opentelemetry.io/otel/trace v1.35.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.4.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.23.0 // indirect
-	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/oauth2 v0.24.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/oauth2 v0.25.0 // indirect
+	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
-	golang.org/x/time v0.9.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/time v0.11.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto v0.0.0-20240325203815-454cdb8f5daa // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
-	google.golang.org/protobuf v1.36.5 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250224174004-546df14abb99 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
