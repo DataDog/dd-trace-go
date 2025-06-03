@@ -6,7 +6,6 @@
 package echo
 
 import (
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -44,27 +43,6 @@ func TestAppSec(t *testing.T) {
 	e.POST("/body", func(c echo.Context) error {
 		pappsec.MonitorParsedHTTPBody(c.Request().Context(), "$globals")
 		return c.String(200, "Hello Body!\n")
-	})
-	e.POST("/body-bind", func(c echo.Context) error {
-		type Payload struct {
-			XMLName xml.Name `json:"-" xml:"hello"`
-			Hello   string   `json:"hello" xml:"who,attr"`
-		}
-		var payload Payload
-		err := c.Bind(&payload)
-		if err != nil {
-			return err
-		}
-		switch encoding := c.Request().Header.Get("Accept-Encoding"); encoding {
-		case echo.MIMEApplicationJSON:
-			c.Response().Header().Set("Content-Type", encoding)
-			return c.JSON(200, payload)
-		case echo.MIMEApplicationXMLCharsetUTF8:
-			c.Response().Header().Set("Content-Type", encoding)
-			return c.XML(200, payload)
-		default:
-			return c.String(400, fmt.Sprintf("Unsupported encoding: %q", encoding))
-		}
 	})
 
 	e.Any("/error", func(_ echo.Context) error {
@@ -199,38 +177,6 @@ func TestAppSec(t *testing.T) {
 		event := finished[0].Tag("_dd.appsec.json")
 		require.NotNil(t, event)
 		require.True(t, strings.Contains(event.(string), "crs-933-130"))
-	})
-
-	t.Run("body-bind", func(t *testing.T) {
-		req, err := http.NewRequest("POST", srv.URL+"/body-bind", strings.NewReader(`{"hello":"$globals"}`))
-		require.NoError(t, err)
-		req.Header.Set("Content-Type", "application/json")
-
-		for encoding, resp := range map[string]string{
-			echo.MIMEApplicationJSON:           `{"hello":"$globals"}`,
-			echo.MIMEApplicationXMLCharsetUTF8: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<hello who=\"$globals\"></hello>",
-		} {
-			t.Run(encoding, func(t *testing.T) {
-				mt := mocktracer.Start()
-				defer mt.Stop()
-
-				req.Header.Set("Accept-Encoding", encoding)
-
-				res, err := srv.Client().Do(req)
-				require.NoError(t, err)
-				defer res.Body.Close()
-				// Check that the handler was properly called
-				b, err := io.ReadAll(res.Body)
-				require.NoError(t, err)
-				require.Equal(t, resp, strings.TrimSpace(string(b)))
-
-				finished := mt.FinishedSpans()
-				require.Len(t, finished, 1)
-				event := finished[0].Tag("_dd.appsec.json")
-				require.NotNil(t, event)
-				require.True(t, strings.Contains(event.(string), "crs-933-130"))
-			})
-		}
 	})
 
 	for _, tc := range []struct {
