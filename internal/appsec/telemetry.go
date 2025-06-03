@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/go-libddwaf/v4"
@@ -62,9 +63,10 @@ func detectLibDL() {
 
 	for _, method := range detectLibDLMethods {
 		if ok, err := method.method(); err != nil {
-			telemetrylog.Debug("failed to detect libdl: %v", err, telemetry.WithTags([]string{"method:" + method.name}))
+			log.Debug("failed to detect libdl: %v", err)
 		} else if ok {
 			telemetrylog.Debug("libdl detected using method: %s", method.name, telemetry.WithTags([]string{"method:" + method.name}))
+			log.Debug("libdl detected using method: %s", method.name)
 			telemetry.RegisterAppConfig("libdl_present", true, telemetry.OriginCode)
 			return
 		}

@@ -145,10 +145,6 @@ jobs:
                   fi
 
                   for submodule in $SUBMODULES; do
-                    if [[ $cgocheck_env == "GOEXPERIMENT=cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
-                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
-                      continue
-                    fi
                     cd $submodule
                     if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
                       echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule)"
@@ -269,6 +265,7 @@ jobs:
             -v "$PWD:$PWD"                                                      \
             -w "$PWD"                                                           \
             -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            -e DD_TRACE_DEBUG=true                                              \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'
