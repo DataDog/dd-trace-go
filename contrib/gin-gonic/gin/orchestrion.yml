@@ -29,9 +29,25 @@ aspects:
   - id: Request.Body
     join-point:
       function-body:
-        function:
-          - receiver: '*github.com/gin-gonic/gin.Context'
-          - name: Bind
+        one-of:
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: Bind
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindTOML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindYAML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindQuery
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindXML
     advice:
       - prepend-statements:
           imports:
