@@ -31,7 +31,7 @@ generate_matrix:
       echo "  - benchmarks" >> generated_benchmark_matrix.yml
       echo "" >> generated_benchmark_matrix.yml
 
-      echo ".benchmark_matrix:" >> generated_benchmark_matrix.yml
+      echo "benchmark_matrix:" >> generated_benchmark_matrix.yml
       echo "  extends: .benchmark" >> generated_benchmark_matrix.yml
       echo "  stage: benchmarks" >> generated_benchmark_matrix.yml
       echo "  parallel:" >> generated_benchmark_matrix.yml
