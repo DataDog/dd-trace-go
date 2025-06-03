@@ -37,7 +37,6 @@ env:
     ./contrib/go-chi/chi
     ./contrib/go-chi/chi.v5
     ./contrib/labstack/echo.v4
-    ./contrib/
     ./contrib/99designs/gqlgen
     ./contrib/graphql-go/graphql
     ./contrib/graph-gophers/graphql-go
@@ -266,7 +265,6 @@ jobs:
             -v "$PWD:$PWD"                                                      \
             -w "$PWD"                                                           \
             -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
-            -e DD_TRACE_DEBUG=true                                              \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'
