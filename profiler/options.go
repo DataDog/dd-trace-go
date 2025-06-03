@@ -118,10 +118,6 @@ type config struct {
 
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
-	var enabledProfiles []string
-	for t := range c.types {
-		enabledProfiles = append(enabledProfiles, t.String())
-	}
 	info := map[string]any{
 		"date":                       time.Now().Format(time.RFC3339),
 		"os_name":                    osinfo.OSName(),
@@ -130,27 +126,14 @@ func logStartup(c *config) {
 		"lang":                       "Go",
 		"lang_version":               runtime.Version(),
 		"hostname":                   c.hostname,
-		"delta_profiles":             c.deltaProfiles,
 		"service":                    c.service,
 		"env":                        c.env,
 		"target_url":                 c.targetURL,
-		"agentless":                  c.agentless,
 		"tags":                       c.tags.Slice(),
-		"profile_period":             c.period.String(),
-		"enabled_profiles":           enabledProfiles,
-		"cpu_duration":               c.cpuDuration.String(),
-		"cpu_profile_rate":           c.cpuProfileRate,
-		"block_profile_rate":         c.blockRate,
-		"mutex_profile_fraction":     c.mutexFraction,
-		"max_goroutines_wait":        c.maxGoroutinesWait,
-		"upload_timeout":             c.uploadTimeout.String(),
-		"execution_trace_enabled":    c.traceConfig.Enabled,
-		"execution_trace_period":     c.traceConfig.Period.String(),
-		"execution_trace_size_limit": c.traceConfig.Limit,
-		"endpoint_count_enabled":     c.endpointCountEnabled,
 		"custom_profiler_label_keys": c.customProfilerLabels,
-		"enabled":                    c.enabled,
-		"flush_on_exit":              c.flushOnExit,
+	}
+	for _, tc := range telemetryConfiguration(c) {
+		info[tc.Name] = tc.Value
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
