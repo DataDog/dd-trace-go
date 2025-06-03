@@ -27,9 +27,14 @@ follow in the next update to this file.
 */
 
 import (
-	"compress/gzip"
+	"cmp"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
+
+	kgzip "github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/zstd"
 )
 
 // legacyCompressionStrategy returns the input and output compression to be used
@@ -37,6 +42,17 @@ import (
 // legacy compression strategy.
 func legacyCompressionStrategy(pt ProfileType, isDelta bool) (compression, compression) {
 	return inputCompression(pt, isDelta), legacyOutputCompression(pt, isDelta)
+}
+
+func compressionStrategy(pt ProfileType, isDelta bool, config string) (compression, compression) {
+	if config == "" {
+		return legacyCompressionStrategy(pt, isDelta)
+	}
+	algorithm, levelStr, _ := strings.Cut(config, "-")
+	// Don't bother checking the error. We'll get zero which represents the
+	// default, and we we assume this is only going to get used internally
+	level, _ := strconv.Atoi(levelStr)
+	return inputCompression(pt, isDelta), compression{algorithm: compressionAlgorithm(algorithm), level: level}
 }
 
 // inputCompression maps the given profile type and isDelta flavor to the
@@ -84,6 +100,7 @@ type compressionAlgorithm string
 const (
 	compressionAlgorithmNone compressionAlgorithm = "none"
 	compressionAlgorithmGzip compressionAlgorithm = "gzip"
+	compressionAlgorithmZstd compressionAlgorithm = "zstd"
 )
 
 type compression struct {
@@ -103,7 +120,22 @@ var (
 	noCompression    = compression{algorithm: compressionAlgorithmNone}
 	gzip1Compression = compression{algorithm: compressionAlgorithmGzip, level: 1}
 	gzip6Compression = compression{algorithm: compressionAlgorithmGzip, level: 6}
+	zstdCompression  = compression{algorithm: compressionAlgorithmZstd, level: 2}
 )
+
+var zstdLevels = map[int]zstd.EncoderLevel{
+	1: zstd.SpeedFastest,
+	2: zstd.SpeedDefault,
+	3: zstd.SpeedBetterCompression,
+	4: zstd.SpeedBestCompression,
+}
+
+func getZstdLevelOrDefault(level int) zstd.EncoderLevel {
+	if l, ok := zstdLevels[level]; ok {
+		return l
+	}
+	return zstd.SpeedDefault
+}
 
 // newCompressionPipeline returns a compressor that converts the data written to
 // it from the expected input compression to the given output compression.
@@ -113,7 +145,15 @@ func newCompressionPipeline(in compression, out compression) (compressor, error)
 	}
 
 	if in == noCompression && out.algorithm == compressionAlgorithmGzip {
-		return gzip.NewWriterLevel(nil, out.level)
+		return kgzip.NewWriterLevel(nil, out.level)
+	}
+
+	if in == noCompression && out.algorithm == compressionAlgorithmZstd {
+		return zstd.NewWriter(nil, zstd.WithEncoderLevel(getZstdLevelOrDefault(out.level)))
+	}
+
+	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmZstd {
+		return newZstdRecompressor(getZstdLevelOrDefault(out.level))
 	}
 
 	return nil, fmt.Errorf("unsupported recompression: %s -> %s", in, out)
@@ -144,4 +184,46 @@ func (r *passthroughCompressor) Reset(w io.Writer) {
 
 func (r *passthroughCompressor) Close() error {
 	return nil
+}
+
+func newZstdRecompressor(level zstd.EncoderLevel) (*zstdRecompressor, error) {
+	zstdOut, err := zstd.NewWriter(io.Discard, zstd.WithEncoderLevel(level))
+	if err != nil {
+		return nil, err
+	}
+	return &zstdRecompressor{zstdOut: zstdOut, err: make(chan error)}, nil
+}
+
+type zstdRecompressor struct {
+	// err synchronizes finishing writes after closing pw and reports any
+	// error during recompression
+	err     chan error
+	pw      io.WriteCloser
+	zstdOut *zstd.Encoder
+	level   zstd.EncoderLevel
+}
+
+func (r *zstdRecompressor) Reset(w io.Writer) {
+	r.zstdOut.Reset(w)
+	pr, pw := io.Pipe()
+	go func() {
+		gzr, err := kgzip.NewReader(pr)
+		if err != nil {
+			r.err <- err
+			return
+		}
+		_, err = io.Copy(r.zstdOut, gzr)
+		r.err <- err
+	}()
+	r.pw = pw
+}
+
+func (r *zstdRecompressor) Write(p []byte) (int, error) {
+	return r.pw.Write(p)
+}
+
+func (r *zstdRecompressor) Close() error {
+	r.pw.Close()
+	err := <-r.err
+	return cmp.Or(err, r.zstdOut.Close())
 }

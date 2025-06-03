@@ -20,6 +20,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
+	github.com/klauspost/compress v1.18.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
 	github.com/spaolacci/murmur3 v1.1.0

@@ -114,6 +114,7 @@ type config struct {
 	endpointCountEnabled bool
 	enabled              bool
 	flushOnExit          bool
+	compressionConfig    string
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -184,6 +185,7 @@ func defaultConfig() (*config, error) {
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
+		compressionConfig:    os.Getenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"),
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
