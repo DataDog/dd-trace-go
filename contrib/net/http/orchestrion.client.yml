@@ -23,15 +23,15 @@ aspects:
     tracer-internal: true
     join-point:
       all-of:
-        - struct-literal:
-            type: net/http.Transport
         - one-of:
             - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/remoteconfig
-            - import-path: github.com/DataDog/dd-trace-go/v2/internal/telemetry
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net
             - import-path: github.com/DataDog/dd-trace-go/v2/profiler
-            - import-path: datadoghq.dev/orchestrion/_integration-tests/utils/agent # Integration test's custom transport.
+        - struct-literal:
+            type: net/http.Transport
     advice:
       - wrap-expression:
           template: |-
