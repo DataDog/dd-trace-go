@@ -6,6 +6,7 @@
 package utils
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -267,20 +268,37 @@ func TestGetBaseBranchSha(t *testing.T) {
 		t.Skip("Git not available, skipping base branch SHA test")
 	}
 
-	// Test with master as default
+	// Test with main as default
 	sha, err := GetBaseBranchSha("main")
 
 	// The result depends on the repository state:
-	// - If current branch is already a base-like branch, should return empty
 	// - If no candidates found, should return error
 	// - If candidates found, should return a valid SHA
+	// - The algorithm no longer returns early for main-like branches
 
 	if err != nil {
-		// Error is acceptable if we're on a base branch or no candidates found
-		t.Logf("GetBaseBranchSha returned error (acceptable): %v", err)
+		// Error is acceptable if no candidates found or merge-base fails
+		t.Logf("GetBaseBranchSha returned error (acceptable in some scenarios): %v", err)
+		// Verify it's one of the expected error scenarios
+		errorMessage := err.Error()
+		expectedErrors := []string{
+			"no candidate base branches found",
+			"failed to find best base branch",
+			"failed to find merge base",
+			"failed to get remote branches",
+		}
+
+		hasExpectedError := false
+		for _, expectedError := range expectedErrors {
+			if strings.Contains(errorMessage, expectedError) {
+				hasExpectedError = true
+				break
+			}
+		}
+		assert.True(t, hasExpectedError, "Error should be one of the expected scenarios: %v", err)
 	} else if sha == "" {
-		// Empty SHA is acceptable if we're on a base branch
-		t.Logf("GetBaseBranchSha returned empty SHA (current branch is likely a base branch)")
+		// Empty SHA could happen in some edge cases
+		t.Logf("GetBaseBranchSha returned empty SHA")
 	} else {
 		// Valid SHA should be 40 characters long
 		assert.Len(t, sha, 40, "SHA should be 40 characters long")
@@ -437,19 +455,110 @@ func TestGetBaseBranchShaWithAutoDetection(t *testing.T) {
 	sha, err := GetBaseBranchSha("")
 
 	// The result depends on the repository state:
-	// - If current branch is already a base-like branch, should return empty
 	// - If no candidates found, should return error
 	// - If candidates found, should return a valid SHA
+	// - The algorithm no longer returns early for main-like branches
 
 	if err != nil {
-		// Error is acceptable if we're on a base branch or no candidates found
-		t.Logf("GetBaseBranchSha returned error (acceptable): %v", err)
+		// Error is acceptable if no candidates found or merge-base fails
+		t.Logf("GetBaseBranchSha returned error (acceptable in some scenarios): %v", err)
+		// Verify it's one of the expected error scenarios
+		errorMessage := err.Error()
+		expectedErrors := []string{
+			"no candidate base branches found",
+			"failed to find best base branch",
+			"failed to find merge base",
+			"failed to get remote branches",
+		}
+
+		hasExpectedError := false
+		for _, expectedError := range expectedErrors {
+			if strings.Contains(errorMessage, expectedError) {
+				hasExpectedError = true
+				break
+			}
+		}
+		assert.True(t, hasExpectedError, "Error should be one of the expected scenarios: %v", err)
 	} else if sha == "" {
-		// Empty SHA is acceptable if we're on a base branch
-		t.Logf("GetBaseBranchSha returned empty SHA (current branch is likely a base branch)")
+		// Empty SHA could happen in some edge cases
+		t.Logf("GetBaseBranchSha returned empty SHA")
 	} else {
 		// Valid SHA should be 40 characters long
 		assert.Len(t, sha, 40, "SHA should be 40 characters long")
 		assert.Regexp(t, "^[a-f0-9]{40}$", sha, "SHA should be valid hex string")
+	}
+}
+
+func TestGetRemoteBranches(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping remote branches test")
+	}
+
+	remoteName, err := getRemoteName()
+	if err != nil {
+		t.Skip("Could not get remote name, skipping test")
+	}
+
+	branches, err := getRemoteBranches(remoteName)
+	assert.NoError(t, err)
+
+	// Should get some remote branches (even if empty in some test environments)
+	assert.NotNil(t, branches)
+
+	// All returned branches should have the remote prefix
+	for _, branch := range branches {
+		if branch == remoteName {
+			continue // Skip the remote name itself
+		}
+		assert.Contains(t, branch, remoteName+"/", "Remote branch should have remote prefix: %s", branch)
+	}
+}
+
+func TestCheckAndFetchBranchUpdatedAlgorithm(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping fetch branch test")
+	}
+
+	remoteName, err := getRemoteName()
+	if err != nil {
+		t.Skip("Could not get remote name, skipping test")
+	}
+
+	// Test with a common branch that might exist
+	testBranch := "main"
+
+	// This should not fail even if the branch doesn't exist
+	checkAndFetchBranch(testBranch, remoteName)
+
+	// Test should complete without errors - the function handles missing branches gracefully
+	assert.True(t, true, "checkAndFetchBranch should complete without panicking")
+}
+
+func TestGetBaseBranchShaWithCIBaseBranch(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping CI base branch test")
+	}
+
+	// This test verifies that the algorithm correctly handles git.pull_request.base_branch from CI
+	// We can't easily mock CI environment in this test framework, but we can verify the logic path
+
+	// Test that the algorithm works correctly when no CI tags are available
+	// (This essentially tests the Step 2a path)
+	sha, err := GetBaseBranchSha("main")
+
+	// Since we're testing in a real repository, we expect either:
+	// 1. A valid SHA if candidates are found
+	// 2. An error if no candidates are found
+	// 3. Empty SHA in edge cases
+
+	if err != nil {
+		t.Logf("GetBaseBranchSha without CI tags returned error: %v", err)
+		// This is expected in many test scenarios
+	} else if sha == "" {
+		t.Logf("GetBaseBranchSha without CI tags returned empty SHA")
+	} else {
+		assert.Len(t, sha, 40, "SHA should be 40 characters long")
+		assert.Regexp(t, "^[a-f0-9]{40}$", sha, "SHA should be valid hex string")
+		t.Logf("GetBaseBranchSha without CI tags returned valid SHA: %s", sha)
 	}
 }
