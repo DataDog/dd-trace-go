@@ -241,6 +241,7 @@ func (*Span) String() (string)
 
 // Package Functions
 func FinishTime(time.Time) (FinishOption)
+func NewFinishConfig(...FinishOption) (*FinishConfig)
 func NewStartSpanConfig(...StartSpanOption) (*StartSpanConfig)
 func NoDebugStack() (FinishOption)
 func StackFrames(uint) (FinishOption)
