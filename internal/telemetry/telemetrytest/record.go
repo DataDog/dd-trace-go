@@ -24,12 +24,17 @@ type MetricKey struct {
 	Kind      string
 }
 
+type LogLine struct {
+	Level telemetry.LogLevel
+	Text  string
+}
+
 type RecordClient struct {
 	mu            sync.Mutex
 	Started       bool
 	Stopped       bool
 	Configuration []telemetry.Configuration
-	Logs          map[telemetry.LogLevel]string
+	Logs          []LogLine
 	Integrations  []telemetry.Integration
 	Products      map[telemetry.Namespace]bool
 	Metrics       map[MetricKey]*RecordMetricHandle
@@ -121,11 +126,10 @@ func (r *RecordClient) Distribution(namespace telemetry.Namespace, name string, 
 func (r *RecordClient) Log(level telemetry.LogLevel, text string, _ ...telemetry.LogOption) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.Logs == nil {
-		r.Logs = make(map[telemetry.LogLevel]string)
-	}
-
-	r.Logs[level] = text
+	r.Logs = append(r.Logs, LogLine{
+		Level: level,
+		Text:  text,
+	})
 }
 
 func (r *RecordClient) ProductStarted(product telemetry.Namespace) {
