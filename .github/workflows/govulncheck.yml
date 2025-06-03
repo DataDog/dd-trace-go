@@ -24,11 +24,11 @@ jobs:
   govulncheck-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Checkout Go
-        uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: 'stable'
       - name: Install govulncheck
