@@ -75,6 +75,16 @@ type FinishConfig struct {
 	SkipStackFrames uint
 }
 
+// NewFinishConfig allows to build a base finish config struct. It accepts the same options as Finish.
+// It's useful to reduce the number of operations in any hot path and update it for request/operation specifics.
+func NewFinishConfig(opts ...FinishOption) *FinishConfig {
+	cfg := new(FinishConfig)
+	for _, fn := range opts {
+		fn(cfg)
+	}
+	return cfg
+}
+
 // FinishTime sets the given time as the finishing time for the span. By default,
 // the current time is used.
 func FinishTime(t time.Time) FinishOption {
