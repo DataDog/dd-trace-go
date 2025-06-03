@@ -96,7 +96,7 @@ func getDDorOtelConfig(configName string) string {
 		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
 	}
 
-	// TODO: APMAPI-1358
+	// TODO: report telemetry
 	// Check for stable configuration keys
 	if config.handsOff {
 		if v := stableconfig.ManagedConfig.Get(config.dd); v != "" {
@@ -124,7 +124,7 @@ func getDDorOtelConfig(configName string) string {
 		}
 	}
 
-	// TODO: APMAPI-1358
+	// TODO: report telemetry
 	// If val was not already resolved, and it's compatible with hands-off config, check local config source
 	if val == "" && config.handsOff {
 		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {

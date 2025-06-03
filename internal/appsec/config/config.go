@@ -181,7 +181,6 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // If the [EnvEnabled] variable is set to a value that is not a valid boolean (according to
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
-	// TODO: APMAPI-1358
 	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
 	if origin != telemetry.OriginDefault {
 		set = true
