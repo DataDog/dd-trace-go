@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -1892,6 +1893,25 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(spanID, s.spanID)
 	assert.Equal(ext.SpanTypeWeb, s.spanType)
 	assert.Equal(tm.UnixNano(), s.start)
+}
+
+func TestNewFinishConfig(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		now    = time.Now()
+		err    = errors.New("error")
+	)
+	cfg := NewFinishConfig(
+		FinishTime(now),
+		WithError(err),
+		StackFrames(10, 0),
+		NoDebugStack(),
+	)
+	assert.True(cfg.NoDebugStack)
+	assert.Equal(now, cfg.FinishTime)
+	assert.Equal(err, cfg.Error)
+	assert.Equal(uint(10), cfg.StackFrames)
+	assert.Equal(uint(0), cfg.SkipStackFrames)
 }
 
 func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
