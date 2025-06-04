@@ -15,12 +15,14 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/sketches-go/ddsketch"
 	"github.com/DataDog/sketches-go/ddsketch/store"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -331,6 +333,40 @@ func TestSetCheckpoint(t *testing.T) {
 	assert.Equal(t, statsPt2.hash, pathway.GetHash())
 }
 
+func TestSetCheckpointProcessTags(t *testing.T) {
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+	processtags.Reload()
+	pTags := processtags.GlobalTags().Slice()
+	require.NotEmpty(t, pTags)
+
+	processor := Processor{
+		hashCache:  newHashCache(),
+		stopped:    1,
+		in:         newFastQueue(),
+		service:    "service-1",
+		env:        "env",
+		timeSource: time.Now,
+	}
+	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, pTags), 0)
+	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}, pTags), hash1)
+
+	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
+	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))
+
+	statsPt1 := processor.in.pop().point
+	statsPt2 := processor.in.pop().point
+
+	assert.Equal(t, []string{"direction:in", "type:kafka"}, statsPt1.edgeTags)
+	assert.Equal(t, hash1, statsPt1.hash)
+	assert.Equal(t, uint64(0), statsPt1.parentHash)
+
+	assert.Equal(t, []string{"direction:out", "type:kafka"}, statsPt2.edgeTags)
+	assert.Equal(t, hash2, statsPt2.hash)
+	assert.Equal(t, hash1, statsPt2.parentHash)
+
+	assert.Equal(t, statsPt2.hash, pathway.GetHash())
+}
+
 func TestKafkaLag(t *testing.T) {
 	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
 	tp1 := time.Now()
@@ -373,6 +409,21 @@ func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func BenchmarkSetCheckpoint(b *testing.B) {
+	client := &http.Client{
+		Transport: &noOpTransport{},
+	}
+	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
+	p.Start()
+	for i := 0; i < b.N; i++ {
+		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
+	}
+	p.Stop()
+}
+
+func BenchmarkSetCheckpointProcessTags(b *testing.B) {
+	b.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+	processtags.Reload()
+
 	client := &http.Client{
 		Transport: &noOpTransport{},
 	}

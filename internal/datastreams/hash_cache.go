@@ -19,15 +19,21 @@ type hashCache struct {
 	m  map[string]uint64
 }
 
-func getHashKey(edgeTags []string, parentHash uint64) string {
+func getHashKey(edgeTags, processTags []string, parentHash uint64) string {
 	var s strings.Builder
 	l := 0
 	for _, t := range edgeTags {
 		l += len(t)
 	}
+	for _, t := range processTags {
+		l += len(t)
+	}
 	l += 8
 	s.Grow(l)
 	for _, t := range edgeTags {
+		s.WriteString(t)
+	}
+	for _, t := range processTags {
 		s.WriteString(t)
 	}
 	s.WriteByte(byte(parentHash))
@@ -55,7 +61,7 @@ func (c *hashCache) computeAndGet(key string, parentHash uint64, service, env st
 }
 
 func (c *hashCache) get(service, env string, edgeTags, processTags []string, parentHash uint64) uint64 {
-	key := getHashKey(edgeTags, parentHash)
+	key := getHashKey(edgeTags, processTags, parentHash)
 	c.mu.RLock()
 	if hash, ok := c.m[key]; ok {
 		c.mu.RUnlock()

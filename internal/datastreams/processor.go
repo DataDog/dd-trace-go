@@ -474,7 +474,6 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 	}
 	processTags := processtags.GlobalTags().Slice()
 	child := Pathway{
-		// FIXME: possible inconsistency, processtags are read here but also in the flush method, values could differ if someone calls processtags.Add in the middle.
 		hash:         p.hashCache.get(service, p.env, edgeTags, processTags, parentHash),
 		pathwayStart: pathwayStart,
 		edgeStart:    now,
