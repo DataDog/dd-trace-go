@@ -9,10 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
-	
+	"strings"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
@@ -72,7 +75,12 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
-		setCodeOriginTags(span, cfg.Handler)
+		// TODO: remove this conditional, this is just for testing
+		if _, ok := os.LookupEnv("_DD_TEST_CODE_ORIGINS_RUNTIME_CALLERS"); ok {
+			setCodeOriginTagsRuntimeCallers(span)
+		} else {
+			setCodeOriginTags(span, cfg.Handler)
+		}
 		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
@@ -124,60 +132,109 @@ func setCodeOriginTags(span *tracer.Span, handler http.Handler) {
 
 	span.SetTag(fmt.Sprintf(tagCodeOriginFrameFile, 0), file)
 	span.SetTag(fmt.Sprintf(tagCodeOriginFrameLine, 0), strconv.Itoa(line))
-
-	//frames := runtime.CallersFrames(pcs)
-	//for {
-	//	frame, more := frames.Next()
-	//	fmt.Printf("got frame: %s:%d | %s\n", frame.File, frame.Line, frame.Function)
-	//
-	//	if isUserCode(frame) {
-	//		span.SetTag(frameTag(tagCodeOriginFrameFile, frameN), frame.File)
-	//		span.SetTag(frameTag(tagCodeOriginFrameLine, frameN), strconv.Itoa(frame.Line))
-	//
-	//		fn, ok := parseFunction(frame.Function)
-	//		if ok {
-	//			if fn.receiver != "" {
-	//				span.SetTag(frameTag(tagCodeOriginFrameType, frameN), fn.pkg+"."+fn.receiver)
-	//				span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.name)
-	//			} else {
-	//				span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.pkg+"."+fn.name)
-	//			}
-	//		} else {
-	//			instr.Logger().Debug("instrumentation/httptrace/setCodeOriginTags: failed to extract function info from frame: %s", frame.Function)
-	//		}
-	//
-	//		frameN++
-	//		if frameN >= cfg.codeOriginMaxUserFrames {
-	//			break
-	//		}
-	//	}
-	//	if !more {
-	//		break
-	//	}
-	//}
 }
 
 func getSourceLocation(h http.Handler) (string, int, error) {
-	var fn interface{}
+	var ptr uintptr
 
-	switch v := h.(type) {
+	switch h.(type) {
 	case http.HandlerFunc:
-		fn = v
+		ptr = reflect.ValueOf(h).Pointer()
 	default:
-		method := reflect.ValueOf(h).MethodByName("ServeHTTP")
-		if !method.IsValid() {
+		t := reflect.TypeOf(h)
+		method, ok := t.MethodByName("ServeHTTP")
+		if !ok {
 			return "", 0, fmt.Errorf("no ServeHTTP method found")
 		}
-		fn = method.Interface().(func(http.ResponseWriter, *http.Request))
+		ptr = method.Func.Pointer()
 	}
-
-	ptr := reflect.ValueOf(fn).Pointer()
 
 	fnInfo := runtime.FuncForPC(ptr)
 	if fnInfo == nil {
 		return "", 0, errors.New("no function info found")
 	}
-
 	file, line := fnInfo.FileLine(ptr)
 	return file, line, nil
+}
+
+func setCodeOriginTagsRuntimeCallers(span *tracer.Span) {
+	if !cfg.codeOriginEnabled {
+		return
+	}
+	span.SetTag(tagCodeOriginType, "exit")
+
+	frameN := 0
+	pcs := make([]uintptr, 32)
+	n := runtime.Callers(2, pcs) // skip 2 frames: Callers + this function
+	pcs = pcs[:n]
+
+	frames := runtime.CallersFrames(pcs)
+	for {
+		frame, more := frames.Next()
+		fmt.Printf("got frame: %s:%d | %s\n", frame.File, frame.Line, frame.Function)
+
+		if isUserCode(frame) {
+			span.SetTag(frameTag(tagCodeOriginFrameFile, frameN), frame.File)
+			span.SetTag(frameTag(tagCodeOriginFrameLine, frameN), strconv.Itoa(frame.Line))
+
+			fn, ok := parseFunction(frame.Function)
+			if ok {
+				if fn.receiver != "" {
+					span.SetTag(frameTag(tagCodeOriginFrameType, frameN), fn.pkg+"."+fn.receiver)
+					span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.name)
+				} else {
+					span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.pkg+"."+fn.name)
+				}
+			} else {
+				instr.Logger().Debug("instrumentation/httptrace/setCodeOriginTags: failed to extract function info from frame: %s", frame.Function)
+			}
+
+			frameN++
+			if frameN >= cfg.codeOriginMaxUserFrames {
+				break
+			}
+		}
+		if !more {
+			break
+		}
+	}
+}
+
+func isUserCode(frame runtime.Frame) bool {
+	return !isStdLib(frame.File) && !isThirdParty(frame.File)
+}
+
+func isStdLib(path string) bool {
+	// FIXME: dummy logic, just to test
+	return strings.HasPrefix(path, "/opt/homebrew/opt/go")
+}
+
+func isThirdParty(path string) bool {
+	// FIXME: dummy logic, just to test
+	return !(strings.HasSuffix(path, "github.com/DataDog/dd-trace-go/contrib/net/http/code_origin_handlers_test.go") ||
+		strings.HasSuffix(path, "github.com/DataDog/dd-trace-go/contrib/net/http/code_origin_test.go"))
+}
+
+func frameTag(tag string, n int) string {
+	return fmt.Sprintf(tag, n)
+}
+
+var funcPattern = regexp.MustCompile(`^(?P<Package>[\w./-]+)(?:\.\((?P<Receiver>[^)]+)\))?\.(?P<Method>\w+)$`)
+
+type funcInfo struct {
+	pkg      string
+	receiver string
+	name     string
+}
+
+func parseFunction(fn string) (funcInfo, bool) {
+	match := funcPattern.FindStringSubmatch(fn)
+	if match == nil {
+		return funcInfo{}, false
+	}
+	return funcInfo{
+		pkg:      match[1],
+		receiver: match[2],
+		name:     match[3],
+	}, true
 }
