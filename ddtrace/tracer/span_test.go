@@ -237,7 +237,7 @@ func TestSpanFinishNilOption(t *testing.T) {
 	}
 
 	for _, tc := range tc {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			span := tracer.newRootSpan("pylons.request", "pylons", "/")
 			span.Finish(tc.options...)
 			if tc.wantErr {
@@ -662,7 +662,7 @@ func TestSpanStartNilOption(t *testing.T) {
 	}
 
 	for _, tc := range tc {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(_ *testing.T) {
 			span := tracer.StartSpan("pylons.request", tc.options...)
 			if tc.wantTag {
 				assert.Equal(tc.wantTag, span.meta["tag"] == "value")
