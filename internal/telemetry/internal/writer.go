@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
@@ -67,6 +68,7 @@ func newBody(config TracerConfig, debugMode bool) *transport.Body {
 			TracerVersion:   version.Tag,
 			LanguageName:    "go",
 			LanguageVersion: runtime.Version(),
+			ProcessTags:     processtags.GlobalTags().String(),
 		},
 		Host: transport.Host{
 			Hostname:      osHostname,
