@@ -26,7 +26,7 @@ aspects:
               return e
             }()
 
-  - id: Request.Body
+  - id: gin.Context.[Must]Bind
     join-point:
       function-body:
         one-of:
@@ -35,19 +35,31 @@ aspects:
               - name: Bind
           - function:
               - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBind
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
               - name: BindJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBindJSON
           - function:
               - receiver: '*github.com/gin-gonic/gin.Context'
               - name: BindTOML
           - function:
               - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBindTOML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
               - name: BindYAML
           - function:
               - receiver: '*github.com/gin-gonic/gin.Context'
-              - name: BindQuery
+              - name: ShouldBindYAML
           - function:
               - receiver: '*github.com/gin-gonic/gin.Context'
               - name: BindXML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBindXML
     advice:
       - prepend-statements:
           imports:
