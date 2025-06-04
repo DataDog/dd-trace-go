@@ -196,7 +196,6 @@ After:
 
 ```go
 cfg := tracer.NewStartSpanConfig(
-	tracer.ChildOf(parent.Context()),
 	tracer.Measured(),
 	tracer.ResourceName("resource"),
 	tracer.ServiceName(service),
@@ -208,7 +207,7 @@ finishCfg := tracer.NewFinishConfig(
 )
 // [...]
 // Reuse the configuration in your hot path:
-span := tracer.StartSpan("operation", tracer.WithStartSpanConfig(cfg))
+span := parent.StartChild("operation", tracer.WithStartSpanConfig(cfg))
 defer span.Finish(tracer.WithFinishConfig(finishCfg))
 ```
 
