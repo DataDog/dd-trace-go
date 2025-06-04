@@ -84,6 +84,11 @@ func TestTracerStructs(t *testing.T) {
 	c.Run(testRunner(t, "tracerstructs"))
 }
 
+func TestWithDogstatsdAddr(t *testing.T) {
+	c := NewChecker(&WithDogstatsdAddr{})
+	c.Run(testRunner(t, "withdogstatsdaddr"))
+}
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()

@@ -292,3 +292,38 @@ func (c TraceIDString) Probes() []Probe {
 func (c TraceIDString) String() string {
 	return "trace IDs are now represented as strings, please use TraceIDLower to keep using 64-bits IDs, although it's recommended to switch to 128-bits with TraceID"
 }
+
+type WithDogstatsdAddr struct {
+	defaultKnownChange
+}
+
+func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
+	args, ok := c.ctx.Value(argsKey).([]string)
+	if !ok || args == nil {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "use WithDogstatsdAddress()",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte(fmt.Sprintf("WithDogstatsdAddress(%s)", strings.Join(args, ", "))),
+				},
+			},
+		},
+	}
+}
+
+func (c WithDogstatsdAddr) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		WithFunctionName("WithDogstatsdAddress"),
+	}
+}
+
+func (c WithDogstatsdAddr) String() string {
+	return "the function WithDogstatsdAddress is no longer supported. Use WithDogstatsdAddr instead."
+}
