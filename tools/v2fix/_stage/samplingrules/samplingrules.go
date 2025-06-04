@@ -24,4 +24,7 @@ func main() {
 	_ = tracer.TagsResourceRule(tags(), "", "", "", 1.0)                                       // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
 	_ = tracer.TagsResourceRule(map[string]string{"hostname": "hn-3*"}, "res-1*", "", "", 1.0) // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
 	_ = tracer.TagsResourceRule(map[string]string{"hostname": "hn-*"}, "", "", "", 1.0)        // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.SpanNameServiceMPSRule("http.request", "test-service", 1.0, 2.0)                // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.SpanTagsResourceRule(tags(), "", "", "", 1.0)                                   // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.SpanNameServiceRule("http.request", "test-service", 1.0)                        // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
 }

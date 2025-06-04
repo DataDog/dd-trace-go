@@ -113,6 +113,17 @@ func IsFuncCall(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.C
 		return ctx, true
 	}
 	ctx = context.WithValue(ctx, pkgPathKey, pkg.Path())
+	sel, ok := c.Fun.(*ast.SelectorExpr)
+	if !ok {
+		// It might be a non-selector expression, in which case we don't know the package prefix.
+		return ctx, true
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		// It might be a non-selector expression, in which case we don't know the package prefix.
+		return ctx, true
+	}
+	ctx = context.WithValue(ctx, pkgPrefixKey, ident.Name)
 	return ctx, true
 }
 

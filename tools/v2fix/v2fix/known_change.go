@@ -151,7 +151,13 @@ func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
 	if !ok {
 		return nil
 	}
-	newText := fmt.Sprintf("tracer.%s", typ.Obj().Name())
+
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
+	if !ok {
+		return nil
+	}
+
+	newText := fmt.Sprintf("%s.%s", pkg, typ.Obj().Name())
 	return []analysis.SuggestedFix{
 		{
 			Message: "the declared type is in the ddtrace/tracer package now",
@@ -234,7 +240,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
-	pkg, ok := c.ctx.Value(pkgPathKey).(*types.Package)
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
 	if !ok {
 		return nil
 	}
@@ -246,7 +252,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", pkg.Name(), exprString(args[0]))),
+					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", pkg, exprString(args[0]))),
 				},
 			},
 		},
@@ -314,7 +320,7 @@ func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
-	pkg, ok := c.ctx.Value(pkgPathKey).(*types.Package)
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
 	if !ok {
 		return nil
 	}
@@ -326,7 +332,7 @@ func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", pkg.Name(), exprString(args[0]))),
+					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", pkg, exprString(args[0]))),
 				},
 			},
 		},
@@ -376,6 +382,11 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
+	if !ok {
+		return nil
+	}
+
 	var parts []string
 
 	switch fn.Name() {
@@ -418,7 +429,15 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
 	}
 
-	newText := fmt.Sprintf("tracer.Rule{%s}", strings.Join(parts, ", "))
+	var ruleType string
+	switch fn.Name() {
+	case "SpanNameServiceMPSRule", "SpanTagsResourceRule", "SpanNameServiceRule":
+		ruleType = "Span"
+	default:
+		ruleType = "Trace"
+	}
+
+	newText := fmt.Sprintf("%s.%sSamplingRules(Rule{%s})", pkg, ruleType, strings.Join(parts, ", "))
 
 	return []analysis.SuggestedFix{
 		{

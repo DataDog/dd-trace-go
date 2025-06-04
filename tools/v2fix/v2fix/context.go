@@ -13,8 +13,9 @@ const (
 	endKey          contextKey = "end"
 	fnKey           contextKey = "fn"
 	pkgNameKey      contextKey = "pkg_name"
+	pkgPrefixKey    contextKey = "pkg_prefix"
 	pkgPathKey      contextKey = "pkg_path"
 	posKey          contextKey = "pos"
 	typeKey         contextKey = "type"
-	callExprKey     contextKey = "callExpr"
+	callExprKey     contextKey = "call_expr"
 )
