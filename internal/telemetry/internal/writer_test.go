@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
@@ -50,6 +51,40 @@ func TestNewWriter_NoEndpoints(t *testing.T) {
 	writer, err := NewWriter(config)
 	assert.Error(t, err)
 	assert.Nil(t, writer)
+}
+
+func TestNewWriter_ProcessTags(t *testing.T) {
+	cfg := WriterConfig{
+		TracerConfig: TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		},
+		Endpoints: []*http.Request{
+			{Method: http.MethodPost, URL: &url.URL{Scheme: "http", Host: "localhost", Path: "/telemetry"}},
+		},
+	}
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+
+		w, err := NewWriter(cfg)
+		require.NoError(t, err)
+
+		body := w.(*writer).body
+		assert.NotEmpty(t, body.Application.ProcessTags)
+	})
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+
+		w, err := NewWriter(cfg)
+		require.NoError(t, err)
+
+		body := w.(*writer).body
+		assert.Empty(t, body.Application.ProcessTags)
+	})
 }
 
 type testPayload struct {
