@@ -166,6 +166,9 @@ func ApplyV1FinishOptions(opts ...ddtrace.FinishOption) v2.FinishOption {
 		fc := finishConfigPool.Get().(*ddtrace.FinishConfig)
 		defer releaseFinishConfig(fc)
 		for _, o := range opts {
+			if o == nil {
+				continue
+			}
 			o(fc)
 		}
 		if fc.Error != nil {
