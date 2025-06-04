@@ -150,18 +150,18 @@ After:
 tracer.Start(tracer.WithService("service"))
 ```
 
-## WithDogstatsdAddress
+## WithDogstatsdAddr
 
-`tracer.WithDogstatsdAddr` has been renamed as `tracer.WithDogstatsdAddress`. If you would like to specify a different DogStatsD address upon starting the tracer, you would have before:
+`tracer.WithDogstatsdAddress` has been renamed as `tracer.WithDogstatsdAddr`. If you would like to specify a different DogStatsD address upon starting the tracer, you would have before:
 
 ```go
-tracer.Start(tracer.WithDogstatsdAddr("10.1.0.12:4002"))
+tracer.Start(tracer.WithDogstatsdAddress("10.1.0.12:4002"))
 ```
 
 After:
 
 ```go
-tracer.Start(tracer.WithDogstatsdAddress("10.1.0.12:4002"))
+tracer.Start(tracer.WithDogstatsdAddr("10.1.0.12:4002"))
 ```
 
 ## WithAgentURL
