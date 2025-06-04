@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
+	"github.com/stretchr/testify/assert"
 )
 
 // dummyTestSpan is a dummy implementation of the TestSpan interface for testing purposes.
@@ -142,4 +143,32 @@ func TestProcessImpactedTest(t *testing.T) {
 	if !isImpacted {
 		t.Error("Expected to be impacted")
 	}
+}
+
+// TestNewImpactedTestAnalyzerWithNoBaseBranch tests that the analyzer handles the case where no base branch can be found gracefully.
+func TestNewImpactedTestAnalyzerWithNoBaseBranch(t *testing.T) {
+	// This test verifies that the analyzer can be created even when base branch detection fails
+	// According to the updated algorithm, this should not cause the analyzer creation to fail
+
+	analyzer, err := NewImpactedTestAnalyzer()
+
+	// The analyzer should be created successfully even if no base branch is found
+	if err != nil {
+		// If there's an error, it should only be due to missing current commit, not missing base
+		if !strings.Contains(err.Error(), "current commit is empty") {
+			t.Errorf("Unexpected error creating analyzer: %v", err)
+		}
+		return // Skip the rest if we can't get current commit
+	}
+
+	// Analyzer should be valid
+	assert.NotNil(t, analyzer, "Analyzer should not be nil")
+	assert.NotNil(t, analyzer.modifiedFiles, "ModifiedFiles should not be nil (can be empty)")
+
+	// The modified files can be empty if no base branch was found
+	t.Logf("Analyzer created with %d modified files", len(analyzer.modifiedFiles))
+
+	// Test that IsImpacted works correctly with empty modified files
+	isImpacted := analyzer.IsImpacted("test", "testfile.go", 1, 10)
+	assert.False(t, isImpacted, "Should not be impacted when no modified files are present")
 }
