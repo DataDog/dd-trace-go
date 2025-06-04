@@ -103,6 +103,7 @@ func IsFuncCall(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.C
 	if !ok {
 		return ctx, false
 	}
+	ctx = context.WithValue(ctx, callExprKey, c)
 	ctx = context.WithValue(ctx, fnKey, fn)
 	ctx = context.WithValue(ctx, argsKey, c.Args)
 	pkg := fn.Pkg()

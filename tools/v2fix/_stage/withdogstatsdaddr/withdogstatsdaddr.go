@@ -10,6 +10,6 @@ import (
 )
 
 func main() {
-	tracer.Start(tracer.WithDogstatsdAddress("localhost:8125")) // want `the function WithDogstatsdAddress is no longer supported. Use WithDogstatsdAddr instead.`
+	tracer.Start(tracer.WithDogstatsdAddress("localhost:8125")) // want `the function WithDogstatsdAddress is no longer supported. Use WithDogstatsdAddr instead`
 	tracer.Stop()
 }

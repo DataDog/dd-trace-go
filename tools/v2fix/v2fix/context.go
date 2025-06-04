@@ -16,4 +16,5 @@ const (
 	pkgPathKey      contextKey = "pkg_path"
 	posKey          contextKey = "pos"
 	typeKey         contextKey = "type"
+	callExprKey     contextKey = "callExpr"
 )
