@@ -78,6 +78,14 @@ func (b *RunAddressDataBuilder) WithRequestBody(body any) *RunAddressDataBuilder
 	return b
 }
 
+func (b *RunAddressDataBuilder) WithResponseBody(body any) *RunAddressDataBuilder {
+	if body == nil {
+		return b
+	}
+	b.Persistent[ServerResponseBodyAddr] = body
+	return b
+}
+
 func (b *RunAddressDataBuilder) WithResponseStatus(status int) *RunAddressDataBuilder {
 	if status == 0 {
 		return b

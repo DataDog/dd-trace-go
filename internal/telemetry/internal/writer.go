@@ -31,8 +31,6 @@ import (
 // We copy the transport to avoid using the default one, as it might be
 // augmented with tracing and we don't want these calls to be recorded.
 // See https://golang.org/pkg/net/http/#DefaultTransport .
-//
-//orchestrion:ignore
 var defaultHTTPClient = &http.Client{
 	Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -140,7 +138,6 @@ func NewWriter(config WriterConfig) (Writer, error) {
 		copyClient := *config.HTTPClient
 		config.HTTPClient = &copyClient
 		config.HTTPClient.Timeout = 5 * time.Second
-		log.Debug("telemetry/writer: client timeout was higher than 5 seconds, clamping it to 5 seconds")
 	}
 
 	body := newBody(config.TracerConfig, config.Debug)

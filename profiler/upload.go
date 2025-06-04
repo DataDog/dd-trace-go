@@ -75,21 +75,7 @@ func (e retriableError) Error() string { return e.err.Error() }
 // doRequest makes an HTTP POST request to the Datadog Profiling API with the
 // given profile.
 func (p *profiler) doRequest(bat batch) error {
-	tags := append(p.cfg.tags.Slice(),
-		fmt.Sprintf("service:%s", p.cfg.service),
-		// The profile_seq tag can be used to identify the first profile
-		// uploaded by a given runtime-id, identify missing profiles, etc.. See
-		// PROF-5612 (internal) for more details.
-		fmt.Sprintf("profile_seq:%d", bat.seq),
-	)
-	tags = append(tags, bat.extraTags...)
-	// If the user did not configure an "env" in the client, we should omit
-	// the tag so that the agent has a chance to supply a default tag.
-	// Otherwise, the tag supplied by the client will have priority.
-	if p.cfg.env != "" {
-		tags = append(tags, fmt.Sprintf("env:%s", p.cfg.env))
-	}
-	contentType, body, err := encode(bat, tags)
+	contentType, body, err := encode(bat, p.cfg)
 	if err != nil {
 		return err
 	}
@@ -164,19 +150,34 @@ type profilerInfo struct {
 	} `json:"ssi"`
 	// Activation distinguishes how the profiler was enabled, either "auto"
 	// (env var set via admission controller) or "manual"
-	Activation string `json:"activation"`
+	Activation string         `json:"activation"`
+	Settings   map[string]any `json:"settings"`
 }
 
 // encode encodes the profile as a multipart mime request.
-func encode(bat batch, tags []string) (contentType string, body io.Reader, err error) {
-	var buf bytes.Buffer
-
-	mw := multipart.NewWriter(&buf)
-
+func encode(bat batch, cfg *config) (contentType string, body io.Reader, err error) {
+	tags := append(cfg.tags.Slice(),
+		fmt.Sprintf("service:%s", cfg.service),
+		// The profile_seq tag can be used to identify the first profile
+		// uploaded by a given runtime-id, identify missing profiles, etc.. See
+		// PROF-5612 (internal) for more details.
+		fmt.Sprintf("profile_seq:%d", bat.seq),
+		"runtime:go",
+	)
+	tags = append(tags, bat.extraTags...)
+	// If the user did not configure an "env" in the client, we should omit
+	// the tag so that the agent has a chance to supply a default tag.
+	// Otherwise, the tag supplied by the client will have priority.
+	if cfg.env != "" {
+		tags = append(tags, fmt.Sprintf("env:%s", cfg.env))
+	}
 	if bat.host != "" {
 		tags = append(tags, fmt.Sprintf("host:%s", bat.host))
 	}
-	tags = append(tags, "runtime:go")
+
+	var buf bytes.Buffer
+
+	mw := multipart.NewWriter(&buf)
 
 	event := &uploadEvent{
 		Version:          "4",
@@ -202,6 +203,10 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		event.Info.Profiler.SSI.Mechanism = "orchestrion"
 	} else {
 		event.Info.Profiler.SSI.Mechanism = "none"
+	}
+	event.Info.Profiler.Settings = map[string]any{}
+	for _, tc := range telemetryConfiguration(cfg) {
+		event.Info.Profiler.Settings[tc.Name] = tc.Value
 	}
 
 	for _, p := range bat.profiles {
