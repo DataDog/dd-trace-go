@@ -77,6 +77,9 @@ func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
 		ssc := startSpanConfigPool.Get().(*ddtrace.StartSpanConfig)
 		defer releaseStartSpanConfig(ssc)
 		for _, o := range opts {
+			if o == nil {
+				continue
+			}
 			o(ssc)
 		}
 		if ssc.Parent != nil {
