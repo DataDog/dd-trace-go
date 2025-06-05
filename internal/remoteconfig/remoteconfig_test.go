@@ -16,8 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // The RC client relies on Repository (in the datadog-agent) which performs config signature validation
@@ -378,6 +381,50 @@ func TestNewUpdateRequest(t *testing.T) {
 	require.Equal(t, "tracer-version", req.Client.ClientTracer.TracerVersion)
 	require.Equal(t, "app-version", req.Client.ClientTracer.AppVersion)
 	require.True(t, req.Client.IsTracer)
+}
+
+func TestProcessTags(t *testing.T) {
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test-svc"
+	cfg.Env = "test-env"
+	cfg.TracerVersion = "tracer-version"
+	cfg.AppVersion = "app-version"
+	var err error
+	client, err = newClient(cfg)
+	require.NoError(t, err)
+
+	err = RegisterProduct("my-product")
+	require.NoError(t, err)
+	err = RegisterCapability(ASMActivation)
+	require.NoError(t, err)
+	err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }, APMTracingSampleRate)
+	require.NoError(t, err)
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+
+		b, err := client.newUpdateRequest()
+		require.NoError(t, err)
+		var req clientGetConfigsRequest
+		err = json.Unmarshal(b.Bytes(), &req)
+		require.NoError(t, err)
+
+		assert.NotEmpty(t, req.Client.ClientTracer.ProcessTags)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+
+		b, err := client.newUpdateRequest()
+		require.NoError(t, err)
+		var req clientGetConfigsRequest
+		err = json.Unmarshal(b.Bytes(), &req)
+		require.NoError(t, err)
+
+		assert.Empty(t, req.Client.ClientTracer.ProcessTags)
+	})
 }
 
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur

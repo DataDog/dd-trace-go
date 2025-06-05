@@ -149,6 +149,7 @@ jobs:
                       echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
                       continue
                     fi
+
                     cd $submodule
                     if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
                       echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule)"
@@ -329,7 +330,6 @@ jobs:
         if: always()
         run: sudo docker rm --force test.runner || echo "Could not remove container"
 
-  # TODO(darccio): revert to use main on release
   test-app-smoke-tests:
     name: Smoke Tests
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'

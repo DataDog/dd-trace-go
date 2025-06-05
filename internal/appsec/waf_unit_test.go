@@ -7,15 +7,41 @@ package appsec
 
 import (
 	"encoding/json"
+	"runtime"
 	"testing"
 	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDetectLibDL(t *testing.T) {
+	client := new(telemetrytest.RecordClient)
+	restore := telemetry.MockClient(client)
+	defer restore()
+
+	prevLevel := log.GetLevel()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(prevLevel)
+
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF is not usable, skipping test")
+	}
+
+	if runtime.GOOS != "linux" {
+		t.Skip("This test is only relevant for Linux")
+	}
+
+	detectLibDL()
+
+	telemetrytest.CheckConfig(t, client.Configuration, "libdl_present", true)
+}
 
 func TestAPISecuritySchemaCollection(t *testing.T) {
 	if wafOk, err := libddwaf.Usable(); !wafOk {
