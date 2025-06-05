@@ -17,6 +17,7 @@ package ddtracego
 // your application. If that is a problem, you should instead manually import
 // only the specific integrations that are useful to your application.
 import (
+	_ "gopkg.in/DataDog/dd-trace-go.v1/civisibility"                                     // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"                         // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/IBM/sarama.v1"                            // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/Shopify/sarama"                           // integration
@@ -58,6 +59,5 @@ import (
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/twitchtv/twirp"                           // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/contrib/valkey-go"                                // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"                                   // integration
-	_ "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting"     // integration
 	_ "gopkg.in/DataDog/dd-trace-go.v1/profiler"                                         // integration
 )

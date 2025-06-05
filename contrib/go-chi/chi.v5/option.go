@@ -6,109 +6,53 @@
 package chi
 
 import (
-	"math"
 	"net/http"
 
+	v2 "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-const defaultServiceName = "chi.router"
-
-type config struct {
-	serviceName        string
-	spanOpts           []ddtrace.StartSpanOption // additional span options to be applied
-	analyticsRate      float64
-	isStatusError      func(statusCode int) bool
-	ignoreRequest      func(r *http.Request) bool
-	modifyResourceName func(resourceName string) string
-	headerTags         *internal.LockMap
-	resourceNamer      func(r *http.Request) string
-	appsecDisabled     bool
-	appsecConfig       httpsec.Config
-}
-
 // Option represents an option that can be passed to NewRouter.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	if internal.BoolEnv("DD_TRACE_CHI_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
-	cfg.modifyResourceName = func(s string) string { return s }
-	// for backward compatibility with modifyResourceName, initialize resourceName as nil.
-	cfg.resourceNamer = nil
-	cfg.appsecDisabled = false
-}
+type Option = v2.Option
 
 // WithServiceName sets the given service name for the router.
 func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
 func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
-	return func(cfg *config) {
-		cfg.spanOpts = opts
-	}
+	return v2.WithSpanOptions(tracer.ApplyV1Options(opts...))
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithStatusCheck specifies a function fn which reports whether the passed
 // statusCode should be considered an error.
 func WithStatusCheck(fn func(statusCode int) bool) Option {
-	return func(cfg *config) {
-		cfg.isStatusError = fn
-	}
+	return v2.WithStatusCheck(fn)
 }
 
 // WithIgnoreRequest specifies a function to use for determining if the
 // incoming HTTP request tracing should be skipped.
 func WithIgnoreRequest(fn func(r *http.Request) bool) Option {
-	return func(cfg *config) {
-		cfg.ignoreRequest = fn
-	}
+	return v2.WithIgnoreRequest(fn)
 }
 
 // WithModifyResourceName specifies a function to use to modify the resource name.
 func WithModifyResourceName(fn func(resourceName string) string) Option {
-	return func(cfg *config) {
-		cfg.modifyResourceName = fn
-	}
+	return v2.WithModifyResourceName(fn)
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
@@ -116,27 +60,20 @@ func WithModifyResourceName(fn func(resourceName string) string) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
-	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
-	}
+	return v2.WithHeaderTags(headers)
 }
 
 // WithResourceNamer specifies a function to use for determining the resource
 // name of the span.
 func WithResourceNamer(fn func(r *http.Request) string) Option {
-	return func(cfg *config) {
-		cfg.resourceNamer = fn
-	}
+	return v2.WithResourceNamer(fn)
 }
 
 // WithNoAppsec opts this router out of AppSec management. This allows a particular router to bypass
 // appsec, while the rest of the application is still being monitored/managed. This has not effect
 // if AppSec is not enabled globally (e.g, via the DD_APPSEC_ENABLED environment variable).
 func WithNoAppsec(disabled bool) Option {
-	return func(cfg *config) {
-		cfg.appsecDisabled = disabled
-	}
+	return v2.WithNoAppsec(disabled)
 }
 
 // WithResponseHeaderCopier provides a function to fetch the response headers from the
@@ -145,7 +82,5 @@ func WithNoAppsec(disabled bool) Option {
 // return a copy of the http.Header map instead of a reference to the original (e.g: to not risk
 // breaking synchronization). This is currently only used by AppSec.
 func WithResponseHeaderCopier(f func(http.ResponseWriter) http.Header) Option {
-	return func(cfg *config) {
-		cfg.appsecConfig.ResponseHeaderCopier = f
-	}
+	return v2.WithResponseHeaderCopier(f)
 }

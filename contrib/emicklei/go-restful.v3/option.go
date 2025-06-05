@@ -6,66 +6,26 @@
 package restful
 
 import (
-	"math"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	v2 "github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2"
 )
 
-const defaultServiceName = "go-restful"
-
-type config struct {
-	serviceName   string
-	analyticsRate float64
-	headerTags    *internal.LockMap
-}
-
-func newConfig() *config {
-	rate := globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_RESTFUL_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
-	serviceName := namingschema.ServiceNameOverrideV0(defaultServiceName, defaultServiceName)
-	return &config{
-		serviceName:   serviceName,
-		analyticsRate: rate,
-		headerTags:    globalconfig.HeaderTagMap(),
-	}
-}
-
 // Option specifies instrumentation configuration options.
-type Option func(*config)
+type Option = v2.Option
 
 // WithServiceName sets the service name to by used by the filter.
 func WithServiceName(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
 func WithAnalytics(on bool) Option {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalytics(on)
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
 func WithAnalyticsRate(rate float64) Option {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
+	return v2.WithAnalyticsRate(rate)
 }
 
 // WithHeaderTags enables the integration to attach HTTP request headers as span tags.
@@ -73,8 +33,5 @@ func WithAnalyticsRate(rate float64) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
-	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
-	}
+	return v2.WithHeaderTags(headers)
 }

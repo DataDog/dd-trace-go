@@ -6,15 +6,21 @@
 package kafka
 
 import (
-	"github.com/confluentinc/confluent-kafka-go/kafka"
+	v2 "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/confluentinc/confluent-kafka-go/internal/tracing"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-// A MessageCarrier injects and extracts traces from a kafka.Message.
-type MessageCarrier = tracing.MessageCarrier
+// A MessageCarrier injects and extracts traces from a sarama.ProducerMessage.
+type MessageCarrier = v2.MessageCarrier
+
+var _ interface {
+	tracer.TextMapReader
+	tracer.TextMapWriter
+} = (*MessageCarrier)(nil)
 
 // NewMessageCarrier creates a new MessageCarrier.
 func NewMessageCarrier(msg *kafka.Message) MessageCarrier {
-	return tracing.NewMessageCarrier(wrapMessage(msg))
+	return v2.NewMessageCarrier(msg)
 }

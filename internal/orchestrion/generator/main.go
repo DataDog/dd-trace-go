@@ -8,7 +8,7 @@
 // of orchestrion. The `orchestrion.tool.go` file contains an import directive
 // for every package in `dd-trace-go` that contains an `orchestrion.yml` file.
 // Orchestrion uses this file when users import
-// `gopkg.in/DataDog/dd-trace-go.v1` in their application's
+// `github.com/DataDog/dd-trace-go/v2` in their application's
 // `orchestrion.tool.go` file, intending to enable every available feature of
 // the tracer library.
 package main
@@ -68,7 +68,7 @@ func generateRootYAML(rootDir string) error {
 			return nil
 		}
 
-		if entry.Name() != "orchestrion.yml" {
+		if entry.Name() != "orchestrion.yml" && entry.Name() != "orchestrion.tool.go" {
 			return nil
 		}
 
@@ -159,9 +159,28 @@ func validateValidConfig(rootDir string) error {
 	if err := goCmd(tmp, "mod", "edit", "-replace", "gopkg.in/DataDog/dd-trace-go.v1="+rootDir); err != nil {
 		return fmt.Errorf("replace gopkg.in/DataDog/dd-trace-go.v1: %w", err)
 	}
-	// TODO: Remove before shipping
-	if err := goCmd(tmp, "mod", "edit", "-require", "github.com/DataDog/orchestrion@v1.0.3-rc.1.0.20250109145419-86f02c486a31"); err != nil {
-		return fmt.Errorf("replace gopkg.in/DataDog/dd-trace-go.v1: %w", err)
+
+	cmd := exec.Command("go", "list", "-deps", "-f={{ with .Module }}-require={{ .Path }}@{{ .Version }}{{ end }}", rootDir+"/...")
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("listing dependencies: %w", err)
+	}
+	lines := bytes.Split(out, []byte{'\n'})
+	dedup := make(map[string]struct{})
+	for _, line := range lines {
+		if !bytes.HasPrefix(line, []byte("-require=github.com/DataDog/dd-trace-go/")) {
+			continue
+		}
+		dedup[string(line)] = struct{}{}
+	}
+	args := make([]string, 0, len(dedup)+1)
+	args = append(args, "edit")
+	for flag := range dedup {
+		fmt.Println("applying", flag)
+		args = append(args, flag)
+	}
+	if err = goCmd(tmp, "mod", args...); err != nil {
+		return fmt.Errorf("require github.com/DataDog/dd-trace-go v2 packages: %w", err)
 	}
 
 	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte(mainGo), 0o644); err != nil {

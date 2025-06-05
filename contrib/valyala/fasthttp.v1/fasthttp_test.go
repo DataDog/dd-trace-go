@@ -143,7 +143,7 @@ func TestStatusError(t *testing.T) {
 	span := spans[0]
 	assert.Equal("500", span.Tag(ext.HTTPCode))
 	wantErr := fmt.Sprintf("%d: %s", 500, errMsg)
-	assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+	assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 }
 
 // Test that users can customize which HTTP status codes are considered an error
@@ -168,7 +168,7 @@ func TestWithStatusCheck(t *testing.T) {
 		assert.Equal("600", span.Tag(ext.HTTPCode))
 		require.Contains(t, span.Tags(), ext.Error)
 		wantErr := fmt.Sprintf("%d: %s", 600, errMsg)
-		assert.Equal(wantErr, span.Tag(ext.Error).(error).Error())
+		assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	})
 	t.Run("notError", func(t *testing.T) {
 		addr := startServer(t, WithStatusCheck(customErrChecker))

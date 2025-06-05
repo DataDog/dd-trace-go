@@ -6,7 +6,7 @@
 package bun
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	v2 "github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2"
 )
 
 type config struct {
@@ -14,19 +14,9 @@ type config struct {
 }
 
 // Option represents an option that can be used to create or wrap a client.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	service := defaultServiceName
-	if svc := globalconfig.ServiceName(); svc != "" {
-		service = svc
-	}
-	cfg.serviceName = service
-}
+type Option = v2.Option
 
 // WithService sets the given service name for the client.
 func WithService(name string) Option {
-	return func(cfg *config) {
-		cfg.serviceName = name
-	}
+	return v2.WithService(name)
 }

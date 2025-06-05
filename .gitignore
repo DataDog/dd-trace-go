@@ -18,3 +18,4 @@ vendor
 /contrib_coverage.txt
 /core_coverage.txt
 /gotestsum-report.xml
+/gotestsum-report.kafka.xml

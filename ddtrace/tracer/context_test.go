@@ -11,26 +11,19 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	v2 "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestContextWithSpan(t *testing.T) {
-	want := &span{SpanID: 123}
-	ctx := ContextWithSpan(context.Background(), want)
-	got, ok := ctx.Value(internal.ActiveSpanKey).(*span)
-	assert := assert.New(t)
-	assert.True(ok)
-	assert.Equal(got, want)
-}
-
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		assert := assert.New(t)
-		want := &span{SpanID: 123}
+		want := traceinternal.WrapSpan(&v2.Span{})
 		ctx := ContextWithSpan(context.Background(), want)
 		got, ok := SpanFromContext(ctx)
 		assert.True(ok)
@@ -50,11 +43,11 @@ func TestSpanFromContext(t *testing.T) {
 }
 
 func TestStartSpanFromContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
-	parent := &span{context: &spanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
-	parent2 := &span{context: &spanContext{spanID: 789, traceID: traceIDFrom64Bits(456)}}
+	parent := StartSpan("test")
+	parent2 := StartSpan("test", ChildOf(parent.Context()))
 	pctx := ContextWithSpan(context.Background(), parent)
 	child, ctx := StartSpanFromContext(
 		pctx,
@@ -65,56 +58,44 @@ func TestStartSpanFromContext(t *testing.T) {
 	)
 	assert := assert.New(t)
 
-	got, ok := child.(*span)
+	sa, ok := child.(traceinternal.SpanV2Adapter)
 	assert.True(ok)
-	gotctx, ok := SpanFromContext(ctx)
+	got := sa.Span
+	sctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
+	sactx, ok := sctx.(traceinternal.SpanV2Adapter)
+	assert.True(ok)
+	gotctx := sactx.Span
 	assert.Equal(gotctx, got)
-	_, ok = gotctx.(*traceinternal.NoopSpan)
-	assert.False(ok)
 
-	assert.Equal(uint64(456), got.TraceID)
-	assert.Equal(uint64(123), got.ParentID)
-	assert.Equal("http.request", got.Name)
-	assert.Equal("gin", got.Service)
-	assert.Equal("/", got.Resource)
+	sm := got.AsMap()
+	st := mocktracer.MockSpan(got)
+	assert.Equal(parent.Context().TraceID(), sm[ext.MapSpanTraceID])
+	assert.Equal(parent.Context().SpanID(), sm[ext.MapSpanParentID])
+	assert.Equal("http.request", st.Tag(ext.SpanName))
+	assert.Equal("gin", st.Tag(ext.ServiceName))
+	assert.Equal("/", st.Tag(ext.ResourceName))
 }
 
-func TestStartSpanWithSpanLinks(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+func TestStartSpanFromContextDefault(t *testing.T) {
+	_, stop := startTestTracer(t)
 	defer stop()
-	spanLink := ddtrace.SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
-	ctx := &spanContext{spanID: 789, traceID: traceIDFrom64Bits(789), spanLinks: []ddtrace.SpanLink{spanLink}}
 
-	t.Run("spanContext with spanLinks satisfies SpanContextWithLinks interface", func(t *testing.T) {
-		var _ ddtrace.SpanContextWithLinks = ctx
-		assert.Equal(t, len(ctx.SpanLinks()), 1)
-		assert.Equal(t, ctx.SpanLinks()[0], spanLink)
-	})
-
-	t.Run("create span from spancontext with links", func(t *testing.T) {
-		var s ddtrace.Span
-		s, _ = StartSpanFromContext(
-			context.Background(),
-			"http.request",
-			WithSpanLinks([]ddtrace.SpanLink{spanLink}),
-			ChildOf(ctx),
-		)
-		//checking that a span links are added to a child span that is created where span links are passed as an StartSpanOption
-		sp, ok := s.(*span)
-		if !ok {
-			assert.Fail(t, "couldn't cast to span")
-		}
-
-		assert.Equal(t, 1, len(sp.SpanLinks))
-		assert.Equal(t, spanLink, sp.SpanLinks[0])
-
-		assert.Equal(t, 0, len(sp.context.spanLinks)) // ensure that the span links are not added to the parent context
-	})
+	assert := assert.New(t)
+	root, ctx := StartSpanFromContext(context.TODO(), "http.request")
+	assert.NotNil(root)
+	mRoot := mocktracer.MockSpan(root.(traceinternal.SpanV2Adapter).Span)
+	assert.Equal("http.request", mRoot.OperationName())
+	span, _ := StartSpanFromContext(ctx, "db.query")
+	assert.NotNil(span)
+	mSpan := mocktracer.MockSpan(span.(traceinternal.SpanV2Adapter).Span)
+	assert.Equal("db.query", mSpan.OperationName())
+	assert.Equal(mSpan.TraceID(), mRoot.TraceID())
+	assert.NotEqual(mSpan.SpanID(), mRoot.SpanID())
 }
 
 func TestStartSpanFromContextRace(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
 	// Start 100 goroutines that create child spans with StartSpanFromContext in parallel,
@@ -144,7 +125,7 @@ func TestStartSpanFromContextRace(t *testing.T) {
 }
 
 func Test128(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
 	t.Run("disable 128 bit trace ids", func(t *testing.T) {
@@ -182,7 +163,7 @@ func Test128(t *testing.T) {
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, stop := startTestTracer(t)
 	defer stop()
 
 	child, ctx := StartSpanFromContext(context.TODO(), "http.request")
@@ -190,12 +171,17 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	// ensure the returned context works
 	assert.Nil(ctx.Value("not_found_key"))
 
-	internalSpan, ok := child.(*span)
+	sa, ok := child.(traceinternal.SpanV2Adapter)
 	assert.True(ok)
-	assert.Equal("http.request", internalSpan.Name)
+	internalSpan := mocktracer.MockSpan(sa.Span)
+	assert.True(ok)
+	assert.Equal("http.request", internalSpan.Tag(ext.SpanName))
 
 	// the returned context includes the span
 	ctxSpan, ok := SpanFromContext(ctx)
 	assert.True(ok)
-	assert.Equal(child, ctxSpan)
+	sactx, ok := ctxSpan.(traceinternal.SpanV2Adapter)
+	assert.True(ok)
+	got := sactx.Span
+	assert.Equal(sa.Span, got)
 }

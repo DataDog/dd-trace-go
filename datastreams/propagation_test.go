@@ -11,7 +11,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -38,8 +37,8 @@ func TestBase64Propagation(t *testing.T) {
 	ctx := context.Background()
 	ctx, _ = tracer.SetDataStreamsCheckpoint(ctx, "direction:out", "type:kafka", "topic:topic1")
 	InjectToBase64Carrier(ctx, c)
-	got, _ := datastreams.PathwayFromContext(ExtractFromBase64Carrier(context.Background(), c))
-	expected, _ := datastreams.PathwayFromContext(ctx)
+	got, _ := PathwayFromContext(ExtractFromBase64Carrier(context.Background(), c))
+	expected, _ := PathwayFromContext(ctx)
 	assert.Equal(t, expected.GetHash(), got.GetHash())
 	assert.NotEqual(t, 0, expected.GetHash())
 }
