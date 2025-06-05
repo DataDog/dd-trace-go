@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 
+	"slices"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -244,17 +246,13 @@ func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderT
 }
 
 // TODO: Figure out how to deduplicate this code with textmap.go getPropagators
+// TODO: Handel DD_TRACE_PROPAGATION_STYLE?
 func baggageExtractEnabled() bool {
 	if v := os.Getenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT"); v != "" {
 		if vv := strings.ToLower(v); vv == "none" {
 			return false
 		} else {
-			for _, vvv := range strings.Split(vv, ",") {
-				if vvv == "baggage" {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(strings.Split(vv, ","), "baggage")
 		}
 	}
 	return true
