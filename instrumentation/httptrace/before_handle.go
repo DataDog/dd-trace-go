@@ -8,19 +8,16 @@ package httptrace
 import (
 	"errors"
 	"fmt"
-	"net/http"
-	"os"
-	"reflect"
-	"regexp"
-	"runtime"
-	"strconv"
-	"strings"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"net/http"
+	"os"
+	"reflect"
+	"runtime"
+	"strconv"
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -76,10 +73,10 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
 		// TODO: remove this conditional, this is just for testing
-		if _, ok := os.LookupEnv("_DD_TEST_CODE_ORIGINS_RUNTIME_CALLERS"); ok {
-			setCodeOriginTagsRuntimeCallers(span)
+		if _, ok := os.LookupEnv("_DD_TEST_CODE_ORIGINS_STACK_TRACE"); ok {
+			setCodeOriginTagsFromStackTrace(span, ddrw.handlerFrames)
 		} else {
-			setCodeOriginTags(span, cfg.Handler)
+			setCodeOriginTagsFromReflection(span, cfg.Handler)
 		}
 		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
@@ -118,7 +115,7 @@ const (
 	tagCodeOriginFrameSignature = "_dd.code_origin.frames.%d.signature"
 )
 
-func setCodeOriginTags(span *tracer.Span, handler http.Handler) {
+func setCodeOriginTagsFromReflection(span *tracer.Span, handler http.Handler) {
 	if !cfg.codeOriginEnabled || handler == nil {
 		return
 	}
@@ -157,84 +154,23 @@ func getSourceLocation(h http.Handler) (string, int, error) {
 	return file, line, nil
 }
 
-func setCodeOriginTagsRuntimeCallers(span *tracer.Span) {
-	if !cfg.codeOriginEnabled {
+func setCodeOriginTagsFromStackTrace(span *tracer.Span, frames []codeOriginFrame) {
+	if !cfg.codeOriginEnabled || len(frames) == 0 {
 		return
 	}
 	span.SetTag(tagCodeOriginType, "entry")
 
-	frameN := 0
-	pcs := make([]uintptr, 32)
-	n := runtime.Callers(2, pcs) // skip 2 frames: Callers + this function
-	pcs = pcs[:n]
-
-	frames := runtime.CallersFrames(pcs)
-	for {
-		frame, more := frames.Next()
-		fmt.Printf("got frame: %s:%d | %s\n", frame.File, frame.Line, frame.Function)
-
-		if isUserCode(frame) {
-			span.SetTag(frameTag(tagCodeOriginFrameFile, frameN), frame.File)
-			span.SetTag(frameTag(tagCodeOriginFrameLine, frameN), strconv.Itoa(frame.Line))
-
-			fn, ok := parseFunction(frame.Function)
-			if ok {
-				if fn.receiver != "" {
-					span.SetTag(frameTag(tagCodeOriginFrameType, frameN), fn.pkg+"."+fn.receiver)
-					span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.name)
-				} else {
-					span.SetTag(frameTag(tagCodeOriginFrameMethod, frameN), fn.pkg+"."+fn.name)
-				}
-			} else {
-				instr.Logger().Debug("instrumentation/httptrace/setCodeOriginTags: failed to extract function info from frame: %s", frame.Function)
-			}
-
-			frameN++
-			if frameN >= cfg.codeOriginMaxUserFrames {
-				break
-			}
+	for i, fr := range frames {
+		span.SetTag(frameTag(tagCodeOriginFrameFile, i), fr.file)
+		span.SetTag(frameTag(tagCodeOriginFrameLine, i), fr.line)
+		if fr.typ != "" {
+			span.SetTag(frameTag(tagCodeOriginFrameType, i), fr.typ)
 		}
-		if !more {
-			break
+		if fr.method != "" {
+			span.SetTag(frameTag(tagCodeOriginFrameMethod, i), fr.method)
+		}
+		if fr.signature != "" {
+			span.SetTag(frameTag(tagCodeOriginFrameSignature, i), fr.signature)
 		}
 	}
-}
-
-func isUserCode(frame runtime.Frame) bool {
-	return !isStdLib(frame.File) && !isThirdParty(frame.File)
-}
-
-func isStdLib(path string) bool {
-	// FIXME: dummy logic, just to test
-	return strings.HasPrefix(path, "/opt/homebrew/opt/go")
-}
-
-func isThirdParty(path string) bool {
-	// FIXME: dummy logic, just to test
-	return !(strings.HasSuffix(path, "github.com/DataDog/dd-trace-go/contrib/net/http/code_origin_handlers_test.go") ||
-		strings.HasSuffix(path, "github.com/DataDog/dd-trace-go/contrib/net/http/code_origin_test.go"))
-}
-
-func frameTag(tag string, n int) string {
-	return fmt.Sprintf(tag, n)
-}
-
-var funcPattern = regexp.MustCompile(`^(?P<Package>[\w./-]+)(?:\.\((?P<Receiver>[^)]+)\))?\.(?P<Method>\w+)$`)
-
-type funcInfo struct {
-	pkg      string
-	receiver string
-	name     string
-}
-
-func parseFunction(fn string) (funcInfo, bool) {
-	match := funcPattern.FindStringSubmatch(fn)
-	if match == nil {
-		return funcInfo{}, false
-	}
-	return funcInfo{
-		pkg:      match[1],
-		receiver: match[2],
-		name:     match[3],
-	}, true
 }

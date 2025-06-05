@@ -23,12 +23,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCodeOriginForSpans(t *testing.T) {
+func TestCodeOriginForSpansReflection(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	require.True(t, ok)
-	testFilePath, err := filepath.Abs(filename)
+	thisFile, err := filepath.Abs(filename)
 	require.NoError(t, err)
-	dir := filepath.Dir(testFilePath)
+	dir := filepath.Dir(thisFile)
 	testHandlersFile := filepath.Join(dir, "code_origin_handlers_test.go")
 
 	const (
@@ -96,7 +96,7 @@ func TestCodeOriginForSpans(t *testing.T) {
 			},
 			wantTags: map[string]any{
 				"_dd.code_origin.type":          "entry",
-				"_dd.code_origin.frames.0.file": testFilePath,
+				"_dd.code_origin.frames.0.file": thisFile,
 				"_dd.code_origin.frames.0.line": "93",
 			},
 		},
@@ -126,75 +126,194 @@ func TestCodeOriginForSpans(t *testing.T) {
 			},
 		},
 	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	t.Run("runtime.FuncForPC", func(t *testing.T) {
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				mt := mocktracer.Start()
-				defer mt.Stop()
+			t.Setenv("DD_CODE_ORIGIN_FOR_SPANS_ENABLED", strconv.FormatBool(!tc.disabled))
+			httptrace.ResetCfg()
 
-				t.Setenv("DD_CODE_ORIGIN_FOR_SPANS_ENABLED", strconv.FormatBool(!tc.disabled))
-				httptrace.ResetCfg()
+			h := WrapHandler(tc.getHandler(), "code-origins", "testHandler")
+			url := "/"
+			r := httptest.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
 
-				h := WrapHandler(tc.getHandler(), "code-origins", "testHandler")
-				url := "/"
-				r := httptest.NewRequest("GET", url, nil)
-				w := httptest.NewRecorder()
-				// This is the only "user-code" frame that runtime.Callers is able to capture
-				h.ServeHTTP(w, r)
+			h.ServeHTTP(w, r)
 
-				spans := mt.FinishedSpans()
-				require.Len(t, spans, 1)
-				s0 := spans[0]
-				require.Equal(t, "http.request", s0.OperationName())
-				require.Equal(t, "code-origins", s0.Tag(ext.ServiceName))
-				require.Equal(t, "testHandler", s0.Tag(ext.ResourceName))
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			s0 := spans[0]
+			require.Equal(t, "http.request", s0.OperationName())
+			require.Equal(t, "code-origins", s0.Tag(ext.ServiceName))
+			require.Equal(t, "testHandler", s0.Tag(ext.ResourceName))
 
-				gotTags := make(map[string]any)
-				for tag, value := range s0.Tags() {
-					if strings.HasPrefix(tag, "_dd.code_origin") {
-						gotTags[tag] = value
-					}
+			gotTags := make(map[string]any)
+			for tag, value := range s0.Tags() {
+				if strings.HasPrefix(tag, "_dd.code_origin") {
+					gotTags[tag] = value
 				}
-				assert.Equal(t, tc.wantTags, gotTags, "_dd.code_origin tags mismatch")
-			})
-		}
-	})
+			}
+			assert.Equal(t, tc.wantTags, gotTags, "_dd.code_origin tags mismatch")
+		})
+	}
+}
 
-	t.Run("runtime.Callers", func(t *testing.T) {
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				mt := mocktracer.Start()
-				defer mt.Stop()
+func TestCodeOriginForSpansStackTrace(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	thisFile, err := filepath.Abs(filename)
+	require.NoError(t, err)
+	dir := filepath.Dir(thisFile)
+	testHandlersFile := filepath.Join(dir, "code_origin_handlers_test.go")
 
-				t.Setenv("_DD_TEST_CODE_ORIGINS_RUNTIME_CALLERS", "1")
-				t.Setenv("DD_CODE_ORIGIN_FOR_SPANS_ENABLED", strconv.FormatBool(!tc.disabled))
-				httptrace.ResetCfg()
+	t.Setenv("_DD_TEST_CODE_ORIGINS_STACK_TRACE", "true")
 
-				h := WrapHandler(tc.getHandler(), "code-origins", "testHandler")
-				url := "/"
-				r := httptest.NewRequest("GET", url, nil)
-				w := httptest.NewRecorder()
-				// This is the only "user-code" frame that runtime.Callers is able to capture
-				h.ServeHTTP(w, r)
+	const (
+		funcHandlerLine       = "13"
+		customTypeHandlerLine = "20"
+	)
 
-				spans := mt.FinishedSpans()
-				require.Len(t, spans, 1)
-				s0 := spans[0]
-				require.Equal(t, "http.request", s0.OperationName())
-				require.Equal(t, "code-origins", s0.Tag(ext.ServiceName))
-				require.Equal(t, "testHandler", s0.Tag(ext.ResourceName))
+	muxFile, muxLine := serveMuxFileLine(t)
 
-				gotTags := make(map[string]any)
-				for tag, value := range s0.Tags() {
-					if strings.HasPrefix(tag, "_dd.code_origin") {
-						gotTags[tag] = value
-					}
+	testCases := []struct {
+		name       string
+		disabled   bool
+		getHandler func() http.Handler
+		wantTags   map[string]any
+	}{
+		{
+			name:     "disabled",
+			disabled: true,
+			getHandler: func() http.Handler {
+				return http.HandlerFunc(testHandler)
+			},
+			wantTags: map[string]any{},
+		},
+		{
+			name: "HandlerFunc",
+			getHandler: func() http.Handler {
+				return http.HandlerFunc(testHandler)
+			},
+			wantTags: map[string]any{
+				"_dd.code_origin.type":            "entry",
+				"_dd.code_origin.frames.0.file":   testHandlersFile,
+				"_dd.code_origin.frames.0.line":   funcHandlerLine,
+				"_dd.code_origin.frames.0.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.testHandler",
+				"_dd.code_origin.frames.1.file":   thisFile,
+				"_dd.code_origin.frames.1.line":   "299",
+				"_dd.code_origin.frames.1.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.TestCodeOriginForSpansStackTrace.func8",
+			},
+		},
+		{
+			name: "NewServeMux",
+			getHandler: func() http.Handler {
+				mux := http.NewServeMux()
+				mux.HandleFunc("/", testHandler)
+				return mux
+			},
+			wantTags: map[string]any{
+				"_dd.code_origin.type":            "entry",
+				"_dd.code_origin.frames.0.file":   testHandlersFile,
+				"_dd.code_origin.frames.0.line":   funcHandlerLine,
+				"_dd.code_origin.frames.0.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.testHandler",
+				"_dd.code_origin.frames.1.file":   thisFile,
+				"_dd.code_origin.frames.1.line":   "299",
+				"_dd.code_origin.frames.1.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.TestCodeOriginForSpansStackTrace.func8",
+			},
+		},
+		{
+			name: "CustomHandler",
+			getHandler: func() http.Handler {
+				return &CustomHandler{}
+			},
+			wantTags: map[string]any{
+				"_dd.code_origin.type":            "entry",
+				"_dd.code_origin.frames.0.file":   testHandlersFile,
+				"_dd.code_origin.frames.0.line":   customTypeHandlerLine,
+				"_dd.code_origin.frames.1.file":   thisFile,
+				"_dd.code_origin.frames.1.line":   "299",
+				"_dd.code_origin.frames.1.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.TestCodeOriginForSpansStackTrace.func8",
+			},
+		},
+		{
+			name: "InlineHandlerFunc",
+			getHandler: func() http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					testHandler(w, r)
+				})
+			},
+			wantTags: map[string]any{
+				"_dd.code_origin.type":            "entry",
+				"_dd.code_origin.frames.0.file":   thisFile,
+				"_dd.code_origin.frames.0.line":   "229",
+				"_dd.code_origin.frames.1.file":   thisFile,
+				"_dd.code_origin.frames.1.line":   "299",
+				"_dd.code_origin.frames.1.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.TestCodeOriginForSpansStackTrace.func8",
+			},
+		},
+		{
+			name: "DefaultServeMux",
+			getHandler: func() http.Handler {
+				http.HandleFunc("/", testHandler)
+				return http.DefaultServeMux
+			},
+			wantTags: map[string]any{
+				"_dd.code_origin.type":            "entry",
+				"_dd.code_origin.frames.0.file":   muxFile,
+				"_dd.code_origin.frames.0.line":   muxLine,
+				"_dd.code_origin.frames.1.file":   thisFile,
+				"_dd.code_origin.frames.1.line":   "299",
+				"_dd.code_origin.frames.1.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.TestCodeOriginForSpansStackTrace.func8",
+			},
+		},
+		{
+			name: "MethodValueHandler",
+			getHandler: func() http.Handler {
+				ch := &CustomHandler{}
+				return http.HandlerFunc(ch.ServeHTTP)
+			},
+			wantTags: map[string]any{
+				"_dd.code_origin.type":            "entry",
+				"_dd.code_origin.frames.0.file":   "<autogenerated>",
+				"_dd.code_origin.frames.0.line":   "1",
+				"_dd.code_origin.frames.1.file":   thisFile,
+				"_dd.code_origin.frames.1.line":   "299",
+				"_dd.code_origin.frames.1.method": "github.com/DataDog/dd-trace-go/contrib/net/http/v2.TestCodeOriginForSpansStackTrace.func8",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			t.Setenv("DD_CODE_ORIGIN_FOR_SPANS_ENABLED", strconv.FormatBool(!tc.disabled))
+			httptrace.ResetCfg()
+
+			h := WrapHandler(tc.getHandler(), "code-origins", "testHandler")
+			url := "/"
+			r := httptest.NewRequest("GET", url, nil)
+			w := httptest.NewRecorder()
+
+			h.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			s0 := spans[0]
+			require.Equal(t, "http.request", s0.OperationName())
+			require.Equal(t, "code-origins", s0.Tag(ext.ServiceName))
+			require.Equal(t, "testHandler", s0.Tag(ext.ResourceName))
+
+			gotTags := make(map[string]any)
+			for tag, value := range s0.Tags() {
+				if strings.HasPrefix(tag, "_dd.code_origin") {
+					gotTags[tag] = value
 				}
-				assert.Equal(t, tc.wantTags, gotTags, "_dd.code_origin tags mismatch")
-			})
-		}
-	})
+			}
+			assert.Equal(t, tc.wantTags, gotTags, "_dd.code_origin tags mismatch")
+		})
+	}
 }
 
 func serveMuxFileLine(t *testing.T) (file string, line string) {
