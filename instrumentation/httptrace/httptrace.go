@@ -11,6 +11,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,7 +76,6 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			if err != nil {
 				log.Debug("%s\n", err.Error())
 			} else {
-				// TODO: Baggage?
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 				if spanParentErr == nil {
 					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
@@ -86,15 +87,10 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		}
 	}
 
-	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-	if extractErr == nil && parentCtx != nil {
-		fmt.Println("IN httptrace extraction; parent is not nil")
-		ctx2 := r.Context()
-		parentCtx.ForeachBaggageItem(func(k, v string) bool {
-			ctx2 = baggage.Set(ctx2, k, v)
-			return true
-		})
-		r = r.WithContext(ctx2)
+	if baggageExtractEnabled() {
+		if v := r.Header.Get("baggage"); v != "" {
+			setBaggageOnCtxFromHeader(r.Context(), v)
+		}
 	}
 
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
@@ -114,11 +110,14 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-			} else if extractErr == nil && parentCtx != nil {
-				if links := parentCtx.SpanLinks(); links != nil {
-					tracer.WithSpanLinks(links)(ssCfg)
+			} else {
+				parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				if extractErr == nil {
+					if links := parentCtx.SpanLinks(); links != nil {
+						tracer.WithSpanLinks(links)(ssCfg)
+					}
+					tracer.ChildOf(parentCtx)(ssCfg)
 				}
-				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
 			for k, v := range ipTags {
@@ -241,5 +240,49 @@ func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderT
 		for _, t := range tags {
 			cfg.Tags[t.key] = t.val
 		}
+	}
+}
+
+// TODO: Figure out how to deduplicate this code with textmap.go getPropagators
+func baggageExtractEnabled() bool {
+	if v := os.Getenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT"); v != "" {
+		if vv := strings.ToLower(v); vv == "none" {
+			return false
+		} else {
+			for _, vvv := range strings.Split(vv, ",") {
+				if vvv == "baggage" {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func setBaggageOnCtxFromHeader(ctx context.Context, value string) {
+	// TODO: only if baggage propagator is enabled.
+	parts := strings.Split(value, ",")
+
+	// 1) validation & single-trim pass
+	for i, kv := range parts {
+		k, v, ok := strings.Cut(kv, "=")
+		trimmedK := strings.TrimSpace(k)
+		trimmedV := strings.TrimSpace(v)
+		// Drop the entire baggage header
+		if !ok || trimmedK == "" || trimmedV == "" {
+			log.Warn("invalid baggage item: %q, dropping entire header", kv)
+			break
+		}
+		// store back the trimmed pair so we don't re-trim below
+		parts[i] = trimmedK + "=" + trimmedV
+	}
+
+	// 2) safe to URL-decode & apply
+	for _, kv := range parts {
+		rawK, rawV, _ := strings.Cut(kv, "=")
+		key, _ := url.QueryUnescape(rawK)
+		val, _ := url.QueryUnescape(rawV)
+		baggage.Set(ctx, key, val)
 	}
 }

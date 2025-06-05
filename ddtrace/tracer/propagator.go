@@ -52,6 +52,4 @@ var (
 
 	// ErrSpanContextNotFound represents missing information in the given carrier.
 	ErrSpanContextNotFound = errors.New("span context not found")
-
-	// ErrOnlyBaggageFound = errors.New("span context missing but baggage present")
 )

@@ -8,13 +8,9 @@ package tracer
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
-
-	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -135,6 +131,9 @@ type PropagatorConfig struct {
 	// BaggageHeader specifies the map key that will be used to store the baggage key-value pairs.
 	// It defaults to DefaultBaggageHeader.
 	BaggageHeader string
+
+	// Baggage specifies if Baggage headers should be used in trace propagation.
+	Baggage bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -196,8 +195,8 @@ type chainedPropagator struct {
 // a warning and be ignored.
 func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 	dd := &propagator{cfg}
-	defaultPs := []Propagator{dd, &propagatorW3c{}, &propagatorBaggage{}}
-	defaultPsName := "datadog,tracecontext,baggage"
+	defaultPs := []Propagator{dd, &propagatorW3c{}}
+	defaultPsName := "datadog,tracecontext"
 	if cfg.B3 {
 		defaultPs = append(defaultPs, &propagatorB3{})
 		defaultPsName += ",b3"
@@ -227,9 +226,6 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		case "tracecontext":
 			list = append(list, &propagatorW3c{})
 			listNames = append(listNames, v)
-		case "baggage":
-			list = append(list, &propagatorBaggage{})
-			listNames = append(listNames, v)
 		case "b3", "b3multi":
 			if !cfg.B3 {
 				// propagatorB3 hasn't already been added, add a new one.
@@ -254,7 +250,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 
 // Inject defines the Propagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
-// TraceID and the current active SpanID, as well as the Span baggage.
+// TraceID and the current active SpanID.
 func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
@@ -279,21 +275,10 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) er
 func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	var ctx *SpanContext
 	var links []SpanLink
-	pendingBaggage := make(map[string]string) // used to store baggage items temprarily
 
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)
-
-		// If this is the baggage propagator, just stash its items into pendingBaggage
-		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
-			if extractedCtx != nil && len(extractedCtx.baggage) > 0 {
-				for k, v := range extractedCtx.baggage {
-					pendingBaggage[k] = v
-				}
-			}
-			continue
-		}
 
 		if firstExtract {
 			if err != nil {
@@ -343,30 +328,9 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		}
 	}
 
+	// 0 successful extractions
 	if ctx == nil {
-		if len(pendingBaggage) > 0 {
-			ctx := &SpanContext{
-				hasBaggage: 1, // does this need to be set?
-				baggage:    make(map[string]string, len(pendingBaggage)),
-			}
-			maps.Copy(ctx.baggage, pendingBaggage)
-			// should we do this instead of setting hasBaggae: 1 directly? Does it matter?
-			// atomic.StoreUint32(&ctx.hasBaggage, 1)
-			return ctx, nil
-		} else {
-			// 0 successful extractions
-			return nil, ErrSpanContextNotFound
-		}
-	}
-
-	if len(pendingBaggage) > 0 {
-		if ctx.baggage == nil {
-			ctx.baggage = make(map[string]string, len(pendingBaggage))
-		}
-		for k, v := range pendingBaggage {
-			ctx.baggage[k] = v
-		}
-		atomic.StoreUint32(&ctx.hasBaggage, 1) // does this need to be set?
+		return nil, ErrSpanContextNotFound
 	}
 
 	if len(links) > 0 {
@@ -386,8 +350,6 @@ func getPropagatorName(p Propagator) string {
 		return "b3"
 	case *propagatorW3c:
 		return "tracecontext"
-	case *propagatorBaggage:
-		return "baggage"
 	default:
 		return ""
 	}
@@ -1332,144 +1294,4 @@ func extractTraceID128(ctx *SpanContext, v string) error {
 		return ErrSpanContextCorrupted
 	}
 	return nil
-}
-
-const (
-	baggageMaxItems     = 64
-	baggageMaxBytes     = 8192
-	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
-	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'()*+-./:<>?@[]^_`{|}~"
-)
-
-// encodeKey encodes a key with the specified safe characters
-func encodeKey(key string) string {
-	return urlEncode(strings.TrimSpace(key), safeCharactersKey)
-}
-
-// encodeValue encodes a value with the specified safe characters
-func encodeValue(value string) string {
-	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
-}
-
-// urlEncode performs percent-encoding while respecting the safe characters
-func urlEncode(input string, safeCharacters string) string {
-	var encoded strings.Builder
-	for _, c := range input {
-		if strings.ContainsRune(safeCharacters, c) {
-			encoded.WriteRune(c)
-		} else {
-			encoded.WriteString(url.QueryEscape(string(c)))
-		}
-	}
-	return encoded.String()
-}
-
-// propagatorBaggage implements Propagator and injects/extracts span contexts
-// using baggage headers.
-type propagatorBaggage struct{}
-
-func (p *propagatorBaggage) Inject(spanCtx *SpanContext, carrier interface{}) error {
-	switch c := carrier.(type) {
-	case TextMapWriter:
-		return p.injectTextMap(spanCtx, c)
-	default:
-		return ErrInvalidCarrier
-	}
-}
-
-// injectTextMap propagates baggage items from the span context into the writer,
-// in the format of a single HTTP "baggage" header. Baggage consists of key=value pairs,
-// separated by commas. This function enforces a maximum number of baggage items and a maximum overall size.
-// If either limit is exceeded, excess items or bytes are dropped, and a warning is logged.
-//
-// Example of a single "baggage" header:
-// baggage: foo=bar,baz=qux
-//
-// Each key and value pair is encoded and added to the existing baggage header in <key>=<value> format,
-// joined together by commas,
-func (p *propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) error {
-	if ctx == nil {
-		return nil
-	}
-
-	ctr := 0
-	var baggageBuilder strings.Builder
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		if ctr >= baggageMaxItems {
-			return false
-		}
-
-		var itemBuilder strings.Builder
-		if ctr > 0 {
-			itemBuilder.WriteRune(',')
-		}
-
-		itemBuilder.WriteString(encodeKey(k))
-		itemBuilder.WriteRune('=')
-		itemBuilder.WriteString(encodeValue(v))
-		if itemBuilder.Len()+baggageBuilder.Len() > baggageMaxBytes {
-			return false
-		}
-		baggageBuilder.WriteString(itemBuilder.String())
-		ctr++
-		return true
-	})
-	if baggageBuilder.Len() > 0 {
-		writer.Set("baggage", baggageBuilder.String())
-	}
-	return nil
-}
-
-func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
-	switch c := carrier.(type) {
-	case TextMapReader:
-		return p.extractTextMap(c)
-	default:
-		return nil, ErrInvalidCarrier
-	}
-}
-
-func (p *propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
-	var baggageHeader string
-	var ctx SpanContext
-	err := reader.ForeachKey(func(k, v string) error {
-		if strings.ToLower(k) == "baggage" {
-			// Expect only one baggage header, return early
-			baggageHeader = v
-			return nil
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if baggageHeader == "" {
-		return &ctx, nil
-	}
-
-	parts := strings.Split(baggageHeader, ",")
-
-	// 1) validation & single-trim pass
-	for i, kv := range parts {
-		k, v, ok := strings.Cut(kv, "=")
-		trimmedK := strings.TrimSpace(k)
-		trimmedV := strings.TrimSpace(v)
-		if !ok || trimmedK == "" || trimmedV == "" {
-			log.Warn("invalid baggage item: %q, dropping entire header", kv)
-			return &ctx, nil
-		}
-		// store back the trimmed pair so we don't re-trim below
-		parts[i] = trimmedK + "=" + trimmedV
-	}
-
-	// 2) safe to URL-decode & apply
-	for _, kv := range parts {
-		rawK, rawV, _ := strings.Cut(kv, "=")
-		key, _ := url.QueryUnescape(rawK)
-		val, _ := url.QueryUnescape(rawV)
-		ctx.setBaggageItem(key, val)
-	}
-
-	return &ctx, nil
 }

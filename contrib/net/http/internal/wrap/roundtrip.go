@@ -6,11 +6,15 @@
 package wrap
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
@@ -73,10 +77,11 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 
 	// Clone the request so we can modify it without causing visible side-effects to the caller...
 	req = req.Clone(ctx)
-	for k, v := range baggage.All(ctx) {
-		span.SetBaggageItem(k, v)
-	}
+
 	if cfg.Propagation {
+		if baggageInjectEnabled() {
+			setBaggageOnReqHeader(&req.Header, req.Context())
+		}
 		// inject the span context into the http request copy
 		err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 		if err != nil {
@@ -125,6 +130,78 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 	return req, after, nil
 }
 
+// TODO: Figure out how to deduplicate this code with textmap.go getPropagators
+// TODO: Handle DD_TRACE_PROPAGATION_STYLE?
+func baggageInjectEnabled() bool {
+	if v := os.Getenv("DD_TRACE_PROPAGATION_STYLE_INJECT"); v != "" {
+		if vv := strings.ToLower(v); vv == "none" {
+			return false
+		} else {
+			return slices.Contains(strings.Split(vv, ","), "baggage")
+		}
+	}
+	return true
+}
+
 func identityAfterRoundTrip(resp *http.Response, err error) (*http.Response, error) {
 	return resp, err
+}
+
+func setBaggageOnReqHeader(h *http.Header, ctx context.Context) {
+	ctr := 0
+	var baggageBuilder strings.Builder
+	for k, v := range baggage.All(ctx) {
+		// TODO: Use baggageMaxItems
+		if ctr >= 64 {
+			break
+		}
+		var itemBuilder strings.Builder
+		if ctr > 0 {
+			itemBuilder.WriteRune(',')
+		}
+
+		itemBuilder.WriteString(encodeKey(k))
+		itemBuilder.WriteRune('=')
+		itemBuilder.WriteString(encodeValue(v))
+		// TODO: use baggageMaxBytes
+		if itemBuilder.Len()+baggageBuilder.Len() > 8192 {
+			break
+		}
+		baggageBuilder.WriteString(itemBuilder.String())
+		ctr++
+	}
+	if baggageBuilder.Len() > 0 {
+		h.Set("baggage", baggageBuilder.String())
+	}
+}
+
+// TODO: Move all of this into some internal baggage package
+const (
+	baggageMaxItems     = 64
+	baggageMaxBytes     = 8192
+	safeCharactersKey   = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
+	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'()*+-./:<>?@[]^_`{|}~"
+)
+
+// encodeKey encodes a key with the specified safe characters
+func encodeKey(key string) string {
+	return urlEncode(strings.TrimSpace(key), safeCharactersKey)
+}
+
+// encodeValue encodes a value with the specified safe characters
+func encodeValue(value string) string {
+	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
+}
+
+// urlEncode performs percent-encoding while respecting the safe characters
+func urlEncode(input string, safeCharacters string) string {
+	var encoded strings.Builder
+	for _, c := range input {
+		if strings.ContainsRune(safeCharacters, c) {
+			encoded.WriteRune(c)
+		} else {
+			encoded.WriteString(url.QueryEscape(string(c)))
+		}
+	}
+	return encoded.String()
 }
