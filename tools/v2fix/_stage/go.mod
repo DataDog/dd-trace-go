@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/tools/v2fix/_stage
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev
-	gopkg.in/DataDog/dd-trace-go.v1 v1.71.1
+	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.2
+	gopkg.in/DataDog/dd-trace-go.v1 v1.73.1
 )
 
 require (
@@ -69,7 +69,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
-	golang.org/x/mod v0.23.0 // indirect
+	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.24.0 // indirect

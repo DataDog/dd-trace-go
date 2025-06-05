@@ -6,10 +6,10 @@
 package main
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	ddtrace "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func main() {
-	tracer.Start(tracer.WithServiceName("service")) // want `the function WithServiceName is no longer supported. Use WithService instead`
-	tracer.Stop()
+	ddtrace.Start(ddtrace.WithDogstatsdAddress("localhost:8125")) // want `the function WithDogstatsdAddress is no longer supported. Use WithDogstatsdAddr instead`
+	ddtrace.Stop()
 }

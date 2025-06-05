@@ -64,7 +64,6 @@ func TestV1ImportURL(t *testing.T) {
 }
 
 func TestDDTraceTypes(t *testing.T) {
-	t.Skip()
 	c := NewChecker(&DDTraceTypes{})
 	c.Run(testRunner(t, "ddtracetypes"))
 }
@@ -82,6 +81,16 @@ func TestTraceIDString(t *testing.T) {
 func TestTracerStructs(t *testing.T) {
 	c := NewChecker(&TracerStructs{})
 	c.Run(testRunner(t, "tracerstructs"))
+}
+
+func TestWithDogstatsdAddr(t *testing.T) {
+	c := NewChecker(&WithDogstatsdAddr{})
+	c.Run(testRunner(t, "withdogstatsdaddr"))
+}
+
+func TestDeprecatedSamplingRules(t *testing.T) {
+	c := NewChecker(&DeprecatedSamplingRules{})
+	c.Run(testRunner(t, "samplingrules"))
 }
 
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
