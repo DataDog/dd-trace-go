@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023 Datadog, Inc.
 
-package v2fix_test
+package v2fix
 
 import (
 	"context"
@@ -13,8 +13,6 @@ import (
 	"os"
 	"path"
 	"testing"
-
-	"github.com/DataDog/dd-trace-go/tools/v2fix/v2fix"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
@@ -38,15 +36,15 @@ func (c V1Usage) Fixes() []analysis.SuggestedFix {
 	return nil
 }
 
-func (c V1Usage) Probes() []v2fix.Probe {
-	return []v2fix.Probe{
-		v2fix.IsFuncCall,
-		v2fix.HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1"),
+func (c V1Usage) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1"),
 	}
 }
 
 func (c V1Usage) String() string {
-	fn, ok := c.ctx.Value("fn").(*types.Func)
+	fn, ok := c.ctx.Value(fnKey).(*types.Func)
 	if !ok {
 		return "unknown"
 	}
@@ -54,36 +52,45 @@ func (c V1Usage) String() string {
 }
 
 func TestV1Usage(t *testing.T) {
-	c := v2fix.NewChecker(&V1Usage{
+	c := NewChecker(&V1Usage{
 		ctx: context.Background(),
 	})
 	c.Run(testRunner(t, "v1usage"))
 }
 
 func TestV1ImportURL(t *testing.T) {
-	c := v2fix.NewChecker(&v2fix.V1ImportURL{})
+	c := NewChecker(&V1ImportURL{})
 	c.Run(testRunner(t, "v1importurl"))
 }
 
 func TestDDTraceTypes(t *testing.T) {
-	t.Skip()
-	c := v2fix.NewChecker(&v2fix.DDTraceTypes{})
+	c := NewChecker(&DDTraceTypes{})
 	c.Run(testRunner(t, "ddtracetypes"))
 }
 
 func TestWithServiceName(t *testing.T) {
-	c := v2fix.NewChecker(&v2fix.WithServiceName{})
+	c := NewChecker(&WithServiceName{})
 	c.Run(testRunner(t, "withservicename"))
 }
 
 func TestTraceIDString(t *testing.T) {
-	c := v2fix.NewChecker(&v2fix.TraceIDString{})
+	c := NewChecker(&TraceIDString{})
 	c.Run(testRunner(t, "traceidstring"))
 }
 
 func TestTracerStructs(t *testing.T) {
-	c := v2fix.NewChecker(&v2fix.TracerStructs{})
+	c := NewChecker(&TracerStructs{})
 	c.Run(testRunner(t, "tracerstructs"))
+}
+
+func TestWithDogstatsdAddr(t *testing.T) {
+	c := NewChecker(&WithDogstatsdAddr{})
+	c.Run(testRunner(t, "withdogstatsdaddr"))
+}
+
+func TestDeprecatedSamplingRules(t *testing.T) {
+	c := NewChecker(&DeprecatedSamplingRules{})
+	c.Run(testRunner(t, "samplingrules"))
 }
 
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {

@@ -17,6 +17,8 @@ func main() {
 		&v2fix.TracerStructs{},
 		&v2fix.TraceIDString{},
 		&v2fix.WithServiceName{},
+		&v2fix.WithDogstatsdAddr{},
+		&v2fix.DeprecatedSamplingRules{},
 	)
 	c.Run(singlechecker.Main)
 }
