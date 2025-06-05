@@ -161,7 +161,7 @@ func setCodeOriginTagsRuntimeCallers(span *tracer.Span) {
 	if !cfg.codeOriginEnabled {
 		return
 	}
-	span.SetTag(tagCodeOriginType, "exit")
+	span.SetTag(tagCodeOriginType, "entry")
 
 	frameN := 0
 	pcs := make([]uintptr, 32)
