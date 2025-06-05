@@ -626,6 +626,9 @@ func (s *Span) Finish(opts ...FinishOption) {
 			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {
+			if fn == nil {
+				continue
+			}
 			fn(&cfg)
 		}
 		if !cfg.FinishTime.IsZero() {
