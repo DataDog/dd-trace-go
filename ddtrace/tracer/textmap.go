@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"maps"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -290,8 +292,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 					pendingBaggage[k] = v
 				}
 			}
-			// Pretend baggage never “extracted” a SpanContext for now
-			extractedCtx = nil
+			continue
 		}
 
 		if firstExtract {
@@ -307,16 +308,9 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 				return extractedCtx, nil
 			}
 			ctx = extractedCtx
-			continue
-		}
-
-		{ // A local trace context has already been extracted
+		} else { // A local trace context has already been extracted
 			extractedCtx2 := extractedCtx
 			ctx2 := ctx
-
-			if extractedCtx2 == nil {
-				continue
-			}
 
 			// If we can't cast to spanContext, we can't propgate tracestate or create span links
 			if extractedCtx2.TraceID() == ctx2.TraceID() {
@@ -349,32 +343,32 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		}
 	}
 
-	if ctx == nil && len(pendingBaggage) > 0 {
-		rootSpan := spanStart("baggage-root")
-		ctx = rootSpan.context
-		if ctx.baggage == nil {
-			ctx.baggage = make(map[string]string, len(pendingBaggage))
-		}
-		for k, v := range pendingBaggage {
-			ctx.baggage[k] = v
-		}
-		atomic.StoreUint32(&ctx.hasBaggage, 1)
-	}
-
-	if ctx != nil && len(pendingBaggage) > 0 {
-		if ctx.baggage == nil {
-			ctx.baggage = make(map[string]string, len(pendingBaggage))
-		}
-		for k, v := range pendingBaggage {
-			ctx.baggage[k] = v
-		}
-		atomic.StoreUint32(&ctx.hasBaggage, 1)
-	}
-
-	// 0 successful extractions
 	if ctx == nil {
-		return nil, ErrSpanContextNotFound
+		if len(pendingBaggage) > 0 {
+			ctx := &SpanContext{
+				hasBaggage: 1, // does this need to be set?
+				baggage:    make(map[string]string, len(pendingBaggage)),
+			}
+			maps.Copy(ctx.baggage, pendingBaggage)
+			// should we do this instead of setting hasBaggae: 1 directly? Does it matter?
+			// atomic.StoreUint32(&ctx.hasBaggage, 1)
+			return ctx, nil
+		} else {
+			// 0 successful extractions
+			return nil, ErrSpanContextNotFound
+		}
 	}
+
+	if len(pendingBaggage) > 0 {
+		if ctx.baggage == nil {
+			ctx.baggage = make(map[string]string, len(pendingBaggage))
+		}
+		for k, v := range pendingBaggage {
+			ctx.baggage[k] = v
+		}
+		atomic.StoreUint32(&ctx.hasBaggage, 1) // does this need to be set?
+	}
+
 	if len(links) > 0 {
 		ctx.spanLinks = links
 	}
@@ -1393,7 +1387,7 @@ func (p *propagatorBaggage) Inject(spanCtx *SpanContext, carrier interface{}) er
 //
 // Each key and value pair is encoded and added to the existing baggage header in <key>=<value> format,
 // joined together by commas,
-func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) error {
+func (p *propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) error {
 	if ctx == nil {
 		return nil
 	}
@@ -1435,7 +1429,7 @@ func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
 	}
 }
 
-func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+func (p *propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
 	var baggageHeader string
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
