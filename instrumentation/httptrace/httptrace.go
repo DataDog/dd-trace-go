@@ -74,6 +74,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			if err != nil {
 				log.Debug("%s\n", err.Error())
 			} else {
+				// TODO: Baggage?
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 				if spanParentErr == nil {
 					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
@@ -85,10 +86,11 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		}
 	}
 
-	headerSpanCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-	if extractErr == nil && headerSpanCtx != nil {
+	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+	if extractErr == nil && parentCtx != nil {
+		fmt.Println("IN httptrace extraction; parent is not nil")
 		ctx2 := r.Context()
-		headerSpanCtx.ForeachBaggageItem(func(k, v string) bool {
+		parentCtx.ForeachBaggageItem(func(k, v string) bool {
 			ctx2 = baggage.Set(ctx2, k, v)
 			return true
 		})
@@ -112,11 +114,11 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-			} else if extractErr == nil && headerSpanCtx != nil {
-				if links := headerSpanCtx.SpanLinks(); links != nil {
+			} else if extractErr == nil && parentCtx != nil {
+				if links := parentCtx.SpanLinks(); links != nil {
 					tracer.WithSpanLinks(links)(ssCfg)
 				}
-				tracer.ChildOf(headerSpanCtx)(ssCfg)
+				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
 			for k, v := range ipTags {

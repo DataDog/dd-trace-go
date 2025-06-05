@@ -640,7 +640,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil {
+	if context != nil && context.useForDistrTracing() {
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID

@@ -2876,7 +2876,7 @@ func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
 	})
 }
 
-func TestExtractOnlyBaggageGeneratesNonZeroTraceID(t *testing.T) {
+func TestExtractOnlyBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
 	headers := TextMapCarrier(map[string]string{
 		"baggage": "foo=bar,baz=qux",
@@ -2887,10 +2887,10 @@ func TestExtractOnlyBaggageGeneratesNonZeroTraceID(t *testing.T) {
 	defer tracer.Stop()
 
 	ctx, err := tracer.Extract(headers)
-	assert.NoError(t, err)
+	assert.Nil(t, err)
 
-	zeroTrace := traceIDFrom64Bits(0)
-	assert.NotEqual(t, zeroTrace, ctx.traceID)
+	// Expect tracer.Extract to return spanContext with 0 tID; it's the caller of tracer.Extract's responsibility to catch this (e.g, func startSpan)
+	assert.Equal(t, traceIDFrom64Bits(0), ctx.traceID)
 
 	got := make(map[string]string)
 	ctx.ForeachBaggageItem(func(k, v string) bool {

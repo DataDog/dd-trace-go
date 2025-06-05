@@ -371,6 +371,7 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 	}
 }
 
+// TODO: Add tests for non-httptrace http integrations
 func TestStartRequestSpanWithBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
 	tracer.Start()
@@ -380,6 +381,7 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	r.Header.Set("baggage", "key1=value1,key2=value2")
 	s, ctx, _ := StartRequestSpan(r)
 	s.Finish()
+	// Why do we want baggage from headers on the span, rather than just the request context?
 	spanBm := make(map[string]string)
 	s.Context().ForeachBaggageItem(func(k, v string) bool {
 		spanBm[k] = v
