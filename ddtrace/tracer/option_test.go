@@ -363,12 +363,10 @@ func TestIntegrationEnabled(t *testing.T) {
 	if _, err = os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("Starting test with root dir: %s", root)
 	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, _ error) error {
 		if filepath.Base(path) != "go.mod" || strings.Contains(path, fmt.Sprintf("%cinternal", os.PathSeparator)) {
 			return nil
 		}
-		t.Logf("Testing package at: %s", path)
 		rErr := testIntegrationEnabled(t, filepath.Dir(path))
 		if rErr != nil {
 			return fmt.Errorf("path: %s, err: %w", path, rErr)
@@ -382,7 +380,7 @@ func TestIntegrationEnabled(t *testing.T) {
 
 func testIntegrationEnabled(t *testing.T, contribPath string) error {
 	t.Helper()
-	t.Logf("Testing integration enabled for: %s", contribPath)
+	t.Log(contribPath)
 	pwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -393,12 +391,10 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 	if err = os.Chdir(contribPath); err != nil {
 		return err
 	}
-	t.Logf("Running go list for: %s", contribPath)
 	body, err := exec.Command("go", "list", "-json", "./...").Output()
 	if err != nil {
 		return fmt.Errorf("unable to get package info: %w", err)
 	}
-	t.Logf("Parsing package info for: %s", contribPath)
 	var packages []contribPkg
 	stream := json.NewDecoder(strings.NewReader(string(body)))
 	for stream.More() {
@@ -409,13 +405,11 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 		}
 		packages = append(packages, out)
 	}
-	t.Logf("Found %d packages in %s", len(packages), contribPath)
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
 			continue
 		}
 		if hasInstrumentationImport(pkg) {
-			t.Logf("Found instrumentation import in package: %s", pkg.ImportPath)
 			return nil
 		}
 	}
