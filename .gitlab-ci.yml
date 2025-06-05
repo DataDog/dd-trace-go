@@ -14,6 +14,7 @@ variables:
 
 # In order to run benchmarks in parallel, we generate a matrix of test names based on the BENCHMARK_TARGETS variable.
 # This will be used in tandem with bp-runner in benchmarks.yml.
+# TODO: let's add some comments here to describe what's going on
 generate_matrix:
   stage: generate
   image: $BASE_CI_IMAGE
