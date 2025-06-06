@@ -19,40 +19,10 @@ generate_matrix:
   stage: generate
   image: $BASE_CI_IMAGE
   tags: ["runner:apm-k8s-tweaked-metal"]
-  script:
-    - |
-      # 1. Include any relevant variables that the GitLab CI/CD pipelines might need.
-
-      echo "---" > generated_benchmark_matrix.yml
-      echo "include:" >> generated_benchmark_matrix.yml
-      echo "  - project: '${CI_PROJECT_PATH}'" >> generated_benchmark_matrix.yml
-      echo "    ref: '${CI_COMMIT_SHA}'" >> generated_benchmark_matrix.yml
-      echo "    file: '.gitlab/benchmarks.yml'" >> generated_benchmark_matrix.yml
-      echo "" >> generated_benchmark_matrix.yml
-
-      # 2. Initialize the list of stages that need to be run.
-
-      echo "stages:" >> generated_benchmark_matrix.yml
-      echo "  - benchmark_matrix" >> generated_benchmark_matrix.yml
-      echo "" >> generated_benchmark_matrix.yml
-
-      # 3. Create the benchmark_matrix subjob.
-      # This creates a "matrix" for the `.benchmark` job that exists inside .gitlab/benchmarks.yml.
-      # The matrix tells GitLab how to split our benchmarks into multiple jobs. In this case, we are
-      # using the `BENCHMARK_TARGETS` variable from above to give GitLab a list of test names.
-      # We use these test names in our associated benchmarking-platform branch to run each benchmark 
-      # on a different core.
-
-      echo "benchmark_matrix:" >> generated_benchmark_matrix.yml
-      echo "  extends: .benchmark" >> generated_benchmark_matrix.yml
-      echo "  stage: benchmark_matrix" >> generated_benchmark_matrix.yml
-      echo "  parallel:" >> generated_benchmark_matrix.yml
-      echo "    matrix:" >> generated_benchmark_matrix.yml
-      echo "      - BENCHMARK_NAME:" >> generated_benchmark_matrix.yml
-      echo "$BENCHMARK_TARGETS" | tr '|' '\n' | while IFS= read -r benchmark_name; do
-        printf "        - \"%s\"\n" "$benchmark_name" >> generated_benchmark_matrix.yml
-      done
-      echo "" >> generated_benchmark_matrix.yml
+  script: |
+    cd .gitlab
+    go run generate_config.go
+    mv generated_benchmark_matrix.yml ../generated_benchmark_matrix.yml
   artifacts:
     paths:
       - generated_benchmark_matrix.yml
