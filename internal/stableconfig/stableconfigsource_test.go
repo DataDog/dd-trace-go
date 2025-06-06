@@ -216,6 +216,16 @@ func TestParseFile(t *testing.T) {
 		err := os.WriteFile("test.yml", []byte(validYaml), 0000) // No permissions
 		assert.NoError(t, err)
 		defer os.Remove("test.yml")
+
+		// Add debug logging
+		info, err := os.Stat("test.yml")
+		if err != nil {
+			t.Logf("os.Stat error: %v", err)
+		} else {
+			t.Logf("File permissions: %v", info.Mode())
+			t.Logf("File size: %d", info.Size())
+		}
+
 		scfg := parseFile("test.yml")
 		assert.True(t, scfg.isEmpty())
 	})
