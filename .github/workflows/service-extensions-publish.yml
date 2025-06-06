@@ -119,9 +119,6 @@ jobs:
             tagname=${TAG_NAME//\//-} # remove slashes from tag name
             tags="tags=-t ghcr.io/datadog/dd-trace-go/service-extensions-callout:${tagname} \
             -t ghcr.io/datadog/dd-trace-go/service-extensions-callout:${{ env.COMMIT_SHA }}"
-            if [ "${PUSH_LATEST}" == "true" ]; then
-              tags="$tags -t ghcr.io/datadog/dd-trace-go/service-extensions-callout:latest"
-            fi
           
             echo $tags >> $GITHUB_OUTPUT
 
