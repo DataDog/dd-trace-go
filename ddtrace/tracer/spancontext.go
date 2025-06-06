@@ -128,7 +128,7 @@ func (c *SpanContext) useID() bool {
 	if c == nil {
 		return false
 	}
-	return !c.traceID.Empty() && c.spanID > 0
+	return !c.traceID.Empty()
 }
 
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
