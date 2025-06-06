@@ -2875,3 +2875,61 @@ func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
 		assert.Len(t, got, 0)
 	})
 }
+
+func TestExtractOnlyBaggageGeneratesNonZeroTraceID(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
+	headers := TextMapCarrier(map[string]string{
+		"baggage": "foo=bar,baz=qux",
+	})
+
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	zeroTrace := traceIDFrom64Bits(0)
+	assert.NotEqual(t, zeroTrace, ctx.traceID)
+
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 2)
+	assert.Equal(t, "bar", got["foo"])
+	assert.Equal(t, "qux", got["baz"])
+}
+
+func TestExtractBaggageFirstThenDatadog(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
+
+	// headers that include both baggage and valid Datadog trace headers.
+	headers := TextMapCarrier(map[string]string{
+		"baggage":             "item=xyz",
+		DefaultTraceIDHeader:  "12345",
+		DefaultParentIDHeader: "67890",
+		DefaultPriorityHeader: "1",
+	})
+
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	// Even though baggage appears first, the trace ID must come from Datadog.
+	expectedTraceID := traceIDFrom64Bits(12345)
+	assert.Equal(t, expectedTraceID, ctx.traceID)
+	assert.Equal(t, uint64(67890), ctx.spanID)
+
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 1)
+	assert.Equal(t, "xyz", got["item"])
+}
