@@ -88,7 +88,6 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 	if extractErr == nil && parentCtx != nil {
-		fmt.Println("IN httptrace extraction; parent is not nil")
 		ctx2 := r.Context()
 		parentCtx.ForeachBaggageItem(func(k, v string) bool {
 			ctx2 = baggage.Set(ctx2, k, v)

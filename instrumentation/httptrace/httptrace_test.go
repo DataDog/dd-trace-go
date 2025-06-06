@@ -381,7 +381,7 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	r.Header.Set("baggage", "key1=value1,key2=value2")
 	s, ctx, _ := StartRequestSpan(r)
 	s.Finish()
-	// Why do we want baggage from headers on the span, rather than just the request context?
+	// Crux of the issue: We want baggage headers accessible with r.Context (baggage.All(r.Context())) -- not the generated span's context.
 	spanBm := make(map[string]string)
 	s.Context().ForeachBaggageItem(func(k, v string) bool {
 		spanBm[k] = v
@@ -422,8 +422,6 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 }
 
 func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
-	// ensure we’re using datadog,tracecontext,baggage
-	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
 	tracer.Start()
 	defer tracer.Stop()
 	// only a baggage header, no real trace/span IDs
