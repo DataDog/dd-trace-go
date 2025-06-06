@@ -213,31 +213,14 @@ func TestParseFile(t *testing.T) {
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "value_2")
 	})
 	t.Run("file with no read permissions", func(t *testing.T) {
-		// Create file with platform-specific no-read permissions
-		var perm os.FileMode
 		if runtime.GOOS == "windows" {
-			// Create the file, with permissions
-			err := os.WriteFile("test.yml", []byte(validYaml), 0644)
-			assert.NoError(t, err)
-			// Then remove read permissions using os.Chmod
-			err = os.Chmod("test.yml", 0222) // Write-only permissions
-			assert.NoError(t, err)
-		} else {
-			// On Unix-like systems, we can use 0000
-			perm = 0000
-			err := os.WriteFile("test.yml", []byte(validYaml), perm)
-			assert.NoError(t, err)
+			t.Skip("File permission restrictions don't work reliably on Windows - the OS often grants read access to file owners regardless of permission bits")
 		}
-		defer os.Remove("test.yml")
 
-		// Add debug logging
-		info, err := os.Stat("test.yml")
-		if err != nil {
-			t.Logf("os.Stat error: %v", err)
-		} else {
-			t.Logf("File permissions: %v", info.Mode())
-			t.Logf("File size: %d", info.Size())
-		}
+		// On Unix-like systems, create file with no read permissions
+		err := os.WriteFile("test.yml", []byte(validYaml), 0000)
+		assert.NoError(t, err)
+		defer os.Remove("test.yml")
 
 		scfg := parseFile("test.yml")
 		assert.True(t, scfg.isEmpty())
