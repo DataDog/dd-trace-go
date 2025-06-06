@@ -29,11 +29,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup go
-        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ inputs.go-version }}
       - name: Copyright
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go
@@ -79,7 +79,7 @@ jobs:
       group: "APM Larger Runners"
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -108,7 +108,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -272,7 +272,7 @@ jobs:
           - 4566:4566
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -325,7 +325,7 @@ jobs:
           - 8126:8126
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
