@@ -586,6 +586,9 @@ func (t *tracer) pushChunk(trace *Chunk) {
 func spanStart(operationName string, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
+		if fn == nil {
+			continue
+		}
 		fn(&opts)
 	}
 	var startTime int64

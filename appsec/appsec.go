@@ -50,6 +50,20 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 	return httpsec.MonitorParsedBody(ctx, body)
 }
 
+// MonitorHTTPResponseBody runs the security monitoring rules on the given
+// response body (in object form, not encoded as the literal HTTP response body
+// payload bytes), and returns an error if the HTTP response is configured to be
+// blocked. The given context must be the HTTP request context as returned by
+// the [net/http.Request.Context] method, or equivalent. Calls to this function
+// are ignored if AppSec is disabled or the provided context is incorrect.
+func MonitorHTTPResponseBody(ctx context.Context, body any) error {
+	if !appsec.Enabled() {
+		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") })
+		return nil
+	}
+	return httpsec.MonitorResponseBody(ctx, body)
+}
+
 // SetUser wraps [tracer.SetUser] and extends it with user blocking.
 // On top of associating the authenticated user information to the service entry span,
 // it checks whether the given user ID is blocked or not by returning an error when it is.
