@@ -124,6 +124,8 @@ type spanContextV1Adapter interface {
 	Tags() map[string]string
 }
 
+// Rename: continueFromTrace? useTraceID? inheritContext?
+// The callers of this function do more than just use the trace (and span) ID if return value is true.
 func (c *SpanContext) useID() bool {
 	if c == nil {
 		return false
