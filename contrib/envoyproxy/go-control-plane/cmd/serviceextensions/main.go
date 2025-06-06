@@ -64,7 +64,7 @@ var log = NewLogger()
 func main() {
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
-		if err := os.Setenv("DD_VERSION", version); err != nil {
+		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
 			log.Error("service_extension: failed to set DD_VERSION environment variable: %v\n", err)
 		}
 	}
