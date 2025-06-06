@@ -13,6 +13,9 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -43,17 +46,56 @@ type AppsecEnvoyConfig struct {
 	BlockingUnavailable   bool
 }
 
+// AppsecEnvoyExternalProcessor extends the ExternalProcessorServer with request counting capabilities
+type AppsecEnvoyExternalProcessor interface {
+	envoyextproc.ExternalProcessorServer
+	StartRequestCounterReporting()
+	StopRequestCounterReporting()
+}
+
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
 type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
-	config AppsecEnvoyConfig
+	config           AppsecEnvoyConfig
+	requestCounter   int64
+	reporterStopCh   chan struct{}
+	reporterStopOnce sync.Once
 }
 
-func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer, config AppsecEnvoyConfig) envoyextproc.ExternalProcessorServer {
+func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer, config AppsecEnvoyConfig) AppsecEnvoyExternalProcessor {
 	return &appsecEnvoyExternalProcessorServer{
 		ExternalProcessorServer: userImplementation,
 		config:                  config,
 	}
+}
+
+// StartRequestCounterReporting starts the request counter reporter that logs number of analyzed requests every minute
+func (s *appsecEnvoyExternalProcessorServer) StartRequestCounterReporting() {
+	s.reporterStopCh = make(chan struct{})
+	s.reporterStopOnce = sync.Once{}
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				count := atomic.LoadInt64(&s.requestCounter)
+				instr.Logger().Info("external_processing: analyzed %d requests in the last minute", count)
+				atomic.StoreInt64(&s.requestCounter, 0)
+			case <-s.reporterStopCh:
+				return
+			}
+		}
+	}()
+}
+
+// StopRequestCounterReporting stops the request counter reporter
+func (s *appsecEnvoyExternalProcessorServer) StopRequestCounterReporting() {
+	s.reporterStopOnce.Do(func() {
+		close(s.reporterStopCh)
+	})
 }
 
 type currentRequest struct {
@@ -85,6 +127,8 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 	// Close the span when the request is done processing
 	defer func() {
+		atomic.AddInt64(&s.requestCounter, 1)
+
 		if currentRequest == nil {
 			return
 		}

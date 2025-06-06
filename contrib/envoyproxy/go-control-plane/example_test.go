@@ -36,6 +36,9 @@ func Example_server() {
 		BlockingUnavailable:   false,
 	})
 
+	// Enable the request counter that reports the number of analyzed requests every minute
+	appsecSrv.StartRequestCounterReporting()
+
 	extprocv3.RegisterExternalProcessorServer(s, appsecSrv)
 
 	// ... register your services
@@ -43,5 +46,6 @@ func Example_server() {
 	// Start serving incoming connections.
 	if err := s.Serve(ln); err != nil {
 		log.Fatalf("failed to serve: %v", err)
+		appsecSrv.StopRequestCounterReporting()
 	}
 }
