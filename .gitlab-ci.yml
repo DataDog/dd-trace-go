@@ -22,7 +22,7 @@ generate_matrix:
   script:
     - |
       # 1. Include any relevant variables that the GitLab CI/CD pipelines might need.
-      
+
       echo "---" > generated_benchmark_matrix.yml
       echo "include:" >> generated_benchmark_matrix.yml
       echo "  - project: '${CI_PROJECT_PATH}'" >> generated_benchmark_matrix.yml
