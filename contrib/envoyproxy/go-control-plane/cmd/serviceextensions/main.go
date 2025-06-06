@@ -160,6 +160,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 		gocontrolplane.AppsecEnvoyConfig{
 			IsGCPServiceExtension: true,
 			BlockingUnavailable:   config.observabilityMode,
+			Context:               ctx,
 		})
 
 	go func() {

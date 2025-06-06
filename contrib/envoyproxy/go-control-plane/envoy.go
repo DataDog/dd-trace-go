@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -41,19 +43,38 @@ func init() {
 type AppsecEnvoyConfig struct {
 	IsGCPServiceExtension bool
 	BlockingUnavailable   bool
+	Context               context.Context
 }
 
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
 type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
-	config AppsecEnvoyConfig
+	config         AppsecEnvoyConfig
+	requestCounter atomic.Uint32
 }
 
 func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer, config AppsecEnvoyConfig) envoyextproc.ExternalProcessorServer {
-	return &appsecEnvoyExternalProcessorServer{
+	processor := &appsecEnvoyExternalProcessorServer{
 		ExternalProcessorServer: userImplementation,
 		config:                  config,
 	}
+
+	if config.Context != nil {
+		go func() {
+			ticker := time.NewTicker(1 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					instr.Logger().Info("external_processing: analyzed %d requests in the last minute", processor.requestCounter.Swap(0))
+				case <-config.Context.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	return processor
 }
 
 type currentRequest struct {
@@ -85,6 +106,8 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 	// Close the span when the request is done processing
 	defer func() {
+		s.requestCounter.Add(1)
+
 		if currentRequest == nil {
 			return
 		}
