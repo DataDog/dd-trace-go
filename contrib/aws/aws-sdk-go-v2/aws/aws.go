@@ -146,7 +146,7 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 	case "SFN":
 		k, v = ext.SFNStateMachineName, stateMachineName(requestInput)
 	default:
-		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
+		return "", "", nil
 	}
 
 	return k, v, nil
