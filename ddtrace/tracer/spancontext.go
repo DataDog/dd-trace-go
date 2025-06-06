@@ -125,6 +125,15 @@ type spanContextV1Adapter interface {
 	Tags() map[string]string
 }
 
+// Rename: continueFromTrace? useTraceID? inheritContext?
+// The callers of this function do more than just use the trace (and span) ID if return value is true.
+func (c *SpanContext) useID() bool {
+	if c == nil {
+		return false
+	}
+	return !c.traceID.Empty()
+}
+
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
@@ -163,10 +172,12 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		context.traceID.SetUpper(parent.traceID.Upper())
-		context.trace = parent.trace
-		context.origin = parent.origin
-		context.errors = parent.errors
+		if parent.useID() {
+			context.traceID.SetUpper(parent.traceID.Upper())
+			context.trace = parent.trace
+			context.origin = parent.origin
+			context.errors = parent.errors
+		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
