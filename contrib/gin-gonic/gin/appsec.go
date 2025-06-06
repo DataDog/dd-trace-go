@@ -8,6 +8,7 @@ package gin
 import (
 	"net/http"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
@@ -33,4 +34,94 @@ func useAppSec(c *gin.Context, span trace.TagSetter) {
 		Route:       c.FullPath(),
 		RouteParams: params,
 	}).ServeHTTP(c.Writer, c.Request)
+}
+
+// AsciiJSON is a wrapper around the [gin.Context.AsciiJSON] method that also performs
+// HTTP response body monitoring.
+func AsciiJSON(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.AsciiJSON(code, obj)
+}
+
+// IndentedJSON is a wrapper around the [gin.Context.IndentedJSON] method that also performs
+// HTTP response body monitoring.
+func IndentedJSON(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.IndentedJSON(code, obj)
+}
+
+// JSON is a wrapper around the [gin.Context.JSON] method that also performs
+// HTTP response body monitoring.
+func JSON(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.JSON(code, obj)
+}
+
+// JSONP is a wrapper around the [gin.Context.JSONP] method that also performs
+// HTTP response body monitoring.
+func JSONP(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.JSONP(code, obj)
+}
+
+// PureJSON is a wrapper around the [gin.Context.PureJSON] method that also performs
+// HTTP response body monitoring.
+func PureJSON(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.PureJSON(code, obj)
+}
+
+// SecureJSON is a wrapper around the [gin.Context.SecureJSON] method that also performs
+// HTTP response body monitoring.
+func SecureJSON(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.SecureJSON(code, obj)
+}
+
+// XML is a wrapper around the [gin.Context.XML] method that also performs
+// HTTP response body monitoring.
+func XML(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.XML(code, obj)
+}
+
+// YAML is a wrapper around the [gin.Context.YAML] method that also performs
+// HTTP response body monitoring.
+func YAML(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.YAML(code, obj)
+}
+
+// TOML is a wrapper around the [gin.Context.TOML] method that also performs
+// HTTP response body monitoring.
+func TOML(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.TOML(code, obj)
+}
+
+// ProtoBuf is a wrapper around the [gin.Context.ProtoBuf] method that also performs
+// HTTP response body monitoring.
+func ProtoBuf(c *gin.Context, code int, obj any) {
+	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
+		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
+	}
+	c.ProtoBuf(code, obj)
 }

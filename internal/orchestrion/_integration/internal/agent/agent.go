@@ -89,6 +89,7 @@ func (m *MockAgent) Start(t *testing.T) {
 		tracer.WithSampler(tracer.NewAllSampler()),
 		tracer.WithLogStartup(false),
 		tracer.WithLogger(testLogger{t}),
+		tracer.WithAppSecEnabled(true),
 	)
 	t.Cleanup(tracer.Stop)
 }
