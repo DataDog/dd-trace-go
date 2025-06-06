@@ -353,10 +353,9 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 			// should we do this instead of setting hasBaggae: 1 directly? Does it matter?
 			// atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
-		} else {
-			// 0 successful extractions
-			return nil, ErrSpanContextNotFound
 		}
+		// 0 successful extractions
+		return nil, ErrSpanContextNotFound
 	}
 
 	if len(pendingBaggage) > 0 {
