@@ -21,6 +21,8 @@ type StatsPayload struct {
 	Lang string
 	// Version is the version of the service
 	Version string
+	// ProcessTags contains the process level tags.
+	ProcessTags []string
 }
 
 type ProduceOffset struct {

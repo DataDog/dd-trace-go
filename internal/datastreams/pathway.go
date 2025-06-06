@@ -26,7 +26,7 @@ func isWellFormedEdgeTag(t string) bool {
 	return false
 }
 
-func nodeHash(service, env string, edgeTags []string) uint64 {
+func nodeHash(service, env string, edgeTags, processTags []string) uint64 {
 	h := fnv.New64()
 	sort.Strings(edgeTags)
 	h.Write([]byte(service))
@@ -37,6 +37,9 @@ func nodeHash(service, env string, edgeTags []string) uint64 {
 		} else {
 			fmt.Println("not formatted correctly", t)
 		}
+	}
+	for _, t := range processTags {
+		h.Write([]byte(t))
 	}
 	return h.Sum64()
 }
