@@ -159,13 +159,11 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 		gocontrolplane.AppsecEnvoyConfig{
 			IsGCPServiceExtension: true,
 			BlockingUnavailable:   config.observabilityMode,
+			Context:               ctx,
 		})
-
-	appsecEnvoyExternalProcessorServer.StartRequestCounterReporting()
 
 	go func() {
 		<-ctx.Done()
-		appsecEnvoyExternalProcessorServer.StopRequestCounterReporting()
 		grpcServer.GracefulStop()
 	}()
 
