@@ -124,7 +124,7 @@ type spanContextV1Adapter interface {
 	Tags() map[string]string
 }
 
-func (c *SpanContext) useForDistrTracing() bool {
+func (c *SpanContext) useID() bool {
 	if c == nil {
 		return false
 	}
@@ -169,7 +169,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		if parent.useForDistrTracing() {
+		if parent.useID() {
 			context.traceID.SetUpper(parent.traceID.Upper())
 			context.trace = parent.trace
 			context.origin = parent.origin
