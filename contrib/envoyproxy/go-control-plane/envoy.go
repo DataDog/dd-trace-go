@@ -59,7 +59,7 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 		config:                  config,
 	}
 
-	if config.Context == nil {
+	if config.Context != nil {
 		go func() {
 			ticker := time.NewTicker(1 * time.Minute)
 			defer ticker.Stop()
