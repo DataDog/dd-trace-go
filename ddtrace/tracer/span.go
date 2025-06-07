@@ -143,6 +143,14 @@ type Span struct {
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
+// links is an easy way to access the span links on the span's spancontext. It does not return a copy of the slice; Any modifications to the returned slice will impact the span's spanLinks slice
+func (s *Span) links() []SpanLink {
+	if s.context == nil {
+		return []SpanLink{}
+	}
+	return s.context.spanLinks
+}
+
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
@@ -572,15 +580,16 @@ func (s *Span) AddLink(link SpanLink) {
 		// already finished
 		return
 	}
-	s.spanLinks = append(s.spanLinks, link)
+	s.context.spanLinks = append(s.context.spanLinks, link)
+	// s.spanLinks = append(s.spanLinks, link)
 }
 
 // serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.
 func (s *Span) serializeSpanLinksInMeta() {
-	if len(s.spanLinks) == 0 {
+	if len(s.context.spanLinks) == 0 {
 		return
 	}
-	spanLinkBytes, err := json.Marshal(s.spanLinks)
+	spanLinkBytes, err := json.Marshal(s.context.spanLinks)
 	if err != nil {
 		log.Debug("Unable to marshal span links. Not adding span links to span meta.")
 		return

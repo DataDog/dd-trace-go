@@ -1294,11 +1294,12 @@ func TestStartWithLink(t *testing.T) {
 	defer tracer.Stop()
 
 	span := tracer.StartSpan("test.request", WithSpanLinks(links))
-	assert.Len(span.spanLinks, 2)
-	assert.Equal(span.spanLinks[0].TraceID, uint64(1))
-	assert.Equal(span.spanLinks[0].SpanID, uint64(2))
-	assert.Equal(span.spanLinks[1].TraceID, uint64(3))
-	assert.Equal(span.spanLinks[1].SpanID, uint64(4))
+	spanLinks := span.links()
+	assert.Len(spanLinks, 2)
+	assert.Equal(spanLinks[0].TraceID, uint64(1))
+	assert.Equal(spanLinks[0].SpanID, uint64(2))
+	assert.Equal(spanLinks[1].TraceID, uint64(3))
+	assert.Equal(spanLinks[1].SpanID, uint64(4))
 }
 
 func TestOtelResourceAtttributes(t *testing.T) {

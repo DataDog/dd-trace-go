@@ -637,8 +637,6 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		integration: "manual",
 	}
 
-	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
-
 	if context != nil {
 		// this is a child span
 		span.traceID = context.traceID.Lower()
@@ -665,6 +663,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	}
 	span.context = newSpanContext(span, context)
+
+	span.context.spanLinks = append(span.links(), opts.SpanLinks...)
+
 	span.setMeta("language", "go")
 	// add tags from options
 	for k, v := range opts.Tags {
