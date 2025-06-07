@@ -6,6 +6,7 @@
 package stableconfig
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -121,7 +122,7 @@ func TestBool(t *testing.T) {
 				defaultValue:   true,
 				expectedValue:  true,
 				expectedOrigin: telemetry.OriginDefault,
-				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in fleet_stable_config configuration, dropping",
+				expectedErr:    fmt.Sprintf("invalid value for DD_KEY: 'not-a-bool' in %s configuration, dropping", originManagedStableConfig),
 			},
 			// Invalid boolean in environment variable
 			{
@@ -131,7 +132,7 @@ func TestBool(t *testing.T) {
 				defaultValue:   true,
 				expectedValue:  true,
 				expectedOrigin: telemetry.OriginDefault,
-				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in env_var configuration, dropping",
+				expectedErr:    fmt.Sprintf("invalid value for DD_KEY: 'not-a-bool' in %s configuration, dropping", originEnvVar),
 			},
 			// Invalid boolean in local config
 			{
@@ -141,7 +142,7 @@ func TestBool(t *testing.T) {
 				defaultValue:   true,
 				expectedValue:  true,
 				expectedOrigin: telemetry.OriginDefault,
-				expectedErr:    "non-boolean value for DD_KEY: 'not-a-bool' in local_stable_config configuration, dropping",
+				expectedErr:    fmt.Sprintf("invalid value for DD_KEY: 'not-a-bool' in %s configuration, dropping", originLocalStableConfig),
 			},
 			// Empty string in config; no error expected
 			{
@@ -249,3 +250,211 @@ apm_configuration_default:
 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
 	})
 }
+
+func TestInt(t *testing.T) {
+	// Yaml content for local and managed files
+	localYaml := `apm_configuration_default:
+    DD_KEY: 123`
+	managedYaml := `apm_configuration_default:
+    DD_KEY: 456`
+	// Modify file paths for testing
+	tempLocalPath := "local.yml"
+	tempManagedPath := "managed.yml"
+	// Write to local file, and defer delete it
+	err := os.WriteFile(tempLocalPath, []byte(localYaml), 0644)
+	assert.NoError(t, err)
+	defer os.Remove(tempLocalPath)
+	// Write to managed file, and defer delete it
+	err = os.WriteFile(tempManagedPath, []byte(managedYaml), 0644)
+	assert.NoError(t, err)
+	defer os.Remove(tempManagedPath)
+
+	t.Run("default", func(t *testing.T) {
+		val, origin := Int("UNKNOWN_KEY", 1)
+		assert.Equal(t, 1, val)
+		assert.Equal(t, telemetry.OriginDefault, origin)
+	})
+	t.Run("localStableconfig only", func(t *testing.T) {
+		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+		val, origin := Int("DD_KEY", 1)
+		assert.Equal(t, 123, val)
+		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
+	})
+	t.Run("env overrides localStableConfig", func(t *testing.T) {
+		t.Setenv("DD_KEY", "2")
+		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+		val, origin := Int("DD_KEY", 1)
+		assert.Equal(t, 2, val)
+		assert.Equal(t, telemetry.OriginEnvVar, origin)
+	})
+	t.Run("managedStableConfig overrides env", func(t *testing.T) {
+		t.Setenv("DD_KEY", "2")
+
+		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+
+		ManagedConfig = newStableConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
+		defer func() { ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig) }()
+
+		val, origin := Int("DD_KEY", 1)
+		assert.Equal(t, 456, val)
+		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
+	})
+}
+
+// func TestFloat(t *testing.T) {
+// 	// Yaml content for local and managed files
+// 	localYaml := `apm_configuration_default:
+//     DD_KEY: 123.45`
+// 	managedYaml := `apm_configuration_default:
+//     DD_KEY: 456.78`
+// 	// Modify file paths for testing
+// 	tempLocalPath := "local.yml"
+// 	tempManagedPath := "managed.yml"
+// 	// Write to local file, and defer delete it
+// 	err := os.WriteFile(tempLocalPath, []byte(localYaml), 0644)
+// 	assert.NoError(t, err)
+// 	defer os.Remove(tempLocalPath)
+// 	// Write to managed file, and defer delete it
+// 	err = os.WriteFile(tempManagedPath, []byte(managedYaml), 0644)
+// 	assert.NoError(t, err)
+// 	defer os.Remove(tempManagedPath)
+
+// 	t.Run("default", func(t *testing.T) {
+// 		val, origin := Float("UNKNOWN_KEY", 1.0)
+// 		assert.Equal(t, 1.0, val)
+// 		assert.Equal(t, telemetry.OriginDefault, origin)
+// 	})
+// 	t.Run("localStableconfig only", func(t *testing.T) {
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		val, origin := Float("DD_KEY", 1.0)
+// 		assert.Equal(t, 123.45, val)
+// 		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
+// 	})
+// 	t.Run("env overrides localStableConfig", func(t *testing.T) {
+// 		t.Setenv("DD_KEY", "2.5")
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		val, origin := Float("DD_KEY", 1.0)
+// 		assert.Equal(t, 2.5, val)
+// 		assert.Equal(t, telemetry.OriginEnvVar, origin)
+// 	})
+// 	t.Run("managedStableConfig overrides env", func(t *testing.T) {
+// 		t.Setenv("DD_KEY", "2.5")
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		ManagedConfig = newStableConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
+// 		defer func() { ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig) }()
+// 		val, origin := Float("DD_KEY", 1.0)
+// 		assert.Equal(t, 456.78, val)
+// 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
+// 	})
+// }
+
+// func TestDuration(t *testing.T) {
+// 	// Yaml content for local and managed files
+// 	localYaml := `apm_configuration_default:
+//     DD_KEY: 1h`
+// 	managedYaml := `apm_configuration_default:
+//     DD_KEY: 2h`
+// 	// Modify file paths for testing
+// 	tempLocalPath := "local.yml"
+// 	tempManagedPath := "managed.yml"
+// 	// Write to local file, and defer delete it
+// 	err := os.WriteFile(tempLocalPath, []byte(localYaml), 0644)
+// 	assert.NoError(t, err)
+// 	defer os.Remove(tempLocalPath)
+// 	// Write to managed file, and defer delete it
+// 	err = os.WriteFile(tempManagedPath, []byte(managedYaml), 0644)
+// 	assert.NoError(t, err)
+// 	defer os.Remove(tempManagedPath)
+
+// 	t.Run("default", func(t *testing.T) {
+// 		val, origin := Duration("UNKNOWN_KEY", time.Hour)
+// 		assert.Equal(t, time.Hour, val)
+// 		assert.Equal(t, telemetry.OriginDefault, origin)
+// 	})
+// 	t.Run("localStableconfig only", func(t *testing.T) {
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		val, origin := Duration("DD_KEY", time.Hour)
+// 		assert.Equal(t, time.Hour, val)
+// 		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
+// 	})
+// 	t.Run("env overrides localStableConfig", func(t *testing.T) {
+// 		t.Setenv("DD_KEY", "30m")
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		val, origin := Duration("DD_KEY", time.Hour)
+// 		assert.Equal(t, 30*time.Minute, val)
+// 		assert.Equal(t, telemetry.OriginEnvVar, origin)
+// 	})
+// 	t.Run("managedStableConfig overrides env", func(t *testing.T) {
+// 		t.Setenv("DD_KEY", "30m")
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		ManagedConfig = newStableConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
+// 		defer func() { ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig) }()
+// 		val, origin := Duration("DD_KEY", time.Hour)
+// 		assert.Equal(t, 2*time.Hour, val)
+// 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
+// 	})
+// }
+
+// func TestIP(t *testing.T) {
+// 	// Yaml content for local and managed files
+// 	localYaml := `apm_configuration_default:
+//     DD_KEY: 127.0.0.1`
+// 	managedYaml := `apm_configuration_default:
+//     DD_KEY: 192.168.1.1`
+// 	// Modify file paths for testing
+// 	tempLocalPath := "local.yml"
+// 	tempManagedPath := "managed.yml"
+// 	// Write to local file, and defer delete it
+// 	err := os.WriteFile(tempLocalPath, []byte(localYaml), 0644)
+// 	assert.NoError(t, err)
+// 	defer os.Remove(tempLocalPath)
+// 	// Write to managed file, and defer delete it
+// 	err = os.WriteFile(tempManagedPath, []byte(managedYaml), 0644)
+// 	assert.NoError(t, err)
+// 	defer os.Remove(tempManagedPath)
+
+// 	defaultIP := net.ParseIP("0.0.0.0")
+// 	localIP := net.ParseIP("127.0.0.1")
+// 	envIP := net.ParseIP("10.0.0.1")
+// 	managedIP := net.ParseIP("192.168.1.1")
+
+// 	t.Run("default", func(t *testing.T) {
+// 		val, origin := IP("UNKNOWN_KEY", defaultIP)
+// 		assert.Equal(t, defaultIP, val)
+// 		assert.Equal(t, telemetry.OriginDefault, origin)
+// 	})
+// 	t.Run("localStableconfig only", func(t *testing.T) {
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		val, origin := IP("DD_KEY", defaultIP)
+// 		assert.Equal(t, localIP, val)
+// 		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
+// 	})
+// 	t.Run("env overrides localStableConfig", func(t *testing.T) {
+// 		t.Setenv("DD_KEY", "10.0.0.1")
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		val, origin := IP("DD_KEY", defaultIP)
+// 		assert.Equal(t, envIP, val)
+// 		assert.Equal(t, telemetry.OriginEnvVar, origin)
+// 	})
+// 	t.Run("managedStableConfig overrides env", func(t *testing.T) {
+// 		t.Setenv("DD_KEY", "10.0.0.1")
+// 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+// 		defer func() { LocalConfig = newStableConfigSource(localFilePath, telemetry.OriginLocalStableConfig) }()
+// 		ManagedConfig = newStableConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
+// 		defer func() { ManagedConfig = newStableConfigSource(managedFilePath, telemetry.OriginManagedStableConfig) }()
+// 		val, origin := IP("DD_KEY", defaultIP)
+// 		assert.Equal(t, managedIP, val)
+// 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
+// 	})
+// }
