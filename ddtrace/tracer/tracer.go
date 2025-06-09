@@ -558,6 +558,9 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	}
 	var opts ddtrace.StartSpanConfig
 	for _, fn := range options {
+		if fn == nil {
+			continue
+		}
 		fn(&opts)
 	}
 	var startTime int64
