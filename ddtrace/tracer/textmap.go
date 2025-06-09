@@ -346,8 +346,9 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				hasBaggage: 1, // does this need to be set?
-				baggage:    make(map[string]string, len(pendingBaggage)),
+				hasBaggage:  1, // does this need to be set?
+				baggage:     make(map[string]string, len(pendingBaggage)),
+				baggageOnly: true,
 			}
 			maps.Copy(ctx.baggage, pendingBaggage)
 			// should we do this instead of setting hasBaggae: 1 directly? Does it matter?
