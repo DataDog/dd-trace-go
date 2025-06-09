@@ -10,9 +10,6 @@ import (
 )
 
 func main() {
-	tracer.Start(tracer.WithService("service"))
-	defer tracer.Stop()
-
-	tracer.Start(tracer.WithServiceName("service")) // want `the function WithServiceName is no longer supported. Use WithService instead.`
+	tracer.Start(tracer.WithServiceName("service")) // want `the function WithServiceName is no longer supported. Use WithService instead`
 	tracer.Stop()
 }
