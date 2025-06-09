@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"golang.org/x/mod/semver"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -503,7 +504,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.agentURL = internal.AgentURLFromEnv()
 	}
 	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
-	if c.httpClient == nil {
+	if c.httpClient == nil || orchestrion.Enabled() {
+		if orchestrion.Enabled() && c.httpClient != nil {
+			// Make sure we don't create http client traces from inside the tracer by using our http client
+			// TODO(eliott.bouhana): remove once dd:no-span is implemented
+			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
+		}
 		if c.agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
