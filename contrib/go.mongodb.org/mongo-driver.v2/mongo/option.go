@@ -31,9 +31,7 @@ func defaults(cfg *config) {
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 }
 
-// WithService sets the given service name for the dialled connection.
-// When the service name is not explicitly set it will be inferred based on the
-// request to AWS.
+// WithService sets the given service name for this integration spans.
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
