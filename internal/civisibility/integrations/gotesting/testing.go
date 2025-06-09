@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,6 +47,12 @@ var (
 
 	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
 	numOfTestsSkipped atomic.Uint64
+
+	// chattyPrinterOnce ensures that the chatty printer is initialized only once.
+	chattyPrinterOnce sync.Once
+
+	// chatty is the global chatty printer used for debugging and verbose output.
+	chatty *chattyPrinter
 )
 
 type (
@@ -260,6 +267,15 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}
 
+		// Initialize the chatty printer if not already done.
+		chattyPrinterOnce.Do(func() {
+			chatty = getTestChattyPrinter(t)
+			// If the chatty printer is enabled, we wrap the writer to capture output.
+			if chatty != nil && chatty.w != nil && *chatty.w != nil {
+				*chatty.w = &customWriter{chatty: chatty, writer: *chatty.w}
+			}
+		})
+
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
@@ -279,6 +295,30 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
 				// Set the EFD retry abort reason
 				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
+			}
+
+			// Set the test output if available.
+			if chatty != nil && chatty.w != nil && *chatty.w != nil {
+				if writer, ok := (*chatty.w).(*customWriter); ok {
+					strOutput := writer.GetOutput(test.Name())
+					if len(strOutput) > 0 {
+						if len(strOutput) > 4000 {
+							// If the output is too long, truncate it to avoid excessive data.
+							strOutput = strOutput[:4000] + "..."
+						}
+						test.SetTag("test.output", strOutput)
+					}
+				}
+			}
+			if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
+				strOutput := string(tCommon.GetOutput())
+				if len(strOutput) > 0 {
+					if len(strOutput) > 4000 {
+						// If the output is too long, truncate it to avoid excessive data.
+						strOutput = strOutput[:4000] + "..."
+					}
+					test.SetTag("test.output", strOutput)
+				}
 			}
 
 			if r := recover(); r != nil {

@@ -58,6 +58,8 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[6], false) {
 		fmt.Printf(scenarioStarted, scenarios[6])
 		runParallelEarlyFlakyTestDetectionTests(m)
+	} else if internal.BoolEnv("Bypass", false) {
+		os.Exit(m.Run())
 	} else {
 		fmt.Println("Starting tests...")
 		for _, v := range scenarios {
