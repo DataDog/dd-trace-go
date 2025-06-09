@@ -357,7 +357,6 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		// 0 successful extractions
 		return nil, ErrSpanContextNotFound
 	}
-
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil {
 			ctx.baggage = make(map[string]string, len(pendingBaggage))
@@ -1386,7 +1385,7 @@ func (p *propagatorBaggage) Inject(spanCtx *SpanContext, carrier interface{}) er
 //
 // Each key and value pair is encoded and added to the existing baggage header in <key>=<value> format,
 // joined together by commas,
-func (p *propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) error {
+func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) error {
 	if ctx == nil {
 		return nil
 	}
@@ -1428,7 +1427,7 @@ func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
 	}
 }
 
-func (p *propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
+func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
 	var baggageHeader string
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
