@@ -81,8 +81,6 @@ func envToTelemetryName(env string) string {
 		return "appsec_enabled"
 	case "DD_DYNAMIC_INSTRUMENTATION_ENABLED":
 		return "dynamic_instrumentation_enabled"
-	case "DD_APPSEC_SCA_ENABLED":
-		return env
 	default:
 		return env
 	}
