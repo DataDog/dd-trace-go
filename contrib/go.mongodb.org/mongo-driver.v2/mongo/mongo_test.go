@@ -20,7 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestMain(m *testing.M) {
@@ -80,59 +79,4 @@ func Test(t *testing.T) {
 	assert.Equal(t, componentName, s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	assert.Equal(t, "mongodb", s.Tag(ext.DBSystem))
-}
-
-func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
-
-		addr := "mongodb://localhost:27017/?connect=direct"
-		mongopts := options.Client()
-		mongopts.Monitor = NewMonitor(opts...)
-		mongopts.ApplyURI(addr)
-		client, err := mongo.Connect(mongopts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		client.
-			Database("test-database").
-			Collection("test-collection").
-			InsertOne(ctx, bson.D{{Key: "test-item", Value: "test-value"}})
-
-		spans := mt.FinishedSpans()
-		assert.Len(t, spans, 1)
-		s := spans[0]
-		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
-	}
-
-	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, nil)
-	})
-
-	t.Run("enabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, 1.0, WithAnalytics(true))
-	})
-
-	t.Run("disabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		assertRate(t, mt, nil, WithAnalytics(false))
-	})
-
-	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		testutils.SetGlobalAnalyticsRate(t, 0.4)
-
-		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
-	})
 }

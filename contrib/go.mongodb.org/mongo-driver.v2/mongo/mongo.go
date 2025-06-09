@@ -12,7 +12,6 @@ package mongo
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"sync"
 
@@ -59,9 +58,6 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),
-	}
-	if !math.IsNaN(m.cfg.analyticsRate) {
-		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, m.cfg.spanName, opts...)
 	key := spanKey{
