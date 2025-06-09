@@ -343,6 +343,9 @@ func getTestChattyPrinter(t *testing.T) *chattyPrinter {
 		return nil
 	}
 	contextMember = contextMember.Elem()
+	if !contextMember.IsValid() {
+		return nil
+	}
 
 	fields := &chattyPrinter{}
 	if ptr, err := getFieldPointerFromValue(contextMember, "w"); err == nil && ptr != nil {
