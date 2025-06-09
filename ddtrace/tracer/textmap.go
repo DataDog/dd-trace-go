@@ -279,7 +279,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) er
 func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	var ctx *SpanContext
 	var links []SpanLink
-	pendingBaggage := make(map[string]string) // used to store baggage items temprarily
+	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
 
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
@@ -346,7 +346,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				hasBaggage:  1, // does this need to be set?
+				hasBaggage:  1,
 				baggage:     make(map[string]string, len(pendingBaggage)),
 				baggageOnly: true,
 			}
@@ -365,7 +365,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		for k, v := range pendingBaggage {
 			ctx.baggage[k] = v
 		}
-		atomic.StoreUint32(&ctx.hasBaggage, 1) // does this need to be set?
+		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
 	if len(links) > 0 {

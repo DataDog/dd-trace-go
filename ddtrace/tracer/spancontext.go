@@ -125,15 +125,6 @@ type spanContextV1Adapter interface {
 	Tags() map[string]string
 }
 
-// Rename: continueFromTrace? useTraceID? inheritContext?
-// The callers of this function do more than just use the trace (and span) ID if return value is true.
-func (c *SpanContext) useID() bool {
-	if c == nil {
-		return false
-	}
-	return !c.traceID.Empty()
-}
-
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {

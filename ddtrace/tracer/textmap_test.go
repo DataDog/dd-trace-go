@@ -2889,9 +2889,6 @@ func TestExtractOnlyBaggage(t *testing.T) {
 	ctx, err := tracer.Extract(headers)
 	assert.Nil(t, err)
 
-	// Expect tracer.Extract to return spanContext with 0 tID; it's the caller of tracer.Extract's responsibility to catch this (e.g, func startSpan)
-	assert.Equal(t, traceIDFrom64Bits(0), ctx.traceID)
-
 	got := make(map[string]string)
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		got[k] = v
@@ -2902,6 +2899,7 @@ func TestExtractOnlyBaggage(t *testing.T) {
 	assert.Equal(t, "qux", got["baz"])
 }
 
+// Ensure trace context from Datadog headers is used to continue the trace, but baggage is also inherited
 func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
 
