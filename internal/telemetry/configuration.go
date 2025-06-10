@@ -35,6 +35,7 @@ func (c *configuration) Add(kv Configuration) {
 		Name:   kv.Name,
 		Value:  kv.Value,
 		Origin: kv.Origin,
+		ID:     kv.ID,
 	}
 }
 
@@ -52,6 +53,9 @@ func (c *configuration) Payload() transport.Payload {
 			conf.Origin = transport.OriginDefault
 		}
 		conf.Value = SanitizeConfigValue(conf.Value)
+		if conf.ID <= 0 {
+			conf.ID = 0
+		}
 		conf.SeqID = c.seqID
 		configs[idx] = conf
 		idx++

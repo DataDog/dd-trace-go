@@ -181,7 +181,7 @@ func (c *client) ProductStartError(product Namespace, err error) {
 }
 
 func (c *client) RegisterAppConfig(key string, value any, origin Origin) {
-	c.configuration.Add(Configuration{key, value, origin})
+	c.configuration.Add(Configuration{Name: key, Value: value, Origin: origin})
 }
 
 func (c *client) RegisterAppConfigs(kvs ...Configuration) {

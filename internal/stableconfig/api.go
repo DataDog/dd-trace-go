@@ -17,16 +17,23 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Origin, err error) (bool, telemetry.Origin, error) {
+// ConfigData holds configuration value with its origin and config ID
+type ConfigData struct {
+	Origin   telemetry.Origin
+	Value    string
+	ConfigID int
+}
+
+func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Origin, id int, err error) (bool, telemetry.Origin, error) {
 	if env == "DD_APPSEC_SCA_ENABLED" && origin == telemetry.OriginDefault {
 		return value, origin, err
 	}
-	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: envToTelemetryName(env), Value: value, Origin: origin, ID: id})
 	return value, origin, err
 }
 
-func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin) (string, telemetry.Origin) {
-	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
+func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin, id int) (string, telemetry.Origin) {
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: envToTelemetryName(env), Value: value, Origin: origin, ID: id})
 	return value, origin
 }
 
@@ -34,33 +41,45 @@ func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin)
 // or local file-based config, in that order. If none provide a valid boolean, it returns the default.
 // Also returns the value's origin and any parse error encountered.
 func Bool(env string, def bool) (value bool, origin telemetry.Origin, err error) {
-	for o, v := range stableConfigByPriority(env) {
-		if val, err := strconv.ParseBool(v); err == nil {
-			return reportTelemetryAndReturnWithErr(env, val, o, nil)
+	for configData := range stableConfigByPriority(env) {
+		if val, err := strconv.ParseBool(configData.Value); err == nil {
+			return reportTelemetryAndReturnWithErr(env, val, configData.Origin, configData.ConfigID, nil)
 		}
-		err = errors.Join(err, fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, v, o))
+		err = errors.Join(err, fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, configData.Value, configData.Origin))
 	}
-	return reportTelemetryAndReturnWithErr(env, def, telemetry.OriginDefault, err)
+	return reportTelemetryAndReturnWithErr(env, def, telemetry.OriginDefault, 0, err)
 }
 
 // String returns a string config value from managed file-based config, environment variable,
 // or local file-based config, in that order. If none are set, it returns the default value and origin.
 func String(env string, def string) (string, telemetry.Origin) {
-	for origin, value := range stableConfigByPriority(env) {
-		return reportTelemetryAndReturn(env, value, origin)
+	for configData := range stableConfigByPriority(env) {
+		return reportTelemetryAndReturn(env, configData.Value, configData.Origin, configData.ConfigID)
 	}
-	return reportTelemetryAndReturn(env, def, telemetry.OriginDefault)
+	return reportTelemetryAndReturn(env, def, telemetry.OriginDefault, 0)
 }
 
-func stableConfigByPriority(env string) iter.Seq2[telemetry.Origin, string] {
-	return func(yield func(telemetry.Origin, string) bool) {
-		if v := ManagedConfig.Get(env); v != "" && !yield(telemetry.OriginManagedStableConfig, v) {
+func stableConfigByPriority(env string) iter.Seq[ConfigData] {
+	return func(yield func(ConfigData) bool) {
+		if v := ManagedConfig.Get(env); v != "" && !yield(ConfigData{
+			Origin:   telemetry.OriginManagedStableConfig,
+			Value:    v,
+			ConfigID: ManagedConfig.GetID(),
+		}) {
 			return
 		}
-		if v, ok := os.LookupEnv(env); ok && !yield(telemetry.OriginEnvVar, v) {
+		if v, ok := os.LookupEnv(env); ok && !yield(ConfigData{
+			Origin:   telemetry.OriginEnvVar,
+			Value:    v,
+			ConfigID: 0, // dummy value for environment variables
+		}) {
 			return
 		}
-		if v := LocalConfig.Get(env); v != "" && !yield(telemetry.OriginLocalStableConfig, v) {
+		if v := LocalConfig.Get(env); v != "" && !yield(ConfigData{
+			Origin:   telemetry.OriginLocalStableConfig,
+			Value:    v,
+			ConfigID: LocalConfig.GetID(),
+		}) {
 			return
 		}
 	}

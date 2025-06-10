@@ -103,6 +103,8 @@ type Configuration struct {
 	Value any
 	// Origin is the source of the configuration change.
 	Origin Origin
+	// ID is the config ID of the configuration change.
+	ID int
 }
 
 // LogOption is a function that modifies the log message that is sent to the telemetry.

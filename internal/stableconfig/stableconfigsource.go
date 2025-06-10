@@ -41,6 +41,10 @@ func (s *stableConfigSource) Get(key string) string {
 	return s.config.get(key)
 }
 
+func (s *stableConfigSource) GetID() int {
+	return s.config.getID()
+}
+
 // newStableConfigSource initializes a new stableConfigSource from the given file.
 func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConfigSource {
 	return &stableConfigSource{
