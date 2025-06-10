@@ -3,8 +3,7 @@ name: Publish Docker images packages
 on:
   push:
     tags:
-      - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+'
-      - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -16,7 +15,18 @@ on:
       set_as_latest:
         description: 'Set the tag as latest'
         required: false
-        default: 'false'
+        default: false
+        type: boolean
+      build_service_extensions:
+        description: 'Build service-extensions-callout image'
+        required: false
+        default: false
+        type: boolean
+      build_request_mirror:
+        description: 'Build request-mirror image'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -25,19 +35,57 @@ permissions:
 env:
   TAG_NAME: ${{ github.event.inputs.tag_name || github.ref_name }}
   COMMIT_SHA: ${{ github.event.inputs.commit_sha || github.sha }}
-  PUSH_LATEST: ${{ github.event.inputs.set_as_latest || 'true' }}
+  PUSH_LATEST: ${{ github.event.inputs.set_as_latest || true }}
 
 jobs:
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.setup.outputs.matrix }}
+    env:
+      ALL_BUILDS: |
+        [
+          {
+            "dockerfile": "./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile",
+            "image": "ghcr.io/datadog/dd-trace-go/service-extensions-callout",
+            "input_key": "build_service_extensions",
+            "artifact_prefix": "service-extensions"
+          },
+          {
+            "dockerfile": "./contrib/k8s.io/cmd/request-mirror/Dockerfile", 
+            "image": "ghcr.io/datadog/dd-trace-go/request-mirror",
+            "input_key": "build_request_mirror",
+            "artifact_prefix": "request-mirror"
+          }
+        ]
+    steps:
+      - name: Setup build matrix
+        id: setup
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            # For version tag pushes, build all images
+            matrix=$(echo '${{ env.ALL_BUILDS }}' | jq -c .)
+          else
+            # For manual triggers, filter based on inputs
+            matrix=$(echo '${{ env.ALL_BUILDS }}' | jq -c '[
+              .[] | select(
+                (.input_key == "build_service_extensions" and "${{ github.event.inputs.build_service_extensions }}" == "true") or
+                (.input_key == "build_request_mirror" and "${{ github.event.inputs.build_request_mirror }}" == "true")
+              )
+            ]')
+          fi
+          
+          echo "matrix={\"include\":$matrix}" >> $GITHUB_OUTPUT
+          echo "Generated matrix: {\"include\":$matrix}"
+
   build-images:
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'arm-4core-linux' }}
+    needs: setup-matrix
+    if: needs.setup-matrix.outputs.matrix != '{"include":[]}'
     strategy:
       matrix:
         platform: [ linux/amd64, linux/arm64 ]
-        include:
-          - dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
-            image: "ghcr.io/datadog/dd-trace-go/service-extensions-callout"
-          - dockerfile: ./contrib/k8s.io/cmd/request-mirror/Dockerfile
-            image: "ghcr.io/datadog/dd-trace-go/request-mirror"
+        include: ${{ fromJson(needs.setup-matrix.outputs.matrix).include }}
 
     steps:
       - name: Prepare
@@ -93,28 +141,25 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ matrix.artifact_prefix }}-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
   publish-images:
     runs-on: ubuntu-latest
-    needs:
-      - build-images
-
+    needs: [setup-matrix, build-images]
+    if: needs.setup-matrix.outputs.matrix != '{"include":[]}'
     strategy:
       matrix:
-        image:
-          - ghcr.io/datadog/dd-trace-go/service-extensions-callout
-          - ghcr.io/datadog/dd-trace-go/request-mirror
+        include: ${{ fromJson(needs.setup-matrix.outputs.matrix).include }}
 
     steps:
       - name: Download digests
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ matrix.artifact_prefix }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
