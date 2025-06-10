@@ -89,6 +89,7 @@ func TestGlobalClient(t *testing.T) {
 
 	t.Run("count", func(t *testing.T) {
 		recorder := new(RecordClient)
+		recorder.knownMetrics = true
 		defer telemetry.MockClient(recorder)()
 
 		telemetry.Count(telemetry.NamespaceTracers, "init_time", nil).Submit(1)
@@ -99,6 +100,7 @@ func TestGlobalClient(t *testing.T) {
 
 	t.Run("gauge", func(t *testing.T) {
 		recorder := new(RecordClient)
+		recorder.knownMetrics = true
 		defer telemetry.MockClient(recorder)()
 
 		telemetry.Gauge(telemetry.NamespaceTracers, "init_time", nil).Submit(1)
@@ -109,6 +111,7 @@ func TestGlobalClient(t *testing.T) {
 
 	t.Run("rate", func(t *testing.T) {
 		recorder := new(RecordClient)
+		recorder.knownMetrics = true
 		defer telemetry.MockClient(recorder)()
 
 		telemetry.Rate(telemetry.NamespaceTracers, "init_time", nil).Submit(1)
@@ -120,6 +123,7 @@ func TestGlobalClient(t *testing.T) {
 
 	t.Run("distribution", func(t *testing.T) {
 		recorder := new(RecordClient)
+		recorder.knownMetrics = true
 		defer telemetry.MockClient(recorder)()
 
 		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(1)
