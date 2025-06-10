@@ -84,6 +84,9 @@ func (m *MockAgent) Start(t *testing.T) {
 	srvURL, err := url.Parse(srv.URL)
 	require.NoError(t, err)
 
+	// Neutralize API Security sampling (always-keep), to prevent tests becoming flaky.
+	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "0")
+
 	tracer.Start(
 		tracer.WithAgentAddr(srvURL.Host),
 		tracer.WithSampler(tracer.NewAllSampler()),
