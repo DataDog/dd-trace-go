@@ -236,8 +236,14 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		})
 	}
 
+	// we try to get the branch name
 	bName := ciTags[constants.GitBranch]
 	if bName == "" {
+		// if not we try to use the tag (checkout over a tag)
+		bName = ciTags[constants.GitTag]
+	}
+	if bName == "" {
+		// if is still empty we assume the customer just used a detached HEAD
 		bName = "auto:git-detached-head"
 	}
 
