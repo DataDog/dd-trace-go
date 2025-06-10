@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
@@ -71,6 +72,11 @@ func (m *RecordMetricHandle) Get() float64 {
 func (r *RecordClient) metric(kind string, namespace telemetry.Namespace, name string, tags []string, submit func(handle *RecordMetricHandle, value float64), get func(handle *RecordMetricHandle) float64) *RecordMetricHandle {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !knownmetrics.IsKnownMetric(namespace, transport.MetricType(kind), name) {
+		panic("telemetrytest.RecordClient should only be used with backend-side known metrics")
+	}
+
 	if r.Metrics == nil {
 		r.Metrics = make(map[MetricKey]*RecordMetricHandle)
 	}
