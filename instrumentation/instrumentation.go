@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // OperationContext holds metadata about an instrumentation operation.
@@ -43,6 +44,11 @@ func Load(pkg Package) *Instrumentation {
 // ReloadConfig reloads config read from environment variables. This is useful for tests.
 func ReloadConfig() {
 	namingschema.ReloadConfig()
+}
+
+// Version returns the version of the dd-trace-go package.
+func Version() string {
+	return version.Tag
 }
 
 // Instrumentation represents instrumentation for a package.
