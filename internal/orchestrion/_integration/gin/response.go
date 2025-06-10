@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,11 @@ type Payload struct {
 }
 
 func (tc *TestCaseResponse) Setup(_ context.Context, t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("AAP features are not supported on Windows")
+		return
+	}
+
 	gin.SetMode(gin.ReleaseMode) // Silence start-up logging
 	engine := gin.New()
 
