@@ -39,6 +39,7 @@ type RecordClient struct {
 	Integrations  []telemetry.Integration
 	Products      map[telemetry.Namespace]bool
 	Metrics       map[MetricKey]*RecordMetricHandle
+	knownMetrics  bool
 }
 
 func (r *RecordClient) Close() error {
@@ -73,7 +74,7 @@ func (r *RecordClient) metric(kind string, namespace telemetry.Namespace, name s
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if !knownmetrics.IsKnownMetric(namespace, transport.MetricType(kind), name) {
+	if !r.knownMetrics && !knownmetrics.IsKnownMetric(namespace, transport.MetricType(kind), name) {
 		panic("telemetrytest.RecordClient should only be used with backend-side known metrics")
 	}
 
