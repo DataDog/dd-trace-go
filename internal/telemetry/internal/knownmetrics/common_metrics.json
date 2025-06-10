@@ -192,6 +192,16 @@
     {
         "namespace": "civisibility",
         "type": "count",
+        "name": "git.commit_sha_discrepancy"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "git.commit_sha_match"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
         "name": "git_requests.objects_pack"
     },
     {
@@ -268,6 +278,41 @@
         "namespace": "civisibility",
         "type": "count",
         "name": "itr_unskippable"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "jenkins.http_endpoint.dropped"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "jenkins.http_endpoint.requests"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "jenkins.http_endpoint.requests_errors"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "jenkins.logs.dropped"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "jenkins.logs.submitted"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "jenkins.traces.dropped"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "count",
+        "name": "jenkins.traces.submitted"
     },
     {
         "namespace": "civisibility",
@@ -408,6 +453,21 @@
         "namespace": "civisibility",
         "type": "distribution",
         "name": "itr_skippable_tests.response_bytes"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "distribution",
+        "name": "jenkins.http_endpoint.bytes"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "distribution",
+        "name": "jenkins.http_endpoint.events_count"
+    },
+    {
+        "namespace": "civisibility",
+        "type": "distribution",
+        "name": "jenkins.http_endpoint.requests_ms"
     },
     {
         "namespace": "civisibility",
@@ -573,6 +633,11 @@
         "namespace": "mlobs",
         "type": "count",
         "name": "user_flush"
+    },
+    {
+        "namespace": "mlobs",
+        "type": "count",
+        "name": "user_processor_called"
     },
     {
         "namespace": "mlobs",

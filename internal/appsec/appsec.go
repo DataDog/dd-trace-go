@@ -106,7 +106,7 @@ func Start(opts ...config.StartOption) {
 		return
 	}
 
-	if err := appsec.start(); err != nil { // AppSec is specifically enabled
+	if err := appsec.start(modeOrigin); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
 		appsec.stopRC()
 		return
@@ -156,7 +156,7 @@ func newAppSec(cfg *config.Config) *appsec {
 }
 
 // Start AppSec by registering its security protections according to the configured the security rules.
-func (a *appsec) start() error {
+func (a *appsec) start(origin telemetry.Origin) error {
 	// Load the waf to catch early errors if any
 	if ok, err := libddwaf.Load(); err != nil {
 		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
@@ -173,6 +173,11 @@ func (a *appsec) start() error {
 	if err := a.SwapRootOperation(); err != nil {
 		return err
 	}
+
+	appsecEnabled := telemetry.Gauge(telemetry.NamespaceAppSec, "appsec.enabled", []string{"origin:" + string(origin)})
+	telemetry.AddFlushTicker(func(_ telemetry.Client) {
+		appsecEnabled.Submit(1)
+	})
 
 	a.enableRCBlocking()
 	a.enableRASP()

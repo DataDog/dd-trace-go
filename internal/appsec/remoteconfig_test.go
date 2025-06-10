@@ -15,9 +15,12 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/require"
@@ -87,7 +90,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 			defer a.stop()
 			require.NotNil(t, a)
 			if tc.startBefore {
-				require.NoError(t, a.start())
+				require.NoError(t, a.start(telemetry.OriginDefault))
 			}
 			require.Equal(t, tc.startBefore, a.started)
 			a.handleASMFeatures(tc.update)

@@ -14,12 +14,13 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/waferrors"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/waferrors"
 )
 
 var (
@@ -51,7 +52,6 @@ func registerAppsecStartTelemetry(mode config.EnablementMode, origin telemetry.O
 
 	telemetry.ProductStarted(telemetry.NamespaceAppSec)
 	telemetry.RegisterAppConfig("DD_APPSEC_ENABLED", mode == config.ForcedOn, origin)
-	// TODO: add appsec.enabled metric once this metric is enabled backend-side
 
 	detectLibDLOnce.Do(detectLibDL)
 }

@@ -16,12 +16,13 @@ import (
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/go-libddwaf/v4"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
-	"github.com/DataDog/go-libddwaf/v4"
 )
 
 // onRCRulesUpdate is the RC callback called when security rules related RC updates are available
@@ -246,7 +247,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 	// RC triggers activation of ASM; ASM is not started yet... Starting it!
 	if parsed.ASM.Enabled && !a.started {
 		log.Debug("appsec: remote config: Starting AppSec")
-		if err := a.start(); err != nil {
+		if err := a.start(telemetry.OriginRemoteConfig); err != nil {
 			log.Error("appsec: remote config: error while processing %s. Configuration won't be applied: %v", path, err)
 			return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
 		}
