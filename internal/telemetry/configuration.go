@@ -53,7 +53,7 @@ func (c *configuration) Payload() transport.Payload {
 			conf.Origin = transport.OriginDefault
 		}
 		conf.Value = SanitizeConfigValue(conf.Value)
-		if conf.ID <= 0 {
+		if conf.ID < 0 {
 			conf.ID = 0
 		}
 		conf.SeqID = c.seqID
