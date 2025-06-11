@@ -6,19 +6,29 @@
 package httpsec
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
 	"testing"
+	"time"
+
+	_ "embed" // For go:embed
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/DataDog/appsec-internal-go/apisec"
+	"github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 func TestClientIP(t *testing.T) {
@@ -227,7 +237,6 @@ func TestTags(t *testing.T) {
 					if eventCase.events != nil {
 						require.Subset(t, span.Tags, map[string]interface{}{
 							"_dd.appsec.json": eventCase.expectedTag,
-							"manual.keep":     true,
 							"appsec.event":    true,
 							"_dd.origin":      "appsec",
 							"_dd.p.ts":        internal.TraceSourceTagValue{Value: internal.ASMTraceSource},
@@ -244,5 +253,92 @@ func TestTags(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+//go:embed testdata/trace_tagging_rules.json
+var wafRulesJSON []byte
+
+func TestTraceTagging(t *testing.T) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("libddwaf is not usable in this context: %v", err)
+	}
+
+	wafManager, err := config.NewWAFManager(appsec.ObfuscatorConfig{}, wafRulesJSON)
+	require.NoError(t, err)
+	cfg := config.Config{
+		WAFManager:          wafManager,
+		WAFTimeout:          time.Hour,
+		TraceRateLimit:      1_000,
+		APISec:              appsec.APISecConfig{Enabled: true, Sampler: apisec.NewSamplerWithInterval(0)},
+		RC:                  nil,
+		RASP:                false,
+		SupportedAddresses:  config.NewAddressSet([]string{"server.request.headers.no_cookies"}),
+		MetaStructAvailable: true,
+		BlockingUnavailable: false,
+		TracingAsTransport:  false,
+	}
+
+	rootOp := dyngo.NewRootOperation()
+	feat, err := waf.NewWAFFeature(&cfg, rootOp)
+	require.NoError(t, err)
+	defer feat.Stop()
+
+	feat, err = NewHTTPSecFeature(&cfg, rootOp)
+	require.NoError(t, err)
+	defer feat.Stop()
+
+	type testCase struct {
+		UserAgent    string
+		ExpectedTags map[string]any
+	}
+	testCases := map[string]testCase{
+		"Attributes, No Keep, No Event": {
+			UserAgent: "TraceTagging/v1+test",
+			ExpectedTags: map[string]any{
+				"_dd.appsec.trace.integer": int64(662607015),
+				"_dd.appsec.trace.agent":   "TraceTagging/v1+test",
+			},
+		},
+		"Attributes, Keep, No Event": {
+			UserAgent: "TraceTagging/v2+test",
+			ExpectedTags: map[string]any{
+				ext.ManualKeep:             true,
+				"_dd.appsec.trace.integer": int64(602214076),
+				"_dd.appsec.trace.agent":   "TraceTagging/v2+test",
+			},
+		},
+		"Attributes, Keep, Event": {
+			UserAgent: "TraceTagging/v3+test",
+			ExpectedTags: map[string]any{
+				ext.ManualKeep:             true,
+				"appsec.event":             true,
+				"_dd.appsec.trace.integer": int64(299792458),
+				"_dd.appsec.trace.agent":   "TraceTagging/v3+test",
+			},
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			ctx = dyngo.RegisterOperation(ctx, rootOp)
+
+			var span MockSpan
+			op, _, _ := httpsec.StartOperation(ctx, httpsec.HandlerOperationArgs{
+				Framework:    "test/phony",
+				Method:       "GET",
+				RequestURI:   "/fake/test/uri",
+				RequestRoute: "/fake/:id/uri",
+				Host:         "localhost",
+				RemoteAddr:   "127.0.0.1:4242",
+				Headers:      map[string][]string{"user-agent": {tc.UserAgent}},
+				Cookies:      map[string][]string{},
+				QueryParams:  map[string][]string{},
+				PathParams:   map[string]string{"id": "test"},
+			}, &span)
+			op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
+
+			require.Subset(t, span.Tags, tc.ExpectedTags)
+		})
 	}
 }
