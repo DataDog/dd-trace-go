@@ -16,8 +16,10 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
@@ -74,7 +76,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	closeSpan := func() {
 		// TODO: remove this conditional, this is just for testing
 		if _, ok := os.LookupEnv("_DD_TEST_CODE_ORIGINS_STACK_TRACE"); ok {
-			setCodeOriginTagsFromStackTrace(span, ddrw.handlerFrames)
+			setCodeOriginTags(span, ddrw.handlerFrames)
 		} else {
 			setCodeOriginTagsFromReflection(span, cfg.Handler)
 		}
@@ -107,11 +109,16 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 }
 
 const (
-	tagCodeOriginType           = "_dd.code_origin.type"
-	tagCodeOriginFrameFile      = "_dd.code_origin.frames.%d.file"
-	tagCodeOriginFrameLine      = "_dd.code_origin.frames.%d.line"
-	tagCodeOriginFrameType      = "_dd.code_origin.frames.%d.type"
-	tagCodeOriginFrameMethod    = "_dd.code_origin.frames.%d.method"
+	tagCodeOriginType = "_dd.code_origin.type"
+	// tagCodeOriginFrameFile contains the file where the handler is.
+	tagCodeOriginFrameFile = "_dd.code_origin.frames.%d.file"
+	// tagCodeOriginFrameLine should contain the first line of executable code within the method that handles the incoming request.
+	tagCodeOriginFrameLine = "_dd.code_origin.frames.%d.line"
+	// tagCodeOriginFrameType is the fully qualified class/type name.
+	tagCodeOriginFrameType = "_dd.code_origin.frames.%d.type"
+	// tagCodeOriginFrameMethod contains the method/function name.
+	tagCodeOriginFrameMethod = "_dd.code_origin.frames.%d.method"
+	// tagCodeOriginFrameSignature contains the signature of the method (used to disambiguate in cases the method has multiple overloads).
 	tagCodeOriginFrameSignature = "_dd.code_origin.frames.%d.signature"
 )
 
@@ -119,19 +126,15 @@ func setCodeOriginTagsFromReflection(span *tracer.Span, handler http.Handler) {
 	if !cfg.codeOriginEnabled || handler == nil {
 		return
 	}
-	span.SetTag(tagCodeOriginType, "entry")
-
-	file, line, err := getSourceLocation(handler)
+	fr, err := getSourceLocation(handler)
 	if err != nil {
 		instr.Logger().Debug("instrumentation/httptrace/setCodeOriginTags: failed to extract handler information: %v", err)
 		return
 	}
-
-	span.SetTag(fmt.Sprintf(tagCodeOriginFrameFile, 0), file)
-	span.SetTag(fmt.Sprintf(tagCodeOriginFrameLine, 0), strconv.Itoa(line))
+	setCodeOriginTags(span, []codeOriginFrame{fr})
 }
 
-func getSourceLocation(h http.Handler) (string, int, error) {
+func getSourceLocation(h http.Handler) (codeOriginFrame, error) {
 	var ptr uintptr
 
 	switch h.(type) {
@@ -141,36 +144,91 @@ func getSourceLocation(h http.Handler) (string, int, error) {
 		t := reflect.TypeOf(h)
 		method, ok := t.MethodByName("ServeHTTP")
 		if !ok {
-			return "", 0, fmt.Errorf("no ServeHTTP method found")
+			return codeOriginFrame{}, fmt.Errorf("no ServeHTTP method found")
 		}
 		ptr = method.Func.Pointer()
 	}
 
 	fnInfo := runtime.FuncForPC(ptr)
 	if fnInfo == nil {
-		return "", 0, errors.New("no function info found")
+		return codeOriginFrame{}, errors.New("no function info found")
+	}
+
+	result := codeOriginFrame{
+		file:   "",
+		line:   "",
+		typ:    "",
+		method: "",
 	}
 	file, line := fnInfo.FileLine(ptr)
-	return file, line, nil
+	result.file = file
+	result.line = strconv.Itoa(line)
+
+	pkgPath, typeName, methodName := parseFuncName(fnInfo.Name())
+	if pkgPath != "" && methodName != "" {
+		if typeName != "" {
+			result.typ = pkgPath + "." + typeName
+			result.method = methodName
+		} else {
+			result.method = pkgPath + "." + methodName
+		}
+	}
+
+	return result, nil
 }
 
-func setCodeOriginTagsFromStackTrace(span *tracer.Span, frames []codeOriginFrame) {
+var funcNameRE = regexp.MustCompile(`^(?P<pkg>.+?)(?:\.(?P<type>\(\*?\w+\)|\w+))?\.(?P<name>\w+)$`)
+
+func parseFuncName(full string) (pkgPath, typeName, methodName string) {
+	match := funcNameRE.FindStringSubmatch(full)
+	if match == nil {
+		return "", "", ""
+	}
+
+	groupNames := funcNameRE.SubexpNames()
+	for i, name := range groupNames {
+		switch name {
+		case "pkg":
+			pkgPath = match[i]
+		case "type":
+			typeName = match[i]
+		case "name":
+			methodName = match[i]
+		}
+	}
+
+	if typeName != "" {
+		typeName = strings.Trim(typeName, "()")
+	}
+	return
+}
+
+func setCodeOriginTags(span *tracer.Span, frames []codeOriginFrame) {
 	if !cfg.codeOriginEnabled || len(frames) == 0 {
 		return
 	}
-	span.SetTag(tagCodeOriginType, "entry")
-
+	tagsSet := false
 	for i, fr := range frames {
-		span.SetTag(frameTag(tagCodeOriginFrameFile, i), fr.file)
-		span.SetTag(frameTag(tagCodeOriginFrameLine, i), fr.line)
-		if fr.typ != "" {
-			span.SetTag(frameTag(tagCodeOriginFrameType, i), fr.typ)
-		}
-		if fr.method != "" {
-			span.SetTag(frameTag(tagCodeOriginFrameMethod, i), fr.method)
-		}
-		if fr.signature != "" {
-			span.SetTag(frameTag(tagCodeOriginFrameSignature, i), fr.signature)
+		if ok := setCodeOriginFrameTags(span, fr, i); ok {
+			tagsSet = true
 		}
 	}
+	if tagsSet {
+		span.SetTag(tagCodeOriginType, "entry")
+	}
+}
+
+func setCodeOriginFrameTags(span *tracer.Span, fr codeOriginFrame, idx int) bool {
+	if fr.file == "" || fr.line == "" {
+		return false
+	}
+	span.SetTag(frameTag(tagCodeOriginFrameFile, idx), fr.file)
+	span.SetTag(frameTag(tagCodeOriginFrameLine, idx), fr.line)
+	if fr.typ != "" {
+		span.SetTag(frameTag(tagCodeOriginFrameType, idx), fr.typ)
+	}
+	if fr.method != "" {
+		span.SetTag(frameTag(tagCodeOriginFrameMethod, idx), fr.method)
+	}
+	return true
 }

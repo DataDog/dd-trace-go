@@ -17,11 +17,10 @@ import (
 )
 
 type codeOriginFrame struct {
-	file      string
-	line      string
-	typ       string
-	method    string
-	signature string
+	file   string
+	line   string
+	typ    string
+	method string
 }
 
 // responseWriter is a small wrapper around an http response writer that will
@@ -90,7 +89,6 @@ func extractCodeOriginFrames() []codeOriginFrame {
 	frames := runtime.CallersFrames(pcs)
 	for {
 		frame, more := frames.Next()
-		fmt.Printf("got frame: %s:%d | %s\n", frame.File, frame.Line, frame.Function)
 
 		if isUserCode(frame) {
 			co := codeOriginFrame{

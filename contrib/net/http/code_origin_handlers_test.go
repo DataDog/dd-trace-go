@@ -18,5 +18,12 @@ func testHandler(w http.ResponseWriter, r *http.Request) {
 type CustomHandler struct{}
 
 func (h *CustomHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	testHandler(w, r)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Hello World"))
+}
+
+func inlineHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		testHandler(w, r)
+	})
 }
