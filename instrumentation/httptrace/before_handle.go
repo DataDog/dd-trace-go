@@ -8,11 +8,6 @@ package httptrace
 import (
 	"errors"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"net/http"
 	"os"
 	"reflect"
@@ -20,6 +15,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
 // ServeConfig specifies the tracing configuration when using TraceAndServe.
