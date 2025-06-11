@@ -540,6 +540,8 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 		span.ParentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
 			span.setMetric(keySamplingPriority, float64(p))
+			// TODO: Check whether prio is trace rules or span rules
+			context.trace.setLocked(true)
 		}
 		if context.span != nil {
 			// local parent, inherit service
