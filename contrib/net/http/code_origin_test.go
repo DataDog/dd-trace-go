@@ -313,6 +313,7 @@ func TestCodeOriginForSpansStackTrace(t *testing.T) {
 			}
 			assert.Equal(t, tc.wantTags, gotTags, "_dd.code_origin tags mismatch")
 
+			// this method produces at least 1 extra frame from the line where we run h.ServeHTTP(w, r) in this function
 			if !tc.disabled {
 				assert.NotEmpty(t, extraFrameTags, "there should be at least 1 extra frame tag")
 				t.Logf("extraFrameTags: %v\n", extraFrameTags)
