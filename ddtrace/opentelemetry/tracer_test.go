@@ -98,7 +98,9 @@ func TestTracerOptions(t *testing.T) {
 
 func TestSpanContext(t *testing.T) {
 	assert := assert.New(t)
-	tp := NewTracerProvider()
+	tp := NewTracerProvider(tracer.WithSamplingRules([]tracer.SamplingRule{
+		{Rate: 0}, // This should be applied only when a brand new root span is started
+	}))
 	defer tp.Shutdown()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
