@@ -24,16 +24,10 @@ func (z *logEntry) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "dd_source":
+		case "ddsource":
 			z.DdSource, err = dc.ReadString()
 			if err != nil {
 				err = msgp.WrapError(err, "DdSource")
-				return
-			}
-		case "dd_tags":
-			z.DdTags, err = dc.ReadString()
-			if err != nil {
-				err = msgp.WrapError(err, "DdTags")
 				return
 			}
 		case "hostname":
@@ -42,16 +36,58 @@ func (z *logEntry) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Hostname")
 				return
 			}
+		case "timestamp":
+			z.Timestamp, err = dc.ReadInt64()
+			if err != nil {
+				err = msgp.WrapError(err, "Timestamp")
+				return
+			}
 		case "message":
 			z.Message, err = dc.ReadString()
 			if err != nil {
 				err = msgp.WrapError(err, "Message")
 				return
 			}
+		case "dd.trace_id":
+			z.TraceId, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "TraceId")
+				return
+			}
+		case "dd.span_id":
+			z.SpanId, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "SpanId")
+				return
+			}
+		case "test.bundle":
+			z.TestBundle, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "TestBundle")
+				return
+			}
+		case "test.suite":
+			z.TestSuite, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "TestSuite")
+				return
+			}
+		case "test.name":
+			z.TestName, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "TestName")
+				return
+			}
 		case "service":
 			z.Service, err = dc.ReadString()
 			if err != nil {
 				err = msgp.WrapError(err, "Service")
+				return
+			}
+		case "dd_tags":
+			z.DdTags, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "DdTags")
 				return
 			}
 		default:
@@ -68,12 +104,12 @@ func (z *logEntry) DecodeMsg(dc *msgp.Reader) (err error) {
 // EncodeMsg implements msgp.Encodable
 func (z *logEntry) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
-	zb0001Len := uint32(5)
-	var zb0001Mask uint8 /* 5 bits */
+	zb0001Len := uint32(11)
+	var zb0001Mask uint16 /* 11 bits */
 	_ = zb0001Mask
 	if z.DdTags == "" {
 		zb0001Len--
-		zb0001Mask |= 0x2
+		zb0001Mask |= 0x400
 	}
 	// variable map header, size zb0001Len
 	err = en.Append(0x80 | uint8(zb0001Len))
@@ -83,8 +119,8 @@ func (z *logEntry) EncodeMsg(en *msgp.Writer) (err error) {
 
 	// skip if no fields are to be emitted
 	if zb0001Len != 0 {
-		// write "dd_source"
-		err = en.Append(0xa9, 0x64, 0x64, 0x5f, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65)
+		// write "ddsource"
+		err = en.Append(0xa8, 0x64, 0x64, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65)
 		if err != nil {
 			return
 		}
@@ -92,18 +128,6 @@ func (z *logEntry) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			err = msgp.WrapError(err, "DdSource")
 			return
-		}
-		if (zb0001Mask & 0x2) == 0 { // if not omitted
-			// write "dd_tags"
-			err = en.Append(0xa7, 0x64, 0x64, 0x5f, 0x74, 0x61, 0x67, 0x73)
-			if err != nil {
-				return
-			}
-			err = en.WriteString(z.DdTags)
-			if err != nil {
-				err = msgp.WrapError(err, "DdTags")
-				return
-			}
 		}
 		// write "hostname"
 		err = en.Append(0xa8, 0x68, 0x6f, 0x73, 0x74, 0x6e, 0x61, 0x6d, 0x65)
@@ -113,6 +137,16 @@ func (z *logEntry) EncodeMsg(en *msgp.Writer) (err error) {
 		err = en.WriteString(z.Hostname)
 		if err != nil {
 			err = msgp.WrapError(err, "Hostname")
+			return
+		}
+		// write "timestamp"
+		err = en.Append(0xa9, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt64(z.Timestamp)
+		if err != nil {
+			err = msgp.WrapError(err, "Timestamp")
 			return
 		}
 		// write "message"
@@ -125,6 +159,56 @@ func (z *logEntry) EncodeMsg(en *msgp.Writer) (err error) {
 			err = msgp.WrapError(err, "Message")
 			return
 		}
+		// write "dd.trace_id"
+		err = en.Append(0xab, 0x64, 0x64, 0x2e, 0x74, 0x72, 0x61, 0x63, 0x65, 0x5f, 0x69, 0x64)
+		if err != nil {
+			return
+		}
+		err = en.WriteString(z.TraceId)
+		if err != nil {
+			err = msgp.WrapError(err, "TraceId")
+			return
+		}
+		// write "dd.span_id"
+		err = en.Append(0xaa, 0x64, 0x64, 0x2e, 0x73, 0x70, 0x61, 0x6e, 0x5f, 0x69, 0x64)
+		if err != nil {
+			return
+		}
+		err = en.WriteString(z.SpanId)
+		if err != nil {
+			err = msgp.WrapError(err, "SpanId")
+			return
+		}
+		// write "test.bundle"
+		err = en.Append(0xab, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x62, 0x75, 0x6e, 0x64, 0x6c, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteString(z.TestBundle)
+		if err != nil {
+			err = msgp.WrapError(err, "TestBundle")
+			return
+		}
+		// write "test.suite"
+		err = en.Append(0xaa, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x73, 0x75, 0x69, 0x74, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteString(z.TestSuite)
+		if err != nil {
+			err = msgp.WrapError(err, "TestSuite")
+			return
+		}
+		// write "test.name"
+		err = en.Append(0xa9, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x6e, 0x61, 0x6d, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteString(z.TestName)
+		if err != nil {
+			err = msgp.WrapError(err, "TestName")
+			return
+		}
 		// write "service"
 		err = en.Append(0xa7, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
 		if err != nil {
@@ -135,13 +219,25 @@ func (z *logEntry) EncodeMsg(en *msgp.Writer) (err error) {
 			err = msgp.WrapError(err, "Service")
 			return
 		}
+		if (zb0001Mask & 0x400) == 0 { // if not omitted
+			// write "dd_tags"
+			err = en.Append(0xa7, 0x64, 0x64, 0x5f, 0x74, 0x61, 0x67, 0x73)
+			if err != nil {
+				return
+			}
+			err = en.WriteString(z.DdTags)
+			if err != nil {
+				err = msgp.WrapError(err, "DdTags")
+				return
+			}
+		}
 	}
 	return
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *logEntry) Msgsize() (s int) {
-	s = 1 + 10 + msgp.StringPrefixSize + len(z.DdSource) + 8 + msgp.StringPrefixSize + len(z.DdTags) + 9 + msgp.StringPrefixSize + len(z.Hostname) + 8 + msgp.StringPrefixSize + len(z.Message) + 8 + msgp.StringPrefixSize + len(z.Service)
+	s = 1 + 9 + msgp.StringPrefixSize + len(z.DdSource) + 9 + msgp.StringPrefixSize + len(z.Hostname) + 10 + msgp.Int64Size + 8 + msgp.StringPrefixSize + len(z.Message) + 12 + msgp.StringPrefixSize + len(z.TraceId) + 11 + msgp.StringPrefixSize + len(z.SpanId) + 12 + msgp.StringPrefixSize + len(z.TestBundle) + 11 + msgp.StringPrefixSize + len(z.TestSuite) + 10 + msgp.StringPrefixSize + len(z.TestName) + 8 + msgp.StringPrefixSize + len(z.Service) + 8 + msgp.StringPrefixSize + len(z.DdTags)
 	return
 }
 

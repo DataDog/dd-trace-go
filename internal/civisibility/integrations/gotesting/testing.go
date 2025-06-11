@@ -6,10 +6,12 @@
 package gotesting
 
 import (
+	"bufio"
 	"fmt"
 	"reflect"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -306,7 +308,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 							// If the output is too long, truncate it to avoid excessive data.
 							strOutput = strOutput[:4000] + "..."
 						}
-						test.SetTag("test.output", strOutput)
+						sc := bufio.NewScanner(strings.NewReader(strOutput))
+						for sc.Scan() {
+							test.Log(sc.Text(), "")
+						}
 					}
 				}
 			}
@@ -317,7 +322,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 						// If the output is too long, truncate it to avoid excessive data.
 						strOutput = strOutput[:4000] + "..."
 					}
-					test.SetTag("test.output", strOutput)
+					sc := bufio.NewScanner(strings.NewReader(strOutput))
+					for sc.Scan() {
+						test.Log(sc.Text(), "")
+					}
 				}
 			}
 

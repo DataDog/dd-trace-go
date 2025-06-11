@@ -15,11 +15,17 @@ type (
 
 	// logEntryPayload represents a single log entry with its metadata.
 	logEntry struct {
-		DdSource string `json:"dd_source" msg:"dd_source"`
-		DdTags   string `json:"dd_tags,omitempty" msg:"dd_tags,omitempty"`
-		Hostname string `json:"hostname" msg:"hostname"`
-		Message  string `json:"message" msg:"message"`
-		Service  string `json:"service" msg:"service"`
+		DdSource   string `json:"ddsource" msg:"ddsource"`
+		Hostname   string `json:"hostname" msg:"hostname"`
+		Timestamp  int64  `json:"timestamp" msg:"timestamp"`
+		Message    string `json:"message" msg:"message"`
+		TraceId    string `json:"dd.trace_id" msg:"dd.trace_id"`
+		SpanId     string `json:"dd.span_id" msg:"dd.span_id"`
+		TestBundle string `json:"test.bundle" msg:"test.bundle"`
+		TestSuite  string `json:"test.suite" msg:"test.suite"`
+		TestName   string `json:"test.name" msg:"test.name"`
+		Service    string `json:"service" msg:"service"`
+		DdTags     string `json:"dd_tags,omitempty" msg:"dd_tags,omitempty"`
 	}
 )
 

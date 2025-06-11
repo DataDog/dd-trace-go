@@ -6,7 +6,9 @@
 package logs
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"strconv"
+	"time"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 )
 
@@ -26,22 +28,36 @@ func Initialize(serviceName string) {
 
 	servName = serviceName
 	logsWriterInstance = newLogsWriter()
-	integrations.PushCiVisibilityCloseAction(func() {
-		logsWriterInstance.stop()
-	})
 }
 
-// WriteLog writes a log entry with the given message and tags.
-func WriteLog(message string, tags string) {
+// Stop stops the logs writer and cleans up resources.
+func Stop() {
 	if logsWriterInstance == nil {
 		return
 	}
 
+	logsWriterInstance.stop()
+	logsWriterInstance = nil
+}
+
+// WriteLog writes a log entry with the given message and tags.
+func WriteLog(testID uint64, moduleName string, suiteName string, testName string, message string, tags string) {
+	if logsWriterInstance == nil {
+		return
+	}
+
+	testIDStr := strconv.FormatUint(testID, 10)
 	logsWriterInstance.add(&logEntry{
-		DdSource: "testoptimization",
-		DdTags:   tags,
-		Hostname: hostname.Get(),
-		Message:  message,
-		Service:  servName,
+		DdSource:   "testoptimization",
+		Hostname:   hostname.Get(),
+		Timestamp:  time.Now().UnixMilli(),
+		Message:    message,
+		TraceId:    testIDStr,
+		SpanId:     testIDStr,
+		TestBundle: moduleName,
+		TestSuite:  suiteName,
+		TestName:   testName,
+		Service:    servName,
+		DdTags:     tags,
 	})
 }
