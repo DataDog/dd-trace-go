@@ -28,6 +28,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 func TestClientIP(t *testing.T) {
@@ -260,6 +261,10 @@ func TestTags(t *testing.T) {
 var wafRulesJSON []byte
 
 func TestTraceTagging(t *testing.T) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("libddwaf is not usable in this context: %v", err)
+	}
+
 	wafManager, err := config.NewWAFManager(appsec.ObfuscatorConfig{}, wafRulesJSON)
 	require.NoError(t, err)
 	cfg := config.Config{
