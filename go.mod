@@ -92,3 +92,8 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250224174004-546df14abb99 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+retract (
+	[v2.0.0-rc.1, v2.0.0-rc.22]
+	[v2.0.0-beta.1, v2.0.0-beta.11]
+)
