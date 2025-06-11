@@ -6,6 +6,7 @@
 package logs
 
 import (
+	"os"
 	"strconv"
 	"time"
 
@@ -47,14 +48,18 @@ func WriteLog(testID uint64, moduleName string, suiteName string, testName strin
 	}
 
 	testIDStr := strconv.FormatUint(testID, 10)
+	hname := hostname.Get()
+	if hname == "" {
+		hname, _ = os.Hostname()
+	}
 	logsWriterInstance.add(&logEntry{
 		DdSource:   "testoptimization",
-		Hostname:   hostname.Get(),
+		Hostname:   hname,
 		Timestamp:  time.Now().UnixMilli(),
 		Message:    message,
-		TraceId:    testIDStr,
-		SpanId:     testIDStr,
-		TestBundle: moduleName,
+		DdTraceId:  testIDStr,
+		DdSpanId:   testIDStr,
+		TestModule: moduleName,
 		TestSuite:  suiteName,
 		TestName:   testName,
 		Service:    servName,

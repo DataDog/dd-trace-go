@@ -46,7 +46,6 @@ type (
 		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
 		GetTestManagementTests() (*TestManagementTestsResponseDataModules, error)
 		SendLogs(logsPayload io.Reader) error
-		SendLogsPayloadWithFormat(logsPayload io.Reader, format string) error
 	}
 
 	// client is a client for sending requests to the Datadog backend.

@@ -3,11 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-//go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=logs_payload_format_msgp.go -tests=false
-
 package logs
-
-import "github.com/tinylib/msgp/msgp"
 
 type (
 	// logsEntriesPayload represents a list of log entries to be sent.
@@ -15,24 +11,16 @@ type (
 
 	// logEntryPayload represents a single log entry with its metadata.
 	logEntry struct {
-		DdSource   string `json:"ddsource" msg:"ddsource"`
-		Hostname   string `json:"hostname" msg:"hostname"`
-		Timestamp  int64  `json:"timestamp" msg:"timestamp"`
-		Message    string `json:"message" msg:"message"`
-		TraceId    string `json:"dd.trace_id" msg:"dd.trace_id"`
-		SpanId     string `json:"dd.span_id" msg:"dd.span_id"`
-		TestBundle string `json:"test.bundle" msg:"test.bundle"`
-		TestSuite  string `json:"test.suite" msg:"test.suite"`
-		TestName   string `json:"test.name" msg:"test.name"`
-		Service    string `json:"service" msg:"service"`
-		DdTags     string `json:"dd_tags,omitempty" msg:"dd_tags,omitempty"`
+		DdSource   string `json:"ddsource"`
+		Hostname   string `json:"hostname"`
+		Timestamp  int64  `json:"timestamp,omitempty"`
+		Message    string `json:"message"`
+		DdTraceId  string `json:"dd.trace_id"`
+		DdSpanId   string `json:"dd.span_id"`
+		TestModule string `json:"test.module"`
+		TestSuite  string `json:"test.suite"`
+		TestName   string `json:"test.name"`
+		Service    string `json:"service"`
+		DdTags     string `json:"dd_tags,omitempty"`
 	}
-)
-
-var (
-	_ msgp.Encodable = (*logsEntriesPayload)(nil)
-	_ msgp.Decodable = (*logsEntriesPayload)(nil)
-
-	_ msgp.Encodable = (*logEntry)(nil)
-	_ msgp.Decodable = (*logEntry)(nil)
 )

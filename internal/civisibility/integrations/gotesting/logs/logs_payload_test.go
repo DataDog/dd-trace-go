@@ -6,13 +6,12 @@
 package logs
 
 import (
-	"bytes"
+	"encoding/json"
 	"io"
 	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func newLogEntry(i int) *logEntry {
@@ -22,34 +21,6 @@ func newLogEntry(i int) *logEntry {
 		Hostname: "host",
 		Message:  "My Message " + strconv.Itoa(i),
 		Service:  "service",
-	}
-}
-
-// TestLogsPayloadIntegrity tests that whatever we push into the payload
-// allows us to read the same content as would have been encoded by
-// the codec.
-func TestLogsPayloadIntegrity(t *testing.T) {
-	want := new(bytes.Buffer)
-	for _, n := range []int{10, 1 << 10, 1 << 17} {
-		t.Run(strconv.Itoa(n), func(t *testing.T) {
-			assert := assert.New(t)
-			p := newLogsPayload()
-			var lists logsEntriesPayload
-			for i := 0; i < n; i++ {
-				val := newLogEntry(i%5 + 1)
-				lists = append(lists, val)
-				p.push(val)
-			}
-			want.Reset()
-			err := msgp.Encode(want, lists)
-			assert.NoError(err)
-			assert.Equal(want.Len(), p.size())
-			assert.Equal(p.itemCount(), n)
-
-			got, err := io.ReadAll(p)
-			assert.NoError(err)
-			assert.Equal(want.Bytes(), got)
-		})
 	}
 }
 
@@ -64,7 +35,8 @@ func TestLogsPayloadDecode(t *testing.T) {
 				p.push(newLogEntry(i%5 + 1))
 			}
 			var got logsEntriesPayload
-			err := msgp.Decode(p, &got)
+			b, err := io.ReadAll(p)
+			err = json.Unmarshal(b, &got)
 			assert.NoError(err)
 		})
 	}

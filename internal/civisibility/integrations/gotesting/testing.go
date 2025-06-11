@@ -299,15 +299,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
 			}
 
-			// Set the test output if available.
+			// Write logs
 			if chatty != nil && chatty.w != nil && *chatty.w != nil {
 				if writer, ok := (*chatty.w).(*customWriter); ok {
 					strOutput := writer.GetOutput(test.Name())
 					if len(strOutput) > 0 {
-						if len(strOutput) > 4000 {
-							// If the output is too long, truncate it to avoid excessive data.
-							strOutput = strOutput[:4000] + "..."
-						}
 						sc := bufio.NewScanner(strings.NewReader(strOutput))
 						for sc.Scan() {
 							test.Log(sc.Text(), "")
@@ -318,10 +314,6 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
 				strOutput := string(tCommon.GetOutput())
 				if len(strOutput) > 0 {
-					if len(strOutput) > 4000 {
-						// If the output is too long, truncate it to avoid excessive data.
-						strOutput = strOutput[:4000] + "..."
-					}
 					sc := bufio.NewScanner(strings.NewReader(strOutput))
 					for sc.Scan() {
 						test.Log(sc.Text(), "")

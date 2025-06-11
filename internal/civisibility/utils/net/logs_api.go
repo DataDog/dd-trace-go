@@ -24,11 +24,6 @@ func NewClientForLogs() Client {
 
 // SendLogs sends a logs payload to the backend.
 func (c *client) SendLogs(logsPayload io.Reader) error {
-	return c.SendLogsPayloadWithFormat(logsPayload, FormatMessagePack)
-}
-
-// SendLogsPayloadWithFormat sends a logs payload to the backend.
-func (c *client) SendLogsPayloadWithFormat(logsPayload io.Reader, format string) error {
 
 	// Send the coverage payload.
 	request := RequestConfig{
@@ -36,7 +31,7 @@ func (c *client) SendLogsPayloadWithFormat(logsPayload io.Reader, format string)
 		URL:        c.getURLPath(logsURLPath),
 		Headers:    c.headers,
 		Body:       logsPayload,
-		Format:     format,
+		Format:     FormatJSON,
 		Compressed: true,
 	}
 

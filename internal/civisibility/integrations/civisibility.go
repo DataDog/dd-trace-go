@@ -111,7 +111,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		tracerInitializer(opts)
 
 		// Initializing logs
-		log.Debug("civisibility: initializing logs")
+		log.Debug("civisibility: initializing logs for service: %s", serviceName)
 		logs.Initialize(serviceName)
 
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting

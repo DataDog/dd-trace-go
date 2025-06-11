@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -185,6 +186,29 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		}
 
 		defer func() {
+
+			// Write logs
+			if chatty != nil && chatty.w != nil && *chatty.w != nil {
+				if writer, ok := (*chatty.w).(*customWriter); ok {
+					strOutput := writer.GetOutput(test.Name())
+					if len(strOutput) > 0 {
+						sc := bufio.NewScanner(strings.NewReader(strOutput))
+						for sc.Scan() {
+							test.Log(sc.Text(), "")
+						}
+					}
+				}
+			}
+			if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
+				strOutput := string(tCommon.GetOutput())
+				if len(strOutput) > 0 {
+					sc := bufio.NewScanner(strings.NewReader(strOutput))
+					for sc.Scan() {
+						test.Log(sc.Text(), "")
+					}
+				}
+			}
+
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
 				if execMeta.isARetry && execMeta.isLastRetry {
