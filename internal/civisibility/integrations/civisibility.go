@@ -17,7 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/logs"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -110,9 +110,13 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
-		// Initializing logs
-		log.Debug("civisibility: initializing logs for service: %s", serviceName)
-		logs.Initialize(serviceName)
+		// Initialize the logs
+		if logs.IsEnabled() {
+			log.Debug("civisibility: initializing logs for service: %s", serviceName)
+			logs.Initialize(serviceName)
+		} else {
+			log.Debug("civisibility: logs are disabled")
+		}
 
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
 		signals := make(chan os.Signal, 1)

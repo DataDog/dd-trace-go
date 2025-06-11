@@ -6,6 +6,7 @@
 package logs
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"os"
 	"strconv"
 	"time"
@@ -19,21 +20,40 @@ var (
 
 	// servName is the name of the service for which logs are being written.
 	servName string
+
+	// host is the hostname of the machine where the logs are being written.
+	host string
+
+	// enabled indicates whether the logs writer is enabled.
+	enabled *bool
 )
+
+func IsEnabled() bool {
+	if enabled == nil {
+		v, _, _ := stableconfig.Bool("DD_CIVISIBILITY_LOGS_ENABLED", false)
+		enabled = &v
+	}
+
+	return *enabled
+}
 
 // Initialize initializes the logs writer for CI visibility.
 func Initialize(serviceName string) {
-	if logsWriterInstance != nil {
+	if !IsEnabled() || logsWriterInstance != nil {
 		return
 	}
 
 	servName = serviceName
+	host = hostname.Get()
+	if host == "" {
+		host, _ = os.Hostname()
+	}
 	logsWriterInstance = newLogsWriter()
 }
 
 // Stop stops the logs writer and cleans up resources.
 func Stop() {
-	if logsWriterInstance == nil {
+	if !IsEnabled() || logsWriterInstance == nil {
 		return
 	}
 
@@ -43,18 +63,14 @@ func Stop() {
 
 // WriteLog writes a log entry with the given message and tags.
 func WriteLog(testID uint64, moduleName string, suiteName string, testName string, message string, tags string) {
-	if logsWriterInstance == nil {
+	if !IsEnabled() || logsWriterInstance == nil {
 		return
 	}
 
 	testIDStr := strconv.FormatUint(testID, 10)
-	hname := hostname.Get()
-	if hname == "" {
-		hname, _ = os.Hostname()
-	}
 	logsWriterInstance.add(&logEntry{
 		DdSource:   "testoptimization",
-		Hostname:   hname,
+		Hostname:   host,
 		Timestamp:  time.Now().UnixMilli(),
 		Message:    message,
 		DdTraceId:  testIDStr,

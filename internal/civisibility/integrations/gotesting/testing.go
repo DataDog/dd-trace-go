@@ -8,6 +8,7 @@ package gotesting
 import (
 	"bufio"
 	"fmt"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"reflect"
 	"runtime"
 	"slices"
@@ -270,13 +271,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		}
 
 		// Initialize the chatty printer if not already done.
-		chattyPrinterOnce.Do(func() {
-			chatty = getTestChattyPrinter(t)
-			// If the chatty printer is enabled, we wrap the writer to capture output.
-			if chatty != nil && chatty.w != nil && *chatty.w != nil {
-				*chatty.w = &customWriter{chatty: chatty, writer: *chatty.w}
-			}
-		})
+		instrumentChattyPrinter(t)
 
 		startTime := time.Now()
 		defer func() {
@@ -299,27 +294,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
 			}
 
-			// Write logs
-			if chatty != nil && chatty.w != nil && *chatty.w != nil {
-				if writer, ok := (*chatty.w).(*customWriter); ok {
-					strOutput := writer.GetOutput(test.Name())
-					if len(strOutput) > 0 {
-						sc := bufio.NewScanner(strings.NewReader(strOutput))
-						for sc.Scan() {
-							test.Log(sc.Text(), "")
-						}
-					}
-				}
-			}
-			if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
-				strOutput := string(tCommon.GetOutput())
-				if len(strOutput) > 0 {
-					sc := bufio.NewScanner(strings.NewReader(strOutput))
-					for sc.Scan() {
-						test.Log(sc.Text(), "")
-					}
-				}
-			}
+			// Collect and write logs
+			collectAndWriteLogs(t, test)
 
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
@@ -714,4 +690,54 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 	}
 
 	return false
+}
+
+// instrumentChattyPrinter initializes the chatty printer for verbose output if logging is enabled.
+func instrumentChattyPrinter(t *testing.T) {
+	if !logs.IsEnabled() {
+		// If the logs integration is not enabled, we don't need to instrument the chatty printer.
+		return
+	}
+
+	// Initialize the chatty printer if not already done.
+	chattyPrinterOnce.Do(func() {
+		chatty = getTestChattyPrinter(t)
+		// If the chatty printer is enabled, we wrap the writer to capture output.
+		if chatty != nil && chatty.w != nil && *chatty.w != nil {
+			*chatty.w = &customWriter{chatty: chatty, writer: *chatty.w}
+		}
+	})
+}
+
+// collectAndWriteLogs collects logs from the chatty printer and the test output, and writes them to the test.
+func collectAndWriteLogs(t *testing.T, test integrations.Test) {
+	if !logs.IsEnabled() {
+		// If the logs integration is not enabled, we don't need to collect or write logs.
+		return
+	}
+
+	if chatty != nil && chatty.w != nil && *chatty.w != nil {
+		if writer, ok := (*chatty.w).(*customWriter); ok {
+			strOutput := writer.GetOutput(test.Name())
+			if len(strOutput) > 0 {
+				sc := bufio.NewScanner(strings.NewReader(strOutput))
+				for sc.Scan() {
+					test.Log(sc.Text(), "")
+				}
+
+				// if the chatty printer has output, we skip the test output extraction
+				return
+			}
+		}
+	}
+
+	if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
+		strOutput := string(tCommon.GetOutput())
+		if len(strOutput) > 0 {
+			sc := bufio.NewScanner(strings.NewReader(strOutput))
+			for sc.Scan() {
+				test.Log(sc.Text(), "")
+			}
+		}
+	}
 }
