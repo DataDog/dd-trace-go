@@ -37,7 +37,7 @@ func useAppSec(c *gin.Context, span trace.TagSetter) {
 }
 
 // AsciiJSON is a wrapper around the [gin.Context.AsciiJSON] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func AsciiJSON(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -46,7 +46,7 @@ func AsciiJSON(c *gin.Context, code int, obj any) {
 }
 
 // IndentedJSON is a wrapper around the [gin.Context.IndentedJSON] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func IndentedJSON(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -55,7 +55,7 @@ func IndentedJSON(c *gin.Context, code int, obj any) {
 }
 
 // JSON is a wrapper around the [gin.Context.JSON] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func JSON(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -64,7 +64,7 @@ func JSON(c *gin.Context, code int, obj any) {
 }
 
 // JSONP is a wrapper around the [gin.Context.JSONP] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func JSONP(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -73,7 +73,7 @@ func JSONP(c *gin.Context, code int, obj any) {
 }
 
 // PureJSON is a wrapper around the [gin.Context.PureJSON] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func PureJSON(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -82,7 +82,7 @@ func PureJSON(c *gin.Context, code int, obj any) {
 }
 
 // SecureJSON is a wrapper around the [gin.Context.SecureJSON] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func SecureJSON(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -91,7 +91,7 @@ func SecureJSON(c *gin.Context, code int, obj any) {
 }
 
 // XML is a wrapper around the [gin.Context.XML] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func XML(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -100,7 +100,7 @@ func XML(c *gin.Context, code int, obj any) {
 }
 
 // YAML is a wrapper around the [gin.Context.YAML] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func YAML(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -109,7 +109,7 @@ func YAML(c *gin.Context, code int, obj any) {
 }
 
 // TOML is a wrapper around the [gin.Context.TOML] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func TOML(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
@@ -118,7 +118,7 @@ func TOML(c *gin.Context, code int, obj any) {
 }
 
 // ProtoBuf is a wrapper around the [gin.Context.ProtoBuf] method that also performs
-// HTTP response body monitoring.
+// appsec HTTP response body monitoring.
 func ProtoBuf(c *gin.Context, code int, obj any) {
 	if err := appsec.MonitorHTTPResponseBody(c.Request.Context(), obj); err != nil {
 		instr.Logger().Debug("appsec: monitoring of response body resulted in error: %v", err)
