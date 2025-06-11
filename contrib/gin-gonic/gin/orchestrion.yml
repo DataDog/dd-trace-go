@@ -117,6 +117,7 @@ aspects:
             {{- $c := .Function.Receiver -}}
             {{- $i := .Function.Argument 1 -}}
             if __err__ := appsec.MonitorHTTPResponseBody({{ $c }}.Request.Context(), {{ $i }}); __err__ != nil {
-              {{ $c }}.Error(__err__)
+              // Request has been blocked by AppSec; aborting this handler right away. The AppSec
+              // handlers in the middleware chain will send the configured blocking response.
               return
             }
