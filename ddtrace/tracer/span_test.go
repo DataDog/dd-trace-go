@@ -131,6 +131,55 @@ func TestSpanFinishTwice(t *testing.T) {
 	tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
 }
 
+func TestSpanFinishNilOption(t *testing.T) {
+	assert := assert.New(t)
+	tracer := newTracer(withTransport(newDefaultTransport()))
+	defer tracer.Stop()
+
+	tc := []struct {
+		name    string
+		wantErr bool
+		options []FinishOption
+	}{
+		{
+			name:    "all nil options",
+			options: []FinishOption{nil, nil, nil},
+			wantErr: false,
+		},
+		{
+			name:    "nil options at end",
+			options: []FinishOption{WithError(errors.New("test error")), nil, nil},
+			wantErr: true,
+		},
+		{
+			name:    "nil options at beginning and end",
+			options: []FinishOption{nil, WithError(errors.New("test error")), nil},
+			wantErr: true,
+		},
+		{
+			name:    "nil options at beginning",
+			options: []FinishOption{nil, nil, WithError(errors.New("test error"))},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.name, func(_ *testing.T) {
+			span := tracer.newRootSpan("pylons.request", "pylons", "/")
+			span.Finish(tc.options...)
+			if tc.wantErr {
+				assert.Equal(tc.wantErr, span.Error != 0)
+				assert.Equal(span.Meta[ext.ErrorMsg], "test error")
+				assert.Equal(span.Meta[ext.ErrorType], "*errors.errorString")
+			} else {
+				assert.Equal(span.Error, int32(0))
+				assert.Empty(span.Meta[ext.ErrorMsg])
+				assert.Empty(span.Meta[ext.ErrorType])
+			}
+		})
+	}
+}
+
 func TestShouldDrop(t *testing.T) {
 	for _, tt := range []struct {
 		prio   int
@@ -487,6 +536,51 @@ func TestSpanStart(t *testing.T) {
 
 	// a new span sets the Start after the initialization
 	assert.NotEqual(int64(0), span.Start)
+}
+
+func TestSpanStartNilOption(t *testing.T) {
+	assert := assert.New(t)
+	tracer := newTracer(withTransport(newDefaultTransport()))
+	defer tracer.Stop()
+
+	tc := []struct {
+		name    string
+		wantTag bool
+		options []StartSpanOption
+	}{
+		{
+			name:    "all nil options",
+			options: []StartSpanOption{nil, nil, nil},
+			wantTag: false,
+		},
+		{
+			name:    "nil options at end",
+			options: []StartSpanOption{Tag("tag", "value"), nil, nil},
+			wantTag: true,
+		},
+		{
+			name:    "nil options at beginning and end",
+			options: []StartSpanOption{nil, Tag("tag", "value"), nil},
+			wantTag: true,
+		},
+		{
+			name:    "nil options at beginning",
+			options: []StartSpanOption{nil, nil, Tag("tag", "value")},
+			wantTag: true,
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.name, func(_ *testing.T) {
+			spn := tracer.StartSpan("pylons.request", tc.options...)
+			s, _ := spn.(*span)
+			if tc.wantTag {
+				assert.Equal(tc.wantTag, s.Meta["tag"] == "value")
+			} else {
+				assert.Empty(s.Meta["tag"])
+			}
+		})
+	}
 }
 
 func TestSpanString(t *testing.T) {
