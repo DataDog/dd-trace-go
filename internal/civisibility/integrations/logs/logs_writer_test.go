@@ -58,7 +58,7 @@ func TestLogsWriterConcurrentFlush(t *testing.T) {
 
 func TestLogsWriterFlushError(t *testing.T) {
 	writer := newLogsWriter()
-	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
+	writer.client = &MockClient{SendLogsFunc: func(_ io.Reader) error {
 		return fmt.Errorf("mock error")
 	},
 	}
