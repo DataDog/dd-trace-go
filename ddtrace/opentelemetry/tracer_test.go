@@ -98,9 +98,12 @@ func TestTracerOptions(t *testing.T) {
 	assert.Contains(fmt.Sprint(sp), "dd.env=wrapper_env")
 }
 
-func TestSpanContext(t *testing.T) {
+func TestExtractSpanContext(t *testing.T) {
 	assert := assert.New(t)
-	tp := NewTracerProvider()
+	// Start tracer with trace sample rules, which should be ignored in favor of the sampling priority inherited from tracer.Extract
+	tp := NewTracerProvider(tracer.WithSamplingRules([]tracer.SamplingRule{
+		{Rate: 0}, // This should be applied only when a brand new root span is started
+	}))
 	defer tp.Shutdown()
 	otel.SetTracerProvider(tp)
 	tr := otel.Tracer("")
