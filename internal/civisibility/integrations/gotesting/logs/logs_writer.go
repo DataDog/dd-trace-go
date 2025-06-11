@@ -83,11 +83,11 @@ func (w *logsWriter) flush() {
 		}()
 
 		size, count := p.size(), p.itemCount()
-		log.Debug("logsWriter: sending payload: size: %d events: %d\n", size, count)
+		log.Debug("logsWriter: sending payload: size: %d logs entries: %d\n", size, count)
 
-		err := w.client.SendCoveragePayload(p)
+		err := w.client.SendLogs(p)
 		if err != nil {
-			log.Error("logsWriter: failure sending coverage data: %v", err)
+			log.Error("logsWriter: failure sending logs data data: %v", err)
 		}
 	}(oldp)
 }
