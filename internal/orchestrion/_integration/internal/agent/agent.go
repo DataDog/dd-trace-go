@@ -84,11 +84,17 @@ func (m *MockAgent) Start(t *testing.T) {
 	srvURL, err := url.Parse(srv.URL)
 	require.NoError(t, err)
 
+	// Increase WAF timeout to avoid flakiness due to ungodly slow CI hosts.
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+	// Neutralize API Security sampling (always-keep), to prevent tests becoming flaky.
+	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "0")
+
 	tracer.Start(
 		tracer.WithAgentAddr(srvURL.Host),
 		tracer.WithSampler(tracer.NewAllSampler()),
 		tracer.WithLogStartup(false),
 		tracer.WithLogger(testLogger{t}),
+		tracer.WithAppSecEnabled(true),
 	)
 	t.Cleanup(tracer.Stop)
 }

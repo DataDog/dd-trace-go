@@ -213,9 +213,15 @@ func TestParseFile(t *testing.T) {
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "value_2")
 	})
 	t.Run("file with no read permissions", func(t *testing.T) {
-		err := os.WriteFile("test.yml", []byte(validYaml), 0000) // No permissions
+		if runtime.GOOS == "windows" {
+			t.Skip("File permission restrictions don't work reliably on Windows - the OS often grants read access to file owners regardless of permission bits")
+		}
+
+		// On Unix-like systems, create file with no read permissions
+		err := os.WriteFile("test.yml", []byte(validYaml), 0000)
 		assert.NoError(t, err)
 		defer os.Remove("test.yml")
+
 		scfg := parseFile("test.yml")
 		assert.True(t, scfg.isEmpty())
 	})
