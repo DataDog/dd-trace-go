@@ -93,9 +93,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
-		k, v, err := resourceNameFromParams(in, serviceID)
-		if err != nil {
-			instr.Logger().Debug("Error: %v", err)
+		k, v, ok := resourceNameFromParams(in, serviceID)
+		if !ok {
+			instr.Logger().Debug("attemped to extract resourceNameFromParams of an unsupported AWS service: %s", serviceID)
 		} else {
 			if v != "" {
 				opts = append(opts, tracer.Tag(k, v))
@@ -127,7 +127,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	}), middleware.After)
 }
 
-func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, error) {
+func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, bool) {
 	var k, v string
 
 	switch awsService {
@@ -146,10 +146,10 @@ func resourceNameFromParams(requestInput middleware.InitializeInput, awsService 
 	case "SFN":
 		k, v = ext.SFNStateMachineName, stateMachineName(requestInput)
 	default:
-		return "", "", fmt.Errorf("attemped to extract ResourceNameFromParams of an unsupported AWS service: %s", awsService)
+		return "", "", false
 	}
 
-	return k, v, nil
+	return k, v, true
 }
 
 func queueName(requestInput middleware.InitializeInput) string {
