@@ -206,6 +206,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 		return
 	}
 	if v, ok := value.(string); ok {
+		time.Sleep(time.Second)
 		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
