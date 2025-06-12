@@ -469,7 +469,8 @@ func (t *trace) finishedOne(s *span) {
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
 		t.root.setMetric(keySamplingPriority, *t.priority)
-		t.locked = true
+		t.setLocked(true)
+		// t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
 		// first span in chunk finished, lock down the tags
