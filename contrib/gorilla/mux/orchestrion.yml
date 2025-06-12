@@ -73,7 +73,7 @@ aspects:
           template: |-
             {{- $res := .Function.Result 0 -}}
             defer func() {
-              {{ $res }}.__dd_config.analyticsRate = __dd_instr.AnalyticsRate(true)
+              analyticsRate := __dd_instr.AnalyticsRate(true)
               {{ $res }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
               {{ $res }}.__dd_config.serviceName = __dd_instr.ServiceName(instrumentation.ComponentServer, nil)
               {{ $res }}.__dd_config.resourceNamer = ddDefaultResourceNamer
@@ -83,7 +83,7 @@ aspects:
                 tracer.Tag(ext.Component, instrumentation.PackageGorillaMux),
                 tracer.Tag(ext.SpanKind, ext.SpanKindServer),
               }
-              if !math.IsNaN({{ $res }}.__dd_config.analyticsRate) {
+              if !math.IsNaN(analyticsRate) {
                 {{ $res }}.__dd_config.spanOpts = append(
                   {{ $res }}.__dd_config.spanOpts,
                   tracer.Tag(ext.EventSampleRate, analyticsRate),
