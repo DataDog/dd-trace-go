@@ -1,0 +1,74 @@
+name: Update System Tests
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Every Sunday at midnight
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Reference to be updated (commit hash, branch, or tag)
+        required: false
+        type: string
+      dry-run:
+        description: Skip PR creation and only show changes
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default permissions for all jobs
+permissions: {}
+
+jobs:
+  update-system-tests:
+    name: "Update System Tests"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: true
+
+      - name: Checkout System Test
+        id: system-test-ref
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: "DataDog/system-tests"
+          path: system-tests
+          persist-credentials: false
+          ref: ${{ github.event.inputs.ref || '' }}
+
+      - run: .github/scripts/update_reference.sh
+        env:
+          TARGET: ".github/workflows/system-tests.yml"
+          PATTERN: '(\s*SYSTEM_TESTS_REF:\s+)(\S+)(\s+# Automated:.*)'
+          REF: ${{ steps.system-test-ref.outputs.commit }}
+
+      - run: .github/scripts/update_reference.sh
+        env:
+          TARGET: ".github/workflows/parametric-tests.yml"
+          PATTERN: '(\s*SYSTEM_TESTS_REF:\s+)(\S+)(\s+# Automated:.*)'
+          REF: ${{ steps.system-test-ref.outputs.commit }}
+
+      - run: git diff --color=always
+
+      - name: Create Pull Request
+        if: ${{ github.event.inputs.dry-run != true }}
+        id: cpr
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        with:
+          branch: auto-generate/update-system-tests
+          title: '[🤖] Update System Tests'
+          base: main
+          # labels: dev/internal
+          commit-message: "[🤖] Update System Tests: ${{github.server_url}}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          delete-branch: true
+          sign-commits: true
+          add-paths: |
+            .github/
+          body: |
+            _This is an auto-generated PR from [here](${{github.server_url}}/${{ github.repository }}/blob/master/.github/workflows/update-system-tests.yml)_
+            The PR updates the system tests (Updated to commit: ${{ steps.system-test-ref.outputs.commit }})
+            Please review the changes and merge when ready
