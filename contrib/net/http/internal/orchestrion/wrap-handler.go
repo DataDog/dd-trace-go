@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 func WrapHandler(handler http.Handler) http.Handler {
@@ -27,5 +28,5 @@ func WrapHandler(handler http.Handler) http.Handler {
 }
 
 func resourceNamer(r *http.Request) string {
-	return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+	return fmt.Sprintf("%s %s", r.Method, httptrace.QuantizeURL(r.URL.Path))
 }
