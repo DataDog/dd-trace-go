@@ -21,7 +21,7 @@ func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Or
 	if env == "DD_APPSEC_SCA_ENABLED" && origin == telemetry.OriginDefault {
 		return value, origin, err
 	}
-	fmt.Println("MTOFF: In stableconfig API, registering app config", envToTelemetryName(env))
+	fmt.Println("MTOFF: In stableconfig API, registering app config", envToTelemetryName(env), "with origin ", origin)
 	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
 	return value, origin, err
 }
