@@ -9,9 +9,11 @@ package transport
 type Origin string
 
 const (
-	OriginDefault      Origin = "default"
-	OriginCode         Origin = "code"
-	OriginDDConfig     Origin = "dd_config"
-	OriginEnvVar       Origin = "env_var"
-	OriginRemoteConfig Origin = "remote_config"
+	OriginDefault             Origin = "default"
+	OriginCode                Origin = "code"
+	OriginDDConfig            Origin = "dd_config"
+	OriginEnvVar              Origin = "env_var"
+	OriginRemoteConfig        Origin = "remote_config"
+	OriginLocalStableConfig   Origin = "local_stable_config"
+	OriginManagedStableConfig Origin = "fleet_stable_config"
 )

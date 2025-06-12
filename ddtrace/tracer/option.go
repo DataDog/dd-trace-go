@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"golang.org/x/mod/semver"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -34,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -453,7 +455,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	c.dataStreamsMonitoringEnabled = internal.BoolEnv("DD_DATA_STREAMS_ENABLED", false)
+	// TODO: APMAPI-1358
+	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -467,7 +470,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
 
-	c.dynamicInstrumentationEnabled = internal.BoolEnv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	// TODO: APMAPI-1358
+	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
@@ -502,11 +506,17 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.agentURL = internal.AgentURLFromEnv()
 	}
 	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
-	if c.httpClient == nil {
+	if c.httpClient == nil || orchestrion.Enabled() {
+		if orchestrion.Enabled() && c.httpClient != nil {
+			// Make sure we don't create http client traces from inside the tracer by using our http client
+			// TODO(eliott.bouhana): remove once dd:no-span is implemented
+			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
+		}
 		if c.agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
 			c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
+			// TODO(darccio): use internal.UnixDataSocketURL instead
 			c.agentURL = &url.URL{
 				Scheme: "http",
 				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
@@ -597,23 +607,27 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
-
-	if !internal.BoolEnv("DD_APM_TRACING_ENABLED", true) {
-		// Enable tracing as transport layer mode
-		// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
-		// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
-		// to let the backend know that it needs to keep APM UI disabled.
-		c.globalSampleRate = 1.0
-		c.traceRateLimitPerSecond = 1.0 / 60
-		c.tracingAsTransport = true
-		WithGlobalTag("_dd.apm.enabled", 0)(c)
-		// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
-		// tell the agent we computed them, so it doesn't do it either.
-		c.runtimeMetrics = false
-		c.runtimeMetricsV2 = false
+	// TODO: APMAPI-1358
+	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
+		apmTracingDisabled(c)
 	}
 
 	return c, nil
+}
+
+func apmTracingDisabled(c *config) {
+	// Enable tracing as transport layer mode
+	// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
+	// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
+	// to let the backend know that it needs to keep APM UI disabled.
+	c.globalSampleRate = 1.0
+	c.traceRateLimitPerSecond = 1.0 / 60
+	c.tracingAsTransport = true
+	WithGlobalTag("_dd.apm.enabled", 0)(c)
+	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
+	// tell the agent we computed them, so it doesn't do it either.
+	c.runtimeMetrics = false
+	c.runtimeMetricsV2 = false
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
@@ -1005,11 +1019,13 @@ func WithAgentURL(agentURL string) StartOption {
 			return
 		}
 		switch u.Scheme {
-		case "unix", "http", "https":
+		case "http", "https":
 			c.agentURL = &url.URL{
 				Scheme: u.Scheme,
 				Host:   u.Host,
 			}
+		case "unix":
+			c.agentURL = internal.UnixDataSocketURL(u.Path)
 		default:
 			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}

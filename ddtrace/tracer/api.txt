@@ -241,6 +241,7 @@ func (*Span) String() (string)
 
 // Package Functions
 func FinishTime(time.Time) (FinishOption)
+func NewFinishConfig(...FinishOption) (*FinishConfig)
 func NewStartSpanConfig(...StartSpanOption) (*StartSpanConfig)
 func NoDebugStack() (FinishOption)
 func StackFrames(uint) (FinishOption)
@@ -365,8 +366,6 @@ type TextMapCarrier map[string]string
 func Extract(interface{}) (*SpanContext, error)
 func Flush()
 func Inject(*SpanContext, interface{}) (error)
-func NewChunk([]*Span, bool) (*Chunk)
-func NewUnstartedTracer(...StartOption) (Tracer, error)
 func SetUser(*Span, string, ...UserMonitoringOption)
 func Start(...StartOption) (error)
 func StartSpan(string, ...StartSpanOption) (*Span)
@@ -381,8 +380,6 @@ type Tracer interface {
 	func Inject(*SpanContext, interface{}) (error)
 	func StartSpan(string, ...StartSpanOption) (*Span)
 	func Stop()
-	func Submit(*Span)
-	func SubmitChunk(*Chunk)
 	func TracerConf() (TracerConf)
 }
 

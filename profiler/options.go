@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -113,14 +114,11 @@ type config struct {
 	endpointCountEnabled bool
 	enabled              bool
 	flushOnExit          bool
+	compressionConfig    string
 }
 
 // logStartup records the configuration to the configured logger in JSON format
 func logStartup(c *config) {
-	var enabledProfiles []string
-	for t := range c.types {
-		enabledProfiles = append(enabledProfiles, t.String())
-	}
 	info := map[string]any{
 		"date":                       time.Now().Format(time.RFC3339),
 		"os_name":                    osinfo.OSName(),
@@ -129,27 +127,14 @@ func logStartup(c *config) {
 		"lang":                       "Go",
 		"lang_version":               runtime.Version(),
 		"hostname":                   c.hostname,
-		"delta_profiles":             c.deltaProfiles,
 		"service":                    c.service,
 		"env":                        c.env,
 		"target_url":                 c.targetURL,
-		"agentless":                  c.agentless,
 		"tags":                       c.tags.Slice(),
-		"profile_period":             c.period.String(),
-		"enabled_profiles":           enabledProfiles,
-		"cpu_duration":               c.cpuDuration.String(),
-		"cpu_profile_rate":           c.cpuProfileRate,
-		"block_profile_rate":         c.blockRate,
-		"mutex_profile_fraction":     c.mutexFraction,
-		"max_goroutines_wait":        c.maxGoroutinesWait,
-		"upload_timeout":             c.uploadTimeout.String(),
-		"execution_trace_enabled":    c.traceConfig.Enabled,
-		"execution_trace_period":     c.traceConfig.Period.String(),
-		"execution_trace_size_limit": c.traceConfig.Limit,
-		"endpoint_count_enabled":     c.endpointCountEnabled,
 		"custom_profiler_label_keys": c.customProfilerLabels,
-		"enabled":                    c.enabled,
-		"flush_on_exit":              c.flushOnExit,
+	}
+	for _, tc := range telemetryConfiguration(c) {
+		info[tc.Name] = tc.Value
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
@@ -200,6 +185,7 @@ func defaultConfig() (*config, error) {
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
+		compressionConfig:    os.Getenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"),
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
@@ -214,10 +200,12 @@ func defaultConfig() (*config, error) {
 	}
 	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
 	// the Datadog admission controller, so we set it to true.
-	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+	// TODO: APMAPI-1358
+	if v, _ := stableconfig.String("DD_PROFILING_ENABLED", ""); v == "auto" {
 		c.enabled = true
 	} else {
-		c.enabled = internal.BoolEnv("DD_PROFILING_ENABLED", true)
+		// TODO: APMAPI-1358
+		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -459,7 +447,7 @@ func WithUDS(socketPath string) Option {
 		// will be interpreted as part of the request path and the
 		// request will fail.  Clean up the path here so we get
 		// something resembling the desired path in any profiler logs.
-		// TODO: copied from ddtrace/tracer, but is this correct?
+		// TODO(darccio): use internal.UnixDataSocketURL instead
 		cleanPath := fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(socketPath))
 		c.agentURL = "http://" + cleanPath + "/profiling/v1/input"
 		WithHTTPClient(&http.Client{

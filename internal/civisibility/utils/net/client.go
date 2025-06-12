@@ -45,7 +45,6 @@ type (
 		SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error
 		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
 		GetTestManagementTests() (*TestManagementTestsResponseDataModules, error)
-		GetImpactedTests() (*ImpactedTestsDetectionResponse, error)
 	}
 
 	// client is a client for sending requests to the Datadog backend.
@@ -189,6 +188,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 				},
 				Timeout: 10 * time.Second,
 			})
+			// TODO(darccio): use internal.UnixDataSocketURL instead
 			agentURL = &url.URL{
 				Scheme: "http",
 				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(agentURL.Path)),
@@ -236,8 +236,14 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		})
 	}
 
+	// we try to get the branch name
 	bName := ciTags[constants.GitBranch]
 	if bName == "" {
+		// if not we try to use the tag (checkout over a tag)
+		bName = ciTags[constants.GitTag]
+	}
+	if bName == "" {
+		// if is still empty we assume the customer just used a detached HEAD
 		bName = "auto:git-detached-head"
 	}
 

@@ -21,6 +21,12 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Generate a GitHub token
+        id: generate-token
+        uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2.0.6
+        with:
+          app-id: ${{ vars.DD_K9_LIBRARY_GO_APP_ID }}
+          private-key: ${{ secrets.DD_K9_LIBRARY_GO_APP_PRIVATE_KEY }}
       - name: Create needs-triage label if needed
         run: |-
           gh label create                                                       \
@@ -29,6 +35,8 @@ jobs:
             --color='#0E8A16'                                                   \
             --description='New issues that have not yet been triaged'           \
             --force
+        env:
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
       - name: Is author a guild member?
         id: is-author-guild-member
         run: |-
@@ -42,13 +50,15 @@ jobs:
           done
           echo "result=${result}" >> "${GITHUB_OUTPUT}"
         env:
-          GITHUB_TOKEN: ${{ secrets.NEEDS_TRIAGE_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
       - name: Add needs-triage label
         if: steps.is-author-guild-member.outputs.result == 'false'
         run: |-
           gh issue edit ${{ github.event.issue.number }}                        \
             --repo='${{ github.repository }}'                                   \
             --add-label='needs-triage'
+        env:
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
 
   find-old-issues:
     name: Find issues in need of attention
@@ -78,7 +88,7 @@ jobs:
           cat issues.json                                  >> "${GITHUB_OUTPUT}"
           echo "EOJSON"                                    >> "${GITHUB_OUTPUT}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
   notify-slack:
     needs: find-old-issues

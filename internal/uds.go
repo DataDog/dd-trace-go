@@ -3,18 +3,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package main
+package internal
 
-import "runtime/debug"
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
 
-var version string
-
-func init() {
-	info, _ := debug.ReadBuildInfo()
-	for _, dep := range info.Deps {
-		if dep.Path == "github.com/DataDog/dd-trace-go/v2" {
-			version = dep.Version
-			break
-		}
+func UnixDataSocketURL(path string) *url.URL {
+	return &url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(path)),
 	}
 }

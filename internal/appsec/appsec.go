@@ -7,8 +7,9 @@ package appsec
 
 import (
 	"fmt"
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"sync"
+
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
 	"github.com/DataDog/go-libddwaf/v4"
@@ -68,6 +69,7 @@ func Start(opts ...config.StartOption) {
 		if mode == config.ForcedOn {
 			// DD_APPSEC_ENABLED is explicitly set so we log an error
 			log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+			telemetrylog.Error("appsec: threats detection cannot be enabled for the following reasons: %v", err)
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.

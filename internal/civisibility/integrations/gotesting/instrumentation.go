@@ -473,9 +473,10 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		// retry is required
 		if options.isEfdInParallel && isAnEfdExecution(execOpts.executionMetadata) {
 			// In parallel, we use the retry count set in the first execution
+			calculatedRetryCount := execOpts.retryCount
 			var wg sync.WaitGroup
-			wg.Add(int(execOpts.retryCount + 1))
-			for i := int64(0); i <= execOpts.retryCount; i++ {
+			wg.Add(int(calculatedRetryCount + 1))
+			for i := int64(0); i <= calculatedRetryCount; i++ {
 				go func(_ int64) {
 					defer wg.Done()
 					executeTestIteration(execOpts)

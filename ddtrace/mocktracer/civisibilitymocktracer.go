@@ -168,8 +168,10 @@ func (t *civisibilitymocktracer) TracerConf() tracer.TracerConf {
 func (t *civisibilitymocktracer) Submit(span *tracer.Span) {
 	t.mock.Submit(span)
 }
-func (t *civisibilitymocktracer) SubmitChunk(chunk *tracer.Chunk) {
-	t.real.SubmitChunk(chunk)
+func (t *civisibilitymocktracer) SubmitChunk(ch *tracer.Chunk) {
+	if mtr, ok := t.real.(interface{ SubmitChunk(*tracer.Chunk) }); ok {
+		mtr.SubmitChunk(ch)
+	}
 }
 
 // Flush forces a flush of both the mock tracer and the real tracer.

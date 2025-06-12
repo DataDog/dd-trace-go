@@ -6,6 +6,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"runtime"
 	"sync"
@@ -146,7 +147,9 @@ func (m *WAFManager) RestoreDefaultConfig() error {
 		return nil
 	}
 	var rules map[string]any
-	if err := json.Unmarshal(m.initRules, &rules); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(m.initRules))
+	dec.UseNumber()
+	if err := dec.Decode(&rules); err != nil {
 		return err
 	}
 	diag, err := m.AddOrUpdateConfig(defaultRulesPath, rules)
