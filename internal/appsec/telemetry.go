@@ -50,7 +50,6 @@ func registerAppsecStartTelemetry(mode config.EnablementMode, origin telemetry.O
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceAppSec)
-	telemetry.RegisterAppConfig("DD_APPSEC_ENABLED", mode == config.ForcedOn, origin)
 	// TODO: add appsec.enabled metric once this metric is enabled backend-side
 
 	detectLibDLOnce.Do(detectLibDL)
