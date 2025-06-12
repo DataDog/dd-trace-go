@@ -1939,7 +1939,7 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {
-	time.Sleep(200 * time.Nanosecond)
+	time.Sleep(time.Microsecond)
 	var cfg StartSpanConfig
 	for _, o := range opts {
 		o(&cfg)

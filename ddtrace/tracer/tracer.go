@@ -687,7 +687,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
-	time.Sleep(200 * time.Nanosecond)
+	time.Sleep(time.Microsecond)
 	if !t.config.enabled.current {
 		return nil
 	}
