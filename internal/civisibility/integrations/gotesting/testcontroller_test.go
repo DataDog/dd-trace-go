@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,10 +29,14 @@ import (
 
 var currentM *testing.M
 var mTracer mocktracer.Tracer
+var logsEntries []*mockedLogEntry
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
 	log.SetLevel(log.LevelDebug)
+
+	// Enable logs collection for all test scenarios (propagates to spawned child processes).
+	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
 	const scenarioStarted = "Scenario %s started.\n"
 	// We need to spawn separated test process for each scenario
@@ -186,6 +191,9 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
 
+	// check logs
+	checkLogs()
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
@@ -286,6 +294,9 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
+
+	// check logs
+	checkLogs()
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -409,6 +420,9 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
+
+	// check logs
+	checkLogs()
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -574,6 +588,9 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 		checkSpansByTagName(finishedSpans, constants.TestIsModified, 0)
 	}
+
+	// check logs
+	checkLogs()
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -829,6 +846,9 @@ func runTestManagementTests(m *testing.M) {
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
 
+	// check logs
+	checkLogs()
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
@@ -931,6 +951,15 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	}
 }
 
+func checkLogs() {
+	// Assert that at least one logs payload has been sent by the library.
+	logsEntriesCount := len(logsEntries)
+	fmt.Printf("Number of logs received: %d\n", logsEntriesCount)
+	if logsEntriesCount == 0 {
+		panic("expected at least one logs payload to be sent, but none were received")
+	}
+}
+
 type (
 	skippableResponse struct {
 		Meta skippableResponseMeta   `json:"meta"`
@@ -958,6 +987,8 @@ func setUpHTTPServer(
 	testManagement bool,
 	testManagementData *net.TestManagementTestsResponseDataModules,
 	impactedTests bool) *httptest.Server {
+	// Reset the collected logs for the new server instance.
+	logsEntries = nil
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1039,6 +1070,21 @@ func setUpHTTPServer(
 			}
 			fmt.Printf("MockApi sending response: %v\n", response)
 			json.NewEncoder(w).Encode(&response)
+		} else if r.URL.Path == "/api/v2/logs" {
+			// Mock the logs intake endpoint.
+			reader, _ := gzip.NewReader(r.Body)
+			body, _ := io.ReadAll(reader)
+			fmt.Printf("MockApi received logs payload: %d bytes\n", len(body))
+			var newEntries []*mockedLogEntry
+			if err := json.Unmarshal(body, &newEntries); err != nil {
+				fmt.Printf("MockApi received invalid logs payload: %s\n", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			logsEntries = append(logsEntries, newEntries...)
+			fmt.Printf("MockApi received %d log entries\n", len(newEntries))
+			// A 2xx status code is required to mark the payload as accepted.
+			w.WriteHeader(http.StatusAccepted)
 		} else if r.URL.Path == "/api/v2/test/libraries/test-management/tests" {
 			body, _ := io.ReadAll(r.Body)
 			fmt.Printf("MockApi received body: %s\n", body)
@@ -1116,4 +1162,18 @@ func showResourcesNameFromSpans(spans []*mocktracer.Span) {
 	for i, span := range spans {
 		fmt.Printf("  [%d] = %v | %v\n", i, span.Tag(ext.ResourceName), span.Tag(constants.TestName))
 	}
+}
+
+type mockedLogEntry struct {
+	DdSource   string `json:"ddsource"`
+	Hostname   string `json:"hostname"`
+	Timestamp  int64  `json:"timestamp,omitempty"`
+	Message    string `json:"message"`
+	DdTraceId  string `json:"dd.trace_id"`
+	DdSpanId   string `json:"dd.span_id"`
+	TestModule string `json:"test.module"`
+	TestSuite  string `json:"test.suite"`
+	TestName   string `json:"test.name"`
+	Service    string `json:"service"`
+	DdTags     string `json:"dd_tags,omitempty"`
 }
