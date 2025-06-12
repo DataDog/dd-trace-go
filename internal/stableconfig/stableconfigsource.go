@@ -57,6 +57,7 @@ func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConf
 // ParseFile reads and parses the config file at the given path.
 // Returns an empty config if the file doesn't exist or is invalid.
 func parseFile(filePath string) *stableConfig {
+	fmt.Println("MTOFF: Parsing file ", filePath)
 	info, err := os.Stat(filePath)
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
@@ -73,6 +74,7 @@ func parseFile(filePath string) *stableConfig {
 	}
 
 	data, err := os.ReadFile(filePath)
+	fmt.Println("MTOFF: Found the following data in the file: ", string(data))
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
