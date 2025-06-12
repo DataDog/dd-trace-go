@@ -22,6 +22,7 @@ aspects:
             http: net/http
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
           template: |-
             var __dd_instr *instrumentation.Instrumentation
 
@@ -68,6 +69,7 @@ aspects:
             math: math
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
           template: |-
             {{- $res := .Function.Result 0 -}}
             defer func() {
@@ -103,6 +105,7 @@ aspects:
             instrhttptrace: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
             options: github.com/DataDog/dd-trace-go/v2/instrumentation/options
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
           template: |-
             {{- $r := .Function.Receiver -}}
             {{- $w := .Function.Argument 0 -}}
