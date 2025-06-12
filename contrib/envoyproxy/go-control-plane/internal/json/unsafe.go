@@ -16,12 +16,11 @@ import (
 const intSize = unsafe.Sizeof(int(0))
 
 var (
-	headOffset  uintptr
-	tailOffset  uintptr
-	depthOffset uintptr
+	headOffset = getOffset("head")
+	tailOffset = getOffset("tail")
 )
 
-func getOffset(name string, store *uintptr) {
+func getOffset(name string) uintptr {
 	typ := reflect.TypeFor[jsoniter.Iterator]()
 	field, found := typ.FieldByName(name)
 	if !found {
@@ -32,27 +31,15 @@ func getOffset(name string, store *uintptr) {
 		panic("jsoniter.Iterator field '" + name + "' is not of the right size")
 	}
 
-	*store = field.Offset
+	return field.Offset
 }
 
-func init() {
-	getOffset("head", &headOffset)
-	getOffset("tail", &tailOffset)
-	getOffset("depth", &depthOffset)
-}
-
-func getIteratorHeadTailAndDepth(iter *jsoniter.Iterator) (head, tail, depth int) {
-	head, tail, depth = *(*int)(unsafe.Add(unsafe.Pointer(iter), headOffset)),
-		*(*int)(unsafe.Add(unsafe.Pointer(iter), tailOffset)),
-		*(*int)(unsafe.Add(unsafe.Pointer(iter), depthOffset))
+// getIteratorHeadAndTail retrieves 2 private fields from a jsoniter.Iterator: head and tail.
+// This is done using unsafe operations to avoid the overhead of reflection.
+func getIteratorHeadAndTail(iter *jsoniter.Iterator) (int, int) {
+	head := *(*int)(unsafe.Add(unsafe.Pointer(iter), headOffset))
+	tail := *(*int)(unsafe.Add(unsafe.Pointer(iter), tailOffset))
 
 	runtime.KeepAlive(iter) // Ensure the iterator is not garbage collected while we're using it
-	return head, tail, depth
-}
-
-// setIteratorHeadAndDepth sets the head and depth of the jsoniter iterator
-func setIteratorHeadAndDepth(iter *jsoniter.Iterator, head, depth int) {
-	*(*int)(unsafe.Add(unsafe.Pointer(iter), headOffset)) = head
-	*(*int)(unsafe.Add(unsafe.Pointer(iter), depthOffset)) = depth
-	runtime.KeepAlive(iter) // Ensure the iterator is not garbage collected while we're using it
+	return head, tail
 }
