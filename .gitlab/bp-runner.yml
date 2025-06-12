@@ -1,0 +1,11 @@
+# Setup benchmarks to be run using bp-runner. There are 48 available cores, the first
+# 24 of which are reserved for setup. We use the remaining 24 to allocate resources
+# to run our benchmarks.
+
+experiments:
+  - name: run-benchmarks
+    steps:
+      - name: benchmarks
+        cpus: 23-47
+        run: shell
+        script: export TEST_NAME=$TEST_NAME && /platform/steps/run-benchmarks.sh
