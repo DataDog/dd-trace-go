@@ -15,8 +15,8 @@ type (
 		Hostname   string `json:"hostname"`
 		Timestamp  int64  `json:"timestamp,omitempty"`
 		Message    string `json:"message"`
-		DdTraceId  string `json:"dd.trace_id"`
-		DdSpanId   string `json:"dd.span_id"`
+		DdTraceID  string `json:"dd.trace_id"`
+		DdSpanID   string `json:"dd.span_id"`
 		TestModule string `json:"test.module"`
 		TestSuite  string `json:"test.suite"`
 		TestName   string `json:"test.name"`

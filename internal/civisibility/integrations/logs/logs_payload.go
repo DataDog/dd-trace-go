@@ -49,14 +49,16 @@ func (p *logsPayload) push(logEntryData *logEntry) error {
 		p.serializationTime += time.Since(startTime)
 	}()
 
-	if val, err := json.Marshal(logEntryData); err != nil {
+	var val []byte
+	var err error
+	if val, err = json.Marshal(logEntryData); err != nil {
 		return err
-	} else {
-		if atomic.AddUint32(&p.count, 1) > 1 {
-			p.buf.WriteByte(',')
-		}
-		p.buf.Write(val)
 	}
+
+	if atomic.AddUint32(&p.count, 1) > 1 {
+		p.buf.WriteByte(',')
+	}
+	p.buf.Write(val)
 
 	return nil
 }

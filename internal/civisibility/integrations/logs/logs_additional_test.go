@@ -84,8 +84,8 @@ func TestWriteLog_Serialization(t *testing.T) {
 	assert.Equal(t, suiteName, got.TestSuite)
 	assert.Equal(t, testName, got.TestName)
 	assert.Equal(t, "serialization-service", got.Service)
-	assert.Equal(t, expectedID, got.DdTraceId)
-	assert.Equal(t, expectedID, got.DdSpanId)
+	assert.Equal(t, expectedID, got.DdTraceID)
+	assert.Equal(t, expectedID, got.DdSpanID)
 	assert.Equal(t, tags, got.DdTags)
 	// Hostname and Timestamp are environment dependent, so we only check they
 	// are non-empty / non-zero.
