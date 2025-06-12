@@ -8,6 +8,7 @@
 package stableconfig
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -38,6 +39,9 @@ type stableConfigSource struct {
 }
 
 func (s *stableConfigSource) Get(key string) string {
+	if key == "DD_DYNAMIC_INSTRUMENTATION_ENABLED" {
+		fmt.Println("MTOFF: The value of Localconfig for dynamic instrumentation is ", s.config.get(key))
+	}
 	return s.config.get(key)
 }
 

@@ -37,11 +37,14 @@ func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin)
 // Also returns the value's origin and any parse error encountered.
 func Bool(env string, def bool) (value bool, origin telemetry.Origin, err error) {
 	for o, v := range stableConfigByPriority(env) {
+		fmt.Println("MTOFF: result of stableConfigByPriority is ", o)
 		if val, err := strconv.ParseBool(v); err == nil {
+			fmt.Println("MTOFF: Should report telemetry with correct origin. It's currently", o)
 			return reportTelemetryAndReturnWithErr(env, val, o, nil)
 		}
 		err = errors.Join(err, fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, v, o))
 	}
+	fmt.Println("MTOFF: No success with stableConfigByPriority, using default")
 	return reportTelemetryAndReturnWithErr(env, def, telemetry.OriginDefault, err)
 }
 
@@ -63,6 +66,7 @@ func stableConfigByPriority(env string) iter.Seq2[telemetry.Origin, string] {
 			return
 		}
 		if v := LocalConfig.Get(env); v != "" && !yield(telemetry.OriginLocalStableConfig, v) {
+			fmt.Println("MTOFF: Successfully yielding to local config")
 			return
 		}
 	}
