@@ -113,6 +113,7 @@ func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
 		log.Debug("appsec: blocking event detected")
 		op.SetTag(blockedRequestTag, true)
+		op.SetRequestBlocked()
 	})
 
 	// Register the stacktrace if one is requested by a WAF action

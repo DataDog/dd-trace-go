@@ -256,7 +256,7 @@ func (b *RunAddressDataBuilder) WithGRPCResponseStatusCode(status int) *RunAddre
 
 func (b *RunAddressDataBuilder) WithGraphQLResolver(fieldName string, args map[string]any) *RunAddressDataBuilder {
 	if _, ok := b.Ephemeral[GraphQLServerResolverAddr]; !ok {
-		b.Ephemeral[GraphQLServerResolverAddr] = map[string]any{}
+		b.Ephemeral[GraphQLServerResolverAddr] = make(map[string]any, 1)
 	}
 
 	b.Ephemeral[GraphQLServerResolverAddr].(map[string]any)[fieldName] = args
@@ -265,10 +265,19 @@ func (b *RunAddressDataBuilder) WithGraphQLResolver(fieldName string, args map[s
 
 func (b *RunAddressDataBuilder) ExtractSchema() *RunAddressDataBuilder {
 	if _, ok := b.Persistent[contextProcessKey]; !ok {
-		b.Persistent[contextProcessKey] = map[string]bool{}
+		b.Persistent[contextProcessKey] = make(map[string]bool, 1)
 	}
 
 	b.Persistent[contextProcessKey].(map[string]bool)["extract-schema"] = true
+	return b
+}
+
+func (b *RunAddressDataBuilder) NoExtractSchema() *RunAddressDataBuilder {
+	if _, ok := b.Persistent[contextProcessKey]; !ok {
+		b.Persistent[contextProcessKey] = make(map[string]bool, 1)
+	}
+
+	b.Persistent[contextProcessKey].(map[string]bool)["extract-schema"] = false
 	return b
 }
 
