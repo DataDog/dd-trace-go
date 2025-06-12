@@ -18,6 +18,7 @@ type config struct {
 	traceConnect  bool
 	traceAcquire  bool
 	poolStats     bool
+	ignoreError   func(error) bool
 	statsdClient  instrumentation.StatsdClient
 }
 
@@ -30,6 +31,7 @@ func defaultConfig() *config {
 		tracePrepare:  true,
 		traceConnect:  true,
 		traceAcquire:  true,
+		ignoreError:   func(err error) bool { return false },
 	}
 }
 
@@ -105,5 +107,12 @@ func WithTraceConnect(enabled bool) Option {
 func WithPoolStats() Option {
 	return func(cfg *config) {
 		cfg.poolStats = true
+	}
+}
+
+// WithIgnoreError specifies a function that determines whether the error should be ignored.
+func WithIgnoreError(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.ignoreError = fn
 	}
 }

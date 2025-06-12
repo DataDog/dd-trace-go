@@ -342,6 +342,7 @@ func tracingAllDisabled() []Option {
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
 		WithTraceAcquire(false),
+		WithIgnoreError(func(err error) bool { return false }),
 	}
 }
 
