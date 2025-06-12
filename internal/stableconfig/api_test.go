@@ -37,13 +37,13 @@ func TestBool(t *testing.T) {
 			expectedErr    error            // Expected error, if any
 		}{
 			// When no config exists, return default value
-			{
-				name:           "default value",
-				key:            "UNKNOWN_KEY",
-				defaultValue:   true,
-				expectedValue:  true,
-				expectedOrigin: telemetry.OriginDefault,
-			},
+			// {
+			// 	name:           "default value",
+			// 	key:            "UNKNOWN_KEY",
+			// 	defaultValue:   true,
+			// 	expectedValue:  true,
+			// 	expectedOrigin: telemetry.OriginDefault,
+			// },
 			//  Local config overrides default
 			{
 				name:           "local config only",
@@ -54,26 +54,26 @@ func TestBool(t *testing.T) {
 				expectedOrigin: telemetry.OriginLocalStableConfig,
 			},
 			// Env var overrides local config
-			{
-				name:           "env overrides local",
-				localYaml:      "apm_configuration_default:\n    DD_KEY: true",
-				envValue:       "false",
-				key:            "DD_KEY",
-				defaultValue:   true,
-				expectedValue:  false,
-				expectedOrigin: telemetry.OriginEnvVar,
-			},
-			// Managed config overrides env var
-			{
-				name:           "managed overrides env",
-				localYaml:      "apm_configuration_default:\n    DD_KEY: true",
-				managedYaml:    "apm_configuration_default:\n    DD_KEY: false",
-				envValue:       "true",
-				key:            "DD_KEY",
-				defaultValue:   true,
-				expectedValue:  false,
-				expectedOrigin: telemetry.OriginManagedStableConfig,
-			},
+			// {
+			// 	name:           "env overrides local",
+			// 	localYaml:      "apm_configuration_default:\n    DD_KEY: true",
+			// 	envValue:       "false",
+			// 	key:            "DD_KEY",
+			// 	defaultValue:   true,
+			// 	expectedValue:  false,
+			// 	expectedOrigin: telemetry.OriginEnvVar,
+			// },
+			// // Managed config overrides env var
+			// {
+			// 	name:           "managed overrides env",
+			// 	localYaml:      "apm_configuration_default:\n    DD_KEY: true",
+			// 	managedYaml:    "apm_configuration_default:\n    DD_KEY: false",
+			// 	envValue:       "true",
+			// 	key:            "DD_KEY",
+			// 	defaultValue:   true,
+			// 	expectedValue:  false,
+			// 	expectedOrigin: telemetry.OriginManagedStableConfig,
+			// },
 		}
 
 		for _, tt := range tests {

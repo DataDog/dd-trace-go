@@ -34,6 +34,8 @@ func startTelemetry(c *config) {
 		return
 	}
 
+	fmt.Println("MTOFF: In startTelemetry")
+
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "trace_debug_enabled", Value: c.debug},

@@ -21,11 +21,13 @@ func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Or
 	if env == "DD_APPSEC_SCA_ENABLED" && origin == telemetry.OriginDefault {
 		return value, origin, err
 	}
+	fmt.Println("MTOFF: In stableconfig API, registering app config", envToTelemetryName(env))
 	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
 	return value, origin, err
 }
 
 func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin) (string, telemetry.Origin) {
+	fmt.Println("MTOFF: In stableconfig API, registering app config", envToTelemetryName(env))
 	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
 	return value, origin
 }
