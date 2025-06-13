@@ -1305,6 +1305,7 @@ func BenchmarkSetTagStringPtr(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		k := keys[i%len(keys)]
 		span.SetTag(k, v)
+		time.Sleep(time.Nanosecond * 100)
 	}
 }
 
