@@ -68,7 +68,7 @@ done
 if [[ ! -z "$tools" ]]; then
     pushd /tmp
     go install golang.org/x/tools/cmd/goimports@latest
-    go install gotest.tools/gotestsum@v1.12.1
+    go install gotest.tools/gotestsum@v1.12.0
     popd
 fi
 
