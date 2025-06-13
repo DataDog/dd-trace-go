@@ -149,7 +149,7 @@ var (
 // See https://google.github.io/sqlcommenter/spec/ for more details.
 func commentQuery(query string, tags map[string]string) string {
 	if len(tags) == 0 {
-		return ""
+		return query
 	}
 	var b strings.Builder
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,

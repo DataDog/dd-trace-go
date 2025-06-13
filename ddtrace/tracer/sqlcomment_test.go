@@ -353,6 +353,12 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 	})
 }
 
+func TestCommentQueryNoTags(t *testing.T) {
+	query := "SELECT * FROM table"
+	result := commentQuery(query, map[string]string{})
+	require.Equal(t, query, result)
+}
+
 func BenchmarkSQLCommentInjection(b *testing.B) {
 	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()
