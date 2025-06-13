@@ -32,4 +32,4 @@ runs:
       if: steps.cache-go.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        go install gotest.tools/gotestsum@v1.12.0
+        go -C _tools install gotest.tools/gotestsum

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 contrib=""
 sleeptime=10
@@ -65,14 +66,15 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if [[ ! -z "$tools" ]]; then
+if [[ -n "$tools" ]]; then
     pushd /tmp
-    go install golang.org/x/tools/cmd/goimports@latest
-    go install gotest.tools/gotestsum@v1.12.0
+		SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+    go -C "${SCRIPT_DIR}/_tools" install golang.org/x/tools/cmd/goimports
+    go -C "${SCRIPT_DIR}/_tools" install gotest.tools/gotestsum
     popd
 fi
 
-if [[ ! -z "$lint" ]]; then
+if [[ -n "$lint" ]]; then
     echo "Running Linter"
     goimports -e -l -local github.com/DataDog/dd-trace-go/v2 .
 fi
@@ -96,7 +98,7 @@ fi
 ## CORE
 echo testing core
 pkg_names=$(go list ./...)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic $pkg_names && true
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic "${pkg_names}" && true
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB
@@ -104,8 +106,8 @@ if [[ "$contrib" != "" ]]; then
 
 	if [[ "$INTEGRATION" != "" ]]; then
 		## wait for all the docker containers to be "ready"
-		echo Waiting for docker for $sleeptime seconds
-		sleep $sleeptime
+		echo "Waiting for docker for ${sleeptime} seconds"
+		sleep "${sleeptime}"
 	fi
 
   find . -mindepth 2 -type f -name go.mod | while read -r go_mod_path; do
@@ -123,7 +125,7 @@ if [[ "$contrib" != "" ]]; then
       cd - > /dev/null
       continue
     fi
-    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic $pkgs
+    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic "${pkgs}"
     cd - > /dev/null
   done
 fi
