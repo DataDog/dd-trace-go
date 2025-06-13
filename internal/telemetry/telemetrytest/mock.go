@@ -8,6 +8,8 @@ package telemetrytest
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -16,6 +18,8 @@ import (
 // e.g. the tracer and profiler.
 type MockClient struct {
 	mock.Mock
+
+	knownMetrics bool
 }
 
 func (m *MockClient) Close() error {
@@ -35,18 +39,30 @@ func (m *MockMetricHandle) Get() float64 {
 }
 
 func (m *MockClient) Count(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
+	if !m.knownMetrics && !knownmetrics.IsKnownMetric(namespace, transport.CountMetric, name) {
+		panic("telemetrytest.RecordClient should only be used with backend-side known metrics")
+	}
 	return m.Called(namespace, name, tags).Get(0).(telemetry.MetricHandle)
 }
 
 func (m *MockClient) Rate(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
+	if !m.knownMetrics && !knownmetrics.IsKnownMetric(namespace, transport.RateMetric, name) {
+		panic("telemetrytest.RecordClient should only be used with backend-side known metrics")
+	}
 	return m.Called(namespace, name, tags).Get(0).(telemetry.MetricHandle)
 }
 
 func (m *MockClient) Gauge(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
+	if !m.knownMetrics && !knownmetrics.IsKnownMetric(namespace, transport.GaugeMetric, name) {
+		panic("telemetrytest.RecordClient should only be used with backend-side known metrics")
+	}
 	return m.Called(namespace, name, tags).Get(0).(telemetry.MetricHandle)
 }
 
 func (m *MockClient) Distribution(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
+	if !m.knownMetrics && !knownmetrics.IsKnownMetric(namespace, transport.DistMetric, name) {
+		panic("telemetrytest.RecordClient should only be used with backend-side known metrics")
+	}
 	return m.Called(namespace, name, tags).Get(0).(telemetry.MetricHandle)
 }
 
