@@ -1,7 +1,8 @@
-#!/bin/sh
+#!/bin/bash
+set -euo pipefail
 
 OUT_DIR=$1
-cd $OUT_DIR
+cd "${OUT_DIR}"
 
 YEAR=$(date +'%Y')
 COPYRIGHT_HEADER="// Unless explicitly stated otherwise all files in this repository are licensed
@@ -10,8 +11,10 @@ COPYRIGHT_HEADER="// Unless explicitly stated otherwise all files in this reposi
 // Copyright ${YEAR} Datadog, Inc.
 "
 
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+go -C "${SCRIPT_DIR}/../../../../_tools" install google.golang.org/protobuf/cmd/protoc-gen-go
+go -C "${SCRIPT_DIR}/../../../../_tools" install google.golang.org/grpc/cmd/protoc-gen-go-grpc
 
 protoc fixture.proto \
   --go_out=. \
