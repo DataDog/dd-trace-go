@@ -3,11 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package jsonencoder
+package json
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"reflect"
 	"runtime"
 	"sort"
@@ -30,7 +32,7 @@ type testCase struct {
 }
 
 func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiallyTruncated bool, checkOutput bool) {
-	encoder := newTestJSONEncoder(initiallyTruncated, []byte(tc.jsonInput))
+	encoder := newTestJSONEncodable(initiallyTruncated, []byte(tc.jsonInput))
 	config := newTestMaxJsonEncoderConfig(pinner)
 
 	if tc.encoderSetup != nil {
@@ -60,7 +62,7 @@ func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiall
 		return
 	}
 
-	decoded, decodeErr := libddwaf.DecodeObject(wafObj)
+	decoded, decodeErr := wafObj.AnyValue()
 
 	if tc.expectedDecodingError {
 		require.Error(t, decodeErr, "Expected decoding to fail with an error")
@@ -600,12 +602,13 @@ func TestJSONEncode_TruncatedInvalidStructure(t *testing.T) {
 	})
 }
 
-// newTestJSONEncoder creates a new JSON encoder for testing purposes
+// newTestJSONEncodable creates a new JSON encoder for testing purposes
 // Overrides the truncation behavior to simulate different scenarios
-func newTestJSONEncoder(initiallyTruncated bool, data []byte) *JsonEncoder {
-	encoder := NewJSONEncoder(data, math.MaxInt32)
-	encoder.initiallyTruncated = initiallyTruncated
-	return encoder
+func newTestJSONEncodable(truncated bool, data []byte) *Encodable {
+	return &Encodable{
+		truncated: truncated,
+		data:      data,
+	}
 }
 
 // newTestMaxJsonEncoderConfig creates a new JSON encoder configuration for testing purposes with all configs set to max
@@ -633,4 +636,61 @@ func sortTruncations(truncations map[libddwaf.TruncationReason][]int) map[libddw
 		sort.Ints(truncations[k])
 	}
 	return truncations
+}
+
+func BenchmarkEncoder(b *testing.B) {
+	rnd := rand.New(rand.NewSource(33))
+	buf := make([]byte, 16384)
+	n, err := rnd.Read(buf)
+	fullstr := string(buf)
+	encodeTimer, _ := timer.NewTimer(timer.WithUnlimitedBudget())
+	var pinner runtime.Pinner
+	defer pinner.Unpin()
+
+	for _, l := range []int{4, 16, 128, 1024, 4096} {
+		config := libddwaf.EncoderConfig{
+			Pinner:           &pinner,
+			MaxObjectDepth:   10,
+			MaxStringSize:    1 * 1024 * 1024,
+			MaxContainerSize: 100,
+			Timer:            encodeTimer,
+		}
+		b.Run(fmt.Sprintf("%d", l), func(b *testing.B) {
+			b.ReportAllocs()
+			str := fullstr[:l]
+			slice := []string{str, str, str, str, str, str, str, str, str, str}
+			data := map[string]any{
+				"k0": slice,
+				"k1": slice,
+				"k2": slice,
+				"k3": slice,
+				"k4": slice,
+				"k5": slice,
+				"k6": slice,
+				"k7": slice,
+				"k8": slice,
+				"k9": slice,
+			}
+			if err != nil || n != len(buf) {
+				b.Fatal(err)
+			}
+			bytes, err := json.Marshal(data)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ResetTimer()
+			for b.Loop() {
+				encodable := Encodable{data: bytes}
+				var wafObj libddwaf.WAFObject
+				truncations, err := encodable.Encode(config, &wafObj, 0)
+				if err != nil {
+					b.Fatalf("Error encoding: %v", err)
+				}
+
+				runtime.KeepAlive(encodable)
+				runtime.KeepAlive(wafObj)
+				runtime.KeepAlive(truncations)
+			}
+		})
+	}
 }
