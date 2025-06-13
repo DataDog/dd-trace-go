@@ -351,7 +351,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 				baggageOnly: true,
 			}
 			maps.Copy(ctx.baggage, pendingBaggage)
-			// should we do this instead of setting hasBaggae: 1 directly? Does it matter?
+			// should we do this instead of setting hasBaggage: 1 directly? Does it matter?
 			// atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
 		}
