@@ -98,7 +98,7 @@ jobs:
           go-version: "stable"
       - name: Test contribs
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
-        run: ./scripts/ci-test-contrib.sh smoke ${{ toJson(matrix.chunk) }}
+        run: ./scripts/ci-test-contrib.sh smoke ${{ toJson(matrix.chunk) }} "go"
 
   smoke-test-tracer:
     name: Test dd-trace-go

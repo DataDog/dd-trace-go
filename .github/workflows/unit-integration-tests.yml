@@ -6,6 +6,10 @@ on:
       go-version:
         required: true
         type: string
+      go-command:
+        required: false
+        type: string
+        default: 'go'
       ref:
         description: 'The branch to run the workflow on'
         required: true
@@ -38,7 +42,7 @@ jobs:
           go-version: ${{ inputs.go-version }}
       - name: Copyright
         run: |
-          go run ./scripts/checkcopyright.go
+          ${{ inputs.go-command }} run ./scripts/checkcopyright.go
 
   generate:
     runs-on: ubuntu-latest
@@ -116,7 +120,7 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
+          ${{ inputs.go-command }} run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
 
   test-contrib-matrix:
     needs: set-up
@@ -284,7 +288,7 @@ jobs:
       - name: Test Contrib
         if: always()
         run: |
-          ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
+          ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }} ${{ inputs.go-command }}
 
   test-contrib:
     needs:

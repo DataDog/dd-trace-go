@@ -1,0 +1,50 @@
+name: Go Tip
+on:
+  workflow_dispatch: # manually
+  schedule:
+    - cron: "0 0 * * 0" # run every Sunday at midnight UTC
+  pull_request:
+    branches:
+      - "hannahkm/go-tip-pipeline" # TODO: delete after testing
+
+jobs:
+  setup-gotip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up a stable Go version
+        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        with:
+          go-version: 'latest'
+
+      - name: Install gotip
+        run: |
+          go install golang.org/dl/gotip@latest
+          gotip download
+
+  unit-integration-tests:
+    needs: setup-gotip
+    strategy:
+      matrix:
+        go-version: [ "gotip" ]
+      fail-fast: false
+    uses: ./.github/workflows/unit-integration-tests.yml
+    with:
+      go-version: ${{ matrix.go-version }}
+      go-command: "gotip"
+      ref: ${{ github.ref }}
+    secrets: inherit
+
+  multios-unit-tests:
+    needs: setup-gotip
+    strategy:
+      matrix:
+        runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
+        go-version: [ "gotip" ]
+      fail-fast: false
+    uses: ./.github/workflows/multios-unit-tests.yml
+    with:
+      go-version: ${{ matrix.go-version }}
+      go-command: "gotip"
+      runs-on: ${{ matrix.runs-on }}
+      ref: ${{ github.ref }}
+    secrets: inherit
