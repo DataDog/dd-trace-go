@@ -40,6 +40,11 @@ jobs:
         uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
           go-version: ${{ inputs.go-version }}
+      - name: Setup gotip if needed
+        if: inputs.go-version == 'gotip'
+        run: |
+          go install golang.org/dl/gotip@latest
+          gotip download
       - name: Copyright
         run: |
           ${{ inputs.go-command }} run ./scripts/checkcopyright.go
@@ -115,6 +120,12 @@ jobs:
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
+      
+      - name: Setup gotip if needed
+        if: inputs.go-version == 'gotip'
+        run: |
+          go install golang.org/dl/gotip@latest
+          gotip download
 
       - name: Compute Matrix
         id: matrix
@@ -279,6 +290,12 @@ jobs:
         uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
+
+      - name: Setup gotip if needed
+        if: inputs.go-version == 'gotip'
+        run: |
+          go install golang.org/dl/gotip@latest
+          gotip download
 
       - name: Setup Go
         uses: ./.github/actions/setup-go
