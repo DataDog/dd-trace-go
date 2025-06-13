@@ -126,6 +126,8 @@ const (
 	APMTracingEnableLiveDebugging
 	// ASMDDMultiConfig represents the capability to handle multiple ASM_DD configuration objects
 	ASMDDMultiConfig
+	// ASMTraceTaggingRules represents the capability to honor trace tagging rules
+	ASMTraceTaggingRules
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.

@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.0
 	github.com/DataDog/datadog-agent/pkg/trace v0.66.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/go-libddwaf/v4 v4.1.0
+	github.com/DataDog/go-libddwaf/v4 v4.2.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
@@ -91,4 +91,9 @@ require (
 	golang.org/x/text v0.24.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250224174004-546df14abb99 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
+)
+
+retract (
+	[v2.0.0-rc.1, v2.0.0-rc.22]
+	[v2.0.0-beta.1, v2.0.0-beta.11]
 )
