@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -371,6 +372,7 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, r
 func (c *client) AppStart() {
 	c.flushMapperMu.Lock()
 	defer c.flushMapperMu.Unlock()
+	fmt.Println("MTOFF: In AppStart; client configuration is ", c.configuration.config)
 	c.flushMapper = mapper.NewAppStartedMapper(c.flushMapper)
 }
 
