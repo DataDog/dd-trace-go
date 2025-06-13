@@ -108,7 +108,6 @@ func TestTags(t *testing.T) {
 				if eventCase.events != nil {
 					require.Subset(t, span.Tags, map[string]interface{}{
 						"_dd.appsec.json": eventCase.expectedTag,
-						"manual.keep":     true,
 						"appsec.event":    true,
 						"_dd.origin":      "appsec",
 					})

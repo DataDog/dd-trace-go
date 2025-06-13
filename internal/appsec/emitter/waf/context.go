@@ -138,7 +138,7 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	if op.derivatives == nil {
-		op.derivatives = make(map[string]any)
+		op.derivatives = make(map[string]any, len(derivatives))
 	}
 
 	for k, v := range derivatives {

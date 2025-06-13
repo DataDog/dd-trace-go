@@ -13,7 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	httptraceinternal "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/gorilla/mux"
@@ -105,7 +105,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		route, _ = match.Route.GetPathTemplate()
 	}
-	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
+	spanopts = append(spanopts, instrhttptrace.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Framework:     "github.com/gorilla/mux",

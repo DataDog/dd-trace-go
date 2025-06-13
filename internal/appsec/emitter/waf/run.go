@@ -11,9 +11,11 @@ import (
 	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/waferrors"
 )
@@ -49,6 +51,11 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.Ru
 	rateLimited := op.AddEvents(result.Events...)
 	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
 	op.AbsorbDerivatives(result.Derivatives)
+
+	// Set the trace to ManualKeep if the WAF instructed us to keep it.
+	if result.Keep {
+		op.SetTag(ext.ManualKeep, samplernames.AppSec)
+	}
 
 	if result.HasEvents() {
 		dyngo.EmitData(op, &SecurityEvent{})

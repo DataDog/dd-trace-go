@@ -9,7 +9,7 @@ on:
   push:
     branches:
       - main
-      - release-v*  
+      - release-v*
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -33,7 +33,7 @@ jobs:
           go-version: 'stable'
       - name: Install govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go -C _tools install golang.org/x/vuln/cmd/govulncheck
       - name: Run govulncheck
         run: govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/...
       - name: Run govulncheck-contribs

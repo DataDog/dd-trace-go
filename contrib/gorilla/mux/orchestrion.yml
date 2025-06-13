@@ -20,13 +20,19 @@ aspects:
       - inject-declarations:
           imports:
             http: net/http
-            internal: github.com/DataDog/dd-trace-go/v2/internal
-            telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
           template: |-
+            var __dd_instr *instrumentation.Instrumentation
+
+            func init() {
+              __dd_instr = instrumentation.Load(instrumentation.PackageGorillaMux)
+            }
+
             type ddRouterConfig struct {
               ignoreRequest func(*http.Request) bool
-              headerTags    *internal.LockMap
+              headerTags    instrumentation.HeaderTags
               resourceNamer func(*Router, *http.Request) string
               serviceName   string
               spanOpts      []tracer.StartSpanOption
@@ -44,11 +50,6 @@ aspects:
               }
               return fmt.Sprintf("%s %s", req.Method, route)
             }
-
-            func init() {
-              telemetry.LoadIntegration("gorilla/mux")
-              tracer.MarkIntegrationImported("github.com/gorilla/mux")
-            }
       - add-struct-field:
           name: __dd_config
           type: ddRouterConfig
@@ -64,28 +65,22 @@ aspects:
       - prepend-statements:
           imports:
             ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
-            globalconfig: github.com/DataDog/dd-trace-go/v2/internal/globalconfig
             http: net/http
-            internal: github.com/DataDog/dd-trace-go/v2/internal
             math: math
-            namingschema: github.com/DataDog/dd-trace-go/v2/internal/namingschema
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
           template: |-
             {{- $res := .Function.Result 0 -}}
             defer func() {
-              var analyticsRate float64
-              if internal.BoolEnv("DD_TRACE_MUX_ANALYTICS_ENABLED", false) {
-                analyticsRate = 1.0
-              } else {
-                analyticsRate = globalconfig.AnalyticsRate()
-              }
-
-              {{ $res }}.__dd_config.headerTags = globalconfig.HeaderTagMap()
-              {{ $res }}.__dd_config.ignoreRequest = func(*http.Request) bool { return false }
+              analyticsRate := __dd_instr.AnalyticsRate(true)
+              {{ $res }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
+              {{ $res }}.__dd_config.serviceName = __dd_instr.ServiceName(instrumentation.ComponentServer, nil)
               {{ $res }}.__dd_config.resourceNamer = ddDefaultResourceNamer
-              {{ $res }}.__dd_config.serviceName = namingschema.ServiceName("mux.router")
+              {{ $res }}.__dd_config.ignoreRequest = func(_ *http.Request) bool { return false }
+
               {{ $res }}.__dd_config.spanOpts = []tracer.StartSpanOption{
-                tracer.Tag(ext.Component, "gorilla/mux"),
+                tracer.Tag(ext.Component, instrumentation.PackageGorillaMux),
                 tracer.Tag(ext.SpanKind, ext.SpanKindServer),
               }
               if !math.IsNaN(analyticsRate) {
@@ -107,9 +102,10 @@ aspects:
           imports:
             http: net/http
             httptrace: github.com/DataDog/dd-trace-go/contrib/net/http/v2
-            httptraceinternal: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
+            instrhttptrace: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
             options: github.com/DataDog/dd-trace-go/v2/instrumentation/options
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
           template: |-
             {{- $r := .Function.Receiver -}}
             {{- $w := .Function.Argument 0 -}}
@@ -126,7 +122,7 @@ aspects:
                 }
                 route, _ = match.Route.GetPathTemplate()
               }
-              spanOpts = append(spanOpts, httptraceinternal.HeaderTagsFromRequest({{ $req }}, {{ $r }}.__dd_config.headerTags))
+              spanOpts = append(spanOpts, instrhttptrace.HeaderTagsFromRequest({{ $req }}, {{ $r }}.__dd_config.headerTags))
               resource := {{ $r }}.__dd_config.resourceNamer({{ $r }}, {{ $req }})
 
               // This is a temporary workaround/hack to prevent endless recursion via httptrace.TraceAndServe, which

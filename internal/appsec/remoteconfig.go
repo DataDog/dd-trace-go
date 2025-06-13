@@ -317,6 +317,7 @@ var baseCapabilities = [...]remoteconfig.Capability{
 	remoteconfig.ASMSessionFingerprinting,
 	remoteconfig.ASMNetworkFingerprinting,
 	remoteconfig.ASMHeaderFingerprinting,
+	remoteconfig.ASMTraceTaggingRules,
 }
 
 var blockingCapabilities = [...]remoteconfig.Capability{

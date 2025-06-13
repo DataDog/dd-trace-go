@@ -3,6 +3,7 @@ go 1.23.0 // Go version must match the lowest supported version, not the highest
 use (
 	.
 	./.github/workflows/apps
+	./_tools
 	./contrib/99designs/gqlgen
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
