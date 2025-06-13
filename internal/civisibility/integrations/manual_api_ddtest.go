@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -355,6 +356,11 @@ func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
 	for k, v := range data {
 		t.span.SetTag(fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
 	}
+}
+
+// Log writes a log message for the test.
+func (t *tslvTest) Log(message string, tags string) {
+	logs.WriteLog(t.testID, t.suite.module.name, t.suite.name, t.name, message, tags)
 }
 
 // close closes the test and reports the telemetry event.

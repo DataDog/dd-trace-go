@@ -123,8 +123,12 @@ services:
       DD_DISABLE_ERROR_RESPONSES: "true"
     ports:
       - "127.0.0.1:9126:9126"
-  mongodb:
+  mongodb3:
     image: mongo:3
+    ports:
+      - "27018:27017"
+  mongodb:
+    image: mongo:8
     ports:
       - "27017:27017"
   memcached:

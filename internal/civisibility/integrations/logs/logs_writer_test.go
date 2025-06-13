@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package coverage
+package logs
 
 import (
 	"fmt"
@@ -14,56 +14,56 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewCoverageWriter(t *testing.T) {
-	writer := newCoverageWriter()
+func TestNewLogsWriter(t *testing.T) {
+	writer := newLogsWriter()
 	assert.NotNil(t, writer)
 	assert.NotNil(t, writer.client)
 	assert.NotNil(t, writer.payload)
 	assert.NotNil(t, writer.climit)
 }
 
-func TestCoverageWriterAdd(t *testing.T) {
-	writer := newCoverageWriter()
-	coverage := &testCoverage{}
-	writer.add(coverage)
+func TestLogsWriterAdd(t *testing.T) {
+	writer := newLogsWriter()
+	entry := &logEntry{}
+	writer.add(entry)
 	assert.Equal(t, writer.payload.itemCount(), 1)
 }
 
-func TestCoverageWriterStop(t *testing.T) {
-	writer := newCoverageWriter()
-	coverage := &testCoverage{}
-	writer.add(coverage)
+func TestLogsWriterStop(t *testing.T) {
+	writer := newLogsWriter()
+	entry := &logEntry{}
+	writer.add(entry)
 	writer.stop()
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
-func TestCoverageWriterFlush(t *testing.T) {
-	writer := newCoverageWriter()
-	coverage := &testCoverage{}
-	writer.add(coverage)
+func TestLogsWriterFlush(t *testing.T) {
+	writer := newLogsWriter()
+	entry := &logEntry{}
+	writer.add(entry)
 	writer.flush()
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
-func TestCoverageWriterConcurrentFlush(t *testing.T) {
-	writer := newCoverageWriter()
-	coverage := &testCoverage{}
+func TestLogsWriterConcurrentFlush(t *testing.T) {
+	writer := newLogsWriter()
+	entry := &logEntry{}
 
 	for i := 0; i < concurrentConnectionLimit+1; i++ {
-		writer.add(coverage)
+		writer.add(entry)
 	}
 	writer.flush()
 	assert.Equal(t, 0, writer.payload.itemCount())
 }
 
-func TestCoverageWriterFlushError(t *testing.T) {
-	writer := newCoverageWriter()
-	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
+func TestLogsWriterFlushError(t *testing.T) {
+	writer := newLogsWriter()
+	writer.client = &MockClient{SendLogsFunc: func(_ io.Reader) error {
 		return fmt.Errorf("mock error")
 	},
 	}
-	coverage := &testCoverage{}
-	writer.add(coverage)
+	entry := &logEntry{}
+	writer.add(entry)
 	writer.flush()
 	assert.Equal(t, 0, writer.payload.itemCount())
 }

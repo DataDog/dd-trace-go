@@ -22,6 +22,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// this integration only supports up to mongodb:3
+const mongodb3URL = "localhost:27018"
+
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {
@@ -44,7 +47,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []*mock
 		tracer.ResourceName("insert-test"),
 	)
 
-	session, err := Dial("localhost:27017", WithService("unit-tests"), WithContext(ctx))
+	session, err := Dial(mongodb3URL, WithService("unit-tests"), WithContext(ctx))
 	require.NoError(t, err)
 
 	defer session.Close()
@@ -496,7 +499,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...DialOption) {
 		assert := assert.New(t)
 
-		session, err := Dial("localhost:27017", opts...)
+		session, err := Dial(mongodb3URL, opts...)
 		assert.NoError(err)
 		defer session.Close()
 

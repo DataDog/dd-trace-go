@@ -238,8 +238,12 @@ jobs:
           xpack.security.enabled: false
         ports:
           - 9204:9200
-      mongo:
+      mongo3:
         image: mongo:3
+        ports:
+          - 27018:27017
+      mongo:
+        image: mongo:8
         ports:
           - 27017:27017
       memcached:

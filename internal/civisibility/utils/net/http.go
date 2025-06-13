@@ -189,17 +189,17 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			return true, nil, err
 		}
 
-		if log.DebugEnabled() {
-			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
-				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
-		}
-
 		// Compress body if needed
 		if config.Compressed {
 			serializedBody, err = compressData(serializedBody)
 			if err != nil {
 				return true, nil, err
 			}
+		}
+
+		if log.DebugEnabled() {
+			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
+				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
 		}
 
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(serializedBody))

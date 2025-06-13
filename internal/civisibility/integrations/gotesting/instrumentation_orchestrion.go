@@ -185,6 +185,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		}
 
 		defer func() {
+			// Collect and write logs
+			collectAndWriteLogs(t, test)
+
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
 				if execMeta.isARetry && execMeta.isLastRetry {
