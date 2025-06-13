@@ -1,0 +1,60 @@
+name: Release Docker images
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Docker image tag to use for the package (default to selected branch name)'
+        required: false
+      commit_sha:
+        description: 'Commit SHA to checkout (default to latest commit on selected branch)'
+        required: false
+      set_as_latest:
+        description: 'Set the tag as latest'
+        required: false
+        default: false
+        type: boolean
+      build_service_extensions:
+        description: 'Build service-extensions-callout image'
+        required: false
+        default: false
+        type: boolean
+      build_request_mirror:
+        description: 'Build request-mirror image'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-service-extensions-callout:
+    if: github.event_name == 'push' || github.event.inputs.build_service_extensions == 'true'
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/service-extensions-callout
+      dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
+      artifact_prefix: service-extensions
+      commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      tags: >-
+        ${{ github.event.inputs.tag_name || github.ref_name }}
+        ${{ github.event.inputs.commit_sha || github.sha }}
+        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
+
+  build-request-mirror:
+    if: github.event_name == 'push' || github.event.inputs.build_request_mirror == 'true'
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/request-mirror
+      dockerfile: ./contrib/k8s.io/cmd/request-mirror/Dockerfile
+      artifact_prefix: request-mirror
+      commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      tags: >-
+        ${{ github.event.inputs.tag_name || github.ref_name }}
+        ${{ github.event.inputs.commit_sha || github.sha }}
+        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}

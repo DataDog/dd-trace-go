@@ -1,92 +1,35 @@
-name: Publish Docker images packages
+name: Docker image Build and Push
 
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      tag_name:
-        description: 'Docker image tag to use for the package (default to selected branch name)'
-        required: false
+      image:
+        description: 'Docker image name'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Path to the Dockerfile'
+        required: true
+        type: string
+      artifact_prefix:
+        description: 'Prefix for the artifact name'
+        required: true
+        type: string
       commit_sha:
-        description: 'Commit SHA to checkout (default to latest commit on selected branch)'
-        required: false
-      set_as_latest:
-        description: 'Set the tag as latest'
-        required: false
-        default: false
-        type: boolean
-      build_service_extensions:
-        description: 'Build service-extensions-callout image'
-        required: false
-        default: false
-        type: boolean
-      build_request_mirror:
-        description: 'Build request-mirror image'
-        required: false
-        default: false
-        type: boolean
-
-permissions:
-  contents: read
-  packages: write
-
-env:
-  TAG_NAME: ${{ github.event.inputs.tag_name || github.ref_name }}
-  COMMIT_SHA: ${{ github.event.inputs.commit_sha || github.sha }}
-  PUSH_LATEST: ${{ github.event.inputs.set_as_latest || true }}
+        description: 'Commit SHA to checkout'
+        required: true
+        type: string
+      tags:
+        description: 'Space-separated list of tags to apply to the image (e.g., "latest v2.0.0")'
+        required: true
+        type: string
 
 jobs:
-  setup-matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.setup.outputs.matrix }}
-    env:
-      ALL_BUILDS: |
-        [
-          {
-            "dockerfile": "./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile",
-            "image": "ghcr.io/datadog/dd-trace-go/service-extensions-callout",
-            "input_key": "build_service_extensions",
-            "artifact_prefix": "service-extensions"
-          },
-          {
-            "dockerfile": "./contrib/k8s.io/cmd/request-mirror/Dockerfile", 
-            "image": "ghcr.io/datadog/dd-trace-go/request-mirror",
-            "input_key": "build_request_mirror",
-            "artifact_prefix": "request-mirror"
-          }
-        ]
-    steps:
-      - name: Setup build matrix
-        id: setup
-        run: |
-          if [ "${{ github.event_name }}" == "push" ]; then
-            # For version tag pushes, build all images
-            matrix=$(echo '${{ env.ALL_BUILDS }}' | jq -c .)
-          else
-            # For manual triggers, filter based on inputs
-            matrix=$(echo '${{ env.ALL_BUILDS }}' | jq -c '[
-              .[] | select(
-                (.input_key == "build_service_extensions" and "${{ github.event.inputs.build_service_extensions }}" == "true") or
-                (.input_key == "build_request_mirror" and "${{ github.event.inputs.build_request_mirror }}" == "true")
-              )
-            ]')
-          fi
-          
-          echo "matrix={\"include\":$matrix}" >> $GITHUB_OUTPUT
-          echo "Generated matrix: {\"include\":$matrix}"
-
   build-images:
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'arm-4core-linux' }}
-    needs: setup-matrix
-    if: needs.setup-matrix.outputs.matrix != '{"include":[]}'
     strategy:
       matrix:
         platform: [ linux/amd64, linux/arm64 ]
-        include: ${{ fromJson(needs.setup-matrix.outputs.matrix).include }}
-
     steps:
       - name: Prepare
         run: |
@@ -96,7 +39,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ env.COMMIT_SHA }}
+          ref: ${{ inputs.commit_sha }}
 
       - name: Install Docker (only arm64)
         if: matrix.platform == 'linux/arm64'
@@ -120,17 +63,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@369eb591f429131d6889c46b94e711f089e6ca96 # v5.6.1
         with:
-          images: ${{ matrix.image }}
+          images: ${{ inputs.image }}
 
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v6.13.0
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -141,25 +84,20 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: digests-${{ matrix.artifact_prefix }}-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
   publish-images:
     runs-on: ubuntu-latest
-    needs: [setup-matrix, build-images]
-    if: needs.setup-matrix.outputs.matrix != '{"include":[]}'
-    strategy:
-      matrix:
-        include: ${{ fromJson(needs.setup-matrix.outputs.matrix).include }}
-
+    needs: [build-images]
     steps:
       - name: Download digests
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           path: /tmp/digests
-          pattern: digests-${{ matrix.artifact_prefix }}-*
+          pattern: digests-${{ inputs.artifact_prefix }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
@@ -169,20 +107,14 @@ jobs:
         shell: bash
         run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
 
-      - name: Create tags
-        id: tags
-        run: |
-          tagname=${TAG_NAME//\//-} # remove slashes from tag name
-          tags="tags=-t ${{ matrix.image }}:${tagname} \
-          -t ${{ matrix.image }}:${{ env.COMMIT_SHA }}"
-          if [ "${PUSH_LATEST}" == "true" ]; then
-            tags="$tags -t ${{ matrix.image }}:latest"
-          fi
-
-          echo $tags >> $GITHUB_OUTPUT
-
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create ${{ steps.tags.outputs.tags }} \
-            $(printf '${{ matrix.image }}@sha256:%s ' *)
+          TAG_FLAGS=""
+          for tag in ${{ inputs.tags }}; do
+            if [ -n "$tag" ]; then
+              TAG_FLAGS="$TAG_FLAGS -t ${{ inputs.image }}:$tag"
+            fi
+          done
+          docker buildx imagetools create $TAG_FLAGS \
+            $(printf '${{ inputs.image }}@sha256:%s ' *) 
