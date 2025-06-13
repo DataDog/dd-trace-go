@@ -139,7 +139,8 @@ func (e *encoder) Encode(obj *libddwaf.WAFObject, depth int) error {
 	case jsoniter.NilValue:
 		e.iter.ReadNil()
 		if err = e.iter.Error; err == nil || err == io.EOF {
-			return skipErr
+			err = nil
+			obj.SetNil()
 		}
 	default:
 		return fmt.Errorf("unexpected JSON token: %v", e.iter.WhatIsNext())
@@ -253,6 +254,7 @@ func (e *encoder) encodeObject(parentObj *libddwaf.WAFObject, depth int) error {
 	}
 
 	parentObj.SetMapData(e.config.Pinner, wafObjs)
+	errs = append(errs, e.iter.Error)
 	return errors.Join(errs...)
 }
 
@@ -290,8 +292,9 @@ func (e *encoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) error {
 		}
 
 		wafObjs = append(wafObjs, libddwaf.WAFObject{})
+		entryObj := &wafObjs[len(wafObjs)-1]
 
-		if err := e.Encode(&wafObjs[len(wafObjs)-1], depth); err != nil {
+		if err := e.Encode(entryObj, depth); err != nil {
 			wafObjs = wafObjs[:len(wafObjs)-1] // Remove the last element if encoding failed
 			if err == skipErr {
 				return true
@@ -299,6 +302,10 @@ func (e *encoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) error {
 
 			errs = append(errs, fmt.Errorf("failed to encode array element %d: %w", len(wafObjs)-1, err))
 			return false
+		}
+
+		if entryObj.IsUnusable() {
+			wafObjs = wafObjs[:len(wafObjs)-1] // Remove the last element if it is nil or invalid
 		}
 
 		return true

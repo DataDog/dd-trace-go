@@ -647,7 +647,7 @@ func BenchmarkEncoder(b *testing.B) {
 	var pinner runtime.Pinner
 	defer pinner.Unpin()
 
-	for _, l := range []int{16, 128, 1024, 4096} {
+	for _, l := range []int{4, 16, 128, 1024, 4096} {
 		config := libddwaf.EncoderConfig{
 			Pinner:           &pinner,
 			MaxObjectDepth:   10,
