@@ -1825,7 +1825,7 @@ func TestWithStatsComputation(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newConfig()
 		assert.NoError(err)
-		assert.False(c.statsComputationEnabled)
+		assert.True(c.statsComputationEnabled)
 	})
 	t.Run("enabled-via-option", func(t *testing.T) {
 		assert := assert.New(t)

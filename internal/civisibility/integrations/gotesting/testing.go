@@ -6,10 +6,14 @@
 package gotesting
 
 import (
+	"bufio"
 	"fmt"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"reflect"
 	"runtime"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,6 +50,12 @@ var (
 
 	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
 	numOfTestsSkipped atomic.Uint64
+
+	// chattyPrinterOnce ensures that the chatty printer is initialized only once.
+	chattyPrinterOnce sync.Once
+
+	// chatty is the global chatty printer used for debugging and verbose output.
+	chatty *chattyPrinter
 )
 
 type (
@@ -260,6 +270,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}
 
+		// Initialize the chatty printer if not already done.
+		instrumentChattyPrinter(t)
+
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
@@ -280,6 +293,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				// Set the EFD retry abort reason
 				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
 			}
+
+			// Collect and write logs
+			collectAndWriteLogs(t, test)
 
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
@@ -674,4 +690,54 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 	}
 
 	return false
+}
+
+// instrumentChattyPrinter initializes the chatty printer for verbose output if logging is enabled.
+func instrumentChattyPrinter(t *testing.T) {
+	if !logs.IsEnabled() {
+		// If the logs integration is not enabled, we don't need to instrument the chatty printer.
+		return
+	}
+
+	// Initialize the chatty printer if not already done.
+	chattyPrinterOnce.Do(func() {
+		chatty = getTestChattyPrinter(t)
+		// If the chatty printer is enabled, we wrap the writer to capture output.
+		if chatty != nil && chatty.w != nil && *chatty.w != nil {
+			*chatty.w = &customWriter{chatty: chatty, writer: *chatty.w}
+		}
+	})
+}
+
+// collectAndWriteLogs collects logs from the chatty printer and the test output, and writes them to the test.
+func collectAndWriteLogs(t *testing.T, test integrations.Test) {
+	if !logs.IsEnabled() {
+		// If the logs integration is not enabled, we don't need to collect or write logs.
+		return
+	}
+
+	if chatty != nil && chatty.w != nil && *chatty.w != nil {
+		if writer, ok := (*chatty.w).(*customWriter); ok {
+			strOutput := writer.GetOutput(test.Name())
+			if len(strOutput) > 0 {
+				sc := bufio.NewScanner(strings.NewReader(strOutput))
+				for sc.Scan() {
+					test.Log(sc.Text(), "")
+				}
+
+				// if the chatty printer has output, we skip the test output extraction
+				return
+			}
+		}
+	}
+
+	if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
+		strOutput := string(tCommon.GetOutput())
+		if len(strOutput) > 0 {
+			sc := bufio.NewScanner(strings.NewReader(strOutput))
+			for sc.Scan() {
+				test.Log(sc.Text(), "")
+			}
+		}
+	}
 }
