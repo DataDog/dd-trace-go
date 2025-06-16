@@ -1,1 +1,13 @@
+# Built binary
+api_extractor
 apiextractor
+api_extractor.test
+apiextractor.test
+
+# IDE files
+.idea/
+.vscode/
+
+# Test artifacts
+*.out
+*.prof
