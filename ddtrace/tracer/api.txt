@@ -34,17 +34,7 @@ type Logger interface {
 // File: noop.go
 
 // Types
-type NoopTracer interface {
-	func (NoopTracer) Extract(interface{}) (*SpanContext, error)
-	func (NoopTracer) Flush()
-	func (NoopTracer) Inject(*SpanContext, interface{}) (error)
-	func (NoopTracer) SetServiceInfo(string)
-	func (NoopTracer) StartSpan(string, ...StartSpanOption) (*Span)
-	func (NoopTracer) Stop()
-	func (NoopTracer) Submit(*Span)
-	func (NoopTracer) SubmitChunk(*Chunk)
-	func (NoopTracer) TracerConf() (TracerConf)
-}
+type NoopTracer struct {}
 
 func (NoopTracer) Extract(interface{}) (*SpanContext, error)
 func (NoopTracer) Flush()
@@ -207,24 +197,11 @@ type Sampler interface {
 // File: span.go
 
 // Types
-type Span interface {
-	func (*Span) AddEvent(string, ...SpanEventOption)
-	func (*Span) AddLink(SpanLink)
-	func (*Span) BaggageItem(string) (string)
-	func (*Span) Context() (*SpanContext)
-	func (*Span) Finish(...FinishOption)
-	func (*Span) Format(fmt.State, rune)
-	func (*Span) Root() (*Span)
-	func (*Span) SetBaggageItem(string)
-	func (*Span) SetOperationName(string)
-	func (*Span) SetTag(string, interface{})
-	func (*Span) SetUser(string, ...UserMonitoringOption)
-	func (*Span) StartChild(string, ...StartSpanOption) (*Span)
-	func (*Span) String() (string)
-}
+type Span struct {}
 
 func (*Span) AddEvent(string, ...SpanEventOption)
 func (*Span) AddLink(SpanLink)
+func (*Span) AsMap() (map[string]interface{})
 func (*Span) BaggageItem(string) (string)
 func (*Span) Context() (*SpanContext)
 func (*Span) Finish(...FinishOption)
@@ -290,16 +267,7 @@ type SpanEventOption func(*SpanEventConfig)()
 func FromGenericCtx(ddtrace.SpanContext) (*SpanContext)
 
 // Types
-type SpanContext interface {
-	func (*SpanContext) ForeachBaggageItem(func(string)(bool))
-	func (*SpanContext) SamplingPriority() (int, bool)
-	func (*SpanContext) SpanID() (uint64)
-	func (*SpanContext) SpanLinks() ([]SpanLink)
-	func (*SpanContext) TraceID() (string)
-	func (*SpanContext) TraceIDBytes() ([16]byte)
-	func (*SpanContext) TraceIDLower() (uint64)
-	func (*SpanContext) TraceIDUpper() (uint64)
-}
+type SpanContext struct {}
 
 func (*SpanContext) ForeachBaggageItem(func(string)(bool))
 func (*SpanContext) SamplingPriority() (int, bool)
@@ -372,7 +340,7 @@ func StartSpan(string, ...StartSpanOption) (*Span)
 func Stop()
 
 // Types
-type Chunk
+type Chunk struct {}
 
 type Tracer interface {
 	func Extract(interface{}) (*SpanContext, error)
