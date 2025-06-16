@@ -679,7 +679,7 @@ func BenchmarkEncoder(b *testing.B) {
 				b.Fatal(err)
 			}
 			b.ResetTimer()
-			for b.Loop() {
+			for i := 0; i < b.N; i++ {
 				encodable := Encodable{data: bytes}
 				var wafObj libddwaf.WAFObject
 				truncations, err := encodable.Encode(config, &wafObj, 0)
