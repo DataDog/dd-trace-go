@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/waferrors"
@@ -46,12 +45,18 @@ func NewEncodable(reader io.ReadCloser, limit int64) (*Encodable, error) {
 	}, nil
 }
 
+func NewEncodableFromData(data []byte, truncated bool) *Encodable {
+	return &Encodable{
+		truncated: truncated,
+		data:      data,
+	}
+}
+
 func (e *Encodable) ToEncoder(config libddwaf.EncoderConfig) *encoder {
-	iter := cfg.BorrowIterator(e.data)
 	return &encoder{
 		Encodable: e,
 		config:    config,
-		iter:      iter,
+		iter:      cfg.BorrowIterator(e.data),
 	}
 }
 
@@ -60,8 +65,7 @@ func (e *Encodable) Encode(config libddwaf.EncoderConfig, obj *libddwaf.WAFObjec
 
 	defer cfg.ReturnIterator(encoder.iter)
 
-	err := encoder.Encode(obj, config.MaxObjectDepth-depth)
-	if err != nil && (errors.Is(err, waferrors.ErrTimeout) || !e.truncated) {
+	if err := encoder.Encode(obj, config.MaxObjectDepth-depth); err != nil && (errors.Is(err, waferrors.ErrTimeout) || !e.truncated) {
 		// Return an error if a waf timeout error occurred, or we are in normal parsing mode
 		return nil, err
 	}
@@ -75,7 +79,7 @@ func (e *Encodable) Encode(config libddwaf.EncoderConfig, obj *libddwaf.WAFObjec
 	if head < tail {
 		// If the iterator head is less than the tail, it means that there are still bytes left in the buffer,
 		// thus alerting that a structural parsing error occurred (other than due to truncation)
-		return nil, fmt.Errorf("malformed JSON: %w", err)
+		return nil, fmt.Errorf("malformed JSON, expected end of input but found more data")
 	}
 
 	return encoder.truncations, nil
@@ -86,10 +90,12 @@ type encoder struct {
 	truncations map[libddwaf.TruncationReason][]int
 	config      libddwaf.EncoderConfig
 	iter        *jsoniter.Iterator
-	iterReflect reflect.Value
 }
 
-var cfg = jsoniter.ConfigFastest
+var cfg = jsoniter.Config{
+	MarshalFloatWith6Digits: true,
+	EscapeHTML:              true,
+}.Froze()
 
 type skipError struct{}
 
