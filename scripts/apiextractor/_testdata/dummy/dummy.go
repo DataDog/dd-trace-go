@@ -46,5 +46,24 @@ type ArrayTestType struct {
 	MultiDimArray [2][3]int
 }
 
+// EmptyStruct is an empty struct with methods (like NoopTracer)
+type EmptyStruct struct{}
+
+// DoSomething is a method on EmptyStruct
+func (EmptyStruct) DoSomething() string {
+	return "something"
+}
+
+// DoSomethingElse is another method on EmptyStruct with pointer receiver
+func (*EmptyStruct) DoSomethingElse() int {
+	return 42
+}
+
+// MyString is a type alias for string
+type MyString string
+
+// MyInt is a type alias for int
+type MyInt int
+
 // dummyUnexportedFunc is an unexported function
 func dummyUnexportedFunc() {}

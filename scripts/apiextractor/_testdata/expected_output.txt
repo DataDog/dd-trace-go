@@ -25,6 +25,15 @@ type DummyStruct struct {
 func (*DummyStruct) AnotherExportedMethod()
 func (DummyStruct) ExportedMethod()
 
+type EmptyStruct struct {}
+
+func (EmptyStruct) DoSomething() (string)
+func (*EmptyStruct) DoSomethingElse() (int)
+
+type MyInt int
+
+type MyString string
+
 // File: package1/package1.go
 
 // Package Functions

@@ -42,53 +42,76 @@ func (f funcSpec) String() string {
 	return b.String()
 }
 
+// extractFromNode inspects the AST of a file and returns its exported functions and types (with methods).
 func extractFromNode(node *ast.File) ([]funcSpec, []*typeSpec) {
-	var (
-		funcs []funcSpec
-		types = make(map[string]*typeSpec)
-	)
+	var funcs []funcSpec
+	// First, collect exported type declarations
+	typesMap := make(map[string]*typeSpec)
 	for _, decl := range node.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			if !d.Name.IsExported() {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			typSpec := spec.(*ast.TypeSpec)
+			if !typSpec.Name.IsExported() {
 				continue
 			}
-			f := funcSpec{
-				name:   d.Name.Name,
-				params: formatFieldList(d.Type.Params),
+			ts := &typeSpec{name: typSpec.Name.Name}
+			switch typ := typSpec.Type.(type) {
+			case *ast.StructType:
+				ts.kind = kindStruct
+				ts.fields = extractFromStructType(typ)
+				sort.Slice(ts.fields, func(i, j int) bool {
+					return ts.fields[i].name < ts.fields[j].name
+				})
+			case *ast.InterfaceType:
+				ts.kind = kindInterface
+				ts.methods = extractFromInterfaceType(typ)
+				sort.Slice(ts.methods, func(i, j int) bool {
+					return ts.methods[i].name < ts.methods[j].name
+				})
+			default:
+				ts.kind = kindAlias
+				ts.underlying = formatExpr(typ)
 			}
-			if d.Type.Results != nil {
-				f.returns = formatFieldList(d.Type.Results)
-			}
-			if d.Recv == nil {
-				funcs = append(funcs, f)
-				continue
-			}
-			f.receiver = formatReceiver(d.Recv.List[0].Type)
-			typeName := getTypeName(d.Recv.List[0].Type)
-			if t, ok := types[typeName]; ok {
-				t.methods = append(t.methods, f)
-
-			}
-		case *ast.GenDecl:
-			if d.Tok != token.TYPE {
-				continue
-			}
-			typ := extractFromGenDecl(d)
-			for _, t := range typ {
-				types[t.name] = t
-			}
+			typesMap[ts.name] = ts
 		}
 	}
+	// Next, collect exported functions and associate methods with types
+	for _, decl := range node.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || !fn.Name.IsExported() {
+			continue
+		}
+		f := funcSpec{
+			name:   fn.Name.Name,
+			params: formatFieldList(fn.Type.Params),
+		}
+		if fn.Type.Results != nil {
+			f.returns = formatFieldList(fn.Type.Results)
+		}
+		if fn.Recv == nil {
+			funcs = append(funcs, f)
+			continue
+		}
+		f.receiver = formatReceiver(fn.Recv.List[0].Type)
+		typeName := getTypeName(fn.Recv.List[0].Type)
+		if ts, ok := typesMap[typeName]; ok {
+			ts.methods = append(ts.methods, f)
+		}
+	}
+	// Sort functions by name
 	sort.Slice(funcs, func(i, j int) bool {
 		return funcs[i].name < funcs[j].name
 	})
+	// Collect and sort types and their methods
 	var foundTypes []*typeSpec
-	for _, t := range types {
-		sort.Slice(t.methods, func(i, j int) bool {
-			return t.methods[i].name < t.methods[j].name
+	for _, ts := range typesMap {
+		sort.Slice(ts.methods, func(i, j int) bool {
+			return ts.methods[i].name < ts.methods[j].name
 		})
-		foundTypes = append(foundTypes, t)
+		foundTypes = append(foundTypes, ts)
 	}
 	sort.Slice(foundTypes, func(i, j int) bool {
 		return foundTypes[i].name < foundTypes[j].name
@@ -111,32 +134,46 @@ func getTypeName(expr ast.Expr) string {
 	return ""
 }
 
+// typeKind represents the kind of type declaration
+type typeKind int
+
+const (
+	kindStruct typeKind = iota
+	kindInterface
+	kindAlias
+)
+
 type typeSpec struct {
 	name       string
 	underlying string // For type definitions.
 	fields     []fieldSpec
 	methods    []funcSpec
+	kind       typeKind
 }
 
 func (t typeSpec) String() string {
 	var b strings.Builder
 	b.WriteString("type ")
 	b.WriteString(t.name)
-	if t.underlying != "" {
+
+	switch t.kind {
+	case kindAlias:
 		b.WriteString(" ")
 		b.WriteString(t.underlying)
 		return b.String()
-	}
-
-	if len(t.fields) > 0 {
-		b.WriteString(" struct {\n")
-		for _, f := range t.fields {
-			b.WriteString("\t")
-			b.WriteString(f.String())
-			b.WriteString("\n")
+	case kindStruct:
+		if len(t.fields) > 0 {
+			b.WriteString(" struct {\n")
+			for _, f := range t.fields {
+				b.WriteString("\t")
+				b.WriteString(f.String())
+				b.WriteString("\n")
+			}
+			b.WriteString("}")
+		} else {
+			b.WriteString(" struct {}")
 		}
-		b.WriteString("}")
-	} else if len(t.methods) > 0 {
+	case kindInterface:
 		b.WriteString(" interface {\n")
 		for _, m := range t.methods {
 			b.WriteString("\t")
@@ -168,16 +205,19 @@ func extractFromGenDecl(d *ast.GenDecl) []*typeSpec {
 		types = append(types, ts)
 		switch typ := typSpec.Type.(type) {
 		case *ast.StructType:
+			ts.kind = kindStruct
 			ts.fields = extractFromStructType(typ)
 			sort.Slice(ts.fields, func(i, j int) bool {
 				return ts.fields[i].name < ts.fields[j].name
 			})
 		case *ast.InterfaceType:
+			ts.kind = kindInterface
 			ts.methods = extractFromInterfaceType(typ)
 			sort.Slice(ts.methods, func(i, j int) bool {
 				return ts.methods[i].name < ts.methods[j].name
 			})
 		default:
+			ts.kind = kindAlias
 			ts.underlying = formatExpr(typ)
 		}
 	}
