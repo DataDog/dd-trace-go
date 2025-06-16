@@ -52,6 +52,7 @@ func TestSCAEnabled(t *testing.T) {
 			}
 
 			telemetryClient := new(telemetrytest.MockClient)
+			telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar, ID: 0}}).Return()
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
 			if tc.telemetryLog != "" {
 				telemetryClient.On("Log", telemetry.LogError, tc.telemetryLog, []telemetry.LogOption(nil)).Return()
@@ -61,10 +62,10 @@ func TestSCAEnabled(t *testing.T) {
 			registerSCAAppConfigTelemetry()
 
 			if tc.telemetryExpected {
-				telemetryClient.AssertCalled(t, "RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar)
-				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 1)
+				telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar, ID: 0}})
+				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 1)
 			} else {
-				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 0)
+				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 0)
 			}
 			if tc.telemetryLog != "" {
 				telemetryClient.AssertCalled(t, "Log", telemetry.LogError, tc.telemetryLog, []telemetry.LogOption(nil))

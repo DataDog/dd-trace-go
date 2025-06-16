@@ -17,6 +17,10 @@ func (s *stableConfig) get(key string) string {
 	return s.Config[key]
 }
 
+func (s *stableConfig) getID() int {
+	return s.ID
+}
+
 // isEmpty checks if the config is considered empty (no ID and no config entries).
 func (s *stableConfig) isEmpty() bool {
 	return s.ID == -1 && len(s.Config) == 0
