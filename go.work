@@ -27,6 +27,7 @@ use (
 	./contrib/go-redis/redis.v7
 	./contrib/go-redis/redis.v8
 	./contrib/go.mongodb.org/mongo-driver
+	./contrib/go.mongodb.org/mongo-driver.v2
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
 	./contrib/gomodule/redigo
@@ -71,6 +72,9 @@ use (
 	./orchestrion/all
 	./scripts/apiextractor
 	./scripts/autoreleasetagger
+	./scripts/autoreleasetagger/testdata/root
+	./scripts/autoreleasetagger/testdata/root/moduleA
+	./scripts/autoreleasetagger/testdata/root/moduleB
 	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage
