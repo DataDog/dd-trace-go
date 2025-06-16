@@ -200,7 +200,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'DataDog/system-tests'
-          ref: refs/heads/dario.castane/AIT-3705/dd-trace-go.v2
+          ref: ${{ inputs.ref }}
 
       - name: Set service extensions callout image name
         run: echo "ghcr.io/datadog/dd-trace-go/service-extensions-callout:dev" > binaries/golang-service-extensions-callout-image
