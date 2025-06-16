@@ -30,16 +30,10 @@ func newLogger(pkg Package) *logger {
 
 func (l logger) Debug(msg string, args ...any) {
 	log.Debug(msg, args...)
-	if hasErrors(args...) {
-		telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
-	}
 }
 
 func (l logger) Info(msg string, args ...any) {
 	log.Info(msg, args...)
-	if hasErrors(args...) {
-		telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
-	}
 }
 
 func (l logger) Warn(msg string, args ...any) {

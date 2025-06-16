@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -34,7 +35,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1825,7 +1825,7 @@ func TestWithStatsComputation(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newConfig()
 		assert.NoError(err)
-		assert.False(c.statsComputationEnabled)
+		assert.True(c.statsComputationEnabled)
 	})
 	t.Run("enabled-via-option", func(t *testing.T) {
 		assert := assert.New(t)
@@ -1893,6 +1893,25 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(spanID, s.spanID)
 	assert.Equal(ext.SpanTypeWeb, s.spanType)
 	assert.Equal(tm.UnixNano(), s.start)
+}
+
+func TestNewFinishConfig(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		now    = time.Now()
+		err    = errors.New("error")
+	)
+	cfg := NewFinishConfig(
+		FinishTime(now),
+		WithError(err),
+		StackFrames(10, 0),
+		NoDebugStack(),
+	)
+	assert.True(cfg.NoDebugStack)
+	assert.Equal(now, cfg.FinishTime)
+	assert.Equal(err, cfg.Error)
+	assert.Equal(uint(10), cfg.StackFrames)
+	assert.Equal(uint(0), cfg.SkipStackFrames)
 }
 
 func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {

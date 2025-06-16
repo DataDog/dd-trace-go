@@ -609,9 +609,7 @@ func extractTravis() map[string]string {
 	tags[constants.CIJobURL] = os.Getenv("TRAVIS_JOB_WEB_URL")
 	tags[constants.GitCommitMessage] = os.Getenv("TRAVIS_COMMIT_MESSAGE")
 
-	tags[constants.GitHeadCommit] = os.Getenv("TRAVIS_PULL_REQUEST_SHA")
 	tags[constants.GitPrBaseBranch] = os.Getenv("TRAVIS_PULL_REQUEST_BRANCH")
-
 	return tags
 }
 

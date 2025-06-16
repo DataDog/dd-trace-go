@@ -297,4 +297,7 @@ type Test interface {
 
 	// SetBenchmarkData sets benchmark data for the test.
 	SetBenchmarkData(measureType string, data map[string]any)
+
+	// Log logs a message with the given tags.
+	Log(message string, tags string)
 }

@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // Callback represents a function that can process a remote config update.
@@ -126,6 +126,8 @@ const (
 	APMTracingEnableLiveDebugging
 	// ASMDDMultiConfig represents the capability to handle multiple ASM_DD configuration objects
 	ASMDDMultiConfig
+	// ASMTraceTaggingRules represents the capability to honor trace tagging rules
+	ASMTraceTaggingRules
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.
@@ -645,6 +647,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Service:       c.ServiceName,
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
+				ProcessTags:   processtags.GlobalTags().Slice(),
 			},
 			Capabilities: capa.Bytes(),
 		},

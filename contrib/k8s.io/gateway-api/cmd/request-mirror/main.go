@@ -8,7 +8,6 @@ package main
 import (
 	"net/http"
 	"os"
-	"runtime/debug"
 
 	gatewayapi "github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -21,17 +20,6 @@ var (
 	instr  = instrumentation.Load(instrumentation.PackageK8SGatewayAPI)
 	logger = instr.Logger()
 )
-
-func getTracerVersion() string {
-	info, _ := debug.ReadBuildInfo()
-	for _, dep := range info.Deps {
-		if dep.Path == "github.com/DataDog/dd-trace-go/v2" {
-			return dep.Version
-		}
-	}
-
-	return ""
-}
 
 type Config struct {
 	ListenAddr      string
@@ -58,7 +46,7 @@ func getConfig() Config {
 func main() {
 	config := getConfig()
 
-	if err := tracer.Start(tracer.WithServiceVersion(getTracerVersion())); err != nil {
+	if err := tracer.Start(tracer.WithServiceVersion(instrumentation.Version())); err != nil {
 		logger.Error("Failed to start tracer: %v", err)
 		os.Exit(1)
 	}

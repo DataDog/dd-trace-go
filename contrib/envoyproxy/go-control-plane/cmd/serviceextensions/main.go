@@ -22,6 +22,7 @@ import (
 
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/gorilla/mux"
@@ -63,7 +64,7 @@ var log = NewLogger()
 func main() {
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
-		if err := os.Setenv("DD_VERSION", version); err != nil {
+		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
 			log.Error("service_extension: failed to set DD_VERSION environment variable: %v\n", err)
 		}
 	}
@@ -115,7 +116,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version + `"}}`))
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + instrumentation.Version() + `"}}`))
 	})
 
 	server := &http.Server{
@@ -159,6 +160,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 		gocontrolplane.AppsecEnvoyConfig{
 			IsGCPServiceExtension: true,
 			BlockingUnavailable:   config.observabilityMode,
+			Context:               ctx,
 		})
 
 	go func() {
