@@ -1,4 +1,4 @@
-// Package redigo provides functions to trace the garyburd/redigo package (https://github.com/garyburd/redigo).
+// Package redigo provides functions to trace the [github.com/garyburd/redigo/redis] package.
 package redigo
 
 import (
@@ -15,13 +15,13 @@ import (
 	"github.com/DataDog/dd-trace-go/tracer/ext"
 )
 
-// Conn is an implementation of the redis.Conn interface that supports tracing
+// Conn is an implementation of the [redis.Conn] interface that supports tracing.
 type Conn struct {
 	redis.Conn
 	*params
 }
 
-// params contains fields and metadata useful for command tracing
+// params contains fields and metadata useful for command tracing.
 type params struct {
 	config  *dialConfig
 	network string
@@ -29,9 +29,9 @@ type params struct {
 	port    string
 }
 
-// parseOptions parses a set of arbitrary options (which can be of type redis.DialOption
-// or the local DialOption) and returns the corresponding redis.DialOption set as well as
-// a configured dialConfig.
+// parseOptions parses a set of arbitrary options (which can be of type [redis.DialOption]
+// or the local [DialOption]) and returns the corresponding [redis.DialOption] set as well as
+// a configured [dialConfig].
 func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 	dialOpts := []redis.DialOption{}
 	cfg := new(dialConfig)
@@ -47,8 +47,8 @@ func parseOptions(options ...interface{}) ([]redis.DialOption, *dialConfig) {
 	return dialOpts, cfg
 }
 
-// Dial dials into the network address and returns a traced redis.Conn.
-// The set of supported options must be either of type redis.DialOption or this package's DialOption.
+// Dial dials into the network address and returns a traced [redis.Conn].
+// The set of supported options must be either of type [redis.DialOption] or this package's [DialOption].
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
 	c, err := redis.Dial(network, address, dialOpts...)
@@ -67,7 +67,7 @@ func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
 // DialURL connects to a Redis server at the given URL using the Redis
 // URI scheme. URLs should follow the draft IANA specification for the
 // scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
-// The returned redis.Conn is traced.
+// The returned [redis.Conn] is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
 	u, err := url.Parse(rawurl)
@@ -88,7 +88,7 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 	return tc, err
 }
 
-// newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection
+// newChildSpan creates a span inheriting from the given context. It adds to the span useful metadata about the traced Redis connection.
 func (tc Conn) newChildSpan(ctx context.Context) *tracer.Span {
 	p := tc.params
 	span := p.config.tracer.NewChildSpanFromContext("redis.command", ctx)
@@ -99,9 +99,9 @@ func (tc Conn) newChildSpan(ctx context.Context) *tracer.Span {
 	return span
 }
 
-// Do wraps redis.Conn.Do. It sends a command to the Redis server and returns the received reply.
+// Do wraps [redis.Conn.Do]. It sends a command to the Redis server and returns the received reply.
 // In the process it emits a span containing key information about the command sent.
-// When passed a context.Context as the final argument, Do will ensure that any span created
+// When passed a [context.Context] as the final argument, Do will ensure that any span created
 // inherits from this context. The rest of the arguments are passed through to the Redis server unchanged.
 func (tc Conn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	var (
