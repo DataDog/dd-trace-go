@@ -1,0 +1,21 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "file_format": {
+            "type": "string",
+            "description": "Version of the configuration file format"
+        },
+        "disabled": {
+            "type": "boolean",
+            "description": "Whether tracing is disabled"
+        },
+        "log_level": {
+            "type": "string",
+            "description": "Logging level for the tracer",
+            "enum": ["debug", "info", "warn", "error"]
+        }
+    },
+    "required": ["file_format"],
+    "additionalProperties": false
+} 

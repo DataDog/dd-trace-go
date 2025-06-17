@@ -1,84 +1,91 @@
 package declarativeconfig
 
 import (
-	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/xeipuuv/gojsonschema"
 	"gopkg.in/yaml.v3"
-	// "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-var filePath = os.Getenv("DD_TRACE_OTEL_CONFIG_FILE_PATH")
+const DD_TRACE_OTEL_CONFIG_FILE_PATH = "DD_TRACE_OTEL_CONFIG_FILE_PATH"
 
-var config = parseFile()
+var (
+	filePath         = os.Getenv(DD_TRACE_OTEL_CONFIG_FILE_PATH)
+	ErrNotConfigured = errors.New(DD_TRACE_OTEL_CONFIG_FILE_PATH + "not configured")
+)
 
-//go:embed schema_v040.json
-var schemaFS embed.FS
+var config = newConfig()
 
-func validateConfig(configJSON []byte) error {
-	schemaBytes, err := schemaFS.ReadFile("schema_v040.json")
-	if err != nil {
-		return fmt.Errorf("failed to read embedded schema: %w", err)
+func validateConfig(rawYAML []byte) (map[string]interface{}, error) {
+	// Step 1: Unmarshal YAML into generic map
+	var configData map[string]any
+	if err := yaml.Unmarshal(rawYAML, &configData); err != nil {
+		return nil, fmt.Errorf("invalid YAML: %v", err)
 	}
 
+	// Step 2: Marshal to JSON for validation
+	configJSON, err := json.Marshal(configData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert YAML to JSON: %v", err)
+	}
+
+	// Step 3: Load schema from local file
+	schemaPath := "schema.json"
+	schemaBytes, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read schema file %s: %v", schemaPath, err)
+	}
+
+	// Step 4: Validate using local schema
 	schemaLoader := gojsonschema.NewBytesLoader(schemaBytes)
 	configLoader := gojsonschema.NewBytesLoader(configJSON)
 
 	result, err := gojsonschema.Validate(schemaLoader, configLoader)
 	if err != nil {
-		return fmt.Errorf("schema validation error: %w", err)
+		return nil, fmt.Errorf("validation failed: %v", err)
 	}
 
 	if !result.Valid() {
-		// TODO: Join the errors and return them
-		for _, e := range result.Errors() {
-			fmt.Printf("Validation error: %s\n", e)
+		var errors []string
+		for _, desc := range result.Errors() {
+			errors = append(errors, desc.String())
 		}
-		return fmt.Errorf("configuration is not valid")
+		return nil, fmt.Errorf("config is invalid:\n%s", strings.Join(errors, "\n"))
 	}
 
-	return nil
+	return configData, nil
 }
 
-func parseFile() *declarativeConfig {
+func readFile(filePath string) ([]byte, error) {
 	if filePath == "" {
-		return nil
+		return nil, ErrNotConfigured
 	}
-	rawYaml, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
-		// log about it
-		return nil
+		return nil, fmt.Errorf("error reading config file: %v", err)
 	}
-	var dc declarativeConfig
-	unmarshal(rawYaml, &dc)
-	return &dc
+	return data, nil
 }
 
-func unmarshal(data []byte, dc *declarativeConfig) {
-	// Unmarshal YAML into generic map to convert to JSON
-	var intermediate map[string]interface{}
-	if err := yaml.Unmarshal(data, &intermediate); err != nil {
-		// log about it
-		return
-	}
-
-	jsonData, err := json.Marshal(intermediate)
+func newConfig() *declarativeConfigMap {
+	data, err := readFile(filePath)
 	if err != nil {
-		// log about it
-		return
+		// If err is ErrNotConfigured
+		if err != ErrNotConfigured {
+			log.Debug("Error sourcing declarative configuration: %v", err)
+		}
+		return nil
 	}
-
-	if err := validateConfig(jsonData); err != nil {
-		// log about it
-		fmt.Println("Configuration validation failed:", err)
-		return
+	config, err := validateConfig(data)
+	if err != nil {
+		log.Debug("Error validating declarative configuration schema: %v", err)
+		return nil
 	}
-
-	if err := yaml.Unmarshal(data, dc); err != nil {
-		// log about it
-		return
-	}
+	configMap := declarativeConfigMap(config)
+	return &configMap
 }
