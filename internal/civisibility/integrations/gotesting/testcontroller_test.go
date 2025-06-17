@@ -1078,6 +1078,7 @@ func setUpHTTPServer(
 			var newEntries []*mockedLogEntry
 			if err := json.Unmarshal(body, &newEntries); err != nil {
 				fmt.Printf("MockApi received invalid logs payload: %s\n", err)
+				fmt.Printf("Payload: %s\n", string(body))
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
