@@ -36,20 +36,19 @@ func newConfig(serviceName string) *config {
 	}
 }
 
-// Option describes options for the Gin integration.
-type Option interface {
-	apply(*config)
-}
+// Option describes an option for the Gin integration.
+type Option = option
 
-// OptionFn represents options applicable to Middleware.
-type OptionFn func(*config)
+// option is the hidden concrete implementation of [Option] using the functional options pattern.
+type option func(*config)
 
-func (fn OptionFn) apply(cfg *config) {
-	fn(cfg)
-}
+// OptionFn is an implementation detail of [Option].
+//
+// Deprecated: use [Option].
+type OptionFn = Option
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) OptionFn {
+func WithAnalytics(on bool) Option {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -61,7 +60,7 @@ func WithAnalytics(on bool) OptionFn {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) OptionFn {
+func WithAnalyticsRate(rate float64) Option {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -73,7 +72,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 
 // WithResourceNamer specifies a function which will be used to obtain a resource name for a given
 // gin request, using the request's context.
-func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
+func WithResourceNamer(namer func(c *gin.Context) string) Option {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
 	}
@@ -83,7 +82,7 @@ func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) OptionFn {
+func WithHeaderTags(headers []string) Option {
 	return func(cfg *config) {
 		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
@@ -91,7 +90,7 @@ func WithHeaderTags(headers []string) OptionFn {
 
 // WithIgnoreRequest specifies a function to use for determining if the
 // incoming HTTP request tracing should be skipped.
-func WithIgnoreRequest(f func(c *gin.Context) bool) OptionFn {
+func WithIgnoreRequest(f func(c *gin.Context) bool) Option {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
 	}
