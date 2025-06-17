@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
 )
