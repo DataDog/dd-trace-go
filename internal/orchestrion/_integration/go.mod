@@ -63,6 +63,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.21
 	github.com/xlab/treeprint v1.2.0
 	go.mongodb.org/mongo-driver v1.17.1
+	go.mongodb.org/mongo-driver/v2 v2.2.2
 	google.golang.org/api v0.176.1
 	google.golang.org/grpc v1.71.1
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
@@ -106,6 +107,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.1.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.1.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.1.0-dev.2 // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.1.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.1.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.1.0-dev.2 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.1.0-dev.2 // indirect
@@ -215,7 +217,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-tpm v0.9.3 // indirect
@@ -406,6 +408,8 @@ replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 => ../../../
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 => ../../../contrib/go-redis/redis
 
 replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 => ../../../contrib/go.mongodb.org/mongo-driver
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2
 
 replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 => ../../../contrib/gocql/gocql
 
