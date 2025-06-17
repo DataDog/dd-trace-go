@@ -42,8 +42,6 @@ func (NoopTracer) Inject(*SpanContext, interface{}) (error)
 func (NoopTracer) SetServiceInfo(string)
 func (NoopTracer) StartSpan(string, ...StartSpanOption) (*Span)
 func (NoopTracer) Stop()
-func (NoopTracer) Submit(*Span)
-func (NoopTracer) SubmitChunk(*Chunk)
 func (NoopTracer) TracerConf() (TracerConf)
 
 // File: option.go
@@ -340,8 +338,6 @@ func StartSpan(string, ...StartSpanOption) (*Span)
 func Stop()
 
 // Types
-type Chunk struct {}
-
 type Tracer interface {
 	func Extract(interface{}) (*SpanContext, error)
 	func Flush()
