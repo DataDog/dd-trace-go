@@ -371,7 +371,6 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 	}
 }
 
-// TODO: Add tests for non-httptrace http integrations
 func TestStartRequestSpanWithBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
 	tracer.Start()
@@ -381,7 +380,7 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	r.Header.Set("baggage", "key1=value1,key2=value2")
 	s, ctx, _ := StartRequestSpan(r)
 	s.Finish()
-	// Crux of the issue: We want baggage headers accessible with r.Context (baggage.All(r.Context())) -- not the generated span's context.
+	// TODO: This behavior is not ideal. We want baggage headers accessible with r.Context (baggage.All(r.Context())) -- not the generated span's context.
 	spanBm := make(map[string]string)
 	s.Context().ForeachBaggageItem(func(k, v string) bool {
 		spanBm[k] = v
@@ -421,16 +420,20 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
 }
 
+// TestStartRequestSpanOnlyBaggageCreatesNewTrace verifies that when only baggage headers are present
+// (no trace/span IDs), a new trace is created with a non-zero trace ID while still preserving the baggage.
 func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
 	tracer.Start()
 	defer tracer.Stop()
-	// only a baggage header, no real trace/span IDs
+
+	// Create a request with only baggage header, no trace context
 	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
 	req.Header.Set("baggage", "foo=bar")
 
 	span, ctx, _ := StartRequestSpan(req)
 	span.Finish()
 
+	// Verify that a new trace was created with a non-zero trace ID
 	sc := span.Context()
 	lower := sc.TraceIDLower()
 	assert.NotZero(
@@ -439,7 +442,7 @@ func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
 		"expected a new non‐zero TraceIDLower when only baggage header is present",
 	)
 
-	// and we should still propagate the baggage
+	// Verify that baggage is still propagated despite the new trace
 	baggageMap := baggage.All(ctx)
 	assert.Equal(t, "bar", baggageMap["foo"], "should propagate baggage even when it's the only header")
 }

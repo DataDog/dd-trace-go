@@ -346,13 +346,11 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				hasBaggage:  1,
 				baggage:     make(map[string]string, len(pendingBaggage)),
 				baggageOnly: true,
 			}
 			maps.Copy(ctx.baggage, pendingBaggage)
-			// should we do this instead of setting hasBaggage: 1 directly? Does it matter?
-			// atomic.StoreUint32(&ctx.hasBaggage, 1)
+			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
 		}
 		// 0 successful extractions
@@ -1163,7 +1161,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 // - flags - represents the propagated flags in the format of 2 hex-encoded digits, and supports 8 unique flags.
 // Example value of HTTP `traceparent` header: `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`,
 // Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
-// stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
+// stored into a field that is accessible from the span's context. TraceId will be parsed from the least significant 16
 // hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *SpanContext, header string) error {
 	nonWordCutset := "_-\t \n"
@@ -1237,7 +1235,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 // with up to 32 comma-separated (,) list-members.
 // An example value would be: `vendorname1=opaqueValue1,vendorname2=opaqueValue2,dd=s:1;o:synthetics`,
 // Where `dd` list contains values that would be in x-datadog-tags as well as those needed for propagation information.
-// The keys to the “dd“ values have been shortened as follows to save space:
+// The keys to the "dd" values have been shortened as follows to save space:
 // `sampling_priority` = `s`
 // `origin` = `o`
 // `last parent` = `p`

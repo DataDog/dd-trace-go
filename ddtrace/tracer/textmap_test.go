@@ -2899,11 +2899,13 @@ func TestExtractOnlyBaggage(t *testing.T) {
 	assert.Equal(t, "qux", got["baz"])
 }
 
-// Ensure trace context from Datadog headers is used to continue the trace, but baggage is also inherited
+// TestExtractBaggageFirstThenDatadog verifies that when both baggage and trace headers are present,
+// the trace context (trace ID, parent ID, etc.) is extracted from trace headers, and the baggage items are properly inherited,
+// specifically when baggage has a higher precedence than trace headers in the propagation style.
 func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
 
-	// headers that include both baggage and valid Datadog trace headers.
+	// Set up headers with both baggage and Datadog trace context
 	headers := TextMapCarrier(map[string]string{
 		"baggage":             "item=xyz",
 		DefaultTraceIDHeader:  "12345",
@@ -2918,7 +2920,7 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 	ctx, err := tracer.Extract(headers)
 	assert.NoError(t, err)
 
-	// Even though baggage appears first, the trace ID must come from Datadog.
+	// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
 	expectedTraceID := traceIDFrom64Bits(12345)
 	assert.Equal(t, expectedTraceID, ctx.traceID)
 	assert.Equal(t, uint64(67890), ctx.spanID)
