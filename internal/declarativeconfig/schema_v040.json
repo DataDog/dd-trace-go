@@ -1,0 +1,74 @@
+{
+    "$id": "https://opentelemetry.io/otelconfig/opentelemetry_configuration.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "OpenTelemetryConfiguration",
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+        "file_format": {
+            "type": "string"
+        },
+        "disabled": {
+            "type": ["boolean", "null"]
+        },
+        "log_level": {
+            "type": ["string", "null"]
+        },
+        "attribute_limits": {
+            "$ref": "#/$defs/AttributeLimits"
+        },
+        "logger_provider": {
+            "$ref": "#/$defs/LoggerProvider"
+        },
+        "meter_provider": {
+            "$ref": "#/$defs/MeterProvider"
+        },
+        "propagator": {
+            "$ref": "#/$defs/Propagator"
+        },
+        "tracer_provider": {
+            "$ref": "#/$defs/TracerProvider"
+        },
+        "resource": {
+            "$ref": "#/$defs/Resource"
+        },
+        "instrumentation/development": {
+            "$ref": "#/$defs/ExperimentalInstrumentation"
+        }
+    },
+    "required": [
+        "file_format"
+    ],
+    "$defs": {
+        "AttributeLimits": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+                "attribute_value_length_limit": {
+                    "type": ["integer", "null"]
+                },
+                "attribute_count_limit": {
+                    "type": ["integer", "null"]
+                }
+            }
+        },
+        "LoggerProvider": {
+            "$ref": "logger_provider.json"
+        },
+        "MeterProvider": {
+            "$ref": "meter_provider.json"
+        },
+        "TracerProvider": {
+            "$ref": "tracer_provider.json"
+        },
+        "Propagator": {
+            "$ref": "propagator.json"
+        },
+        "Resource": {
+            "$ref": "resource.json"
+        },
+        "ExperimentalInstrumentation": {
+            "$ref": "instrumentation.json"
+        }
+    }
+}
