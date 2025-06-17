@@ -27,7 +27,7 @@ type OperationContext map[string]string
 func Load(pkg Package) *Instrumentation {
 	info, ok := packages[pkg]
 	if !ok {
-		panic("instrumentation package: " + pkg + " was not found. If this is an external package, you must" +
+		panic("instrumentation package: " + pkg + " was not found. If this is an external package, you must " +
 			"call instrumentation.Register first")
 	}
 
