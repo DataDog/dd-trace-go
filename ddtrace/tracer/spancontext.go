@@ -88,9 +88,9 @@ type SpanContext struct {
 
 	// the below group should propagate only locally
 
-	trace  *trace // reference to the trace that this span belongs too
-	span   *Span  // reference to the span that hosts this context
-	errors int32  // number of spans with errors in this trace
+	trace  *trace       // reference to the trace that this span belongs too
+	span   *Span        // reference to the span that hosts this context
+	errors atomic.Int32 // number of spans with errors in this trace
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -168,7 +168,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.traceID.SetUpper(parent.traceID.Upper())
 			context.trace = parent.trace
 			context.origin = parent.origin
-			context.errors = parent.errors
+			context.errors.Store(parent.errors.Load())
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
