@@ -978,6 +978,12 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 	if !spanResourcePIISafe(span) {
 		taskName = span.spanType
 	}
+	// The task name is an arbitrary string from the user. If it's too
+	// large, like a big SQL query, the execution tracer can crash when we
+	// create the task. Cap it at an arbirary length.  For "normal" task
+	// names this should be plenty that we can still have the task names for
+	// debugging.
+	taskName = taskName[:min(128, len(taskName))]
 	end := noopTaskEnd
 	if !globalinternal.IsExecutionTraced(ctx) {
 		var task *rt.Task
