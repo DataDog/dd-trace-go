@@ -21,6 +21,7 @@ func TestExtractPublicAPI(t *testing.T) {
 	expectedOutputFile := filepath.Join("_testdata", "expected_output.txt")
 
 	var buf bytes.Buffer
+
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
@@ -30,14 +31,21 @@ func TestExtractPublicAPI(t *testing.T) {
 	}
 
 	os.Stdout = old
-	w.Close()
-	io.Copy(&buf, r)
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close pipe: %v", err)
+	}
+
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("failed to copy output: %v", err)
+	}
 
 	// Update golden files if requested
 	if *update {
-		if err := os.WriteFile(expectedOutputFile, buf.Bytes(), 0644); err != nil {
+		if err := os.WriteFile(expectedOutputFile, buf.Bytes(), 0o644); err != nil {
 			t.Fatalf("failed to update golden file: %v", err)
 		}
+
 		return
 	}
 

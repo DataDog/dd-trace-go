@@ -454,7 +454,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.debugAbandonedSpans {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
-	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)

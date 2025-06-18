@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.1.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.1.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/stretchr/testify v1.10.0
@@ -23,7 +23,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.66.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.66.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
-	github.com/DataDog/go-libddwaf/v4 v4.1.0 // indirect
+	github.com/DataDog/go-libddwaf/v4 v4.2.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a // indirect
 	github.com/DataDog/go-sqllexer v0.1.6 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect

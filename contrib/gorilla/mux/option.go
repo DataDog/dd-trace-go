@@ -14,8 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const defaultServiceName = "mux.router"
-
 type routerConfig struct {
 	serviceName   string
 	spanOpts      []tracer.StartSpanOption // additional span options to be applied
