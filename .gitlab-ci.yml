@@ -37,6 +37,36 @@ trigger_child_pipeline:
     strategy: depend
   needs:
     - generate_matrix
+  variables:
+      PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
+check-big-regressions:
+  stage: benchmarks
+  needs:
+    - job: trigger_child_pipeline
+  when: on_success
+  tags: 
+    - "arch:amd64"
+  image: $BASE_CI_IMAGE
+  script:
+    - |
+      pwd
+      export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
+      git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+      git clone --branch hannahkm/parallel2 https://github.com/DataDog/benchmarking-platform platform && cd platform
+      ./steps/download-child-pipeline-artifacts.sh
+      pushd "${ARTIFACTS_DIR}/"
+      pwd
+      bp-runner ../platform/bp-runner.fail-on-regression.yml --debug
+  variables:
+    # Gitlab and BP specific env vars. Do not modify.
+    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - reports/
+    expire_in: "30 days"
 
 include:
   - local: ".gitlab/macrobenchmarks.yml"

@@ -36,6 +36,4 @@ func (NoopTracer) TracerConf() TracerConf {
 	return TracerConf{}
 }
 
-func (NoopTracer) Submit(*Span)       {}
-func (NoopTracer) SubmitChunk(*Chunk) {}
-func (NoopTracer) Flush()             {}
+func (NoopTracer) Flush() {}

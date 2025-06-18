@@ -746,7 +746,7 @@ func (s *Span) finish(finishTime int64) {
 
 	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
 	if hasTracer {
-		tracer.Submit(s)
+		tracer.submit(s)
 	}
 
 	if s.pprofCtxRestore != nil {

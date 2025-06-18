@@ -8,7 +8,7 @@ The migration tool will help developers to upgrade your tracing code from `dd-tr
 Use the migration tool by running:
 
 ```
-go install github.com/DataDog/dd-trace-go/tools/v2fix
+go install github.com/DataDog/dd-trace-go/tools/v2fix@latest
 # In your repository's directory
 v2fix .
 ```
