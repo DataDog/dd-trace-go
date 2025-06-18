@@ -207,8 +207,6 @@ func (t *mocktracer) TracerConf() tracer.TracerConf {
 	return tracer.TracerConf{}
 }
 
-func (t *mocktracer) Submit(*tracer.Span)       {}
-func (t *mocktracer) SubmitChunk(*tracer.Chunk) {}
 func (t *mocktracer) Flush() {
 	t.dsmProcessor.Flush()
 	for _, s := range t.OpenSpans() {

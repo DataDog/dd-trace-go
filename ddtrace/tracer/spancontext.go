@@ -88,9 +88,9 @@ type SpanContext struct {
 
 	// the below group should propagate only locally
 
-	trace  *trace // reference to the trace that this span belongs too
-	span   *Span  // reference to the span that hosts this context
-	errors int32  // number of spans with errors in this trace
+	trace  *trace       // reference to the trace that this span belongs too
+	span   *Span        // reference to the span that hosts this context
+	errors atomic.Int32 // number of spans with errors in this trace
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -166,7 +166,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		context.traceID.SetUpper(parent.traceID.Upper())
 		context.trace = parent.trace
 		context.origin = parent.origin
-		context.errors = parent.errors
+		context.errors.Store(parent.errors.Load())
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
@@ -548,10 +548,12 @@ func (t *trace) finishedOne(s *Span) {
 	}
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans
-		t.finishChunk(tr, &Chunk{
-			spans:    t.spans,
-			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-		})
+		if tr, ok := tr.(*tracer); ok {
+			t.finishChunk(tr, &chunk{
+				spans:    t.spans,
+				willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+			})
+		}
 		t.spans = nil
 		return
 	}
@@ -578,17 +580,17 @@ func (t *trace) finishedOne(s *Span) {
 		// Make sure the first span in the chunk has the trace-level tags
 		t.setTraceTags(finishedSpans[0])
 	}
-	t.finishChunk(tr, &Chunk{
-		spans:    finishedSpans,
-		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-	})
+	if tr, ok := tr.(*tracer); ok {
+		t.finishChunk(tr, &chunk{
+			spans:    finishedSpans,
+			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		})
+	}
 	t.spans = leftoverSpans
 }
 
-func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
-	if mtr, ok := tr.(interface{ SubmitChunk(*Chunk) }); ok {
-		mtr.SubmitChunk(ch)
-	}
+func (t *trace) finishChunk(tr *tracer, ch *chunk) {
+	tr.submitChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
