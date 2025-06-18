@@ -1,7 +1,7 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2024 Datadog, Inc.
+// Copyright 2025 Datadog, Inc.
 
 package json
 
@@ -15,8 +15,6 @@ import (
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/waferrors"
 	json "github.com/minio/simdjson-go"
-
-	backupencoder "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/internal/json"
 )
 
 type Encodable struct {
@@ -31,7 +29,7 @@ var (
 
 func NewEncodable(reader io.ReadCloser, limit int64) (libddwaf.Encodable, error) {
 	if !json.SupportedCPU() {
-		return backupencoder.NewEncodable(reader, limit)
+		return NewEncodable(reader, limit)
 	}
 
 	limitedReader := io.LimitedReader{
@@ -59,7 +57,7 @@ func newEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
 	if err != nil {
 		// This can happen if a trivial JSON type is found like a string or number, in this case simply return a
 		// simpler encoder where performance is not critical.
-		return backupencoder.NewEncodableFromData(data, truncated)
+		return newJSONIterEncodableFromData(data, truncated)
 	}
 
 	return &Encodable{
