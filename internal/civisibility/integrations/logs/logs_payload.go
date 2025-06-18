@@ -10,14 +10,13 @@ import (
 	"encoding/json"
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 // logsPayload is a slim copy of the logs payload struct.
 type logsPayload struct {
 	// count specifies the number of items in the stream.
-	count uint32
+	count int
 
 	// buf holds the sequence of json-encoded items.
 	buf *bytes.Buffer
@@ -59,10 +58,10 @@ func (p *logsPayload) push(logEntryData *logEntry) error {
 		return err
 	}
 
-	nextCount := atomic.AddUint32(&p.count, 1)
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if nextCount > 1 {
+	p.count = p.count + 1 // increment the count after acquiring the lock to ensure consistency
+	if p.count > 1 {
 		p.buf.WriteByte(',')
 	}
 	p.buf.Write(val)
@@ -71,7 +70,9 @@ func (p *logsPayload) push(logEntryData *logEntry) error {
 
 // itemCount returns the number of items available in the srteam.
 func (p *logsPayload) itemCount() int {
-	return int(atomic.LoadUint32(&p.count))
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.count
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
@@ -102,6 +103,7 @@ func (p *logsPayload) clear() {
 	defer p.mu.Unlock()
 	p.buf = bytes.NewBuffer([]byte{byte('[')})
 	p.reader = nil
+	p.count = 0
 }
 
 // Close implements io.Closer
