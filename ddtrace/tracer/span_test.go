@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -272,7 +271,7 @@ func TestShouldDrop(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
 			s.setSamplingPriority(tt.prio, samplernames.Default)
 			s.SetTag(ext.EventSampleRate, tt.rate)
-			atomic.StoreInt32(&s.context.errors, tt.errors)
+			s.context.errors.Store(tt.errors)
 			assert.Equal(t, shouldKeep(s), tt.want)
 		})
 	}
