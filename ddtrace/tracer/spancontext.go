@@ -551,10 +551,12 @@ func (t *trace) finishedOne(s *Span) {
 	}
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans
-		t.finishChunk(tr, &Chunk{
-			spans:    t.spans,
-			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-		})
+		if tr, ok := tr.(*tracer); ok {
+			t.finishChunk(tr, &chunk{
+				spans:    t.spans,
+				willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+			})
+		}
 		t.spans = nil
 		return
 	}
@@ -581,17 +583,17 @@ func (t *trace) finishedOne(s *Span) {
 		// Make sure the first span in the chunk has the trace-level tags
 		t.setTraceTags(finishedSpans[0])
 	}
-	t.finishChunk(tr, &Chunk{
-		spans:    finishedSpans,
-		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-	})
+	if tr, ok := tr.(*tracer); ok {
+		t.finishChunk(tr, &chunk{
+			spans:    finishedSpans,
+			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		})
+	}
 	t.spans = leftoverSpans
 }
 
-func (t *trace) finishChunk(tr Tracer, ch *Chunk) {
-	if mtr, ok := tr.(interface{ SubmitChunk(*Chunk) }); ok {
-		mtr.SubmitChunk(ch)
-	}
+func (t *trace) finishChunk(tr *tracer, ch *chunk) {
+	tr.submitChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
