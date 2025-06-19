@@ -370,24 +370,24 @@ func TestSamplingDecision(t *testing.T) {
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
 			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.prioritySampling.defaultRate = 0
+		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
-		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
+		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
 	t.Run("dropped_sent", func(t *testing.T) {
 		// Even if DropP0s is enabled, spans should always be kept unless
 		// client-side stats are also enabled.
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false))
 		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
@@ -395,7 +395,6 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -417,9 +416,6 @@ func TestSamplingDecision(t *testing.T) {
 		}()
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
-		tracer.config.agent.DropP0s = true
-		tracer.config.agent.Stats = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -440,7 +436,6 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -492,9 +487,7 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -578,7 +571,6 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
@@ -624,20 +616,23 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		tracer.Stop()
 
+		keptTraces := map[uint64]struct{}{}
 		var singleSpans, keptSpans int
 		for _, s := range spans {
 			if _, ok := s.metrics[keySpanSamplingMechanism]; ok {
 				singleSpans++
+				keptTraces[s.traceID] = struct{}{}
 				assert.Equal(t, 1.0, s.metrics[keySingleSpanSamplingRuleRate])
 				assert.Equal(t, 50.0, s.metrics[keySingleSpanSamplingMPS])
 			}
 			if s.metrics[keySamplingPriority] == ext.PriorityUserKeep {
 				keptSpans++
+				keptTraces[s.traceID] = struct{}{}
 			}
 		}
 		assert.Equal(t, 50, singleSpans)
 		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.19)
-		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(100-len(keptTraces)), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
@@ -696,14 +691,17 @@ func TestSamplingDecision(t *testing.T) {
 			s.Finish()
 		}
 		tracer.Stop()
+		keptTraces := map[uint64]struct{}{}
 		singleSpans, keptTotal, keptChildren := 0, 0, 0
 		for _, s := range spans {
 			if _, ok := s.metrics[keySpanSamplingMechanism]; ok {
 				singleSpans++
+				keptTraces[s.traceID] = struct{}{}
 				continue
 			}
 			if s.metrics[keySamplingPriority] == ext.PriorityUserKeep {
 				keptTotal++
+				keptTraces[s.traceID] = struct{}{}
 				if s.context.trace.root.spanID != s.spanID {
 					keptChildren++
 				}
@@ -711,7 +709,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.InDelta(t, 0.5, float64(singleSpans)/(float64(900-keptChildren)), 0.15)
 		assert.InDelta(t, 0.8, float64(keptTotal)/1000, 0.15)
-		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(100-len(keptTraces)), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 }
 
@@ -2319,6 +2317,9 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	if err != nil {
 		return tracer, transport, nil, nil, err
 	}
+	// These settings are always enabled on the trace-agent.
+	tracer.config.agent.Stats = true
+	tracer.config.agent.DropP0s = true
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		if n < 0 {
@@ -2612,7 +2613,6 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2634,7 +2634,6 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2660,7 +2659,6 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2795,8 +2793,6 @@ func TestEmptyChunksNotSent(t *testing.T) {
 	defer stop()
 
 	tracer.config.statsComputationEnabled = true
-	tracer.config.agent.DropP0s = true
-	tracer.config.agent.Stats = true
 	tracer.prioritySampling.defaultRate = 0
 	tracer.config.serviceName = "test_service"
 
