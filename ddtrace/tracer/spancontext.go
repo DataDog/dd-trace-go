@@ -113,7 +113,8 @@ type SpanContext struct {
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
 
-	spanLinks []SpanLink // links to related spans in separate|external|disconnected traces
+	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
+	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
@@ -163,10 +164,12 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		context.traceID.SetUpper(parent.traceID.Upper())
-		context.trace = parent.trace
-		context.origin = parent.origin
-		context.errors.Store(parent.errors.Load())
+		if !parent.baggageOnly {
+			context.traceID.SetUpper(parent.traceID.Upper())
+			context.trace = parent.trace
+			context.origin = parent.origin
+			context.errors.Store(parent.errors.Load())
+		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
