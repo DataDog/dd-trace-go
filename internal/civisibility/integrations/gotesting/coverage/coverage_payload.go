@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
@@ -58,7 +59,7 @@ func newCoveragePayload() *coveragePayload {
 func (p *coveragePayload) push(testCoverageData *ciTestCoverageData) error {
 	startTime := time.Now()
 	defer func() {
-		p.serializationTime += time.Since(startTime)
+		atomic.AddInt64((*int64)(&p.serializationTime), int64(time.Since(startTime)))
 	}()
 	p.mu.Lock()
 	defer p.mu.Unlock()
