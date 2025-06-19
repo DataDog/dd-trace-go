@@ -141,7 +141,7 @@ jobs:
           cache: true
           cache-dependency-path: |-
             ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
-            ${{ github.workspace }}/orchestrion/go.mod
+            ${{ github.workspace }}/orchestrion/all/go.mod
 
       - name: Set up orchestrion
         if: inputs.orchestrion-version != ''
