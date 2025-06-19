@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"io"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -53,7 +52,7 @@ func (p *logsPayload) push(logEntryData *logEntry) error {
 
 	startTime := time.Now()
 	defer func() {
-		atomic.AddInt64((*int64)(&p.serializationTime), int64(time.Since(startTime)))
+		p.serializationTime += time.Since(startTime)
 	}()
 
 	var val []byte
