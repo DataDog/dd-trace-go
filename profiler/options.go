@@ -186,6 +186,11 @@ func defaultConfig() (*config, error) {
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
 		compressionConfig:    os.Getenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"),
+		traceConfig: executionTraceConfig{
+			Enabled: internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault),
+			Period:  internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute),
+			Limit:   internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit),
+		},
 	}
 	c.tags = c.tags.Append(fmt.Sprintf("process_id:%d", os.Getpid()))
 	for _, t := range defaultProfileTypes {
@@ -272,8 +277,6 @@ func defaultConfig() (*config, error) {
 		c.maxGoroutinesWait = n
 	}
 
-	// Experimental feature: Go execution trace (runtime/trace) recording.
-	c.traceConfig.Refresh()
 	return &c, nil
 }
 
@@ -514,27 +517,6 @@ type executionTraceConfig struct {
 //
 // [article]: https://blog.felixge.de/waiting-for-go1-21-execution-tracing-with-less-than-one-percent-overhead/
 var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"
-
-// Refresh updates the execution trace configuration to reflect any run-time
-// changes to the configuration environment variables, applying defaults as
-// needed.
-func (e *executionTraceConfig) Refresh() {
-	e.Enabled = internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault)
-	e.Period = internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute)
-	e.Limit = internal.IntEnv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", defaultExecutionTraceSizeLimit)
-
-	if e.Enabled && (e.Period == 0 || e.Limit == 0) {
-		if !e.warned {
-			e.warned = true
-			log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution trace.")
-		}
-		e.Enabled = false
-		return
-	}
-	// If the config is valid, reset e.warned so we'll print another warning
-	// if it's udpated to be invalid
-	e.warned = false
-}
 
 // WithCustomProfilerLabelKeys specifies [profiler label] keys which should be
 // available as attributes for filtering frames for CPU and goroutine profile
