@@ -205,6 +205,7 @@ func (e *jsonIterEncoder) encodeObject(parentObj *libddwaf.WAFObject, depth int)
 		errs    []error
 		length  int
 		wafObjs []libddwaf.WAFObject
+		tail    = getIteratorTail(e.iter)
 	)
 
 	e.iter.ReadObjectCB(func(_ *jsoniter.Iterator, field string) bool {
@@ -220,11 +221,10 @@ func (e *jsonIterEncoder) encodeObject(parentObj *libddwaf.WAFObject, depth int)
 		}
 
 		if e.iter.Error != nil {
-			// Note: We reject every object where the key field could not be parsed.
+			// Note: We reject the object entry where the key field could not be parsed.
 			// A valid key field is considered to be a string wrapped inside quotes followed by a colon.
 			// We don't do partial parsing of the key, like assuming the key was full even if we don't detect the closing quote,
 			// this could cause bad API Security schema generation.
-			errs = append(errs, fmt.Errorf("failed to read object key %q: %w", field, e.iter.Error))
 			return false
 		}
 
@@ -234,7 +234,10 @@ func (e *jsonIterEncoder) encodeObject(parentObj *libddwaf.WAFObject, depth int)
 		e.encodeMapKeyFromString(field, entryObj)
 
 		if err := e.Encode(entryObj, depth); err != nil {
-			//wafObjs = wafObjs[:len(wafObjs)-1] // Remove the last element if encoding failed
+			if errors.Is(err, io.EOF) && e.truncated {
+				return true
+			}
+
 			entryObj.SetInvalid()
 			if err == skipErr || errors.Is(err, io.EOF) && e.truncated {
 				return true
@@ -251,8 +254,17 @@ func (e *jsonIterEncoder) encodeObject(parentObj *libddwaf.WAFObject, depth int)
 		e.addTruncation(libddwaf.ContainerTooLarge, length)
 	}
 
+	if e.iter.Error != nil {
+		err := e.iter.Error
+		head := getIteratorHead(e.iter)
+		if head == tail {
+			err = io.EOF
+		}
+
+		errs = append(errs, err)
+	}
+
 	parentObj.SetMapData(e.config.Pinner, wafObjs)
-	errs = append(errs, e.iter.Error)
 	return errors.Join(errs...)
 }
 
@@ -274,6 +286,7 @@ func (e *jsonIterEncoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) 
 		errs    []error
 		length  int
 		wafObjs []libddwaf.WAFObject
+		tail    = getIteratorTail(e.iter)
 	)
 
 	e.iter.ReadArrayCB(func(_ *jsoniter.Iterator) bool {
@@ -293,6 +306,10 @@ func (e *jsonIterEncoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) 
 		entryObj := &wafObjs[len(wafObjs)-1]
 
 		if err := e.Encode(entryObj, depth); err != nil {
+			if errors.Is(err, io.EOF) && e.truncated {
+				return true
+			}
+
 			wafObjs = wafObjs[:len(wafObjs)-1] // Remove the last element if encoding failed
 			if err == skipErr {
 				return true
@@ -313,7 +330,16 @@ func (e *jsonIterEncoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) 
 		e.addTruncation(libddwaf.ContainerTooLarge, length)
 	}
 
+	if e.iter.Error != nil {
+		err := e.iter.Error
+		head := getIteratorHead(e.iter)
+		if head == tail {
+			err = io.EOF
+		}
+
+		errs = append(errs, err)
+	}
+
 	parentObj.SetArrayData(e.config.Pinner, wafObjs)
-	errs = append(errs, e.iter.Error)
 	return errors.Join(errs...)
 }
