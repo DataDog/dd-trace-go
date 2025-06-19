@@ -18,7 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +32,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("appsec does not support Windows")
 	}
-	if ok, err := waf.Health(); !ok {
+	if ok, err := libddwaf.Usable(); !ok {
 		t.Skip("WAF is not available:", err)
 	}
 

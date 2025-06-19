@@ -15,10 +15,12 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -50,6 +52,8 @@ func EnsureCiVisibilityInitialization() {
 // InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
 func InitializeCIVisibilityMock() mocktracer.Tracer {
 	internalCiVisibilityInitialization(func([]tracer.StartOption) {
+		// Set the library to test mode
+		civisibility.SetTestMode()
 		// Initialize the mocktracer
 		mTracer = mocktracer.Start()
 	})
@@ -58,9 +62,13 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
 	ciVisibilityInitializationOnce.Do(func() {
+		civisibility.SetState(civisibility.StateInitializing)
+		defer civisibility.SetState(civisibility.StateInitialized)
+
 		// check the debug flag to enable debug logs. The tracer initialization happens
 		// after the CI Visibility initialization so we need to handle this flag ourselves
-		if internal.BoolEnv("DD_TRACE_DEBUG", false) {
+		// TODO: APMAPI-1358
+		if enabled, _, _ := stableconfig.Bool("DD_TRACE_DEBUG", false); enabled {
 			log.SetLevel(log.LevelDebug)
 		}
 
@@ -102,6 +110,14 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
+		// Initialize the logs
+		if logs.IsEnabled() {
+			log.Debug("civisibility: initializing logs for service: %s", serviceName)
+			logs.Initialize(serviceName)
+		} else {
+			log.Debug("civisibility: logs are disabled")
+		}
+
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -122,12 +138,20 @@ func PushCiVisibilityCloseAction(action ciVisibilityCloseAction) {
 
 // ExitCiVisibility executes all registered close actions and stops the tracer.
 func ExitCiVisibility() {
+	if civisibility.GetState() != civisibility.StateInitialized {
+		log.Debug("civisibility: already closed or not initialized")
+		return
+	}
+
+	civisibility.SetState(civisibility.StateExiting)
+	defer civisibility.SetState(civisibility.StateExited)
 	log.Debug("civisibility: exiting")
 	closeActionsMutex.Lock()
 	defer closeActionsMutex.Unlock()
 	defer func() {
 		closeActions = []ciVisibilityCloseAction{}
-
+		log.Debug("civisibility: flushing and stopping the logger")
+		logs.Stop()
 		log.Debug("civisibility: flushing and stopping tracer")
 		tracer.Flush()
 		tracer.Stop()

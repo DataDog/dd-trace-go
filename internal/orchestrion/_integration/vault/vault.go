@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	testvault "github.com/testcontainers/testcontainers-go/modules/vault"
 )
 
@@ -31,7 +32,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	var err error
 	tc.server, err = testvault.Run(ctx,
 		"vault:1.7.3", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		testvault.WithToken("root"),
 	)
@@ -70,7 +71,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 			Children: trace.Traces{
 				{
 					Tags: map[string]any{
-						"name":     "vault.command",
+						"name":     "http.request",
 						"service":  "vault",
 						"resource": "GET /v1/secret/key",
 						"type":     "http",

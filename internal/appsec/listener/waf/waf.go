@@ -11,11 +11,10 @@ import (
 	"time"
 
 	"github.com/DataDog/appsec-internal-go/limiter"
-	wafv3 "github.com/DataDog/go-libddwaf/v3"
-
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
@@ -24,13 +23,16 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 )
 
 type Feature struct {
 	timeout         time.Duration
 	limiter         *limiter.TokenTicker
-	handle          *wafv3.Handle
+	handle          *libddwaf.Handle
 	supportedAddrs  config.AddressSet
+	rulesVersion    string
 	reportRulesTags sync.Once
 
 	telemetryMetrics waf.HandleMetrics
@@ -41,7 +43,7 @@ type Feature struct {
 }
 
 func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature, error) {
-	if ok, err := wafv3.Load(); err != nil {
+	if ok, err := libddwaf.Load(); err != nil {
 		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
 		// Note that we assume here that the test for the unsupported target has been done before calling
 		// this method, so it is now considered an error for this method
@@ -52,10 +54,16 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		telemetrylog.Warn("appsec: non-critical error while loading libddwaf: %v", err, telemetry.WithTags([]string{"product:appsec"}))
 	}
 
-	newHandle, err := wafv3.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
-	telemetryMetrics := waf.NewMetricsInstance(newHandle, err)
-	if err != nil {
-		return nil, err
+	newHandle, rulesVersion := cfg.NewHandle()
+	telemetryMetrics := waf.NewMetricsInstance(newHandle, rulesVersion)
+	if newHandle == nil {
+		// As specified @ https://docs.google.com/document/d/1t6U7WXko_QChhoNIApn0-CRNe6SAKuiiAQIyCRPUXP4/edit?tab=t.0#bookmark=id.vddhd140geg7
+		telemetrylog.Error("Failed to build WAF instance: no valid rules or processors available", telemetry.WithTags([]string{
+			"log_type:rc::asm_dd::diagnostic",
+			"appsec_config_key:*",
+			"rc_config_id:*",
+		}))
+		return nil, fmt.Errorf("failed to obtain WAF instance from the waf.Builder (loaded paths: %q)", cfg.WAFManager.ConfigPaths(""))
 	}
 
 	cfg.SupportedAddresses = config.NewAddressSet(newHandle.Addresses())
@@ -70,6 +78,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		supportedAddrs:      cfg.SupportedAddresses,
 		telemetryMetrics:    telemetryMetrics,
 		metaStructAvailable: cfg.MetaStructAvailable,
+		rulesVersion:        rulesVersion,
 	}
 
 	dyngo.On(rootOp, feature.onStart)
@@ -80,12 +89,12 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 
 func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.reportRulesTags.Do(func() {
-		AddRulesMonitoringTags(op, waf.handle.Diagnostics())
+		AddRulesMonitoringTags(op)
 	})
 
-	ctx, err := waf.handle.NewContextWithBudget(waf.timeout)
+	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
 	if err != nil {
-		log.Debug("appsec: failed to create Feature context: %v", err)
+		log.Debug("appsec: failed to create WAF context: %v", err)
 	}
 
 	op.SwapContext(ctx)
@@ -104,6 +113,7 @@ func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
 		log.Debug("appsec: blocking event detected")
 		op.SetTag(blockedRequestTag, true)
+		op.SetRequestBlocked()
 	})
 
 	// Register the stacktrace if one is requested by a WAF action
@@ -126,10 +136,11 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 
 	ctx.Close()
 
-	stats := ctx.Stats()
+	truncations := ctx.Truncations()
+	timerStats := ctx.Timer.Stats()
 	metrics := op.GetMetricsInstance()
-	AddWAFMonitoringTags(op, metrics, waf.handle.Diagnostics().Version, stats)
-	metrics.RegisterStats(stats)
+	AddWAFMonitoringTags(op, metrics, waf.rulesVersion, truncations, timerStats)
+	metrics.Submit(truncations, timerStats)
 
 	if wafEvents := op.Events(); len(wafEvents) > 0 {
 		tagValue := map[string][]any{"triggers": wafEvents}

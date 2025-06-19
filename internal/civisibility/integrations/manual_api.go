@@ -63,6 +63,9 @@ type ddTslvEvent interface {
 
 	// SetTag sets a tag on the event.
 	SetTag(key string, value interface{})
+
+	// GetTag retrieves a tag from the event.
+	GetTag(key string) (interface{}, bool)
 }
 
 // TestSessionStartOption represents an option that can be passed to CreateTestSession.
@@ -294,4 +297,7 @@ type Test interface {
 
 	// SetBenchmarkData sets benchmark data for the test.
 	SetBenchmarkData(measureType string, data map[string]any)
+
+	// Log logs a message with the given tags.
+	Log(message string, tags string)
 }

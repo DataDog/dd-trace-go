@@ -25,7 +25,7 @@ func DeclaresType[T any]() Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
 		var (
 			obj     types.Object
-			typ     = ctx.Value("type")
+			typ     = ctx.Value(typeKey)
 			typDecl ast.Expr
 		)
 		switch typ {
@@ -56,15 +56,15 @@ func DeclaresType[T any]() Probe {
 		// We need to store the reflected type unconditionally
 		// to be able to introspect it later, even if the probe
 		// fails or is combined with Not.
-		ctx = context.WithValue(ctx, "declared_type", t)
-		ctx = context.WithValue(ctx, "pos", typDecl.Pos())
-		ctx = context.WithValue(ctx, "end", typDecl.End())
+		ctx = context.WithValue(ctx, declaredTypeKey, t)
+		ctx = context.WithValue(ctx, posKey, typDecl.Pos())
+		ctx = context.WithValue(ctx, endKey, typDecl.End())
 		v := new(T)
 		e := reflect.TypeOf(v).Elem()
 		if t.Obj().Pkg() == nil {
 			return ctx, false
 		}
-		ctx = context.WithValue(ctx, "pkg_name", t.Obj().Pkg().Name())
+		ctx = context.WithValue(ctx, pkgNameKey, t.Obj().Pkg().Name())
 		if t.Obj().Pkg().Path() != e.PkgPath() {
 			return ctx, false
 		}
@@ -82,7 +82,7 @@ func Is[T any](ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Co
 	if !ok {
 		return ctx, false
 	}
-	ctx = context.WithValue(ctx, "type", reflect.TypeOf(v).String())
+	ctx = context.WithValue(ctx, typeKey, reflect.TypeOf(v).String())
 	return ctx, true
 }
 
@@ -103,9 +103,27 @@ func IsFuncCall(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.C
 	if !ok {
 		return ctx, false
 	}
-	ctx = context.WithValue(ctx, "fn", fn)
-	ctx = context.WithValue(ctx, "args", c.Args)
-	ctx = context.WithValue(ctx, "pkg_path", fn.Pkg().Path())
+	ctx = context.WithValue(ctx, callExprKey, c)
+	ctx = context.WithValue(ctx, fnKey, fn)
+	ctx = context.WithValue(ctx, argsKey, c.Args)
+	pkg := fn.Pkg()
+	if pkg == nil {
+		// It could be a built-in function, in which case
+		// we don't know the package path.
+		return ctx, true
+	}
+	ctx = context.WithValue(ctx, pkgPathKey, pkg.Path())
+	sel, ok := c.Fun.(*ast.SelectorExpr)
+	if !ok {
+		// It might be a non-selector expression, in which case we don't know the package prefix.
+		return ctx, true
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		// It might be a non-selector expression, in which case we don't know the package prefix.
+		return ctx, true
+	}
+	ctx = context.WithValue(ctx, pkgPrefixKey, ident.Name)
 	return ctx, true
 }
 
@@ -117,7 +135,7 @@ func IsImport(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Con
 		return ctx, false
 	}
 	path := strings.Trim(imp.Path.Value, `"`)
-	ctx = context.WithValue(ctx, "pkg_path", path)
+	ctx = context.WithValue(ctx, pkgPathKey, path)
 	return ctx, true
 }
 
@@ -125,7 +143,7 @@ func IsImport(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Con
 // The package path is expected in the context as "pkg_path".
 func HasPackagePrefix(prefix string) Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
-		pkgPath, ok := ctx.Value("pkg_path").(string)
+		pkgPath, ok := ctx.Value(pkgPathKey).(string)
 		if !ok {
 			return ctx, false
 		}
@@ -138,7 +156,7 @@ func ImportedFrom(pkgPath string) Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
 		var (
 			obj types.Object
-			typ = ctx.Value("type")
+			typ = ctx.Value(typeKey)
 		)
 		switch typ {
 		case "*ast.ValueSpec":
@@ -172,7 +190,7 @@ func ImportedFrom(pkgPath string) Probe {
 
 func WithFunctionName(name string) Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
-		fn, ok := ctx.Value("fn").(*types.Func)
+		fn, ok := ctx.Value(fnKey).(*types.Func)
 		if !ok {
 			return ctx, false
 		}

@@ -3,6 +3,7 @@ go 1.23.0 // Go version must match the lowest supported version, not the highest
 use (
 	.
 	./.github/workflows/apps
+	./_tools
 	./contrib/99designs/gqlgen
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
@@ -26,6 +27,7 @@ use (
 	./contrib/go-redis/redis.v7
 	./contrib/go-redis/redis.v8
 	./contrib/go.mongodb.org/mongo-driver
+	./contrib/go.mongodb.org/mongo-driver.v2
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
 	./contrib/gomodule/redigo
@@ -42,6 +44,7 @@ use (
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
 	./contrib/k8s.io/client-go
+	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
 	./contrib/log/slog
 	./contrib/miekg/dns
@@ -59,17 +62,19 @@ use (
 	./contrib/valkey-io/valkey-go
 	./contrib/valyala/fasthttp
 	./instrumentation/internal/namingschematest
+	./instrumentation/internal/validationtest
 	./instrumentation/testutils/grpc
 	./internal/apps
-	./internal/contrib/validationtest
 	./internal/exectracetest
 	./internal/orchestrion/_integration
 	./internal/setup-smoke-test
-	./internal/tools
 	./internal/traceprof/traceproftest
 	./orchestrion/all
 	./scripts/apiextractor
 	./scripts/autoreleasetagger
+	./scripts/autoreleasetagger/testdata/root
+	./scripts/autoreleasetagger/testdata/root/moduleA
+	./scripts/autoreleasetagger/testdata/root/moduleB
 	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage

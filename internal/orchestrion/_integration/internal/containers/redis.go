@@ -15,6 +15,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	"github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -29,7 +30,7 @@ func StartRedisTestContainer(t testing.TB) (*redis.RedisContainer, string) {
 	}
 
 	opts := []testcontainers.ContainerCustomizer{
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategy(
 			wait.ForAll(

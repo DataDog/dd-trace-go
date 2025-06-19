@@ -45,13 +45,13 @@ type CommonConfig struct {
 	ServiceName   string
 	ResourceNamer func(*http.Request) string
 	SpanOpts      []tracer.StartSpanOption
+	IsStatusError func(int) bool
 }
 
 type Config struct {
 	CommonConfig
-	FinishOpts    []tracer.FinishOption
-	HeaderTags    instrumentation.HeaderTags
-	IsStatusError func(int) bool
+	FinishOpts []tracer.FinishOption
+	HeaderTags instrumentation.HeaderTags
 }
 
 func (c *Config) ApplyOpts(opts ...Option) {

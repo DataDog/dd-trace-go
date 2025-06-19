@@ -16,8 +16,11 @@ import (
 	"testing"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // The RC client relies on Repository (in the datadog-agent) which performs config signature validation
@@ -36,7 +39,7 @@ func TestRCClient(t *testing.T) {
 
 	t.Run("registerCallback", func(t *testing.T) {
 		client.callbacks = []Callback{}
-		nilCallback := func(map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
+		nilCallback := func(map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
 		defer func() { client.callbacks = []Callback{} }()
 		require.Equal(t, 0, len(client.callbacks))
 		err = RegisterCallback(nilCallback)
@@ -51,16 +54,16 @@ func TestRCClient(t *testing.T) {
 	t.Run("apply-update", func(t *testing.T) {
 		client.callbacks = []Callback{}
 		cfgPath := "datadog/2/ASM_FEATURES/asm_features_activation/config"
-		err = RegisterProduct(rc.ProductASMFeatures)
+		err = RegisterProduct(state.ProductASMFeatures)
 		require.NoError(t, err)
-		err = RegisterCallback(func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus {
-			statuses := map[string]rc.ApplyStatus{}
+		err = RegisterCallback(func(updates map[string]ProductUpdate) map[string]state.ApplyStatus {
+			statuses := map[string]state.ApplyStatus{}
 			for p, u := range updates {
-				if p == rc.ProductASMFeatures {
+				if p == state.ProductASMFeatures {
 					require.NotNil(t, u)
 					require.NotNil(t, u[cfgPath])
 					require.Equal(t, string(u[cfgPath]), "test")
-					statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+					statuses[cfgPath] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 				}
 			}
 			return statuses
@@ -77,13 +80,13 @@ func TestRCClient(t *testing.T) {
 		require.NoError(t, err)
 
 		cfgPath := "datadog/2/APM_TRACING/foo/bar"
-		err = Subscribe(rc.ProductAPMTracing, func(u ProductUpdate) map[string]rc.ApplyStatus {
-			statuses := map[string]rc.ApplyStatus{}
+		err = Subscribe(state.ProductAPMTracing, func(u ProductUpdate) map[string]state.ApplyStatus {
+			statuses := map[string]state.ApplyStatus{}
 			require.NotNil(t, u)
 			require.Len(t, u, 1)
 			require.NotNil(t, u[cfgPath])
 			require.Equal(t, string(u[cfgPath]), "test")
-			statuses[cfgPath] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+			statuses[cfgPath] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 			return statuses
 		})
 		require.NoError(t, err)
@@ -259,19 +262,19 @@ func TestConfig(t *testing.T) {
 	})
 }
 
-func dummyCallback1(map[string]ProductUpdate) map[string]rc.ApplyStatus {
+func dummyCallback1(map[string]ProductUpdate) map[string]state.ApplyStatus {
 	return nil
 }
-func dummyCallback2(map[string]ProductUpdate) map[string]rc.ApplyStatus {
-	return map[string]rc.ApplyStatus{}
+func dummyCallback2(map[string]ProductUpdate) map[string]state.ApplyStatus {
+	return map[string]state.ApplyStatus{}
 }
 
-func dummyCallback3(map[string]ProductUpdate) map[string]rc.ApplyStatus {
-	return map[string]rc.ApplyStatus{}
+func dummyCallback3(map[string]ProductUpdate) map[string]state.ApplyStatus {
+	return map[string]state.ApplyStatus{}
 }
 
-func dummyCallback4(map[string]ProductUpdate) map[string]rc.ApplyStatus {
-	return map[string]rc.ApplyStatus{}
+func dummyCallback4(map[string]ProductUpdate) map[string]state.ApplyStatus {
+	return map[string]state.ApplyStatus{}
 }
 
 func TestRegistration(t *testing.T) {
@@ -318,8 +321,8 @@ func TestSubscribe(t *testing.T) {
 	client, err = newClient(DefaultClientConfig())
 	require.NoError(t, err)
 
-	var callback Callback = func(_ map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
-	var pCallback ProductCallback = func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	var callback Callback = func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
+	var pCallback ProductCallback = func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 
 	err = Subscribe("my-product", pCallback)
 	require.NoError(t, err)
@@ -360,7 +363,7 @@ func TestNewUpdateRequest(t *testing.T) {
 	require.NoError(t, err)
 	err = RegisterCapability(ASMActivation)
 	require.NoError(t, err)
-	err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }, APMTracingSampleRate)
+	err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }, APMTracingSampleRate)
 	require.NoError(t, err)
 
 	b, err := client.newUpdateRequest()
@@ -380,72 +383,150 @@ func TestNewUpdateRequest(t *testing.T) {
 	require.True(t, req.Client.IsTracer)
 }
 
+func TestProcessTags(t *testing.T) {
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test-svc"
+	cfg.Env = "test-env"
+	cfg.TracerVersion = "tracer-version"
+	cfg.AppVersion = "app-version"
+	var err error
+	client, err = newClient(cfg)
+	require.NoError(t, err)
+
+	err = RegisterProduct("my-product")
+	require.NoError(t, err)
+	err = RegisterCapability(ASMActivation)
+	require.NoError(t, err)
+	err = Subscribe("my-second-product", func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }, APMTracingSampleRate)
+	require.NoError(t, err)
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+
+		b, err := client.newUpdateRequest()
+		require.NoError(t, err)
+		var req clientGetConfigsRequest
+		err = json.Unmarshal(b.Bytes(), &req)
+		require.NoError(t, err)
+
+		assert.NotEmpty(t, req.Client.ClientTracer.ProcessTags)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+
+		b, err := client.newUpdateRequest()
+		require.NoError(t, err)
+		var req clientGetConfigsRequest
+		err = json.Unmarshal(b.Bytes(), &req)
+		require.NoError(t, err)
+
+		assert.Empty(t, req.Client.ClientTracer.ProcessTags)
+	})
+}
+
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
 func TestAsync(t *testing.T) {
 	require.NoError(t, Start(DefaultClientConfig()))
 	defer Stop()
 	const iterations = 10000
-	var wg sync.WaitGroup
+	var (
+		startSync   sync.WaitGroup // Guarantees all goroutines are created before any can actually start
+		cleanupSync sync.WaitGroup // Used to wait for business to be done before cleaning back up to a blank slate
+		wg          sync.WaitGroup // Used to wait for all goroutines to have finished
+	)
+	startSync.Add(1)
 
-	// Subscriptions
-	for i := 0; i < iterations; i++ {
+	for range iterations {
+		// Subscriptions
 		product := fmt.Sprintf("%d", rand.Int()%10)
 		capability := Capability(rand.Uint32() % 10)
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
-			callback := func(_ ProductUpdate) map[string]rc.ApplyStatus { return nil }
+			startSync.Done()
+			startSync.Wait()
+			callback := func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 			Subscribe(product, callback, capability)
 			wg.Done()
 		}()
-	}
 
-	// Products
-	for i := 0; i < iterations; i++ {
+		// Products
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			RegisterProduct(fmt.Sprintf("%d", rand.Int()%10))
 		}()
-	}
-	for i := 0; i < iterations; i++ {
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			UnregisterProduct(fmt.Sprintf("%d", rand.Int()%10))
 		}()
-	}
 
-	// Capabilities
-	for i := 0; i < iterations; i++ {
+		// Capabilities
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			RegisterCapability(Capability(rand.Uint32() % 10))
 		}()
-	}
-	for i := 0; i < iterations; i++ {
+		startSync.Add(1)
 		wg.Add(1)
 		go func() {
+			startSync.Done()
+			startSync.Wait()
 			defer wg.Done()
 			UnregisterCapability(Capability(rand.Uint32() % 10))
 		}()
-	}
 
-	// Callbacks
-	callback := func(_ map[string]ProductUpdate) map[string]rc.ApplyStatus { return nil }
-	for i := 0; i < iterations; i++ {
+		// Callbacks
+		callback := func(_ map[string]ProductUpdate) map[string]state.ApplyStatus { return nil }
+		startSync.Add(1)
 		wg.Add(1)
+		cleanupSync.Add(1)
 		go func() {
 			defer wg.Done()
+			defer cleanupSync.Done()
+			startSync.Done()
+			startSync.Wait()
 			RegisterCallback(callback)
 		}()
-	}
-	for i := 0; i < iterations; i++ {
+		startSync.Add(1)
 		wg.Add(1)
+		cleanupSync.Add(1)
 		go func() {
 			defer wg.Done()
+			defer cleanupSync.Done()
+			startSync.Done()
+			startSync.Wait()
+			UnregisterCallback(callback)
+		}()
+		wg.Add(1)
+		go func() {
+			// Make sure the callback is removed before we exit the test...
+			defer wg.Done()
+			cleanupSync.Wait()
 			UnregisterCallback(callback)
 		}()
 	}
+
+	// Unblock the goroutines start
+	startSync.Done()
+	// Wait for all those goroutines to have finished...
 	wg.Wait()
+
+	// Verify we have 0 callbacks left after we're done.
+	client._callbacksMu.RLock()
+	defer client._callbacksMu.RUnlock()
+	require.Empty(t, client.callbacks)
 }

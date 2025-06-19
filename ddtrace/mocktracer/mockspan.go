@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"testing"
 	"time"
-	_ "unsafe"
+	_ "unsafe" // Needed for go:linkname directive.
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

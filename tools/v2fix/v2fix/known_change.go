@@ -6,6 +6,7 @@
 package v2fix
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
@@ -73,7 +74,7 @@ type defaultKnownChange struct {
 }
 
 func (d defaultKnownChange) End() token.Pos {
-	end, ok := d.ctx.Value("end").(token.Pos)
+	end, ok := d.ctx.Value(endKey).(token.Pos)
 	if ok {
 		return end
 	}
@@ -84,7 +85,7 @@ func (d defaultKnownChange) End() token.Pos {
 }
 
 func (d defaultKnownChange) Pos() token.Pos {
-	pos, ok := d.ctx.Value("pos").(token.Pos)
+	pos, ok := d.ctx.Value(posKey).(token.Pos)
 	if ok {
 		return pos
 	}
@@ -111,7 +112,7 @@ type V1ImportURL struct {
 }
 
 func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
-	path := c.ctx.Value("pkg_path").(string)
+	path := c.ctx.Value(pkgPathKey).(string)
 	if path == "" {
 		return nil
 	}
@@ -146,11 +147,17 @@ type DDTraceTypes struct {
 }
 
 func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
-	typ, ok := c.ctx.Value("declared_type").(*types.Named)
+	typ, ok := c.ctx.Value(declaredTypeKey).(*types.Named)
 	if !ok {
 		return nil
 	}
-	newText := fmt.Sprintf("tracer.%s", typ.Obj().Name())
+
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
+	if !ok {
+		return nil
+	}
+
+	newText := fmt.Sprintf("%s.%s", pkg, typ.Obj().Name())
 	return []analysis.SuggestedFix{
 		{
 			Message: "the declared type is in the ddtrace/tracer package now",
@@ -187,7 +194,7 @@ type TracerStructs struct {
 }
 
 func (c TracerStructs) Fixes() []analysis.SuggestedFix {
-	typ, ok := c.ctx.Value("declared_type").(*types.Named)
+	typ, ok := c.ctx.Value(declaredTypeKey).(*types.Named)
 	if !ok {
 		return nil
 	}
@@ -228,19 +235,24 @@ type WithServiceName struct {
 }
 
 func (c WithServiceName) Fixes() []analysis.SuggestedFix {
-	args, ok := c.ctx.Value("args").([]string)
+	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
 	if !ok || args == nil {
+		return nil
+	}
+
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
+	if !ok {
 		return nil
 	}
 
 	return []analysis.SuggestedFix{
 		{
-			Message: "use WithService()",
+			Message: "the function WithServiceName is no longer supported. Use WithService instead",
 			TextEdits: []analysis.TextEdit{
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("WithService(%s)", strings.Join(args, ", "))),
+					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", pkg, exprString(args[0]))),
 				},
 			},
 		},
@@ -255,7 +267,7 @@ func (c WithServiceName) Probes() []Probe {
 }
 
 func (c WithServiceName) String() string {
-	return "the function WithServiceName is no longer supported. Use WithService instead."
+	return "the function WithServiceName is no longer supported. Use WithService instead"
 }
 
 type TraceIDString struct {
@@ -263,19 +275,24 @@ type TraceIDString struct {
 }
 
 func (c TraceIDString) Fixes() []analysis.SuggestedFix {
-	fn, ok := c.ctx.Value("fn").(func())
+	fn, ok := c.ctx.Value(fnKey).(*types.Func)
 	if !ok || fn == nil {
+		return nil
+	}
+
+	callExpr, ok := c.ctx.Value(callExprKey).(*ast.CallExpr)
+	if !ok {
 		return nil
 	}
 
 	return []analysis.SuggestedFix{
 		{
-			Message: "use TraceIDLower()",
+			Message: "trace IDs are now represented as strings, please use TraceIDLower to keep using 64-bits IDs, although it's recommended to switch to 128-bits with TraceID",
 			TextEdits: []analysis.TextEdit{
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte("TraceIDLower()"),
+					NewText: []byte(fmt.Sprintf("%s.TraceIDLower()", exprString(callExpr.Fun.(*ast.SelectorExpr).X))),
 				},
 			},
 		},
@@ -291,4 +308,191 @@ func (c TraceIDString) Probes() []Probe {
 
 func (c TraceIDString) String() string {
 	return "trace IDs are now represented as strings, please use TraceIDLower to keep using 64-bits IDs, although it's recommended to switch to 128-bits with TraceID"
+}
+
+type WithDogstatsdAddr struct {
+	defaultKnownChange
+}
+
+func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
+	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
+	if !ok || args == nil {
+		return nil
+	}
+
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
+	if !ok {
+		return nil
+	}
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "the function WithDogstatsdAddress is no longer supported. Use WithDogstatsdAddr instead",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", pkg, exprString(args[0]))),
+				},
+			},
+		},
+	}
+}
+
+func (c WithDogstatsdAddr) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		WithFunctionName("WithDogstatsdAddress"),
+	}
+}
+
+func (c WithDogstatsdAddr) String() string {
+	return "the function WithDogstatsdAddress is no longer supported. Use WithDogstatsdAddr instead"
+}
+
+// DeprecatedSamplingRules handles the transformation of v1 sampling rule
+// constructor functions to v2 tracer.Rule struct literals.
+type DeprecatedSamplingRules struct {
+	defaultKnownChange
+}
+
+func (c DeprecatedSamplingRules) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		Or(
+			WithFunctionName("ServiceRule"), // Sets funcNameKey
+			WithFunctionName("NameRule"),
+			WithFunctionName("NameServiceRule"),
+			WithFunctionName("TagsResourceRule"),
+			WithFunctionName("SpanNameServiceRule"),
+			WithFunctionName("SpanNameServiceMPSRule"),
+			WithFunctionName("SpanTagsResourceRule"),
+		),
+	}
+}
+
+func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
+	fn, ok := c.ctx.Value(fnKey).(*types.Func)
+	if !ok || fn == nil {
+		return nil
+	}
+
+	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
+	if !ok {
+		return nil
+	}
+
+	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
+	if !ok {
+		return nil
+	}
+
+	var parts []string
+
+	switch fn.Name() {
+	case "ServiceRule":
+		service := args[0]
+		rate := args[1]
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
+		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+	case "NameRule":
+		name := args[0]
+		rate := args[1]
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
+		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+	case "NameServiceRule", "SpanNameServiceRule":
+		name := args[0]
+		service := args[1]
+		rate := args[2]
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
+		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+	case "SpanNameServiceMPSRule":
+		name := args[0]
+		service := args[1]
+		rate := args[2]
+		limit := args[3]
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
+		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+		parts = append(parts, fmt.Sprintf("MaxPerSecond: %s", exprString(limit)))
+	case "TagsResourceRule", "SpanTagsResourceRule":
+		tags := args[0]
+		resource := args[1]
+		name := args[2]
+		service := args[3]
+		rate := args[4]
+		parts = append(parts, fmt.Sprintf("Tags: %s", exprString(tags)))
+		parts = append(parts, fmt.Sprintf("ResourceGlob: %s", exprString(resource)))
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
+		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+	}
+
+	var ruleType string
+	switch fn.Name() {
+	case "SpanNameServiceMPSRule", "SpanTagsResourceRule", "SpanNameServiceRule":
+		ruleType = "Span"
+	default:
+		ruleType = "Trace"
+	}
+
+	newText := fmt.Sprintf("%s.%sSamplingRules(Rule{%s})", pkg, ruleType, strings.Join(parts, ", "))
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte(newText),
+				},
+			},
+		},
+	}
+}
+
+func (c DeprecatedSamplingRules) String() string {
+	return "a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal"
+}
+
+func exprListString(exprs []ast.Expr) string {
+	var buf bytes.Buffer
+	for _, expr := range exprs {
+		buf.WriteString(exprString(expr))
+	}
+	return buf.String()
+}
+
+func exprCompositeString(expr *ast.CompositeLit) string {
+	var buf bytes.Buffer
+	buf.WriteString(exprString(expr.Type))
+	buf.WriteString("{")
+	for _, expr := range expr.Elts {
+		buf.WriteString(exprString(expr))
+		buf.WriteString(",")
+	}
+	buf.WriteString("}")
+	return buf.String()
+}
+
+func exprString(expr ast.Expr) string {
+	switch expr := expr.(type) {
+	case *ast.SelectorExpr:
+		return exprString(expr.X) + "." + exprString(expr.Sel)
+	case *ast.CompositeLit:
+		return exprCompositeString(expr)
+	case *ast.KeyValueExpr:
+		return exprString(expr.Key) + ":" + exprString(expr.Value)
+	case *ast.MapType:
+		return "map[" + exprString(expr.Key) + "]" + exprString(expr.Value)
+	case *ast.BasicLit:
+		return expr.Value
+	case *ast.Ident:
+		return expr.Name
+	case *ast.CallExpr:
+		return exprString(expr.Fun) + "(" + exprListString(expr.Args) + ")"
+	}
+	return ""
 }

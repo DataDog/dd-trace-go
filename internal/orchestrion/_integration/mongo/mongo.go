@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	testmongo "github.com/testcontainers/testcontainers-go/modules/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -36,7 +37,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	var err error
 	tc.server, err = testmongo.Run(ctx,
 		"mongo:6",
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 	)
 	containers.AssertTestContainersError(t, err)

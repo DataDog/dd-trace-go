@@ -17,7 +17,7 @@ import (
 // Tag specifies the current release tag. It needs to be manually
 // updated. A test checks that the value of Tag never points to a
 // git tag that is older than HEAD.
-var Tag = "v2.1.0-dev.1"
+var Tag = "v2.2.0-dev"
 
 type v1version struct {
 	Transitional bool
@@ -42,7 +42,10 @@ var (
 
 func FindV1Version() (string, bool, bool) {
 	once.Do(func() {
-		info, _ := debug.ReadBuildInfo()
+		info, ok := debug.ReadBuildInfo()
+		if !ok {
+			return
+		}
 		v1Tag = findV1Version(info.Deps)
 	})
 	if v1Tag == nil {

@@ -22,7 +22,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // HandlerOperation type representing an HTTP operation. It must be created with
@@ -48,7 +47,7 @@ type (
 		Framework    string // Optional: name of the framework or library being used
 		Method       string
 		RequestURI   string
-		RequestRoute string // the HTTP route for the current handler operation, if available
+		RequestRoute string
 		Host         string
 		RemoteAddr   string
 		Headers      map[string][]string
@@ -80,11 +79,6 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		framework:        args.Framework,
 		method:           args.Method,
 		route:            args.RequestRoute,
-	}
-	if op.route == "" {
-		// If there is no route, use the request URI instead
-		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + args.Framework}).Submit(1)
-		op.route = args.RequestURI
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future
@@ -119,20 +113,38 @@ func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	}
 }
 
-const monitorBodyErrorLog = `
+const (
+	monitorParsedBodyErrorLog = `
 "appsec: parsed http body monitoring ignored: could not find the http handler instrumentation metadata in the request context:
 	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
 `
+	monitorResponseBodyErrorLog = `
+"appsec: http response body monitoring ignored: could not find the http handler instrumentation metadata in the request context:
+	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
+`
+)
 
 // MonitorParsedBody starts and finishes the SDK body operation.
 // This function should not be called when AppSec is disabled in order to
-// get preciser error logs.
+// get more accurate error logs.
 func MonitorParsedBody(ctx context.Context, body any) error {
 	return waf.RunSimple(ctx,
 		addresses.NewAddressesBuilder().
 			WithRequestBody(body).
 			Build(),
-		monitorBodyErrorLog,
+		monitorParsedBodyErrorLog,
+	)
+}
+
+// MonitorResponseBody gets the response body through the in-app WAF.
+// This function should not be called when AppSec is disabled in order to get
+// more accurate error logs.
+func MonitorResponseBody(ctx context.Context, body any) error {
+	return waf.RunSimple(ctx,
+		addresses.NewAddressesBuilder().
+			WithResponseBody(body).
+			Build(),
+		monitorResponseBodyErrorLog,
 	)
 }
 
@@ -157,7 +169,6 @@ func BeforeHandle(
 	w http.ResponseWriter,
 	r *http.Request,
 	span trace.TagSetter,
-	pathParams map[string]string,
 	opts *Config,
 ) (http.ResponseWriter, *http.Request, func(), bool) {
 	if opts == nil {
@@ -166,21 +177,18 @@ func BeforeHandle(
 	if opts.ResponseHeaderCopier == nil {
 		opts.ResponseHeaderCopier = defaultWrapHandlerConfig.ResponseHeaderCopier
 	}
-	if opts.RouteForRequest == nil {
-		opts.RouteForRequest = defaultWrapHandlerConfig.RouteForRequest
-	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
 		Framework:    opts.Framework,
 		Method:       r.Method,
 		RequestURI:   r.RequestURI,
-		RequestRoute: opts.RouteForRequest(r),
+		RequestRoute: opts.Route,
 		Host:         r.Host,
 		RemoteAddr:   r.RemoteAddr,
 		Headers:      r.Header,
 		Cookies:      makeCookies(r.Cookies()),
 		QueryParams:  r.URL.Query(),
-		PathParams:   pathParams,
+		PathParams:   opts.RouteParams,
 	}, span)
 	tr := r.WithContext(ctx)
 
@@ -224,9 +232,9 @@ func BeforeHandle(
 // context since it uses a queue of handlers and it's the only way to make
 // sure other queued handlers don't get executed.
 // TODO: this patch must be removed/improved when we rework our actions/operations system
-func WrapHandler(handler http.Handler, span trace.TagSetter, pathParams map[string]string, opts *Config) http.Handler {
+func WrapHandler(handler http.Handler, span trace.TagSetter, opts *Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, pathParams, opts)
+		tw, tr, afterHandle, handled := BeforeHandle(w, r, span, opts)
 		defer afterHandle()
 		if handled {
 			return

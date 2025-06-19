@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 
@@ -31,6 +32,10 @@ type MockAgent struct {
 
 func (m *MockAgent) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	m.T.Logf("mockagent: handling request: %s", req.URL.String())
+
+	// Put a custom tag on the span generated to skip it in assertions.
+	span, _ := tracer.SpanFromContext(req.Context())
+	span.SetTag("mockagent.span", true)
 
 	switch req.URL.Path {
 	case "/v0.4/traces":
@@ -79,12 +84,17 @@ func (m *MockAgent) Start(t *testing.T) {
 	srvURL, err := url.Parse(srv.URL)
 	require.NoError(t, err)
 
+	// Increase WAF timeout to avoid flakiness due to ungodly slow CI hosts.
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+	// Neutralize API Security sampling (always-keep), to prevent tests becoming flaky.
+	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "0")
+
 	tracer.Start(
 		tracer.WithAgentAddr(srvURL.Host),
-		tracer.WithHTTPClient(&internalClient),
 		tracer.WithSampler(tracer.NewAllSampler()),
 		tracer.WithLogStartup(false),
 		tracer.WithLogger(testLogger{t}),
+		tracer.WithAppSecEnabled(true),
 	)
 	t.Cleanup(tracer.Stop)
 }
@@ -114,18 +124,58 @@ func (m *MockAgent) Traces(t *testing.T) trace.Traces {
 			}
 		}
 	}
+
+	// If span are filtered we remove all their children as well
+	keptSpansByID := make(map[trace.ID]*trace.Trace)
+	for id, span := range spansByID {
+		if filterInternalSpans(t, span, m.srv.URL) {
+			keptSpansByID[id] = span
+			continue
+		}
+
+		t.Logf("mockagent: filtering out span %d: %s", id, span.String())
+	}
+
 	var result trace.Traces
-	for _, span := range spansByID {
+	for _, span := range keptSpansByID {
 		if span.ParentID == 0 {
 			result = append(result, span)
 			continue
 		}
-		parent, ok := spansByID[span.ParentID]
+		parent, ok := keptSpansByID[span.ParentID]
 		if ok {
 			parent.Children = append(parent.Children, span)
 		}
 	}
 	return result
+}
+
+// filterInternalSpans recursively checks the spans in the trace to ensure that that no spans a created as a result of
+// connection to the agent or any agentless HTTP call and also filters out any spans that are created by the testing framework
+func filterInternalSpans(t *testing.T, trace *trace.Trace, agentHost string) bool {
+	t.Helper()
+	if trace == nil {
+		return false
+	}
+
+	if _, ok := trace.Meta["mockagent.span"]; ok {
+		// This span is created by the mock agent to skip it in assertions
+		return false
+	}
+
+	// Make sure no spans are created from a connection to the agent
+	if strings.Contains(trace.Meta["http.url"], agentHost) {
+		assert.Fail(t, "trace should not contain the agent host URL %s: %s", agentHost, trace.String())
+		return false
+	}
+
+	// Make sure no spans are created from any agentless http call
+	if strings.Contains(trace.Meta["http.url"], "datadoghq") {
+		assert.Fail(t, "trace should not contain a datadog URL: %s", trace.String())
+		return false
+	}
+
+	return true
 }
 
 type testLogger struct {
@@ -135,19 +185,3 @@ type testLogger struct {
 func (l testLogger) Log(msg string) {
 	l.T.Log(msg)
 }
-
-var (
-	defaultTransport, _ = http.DefaultTransport.(*http.Transport)
-	// A copy of the default transport, except it will be marked internal by orchestrion, so it is not traced.
-	internalTransport = &http.Transport{
-		Proxy:                 defaultTransport.Proxy,
-		DialContext:           defaultTransport.DialContext,
-		ForceAttemptHTTP2:     defaultTransport.ForceAttemptHTTP2,
-		MaxIdleConns:          defaultTransport.MaxIdleConns,
-		IdleConnTimeout:       defaultTransport.IdleConnTimeout,
-		TLSHandshakeTimeout:   defaultTransport.TLSHandshakeTimeout,
-		ExpectContinueTimeout: defaultTransport.ExpectContinueTimeout,
-	}
-
-	internalClient = http.Client{Transport: internalTransport}
-)

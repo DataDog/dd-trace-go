@@ -316,7 +316,7 @@ func (co *CodeOwners) Match(value string) (*Entry, bool) {
 
 // GetOwnersString returns a formatted string of the owners list in an Entry.
 // It returns an empty string if there are no owners.
-func (e Entry) GetOwnersString() string {
+func (e *Entry) GetOwnersString() string {
 	if e.Owners == nil || len(e.Owners) == 0 {
 		return ""
 	}

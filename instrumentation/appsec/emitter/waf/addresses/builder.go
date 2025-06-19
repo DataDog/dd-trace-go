@@ -9,20 +9,21 @@ import (
 	"net/netip"
 	"strconv"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 const contextProcessKey = "waf.context.processor"
 
 type RunAddressDataBuilder struct {
-	waf.RunAddressData
+	libddwaf.RunAddressData
 }
 
 func NewAddressesBuilder() *RunAddressDataBuilder {
 	return &RunAddressDataBuilder{
-		RunAddressData: waf.RunAddressData{
+		RunAddressData: libddwaf.RunAddressData{
 			Persistent: make(map[string]any, 1),
 			Ephemeral:  make(map[string]any, 1),
+			TimerKey:   WAFScope, // Default value for TimerKey
 		},
 	}
 }
@@ -74,6 +75,14 @@ func (b *RunAddressDataBuilder) WithRequestBody(body any) *RunAddressDataBuilder
 		return b
 	}
 	b.Persistent[ServerRequestBodyAddr] = body
+	return b
+}
+
+func (b *RunAddressDataBuilder) WithResponseBody(body any) *RunAddressDataBuilder {
+	if body == nil {
+		return b
+	}
+	b.Persistent[ServerResponseBodyAddr] = body
 	return b
 }
 
@@ -149,7 +158,7 @@ func (b *RunAddressDataBuilder) WithFilePath(file string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerIOFSFileAddr] = file
-	b.Scope = waf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -158,7 +167,7 @@ func (b *RunAddressDataBuilder) WithURL(url string) *RunAddressDataBuilder {
 		return b
 	}
 	b.Ephemeral[ServerIoNetURLAddr] = url
-	b.Scope = waf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -167,7 +176,7 @@ func (b *RunAddressDataBuilder) WithDBStatement(statement string) *RunAddressDat
 		return b
 	}
 	b.Ephemeral[ServerDBStatementAddr] = statement
-	b.Scope = waf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -176,7 +185,7 @@ func (b *RunAddressDataBuilder) WithDBType(driver string) *RunAddressDataBuilder
 		return b
 	}
 	b.Ephemeral[ServerDBTypeAddr] = driver
-	b.Scope = waf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -185,7 +194,7 @@ func (b *RunAddressDataBuilder) WithSysExecCmd(cmd []string) *RunAddressDataBuil
 		return b
 	}
 	b.Ephemeral[ServerSysExecCmd] = cmd
-	b.Scope = waf.RASPScope
+	b.TimerKey = RASPScope
 	return b
 }
 
@@ -247,7 +256,7 @@ func (b *RunAddressDataBuilder) WithGRPCResponseStatusCode(status int) *RunAddre
 
 func (b *RunAddressDataBuilder) WithGraphQLResolver(fieldName string, args map[string]any) *RunAddressDataBuilder {
 	if _, ok := b.Ephemeral[GraphQLServerResolverAddr]; !ok {
-		b.Ephemeral[GraphQLServerResolverAddr] = map[string]any{}
+		b.Ephemeral[GraphQLServerResolverAddr] = make(map[string]any, 1)
 	}
 
 	b.Ephemeral[GraphQLServerResolverAddr].(map[string]any)[fieldName] = args
@@ -256,13 +265,22 @@ func (b *RunAddressDataBuilder) WithGraphQLResolver(fieldName string, args map[s
 
 func (b *RunAddressDataBuilder) ExtractSchema() *RunAddressDataBuilder {
 	if _, ok := b.Persistent[contextProcessKey]; !ok {
-		b.Persistent[contextProcessKey] = map[string]bool{}
+		b.Persistent[contextProcessKey] = make(map[string]bool, 1)
 	}
 
 	b.Persistent[contextProcessKey].(map[string]bool)["extract-schema"] = true
 	return b
 }
 
-func (b *RunAddressDataBuilder) Build() waf.RunAddressData {
+func (b *RunAddressDataBuilder) NoExtractSchema() *RunAddressDataBuilder {
+	if _, ok := b.Persistent[contextProcessKey]; !ok {
+		b.Persistent[contextProcessKey] = make(map[string]bool, 1)
+	}
+
+	b.Persistent[contextProcessKey].(map[string]bool)["extract-schema"] = false
+	return b
+}
+
+func (b *RunAddressDataBuilder) Build() libddwaf.RunAddressData {
 	return b.RunAddressData
 }

@@ -7,7 +7,7 @@ package tracer
 
 // SpanLink represents a reference to a span that exists outside of the trace.
 //
-//go:generate msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_link_msgp.go -tests=false
 
 type SpanLink struct {
 	// TraceID represents the low 64 bits of the linked span's trace id. This field is required.

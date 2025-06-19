@@ -11,7 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-//go:generate msgp -unexported -marshal=false -o=span_event_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_event_msgp.go -tests=false
 
 // SpanEvent represent an event at an instant in time related to this span, but not necessarily during the span.
 type spanEvent struct {

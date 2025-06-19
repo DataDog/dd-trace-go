@@ -14,6 +14,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"strconv"
@@ -82,9 +83,8 @@ func (r *Response) Unmarshal(target interface{}) error {
 		if target.(msgp.Unmarshaler) != nil {
 			_, err := target.(msgp.Unmarshaler).UnmarshalMsg(r.Body)
 			return err
-		} else {
-			return errors.New("target must implement msgp.Unmarshaler for MessagePack unmarshalling")
 		}
+		return errors.New("target must implement msgp.Unmarshaler for MessagePack unmarshalling")
 	default:
 		return fmt.Errorf("unsupported format '%s' for unmarshalling", r.Format)
 	}
@@ -95,12 +95,31 @@ type RequestHandler struct {
 	Client *http.Client
 }
 
+// We copy the transport to avoid using the default one, as it might be
+// augmented with tracing and we don't want these calls to be recorded.
+// This also permits orchestrion to disable tracing on this client.
+// See https://golang.org/pkg/net/http/#DefaultTransport .
+// Except we use a higher timeout for this
+var defaultHTTPClient = http.Client{
+	Timeout: 45 * time.Second,
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	},
+}
+
 // NewRequestHandler creates a new RequestHandler with a default HTTP client.
 func NewRequestHandler() *RequestHandler {
 	return &RequestHandler{
-		Client: &http.Client{
-			Timeout: 45 * time.Second, // Customize timeout as needed
-		},
+		Client: &defaultHTTPClient,
 	}
 }
 
@@ -170,17 +189,17 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			return true, nil, err
 		}
 
-		if log.DebugEnabled() {
-			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
-				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
-		}
-
 		// Compress body if needed
 		if config.Compressed {
 			serializedBody, err = compressData(serializedBody)
 			if err != nil {
 				return true, nil, err
 			}
+		}
+
+		if log.DebugEnabled() {
+			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
+				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
 		}
 
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(serializedBody))

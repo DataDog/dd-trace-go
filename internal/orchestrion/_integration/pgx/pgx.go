@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	testpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -34,7 +35,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	var err error
 	tc.container, err = testpostgres.Run(ctx,
 		"docker.io/postgres:16-alpine", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 		// https://golang.testcontainers.org/modules/postgres/#wait-strategies_1
 		testcontainers.WithWaitStrategy(

@@ -48,16 +48,23 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
 
+	coverageInitialized := false
 	settings := integrations.GetSettings()
 	if settings != nil {
 		if settings.CodeCoverage {
 			// Initialize the runtime coverage if enabled.
 			coverage.InitializeCoverage(m)
+			coverageInitialized = true
 		}
 		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
 			// Set the test management tag if enabled.
 			session.SetTag(constants.TestManagementEnabled, "true")
 		}
+	}
+
+	// Check if the coverage was enabled by not initialized
+	if !coverageInitialized && testing.CoverMode() != "" {
+		coverage.InitializeCoverage(m)
 	}
 
 	ddm := (*M)(m)
@@ -77,12 +84,8 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-
-			var cov float64
 			// let's try first with our coverage package
-			if coverage.CanCollect() {
-				cov = coverage.GetCoverage()
-			}
+			cov := coverage.GetCoverage()
 			if cov == 0 {
 				// if not we try we the default testing package
 				cov = testing.Coverage()
@@ -182,10 +185,16 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		}
 
 		defer func() {
+			// Collect and write logs
+			collectAndWriteLogs(t, test)
+
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
-				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
-					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
+					test.SetTag(constants.TestAttemptToFixPassed, "false")
 				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
@@ -200,18 +209,28 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			}
 			// Normal finalization: determine the test result based on its state.
 			if t.Failed() {
-				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allRetriesFailed {
-					test.SetTag(constants.TestHasFailedAllRetries, "true")
+				if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
+					test.SetTag(constants.TestAttemptToFixPassed, "false")
 				}
 				test.SetTag(ext.Error, true)
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
 			} else if t.Skipped() {
+				if execMeta.isARetry && execMeta.isLastRetry {
+					test.SetTag(constants.TestAttemptToFixPassed, "false")
+				}
 				test.Close(integrations.ResultStatusSkip)
 			} else {
-				if execMeta.isARetry && execMeta.isLastRetry && execMeta.allAttemptsPassed {
-					test.SetTag(constants.TestAttemptToFixPassed, "true")
+				if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.allAttemptsPassed {
+						test.SetTag(constants.TestAttemptToFixPassed, "true")
+					} else {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 				}
 				test.Close(integrations.ResultStatusPass)
 			}

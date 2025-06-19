@@ -26,6 +26,7 @@ var (
 		"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2",
 	}
 	defaultExcludedDirs = []string{
+		"_tools",
 		".github",
 		"tools",
 	}

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-//go:generate msgp -unexported -marshal=false -o=payload_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=payload_msgp.go -tests=false
 
 package datastreams
 
@@ -21,6 +21,8 @@ type StatsPayload struct {
 	Lang string
 	// Version is the version of the service
 	Version string
+	// ProcessTags contains the process level tags.
+	ProcessTags []string
 }
 
 type ProduceOffset struct {

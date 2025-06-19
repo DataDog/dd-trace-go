@@ -1,9 +1,33 @@
-run:
-  deadline: 10m
+version: "2"
 linters:
-  disable-all: true
+  default: none
   enable:
-  - gofmt
-  - govet
-  - revive
-  - bodyclose
+    - bodyclose
+    - govet
+    - revive
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow # TODO: Enable this once we've fixed all the shadowing issues.
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -34,7 +35,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -363,7 +363,7 @@ func TestIntegrationEnabled(t *testing.T) {
 	if _, err = os.Stat(root); err != nil {
 		t.Fatal(err)
 	}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, _ error) error {
 		if filepath.Base(path) != "go.mod" || strings.Contains(path, fmt.Sprintf("%cinternal", os.PathSeparator)) {
 			return nil
 		}
@@ -741,6 +741,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:3333"}, c.agentURL)
+		})
+
+		t.Run("code-full-UDS", func(t *testing.T) {
+			tracer, err := newTracer(WithAgentURL("unix:///var/run/datadog/apm.socket"))
+			assert.Nil(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "UDS__var_run_datadog_apm.socket"}, c.agentURL)
 		})
 
 		t.Run("code-override-full-URL-error", func(t *testing.T) {
@@ -1817,7 +1825,7 @@ func TestWithStatsComputation(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newConfig()
 		assert.NoError(err)
-		assert.False(c.statsComputationEnabled)
+		assert.True(c.statsComputationEnabled)
 	})
 	t.Run("enabled-via-option", func(t *testing.T) {
 		assert := assert.New(t)
@@ -1887,6 +1895,25 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(tm.UnixNano(), s.start)
 }
 
+func TestNewFinishConfig(t *testing.T) {
+	var (
+		assert = assert.New(t)
+		now    = time.Now()
+		err    = errors.New("error")
+	)
+	cfg := NewFinishConfig(
+		FinishTime(now),
+		WithError(err),
+		StackFrames(10, 0),
+		NoDebugStack(),
+	)
+	assert.True(cfg.NoDebugStack)
+	assert.Equal(now, cfg.FinishTime)
+	assert.Equal(err, cfg.Error)
+	assert.Equal(uint(10), cfg.StackFrames)
+	assert.Equal(uint(0), cfg.SkipStackFrames)
+}
+
 func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 	var (
 		assert = assert.New(t)
@@ -1919,7 +1946,7 @@ func optsTestConsumer(opts ...StartSpanOption) {
 }
 
 func BenchmarkConfig(b *testing.B) {
-	b.Run("scenario=none", func(b *testing.B) {
+	b.Run("scenario_none", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			optsTestConsumer(
@@ -1929,7 +1956,7 @@ func BenchmarkConfig(b *testing.B) {
 			)
 		}
 	})
-	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+	b.Run("scenario_WithStartSpanConfig", func(b *testing.B) {
 		b.ReportAllocs()
 		cfg := NewStartSpanConfig(
 			ServiceName("SomeService"),
@@ -1946,7 +1973,7 @@ func BenchmarkConfig(b *testing.B) {
 }
 
 func BenchmarkStartSpanConfig(b *testing.B) {
-	b.Run("scenario=none", func(b *testing.B) {
+	b.Run("scenario_none", func(b *testing.B) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(b, err)
@@ -1961,7 +1988,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 
 		}
 	})
-	b.Run("scenario=WithStartSpanConfig", func(b *testing.B) {
+	b.Run("scenario_WithStartSpanConfig", func(b *testing.B) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.NoError(b, err)

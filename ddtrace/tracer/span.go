@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
 package tracer
 
@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -182,6 +181,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 	value = dereference(value)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -241,6 +241,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 
 	if v, ok := value.([]byte); ok {
 		s.setMeta(key, string(v))
+		return
 	}
 
 	if value != nil {
@@ -328,6 +329,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	trace := root.context.trace
 	root.mu.Lock()
 	defer root.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -375,7 +377,7 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 		return nil
 	}
 	opts = append(opts, ChildOf(s.Context()))
-	return GetGlobalTracer().StartSpan(operationName, opts...)
+	return getGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // setSamplingPriorityLocked updates the sampling priority.
@@ -398,17 +400,20 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		if yes {
 			if s.error == 0 {
 				// new error
-				atomic.AddInt32(&s.context.errors, 1)
+				s.context.errors.Add(1)
 			}
 			s.error = 1
 		} else {
 			if s.error > 0 {
 				// flip from active to inactive
-				atomic.AddInt32(&s.context.errors, -1)
+				s.context.errors.Add(-1)
 			}
 			s.error = 0
 		}
 	}
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
@@ -558,6 +563,7 @@ func (s *Span) AddLink(link SpanLink) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -619,19 +625,13 @@ func (s *Span) Finish(opts ...FinishOption) {
 			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {
+			if fn == nil {
+				continue
+			}
 			fn(&cfg)
 		}
 		if !cfg.FinishTime.IsZero() {
 			t = cfg.FinishTime.UnixNano()
-		}
-		if cfg.NoDebugStack {
-			s.mu.Lock()
-			if s.finished {
-				s.mu.Unlock()
-				return
-			}
-			delete(s.meta, ext.ErrorStack)
-			s.mu.Unlock()
 		}
 		if cfg.Error != nil {
 			s.mu.Lock()
@@ -662,7 +662,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
@@ -680,6 +680,7 @@ func (s *Span) SetOperationName(operationName string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -693,6 +694,7 @@ func (s *Span) SetOperationName(operationName string) {
 func (s *Span) finish(finishTime int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -715,7 +717,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	tracer, hasTracer := GetGlobalTracer().(*tracer)
+	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
 		if !tracer.config.enabled.current {
 			return
@@ -743,7 +745,7 @@ func (s *Span) finish(finishTime int64) {
 
 	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
 	if hasTracer {
-		tracer.Submit(s)
+		tracer.submit(s)
 	}
 
 	if s.pprofCtxRestore != nil {
@@ -785,7 +787,7 @@ func shouldKeep(s *Span) bool {
 		// positive sampling priorities stay
 		return true
 	}
-	if atomic.LoadInt32(&s.context.errors) > 0 {
+	if s.context.errors.Load() > 0 {
 		// traces with any span containing an error get kept
 		return true
 	}
@@ -850,7 +852,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := GetGlobalTracer(); tr != nil {
+		if tr := getGlobalTracer(); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
@@ -879,8 +881,15 @@ func (s *Span) Format(f fmt.State, c rune) {
 
 // AddEvent attaches a new event to the current span.
 func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
@@ -903,10 +912,19 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.spanEvents = append(s.spanEvents, event)
 }
 
+// used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	val, ok := s.meta[key]
+	return val, ok
+}
+
+// used in internal/civisibility/integrations/manual_api_common.go using linkname
+func getMetric(s *Span, key string) (float64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	val, ok := s.metrics[key]
 	return val, ok
 }
 
@@ -950,6 +968,8 @@ const (
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
 	keyBaseService = "_dd.base_service"
+	// keyProcessTags contains a list of process tags to indentify the service.
+	keyProcessTags = "_dd.tags.process"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

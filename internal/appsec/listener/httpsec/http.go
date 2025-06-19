@@ -6,22 +6,25 @@
 package httpsec
 
 import (
+	"net/netip"
 	"strings"
 
 	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/DataDog/appsec-internal-go/appsec"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 type Feature struct {
-	APISec appsec.APISecConfig
+	APISec                        appsec.APISecConfig
+	ForceKeepWhenGeneratingSchema bool
 }
 
 func (*Feature) String() string {
@@ -38,13 +41,21 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.
 		addresses.ServerRequestQueryAddr,
 		addresses.ServerRequestPathParamsAddr,
 		addresses.ServerRequestBodyAddr,
+		addresses.ServerResponseBodyAddr,
 		addresses.ServerResponseStatusAddr,
-		addresses.ServerResponseHeadersNoCookiesAddr) {
-		return nil, nil
+		addresses.ServerResponseHeadersNoCookiesAddr,
+		addresses.ClientIPAddr,
+	) {
+		// We extract headers even when the security features are not enabled...
+		feature := &HeaderExtractionFeature{}
+		dyngo.On(rootOp, feature.OnRequest)
+		dyngo.OnFinish(rootOp, feature.OnResponse)
+		return feature, nil
 	}
 
 	feature := &Feature{
-		APISec: config.APISec,
+		APISec:                        config.APISec,
+		ForceKeepWhenGeneratingSchema: config.TracingAsTransport,
 	}
 
 	dyngo.On(rootOp, feature.OnRequest)
@@ -53,14 +64,7 @@ func NewHTTPSecFeature(config *config.Config, rootOp dyngo.Operation) (listener.
 }
 
 func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) {
-	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
-	log.Debug("appsec: http client ip detection returned `%s` given the http headers `%v`", ip, args.Headers)
-
-	op.SetStringTags(tags)
-	headers := headersRemoveCookies(args.Headers)
-	headers["host"] = []string{args.Host}
-
-	setRequestHeadersTags(op, headers)
+	headers, ip := extractRequestHeaders(op, args)
 
 	op.Run(op,
 		addresses.NewAddressesBuilder().
@@ -76,8 +80,7 @@ func (feature *Feature) OnRequest(op *httpsec.HandlerOperation, args httpsec.Han
 }
 
 func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) {
-	headers := headersRemoveCookies(resp.Headers)
-	setResponseHeadersTags(op, headers)
+	headers := extractResponseHeaders(op, resp)
 
 	builder := addresses.NewAddressesBuilder().
 		WithResponseHeadersNoCookies(headers).
@@ -85,6 +88,10 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 
 	if feature.shouldExtractShema(op, resp.StatusCode) {
 		builder = builder.ExtractSchema()
+
+		if feature.ForceKeepWhenGeneratingSchema {
+			op.SetTag(ext.ManualKeep, samplernames.AppSec)
+		}
 	}
 
 	op.Run(op, builder.Build())
@@ -108,4 +115,38 @@ func (feature *Feature) shouldExtractShema(op *httpsec.HandlerOperation, statusC
 			Route:      op.Route(),
 			StatusCode: statusCode,
 		})
+}
+
+type HeaderExtractionFeature struct{}
+
+func (*HeaderExtractionFeature) String() string {
+	return "HTTP Header Extraction"
+}
+
+func (*HeaderExtractionFeature) Stop() {}
+
+func (*HeaderExtractionFeature) OnRequest(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) {
+	_, _ = extractRequestHeaders(op, args)
+}
+
+func (*HeaderExtractionFeature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) {
+	_ = extractResponseHeaders(op, resp)
+}
+
+func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
+	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
+
+	op.SetStringTags(tags)
+	headers := headersRemoveCookies(args.Headers)
+	headers["host"] = []string{args.Host}
+
+	setRequestHeadersTags(op, headers)
+
+	return headers, ip
+}
+
+func extractResponseHeaders(op *httpsec.HandlerOperation, resp httpsec.HandlerOperationRes) map[string][]string {
+	headers := headersRemoveCookies(resp.Headers)
+	setResponseHeadersTags(op, headers)
+	return headers
 }

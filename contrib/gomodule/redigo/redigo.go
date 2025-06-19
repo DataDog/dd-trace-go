@@ -190,7 +190,7 @@ func withSpan(ctx context.Context, do func(commandName string, args ...interface
 		span.SetTag(ext.ResourceName, commandName)
 	} else {
 		// When the command argument to the Do method is "", then the Do method will flush the output buffer
-		// See https://godoc.org/github.com/gomodule/redigo/redis#hdr-Pipelining
+		// See https://pkg.go.dev/github.com/gomodule/redigo/redis#hdr-Pipelining
 		span.SetTag(ext.ResourceName, "redigo.Conn.Flush")
 	}
 	var b bytes.Buffer

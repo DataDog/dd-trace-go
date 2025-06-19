@@ -52,4 +52,7 @@ const (
 
 	// CIVisibilityImpactedTestsDetectionEnabled indicates if the impacted tests detection feature is enabled.
 	CIVisibilityImpactedTestsDetectionEnabled = "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED"
+
+	// CIVisibilityInternalParallelEarlyFlakeDetectionEnabled indicates if the internal parallel early flake detection feature is enabled.
+	CIVisibilityInternalParallelEarlyFlakeDetectionEnabled = "DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED"
 )
