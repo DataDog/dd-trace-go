@@ -23,27 +23,11 @@ type Encodable struct {
 	data      []byte
 }
 
-func NewEncodable(reader io.ReadCloser, limit int64) (*Encodable, error) {
-	limitedReader := io.LimitedReader{
-		R: reader,
-		N: limit,
-	}
-
-	data, err := io.ReadAll(&limitedReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read data: %w", err)
-	}
-
-	truncated := false
-	if len(data) > int(limit) {
-		data = data[:limit]
-		truncated = true
-	}
-
+func NewEncodable(data []byte, truncated bool) *Encodable {
 	return &Encodable{
 		truncated: truncated,
 		data:      data,
-	}, nil
+	}
 }
 
 func (e *Encodable) ToEncoder(config libddwaf.EncoderConfig) *encoder {
