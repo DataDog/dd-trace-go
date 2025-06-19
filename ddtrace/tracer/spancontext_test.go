@@ -246,12 +246,11 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	assert := assert.New(t)
 
-	_, transport, flush, stop, err := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
 	assert.Nil(err)
 	defer stop()
 
-	traceID := randUint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
+	root := tracer.newRootSpan("name1", "a-service", "a-resource")
 	trace := root.context.trace
 
 	assert.Len(trace.spans, 1)
