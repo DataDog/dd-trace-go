@@ -1,0 +1,27 @@
+{
+  "version": "2.2",
+  "metadata": {
+    "rules_version": "1.2.6"
+  },
+  "rules": [
+    {
+      "id": "block-hostile-ip",
+      "name": "Block request from 4.5.6.7",
+      "tags": {
+        "type": "block_ip",
+        "category": "security_response"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [{ "address": "http.client_ip" }],
+            "list": ["4.5.6.7"]
+          },
+          "operator": "ip_match"
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
+    }
+  ]
+}
