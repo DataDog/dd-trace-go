@@ -2835,3 +2835,24 @@ func TestPPROFLabelRootSpanRace(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+func TestExecTraceLargeTaskNameRegression(t *testing.T) {
+	if rt.IsEnabled() {
+		t.Skip("execution tracing is already enabled")
+	}
+	rt.Start(io.Discard)
+	defer rt.Stop()
+
+	Start()
+	defer Stop()
+
+	// Create a string big enough that in practice the execution tracer will
+	// crash if we try to use it as a task name
+	var b strings.Builder
+	for range 160000 {
+		b.WriteByte('a')
+	}
+
+	s := StartSpan("test", ResourceName(b.String()))
+	s.Finish()
+}
