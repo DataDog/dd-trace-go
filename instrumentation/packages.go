@@ -76,7 +76,7 @@ const (
 	PackageOS                       Package = "os"
 	PackageRedisRueidis             Package = "redis/rueidis"
 
-	// Deprecated packages
+	// deprecated packages
 	PackageEmickleiGoRestful Package = "emicklei/go-restful"
 	PackageGaryburdRedigo    Package = "garyburd/redigo"
 	PackageGopkgJinZhuGormV1 Package = "gopkg.in/jinzhu/gorm.v1"
