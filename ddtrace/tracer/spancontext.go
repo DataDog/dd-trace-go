@@ -88,9 +88,9 @@ type SpanContext struct {
 
 	// the below group should propagate only locally
 
-	trace  *trace // reference to the trace that this span belongs too
-	span   *Span  // reference to the span that hosts this context
-	errors int32  // number of spans with errors in this trace
+	trace  *trace       // reference to the trace that this span belongs too
+	span   *Span        // reference to the span that hosts this context
+	errors atomic.Int32 // number of spans with errors in this trace
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -113,7 +113,8 @@ type SpanContext struct {
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
 
-	spanLinks []SpanLink // links to related spans in separate|external|disconnected traces
+	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
+	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
@@ -163,10 +164,12 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		context.traceID.SetUpper(parent.traceID.Upper())
-		context.trace = parent.trace
-		context.origin = parent.origin
-		context.errors = parent.errors
+		if !parent.baggageOnly {
+			context.traceID.SetUpper(parent.traceID.Upper())
+			context.trace = parent.trace
+			context.origin = parent.origin
+			context.errors.Store(parent.errors.Load())
+		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
