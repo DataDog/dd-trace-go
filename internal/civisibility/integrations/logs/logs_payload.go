@@ -43,6 +43,9 @@ func newLogsPayload() *logsPayload {
 
 // push pushes a new item into the stream.
 func (p *logsPayload) push(logEntryData *logEntry) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.reader != nil {
 		// If the reader is already set, we cannot push new items.
 		return io.ErrClosedPipe
@@ -59,8 +62,6 @@ func (p *logsPayload) push(logEntryData *logEntry) error {
 		return err
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.count = p.count + 1 // increment the count after acquiring the lock to ensure consistency
 	if p.count > 1 {
 		p.buf.WriteByte(',')
