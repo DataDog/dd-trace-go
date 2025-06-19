@@ -43,3 +43,19 @@ func getIteratorHeadAndTail(iter *jsoniter.Iterator) (int, int) {
 	runtime.KeepAlive(iter) // Ensure the iterator is not garbage collected while we're using it
 	return head, tail
 }
+
+// getIteratorHead retrieves the head field from a jsoniter.Iterator.
+// This is done using unsafe operations to avoid the overhead of reflection.
+func getIteratorHead(iter *jsoniter.Iterator) int {
+	head := *(*int)(unsafe.Add(unsafe.Pointer(iter), headOffset))
+	runtime.KeepAlive(iter) // Ensure the iterator is not garbage collected while we're using it
+	return head
+}
+
+// getIteratorTail retrieves the tail field from a jsoniter.Iterator.
+// This is done using unsafe operations to avoid the overhead of reflection.
+func getIteratorTail(iter *jsoniter.Iterator) int {
+	tail := *(*int)(unsafe.Add(unsafe.Pointer(iter), tailOffset))
+	runtime.KeepAlive(iter) // Ensure the iterator is not garbage collected while we're using it
+	return tail
+}

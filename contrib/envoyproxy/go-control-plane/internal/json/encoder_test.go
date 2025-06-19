@@ -427,6 +427,26 @@ func TestJSONEncode_MalformedInput(t *testing.T) {
 			},
 		},
 		{
+			name:      "array first object key truncated",
+			jsonInput: `[{"name": "value", "test`,
+			truncatedTestCase: testCase{
+				expectOutput: []any{map[string]any{"name": "value"}},
+			},
+			notTruncatedTestCase: testCase{
+				expectEncodingError: true,
+			},
+		},
+		{
+			name:      "object in object with key truncated",
+			jsonInput: `{"name": {"key": "val", "test`,
+			truncatedTestCase: testCase{
+				expectOutput: map[string]any{"name": map[string]any{"key": "val"}},
+			},
+			notTruncatedTestCase: testCase{
+				expectEncodingError: true,
+			},
+		},
+		{
 			name:      "malformed json - missing colon",
 			jsonInput: `{"key" "value"}`,
 			truncatedTestCase: testCase{
