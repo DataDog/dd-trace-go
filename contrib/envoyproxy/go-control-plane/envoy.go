@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/internal/json"
+	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -44,6 +46,7 @@ type AppsecEnvoyConfig struct {
 	IsGCPServiceExtension bool
 	BlockingUnavailable   bool
 	Context               context.Context
+	BodyParsingSizeLimit  int
 }
 
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
@@ -74,15 +77,24 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 		}()
 	}
 
+	if config.BodyParsingSizeLimit <= 0 {
+		instr.Logger().Debug("external_processing: body parsing size limit set to 0 or negative, disabling body parsing")
+	}
+
 	return processor
 }
 
-type currentRequest struct {
-	span                  *tracer.Span
-	afterHandle           func()
-	ctx                   context.Context
-	fakeResponseWriter    *fakeResponseWriter
-	wrappedResponseWriter http.ResponseWriter
+type requestContext struct {
+	span                   *tracer.Span
+	afterHandle            func()
+	ctx                    context.Context
+	fakeResponseWriter     *fakeResponseWriter
+	wrappedResponseWriter  http.ResponseWriter
+	bodyBuffer             []byte
+	bodyTruncated          bool
+	receivingRequestBody   bool
+	waitingForResponseBody bool
+	blockedResponseHeaders bool
 }
 
 // Process handles the bidirectional stream that Envoy uses to give the server control
@@ -98,8 +110,7 @@ type currentRequest struct {
 func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.ExternalProcessor_ProcessServer) error {
 	var (
 		ctx                = processServer.Context()
-		blocked            bool
-		currentRequest     *currentRequest
+		currentRequest     *requestContext
 		processingRequest  envoyextproc.ProcessingRequest
 		processingResponse *envoyextproc.ProcessingResponse
 	)
@@ -112,8 +123,13 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return
 		}
 
-		instr.Logger().Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
-		currentRequest.span.Finish()
+		// We can't know if Envoy is configured to send the request and response body or not, but we were waiting for it,
+		// so don't show an error as it is expected in that specific configuration.
+		if !currentRequest.waitingForResponseBody {
+			instr.Logger().Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
+		}
+
+		currentRequest.afterHandle()
 		currentRequest = nil
 	}()
 
@@ -124,6 +140,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 				return nil
 			}
 
+			instr.Logger().Debug("external_processing: error processing stream: %v\n", ctx.Err())
 			return ctx.Err()
 		default:
 			// no op
@@ -131,8 +148,6 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 		err := processServer.RecvMsg(&processingRequest)
 		if err != nil {
-			// Note: Envoy is inconsistent with the "end_of_stream" value of its headers responses,
-			// so we can't fully rely on it to determine when it will close (cancel) the stream.
 			if s, ok := status.FromError(err); (ok && s.Code() == codes.Canceled) || err == io.EOF {
 				return nil
 			}
@@ -147,12 +162,21 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return status.Errorf(codes.Unknown, "Error asserting request type: %v", err)
 		}
 
+		var blocked bool
+
 		switch v := processingRequest.Request.(type) {
 		case *envoyextproc.ProcessingRequest_RequestHeaders:
 			processingResponse, currentRequest, blocked, err = processRequestHeaders(ctx, v, s.config)
+		case *envoyextproc.ProcessingRequest_RequestBody:
+			processingResponse = processRequestBody(v, currentRequest, s.config)
+
 		case *envoyextproc.ProcessingRequest_ResponseHeaders:
-			processingResponse, err = processResponseHeaders(v, currentRequest, s.config)
-			currentRequest = nil // Request is done, reset the current request
+			processingResponse, blocked, err = processResponseHeaders(v, currentRequest, s.config)
+		case *envoyextproc.ProcessingRequest_ResponseBody:
+			processingResponse = processResponseBody(v, currentRequest, s.config)
+
+		default:
+			// no op
 		}
 
 		if err != nil {
@@ -161,23 +185,24 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 		}
 
 		// End of stream reached, no more data to process
+		// We are sure that nothing more needs to be analyzed, no need to send a response (can only happen when response headers are received (with no body) or after a request body is received)
+		// and that the request is not blocked
 		if processingResponse == nil {
 			instr.Logger().Debug("external_processing: end of stream reached")
+			currentRequest = nil // Must set it to nil to indicate that the span was closed without issue
 			return nil
 		}
 
+		instr.Logger().Debug("external_processing: sending response: %v\n", processingResponse)
 		if err := processServer.SendMsg(processingResponse); err != nil {
 			instr.Logger().Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
 			return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 		}
 
-		if !blocked {
-			continue
+		if blocked {
+			instr.Logger().Debug("external_processing: request blocked, end the stream")
+			return nil
 		}
-
-		instr.Logger().Debug("external_processing: request blocked, end the stream")
-		currentRequest = nil
-		return nil
 	}
 }
 
@@ -187,16 +212,7 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 		return nil, nil
 
 	case *envoyextproc.ProcessingRequest_RequestBody:
-		// TODO: Handle request raw body in the WAF
-		return &envoyextproc.ProcessingResponse{
-			Response: &envoyextproc.ProcessingResponse_RequestBody{
-				RequestBody: &envoyextproc.BodyResponse{
-					Response: &envoyextproc.CommonResponse{
-						Status: envoyextproc.CommonResponse_CONTINUE,
-					},
-				},
-			},
-		}, nil
+		return nil, nil
 
 	case *envoyextproc.ProcessingRequest_RequestTrailers:
 		return &envoyextproc.ProcessingResponse{
@@ -204,16 +220,7 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 		}, nil
 
 	case *envoyextproc.ProcessingRequest_ResponseBody:
-		// Note: The end of stream bool value is not reliable
-		// Sometimes it's not set to true even if there is no more data to process
-		if r.ResponseBody.GetEndOfStream() {
-			return nil, nil
-		}
-
-		// TODO: Handle response raw body in the WAF
-		return &envoyextproc.ProcessingResponse{
-			Response: &envoyextproc.ProcessingResponse_ResponseBody{},
-		}, nil
+		return nil, nil
 
 	case *envoyextproc.ProcessingRequest_ResponseTrailers:
 		return &envoyextproc.ProcessingResponse{
@@ -225,7 +232,7 @@ func envoyExternalProcessingRequestTypeAssert(req *envoyextproc.ProcessingReques
 	}
 }
 
-func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders, config AppsecEnvoyConfig) (*envoyextproc.ProcessingResponse, *currentRequest, bool, error) {
+func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequest_RequestHeaders, config AppsecEnvoyConfig) (*envoyextproc.ProcessingResponse, *requestContext, bool, error) {
 	instr.Logger().Debug("external_processing: received request headers: %v\n", req.RequestHeaders)
 
 	request, err := newRequest(ctx, req)
@@ -253,8 +260,7 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 
 	// Block handling: If triggered, we need to block the request, return an immediate response
 	if !config.BlockingUnavailable && blocked {
-		afterHandle()
-		return doBlockResponse(fakeResponseWriter), nil, true, nil
+		return doBlockResponse(fakeResponseWriter, afterHandle), nil, true, nil
 	}
 
 	span, ok := tracer.SpanFromContext(request.Context())
@@ -267,7 +273,7 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 		return nil, nil, false, err
 	}
 
-	return processingResponse, &currentRequest{
+	return processingResponse, &requestContext{
 		span:                  span,
 		ctx:                   request.Context(),
 		fakeResponseWriter:    fakeResponseWriter,
@@ -310,7 +316,7 @@ func propagationRequestHeaderMutation(span *tracer.Span) (*envoyextproc.Processi
 	}, nil
 }
 
-func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *currentRequest, config AppsecEnvoyConfig) (*envoyextproc.ProcessingResponse, error) {
+func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders, currentRequest *requestContext, config AppsecEnvoyConfig) (*envoyextproc.ProcessingResponse, bool, error) {
 	instr.Logger().Debug("external_processing: received response headers: %v\n", res.ResponseHeaders)
 
 	if currentRequest == nil {
@@ -318,14 +324,12 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 		// However the response of the server (which is valid) is sent to the External Processor and fail to be processed
 		instr.Logger().Warn("external_processing: can't process the response: envoy never sent the beginning of the request, this is a known issue" +
 			" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
-		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
+		return nil, false, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 	}
 
 	if err := createFakeResponseWriter(currentRequest.wrappedResponseWriter, res); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
+		return nil, false, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
 	}
-
-	var blocked bool
 
 	// Now we need to know if the request has been blocked, but we don't have any other way than to look for the operation and bind a blocking data listener to it
 	if !config.BlockingUnavailable {
@@ -335,25 +339,30 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 				// We already wrote over the response writer, we need to reset it so the blocking handler can write to it
 				httptrace.ResetStatusCode(currentRequest.wrappedResponseWriter)
 				currentRequest.fakeResponseWriter.Reset()
-				blocked = true
+				currentRequest.blockedResponseHeaders = true
 			})
 		}
 	}
 
-	currentRequest.afterHandle()
+	// Run the waf on the response headers only when we are sure to not receive a response body
+	// Todo: change to support blocking on response headers followed by bodies, with bodies not sent to the extproc
+	if res.ResponseHeaders.GetEndOfStream() {
+		currentRequest.afterHandle()
+	}
 
-	if !config.BlockingUnavailable && blocked {
-		response := doBlockResponse(currentRequest.fakeResponseWriter)
-		return response, nil
+	if !config.BlockingUnavailable && currentRequest.blockedResponseHeaders {
+		response := doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
+		return response, true, nil
 	}
 
 	instr.Logger().Debug("external_processing: finishing request with status code: %v\n", currentRequest.fakeResponseWriter.status)
 
-	// Note: (cf. comment in the stream error handling)
-	// The end of stream bool value is not reliable
+	// When no response body is expected, we can end the stream
 	if res.ResponseHeaders.GetEndOfStream() {
-		return nil, nil
+		return nil, false, nil
 	}
+
+	currentRequest.waitingForResponseBody = true
 
 	return &envoyextproc.ProcessingResponse{
 		Response: &envoyextproc.ProcessingResponse_ResponseHeaders{
@@ -363,10 +372,141 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 				},
 			},
 		},
-	}, nil
+	}, false, nil
 }
 
-func doBlockResponse(writer *fakeResponseWriter) *envoyextproc.ProcessingResponse {
+func processRequestBody(body *envoyextproc.ProcessingRequest_RequestBody, currentRequest *requestContext, config AppsecEnvoyConfig) *envoyextproc.ProcessingResponse {
+	instr.Logger().Debug("external_processing: received request body: %v - EOS: %v\n", len(body.RequestBody.GetBody()), body.RequestBody.EndOfStream)
+
+	eos := body.RequestBody.GetEndOfStream()
+
+	if config.BodyParsingSizeLimit <= 0 {
+		instr.Logger().Warn("external_processing: the body parsing has been disabled but the request body analysis is still enabled in the Envoy configuration. " +
+			"Please check your configuration to either enable body parsing in the External Processor or disable it in the Envoy configuration.")
+
+		return &envoyextproc.ProcessingResponse{
+			Response: &envoyextproc.ProcessingResponse_RequestBody{
+				RequestBody: &envoyextproc.BodyResponse{},
+			},
+		}
+	}
+
+	currentRequest.receivingRequestBody = true
+	blocked := processBody(body.RequestBody.GetBody(), eos, currentRequest, config.BodyParsingSizeLimit, true)
+	if blocked != nil && !config.BlockingUnavailable {
+		return doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
+	}
+
+	return &envoyextproc.ProcessingResponse{
+		Response: &envoyextproc.ProcessingResponse_RequestBody{
+			RequestBody: &envoyextproc.BodyResponse{},
+		},
+	}
+}
+
+func processResponseBody(body *envoyextproc.ProcessingRequest_ResponseBody, currentRequest *requestContext, config AppsecEnvoyConfig) *envoyextproc.ProcessingResponse {
+	instr.Logger().Debug("external_processing: received response body: %v - EOS: %v\n", len(body.ResponseBody.GetBody()), body.ResponseBody.EndOfStream)
+
+	eos := body.ResponseBody.GetEndOfStream()
+
+	if config.BodyParsingSizeLimit <= 0 {
+		instr.Logger().Warn("external_processing: the body parsing has been disabled but the response body analysis is still enabled in the Envoy configuration. " +
+			"Please check your configuration to either enable body parsing in the External Processor or disable it in the Envoy configuration.")
+
+		// When no more data is expected, we can end the stream
+		if eos {
+			currentRequest.afterHandle()
+			return nil
+		}
+
+		return &envoyextproc.ProcessingResponse{
+			Response: &envoyextproc.ProcessingResponse_ResponseBody{
+				ResponseBody: &envoyextproc.BodyResponse{},
+			},
+		}
+	}
+
+	// If the response headers came before the end of the request body, we can be in a state where the request body
+	// was not fully received and not processed.
+	if currentRequest.receivingRequestBody {
+		currentRequest.receivingRequestBody = false
+		currentRequest.bodyBuffer = nil
+		currentRequest.bodyTruncated = false
+	}
+
+	blocked := processBody(body.ResponseBody.GetBody(), eos, currentRequest, config.BodyParsingSizeLimit, false)
+	if blocked != nil && !config.BlockingUnavailable {
+		return doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
+	}
+
+	// When the request is not blocked and no more data is expected, we can end the stream
+	if eos {
+		currentRequest.afterHandle()
+
+		// Because the afterHandle for the response headers is not executed when a response body is awaited,
+		// the blocking event of response headers will be triggered now in case of a triggered rule.
+		if currentRequest.blockedResponseHeaders && !config.BlockingUnavailable {
+			return doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
+		}
+
+		return nil
+	}
+
+	return &envoyextproc.ProcessingResponse{
+		Response: &envoyextproc.ProcessingResponse_ResponseBody{
+			ResponseBody: &envoyextproc.BodyResponse{},
+		},
+	}
+}
+
+// processBody is called when a processing request/response body is received from Envoy.
+// The body can be received in multiple chunks, so we need to buffer the data until the end of the request.
+// Returns an error when the request needs to be blocked, nil otherwise.
+func processBody(bodyChunk []byte, eos bool, currentRequest *requestContext, bodyParsingSizeLimit int, isRequest bool) error {
+	bodyLength := len(bodyChunk)
+
+	// Only add the bytes to the buffer that can fit
+	if bodyLength > 0 && !currentRequest.bodyTruncated {
+		currentBufferBodyLength := len(currentRequest.bodyBuffer)
+
+		if currentBufferBodyLength+bodyLength > bodyParsingSizeLimit {
+			bodyLength = bodyParsingSizeLimit - currentBufferBodyLength
+			instr.Logger().Debug("external_processing: request body size limit reached, truncating body to %d bytes", bodyLength)
+			currentRequest.bodyTruncated = true
+		}
+
+		if currentRequest.bodyBuffer == nil {
+			currentRequest.bodyBuffer = make([]byte, 0, bodyLength)
+		}
+
+		currentRequest.bodyBuffer = append(currentRequest.bodyBuffer, bodyChunk[:bodyLength]...)
+	}
+
+	// Only run the analysis on the body when it's complete or if it has been truncated
+	if !eos && !currentRequest.bodyTruncated {
+		instr.Logger().Debug("external_processing: request body not complete, waiting for more data")
+		return nil
+	}
+
+	instr.Logger().Debug("external_processing: request body complete or max size, processing body")
+
+	defer func() {
+		currentRequest.bodyTruncated = false
+		currentRequest.bodyBuffer = nil
+		currentRequest.receivingRequestBody = false
+	}()
+
+	jsonEncoder := json.NewEncodable(currentRequest.bodyBuffer, currentRequest.bodyTruncated)
+
+	if isRequest {
+		return appsec.MonitorParsedHTTPBody(currentRequest.ctx, jsonEncoder)
+	}
+	return appsec.MonitorHTTPResponseBody(currentRequest.ctx, jsonEncoder)
+}
+
+func doBlockResponse(writer *fakeResponseWriter, afterHandle func()) *envoyextproc.ProcessingResponse {
+	afterHandle()
+
 	var headersMutation []*envoycore.HeaderValueOption
 	for k, v := range writer.headers {
 		headersMutation = append(headersMutation, &envoycore.HeaderValueOption{

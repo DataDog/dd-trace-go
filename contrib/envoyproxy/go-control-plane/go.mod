@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
-	github.com/DataDog/go-libddwaf/v4 v4.2.0
+	github.com/DataDog/go-libddwaf/v4 v4.2.1-0.20250611134638-508ab5109eb0
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
 	github.com/gorilla/mux v1.8.1
 	github.com/json-iterator/go v1.1.12
