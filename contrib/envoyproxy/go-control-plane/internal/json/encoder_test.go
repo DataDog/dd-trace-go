@@ -32,45 +32,53 @@ type testCase struct {
 }
 
 func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiallyTruncated bool, checkOutput bool) {
-	encoder := newTestJSONEncodable(initiallyTruncated, []byte(tc.jsonInput))
-	config := newTestMaxJsonEncoderConfig(pinner)
+	for name, encodableFunc := range map[string]func([]byte, bool) libddwaf.Encodable{
+		"jsoniter": newJSONIterEncodableFromData,
+		"simdjson": newEncodableFromData,
+	} {
 
-	if tc.encoderSetup != nil {
-		tc.encoderSetup(&config)
+		t.Run(name, func(t *testing.T) {
+			encoder := encodableFunc([]byte(tc.jsonInput), initiallyTruncated)
+			config := newTestMaxJsonEncoderConfig(pinner)
+
+			if tc.encoderSetup != nil {
+				tc.encoderSetup(&config)
+			}
+
+			wafObj := &libddwaf.WAFObject{}
+			truncations, err := encoder.Encode(config, wafObj, 0)
+
+			// Check truncations
+			if len(tc.truncations) == 0 {
+				require.Empty(t, truncations, "Expected no truncations")
+			} else {
+				require.Equal(t, sortTruncations(tc.truncations), sortTruncations(truncations), "truncations mismatch")
+			}
+
+			// Check on expected error, when there is an error, the WAFObject is in an undefined state
+			if tc.expectEncodingError {
+				require.Error(t, err, "Expected encoding to fail with an error")
+				return
+			}
+
+			require.NoError(t, err, "Encode failed with an error")
+			require.False(t, wafObj.IsUnusable(), "The WAFObject should not be Nil nor Invalid")
+
+			if !checkOutput {
+				return
+			}
+
+			decoded, decodeErr := wafObj.AnyValue()
+
+			if tc.expectedDecodingError {
+				require.Error(t, decodeErr, "Expected decoding to fail with an error")
+				return
+			}
+
+			require.NoError(t, decodeErr, "Decode failed with an error")
+			require.True(t, reflect.DeepEqual(tc.expectOutput, decoded), fmt.Sprintf("Decoded object mismatch.\nExpected: %v\nGot:      %v", tc.expectOutput, decoded))
+		})
 	}
-
-	wafObj := &libddwaf.WAFObject{}
-	truncations, err := encoder.Encode(config, wafObj, 0)
-
-	// Check truncations
-	if len(tc.truncations) == 0 {
-		require.Empty(t, truncations, "Expected no truncations")
-	} else {
-		require.Equal(t, sortTruncations(tc.truncations), sortTruncations(truncations), "truncations mismatch")
-	}
-
-	// Check on expected error, when there is an error, the WAFObject is in an undefined state
-	if tc.expectEncodingError {
-		require.Error(t, err, "Expected encoding to fail with an error")
-		return
-	}
-
-	require.NoError(t, err, "Encode failed with an error")
-	require.False(t, wafObj.IsUnusable(), "The WAFObject should not be Nil nor Invalid")
-
-	if !checkOutput {
-		return
-	}
-
-	decoded, decodeErr := wafObj.AnyValue()
-
-	if tc.expectedDecodingError {
-		require.Error(t, decodeErr, "Expected decoding to fail with an error")
-		return
-	}
-
-	require.NoError(t, decodeErr, "Decode failed with an error")
-	require.True(t, reflect.DeepEqual(tc.expectOutput, decoded), fmt.Sprintf("Decoded object mismatch.\nExpected: %v\nGot:      %v", tc.expectOutput, decoded))
 }
 
 func TestJSONEncode_SimpleTypes(t *testing.T) {
@@ -602,15 +610,6 @@ func TestJSONEncode_TruncatedInvalidStructure(t *testing.T) {
 	})
 }
 
-// newTestJSONEncodable creates a new JSON encoder for testing purposes
-// Overrides the truncation behavior to simulate different scenarios
-func newTestJSONEncodable(truncated bool, data []byte) *Encodable {
-	return &Encodable{
-		truncated: truncated,
-		data:      data,
-	}
-}
-
 // newTestMaxJsonEncoderConfig creates a new JSON encoder configuration for testing purposes with all configs set to max
 func newTestMaxJsonEncoderConfig(pinner *runtime.Pinner) libddwaf.EncoderConfig {
 	tm, err := timer.NewTimer(timer.WithUnlimitedBudget())
@@ -655,42 +654,52 @@ func BenchmarkEncoder(b *testing.B) {
 			MaxContainerSize: 100,
 			Timer:            encodeTimer,
 		}
-		b.Run(fmt.Sprintf("%d", l), func(b *testing.B) {
-			b.ReportAllocs()
-			str := fullstr[:l]
-			slice := []string{str, str, str, str, str, str, str, str, str, str}
-			data := map[string]any{
-				"k0": slice,
-				"k1": slice,
-				"k2": slice,
-				"k3": slice,
-				"k4": slice,
-				"k5": slice,
-				"k6": slice,
-				"k7": slice,
-				"k8": slice,
-				"k9": slice,
-			}
-			if err != nil || n != len(buf) {
-				b.Fatal(err)
-			}
-			bytes, err := json.Marshal(data)
-			if err != nil {
-				b.Fatal(err)
-			}
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				encodable := Encodable{data: bytes}
-				var wafObj libddwaf.WAFObject
-				truncations, err := encodable.Encode(config, &wafObj, 0)
-				if err != nil {
-					b.Fatalf("Error encoding: %v", err)
-				}
 
-				runtime.KeepAlive(encodable)
-				runtime.KeepAlive(wafObj)
-				runtime.KeepAlive(truncations)
-			}
-		})
+		for name, encodableFunc := range map[string]func([]byte) libddwaf.Encodable{
+			"jsoniter": func(data []byte) libddwaf.Encodable {
+				return newJSONIterEncodableFromData(data, false)
+			},
+			"simdjson": func(data []byte) libddwaf.Encodable {
+				return newEncodableFromData(data, false)
+			},
+		} {
+			b.Run(fmt.Sprintf("%s/%d", name, l), func(b *testing.B) {
+				b.ReportAllocs()
+				str := fullstr[:l]
+				slice := []string{str, str, str, str, str, str, str, str, str, str}
+				data := map[string]any{
+					"k0": slice,
+					"k1": slice,
+					"k2": slice,
+					"k3": slice,
+					"k4": slice,
+					"k5": slice,
+					"k6": slice,
+					"k7": slice,
+					"k8": slice,
+					"k9": slice,
+				}
+				if err != nil || n != len(buf) {
+					b.Fatal(err)
+				}
+				bytes, err := json.Marshal(data)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					encodable := encodableFunc(bytes)
+					var wafObj libddwaf.WAFObject
+					truncations, err := encodable.Encode(config, &wafObj, 0)
+					if err != nil {
+						b.Fatalf("Error encoding: %v", err)
+					}
+
+					runtime.KeepAlive(encodable)
+					runtime.KeepAlive(wafObj)
+					runtime.KeepAlive(truncations)
+				}
+			})
+		}
 	}
 }
