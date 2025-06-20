@@ -1,0 +1,21 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2025-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2
+  description: Go Client for OpenSearch v4.
+
+aspects:
+  - id: NewClient
+    join-point:
+      one-of:
+        - function-call: github.com/opensearch-project/opensearch-go/v4.NewClient
+    advice:
+      - wrap-expression:
+          imports:
+            opensearchtrace: github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2
+          template: |-
+           opensearchtrace.NewClient({{ index .AST.Args 0 }})
