@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	_ "embed"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/xeipuuv/gojsonschema"
 	"gopkg.in/yaml.v3"
@@ -21,6 +23,9 @@ var (
 
 var config = newConfig()
 
+//go:embed schema.json
+var schemaBytes []byte
+
 func validateConfig(rawYAML []byte) (map[string]interface{}, error) {
 	// Step 1: Unmarshal YAML into generic map
 	var configData map[string]any
@@ -32,13 +37,6 @@ func validateConfig(rawYAML []byte) (map[string]interface{}, error) {
 	configJSON, err := json.Marshal(configData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert YAML to JSON: %v", err)
-	}
-
-	// Step 3: Load schema from local file
-	schemaPath := "schema.json"
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read schema file %s: %v", schemaPath, err)
 	}
 
 	// Step 4: Validate using the schema
