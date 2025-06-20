@@ -35,6 +35,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.2.0-dev
@@ -73,7 +74,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
-	github.com/aws/aws-sdk-go v1.44.327 // indirect
+	github.com/aws/aws-sdk-go v1.51.21 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.26.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.5 // indirect
@@ -206,6 +207,7 @@ require (
 	github.com/nats-io/nkeys v0.4.10 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/opensearch-project/opensearch-go/v4 v4.0.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.9 // indirect
 	github.com/philhofer/fwd v1.1.3-0.20240916144458-20a13a1f6b7c // indirect
@@ -325,6 +327,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../contrib/labstack/echo.v4
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 => ../../contrib/log/slog
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
+	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../contrib/opensearch-project/opensearch-go.v4
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../contrib/segmentio/kafka-go

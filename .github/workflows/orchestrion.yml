@@ -194,6 +194,9 @@ jobs:
           # Vault service
           docker pull vault:1.7.3
 
+          # OpenSearch images
+          docker pull public.ecr.aws/opensearchproject/opensearch:2
+
       # Enable VM overcommit memory, which is essential to ensure smooth operations of the Redis
       # servers. This VM setting is not namespaced, so changing it on the host also affects all
       # containerized workloads (which our Redis service is).
