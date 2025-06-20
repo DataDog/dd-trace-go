@@ -1,0 +1,91 @@
+{
+    "$id": "https://opentelemetry.io/otelconfig/resource.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "attributes": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/AttributeNameValue"
+            }
+        },
+        "detection/development": {
+            "$ref": "#/$defs/ExperimentalResourceDetection"
+        },
+        "schema_url": {
+            "type": ["string", "null"]
+        },
+        "attributes_list": {
+            "type": ["string", "null"]
+        }
+    },
+    "$defs": {
+        "AttributeNameValue": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "value": {
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "number"},
+                        {"type": "boolean"},
+                        {"type": "null"},
+                        {"type": "array", "items": {"type": "string"}},
+                        {"type": "array", "items": {"type": "boolean"}},
+                        {"type": "array", "items": {"type": "number"}}
+                    ]
+                },
+                "type": {
+                    "$ref": "#/$defs/AttributeType"
+                }
+            },
+            "required": [
+                "name", "value"
+            ]
+        },
+        "AttributeType": {
+            "type": ["string", "null"],
+            "enum": [
+                null,
+                "string",
+                "bool",
+                "int",
+                "double",
+                "string_array",
+                "bool_array",
+                "int_array",
+                "double_array"
+            ]
+        },
+        "ExperimentalResourceDetection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "attributes": {
+                    "$ref": "common.json#/$defs/IncludeExclude"
+                },
+                "detectors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ExperimentalResourceDetector"
+                    }
+                }
+            }
+        },
+        "ExperimentalResourceDetector": {
+            "type": "object",
+            "additionalProperties": true,
+            "minProperties": 1,
+            "maxProperties": 1,
+            "patternProperties": {
+                ".*": {
+                    "type": ["object", "null"]
+                }
+            }
+        }
+    }
+}
