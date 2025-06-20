@@ -31,7 +31,7 @@ jobs:
       # note: This will only run when there *are* changes to integration versions
       - name: Create Pull Request
         id: pr
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: "update-latest-supported-versions"
@@ -40,3 +40,4 @@ jobs:
           title: "docs: update supported integrations documentation"
           labels: changelog/no-changelog,docs
           body: "Update supported integrations documentation"
+          sign-commits: true
