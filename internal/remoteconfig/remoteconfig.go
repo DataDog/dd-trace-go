@@ -199,12 +199,12 @@ func newClient(config ClientConfig) (*Client, error) {
 func Start(config ClientConfig) error {
 	var err error
 	startOnce.Do(func() {
-		client, err = newClient(config)
-		if err != nil {
-			return
-		}
 		if !internal.BoolEnv("DD_REMOTE_CONFIGURATION_ENABLED", true) {
 			// Don't start polling if the feature is disabled explicitly
+			return
+		}
+		client, err = newClient(config)
+		if err != nil {
 			return
 		}
 		go func() {
