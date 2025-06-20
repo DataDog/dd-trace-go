@@ -75,8 +75,10 @@ const (
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
 	PackageOS                       Package = "os"
 	PackageRedisRueidis             Package = "redis/rueidis"
+)
 
-	// Deprecated packages
+// These packages have been removed in v2, but they are kept here for the transitional version.
+const (
 	PackageEmickleiGoRestful Package = "emicklei/go-restful"
 	PackageGaryburdRedigo    Package = "garyburd/redigo"
 	PackageGopkgJinZhuGormV1 Package = "gopkg.in/jinzhu/gorm.v1"
