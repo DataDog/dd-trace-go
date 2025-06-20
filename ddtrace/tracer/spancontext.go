@@ -115,6 +115,7 @@ type SpanContext struct {
 
 	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
 	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	propagated  bool       // when true, indicates this span was propagated to a remote source (via a propagator)
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
