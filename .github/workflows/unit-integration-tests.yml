@@ -123,7 +123,6 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
         INTEGRATION: true
     strategy:
       matrix:
@@ -287,6 +286,8 @@ jobs:
 
       - name: Test Contrib
         if: always()
+        env:
+          TEST_RESULTS: /tmp/test-results # path to where test results will be saved
         run: |
           ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
 
@@ -309,7 +310,6 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
     services:
       datadog-agent:
@@ -341,6 +341,7 @@ jobs:
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
+          TEST_RESULTS: /tmp/test-results # path to where test results will be saved
         run: |
             ./scripts/ci-test-core.sh
 
