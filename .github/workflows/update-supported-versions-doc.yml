@@ -35,8 +35,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: "update-latest-supported-versions"
-          commit-message: "docs: update latest supported integration versions doc"
+          commit-message: "docs: update supported integrations documentation"
           base: main
-          title: "docs: update latest supported integration versions doc"
+          title: "docs: update supported integrations documentation"
           labels: changelog/no-changelog,docs
-          body: "Update latest supported integration versions doc"
+          body: "Update supported integrations documentation"
