@@ -44,6 +44,9 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
 			ddopts = append(ddopts, tracer.ChildOf(tracer.FromGenericCtx(&otelCtxToDDCtx{sctx})))
+			if sctx.IsSampled() {
+				ddopts = append(ddopts, tracer.Tag(ext.ManualKeep, true))
+			}
 		}
 	}
 	if t := ssConfig.Timestamp(); !t.IsZero() {
