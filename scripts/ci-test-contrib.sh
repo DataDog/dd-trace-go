@@ -6,6 +6,9 @@ set +e
 # It is run by the GitHub Actions CI workflow defined in
 # .github/workflows/unit-integration-tests.yml.
 
+mkdir -p $TEST_RESULTS
+echo "make directory $TEST_RESULTS"
+
 [[ -d ./contrib ]] || exit 0
 
 if [ $# -eq 2 ]; then
