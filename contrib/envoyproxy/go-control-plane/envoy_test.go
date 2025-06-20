@@ -54,7 +54,7 @@ func TestAppSec(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "dd-test-scanner-log"}, map[string]string{}, false, false, "", "body")
+		end2EndStreamRequest(t, stream, "/", "POST", map[string]string{"User-Agent": "dd-test-scanner-log"}, map[string]string{}, false, false, "", "body")
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestAppSec(t *testing.T) {
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
-		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "ua0-600-55x": 1})
+		checkForAppsecEvent(t, finished, map[string]int{"ua0-600-55x": 1})
 	})
 
 	t.Run("monitoring-event-on-request-body", func(t *testing.T) {
@@ -424,7 +424,7 @@ func TestAppSec(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "1.2.3.4"}, "GET", "/", false)
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222"}, "GET", "/", false)
 
 		// Handle the immediate response
 		res, err := stream.Recv()
@@ -444,7 +444,7 @@ func TestAppSec(t *testing.T) {
 
 		// Check for tags
 		span := finished[0]
-		require.Equal(t, "1.2.3.4", span.Tag("http.client_ip"))
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
 		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))

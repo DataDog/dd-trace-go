@@ -93,7 +93,6 @@ type requestContext struct {
 	bodyBuffer             []byte
 	bodyTruncated          bool
 	receivingRequestBody   bool
-	waitingForRequestBody  bool
 	waitingForResponseBody bool
 	blockedResponseHeaders bool
 }
@@ -126,7 +125,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 		// We can't know if Envoy is configured to send the request and response body or not, but we were waiting for it,
 		// so don't show an error as it is expected in that specific configuration.
-		if !currentRequest.waitingForResponseBody /*&& !currentRequest.waitingForRequestBody*/ {
+		if !currentRequest.waitingForResponseBody {
 			instr.Logger().Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
 		}
 
@@ -204,8 +203,6 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			instr.Logger().Debug("external_processing: request blocked, end the stream")
 			return nil
 		}
-
-		continue
 	}
 }
 
@@ -276,19 +273,12 @@ func processRequestHeaders(ctx context.Context, req *envoyextproc.ProcessingRequ
 		return nil, nil, false, err
 	}
 
-	var bodyParsingBuffer []byte
-	if config.BodyParsingSizeLimit > 0 {
-		bodyParsingBuffer = make([]byte, 0, config.BodyParsingSizeLimit)
-	}
-
 	return processingResponse, &requestContext{
 		span:                  span,
 		ctx:                   request.Context(),
 		fakeResponseWriter:    fakeResponseWriter,
 		wrappedResponseWriter: wrappedResponseWriter,
 		afterHandle:           afterHandle,
-		bodyBuffer:            bodyParsingBuffer,
-		waitingForRequestBody: !req.RequestHeaders.GetEndOfStream(),
 	}, false, nil
 }
 
@@ -336,8 +326,6 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 			" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
 		return nil, false, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 	}
-
-	currentRequest.waitingForRequestBody = false
 
 	if err := createFakeResponseWriter(currentRequest.wrappedResponseWriter, res); err != nil {
 		return nil, false, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
@@ -390,7 +378,6 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 func processRequestBody(body *envoyextproc.ProcessingRequest_RequestBody, currentRequest *requestContext, config AppsecEnvoyConfig) *envoyextproc.ProcessingResponse {
 	instr.Logger().Debug("external_processing: received request body: %v - EOS: %v\n", len(body.RequestBody.GetBody()), body.RequestBody.EndOfStream)
 
-	currentRequest.waitingForRequestBody = false
 	eos := body.RequestBody.GetEndOfStream()
 
 	if config.BodyParsingSizeLimit <= 0 {
@@ -405,7 +392,7 @@ func processRequestBody(body *envoyextproc.ProcessingRequest_RequestBody, curren
 	}
 
 	currentRequest.receivingRequestBody = true
-	blocked := processBody(body.RequestBody.GetBody(), eos, currentRequest, config.BodyParsingSizeLimit)
+	blocked := processBody(body.RequestBody.GetBody(), eos, currentRequest, config.BodyParsingSizeLimit, true)
 	if blocked != nil && !config.BlockingUnavailable {
 		return doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
 	}
@@ -443,11 +430,11 @@ func processResponseBody(body *envoyextproc.ProcessingRequest_ResponseBody, curr
 	// was not fully received and not processed.
 	if currentRequest.receivingRequestBody {
 		currentRequest.receivingRequestBody = false
-		currentRequest.bodyBuffer = currentRequest.bodyBuffer[:0]
+		currentRequest.bodyBuffer = nil
 		currentRequest.bodyTruncated = false
 	}
 
-	blocked := processBody(body.ResponseBody.GetBody(), eos, currentRequest, config.BodyParsingSizeLimit)
+	blocked := processBody(body.ResponseBody.GetBody(), eos, currentRequest, config.BodyParsingSizeLimit, false)
 	if blocked != nil && !config.BlockingUnavailable {
 		return doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
 	}
@@ -472,10 +459,10 @@ func processResponseBody(body *envoyextproc.ProcessingRequest_ResponseBody, curr
 	}
 }
 
-// processRequestBody is called when the request body is received from Envoy.
+// processBody is called when a processing request/response body is received from Envoy.
 // The body can be received in multiple chunks, so we need to buffer the data until the end of the request.
 // Returns an error when the request needs to be blocked, nil otherwise.
-func processBody(bodyChunk []byte, eos bool, currentRequest *requestContext, bodyParsingSizeLimit int) error {
+func processBody(bodyChunk []byte, eos bool, currentRequest *requestContext, bodyParsingSizeLimit int, isRequest bool) error {
 	bodyLength := len(bodyChunk)
 
 	// Only add the bytes to the buffer that can fit
@@ -488,10 +475,14 @@ func processBody(bodyChunk []byte, eos bool, currentRequest *requestContext, bod
 			currentRequest.bodyTruncated = true
 		}
 
+		if currentRequest.bodyBuffer == nil {
+			currentRequest.bodyBuffer = make([]byte, 0, bodyLength)
+		}
+
 		currentRequest.bodyBuffer = append(currentRequest.bodyBuffer, bodyChunk[:bodyLength]...)
 	}
 
-	// Only run the analysis of the body is complete or if it has been truncated
+	// Only run the analysis on the body when it's complete or if it has been truncated
 	if !eos && !currentRequest.bodyTruncated {
 		instr.Logger().Debug("external_processing: request body not complete, waiting for more data")
 		return nil
@@ -499,15 +490,18 @@ func processBody(bodyChunk []byte, eos bool, currentRequest *requestContext, bod
 
 	instr.Logger().Debug("external_processing: request body complete or max size, processing body")
 
-	// Send for process
 	defer func() {
 		currentRequest.bodyTruncated = false
-		currentRequest.bodyBuffer = currentRequest.bodyBuffer[:0]
+		currentRequest.bodyBuffer = nil
 		currentRequest.receivingRequestBody = false
 	}()
 
 	jsonEncoder := json.NewEncodable(currentRequest.bodyBuffer, currentRequest.bodyTruncated)
-	return appsec.MonitorParsedHTTPBody(currentRequest.ctx, jsonEncoder)
+
+	if isRequest {
+		return appsec.MonitorParsedHTTPBody(currentRequest.ctx, jsonEncoder)
+	}
+	return appsec.MonitorHTTPResponseBody(currentRequest.ctx, jsonEncoder)
 }
 
 func doBlockResponse(writer *fakeResponseWriter, afterHandle func()) *envoyextproc.ProcessingResponse {

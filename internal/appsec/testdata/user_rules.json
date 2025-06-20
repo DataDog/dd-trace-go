@@ -50,7 +50,7 @@
             ],
             "transformers": [],
             "on_match": [
-                "block2"
+                "block_418"
             ]
         },
         {
@@ -76,7 +76,7 @@
             ],
             "transformers": [],
             "on_match": [
-                "block2"
+                "block_418"
             ]
         },
         {
@@ -105,7 +105,7 @@
             ],
             "transformers": [],
             "on_match": [
-                "block2"
+                "block_418"
             ]
         }
     ],
@@ -375,13 +375,13 @@
             "id": "blocked_ips",
             "type": "ip_with_expiration",
             "data": [
-                { "value": "1.2.3.4" }
+                { "value": "111.222.111.222" }
             ]
         }
     ],
     "actions":[
         {
-            "id": "block2",
+            "id": "block_418",
             "type": "block_request",
             "parameters": {
                 "status_code": 418,
