@@ -83,7 +83,7 @@ func Test(t *testing.T) {
 }
 
 func TestTruncation(t *testing.T) {
-	getQuery := func(t *testing.T, max int) string {
+	getQuery := func(t *testing.T, max int) (string, bool) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -116,32 +116,32 @@ func TestTruncation(t *testing.T) {
 		span.Finish()
 
 		spans := mt.FinishedSpans()
-		return spans[0].Tag("mongodb.query").(string)
+		value, ok := spans[0].Tag("mongodb.query").(string)
+		return value, ok
 	}
 
 	t.Run("zero", func(t *testing.T) {
-		// Should *not* truncate. The actual query contains a random session ID, so we just check the end which is deterministic.
-		actual := getQuery(t, 0)
-		wantSuffix := `"u":{"$set":{"test-item":"test-value"}}}]}`
-		assert.True(t, strings.HasSuffix(actual, `"u":{"$set":{"test-item":"test-value"}}}]}`), "query %q does not end with %q", actual, wantSuffix)
+		// Should *not* attach the tag.
+		_, ok := getQuery(t, 0)
+		assert.False(t, ok)
 	})
 
 	t.Run("positive", func(t *testing.T) {
 		// Should truncate.
-		actual := getQuery(t, 50)
+		actual, _ := getQuery(t, 50)
 		assert.Equal(t, actual, `{"update":"test-collection","ordered":true,"lsid":`)
 	})
 
 	t.Run("negative", func(t *testing.T) {
-		// Should *not* truncate.
-		actual := getQuery(t, -1)
+		// Should *not* truncate. The actual query contains a random session ID, so we just check the end which is deterministic.
+		actual, _ := getQuery(t, -1)
 		wantSuffix := `"u":{"$set":{"test-item":"test-value"}}}]}`
 		assert.True(t, strings.HasSuffix(actual, `"u":{"$set":{"test-item":"test-value"}}}]}`), "query %q does not end with %q", actual, wantSuffix)
 	})
 
 	t.Run("greater than query size", func(t *testing.T) {
-		// Should *not* truncate.
-		actual := getQuery(t, 1000) // arbitrary value > the size of the query we will be truncating
+		// Should *not* truncate. The actual query contains a random session ID, so we just check the end which is deterministic.
+		actual, _ := getQuery(t, 1000) // arbitrary value > the size of the query we will be truncating
 		wantSuffix := `"u":{"$set":{"test-item":"test-value"}}}]}`
 		assert.True(t, strings.HasSuffix(actual, `"u":{"$set":{"test-item":"test-value"}}}]}`), "query %q does not end with %q", actual, wantSuffix)
 	})

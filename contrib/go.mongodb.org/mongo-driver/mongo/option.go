@@ -34,6 +34,7 @@ func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.maxQuerySize = -1
 }
 
 // WithService sets the given service name for this integration spans.
@@ -69,9 +70,9 @@ func WithAnalyticsRate(rate float64) OptionFn {
 // WithMaxQuerySize sets the maximum query size (in bytes) before queries
 // are truncated when attached as a span tag.
 //
-// If max is <=0, the query is never truncated.
+// If max is < 0, the query is never truncated.
 //
-// Defaults to zero.
+// Defaults to -1.
 func WithMaxQuerySize(max int) OptionFn {
 	return func(cfg *config) {
 		cfg.maxQuerySize = max

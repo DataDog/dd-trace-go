@@ -45,16 +45,11 @@ type monitor struct {
 
 func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	hostname, port := peerInfo(evt)
-	b, _ := bson.MarshalExtJSON(evt.Command, false, false)
-	if m.cfg.maxQuerySize > 0 && len(b) > m.cfg.maxQuerySize {
-		b = b[:m.cfg.maxQuerySize]
-	}
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName("mongo." + evt.CommandName),
 		tracer.Tag(ext.DBInstance, evt.DatabaseName),
-		tracer.Tag(m.cfg.spanName, string(b)),
 		tracer.Tag(ext.DBType, "mongo"),
 		tracer.Tag(ext.PeerHostname, hostname),
 		tracer.Tag(ext.NetworkDestinationName, hostname),
@@ -65,6 +60,13 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	}
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
+	}
+	if m.cfg.maxQuerySize != 0 {
+		b, _ := bson.MarshalExtJSON(evt.Command, false, false)
+		if m.cfg.maxQuerySize > 0 && len(b) > m.cfg.maxQuerySize {
+			b = b[:m.cfg.maxQuerySize]
+		}
+		opts = append(opts, tracer.Tag(m.cfg.spanName, string(b)))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, m.cfg.spanName, opts...)
 	key := spanKey{
