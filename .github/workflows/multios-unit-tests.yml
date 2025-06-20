@@ -64,7 +64,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.REPORT }}
+          path: ./
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage

@@ -279,7 +279,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_API_KEY }}
-          files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
+          path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.

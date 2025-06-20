@@ -123,7 +123,6 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
         INTEGRATION: true
     strategy:
       matrix:
@@ -287,6 +286,8 @@ jobs:
 
       - name: Test Contrib
         if: always()
+        env:
+          TEST_RESULTS: /tmp/test-results # path to where test results will be saved
         run: |
           ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
 
@@ -309,7 +310,6 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
     services:
       datadog-agent:
@@ -341,6 +341,7 @@ jobs:
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
+          TEST_RESULTS: /tmp/test-results # path to where test results will be saved
         run: |
             ./scripts/ci-test-core.sh
 
@@ -380,13 +381,18 @@ jobs:
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
     steps:
+      - name: Checkout
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report*.xml
+          path: ${{ env.TEST_RESULTS }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
