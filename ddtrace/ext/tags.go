@@ -53,6 +53,9 @@ const (
 	// HTTPClientIP sets the HTTP client IP tag.
 	HTTPClientIP = "http.client_ip"
 
+	// HTTPReferrerHostname sets the HTTP referrer hostname tag.
+	HTTPReferrerHostname = "http.referrer_hostname"
+
 	// HTTPRequestHeaders sets the HTTP request headers partial tag
 	// This tag is meant to be composed, i.e http.request.headers.headerX, http.request.headers.headerY, etc...
 	// See https://docs.datadoghq.com/tracing/trace_collection/tracing_naming_convention/#http-requests
