@@ -800,8 +800,6 @@ github.com/DataDog/datadog-agent/pkg/version v0.66.1 h1:8eJdgkO/o4/5RlF3u29j0QO8
 github.com/DataDog/datadog-agent/pkg/version v0.66.1/go.mod h1:LXOHXAHH+vqBwmQKcZa5FgBEi4ECKIC2WsV2Jd9VVJ0=
 github.com/DataDog/datadog-go/v5 v5.6.0 h1:2oCLxjF/4htd55piM75baflj/KoE6VYS7alEUqFvRDw=
 github.com/DataDog/datadog-go/v5 v5.6.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.2.0-dev h1:tyGQmMom7VS6TzGF45p+mGXW+rE0IWAtVKw0Ln5VMOA=
-github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.2.0-dev/go.mod h1:4RlVpgcAoxrfa1DFT7dMfKJVG7Y7HViHpfOql3ugMi8=
 github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.2.0-dev h1:h4j/WhnsQyYU44v1AChsbaeQo7/B67i1xlq3dw0nB+Y=
 github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.2.0-dev/go.mod h1:MqGsmoXMJ8mfn36mcmMX+MBoRG4D9WTCKt34FzcrEz8=
 github.com/DataDog/go-libddwaf/v4 v4.2.1-0.20250613111738-824b8f59fcd9 h1:YVd3hJJ1RlHatMzBh8BsvO38UPtDVwqbkrPYJ07Wt9U=

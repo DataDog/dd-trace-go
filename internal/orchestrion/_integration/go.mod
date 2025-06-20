@@ -456,3 +456,5 @@ replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../orchestrio
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 
 replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2
