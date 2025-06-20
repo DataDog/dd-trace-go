@@ -52,10 +52,6 @@ func TestGetCoverage(t *testing.T) {
 		return "", nil
 	}
 
-	// Redirect stdout to tempFile to avoid cluttering output
-	tempFile, _ = os.CreateTemp("", "coverage")
-	defer tempFile.Close()
-
 	coverage := GetCoverage()
 	if coverage != 1.0 {
 		t.Errorf("Expected coverage to be 1.0, got %v", coverage)
@@ -240,10 +236,6 @@ func TestCollectCoverageBeforeTestExecution(t *testing.T) {
 		return "", nil
 	}
 
-	// Redirect stdout to tempFile to avoid cluttering output
-	tempFile, _ = os.CreateTemp("", "coverage")
-	defer tempFile.Close()
-
 	mode = "count"
 
 	tc := &testCoverage{
@@ -284,10 +276,6 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 		return fmt.Errorf("mock error")
 	},
 	}
-
-	// Redirect stdout to tempFile to avoid cluttering output
-	tempFile, _ = os.CreateTemp("", "coverage")
-	defer tempFile.Close()
 
 	mode = "count"
 
