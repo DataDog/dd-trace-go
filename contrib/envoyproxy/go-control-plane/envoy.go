@@ -93,7 +93,9 @@ type requestContext struct {
 	bodyBuffer             []byte
 	bodyTruncated          bool
 	receivingRequestBody   bool
+	waitingForRequestBody  bool
 	waitingForResponseBody bool
+	blockedResponseHeaders bool
 }
 
 // Process handles the bidirectional stream that Envoy uses to give the server control
@@ -147,8 +149,6 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 
 		err := processServer.RecvMsg(&processingRequest)
 		if err != nil {
-			// Note: Envoy is inconsistent with the "end_of_stream" value of its headers responses,
-			// so we can't fully rely on it to determine when it will close (cancel) the stream.
 			if s, ok := status.FromError(err); (ok && s.Code() == codes.Canceled) || err == io.EOF {
 				return nil
 			}
@@ -177,7 +177,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			processingResponse = processResponseBody(v, currentRequest, s.config)
 
 		default:
-			instr.Logger().Error("external_processing 2: unknown request type: %T\n", v)
+			// no op
 		}
 
 		if err != nil {
@@ -194,6 +194,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return nil
 		}
 
+		instr.Logger().Debug("external_processing: sending response: %v\n", processingResponse)
 		if err := processServer.SendMsg(processingResponse); err != nil {
 			instr.Logger().Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
 			return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
@@ -336,11 +337,11 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 		return nil, false, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 	}
 
+	currentRequest.waitingForRequestBody = false
+
 	if err := createFakeResponseWriter(currentRequest.wrappedResponseWriter, res); err != nil {
 		return nil, false, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
 	}
-
-	var blocked bool
 
 	// Now we need to know if the request has been blocked, but we don't have any other way than to look for the operation and bind a blocking data listener to it
 	if !config.BlockingUnavailable {
@@ -350,12 +351,18 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 				// We already wrote over the response writer, we need to reset it so the blocking handler can write to it
 				httptrace.ResetStatusCode(currentRequest.wrappedResponseWriter)
 				currentRequest.fakeResponseWriter.Reset()
-				blocked = true
+				currentRequest.blockedResponseHeaders = true
 			})
 		}
 	}
 
-	if !config.BlockingUnavailable && blocked {
+	// Run the waf on the response headers only when we are sure to not receive a response body
+	// Todo: change to support blocking on response headers followed by bodies, with bodies not sent to the extproc
+	if res.ResponseHeaders.GetEndOfStream() {
+		currentRequest.afterHandle()
+	}
+
+	if !config.BlockingUnavailable && currentRequest.blockedResponseHeaders {
 		response := doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
 		return response, true, nil
 	}
@@ -364,7 +371,6 @@ func processResponseHeaders(res *envoyextproc.ProcessingRequest_ResponseHeaders,
 
 	// When no response body is expected, we can end the stream
 	if res.ResponseHeaders.GetEndOfStream() {
-		currentRequest.afterHandle()
 		return nil, false, nil
 	}
 
@@ -449,6 +455,13 @@ func processResponseBody(body *envoyextproc.ProcessingRequest_ResponseBody, curr
 	// When the request is not blocked and no more data is expected, we can end the stream
 	if eos {
 		currentRequest.afterHandle()
+
+		// Because the afterHandle for the response headers is not executed when a response body is awaited,
+		// the blocking event of response headers will be triggered now in case of a triggered rule.
+		if currentRequest.blockedResponseHeaders && !config.BlockingUnavailable {
+			return doBlockResponse(currentRequest.fakeResponseWriter, currentRequest.afterHandle)
+		}
+
 		return nil
 	}
 
