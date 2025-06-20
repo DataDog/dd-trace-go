@@ -1,0 +1,133 @@
+{
+    "$id": "https://opentelemetry.io/otelconfig/common.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+        "IncludeExclude": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "included": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "excluded": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "NameStringValuePair": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": ["string", "null"]
+                }
+            },
+            "required": [
+                "name", "value"
+            ]
+        },
+        "OtlpHttpExporter": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+                "endpoint": {
+                    "type": ["string", "null"]
+                },
+                "certificate_file": {
+                    "type": ["string", "null"]
+                },
+                "client_key_file": {
+                    "type": ["string", "null"]
+                },
+                "client_certificate_file": {
+                    "type": ["string", "null"]
+                },
+                "headers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/NameStringValuePair"
+                    }
+                },
+                "headers_list": {
+                    "type": ["string", "null"]
+                },
+                "compression": {
+                    "type": ["string", "null"]
+                },
+                "timeout": {
+                    "type": ["integer", "null"],
+                    "minimum": 0
+                },
+                "encoding": {
+                    "$ref": "#/$defs/OtlpHttpEncoding"
+                }
+            }
+        },
+        "OtlpHttpEncoding": {
+            "type": ["string", "null"],
+            "enum": [
+                "protobuf",
+                "json"
+            ]
+        },
+        "OtlpGrpcExporter": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+                "endpoint": {
+                    "type": ["string", "null"]
+                },
+                "certificate_file": {
+                    "type": ["string", "null"]
+                },
+                "client_key_file": {
+                    "type": ["string", "null"]
+                },
+                "client_certificate_file": {
+                    "type": ["string", "null"]
+                },
+                "headers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "common.json#/$defs/NameStringValuePair"
+                    }
+                },
+                "headers_list": {
+                    "type": ["string", "null"]
+                },
+                "compression": {
+                    "type": ["string", "null"]
+                },
+                "timeout": {
+                    "type": ["integer", "null"],
+                    "minimum": 0
+                },
+                "insecure": {
+                    "type": ["boolean", "null"]
+                }
+            }
+        },
+        "ExperimentalOtlpFileExporter": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "properties": {
+                "output_stream": {
+                    "type": ["string", "null"]
+                }
+            }
+        },
+        "ConsoleExporter": {
+            "type": ["object", "null"],
+            "additionalProperties": false
+        }
+    }
+}

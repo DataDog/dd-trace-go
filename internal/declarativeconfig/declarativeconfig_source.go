@@ -41,7 +41,7 @@ func validateConfig(rawYAML []byte) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("failed to read schema file %s: %v", schemaPath, err)
 	}
 
-	// Step 4: Validate using local schema
+	// Step 4: Validate using the schema
 	schemaLoader := gojsonschema.NewBytesLoader(schemaBytes)
 	configLoader := gojsonschema.NewBytesLoader(configJSON)
 
