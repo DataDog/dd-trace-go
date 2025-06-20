@@ -32,7 +32,8 @@ Sometimes a pull request's checks will show failures that aren't related to its 
 
 1. look through the gitlab job logs for an obvious cause
 2. retry the test a few times to see if it flakes
-3. ask the ddtrace-go chat channel for help
+3. for internal contributors, ask the #dd-trace-go channel for help
+4. if you are not an internal contributor, [open an issue](https://github.com/DataDog/dd-trace-go/issues/new/choose) or ping @Datadog/apm-go
 
 #### Getting a PR Reviewed
 
