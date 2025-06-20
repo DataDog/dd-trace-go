@@ -380,6 +380,11 @@ jobs:
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
     steps:
+      - name: Checkout
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
