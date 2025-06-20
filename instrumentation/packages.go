@@ -45,31 +45,32 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
-	PackageValyalaFastHTTP         Package = "valyala/fasthttp"
-	PackageUrfaveNegroni           Package = "urfave/negroni"
-	PackageTwitchTVTwirp           Package = "twitchtv/twirp"
-	PackageTidwallBuntDB           Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB         Package = "syndtr/goleveldb"
-	PackageSirupsenLogrus          Package = "sirupsen/logrus"
-	PackageShopifySarama           Package = "Shopify/sarama"
-	PackageSegmentioKafkaGo        Package = "segmentio/kafka-go"
-	PackageRedisGoRedisV9          Package = "redis/go-redis.v9"
-	PackageOlivereElasticV5        Package = "olivere/elastic.v5"
-	PackageMiekgDNS                Package = "miekg/dns"
-	PackageLabstackEchoV4          Package = "labstack/echo.v4"
-	PackageK8SClientGo             Package = "k8s.io/client-go"
-	PackageK8SGatewayAPI           Package = "k8s.io/gateway-api"
-	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
-	PackageJmoironSQLx             Package = "jmoiron/sqlx"
-	PackageJackcPGXV5              Package = "jackc/pgx.v5"
-	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
-	PackageHashicorpVaultAPI       Package = "hashicorp/vault"
-	PackageGraphQLGoGraphQL        Package = "graphql-go/graphql"
-	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
-	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
-	PackageGorillaMux              Package = "gorilla/mux"
-	PackageUptraceBun              Package = "uptrace/bun"
-	PackageLogSlog                 Package = "log/slog"
+	PackageValyalaFastHTTP                 Package = "valyala/fasthttp"
+	PackageUrfaveNegroni                   Package = "urfave/negroni"
+	PackageTwitchTVTwirp                   Package = "twitchtv/twirp"
+	PackageTidwallBuntDB                   Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB                 Package = "syndtr/goleveldb"
+	PackageSirupsenLogrus                  Package = "sirupsen/logrus"
+	PackageShopifySarama                   Package = "Shopify/sarama"
+	PackageSegmentioKafkaGo                Package = "segmentio/kafka-go"
+	PackageRedisGoRedisV9                  Package = "redis/go-redis.v9"
+	PackageOlivereElasticV5                Package = "olivere/elastic.v5"
+	PackageOpenSearchProjectOpenSearchGoV4 Package = "opensearch-project/opensearch-go/v4"
+	PackageMiekgDNS                        Package = "miekg/dns"
+	PackageLabstackEchoV4                  Package = "labstack/echo.v4"
+	PackageK8SClientGo                     Package = "k8s.io/client-go"
+	PackageK8SGatewayAPI                   Package = "k8s.io/gateway-api"
+	PackageJulienschmidtHTTPRouter         Package = "julienschmidt/httprouter"
+	PackageJmoironSQLx                     Package = "jmoiron/sqlx"
+	PackageJackcPGXV5                      Package = "jackc/pgx.v5"
+	PackageHashicorpConsulAPI              Package = "hashicorp/consul"
+	PackageHashicorpVaultAPI               Package = "hashicorp/vault"
+	PackageGraphQLGoGraphQL                Package = "graphql-go/graphql"
+	PackageGraphGophersGraphQLGo           Package = "graph-gophers/graphql-go"
+	PackageGormIOGormV1                    Package = "gorm.io/gorm.v1"
+	PackageGorillaMux                      Package = "gorilla/mux"
+	PackageUptraceBun                      Package = "uptrace/bun"
+	PackageLogSlog                         Package = "log/slog"
 
 	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
@@ -640,6 +641,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("elastic.client"),
 				buildOpNameV0:      staticName("elasticsearch.query"),
 				buildOpNameV1:      staticName("elasticsearch.query"),
+			},
+		},
+	},
+	PackageOpenSearchProjectOpenSearchGoV4: {
+		TracedPackage: "github.com/opensearch-project/opensearch-go/v4",
+		EnvVarPrefix:  "OPENSEARCH",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("opensearch.client"),
+				buildOpNameV0:      staticName("opensearch.query"),
+				buildOpNameV1:      staticName("opensearch.query"),
 			},
 		},
 	},
