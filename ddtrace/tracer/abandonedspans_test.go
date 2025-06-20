@@ -72,11 +72,11 @@ func formatSpanString(s *Span) string {
 }
 
 func TestAbandonedSpansMetric(t *testing.T) {
-	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
 	tp := new(log.RecordLogger)
 	tickerInterval = 100 * time.Millisecond
 	t.Run("finished", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		tg.Reset()
 		defer setTestTime()()
@@ -89,6 +89,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		assert.Empty(tg.GetCallsByName("datadog.tracer.abandoned_spans"))
 	})
 	t.Run("open", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		tg.Reset()
 		defer setTestTime()()
@@ -102,7 +103,9 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		call := calls[0]
 		assert.Equal([]string{"name:operation", "integration:some_integration_name"}, call.Tags())
 	})
+
 	t.Run("both", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		tg.Reset()
 		defer setTestTime()()
@@ -120,11 +123,11 @@ func TestAbandonedSpansMetric(t *testing.T) {
 }
 
 func TestReportAbandonedSpans(t *testing.T) {
-	assert := assert.New(t)
 	tp := new(log.RecordLogger)
 	tickerInterval = 100 * time.Millisecond
 
 	t.Run("on", func(t *testing.T) {
+		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond))
 		assert.Nil(err)
 		defer stop()
@@ -133,6 +136,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("finished", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
@@ -146,6 +150,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("open", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
@@ -158,6 +163,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("both", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
@@ -176,6 +182,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("timeout", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(3*time.Minute))
@@ -195,6 +202,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	// This test ensures that the debug mode works as expected and returns invalid information
 	// given invalid inputs.
 	t.Run("invalid", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(10*time.Minute))
@@ -211,6 +219,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("many", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
@@ -232,6 +241,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("many buckets", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond))
@@ -255,6 +265,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("stop", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond))
@@ -273,6 +284,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("wait", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))
@@ -289,6 +301,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 	})
 
 	t.Run("truncate", func(t *testing.T) {
+		assert := assert.New(t)
 		tp.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond))

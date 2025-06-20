@@ -72,9 +72,6 @@ var (
 	// tearDown is the function to write the coverage counters to the file.
 	tearDown func(coverprofile string, gocoverdir string) (string, error)
 
-	// tempFile is the temp file to store coverage messages that we don't want to print to stdout.
-	tempFile *os.File
-
 	// covWriter is the coverage writer for sending test coverage data to the backend.
 	covWriter *coverageWriter
 
@@ -99,10 +96,6 @@ func InitializeCoverage(m *testing.M) {
 	tMode, tDown, _ := testDep.InitRuntimeCoverage()
 	mode = tMode
 	tearDown = func(coverprofile string, gocoverdir string) (string, error) {
-		// redirecting stdout to a temp file to avoid printing coverage messages to stdout
-		stdout := os.Stdout
-		os.Stdout = tempFile
-		defer func() { os.Stdout = stdout }()
 		// writing the coverage counters to the file
 		return tDown(coverprofile, gocoverdir)
 	}
@@ -111,9 +104,6 @@ func InitializeCoverage(m *testing.M) {
 	if !CanCollect() {
 		return
 	}
-
-	// creating a temp file to store coverage messages that we don't want to print to stdout
-	tempFile, _ = os.CreateTemp("", "coverage")
 
 	// initializing coverage writer
 	covWriter = newCoverageWriter()

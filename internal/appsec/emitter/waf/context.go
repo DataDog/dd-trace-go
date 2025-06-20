@@ -9,6 +9,7 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -41,7 +42,9 @@ type (
 		supportedAddresses config.AddressSet
 		// metrics the place that manages reporting for the current execution
 		metrics *ContextMetrics
-		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices.
+		// requestBlocked is used to track if the request has been requestBlocked by the WAF or not.
+		requestBlocked bool
+		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices, and requestBlocked.
 		mu sync.Mutex
 		// logOnce is used to log a warning once when a request has too many WAF events via the built-in limiter or the max value.
 		logOnce sync.Once
@@ -94,6 +97,12 @@ func (op *ContextOperation) GetMetricsInstance() *ContextMetrics {
 	return op.metrics
 }
 
+func (op *ContextOperation) SetRequestBlocked() {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.requestBlocked = true
+}
+
 // AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.
 func (op *ContextOperation) AddEvents(events ...any) bool {
 	if len(events) == 0 {
@@ -142,6 +151,11 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 	}
 
 	for k, v := range derivatives {
+		// If the request has been blocked, we don't want to report any derivatives representing the response schema.
+		if op.requestBlocked && strings.HasPrefix(k, "_dd.appsec.s.res.") {
+			continue
+		}
+
 		op.derivatives[k] = v
 	}
 }
