@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -134,5 +135,70 @@ func TestAnalyticsSettings(t *testing.T) {
 		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
+	})
+}
+
+func TestTruncation(t *testing.T) {
+	getQuery := func(t *testing.T, max int) string {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+		defer cancel()
+
+		span, ctx := tracer.StartSpanFromContext(ctx, "mongodb-test")
+
+		addr := "mongodb://localhost:27017/?connect=direct"
+		opts := options.Client()
+		opts.Monitor = NewMonitor(WithMaxQuerySize(max))
+		opts.ApplyURI(addr)
+		client, err := mongo.Connect(ctx, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = client.
+			Database("test-database").
+			Collection("test-collection").
+			UpdateOne(
+				ctx,
+				bson.D{{Key: "_id", Value: "68536ec8d906742797f5705a"}},
+				bson.D{{Key: "$set", Value: map[string]any{"test-item": "test-value"}}},
+			)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		span.Finish()
+
+		spans := mt.FinishedSpans()
+		return spans[0].Tag("mongodb.query").(string)
+	}
+
+	t.Run("zero", func(t *testing.T) {
+		// Should *not* truncate. The actual query contains a random session ID, so we just check the end which is deterministic.
+		actual := getQuery(t, 0)
+		wantSuffix := `"u":{"$set":{"test-item":"test-value"}}}]}`
+		assert.True(t, strings.HasSuffix(actual, `"u":{"$set":{"test-item":"test-value"}}}]}`), "query %q does not end with %q", actual, wantSuffix)
+	})
+
+	t.Run("positive", func(t *testing.T) {
+		// Should truncate.
+		actual := getQuery(t, 50)
+		assert.Equal(t, actual, `{"update":"test-collection","ordered":true,"lsid":`)
+	})
+
+	t.Run("negative", func(t *testing.T) {
+		// Should *not* truncate.
+		actual := getQuery(t, -1)
+		wantSuffix := `"u":{"$set":{"test-item":"test-value"}}}]}`
+		assert.True(t, strings.HasSuffix(actual, `"u":{"$set":{"test-item":"test-value"}}}]}`), "query %q does not end with %q", actual, wantSuffix)
+	})
+
+	t.Run("greater than query size", func(t *testing.T) {
+		// Should *not* truncate.
+		actual := getQuery(t, 1000) // arbitrary value > the size of the query we will be truncating
+		wantSuffix := `"u":{"$set":{"test-item":"test-value"}}}]}`
+		assert.True(t, strings.HasSuffix(actual, `"u":{"$set":{"test-item":"test-value"}}}]}`), "query %q does not end with %q", actual, wantSuffix)
 	})
 }

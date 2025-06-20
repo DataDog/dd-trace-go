@@ -15,6 +15,7 @@ type config struct {
 	serviceName   string
 	spanName      string
 	analyticsRate float64
+	maxQuerySize  int
 }
 
 // Option describes options for the Mongo integration.
@@ -62,5 +63,17 @@ func WithAnalyticsRate(rate float64) OptionFn {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithMaxQuerySize sets the maximum query size (in bytes) before queries
+// are truncated when attached as a span tag.
+//
+// If max is <=0, the query is never truncated.
+//
+// Defaults to zero.
+func WithMaxQuerySize(max int) OptionFn {
+	return func(cfg *config) {
+		cfg.maxQuerySize = max
 	}
 }
