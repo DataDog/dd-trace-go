@@ -14,6 +14,7 @@ import (
 	"os"
 	"testing"
 
+	envoyextprocfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 
@@ -54,7 +55,7 @@ func TestAppSec(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/", "POST", map[string]string{"User-Agent": "dd-test-scanner-log"}, map[string]string{}, false, false, "", "body")
+		end2EndStreamRequest(t, stream, "/", "POST", map[string]string{"User-Agent": "dd-test-scanner-log"}, map[string]string{}, false, false, "", "")
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
@@ -136,7 +137,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a processing response headers with the information that it would be followed by a body, but don't send the body
 		// It is mimicking a scenario where the response headers are sent and a body is present, but response body processing is disabled in the Envoy configuration
-		sendProcessingResponseHeaders(t, stream, map[string]string{"test": "match-no-block-response-header"}, "200", true)
+		sendProcessingResponseHeaders(t, stream, map[string]string{"test": "match-no-block-response-header", "Content-Type": "application/json"}, "200", true)
 		_, err = stream.Recv()
 		require.NoError(t, err)
 
@@ -287,6 +288,8 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
+	// Expected to fail because the external processor is waiting for a body to run the waf on the response headers
+	// This scenario only happen if the Envoy configuration doesn't allow the mode override, and so Envoy never sends the body
 	t.Run("blocking-event-on-response-headers-with-body-not-sent", func(t *testing.T) {
 		client, mt, cleanup := setup()
 		defer cleanup()
@@ -301,7 +304,7 @@ func TestAppSec(t *testing.T) {
 
 		// Send a processing response headers with the information that it would be followed by a body, but don't send the body
 		// It is mimicking a scenario where the response headers are sent and a body is present, but response body processing is disabled in the Envoy configuration
-		sendProcessingResponseHeaders(t, stream, map[string]string{"test": "match-response-header"}, "200", true)
+		sendProcessingResponseHeaders(t, stream, map[string]string{"test": "match-response-header", "Content-Type": "application/json"}, "200", true)
 
 		// Res should be an immediate response with the blocking event
 		res, err := stream.Recv()
@@ -448,6 +451,28 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("no-monitoring-event-on-request-body-bad-content-type", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "text/html"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		span := finished[0]
+		require.NotContains(t, span.Tags(), "appsec.event")
+		require.NotContains(t, span.Tags(), "_dd.appsec.json")
 	})
 }
 
@@ -829,14 +854,14 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 
 	// First part: request
 	// 1- Send the headers
-	sendProcessingRequestHeaders(t, stream, requestHeaders, method, path, true)
+	sendProcessingRequestHeaders(t, stream, requestHeaders, method, path, len(requestBody) != 0)
 
 	res, err := stream.Recv()
 	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_RequestHeaders{}, res.GetResponse())
 	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetRequestHeaders().GetResponse().GetStatus())
 
-	hasRequestBody := len(requestBody) != 0
-	if hasRequestBody {
+	if res.GetModeOverride().GetRequestBodyMode() == envoyextprocfilter.ProcessingMode_STREAMED {
 		// 2- Send the body
 		msgRequestBodySent := sendProcessingRequestBodyStreamed(t, stream, []byte(requestBody), 1)
 
@@ -856,11 +881,10 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 
 	// Second part: response
 	// 1- Send the response headers
-	hasResponseBody := len(responseBody) != 0
-	sendProcessingResponseHeaders(t, stream, responseHeaders, "200", hasResponseBody)
+	sendProcessingResponseHeaders(t, stream, responseHeaders, "200", len(responseBody) != 0)
 
-	if blockOnResponseHeaders || !hasResponseBody {
-		// Should have received an immediate response for blocking
+	if blockOnResponseHeaders || res.GetModeOverride().GetResponseBodyMode() != envoyextprocfilter.ProcessingMode_STREAMED {
+		// Should have received an immediate response for blocking or the body wasn't accepted for analysis
 		// Let the test handle the response
 		return
 	}
@@ -869,17 +893,15 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	require.NoError(t, err)
 	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseHeaders().GetResponse().GetStatus())
 
-	if hasResponseBody {
-		// 2- Send the response body
-		msgResponseBodySent := sendProcessingResponseBodyStreamed(t, stream, []byte(responseBody), 1)
+	// 2- Send the response body
+	msgResponseBodySent := sendProcessingResponseBodyStreamed(t, stream, []byte(responseBody), 1)
 
-		// minus 1 because the last message is the end of stream, and the connection will be closed after that
-		// because no appsec event will be found
-		for i := 0; i < msgResponseBodySent-1; i++ {
-			res, err = stream.Recv()
-			require.NoError(t, err)
-			require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseBody().GetResponse().GetStatus())
-		}
+	// minus 1 because the last message is the end of stream, and the connection will be closed after that
+	// because no appsec event will be found
+	for i := 0; i < msgResponseBodySent-1; i++ {
+		res, err = stream.Recv()
+		require.NoError(t, err)
+		require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseBody().GetResponse().GetStatus())
 	}
 
 	if blockOnResponseBody {
