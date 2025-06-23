@@ -32,19 +32,19 @@ var config = newConfig()
 var schemaBytes []byte
 
 func validateConfig(rawYAML []byte) (map[string]interface{}, error) {
-	// Step 1: Unmarshal YAML into generic map
+	// Unmarshal YAML into generic map
 	var configData map[string]any
 	if err := yaml.Unmarshal(rawYAML, &configData); err != nil {
 		return nil, fmt.Errorf("invalid YAML: %v", err)
 	}
 
-	// Step 2: Marshal to JSON for validation
+	// Marshal to JSON for validation
 	configJSON, err := json.Marshal(configData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert YAML to JSON: %v", err)
 	}
 
-	// Step 4: Validate using the schema
+	// Validate using the schema
 	schemaLoader := gojsonschema.NewBytesLoader(schemaBytes)
 	configLoader := gojsonschema.NewBytesLoader(configJSON)
 
@@ -78,7 +78,6 @@ func readFile(filePath string) ([]byte, error) {
 func newConfig() *declarativeConfigMap {
 	data, err := readFile(filePath)
 	if err != nil {
-		// If err is ErrNotConfigured
 		if err != ErrNotConfigured {
 			log.Debug("Error sourcing declarative configuration: %v", err)
 		}
