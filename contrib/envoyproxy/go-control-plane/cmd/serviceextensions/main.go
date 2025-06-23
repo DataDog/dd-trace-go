@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -27,7 +26,6 @@ import (
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // AppsecCalloutExtensionService defines the struct that follows the ExternalProcessorServer interface.
@@ -36,10 +34,11 @@ type AppsecCalloutExtensionService struct {
 }
 
 type serviceExtensionConfig struct {
-	extensionPort     string
-	extensionHost     string
-	healthcheckPort   string
-	observabilityMode bool
+	extensionPort        string
+	extensionHost        string
+	healthcheckPort      string
+	observabilityMode    bool
+	bodyParsingSizeLimit int
 }
 
 func loadConfig() serviceExtensionConfig {
@@ -47,15 +46,17 @@ func loadConfig() serviceExtensionConfig {
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
 	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 	observabilityMode := boolEnv("DD_SERVICE_EXTENSION_OBSERVABILITY_MODE", false)
+	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", 1000000)
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
 
 	return serviceExtensionConfig{
-		extensionPort:     extensionPortStr,
-		extensionHost:     extensionHostStr,
-		healthcheckPort:   healthcheckPortStr,
-		observabilityMode: observabilityMode,
+		extensionPort:        extensionPortStr,
+		extensionHost:        extensionHostStr,
+		healthcheckPort:      healthcheckPortStr,
+		observabilityMode:    observabilityMode,
+		bodyParsingSizeLimit: bodyParsingSizeLimit,
 	}
 }
 
@@ -142,18 +143,12 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 }
 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
-	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
-	if err != nil {
-		return fmt.Errorf("failed to load key pair: %v", err)
-	}
-
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
 		return fmt.Errorf("gRPC server: %v", err)
 	}
 
-	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
-	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
+	grpcServer := grpc.NewServer()
 
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
@@ -161,6 +156,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 			IsGCPServiceExtension: true,
 			BlockingUnavailable:   config.observabilityMode,
 			Context:               ctx,
+			BodyParsingSizeLimit:  config.bodyParsingSizeLimit,
 		})
 
 	go func() {
