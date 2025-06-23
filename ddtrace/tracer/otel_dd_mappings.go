@@ -47,7 +47,7 @@ var otelDDConfigs = map[string]*otelDDEnv{
 		dd:       "DD_TRACE_ENABLED",
 		ot:       "OTEL_TRACES_EXPORTER",
 		remapper: mapEnabled,
-		handsOff: false,
+		handsOff: true,
 	},
 	"sampleRate": {
 		dd:       "DD_TRACE_SAMPLE_RATE",

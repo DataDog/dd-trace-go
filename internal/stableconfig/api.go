@@ -72,7 +72,7 @@ func envToTelemetryName(env string) string {
 	case "DD_TRACE_DEBUG":
 		return "trace_debug_enabled"
 	case "DD_APM_TRACING_ENABLED":
-		return "trace_enabled"
+		return "apm_tracing_enabled"
 	case "DD_RUNTIME_METRICS_ENABLED":
 		return "runtime_metrics_enabled"
 	case "DD_DATA_STREAMS_ENABLED":
