@@ -230,7 +230,7 @@ func globalClientCall(fun func(client Client)) {
 			globalClientLogLossOnce.Do(func() {
 				msg := "telemetry: global client recorder queue is full, dropping telemetry data, please start the telemetry client earlier to avoid data loss"
 				log.Debug("%s\n", msg)
-				// Log(LogError, msg, WithStacktrace())
+				Log(LogError, msg, WithStacktrace())
 			})
 		}
 		return
