@@ -25,6 +25,7 @@ import (
 	v3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -36,7 +37,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -59,12 +60,229 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
 		checkForAppsecEvent(t, finished, map[string]int{"ua0-600-55x": 1})
 	})
+
+	t.Run("monitoring-event-on-response-headers-without-body", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{"test": "match-no-block-response-header"}, false, false, "", "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "headers-004": 1})
+	})
+
+	t.Run("blocking-event-on-request-headers", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/", false)
+
+		res, err := stream.Recv()
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "ua0-600-56x": 1})
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("blocking-event-on-request-on-query", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query", false)
+
+		res, err := stream.Recv()
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"query-002": 1})
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("blocking-event-on-request-on-cookies", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream, map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/", false)
+
+		res, err := stream.Recv()
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"tst-037-008": 1})
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("client-ip", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "OPTION",
+			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "18.18.18.18"},
+			map[string]string{"User-Agent": "match-response-header"},
+			true, false, "", "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
+
+		// Appsec
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
+	})
+
+	t.Run("blocking-client-ip", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222"}, "GET", "/", false)
+
+		// Handle the immediate response
+		res, err := stream.Recv()
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "blk-001-001": 1})
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
+		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("no-monitoring-event-on-request-body-parsing-disabled", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that no appsec event was created
+		span := finished[0]
+		require.NotContains(t, span.Tags(), "appsec.event")
+		require.NotContains(t, span.Tags(), "_dd.appsec.json")
+	})
+}
+
+func TestAppSecBodyParsingEnabled(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, false, false, false, 1024)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
 
 	t.Run("monitoring-event-on-request-body", func(t *testing.T) {
 		client, mt, cleanup := setup()
@@ -78,7 +296,7 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -97,7 +315,7 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -116,7 +334,7 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -143,42 +361,11 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
 		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "headers-004": 1})
-	})
-
-	t.Run("blocking-event-on-request-headers", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := context.Background()
-		stream, err := client.Process(ctx)
-		require.NoError(t, err)
-
-		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/", false)
-
-		res, err := stream.Recv()
-		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
-		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
-		require.NoError(t, err)
-
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		stream.Recv() // to flush the spans
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "ua0-600-56x": 1})
-
-		// Check for tags
-		span := finished[0]
-		require.Equal(t, "true", span.Tag("appsec.event"))
-		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})
 
 	t.Run("blocking-event-on-request-body", func(t *testing.T) {
@@ -208,7 +395,7 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -241,7 +428,7 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -275,7 +462,7 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -286,6 +473,28 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("no-monitoring-event-on-request-body-bad-content-type", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "text/html"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		span := finished[0]
+		require.NotContains(t, span.Tags(), "appsec.event")
+		require.NotContains(t, span.Tags(), "_dd.appsec.json")
 	})
 
 	// This test is failing because the external processor is waiting for a body to run the waf on the response headers
@@ -317,7 +526,7 @@ func TestAppSec(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -329,156 +538,11 @@ func TestAppSec(t *testing.T) {
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})*/
 
-	t.Run("blocking-event-on-request-on-query", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := context.Background()
-		stream, err := client.Process(ctx)
-		require.NoError(t, err)
-
-		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query", false)
-
-		res, err := stream.Recv()
-		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
-		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
-		require.NoError(t, err)
-
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		stream.Recv() // to flush the spans
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		checkForAppsecEvent(t, finished, map[string]int{"query-002": 1})
-
-		// Check for tags
-		span := finished[0]
-		require.Equal(t, "true", span.Tag("appsec.event"))
-		require.Equal(t, "true", span.Tag("appsec.blocked"))
-	})
-
-	t.Run("blocking-event-on-request-on-cookies", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := context.Background()
-		stream, err := client.Process(ctx)
-		require.NoError(t, err)
-
-		sendProcessingRequestHeaders(t, stream, map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/", false)
-
-		res, err := stream.Recv()
-		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
-		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
-		require.NoError(t, err)
-
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		stream.Recv() // to flush the spans
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		checkForAppsecEvent(t, finished, map[string]int{"tst-037-008": 1})
-
-		// Check for tags
-		span := finished[0]
-		require.Equal(t, "true", span.Tag("appsec.event"))
-		require.Equal(t, "true", span.Tag("appsec.blocked"))
-	})
-
-	t.Run("client-ip", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := context.Background()
-		stream, err := client.Process(ctx)
-		require.NoError(t, err)
-
-		end2EndStreamRequest(t, stream, "/", "OPTION",
-			map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "18.18.18.18"},
-			map[string]string{"User-Agent": "match-response-header"},
-			true, false, "", "")
-
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		stream.Recv() // to flush the spans
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-
-		// Check for tags
-		span := finished[0]
-		require.Equal(t, "18.18.18.18", span.Tag("http.client_ip"))
-
-		// Appsec
-		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
-	})
-
-	t.Run("blocking-client-ip", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := context.Background()
-		stream, err := client.Process(ctx)
-		require.NoError(t, err)
-
-		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222"}, "GET", "/", false)
-
-		// Handle the immediate response
-		res, err := stream.Recv()
-		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
-		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
-		require.NoError(t, err)
-
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		stream.Recv() // to flush the spans
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "blk-001-001": 1})
-
-		// Check for tags
-		span := finished[0]
-		require.Equal(t, "111.222.111.222", span.Tag("http.client_ip"))
-		require.Equal(t, 1.0, span.Tag("_dd.appsec.enabled"))
-		require.Equal(t, "true", span.Tag("appsec.event"))
-		require.Equal(t, "true", span.Tag("appsec.blocked"))
-	})
-
-	t.Run("no-monitoring-event-on-request-body-bad-content-type", func(t *testing.T) {
-		client, mt, cleanup := setup()
-		defer cleanup()
-
-		ctx := context.Background()
-		stream, err := client.Process(ctx)
-		require.NoError(t, err)
-
-		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "text/html"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
-
-		err = stream.CloseSend()
-		require.NoError(t, err)
-		stream.Recv() // to flush the spans
-
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
-
-		span := finished[0]
-		require.NotContains(t, span.Tags(), "appsec.event")
-		require.NotContains(t, span.Tags(), "_dd.appsec.json")
-	})
 }
 
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -501,7 +565,7 @@ func TestGeneratedSpan(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -537,7 +601,7 @@ func TestGeneratedSpan(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -566,7 +630,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -589,7 +653,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 
 		_, err = stream.Recv()
 		require.Error(t, err)
-		stream.Recv()
+		_, _ = stream.Recv()
 
 		// No span created, the request is invalid.
 		// Span couldn't be created without request data
@@ -605,7 +669,7 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, true, false)
+		rig, err := newEnvoyAppsecRig(t, false, true, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -628,7 +692,7 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
-		stream.Recv() // to flush the spans
+		_, _ = stream.Recv() // to flush the spans
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -640,7 +704,7 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, blockingUnavailable bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, blockingUnavailable bool, bodyParsingSizeLimit int, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
 	t.Helper()
 
 	interceptorOpts = append([]ddgrpc.Option{ddgrpc.WithService("grpc")}, interceptorOpts...)
@@ -656,7 +720,7 @@ func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension boo
 	appsecSrv = AppsecEnvoyExternalProcessorServer(fixtureServer, AppsecEnvoyConfig{
 		IsGCPServiceExtension: isGCPServiceExtension,
 		BlockingUnavailable:   blockingUnavailable,
-		BodyParsingSizeLimit:  1024,
+		BodyParsingSizeLimit:  bodyParsingSizeLimit,
 	})
 
 	envoyextproc.RegisterExternalProcessorServer(server, appsecSrv)
@@ -667,15 +731,19 @@ func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension boo
 	}
 	_, port, _ := net.SplitHostPort(li.Addr().String())
 	// start our test fixtureServer.
-	go server.Serve(li)
+	go func() {
+		if server.Serve(li) != nil {
+			t.Errorf("error serving: %s", err)
+		}
+	}()
 
-	opts := []grpc.DialOption{grpc.WithInsecure()}
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
 	if traceClient {
 		opts = append(opts,
 			grpc.WithStreamInterceptor(ddgrpc.StreamClientInterceptor(interceptorOpts...)),
 		)
 	}
-	conn, err := grpc.Dial(li.Addr().String(), opts...)
+	conn, err := grpc.NewClient(li.Addr().String(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
@@ -701,7 +769,7 @@ type envoyAppsecRig struct {
 
 func (r *envoyAppsecRig) Close() {
 	r.server.Stop()
-	r.conn.Close()
+	_ = r.conn.Close()
 }
 
 type envoyFixtureServer struct {
@@ -829,24 +897,6 @@ func sendProcessingResponseBodyStreamed(t *testing.T, stream envoyextproc.Extern
 	messagesCount++
 
 	return messagesCount
-}
-
-func sendProcessingResponseTrailers(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, trailers map[string]string) {
-	t.Helper()
-
-	trailerHeaders := &v3.HeaderMap{}
-	for k, v := range trailers {
-		trailerHeaders.Headers = append(trailerHeaders.Headers, &v3.HeaderValue{Key: k, RawValue: []byte(v)})
-	}
-
-	err := stream.Send(&envoyextproc.ProcessingRequest{
-		Request: &envoyextproc.ProcessingRequest_ResponseTrailers{
-			ResponseTrailers: &envoyextproc.HttpTrailers{
-				Trailers: trailerHeaders,
-			},
-		},
-	})
-	require.NoError(t, err)
 }
 
 func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_ProcessClient, path string, method string, requestHeaders map[string]string, responseHeaders map[string]string, blockOnResponseHeaders bool, blockOnResponseBody bool, requestBody string, responseBody string) {
