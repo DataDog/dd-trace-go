@@ -474,9 +474,15 @@ func processResponseBody(body *envoyextproc.ProcessingRequest_ResponseBody, curr
 
 // processBody is called when a processing request/response body is received from Envoy.
 // The body can be received in multiple chunks, so we need to buffer the data until the end of the request.
+// If we received data up to the limit, the body is truncated and that data is sent to the WAF. No more data will be buffered for that body.
 // Returns an error when the request needs to be blocked, nil otherwise.
 func processBody(bodyChunk []byte, eos bool, currentRequest *requestContext, bodyParsingSizeLimit int, isRequest bool) error {
 	bodyLength := len(bodyChunk)
+
+	// If the body is already truncated, it means that the analyzing of the body has already been done
+	if currentRequest.bodyTruncated {
+		return nil
+	}
 
 	// Only add the bytes to the buffer that can fit
 	if bodyLength > 0 && !currentRequest.bodyTruncated {
@@ -495,13 +501,12 @@ func processBody(bodyChunk []byte, eos bool, currentRequest *requestContext, bod
 		currentRequest.bodyBuffer = append(currentRequest.bodyBuffer, bodyChunk[:bodyLength]...)
 	}
 
-	// Only run the analysis on the body when it's complete or if it has been truncated
 	if !eos && !currentRequest.bodyTruncated {
 		instr.Logger().Debug("external_processing: request body not complete, waiting for more data")
 		return nil
 	}
 
-	instr.Logger().Debug("external_processing: request body complete or max size, processing body")
+	instr.Logger().Debug("external_processing: request body complete or max size reached, processing the body")
 
 	defer func() {
 		currentRequest.bodyTruncated = false
