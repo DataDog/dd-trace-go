@@ -47,7 +47,7 @@ func Bool(env string, def bool) (value bool, origin telemetry.Origin, err error)
 		}
 		err = errors.Join(err, fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, configData.Value, configData.Origin))
 	}
-	return reportTelemetryAndReturnWithErr(env, def, telemetry.OriginDefault, 0, err)
+	return reportTelemetryAndReturnWithErr(env, def, telemetry.OriginDefault, telemetry.EmptyID, err)
 }
 
 // String returns a string config value from managed file-based config, environment variable,
@@ -71,7 +71,7 @@ func stableConfigByPriority(env string) iter.Seq[ConfigData] {
 		if v, ok := os.LookupEnv(env); ok && !yield(ConfigData{
 			Origin:   telemetry.OriginEnvVar,
 			Value:    v,
-			ConfigID: 0, // dummy value for environment variables
+			ConfigID: telemetry.EmptyID, // environment variables do not have config ID
 		}) {
 			return
 		}

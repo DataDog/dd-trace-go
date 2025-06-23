@@ -7,6 +7,8 @@
 // loaded from YAML configuration files
 package stableconfig
 
+import "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+
 // stableConfig represents a configuration loaded from a YAML source file.
 type stableConfig struct {
 	Config map[string]string `yaml:"apm_configuration_default,omitempty"` // Configuration key-value pairs.
@@ -23,13 +25,13 @@ func (s *stableConfig) getID() int {
 
 // isEmpty checks if the config is considered empty (no ID and no config entries).
 func (s *stableConfig) isEmpty() bool {
-	return s.ID == -1 && len(s.Config) == 0
+	return s.ID == telemetry.EmptyID && len(s.Config) == 0
 }
 
 // emptyStableConfig creates and returns a new, empty stableConfig instance.
 func emptyStableConfig() *stableConfig {
 	return &stableConfig{
 		Config: make(map[string]string, 0),
-		ID:     -1,
+		ID:     telemetry.EmptyID,
 	}
 }

@@ -90,7 +90,7 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	scfg := &stableConfig{}
 	err := yaml.Unmarshal(data, scfg)
 	if err != nil {
-		log.Warn("Parsing stable config file" + fileName + "failed due to error, dropping: " + err.Error())
+		log.Warn("Parsing stable config file " + fileName + " failed due to error, dropping: " + err.Error())
 		return emptyStableConfig()
 	}
 	if scfg.Config == nil {
