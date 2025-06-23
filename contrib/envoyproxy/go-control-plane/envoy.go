@@ -79,7 +79,7 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 	}
 
 	if config.BodyParsingSizeLimit <= 0 {
-		instr.Logger().Debug("external_processing: body parsing size limit set to 0 or negative, disabling body parsing")
+		instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The body of requests and responses will not be analyzed.")
 	}
 
 	return processor
@@ -141,7 +141,6 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 				return nil
 			}
 
-			instr.Logger().Debug("external_processing: error processing stream: %v\n", ctx.Err())
 			return ctx.Err()
 		default:
 			// no op
