@@ -837,6 +837,10 @@ func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
 		}
 	}
 
+	// mark the span as propagated as it is being injected
+	// for external propagation.
+	ctx.setPropagated(true)
+
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }

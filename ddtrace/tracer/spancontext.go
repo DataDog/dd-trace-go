@@ -115,7 +115,6 @@ type SpanContext struct {
 
 	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
 	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
-	propagated  bool       // when true, indicates this span was propagated to a remote source (via a propagator)
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
@@ -293,6 +292,13 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 	c.baggage[key] = val
 }
 
+func (c *SpanContext) setPropagated(val bool) {
+	if c.trace == nil {
+		return
+	}
+	c.trace.setPropagated(val)
+}
+
 func (c *SpanContext) baggageItem(key string) string {
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
@@ -331,6 +337,7 @@ type trace struct {
 	priority         *float64          // sampling priority
 	locked           bool              // specifies if the sampling priority can be altered
 	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
+	propagated       bool              // propagated indicates whether the trace was propagated to a remote source (via a propagator)
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -450,6 +457,18 @@ func (t *trace) setLocked(locked bool) {
 	t.locked = locked
 }
 
+func (t *trace) setPropagated(propagated bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.propagated = propagated
+}
+
+func (t *trace) isPropagated() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.propagated
+}
+
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
 func (t *trace) push(sp *Span) {
@@ -535,6 +554,11 @@ func (t *trace) finishedOne(s *Span) {
 		// without causing a race condition.
 		t.root.setMetric(keySamplingPriority, *t.priority)
 		t.locked = true
+	}
+	if s == t.root && !t.isPropagated() && s.context != nil && !s.Context().isRemote {
+		// If trace was not propagated to downstream resource, we want to apply a metric tag to the root span
+		// to indicate that the trace is supposedly ended and thus the backend does not need to wait for future spans.
+		t.root.setMetric(keyTraceEnded, 1)
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
 		// first span in chunk finished, lock down the tags

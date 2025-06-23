@@ -960,6 +960,8 @@ const (
 	keyPropagatedTraceSource = "_dd.p.ts"
 	// keyTraceID128 is the lowercase, hex encoded upper 64 bits of a 128-bit trace id, if present.
 	keyTraceID128 = "_dd.p.tid"
+	// keyTraceEnded indicates that the trace is supposedly ended. It is sent as a metric tag to the root span.
+	keyTraceEnded = "_dd.p.eot"
 	// keySpanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	keySpanAttributeSchemaVersion = "_dd.trace_span_attribute_schema"
 	// keyPeerServiceSource indicates the precursor tag that was used as the value of peer.service.
