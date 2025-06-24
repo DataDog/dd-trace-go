@@ -301,6 +301,12 @@ jobs:
           path: ./scripts/${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
   test-contrib:
     needs:
       - test-contrib-matrix
@@ -364,6 +370,12 @@ jobs:
           path: ./scripts/${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
   upload-test-results:
     needs:
       - test-contrib
@@ -399,12 +411,6 @@ jobs:
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
     steps:
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
-
       - name: Get Datadog APM Test Agent Logs
         if: always()
         shell: bash
