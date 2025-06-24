@@ -292,11 +292,11 @@ jobs:
           ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
       
       - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: test-contrib-results-${{ strategy.job-index }}
+          name: test-contrib-results-${{ inputs.go-version }}-${{ strategy.job-index }}
           path: /tmp/test-results
-          retention-days: 1
 
   test-contrib:
     needs:
@@ -353,11 +353,11 @@ jobs:
             ./scripts/ci-test-core.sh
 
       - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: test-core-results
+          name: test-core-results-${{ inputs.go-version }}
           path: /tmp/test-results
-          retention-days: 1
 
   upload-test-results:
     needs:
