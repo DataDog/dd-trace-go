@@ -235,11 +235,11 @@ func (e *jsonIterEncoder) encodeObject(parentObj *libddwaf.WAFObject, depth int)
 
 		if err := e.Encode(entryObj, depth); err != nil {
 			if errors.Is(err, io.EOF) && e.truncated {
-				return true
+				return false
 			}
 
 			entryObj.SetInvalid()
-			if err == skipErr || errors.Is(err, io.EOF) && e.truncated {
+			if err == skipErr {
 				return true
 			}
 
@@ -254,16 +254,7 @@ func (e *jsonIterEncoder) encodeObject(parentObj *libddwaf.WAFObject, depth int)
 		e.addTruncation(libddwaf.ContainerTooLarge, length)
 	}
 
-	if e.iter.Error != nil {
-		err := e.iter.Error
-		head := getIteratorHead(e.iter)
-		if head == tail {
-			err = io.EOF
-		}
-
-		errs = append(errs, err)
-	}
-
+	errs = append(errs, extractError(e.iter, tail))
 	parentObj.SetMapData(e.config.Pinner, wafObjs)
 	return errors.Join(errs...)
 }
@@ -307,7 +298,7 @@ func (e *jsonIterEncoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) 
 
 		if err := e.Encode(entryObj, depth); err != nil {
 			if errors.Is(err, io.EOF) && e.truncated {
-				return true
+				return false
 			}
 
 			wafObjs = wafObjs[:len(wafObjs)-1] // Remove the last element if encoding failed
@@ -330,16 +321,21 @@ func (e *jsonIterEncoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) 
 		e.addTruncation(libddwaf.ContainerTooLarge, length)
 	}
 
-	if e.iter.Error != nil {
-		err := e.iter.Error
-		head := getIteratorHead(e.iter)
-		if head == tail {
-			err = io.EOF
-		}
-
-		errs = append(errs, err)
-	}
-
+	errs = append(errs, extractError(e.iter, tail))
 	parentObj.SetArrayData(e.config.Pinner, wafObjs)
 	return errors.Join(errs...)
+}
+
+func extractError(iter *jsoniter.Iterator, tail int) error {
+	if iter.Error == nil {
+		return nil
+	}
+
+	err := iter.Error
+	head := getIteratorHead(iter)
+	if head == tail {
+		err = io.EOF
+	}
+
+	return err
 }
