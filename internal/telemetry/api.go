@@ -63,6 +63,8 @@ const (
 	OriginManagedStableConfig Origin = transport.OriginManagedStableConfig
 )
 
+const EmptyID = ""
+
 // LogLevel describes the level of a log message
 
 //goland:noinspection GoVarAndConstTypeMayBeOmitted Goland is having a hard time with the following const block, it keeps deleting the type
@@ -103,6 +105,8 @@ type Configuration struct {
 	Value any
 	// Origin is the source of the configuration change.
 	Origin Origin
+	// ID is the config ID of the configuration change.
+	ID string
 }
 
 // LogOption is a function that modifies the log message that is sent to the telemetry.
@@ -134,7 +138,7 @@ type Client interface {
 	// Options include sending key-value pairs as tags, and a stack trace frozen from inside the Log function.
 	Log(level LogLevel, text string, options ...LogOption)
 
-	// ProductStarted declares a product to have started at the customer’s request
+	// ProductStarted declares a product to have started at the customer's request
 	ProductStarted(product Namespace)
 
 	// ProductStopped declares a product to have being stopped by the customer
