@@ -349,6 +349,7 @@ jobs:
     needs:
       - test-contrib
       - test-core
+    if: always() # Make sure this always runs, even if test-contrib or test-core fails
     runs-on:
       group: "APM Larger Runners"
     env:
