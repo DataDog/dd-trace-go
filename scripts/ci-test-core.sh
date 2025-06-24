@@ -7,8 +7,6 @@ report_error=0
 mkdir -p $TEST_RESULTS
 PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
 
-echo "make directory $TEST_RESULTS"
-
 # Set +e so that we run both of the test commands even if
 # the first one fails
 set +e

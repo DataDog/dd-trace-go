@@ -46,10 +46,10 @@ runs:
       shell: bash
       run: ./.github/actions/add-codeowners/codeowners.sh
 
-    - name: Upload the JUnit files`
+    - name: Upload the JUnit files
       shell: bash
       run: |
         env DD_API_KEY=${{ inputs.dd-api-key }} ./datadog-ci junit upload \
           --service ${{ inputs.service }} \
           --tags "${{ inputs.tags }}" \
-          "${{ inputs.path }}"
+          ${{ inputs.path }}
