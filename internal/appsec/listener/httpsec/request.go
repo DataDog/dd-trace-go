@@ -11,8 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/DataDog/appsec-internal-go/httpsec"
-
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 )
 
@@ -77,9 +76,27 @@ var (
 // The tags are present only if a valid ip address has been returned by
 // RemoteAddr().
 func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteAddr string) (tags map[string]string, clientIP netip.Addr) {
-	remoteIP, clientIP := httpsec.ClientIP(headers, hasCanonicalHeaders, remoteAddr, monitoredClientIPHeadersCfg)
-	tags = httpsec.ClientIPTags(remoteIP, clientIP)
-	return tags, clientIP
+	remoteIP, clientIP := ClientIP(headers, hasCanonicalHeaders, remoteAddr, monitoredClientIPHeadersCfg)
+	return ClientIPTagsFor(remoteIP, clientIP), clientIP
+}
+
+func ClientIPTagsFor(remoteIP netip.Addr, clientIP netip.Addr) map[string]string {
+	remoteIPValid := remoteIP.IsValid()
+	clientIPValid := clientIP.IsValid()
+
+	if !remoteIPValid && !clientIPValid {
+		return nil
+	}
+
+	tags := make(map[string]string, 2)
+	if remoteIPValid {
+		tags[ext.NetworkClientIP] = remoteIP.String()
+	}
+	if clientIPValid {
+		tags[ext.HTTPClientIP] = clientIP.String()
+	}
+
+	return tags
 }
 
 // NormalizeHTTPHeaders returns the HTTP headers following Datadog's
