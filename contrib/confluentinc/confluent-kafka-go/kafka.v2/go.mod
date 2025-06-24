@@ -98,4 +98,4 @@ replace github.com/spf13/viper => github.com/DataDog/viper v1.7.0
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../../..
 
-retract v2.0.0 // Sending sensitive data to datadog
+retract v2.0.0 // Security vulnerability discovered

@@ -92,4 +92,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-retract v2.0.0 // Sending sensitive data to datadog
+retract v2.0.0 // Security vulnerability discovered

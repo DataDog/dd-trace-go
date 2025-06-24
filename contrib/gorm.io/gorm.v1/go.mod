@@ -102,4 +102,4 @@ replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../database
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 
-retract v2.0.0 // Sending sensitive data to datadog
+retract v2.0.0 // Security vulnerability discovered
