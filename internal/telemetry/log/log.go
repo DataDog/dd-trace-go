@@ -6,8 +6,6 @@
 package log
 
 import (
-	"fmt"
-
 	internallog "github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -46,7 +44,7 @@ func Error(format string, args ...any) {
 
 func log(lvl telemetry.LogLevel, format string, args []any) {
 	opts, fmtArgs := divideArgs(args)
-	telemetry.Log(lvl, fmt.Sprintf(format, fmtArgs...), opts...)
+	telemetry.Log(lvl, format, opts...)
 
 	if lvl != telemetry.LogDebug {
 		internallog.Debug(format, fmtArgs...)
