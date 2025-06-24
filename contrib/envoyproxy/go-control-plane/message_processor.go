@@ -7,6 +7,8 @@ package gocontrolplane
 
 import (
 	"context"
+
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/internal/json"
 	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
@@ -104,10 +106,11 @@ func (mp *messageProcessor) ProcessRequestBody(req *envoyextproc.ProcessingReque
 		}
 	}
 
-	blocked := processBody(req.RequestBody.GetBody(), req.RequestBody.GetEndOfStream(), mp.config.BodyParsingSizeLimit, state, appsec.MonitorParsedHTTPBody)
+	state.InitBodyBuffer(mp.config.BodyParsingSizeLimit)
+	blocked := processBody(state.Ctx, state.BodyBuffer, req.RequestBody.GetBody(), req.RequestBody.GetEndOfStream(), appsec.MonitorParsedHTTPBody)
 	if blocked != nil && !mp.config.BlockingUnavailable {
 		state.SetBlocked()
-		return buildImmediateResponse(state.GetFakeResponseWriter())
+		return buildImmediateResponse(state.FakeResponseWriter)
 	}
 
 	return &envoyextproc.ProcessingResponse{
@@ -121,38 +124,38 @@ func (mp *messageProcessor) ProcessRequestBody(req *envoyextproc.ProcessingReque
 func (mp *messageProcessor) ProcessResponseHeaders(req *envoyextproc.ProcessingRequest_ResponseHeaders, state *requestState) (*envoyextproc.ProcessingResponse, error) {
 	instr.Logger().Debug("external_processing: received response headers: %v\n", req.ResponseHeaders)
 
-	if err := createFakeResponseWriter(state.GetWrappedResponseWriter(), req); err != nil {
+	if err := createFakeResponseWriter(state.WrappedResponseWriter, req); err != nil {
 		state.Complete()
 		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
 	}
 
 	// We need to know if the request has been blocked, but we don't have any other way than to look for the operation and bind a blocking data listener to it
 	if !mp.config.BlockingUnavailable {
-		op, ok := dyngo.FromContext(state.Context())
+		op, ok := dyngo.FromContext(state.Ctx)
 		if ok {
 			dyngo.OnData(op, func(_ *actions.BlockHTTP) {
 				// We already wrote over the response writer, we need to reset it so the blocking handler can write to it
-				httptrace.ResetStatusCode(state.GetWrappedResponseWriter())
-				state.GetFakeResponseWriter().Reset()
+				httptrace.ResetStatusCode(state.WrappedResponseWriter)
+				state.FakeResponseWriter.Reset()
 				state.SetBlocked()
 			})
 		}
 	}
 
 	// Run the waf on the response headers only when we are sure to not receive a response body
-	if req.ResponseHeaders.GetEndOfStream() || !isBodySupported(state.GetWrappedResponseWriter().Header().Get("Content-Type"), mp.config) {
+	if req.ResponseHeaders.GetEndOfStream() || !isBodySupported(state.WrappedResponseWriter.Header().Get("Content-Type"), mp.config) {
 		state.Complete()
 
-		if !mp.config.BlockingUnavailable && state.IsBlocked() {
-			return buildImmediateResponse(state.GetFakeResponseWriter()), nil
+		if !mp.config.BlockingUnavailable && state.Blocked {
+			return buildImmediateResponse(state.FakeResponseWriter), nil
 		}
 
-		instr.Logger().Debug("external_processing: finishing request with status code: %v\n", state.GetFakeResponseWriter().status)
+		instr.Logger().Debug("external_processing: finishing request with status code: %v\n", state.FakeResponseWriter.status)
 		return nil, nil
 	}
 
 	// Prepare for response body
-	state.SetAwaitingResponseBody()
+	state.AwaitingResponseBody = true
 
 	return &envoyextproc.ProcessingResponse{
 		Response: &envoyextproc.ProcessingResponse_ResponseHeaders{
@@ -170,24 +173,25 @@ func (mp *messageProcessor) ProcessResponseHeaders(req *envoyextproc.ProcessingR
 func (mp *messageProcessor) ProcessResponseBody(req *envoyextproc.ProcessingRequest_ResponseBody, state *requestState) *envoyextproc.ProcessingResponse {
 	instr.Logger().Debug("external_processing: received response body: %v - EOS: %v\n", len(req.ResponseBody.GetBody()), req.ResponseBody.EndOfStream)
 
-	if state.bodyBuffer != nil && state.bodyBuffer.GetPhase() != ResponseBodyPhase {
-		state.bodyBuffer.Reset(ResponseBodyPhase)
+	if state.BodyBuffer != nil && state.BodyBuffer.Phase != ResponseBodyPhase {
+		state.BodyBuffer.Reset(ResponseBodyPhase)
 	}
 
 	eos := req.ResponseBody.GetEndOfStream()
 
-	blocked := processBody(req.ResponseBody.GetBody(), eos, mp.config.BodyParsingSizeLimit, state, appsec.MonitorHTTPResponseBody)
+	state.InitBodyBuffer(mp.config.BodyParsingSizeLimit)
+	blocked := processBody(state.Ctx, state.BodyBuffer, req.ResponseBody.GetBody(), eos, appsec.MonitorHTTPResponseBody)
 	if blocked != nil && !mp.config.BlockingUnavailable {
 		state.SetBlocked()
-		return buildImmediateResponse(state.GetFakeResponseWriter())
+		return buildImmediateResponse(state.FakeResponseWriter)
 	}
 
-	if eos || state.bodyBuffer.IsComplete() {
+	if eos || state.BodyBuffer.Truncated {
 		state.Complete()
 
 		// Check for deferred blocking from response headers
-		if state.IsBlocked() && !mp.config.BlockingUnavailable {
-			return buildImmediateResponse(state.GetFakeResponseWriter())
+		if state.Blocked && !mp.config.BlockingUnavailable {
+			return buildImmediateResponse(state.FakeResponseWriter)
 		}
 
 		return nil
@@ -200,13 +204,11 @@ func (mp *messageProcessor) ProcessResponseBody(req *envoyextproc.ProcessingRequ
 	}
 }
 
-func processBody(body []byte, eos bool, bodyParsingSizeLimit int, state *requestState, analyzeBody func(ctx context.Context, encodable any) error) error {
-	state.InitBodyBuffer(bodyParsingSizeLimit)
-	state.bodyBuffer.Append(body)
+func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos bool, analyzeBody func(ctx context.Context, encodable any) error) error {
+	bodyBuffer.Append(body)
 
-	if eos || state.bodyBuffer.IsComplete() {
-		ctx := state.Context()
-		encodable := state.bodyBuffer.GetJSONEncodable()
+	if eos || bodyBuffer.Truncated {
+		encodable := json.NewEncodable(bodyBuffer.Buffer, bodyBuffer.Truncated)
 		return analyzeBody(ctx, encodable)
 	}
 

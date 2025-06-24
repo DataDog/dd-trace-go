@@ -91,8 +91,8 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 	defer func() {
 		s.requestCounter.Add(1)
 
-		if currentRequest != nil && !currentRequest.IsComplete() {
-			if !currentRequest.IsAwaitingResponseBody() {
+		if currentRequest != nil && !currentRequest.IsComplete {
+			if !currentRequest.AwaitingResponseBody {
 				instr.Logger().Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
 			}
 			currentRequest.Complete()
@@ -125,7 +125,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return err
 		}
 
-		if currentRequest != nil && currentRequest.IsBlocked() {
+		if currentRequest != nil && currentRequest.Blocked {
 			instr.Logger().Debug("external_processing: request blocked, end the stream")
 			return nil
 		}
