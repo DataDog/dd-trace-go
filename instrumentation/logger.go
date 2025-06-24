@@ -6,7 +6,6 @@
 package instrumentation
 
 import (
-	"fmt"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -44,14 +43,10 @@ func (l logger) Info(msg string, args ...any) {
 
 func (l logger) Warn(msg string, args ...any) {
 	log.Warn(msg, args...)
-	if hasErrors(args...) {
-		telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
-	}
 }
 
 func (l logger) Error(msg string, args ...any) {
 	log.Error(msg, args...)
-	telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
 }
 
 func hasErrors(args ...any) bool {
