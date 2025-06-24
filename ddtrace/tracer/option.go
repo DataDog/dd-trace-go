@@ -944,6 +944,7 @@ func WithDebugStack(enabled bool) StartOption {
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
+		telemetry.RegisterAppConfig("trace_debug_enabled", enabled, telemetry.OriginCode)
 		c.debug = enabled
 	}
 }
@@ -1157,6 +1158,7 @@ func WithAnalyticsRate(rate float64) StartOption {
 // WithRuntimeMetrics enables automatic collection of runtime metrics every 10 seconds.
 func WithRuntimeMetrics() StartOption {
 	return func(cfg *config) {
+		telemetry.RegisterAppConfig("runtime_metrics_enabled", true, telemetry.OriginCode)
 		cfg.runtimeMetrics = true
 	}
 }
@@ -1220,6 +1222,7 @@ func WithHostname(name string) StartOption {
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
 	return func(c *config) {
+		telemetry.RegisterAppConfig("trace_enabled", enabled, telemetry.OriginCode)
 		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(_ bool) bool { return true }, equal[bool])
 	}
 }
