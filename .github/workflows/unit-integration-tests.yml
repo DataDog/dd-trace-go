@@ -352,7 +352,7 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+        TEST_RESULTS: ./scripts/tmp/test-results # path to where test results will be saved
     services:
       datadog-agent:
         image: datadog/agent:latest
