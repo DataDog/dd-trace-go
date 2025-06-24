@@ -4,6 +4,9 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package aws provides functions to trace aws/aws-sdk-go (https://github.com/aws/aws-sdk-go).
+//
+// Deprecated: The AWS SDK for Go v1 is deprecated. Please migrate to github.com/aws/aws-sdk-go-v2 and use the corresponding integration.
+// This integration will be removed in a future release.
 package aws // import "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"
 
 import (

@@ -74,6 +74,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			if err != nil {
 				log.Debug("%s\n", err.Error())
 			} else {
+				// TODO: Baggage?
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 				if spanParentErr == nil {
 					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
@@ -83,6 +84,16 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
 			}
 		}
+	}
+
+	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+	if extractErr == nil && parentCtx != nil {
+		ctx2 := r.Context()
+		parentCtx.ForeachBaggageItem(func(k, v string) bool {
+			ctx2 = baggage.Set(ctx2, k, v)
+			return true
+		})
+		r = r.WithContext(ctx2)
 	}
 
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
@@ -102,21 +113,11 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-			} else {
-				if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-					// If there are span links as a result of context extraction, add them as a StartSpanOption
-					if spanctx != nil && spanctx.SpanLinks() != nil {
-						tracer.WithSpanLinks(spanctx.SpanLinks())(ssCfg)
-					}
-					tracer.ChildOf(spanctx)(ssCfg)
-
-					ctx := r.Context()
-					spanctx.ForeachBaggageItem(func(k, v string) bool {
-						ctx = baggage.Set(ctx, k, v)
-						return true
-					})
-					r = r.WithContext(ctx)
+			} else if extractErr == nil && parentCtx != nil {
+				if links := parentCtx.SpanLinks(); links != nil {
+					tracer.WithSpanLinks(links)(ssCfg)
 				}
+				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
 			for k, v := range ipTags {
@@ -126,9 +127,9 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	nopts = append(nopts, opts...)
 
-	var requestContext = r.Context()
+	requestContext := r.Context()
 	if inferredProxySpan != nil {
-		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, true)
+		requestContext = context.WithValue(requestContext, inferredSpanCreatedCtxKey{}, true)
 	}
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)

@@ -881,6 +881,9 @@ func (s *Span) Format(f fmt.State, c rune) {
 
 // AddEvent attaches a new event to the current span.
 func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

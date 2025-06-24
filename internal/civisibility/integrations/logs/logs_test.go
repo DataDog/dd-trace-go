@@ -103,9 +103,6 @@ func TestLogsPayloadClear(t *testing.T) {
 
 	p.clear()
 
-	// The item count remains the same (clear only empties the buffer), but size
-	// should shrink to account for an empty buffer (plus the closing bracket
-	// that size accounts for when reader is nil).
-	assert.Equal(t, 1, p.itemCount())
+	assert.Equal(t, 0, p.itemCount())
 	assert.LessOrEqual(t, p.size(), 2, "Size should be minimal after clear")
 }

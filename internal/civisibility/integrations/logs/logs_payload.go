@@ -9,36 +9,42 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
 // logsPayload is a slim copy of the logs payload struct.
 type logsPayload struct {
 	// count specifies the number of items in the stream.
-	count uint32
+	count int
 
 	// buf holds the sequence of json-encoded items.
-	buf bytes.Buffer
+	buf *bytes.Buffer
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
 
 	// serializationTime time to do serialization
 	serializationTime time.Duration
+
+	// mu is a mutex to protect concurrent access to the payload.
+	mu sync.RWMutex
 }
 
 var _ io.Reader = (*logsPayload)(nil)
 
 // newLogsPayload returns a ready to use logs payload.
 func newLogsPayload() *logsPayload {
-	p := &logsPayload{}
-	p.buf.WriteByte('[')
-	return p
+	return &logsPayload{
+		buf: bytes.NewBuffer([]byte{byte('[')}),
+	}
 }
 
 // push pushes a new item into the stream.
 func (p *logsPayload) push(logEntryData *logEntry) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.reader != nil {
 		// If the reader is already set, we cannot push new items.
 		return io.ErrClosedPipe
@@ -55,22 +61,26 @@ func (p *logsPayload) push(logEntryData *logEntry) error {
 		return err
 	}
 
-	if atomic.AddUint32(&p.count, 1) > 1 {
+	p.count = p.count + 1 // increment the count after acquiring the lock to ensure consistency
+	if p.count > 1 {
 		p.buf.WriteByte(',')
 	}
 	p.buf.Write(val)
-
 	return nil
 }
 
 // itemCount returns the number of items available in the srteam.
 func (p *logsPayload) itemCount() int {
-	return int(atomic.LoadUint32(&p.count))
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.count
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
 // inaccurate by up to 8 bytes.
 func (p *logsPayload) size() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	if p.reader != nil {
 		return p.buf.Len() // the reader is already set, so the array is closed
 	}
@@ -81,6 +91,8 @@ func (p *logsPayload) size() int {
 // underlying byte contents of the buffer. reset should not be used in order to
 // reuse the payload for another set of traces.
 func (p *logsPayload) reset() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.reader != nil {
 		p.reader.Seek(0, 0)
 	}
@@ -88,8 +100,11 @@ func (p *logsPayload) reset() {
 
 // clear empties the payload buffers.
 func (p *logsPayload) clear() {
-	p.buf = bytes.Buffer{}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.buf = bytes.NewBuffer([]byte{byte('[')})
 	p.reader = nil
+	p.count = 0
 }
 
 // Close implements io.Closer
@@ -99,6 +114,8 @@ func (p *logsPayload) Close() error {
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
 func (p *logsPayload) Read(b []byte) (n int, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.reader == nil {
 		p.buf.WriteByte(']') // close the array
 		p.reader = bytes.NewReader(p.buf.Bytes())
