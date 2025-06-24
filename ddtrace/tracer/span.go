@@ -460,13 +460,17 @@ func takeStacktrace(n, skip uint) string {
 	pcs := make([]uintptr, n)
 
 	// +2 to exclude runtime.Callers and takeStacktrace
-	numFrames := runtime.Callers(2+int(skip), pcs)
+	numFrames := runtime.Callers(4+int(skip), pcs)
 	if numFrames == 0 {
 		return ""
 	}
+	var buf []byte
+	runtime.Stack(buf, true)
+	fmt.Println(buf)
 	frames := runtime.CallersFrames(pcs[:numFrames])
 	for i := 0; ; i++ {
 		frame, more := frames.Next()
+		fmt.Printf("FRAME = %+v\n", frame)
 		if i != 0 {
 			builder.WriteByte('\n')
 		}

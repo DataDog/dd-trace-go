@@ -278,7 +278,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_API_KEY }}
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
