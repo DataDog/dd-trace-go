@@ -90,3 +90,5 @@ replace github.com/DataDog/dd-trace-go/v2 => ../../..
 // Also, we are not able to upgrade to gqlgen v0.17.72 yet because it requires Go 1.23.8,
 // and we want to keep compatibility with Go 1.23.0 until Go 1.25.0 is released.
 replace github.com/99designs/gqlgen => github.com/99designs/gqlgen v0.17.36
+
+retract v2.0.0 // Sending sensitive data to datadog

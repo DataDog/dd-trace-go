@@ -3,3 +3,5 @@ module github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/internal/gen
 go 1.23.0
 
 require github.com/yosida95/uritemplate/v3 v3.0.2
+
+retract v2.0.0 // Sending sensitive data to datadog

@@ -104,3 +104,5 @@ replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.4.1
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../net/http
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.0.0 // Sending sensitive data to datadog

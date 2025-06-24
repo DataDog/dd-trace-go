@@ -87,3 +87,5 @@ require (
 replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../google.golang.org/grpc
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+retract v2.0.0 // Sending sensitive data to datadog
