@@ -31,6 +31,8 @@ import (
 
 func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+
 	testutils.StartAppSec(t)
 	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
@@ -97,6 +99,7 @@ func TestAppSec(t *testing.T) {
 		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/", false)
 
 		res, err := stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
 		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
@@ -128,6 +131,7 @@ func TestAppSec(t *testing.T) {
 		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query", false)
 
 		res, err := stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
 		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
@@ -159,6 +163,7 @@ func TestAppSec(t *testing.T) {
 		sendProcessingRequestHeaders(t, stream, map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/", false)
 
 		res, err := stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
 		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
@@ -219,6 +224,7 @@ func TestAppSec(t *testing.T) {
 
 		// Handle the immediate response
 		res, err := stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
 		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
@@ -267,13 +273,15 @@ func TestAppSec(t *testing.T) {
 
 func TestAppSecBodyParsingEnabled(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+
 	testutils.StartAppSec(t)
 	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false, 1024)
+		rig, err := newEnvoyAppsecRig(t, false, false, false, 256)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -387,6 +395,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		}
 
 		res, err = stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
 		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
@@ -419,6 +428,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 
 		// Handle the immediate response
 		res, err := stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
 		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 1)
@@ -453,6 +463,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 
 		// Handle the immediate response
 		res, err := stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
 		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 1)
@@ -492,6 +503,78 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
 
+		span := finished[0]
+		require.NotContains(t, span.Tags(), "appsec.event")
+		require.NotContains(t, span.Tags(), "_dd.appsec.json")
+	})
+
+	t.Run("blocking-event-on-request-body-truncated", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/", true)
+		res, err := stream.Recv()
+		require.NoError(t, err)
+
+		largeText := make([]byte, 300)
+		for i := range largeText {
+			largeText[i] = 'x'
+		}
+		requestBody := fmt.Sprintf(`{ "name": "$globals", "text": "%s" }`, largeText)
+
+		// Should block at the first chunk
+		_ = sendProcessingRequestBodyStreamed(t, stream, []byte(requestBody), 300)
+
+		res, err = stream.Recv()
+		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
+		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
+		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
+		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
+		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.NoError(t, err)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+		checkForAppsecEvent(t, finished, map[string]int{"custom-001": 1, "crs-933-130-block": 1})
+
+		// Check for tags
+		span := finished[0]
+		require.Equal(t, "true", span.Tag("appsec.event"))
+		require.Equal(t, "true", span.Tag("appsec.blocked"))
+	})
+
+	t.Run("no-blocking-event-on-request-body-attack-truncated", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		largeText := make([]byte, 300)
+		for i := range largeText {
+			largeText[i] = 'x'
+		}
+		requestBody := fmt.Sprintf(`{ "text": "%s", "name": "$globals" }`, largeText)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, requestBody, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for tags
 		span := finished[0]
 		require.NotContains(t, span.Tags(), "appsec.event")
 		require.NotContains(t, span.Tags(), "_dd.appsec.json")
