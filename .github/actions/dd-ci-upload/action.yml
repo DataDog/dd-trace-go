@@ -49,6 +49,7 @@ runs:
     - name: Upload the JUnit files
       shell: bash
       run: |
+        ls ${{ inputs.path }}
         env DD_API_KEY=${{ inputs.dd-api-key }} ./datadog-ci junit upload \
           --service ${{ inputs.service }} \
           --tags "${{ inputs.tags }}" \
