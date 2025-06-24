@@ -25,6 +25,7 @@ type requestState struct {
 	// Processing state
 	IsComplete           bool
 	Blocked              bool
+	AwaitingRequestBody  bool
 	AwaitingResponseBody bool
 }
 

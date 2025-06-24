@@ -71,6 +71,8 @@ func (mp *messageProcessor) ProcessRequestHeaders(ctx context.Context, req *envo
 	var modeOverride *envoyextprocfilter.ProcessingMode
 	if !req.RequestHeaders.GetEndOfStream() && isBodySupported(spanRequest.Header.Get("Content-Type"), mp.config) {
 		modeOverride = &envoyextprocfilter.ProcessingMode{RequestBodyMode: envoyextprocfilter.ProcessingMode_STREAMED}
+		requestState.AwaitingRequestBody = true
+		// Todo: Set telemetry body size (using content-length)
 	}
 
 	processingResponse := &envoyextproc.ProcessingResponse{
@@ -96,7 +98,7 @@ func (mp *messageProcessor) ProcessRequestHeaders(ctx context.Context, req *envo
 func (mp *messageProcessor) ProcessRequestBody(req *envoyextproc.ProcessingRequest_RequestBody, state *requestState) *envoyextproc.ProcessingResponse {
 	instr.Logger().Debug("external_processing: received request body: %v - EOS: %v\n", len(req.RequestBody.GetBody()), req.RequestBody.EndOfStream)
 
-	if mp.config.BodyParsingSizeLimit <= 0 {
+	if mp.config.BodyParsingSizeLimit <= 0 || !state.AwaitingRequestBody {
 		instr.Logger().Warn("external_processing: the body parsing has been wrongly configured. " +
 			"Please disable in your Envoy External Processor filter configuration the body processing mode and enable the allow_mode_override option to let the processor handle the processing mode.")
 		return &envoyextproc.ProcessingResponse{
@@ -123,6 +125,7 @@ func (mp *messageProcessor) ProcessRequestBody(req *envoyextproc.ProcessingReque
 // ProcessResponseHeaders handles incoming response headers
 func (mp *messageProcessor) ProcessResponseHeaders(req *envoyextproc.ProcessingRequest_ResponseHeaders, state *requestState) (*envoyextproc.ProcessingResponse, error) {
 	instr.Logger().Debug("external_processing: received response headers: %v\n", req.ResponseHeaders)
+	state.AwaitingRequestBody = false
 
 	if err := createFakeResponseWriter(state.WrappedResponseWriter, req); err != nil {
 		state.Complete()
@@ -156,6 +159,8 @@ func (mp *messageProcessor) ProcessResponseHeaders(req *envoyextproc.ProcessingR
 
 	// Prepare for response body
 	state.AwaitingResponseBody = true
+
+	// Todo: Set telemetry body size (using content-length)
 
 	return &envoyextproc.ProcessingResponse{
 		Response: &envoyextproc.ProcessingResponse_ResponseHeaders{
