@@ -4,7 +4,7 @@ This document contains answers to questions frequently asked by users. Just beca
 #### Why do client integration spans not use the global service name?
 Integrations that are considered *clients* (http clients, grpc clients, sql clients) do **not** use the globally-configured service name. This is by design and is a product-level decision that spans across all the languages' tracers. This is likely to segregate the time spent actually doing the work of the service from the time waiting for another service (i.e. waiting on a web server to return a response).
 
-While there are good arguments to be made that client integrations should take the same service name as everything else in the service, that's not how the library is intended to function today. As a work-around, most integrations have a `WithService` `Option` that will allow you to override the default. If the integration you are using cannot be configured the way you want, please open an issue to discuss adding as option.
+While there are good arguments to be made that client integrations should take the same service name as everything else in the service, that's not how the library is intended to function today. As a work-around, most integrations have a `WithService` `Option` that will allow you to override the default. If the integration you are using cannot be configured the way you want, please open an issue to discuss adding an option.
 
 See also: https://github.com/DataDog/dd-trace-go/pull/603
 
