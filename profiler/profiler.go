@@ -159,6 +159,12 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if len(cfg.customProfilerLabels) > customProfileLabelLimit {
 		cfg.customProfilerLabels = cfg.customProfilerLabels[:customProfileLabelLimit]
 	}
+
+	if cfg.traceConfig.Enabled && (cfg.traceConfig.Period == 0 || cfg.traceConfig.Limit == 0) {
+		log.Warn("Invalid execution trace config, enabled is true but size limit or frequency is 0. Disabling execution tracing")
+		cfg.traceConfig.Enabled = false
+	}
+
 	// TODO(fg) remove this after making expGoroutineWaitProfile public.
 	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
@@ -348,8 +354,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 
 		profileTypes := p.enabledProfileTypes()
 
-		// Decide whether we should record an execution trace
-		p.cfg.traceConfig.Refresh()
+		// Decide whether we should record an execution trace.
 		// Randomly record a trace with probability (profile period) / (trace period).
 		// Note that if the trace period is equal to or less than the profile period,
 		// we will always record a trace

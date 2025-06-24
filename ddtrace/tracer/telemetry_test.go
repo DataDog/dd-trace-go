@@ -7,6 +7,9 @@ package tracer
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -22,7 +25,24 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
 
+		// Create mock agent server with /info endpoint
+		// stats_computation_enabled depends on the trace-agent exposing this endpoint
+		mockAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/info" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"endpoints": ["/v0.4/traces", "/v0.6/stats"]}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer mockAgent.Close()
+
+		agentURL, err := url.Parse(mockAgent.URL)
+		assert.NoError(t, err)
+
 		Start(
+			WithStatsComputation(true),
 			WithDebugMode(true),
 			WithService("test-serv"),
 			WithEnv("test-env"),
@@ -31,6 +51,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithPeerServiceDefaults(true),
 			WithDebugStack(false),
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
+			WithAgentAddr(agentURL.Host),
 			WithSamplingRules(
 				TraceSamplingRules(
 					Rule{
@@ -50,7 +71,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "env", "test-env")
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
-		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "stats_computation_enabled", false)
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "stats_computation_enabled", true)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_enabled", true)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_span_attribute_schema", 0)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)

@@ -96,16 +96,17 @@ func getDDorOtelConfig(configName string) string {
 		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
 	}
 
-	// Check for stable configuration keys
+	// 1. Check managed stable config if handsOff
 	if config.handsOff {
 		if v := stableconfig.ManagedConfig.Get(config.dd); v != "" {
-			telemetry.RegisterAppConfig(config.dd, v, telemetry.OriginManagedStableConfig)
+			telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(config.dd), v, telemetry.OriginManagedStableConfig)
 			return v
 		}
 	}
 
-	// Resolve from Datadog and Opentelemetry env vars
+	// 2. Check environment variables (DD or OT)
 	val := os.Getenv(config.dd)
+	key := config.dd // Store the environment variable that will be used to set the config
 	if otVal := os.Getenv(config.ot); otVal != "" {
 		ddPrefix := "config_datadog:"
 		otelPrefix := "config_opentelemetry:"
@@ -120,19 +121,25 @@ func getDDorOtelConfig(configName string) string {
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
+			key = config.ot
 			val = v
 		}
 	}
+	if val != "" {
+		telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(key), val, telemetry.OriginEnvVar)
+		return val
+	}
 
-	// If val was not already resolved, and it's compatible with hands-off config, check local config source
-	if val == "" && config.handsOff {
+	// 3. If handsOff, check local stable config
+	if config.handsOff {
 		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {
-			telemetry.RegisterAppConfig(config.dd, v, telemetry.OriginLocalStableConfig)
+			telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(config.dd), v, telemetry.OriginLocalStableConfig)
 			return v
 		}
 	}
 
-	return val
+	// 4. Not found, return empty string
+	return ""
 }
 
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS

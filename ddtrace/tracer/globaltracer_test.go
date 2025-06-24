@@ -30,9 +30,7 @@ func (*raceTestTracer) TracerConf() TracerConf {
 	return TracerConf{}
 }
 
-func (*raceTestTracer) Submit(*Span)       {}
-func (*raceTestTracer) SubmitChunk(*Chunk) {}
-func (*raceTestTracer) Flush()             {}
+func (*raceTestTracer) Flush() {}
 
 func TestGlobalTracer(t *testing.T) {
 	// at module initialization, the tracer must be seet

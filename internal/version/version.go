@@ -17,7 +17,7 @@ import (
 // Tag specifies the current release tag. It needs to be manually
 // updated. A test checks that the value of Tag never points to a
 // git tag that is older than HEAD.
-var Tag = "v2.1.0-dev.2"
+var Tag = "v2.2.0-dev"
 
 type v1version struct {
 	Transitional bool
