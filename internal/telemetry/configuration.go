@@ -31,9 +31,8 @@ func (c *configuration) Add(kv Configuration) {
 		c.config = make(map[string]transport.ConfKeyValue)
 	}
 
-	name := envToTelemetryName(kv.Name)
-	c.config[name] = transport.ConfKeyValue{
-		Name:   name,
+	c.config[kv.Name] = transport.ConfKeyValue{
+		Name:   kv.Name,
 		Value:  kv.Value,
 		Origin: kv.Origin,
 	}
@@ -156,7 +155,7 @@ func SanitizeConfigValue(value any) any {
 	return fmt.Sprintf("%v", value)
 }
 
-func envToTelemetryName(env string) string {
+func EnvToTelemetryName(env string) string {
 	switch env {
 	case "DD_TRACE_DEBUG":
 		return "trace_debug_enabled"

@@ -21,12 +21,12 @@ func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Or
 	if env == "DD_APPSEC_SCA_ENABLED" && origin == telemetry.OriginDefault {
 		return value, origin, err
 	}
-	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
+	telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(env), value, origin)
 	return value, origin, err
 }
 
 func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin) (string, telemetry.Origin) {
-	telemetry.RegisterAppConfig(envToTelemetryName(env), value, origin)
+	telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(env), value, origin)
 	return value, origin
 }
 
@@ -63,25 +63,5 @@ func stableConfigByPriority(env string) iter.Seq2[telemetry.Origin, string] {
 		if v := LocalConfig.Get(env); v != "" && !yield(telemetry.OriginLocalStableConfig, v) {
 			return
 		}
-	}
-}
-
-// TODO: This should probably go somewhere else, usable across the repo
-func envToTelemetryName(env string) string {
-	switch env {
-	case "DD_TRACE_DEBUG":
-		return "trace_debug_enabled"
-	case "DD_APM_TRACING_ENABLED":
-		return "apm_tracing_enabled"
-	case "DD_RUNTIME_METRICS_ENABLED":
-		return "runtime_metrics_enabled"
-	case "DD_DATA_STREAMS_ENABLED":
-		return "data_streams_enabled"
-	case "DD_APPSEC_ENABLED":
-		return "appsec_enabled"
-	case "DD_DYNAMIC_INSTRUMENTATION_ENABLED":
-		return "dynamic_instrumentation_enabled"
-	default:
-		return env
 	}
 }
