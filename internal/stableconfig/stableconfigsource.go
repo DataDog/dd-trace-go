@@ -41,7 +41,7 @@ func (s *stableConfigSource) Get(key string) string {
 	return s.config.get(key)
 }
 
-func (s *stableConfigSource) GetID() int {
+func (s *stableConfigSource) GetID() string {
 	return s.config.getID()
 }
 
@@ -95,9 +95,6 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	}
 	if scfg.Config == nil {
 		scfg.Config = make(map[string]string, 0)
-	}
-	if scfg.ID == 0 {
-		scfg.ID = -1
 	}
 	return scfg
 }

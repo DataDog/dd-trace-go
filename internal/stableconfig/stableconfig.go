@@ -12,14 +12,14 @@ import "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 // stableConfig represents a configuration loaded from a YAML source file.
 type stableConfig struct {
 	Config map[string]string `yaml:"apm_configuration_default,omitempty"` // Configuration key-value pairs.
-	ID     int               `yaml:"config_id,omitempty"`                 // Identifier for the config set.
+	ID     string            `yaml:"config_id,omitempty"`                 // Identifier for the config set.
 }
 
 func (s *stableConfig) get(key string) string {
 	return s.Config[key]
 }
 
-func (s *stableConfig) getID() int {
+func (s *stableConfig) getID() string {
 	return s.ID
 }
 

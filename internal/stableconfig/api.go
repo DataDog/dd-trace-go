@@ -21,10 +21,10 @@ import (
 type ConfigData struct {
 	Origin   telemetry.Origin
 	Value    string
-	ConfigID int
+	ConfigID string
 }
 
-func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Origin, id int, err error) (bool, telemetry.Origin, error) {
+func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Origin, id string, err error) (bool, telemetry.Origin, error) {
 	if env == "DD_APPSEC_SCA_ENABLED" && origin == telemetry.OriginDefault {
 		return value, origin, err
 	}
@@ -32,7 +32,7 @@ func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Or
 	return value, origin, err
 }
 
-func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin, id int) (string, telemetry.Origin) {
+func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin, id string) (string, telemetry.Origin) {
 	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: telemetry.EnvToTelemetryName(env), Value: value, Origin: origin, ID: id})
 	return value, origin
 }
@@ -56,7 +56,7 @@ func String(env string, def string) (string, telemetry.Origin) {
 	for configData := range stableConfigByPriority(env) {
 		return reportTelemetryAndReturn(env, configData.Value, configData.Origin, configData.ConfigID)
 	}
-	return reportTelemetryAndReturn(env, def, telemetry.OriginDefault, 0)
+	return reportTelemetryAndReturn(env, def, telemetry.OriginDefault, telemetry.EmptyID)
 }
 
 func stableConfigByPriority(env string) iter.Seq[ConfigData] {

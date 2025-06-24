@@ -20,9 +20,9 @@ func TestBool(t *testing.T) {
 		// Setup mock telemetry client
 		telemetryClient := new(telemetrytest.MockClient)
 		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "UNKNOWN_KEY", Value: true, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: true, Origin: telemetry.OriginLocalStableConfig, ID: 100}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: true, Origin: telemetry.OriginLocalStableConfig, ID: "100"}}).Return()
 		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: false, Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: false, Origin: telemetry.OriginManagedStableConfig, ID: 200}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: false, Origin: telemetry.OriginManagedStableConfig, ID: "200"}}).Return()
 		defer telemetry.MockClient(telemetryClient)()
 
 		tests := []struct {
@@ -34,7 +34,7 @@ func TestBool(t *testing.T) {
 			defaultValue   bool             // Default value to use
 			expectedValue  bool             // Expected result value
 			expectedOrigin telemetry.Origin // Expected origin of the value
-			expectedID     int              // Expected Config ID of the value
+			expectedID     string           // Expected Config ID of the value
 			expectedErr    error            // Expected error, if any
 		}{
 			// When no config exists, return default value
@@ -54,7 +54,7 @@ func TestBool(t *testing.T) {
 				defaultValue:   false,
 				expectedValue:  true,
 				expectedOrigin: telemetry.OriginLocalStableConfig,
-				expectedID:     100,
+				expectedID:     "100",
 			},
 			// Env var overrides local config
 			{
@@ -77,7 +77,7 @@ func TestBool(t *testing.T) {
 				defaultValue:   true,
 				expectedValue:  false,
 				expectedOrigin: telemetry.OriginManagedStableConfig,
-				expectedID:     200,
+				expectedID:     "200",
 			},
 		}
 
@@ -236,9 +236,9 @@ apm_configuration_default:
 	// Setup mock telemetry client
 	telemetryClient := new(telemetrytest.MockClient)
 	telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "default", Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-	telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "local", Origin: telemetry.OriginLocalStableConfig, ID: 100}}).Return()
+	telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "local", Origin: telemetry.OriginLocalStableConfig, ID: "100"}}).Return()
 	telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "env", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-	telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "managed", Origin: telemetry.OriginManagedStableConfig, ID: 200}}).Return()
+	telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "managed", Origin: telemetry.OriginManagedStableConfig, ID: "200"}}).Return()
 	defer telemetry.MockClient(telemetryClient)()
 
 	t.Run("default", func(t *testing.T) {
@@ -253,7 +253,7 @@ apm_configuration_default:
 		val, origin := String("DD_KEY", "default")
 		assert.Equal(t, "local", val)
 		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "local", Origin: telemetry.OriginLocalStableConfig, ID: 100}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "local", Origin: telemetry.OriginLocalStableConfig, ID: "100"}})
 	})
 	t.Run("env overrides localStableConfig", func(t *testing.T) {
 		t.Setenv("DD_KEY", "env")
@@ -277,6 +277,6 @@ apm_configuration_default:
 		assert.Equal(t, "managed", val)
 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
 
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "managed", Origin: telemetry.OriginManagedStableConfig, ID: 200}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_KEY", Value: "managed", Origin: telemetry.OriginManagedStableConfig, ID: "200"}})
 	})
 }

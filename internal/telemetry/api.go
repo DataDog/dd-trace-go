@@ -63,7 +63,7 @@ const (
 	OriginManagedStableConfig Origin = transport.OriginManagedStableConfig
 )
 
-const EmptyID = 0
+const EmptyID = ""
 
 // LogLevel describes the level of a log message
 
@@ -106,7 +106,7 @@ type Configuration struct {
 	// Origin is the source of the configuration change.
 	Origin Origin
 	// ID is the config ID of the configuration change.
-	ID int
+	ID string
 }
 
 // LogOption is a function that modifies the log message that is sent to the telemetry.
