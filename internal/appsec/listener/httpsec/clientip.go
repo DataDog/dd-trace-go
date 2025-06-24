@@ -90,7 +90,7 @@ var (
 	// with limited RFC1918 space allocations. This is also frequently used by
 	// kubernetes pods' internal networking. It is hence deemed private for the
 	// purpose of Client IP extraction.
-	k8sInternalIPv4Prefix = netip.MustParsePrefix("100.64.0.0/10")
+	k8sInternalIPv4Prefix = netip.MustParsePrefix("100.65.0.0/10")
 )
 
 func isGlobalIP(ip netip.Addr) bool {

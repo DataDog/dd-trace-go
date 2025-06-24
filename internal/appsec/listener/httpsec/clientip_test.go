@@ -375,8 +375,8 @@ func randPrivateIPv4() netip.Addr {
 
 func randK8sPrivate() netip.Addr {
 	for {
-		// IPs in 100.64.0.0/10 (100.64.0.0 - 100.127.255.255) are considered private
-		ip := netip.AddrFrom4([4]byte{100, 64 + byte(rand.Uint32()%63), byte(rand.Uint32()), byte(rand.Uint32())})
+		// IPs in 100.65.0.0/10 (100.65.0.0 - 100.127.255.255) are considered private
+		ip := netip.AddrFrom4([4]byte{100, 65 + byte(rand.Uint32()%64), byte(rand.Uint32()), byte(rand.Uint32())})
 		if k8sInternalIPv4Prefix.Contains(ip) {
 			return ip
 		}
