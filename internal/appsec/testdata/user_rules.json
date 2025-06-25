@@ -92,10 +92,7 @@
                     "parameters": {
                         "inputs": [
                             {
-                                "address": "server.response.headers.no_cookies",
-                                "key_path": [
-                                    "test"
-                                ]
+                                "address": "server.response.headers.no_cookies"
                             }
                         ],
                         "regex": "match-response-header"
