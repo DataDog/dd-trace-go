@@ -15,10 +15,7 @@ import (
 
 const intSize = unsafe.Sizeof(int(0))
 
-var (
-	headOffset = getOffset("head")
-	tailOffset = getOffset("tail")
-)
+var headOffset = getOffset("head")
 
 func getOffset(name string) uintptr {
 	typ := reflect.TypeFor[jsoniter.Iterator]()
@@ -34,12 +31,10 @@ func getOffset(name string) uintptr {
 	return field.Offset
 }
 
-// getIteratorHeadAndTail retrieves 2 private fields from a jsoniter.Iterator: head and tail.
+// getIteratorHead retrieves the head field from a jsoniter.Iterator.
 // This is done using unsafe operations to avoid the overhead of reflection.
-func getIteratorHeadAndTail(iter *jsoniter.Iterator) (int, int) {
+func getIteratorHead(iter *jsoniter.Iterator) int {
 	head := *(*int)(unsafe.Add(unsafe.Pointer(iter), headOffset))
-	tail := *(*int)(unsafe.Add(unsafe.Pointer(iter), tailOffset))
-
 	runtime.KeepAlive(iter) // Ensure the iterator is not garbage collected while we're using it
-	return head, tail
+	return head
 }
