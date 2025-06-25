@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for file in "$@"; do
+for file in gotestsum-report*.xml; do
     temp_file="tempfile.xml"
 
     # force write a new line at the end of the gotestsum-report.xml, or else
