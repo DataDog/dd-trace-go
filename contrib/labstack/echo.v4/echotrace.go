@@ -79,13 +79,14 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			// serve the request to the next middleware
 			err := next(c)
 
-			var echoStatus int
-			switch {
 			// If we have an ignoreResponseFunc, use it to see if we proceed with
 			// tracing
-			case cfg.ignoreResponseFunc != nil && cfg.ignoreResponseFunc(c):
+			if cfg.ignoreResponseFunc != nil && cfg.ignoreResponseFunc(c) {
 				return err
+			}
 
+			var echoStatus int
+			switch {
 			case err != nil && !shouldIgnoreError(cfg, err):
 				// It is impossible to determine what the final status code of a request is in echo.
 				// This is the best we can do.
