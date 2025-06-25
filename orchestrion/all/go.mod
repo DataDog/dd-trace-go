@@ -19,6 +19,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.2.0-dev
@@ -146,7 +147,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/go-tpm v0.9.3 // indirect
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
@@ -249,6 +250,7 @@ require (
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.mongodb.org/mongo-driver v1.12.1 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.2.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/collector/component v1.28.1 // indirect
@@ -309,6 +311,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 => ../../contrib/go-redis/redis.v7
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 => ../../contrib/go-redis/redis.v8
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 => ../../contrib/go-redis/redis
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../contrib/go.mongodb.org/mongo-driver.v2
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 => ../../contrib/go.mongodb.org/mongo-driver
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 => ../../contrib/gocql/gocql
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../contrib/gofiber/fiber.v2

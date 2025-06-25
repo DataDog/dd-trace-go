@@ -15,25 +15,25 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type TestCase struct {
 	client *mongo.Client
 }
 
-func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
+func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 	_, mongoURI := containers.StartMongoDBTestContainer(t)
 
 	opts := options.Client()
 	opts.ApplyURI(mongoURI)
-	client, err := mongo.Connect(ctx, opts)
+	client, err := mongo.Connect(opts)
 	require.NoError(t, err)
 	tc.client = client
 
@@ -73,7 +73,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"type":     "mongodb",
 					},
 					Meta: map[string]string{
-						"component": "go.mongodb.org/mongo-driver/mongo",
+						"component": "go.mongodb.org/mongo-driver.v2",
 						"span.kind": "client",
 						"db.system": "mongodb",
 					},
@@ -86,7 +86,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"type":     "mongodb",
 					},
 					Meta: map[string]string{
-						"component": "go.mongodb.org/mongo-driver/mongo",
+						"component": "go.mongodb.org/mongo-driver.v2",
 						"span.kind": "client",
 						"db.system": "mongodb",
 					},
