@@ -83,6 +83,16 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 		}
 	}
 
+	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+	if extractErr == nil && parentCtx != nil {
+		ctx2 := r.Context()
+		parentCtx.ForeachBaggageItem(func(k, v string) bool {
+			ctx2 = baggage.Set(ctx2, k, v)
+			return true
+		})
+		r = r.WithContext(ctx2)
+	}
+
 	nopts = append(nopts,
 		func(ssCfg *ddtrace.StartSpanConfig) {
 			if ssCfg.Tags == nil {
@@ -99,31 +109,11 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-			} else {
-				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-				if spanParentErr == nil {
-					if spanLinksCtx, spanLinksOk := spanParentCtx.(ddtrace.SpanContextWithLinks); spanLinksOk {
-						tracer.WithSpanLinks(spanLinksCtx.SpanLinks())(ssCfg)
-					}
-					tracer.ChildOf(spanParentCtx)(ssCfg)
-
-					var baggageMap map[string]string
-					spanParentCtx.ForeachBaggageItem(func(k, v string) bool {
-						// Make the map only if we actually discover any baggage items.
-						if baggageMap == nil {
-							baggageMap = make(map[string]string)
-						}
-						baggageMap[k] = v
-						return true
-					})
-					if len(baggageMap) > 0 {
-						ctx := r.Context()
-						for k, v := range baggageMap {
-							ctx = baggage.Set(ctx, k, v)
-						}
-						r = r.WithContext(ctx)
-					}
+			} else if extractErr == nil && parentCtx != nil {
+				if links, ok := parentCtx.(ddtrace.SpanContextWithLinks); ok {
+					tracer.WithSpanLinks(links.SpanLinks())(ssCfg)
 				}
+				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
 			for k, v := range ipTags {
@@ -133,9 +123,9 @@ func StartRequestSpan(r *http.Request, opts ...ddtrace.StartSpanOption) (tracer.
 
 	nopts = append(nopts, opts...)
 
-	var requestContext = r.Context()
+	requestContext := r.Context()
 	if inferredProxySpan != nil {
-		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, true)
+		requestContext = context.WithValue(requestContext, inferredSpanCreatedCtxKey{}, true)
 	}
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, namingschema.OpName(namingschema.HTTPServer), nopts...)

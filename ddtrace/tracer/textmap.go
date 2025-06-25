@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -289,17 +290,21 @@ func (p *chainedPropagator) Inject(spanCtx ddtrace.SpanContext, carrier interfac
 func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, error) {
 	var ctx ddtrace.SpanContext
 	var links []ddtrace.SpanLink
+	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
 
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)
 
-		// If the extractor is the baggage propagator and its baggage is empty,
-		// treat it as if nothing was extracted.
-		if _, ok := v.(*propagatorBaggage); ok {
-			if extractedSpan, ok := extractedCtx.(*spanContext); ok && len(extractedSpan.baggage) == 0 {
-				extractedCtx = nil
+		// If this is the baggage propagator, just stash its items into pendingBaggage
+		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
+			// if extractedCtx is a spanContext, extract its baggage
+			if extractedCtx, ok := extractedCtx.(*spanContext); ok {
+				for k, v := range extractedCtx.baggage {
+					pendingBaggage[k] = v
+				}
 			}
+			continue
 		}
 
 		if firstExtract {
@@ -361,12 +366,30 @@ func (p *chainedPropagator) Extract(carrier interface{}) (ddtrace.SpanContext, e
 		}
 	}
 
-	// 0 successful extractions
 	if ctx == nil {
+		if len(pendingBaggage) > 0 {
+			ctx := &spanContext{
+				baggage:     make(map[string]string, len(pendingBaggage)),
+				baggageOnly: true,
+			}
+			maps.Copy(ctx.baggage, pendingBaggage)
+			atomic.StoreUint32(&ctx.hasBaggage, 1)
+			return ctx, nil
+		}
+		// 0 successful extractions
 		return nil, ErrSpanContextNotFound
 	}
-	if spCtx, ok := ctx.(*spanContext); ok && len(links) > 0 {
-		spCtx.spanLinks = links
+	if spCtx, ok := ctx.(*spanContext); ok {
+		if len(pendingBaggage) > 0 {
+			if spCtx.baggage == nil {
+				spCtx.baggage = make(map[string]string, len(pendingBaggage))
+			}
+			maps.Copy(spCtx.baggage, pendingBaggage)
+			atomic.StoreUint32(&spCtx.hasBaggage, 1)
+		}
+		if len(links) > 0 {
+			spCtx.spanLinks = links
+		}
 	}
 	log.Debug("Extracted span context: %#v", ctx)
 	return ctx, nil
