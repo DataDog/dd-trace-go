@@ -98,7 +98,7 @@ func mergeMetadataHeaders(md metadata.MD, headers http.Header) {
 	}
 }
 
-func createFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequest_ResponseHeaders) error {
+func initFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequest_ResponseHeaders) error {
 	headers, pseudoHeaders := splitPseudoHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
 
 	if err := checkPseudoResponseHeaders(pseudoHeaders); err != nil {
@@ -111,7 +111,7 @@ func createFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequ
 	}
 
 	for k, v := range headers {
-		w.Header().Set(k, strings.Join(v, ","))
+		w.Header()[k] = v
 	}
 
 	w.WriteHeader(status)

@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -20,9 +19,6 @@ import (
 
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 )
-
-const componentNameEnvoy = "envoyproxy/go-control-plane"
-const componentNameGCPServiceExtension = "gcp-service-extension"
 
 var instr *instrumentation.Instrumentation
 
@@ -59,7 +55,7 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 	}
 
 	if config.BodyParsingSizeLimit <= 0 {
-		instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The body of requests and responses will not be analyzed.")
+		instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The request and response bodies will be ignored.")
 	}
 
 	return processor
@@ -84,18 +80,20 @@ func (s *appsecEnvoyExternalProcessorServer) startMetricsReporter(ctx context.Co
 
 // Process handles the bidirectional stream that Envoy uses to control the filter
 func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.ExternalProcessor_ProcessServer) error {
-	ctx := processServer.Context()
-	var currentRequest *requestState
+	var (
+		ctx            = processServer.Context()
+		currentRequest requestState
+	)
 
 	// Ensure cleanup on exit
 	defer func() {
 		s.requestCounter.Add(1)
 
-		if currentRequest != nil && !currentRequest.IsComplete {
+		if currentRequest.Ongoing {
 			if !currentRequest.AwaitingResponseBody {
 				instr.Logger().Warn("external_processing: stream stopped during a request, making sure the current span is closed\n")
 			}
-			currentRequest.Complete()
+			currentRequest.Close()
 		}
 	}()
 
@@ -125,7 +123,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return err
 		}
 
-		if currentRequest != nil && currentRequest.Blocked {
+		if currentRequest.Blocked {
 			instr.Logger().Debug("external_processing: request blocked, end the stream")
 			return nil
 		}
@@ -156,33 +154,36 @@ func (s *appsecEnvoyExternalProcessorServer) handleReceiveError(err error) error
 }
 
 // processMessage processes a single message based on its type
-func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest **requestState) (*envoyextproc.ProcessingResponse, error) {
+func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest *requestState) (*envoyextproc.ProcessingResponse, error) {
 	switch v := req.Request.(type) {
 	case *envoyextproc.ProcessingRequest_RequestHeaders:
-		response, state, err := s.messageProcessor.ProcessRequestHeaders(ctx, v)
-		*currentRequest = state
+		var (
+			response *envoyextproc.ProcessingResponse
+			err      error
+		)
+		response, *currentRequest, err = s.messageProcessor.ProcessRequestHeaders(ctx, v)
 		return response, err
 
 	case *envoyextproc.ProcessingRequest_RequestBody:
-		if *currentRequest == nil {
+		if !currentRequest.Ongoing {
 			return nil, status.Errorf(codes.InvalidArgument, "Received request body without request headers")
 		}
-		return s.messageProcessor.ProcessRequestBody(v, *currentRequest), nil
+		return s.messageProcessor.ProcessRequestBody(v, currentRequest), nil
 
 	case *envoyextproc.ProcessingRequest_ResponseHeaders:
-		if *currentRequest == nil {
+		if !currentRequest.Ongoing {
 			// Handle case where request headers were never sent
 			instr.Logger().Warn("external_processing: can't process the response: envoy never sent the beginning of the request, this is a known issue" +
 				" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
 			return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 		}
-		return s.messageProcessor.ProcessResponseHeaders(v, *currentRequest)
+		return s.messageProcessor.ProcessResponseHeaders(v, currentRequest)
 
 	case *envoyextproc.ProcessingRequest_ResponseBody:
-		if *currentRequest == nil {
+		if !currentRequest.Ongoing {
 			return nil, status.Errorf(codes.InvalidArgument, "Received response body without request context")
 		}
-		return s.messageProcessor.ProcessResponseBody(v, *currentRequest), nil
+		return s.messageProcessor.ProcessResponseBody(v, currentRequest), nil
 
 	case *envoyextproc.ProcessingRequest_RequestTrailers:
 		return &envoyextproc.ProcessingResponse{
@@ -209,21 +210,4 @@ func (s *appsecEnvoyExternalProcessorServer) sendResponse(processServer envoyext
 	}
 
 	return nil
-}
-
-// isBodySupported checks if the body should be analyzed based on content type
-func isBodySupported(contentType string, config AppsecEnvoyConfig) bool {
-	if config.BodyParsingSizeLimit <= 0 {
-		return false
-	}
-
-	// Check if content type is a JSON type
-	values := strings.Split(contentType, ";")
-	for _, v := range values {
-		if strings.HasSuffix(strings.TrimSpace(v), "json") {
-			return true
-		}
-	}
-
-	return false
 }

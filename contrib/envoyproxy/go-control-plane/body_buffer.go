@@ -5,19 +5,11 @@
 
 package gocontrolplane
 
-type BodyBufferPhase int
-
-const (
-	RequestBodyPhase BodyBufferPhase = iota
-	ResponseBodyPhase
-)
-
 // bodyBuffer manages the buffering of request/response bodies with size limits
 type bodyBuffer struct {
 	Buffer    []byte
 	SizeLimit int
 	Truncated bool
-	Phase     BodyBufferPhase
 }
 
 // newBodyBuffer creates a new bodyBuffer with the specified size limit
@@ -37,11 +29,6 @@ func (b *bodyBuffer) Append(chunk []byte) {
 	currentSize := len(b.Buffer)
 	remainingCapacity := b.SizeLimit - currentSize
 
-	if remainingCapacity <= 0 {
-		b.Truncated = true
-		return
-	}
-
 	bytesToAdd := len(chunk)
 	if bytesToAdd > remainingCapacity {
 		bytesToAdd = remainingCapacity
@@ -54,11 +41,4 @@ func (b *bodyBuffer) Append(chunk []byte) {
 	}
 
 	b.Buffer = append(b.Buffer, chunk[:bytesToAdd]...)
-}
-
-// Reset clears the buffer for reuse
-func (b *bodyBuffer) Reset(phase BodyBufferPhase) {
-	b.Buffer = nil
-	b.Truncated = false
-	b.Phase = phase
 }
