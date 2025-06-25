@@ -54,13 +54,11 @@ func newJSONIterEncodableFromData(data []byte, truncated bool) libddwaf.Encodabl
 
 func (e *jsonIterEncodable) ToEncoder(config libddwaf.EncoderConfig) *jsonIterEncoder {
 	iter := cfg.BorrowIterator(e.data)
-	tail := len(e.data)
 
 	return &jsonIterEncoder{
 		jsonIterEncodable: e,
 		config:            config,
 		iter:              iter,
-		tail:              tail,
 	}
 }
 
@@ -80,8 +78,8 @@ func (e *jsonIterEncodable) Encode(config libddwaf.EncoderConfig, obj *libddwaf.
 	}
 
 	head := getIteratorHead(encoder.iter)
-	if head < encoder.tail {
-		// If the iterator head is less than the tail, it means that there are still bytes left in the buffer,
+	if head < len(e.data) {
+		// If the iterator head is not at the end of the array, it means that there are still bytes left in the buffer,
 		// thus alerting that a structural parsing error occurred (other than due to truncation)
 		return nil, fmt.Errorf("malformed JSON, expected end of input but found more data")
 	}
@@ -94,7 +92,6 @@ type jsonIterEncoder struct {
 	truncations map[libddwaf.TruncationReason][]int
 	config      libddwaf.EncoderConfig
 	iter        *jsoniter.Iterator
-	tail        int
 }
 
 var cfg = jsoniter.Config{
@@ -258,7 +255,9 @@ func (e *jsonIterEncoder) encodeObject(parentObj *libddwaf.WAFObject, depth int)
 		e.addTruncation(libddwaf.ContainerTooLarge, length)
 	}
 
-	errs = append(errs, extractError(e.iter, e.tail))
+	if err := e.extractIterError(); err != nil {
+		errs = append(errs, err)
+	}
 	parentObj.SetMapData(e.config.Pinner, wafObjs)
 	return errors.Join(errs...)
 }
@@ -324,19 +323,21 @@ func (e *jsonIterEncoder) encodeArray(parentObj *libddwaf.WAFObject, depth int) 
 		e.addTruncation(libddwaf.ContainerTooLarge, length)
 	}
 
-	errs = append(errs, extractError(e.iter, e.tail))
+	if err := e.extractIterError(); err != nil {
+		errs = append(errs, err)
+	}
 	parentObj.SetArrayData(e.config.Pinner, wafObjs)
 	return errors.Join(errs...)
 }
 
-func extractError(iter *jsoniter.Iterator, tail int) error {
-	if iter.Error == nil {
+func (e *jsonIterEncoder) extractIterError() error {
+	if e.iter.Error == nil {
 		return nil
 	}
 
-	err := iter.Error
-	head := getIteratorHead(iter)
-	if head == tail {
+	err := e.iter.Error
+	head := getIteratorHead(e.iter)
+	if head == len(e.data) {
 		err = io.EOF
 	}
 
