@@ -54,7 +54,7 @@ func newJSONIterEncodableFromData(data []byte, truncated bool) libddwaf.Encodabl
 
 func (e *jsonIterEncodable) ToEncoder(config libddwaf.EncoderConfig) *jsonIterEncoder {
 	iter := cfg.BorrowIterator(e.data)
-	tail := getIteratorTail(iter)
+	tail := len(e.data)
 
 	return &jsonIterEncoder{
 		jsonIterEncodable: e,
