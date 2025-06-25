@@ -86,6 +86,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../google.golang.org/grpc
-
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
