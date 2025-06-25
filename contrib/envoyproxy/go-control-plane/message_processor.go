@@ -93,7 +93,7 @@ func (mp *messageProcessor) ProcessRequestBody(req *envoyextproc.ProcessingReque
 	instr.Logger().Debug("external_processing: received request body: %v - EOS: %v\n", len(req.RequestBody.GetBody()), req.RequestBody.EndOfStream)
 
 	if mp.config.BodyParsingSizeLimit <= 0 || !state.AwaitingRequestBody {
-		instr.Logger().Warn("external_processing: the body parsing has been wrongly configured. " +
+		instr.Logger().Error("external_processing: the body parsing has been wrongly configured. " +
 			"Please disable in your Envoy External Processor filter configuration the body processing mode and enable the allow_mode_override option to let the processor handle the processing mode.")
 		return &envoyextproc.ProcessingResponse{
 			Response: &envoyextproc.ProcessingResponse_RequestBody{

@@ -209,7 +209,7 @@ func (s *appsecEnvoyExternalProcessorServer) sendResponse(processServer envoyext
 	instr.Logger().Debug("external_processing: sending response: %v\n", response)
 
 	if err := processServer.SendMsg(response); err != nil {
-		instr.Logger().Warn("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
+		instr.Logger().Error("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
 		return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
 	}
 
