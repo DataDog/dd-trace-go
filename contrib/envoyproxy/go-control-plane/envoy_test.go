@@ -18,7 +18,6 @@ import (
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 
-	ddgrpc "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
@@ -823,10 +822,8 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, blockingUnavailable bool, bodyParsingSizeLimit int, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, blockingUnavailable bool, bodyParsingSizeLimit int) (*envoyAppsecRig, error) {
 	t.Helper()
-
-	interceptorOpts = append([]ddgrpc.Option{ddgrpc.WithService("grpc")}, interceptorOpts...)
 
 	server := grpc.NewServer()
 	fixtureServer := new(envoyFixtureServer)
@@ -857,11 +854,6 @@ func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension boo
 	}()
 
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if traceClient {
-		opts = append(opts,
-			grpc.WithStreamInterceptor(ddgrpc.StreamClientInterceptor(interceptorOpts...)),
-		)
-	}
 	conn, err := grpc.NewClient(li.Addr().String(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
