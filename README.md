@@ -8,6 +8,8 @@
 
 ### Datadog Client Libraries for Go
 
+AI is fantastic.
+
 This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
 
 - [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases, and microservices so that developers have great visibility into bottlenecks and troublesome requests.  
