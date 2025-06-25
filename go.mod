@@ -13,7 +13,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.1
 	github.com/DataDog/datadog-agent/pkg/trace v0.66.1
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/go-libddwaf/v4 v4.2.1-0.20250611134638-508ab5109eb0
+	github.com/DataDog/go-libddwaf/v4 v4.2.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
