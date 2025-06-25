@@ -149,7 +149,7 @@ func (s *appsecEnvoyExternalProcessorServer) handleReceiveError(err error) error
 		return nil
 	}
 
-	instr.Logger().Warn("external_processing: error receiving request/response: %v\n", err)
+	instr.Logger().Error("external_processing: error receiving request/response: %v\n", err)
 	return status.Errorf(codes.Unknown, "Error receiving request/response: %v", err)
 }
 
@@ -186,11 +186,15 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 		return s.messageProcessor.ProcessResponseBody(v, currentRequest), nil
 
 	case *envoyextproc.ProcessingRequest_RequestTrailers:
+		instr.Logger().Debug("external_processing: received unexpected message of type RequestTrailers, ignoring it. " +
+			"Please make sure your Envoy configuration does not include RequestTrailer to accelerate processing.")
 		return &envoyextproc.ProcessingResponse{
 			Response: &envoyextproc.ProcessingResponse_RequestTrailers{},
 		}, nil
 
 	case *envoyextproc.ProcessingRequest_ResponseTrailers:
+		instr.Logger().Debug("external_processing: received unexpected message of type ResponseTrailers, ignoring it. " +
+			"Please make sure your Envoy configuration does not include RequestTrailer to accelerate processing.")
 		return &envoyextproc.ProcessingResponse{
 			Response: &envoyextproc.ProcessingResponse_ResponseTrailers{},
 		}, nil

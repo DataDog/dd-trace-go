@@ -743,6 +743,42 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 0)
 	})
+
+	t.Run("unknown-url-escape-sequence-one", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/%u002e/resource", "GET", nil, nil, false, false, "", "")
+
+		_, err = stream.Recv()
+		require.Error(t, err)
+		_, _ = stream.Recv()
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+	})
+
+	t.Run("unknown-url-escape-sequence-six", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		sendProcessingRequestHeaders(t, stream, nil, "GET", "/%u002e/%ZZ/%tt/%uuuu/%uwu/%%", false)
+
+		_, err = stream.Recv()
+		require.Error(t, err)
+		_, _ = stream.Recv()
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 0)
+	})
 }
 
 func TestAppSecAsGCPServiceExtension(t *testing.T) {
