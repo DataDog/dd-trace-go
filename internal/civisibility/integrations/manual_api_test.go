@@ -38,6 +38,11 @@ func (m *MockDdTslvEvent) SetTag(key string, value interface{}) {
 	m.Called(key, value)
 }
 
+func (m *MockDdTslvEvent) GetTag(key string) (interface{}, bool) {
+	args := m.Called(key)
+	return args.Get(0), true
+}
+
 // Mocking the DdTest interface
 type MockDdTest struct {
 	MockDdTslvEvent
@@ -69,6 +74,10 @@ func (m *MockDdTest) SetTestFunc(fn *runtime.Func) {
 
 func (m *MockDdTest) SetBenchmarkData(measureType string, data map[string]any) {
 	m.Called(measureType, data)
+}
+
+func (m *MockDdTest) Log(message string, tags string) {
+	m.Called(message, tags)
 }
 
 // Mocking the DdTestSession interface

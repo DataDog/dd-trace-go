@@ -22,20 +22,23 @@ import (
 var confluentKafkaV2 = harness.KafkaTestCase(
 	instrumentation.PackageConfluentKafkaGoV2,
 	func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
 		var (
 			testGroupID = "gotest"
 			testTopic   = "gotest"
 		)
+		const (
+			addr = "127.0.0.1:9092"
+		)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
 
 		var opts []kafkatrace.Option
 		if serviceOverride != "" {
 			opts = append(opts, kafkatrace.WithService(serviceOverride))
 		}
 		p, err := kafkatrace.NewProducer(&kafka.ConfigMap{
-			"bootstrap.servers":   "127.0.0.1:9092",
+			"bootstrap.servers":   addr,
 			"go.delivery.reports": true,
 		}, opts...)
 		require.NoError(t, err)
@@ -57,7 +60,7 @@ var confluentKafkaV2 = harness.KafkaTestCase(
 		// next attempt to consume the message
 		c, err := kafkatrace.NewConsumer(&kafka.ConfigMap{
 			"group.id":                 testGroupID,
-			"bootstrap.servers":        "127.0.0.1:9092",
+			"bootstrap.servers":        addr,
 			"fetch.wait.max.ms":        500,
 			"socket.timeout.ms":        1500,
 			"session.timeout.ms":       1500,

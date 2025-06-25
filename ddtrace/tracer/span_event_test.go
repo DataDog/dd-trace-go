@@ -90,6 +90,16 @@ func Test_spanAddEvent(t *testing.T) {
 		assert.Equal(t, wantJSON, string(b))
 	}
 
+	t.Run("nil span should be a noop", func(t *testing.T) {
+		var s *Span
+
+		require.NotPanics(t, func() {
+			s.AddEvent("test-event-1", WithSpanEventTimestamp(ts), WithSpanEventAttributes(attrs))
+			s.AddEvent("test-event-2", WithSpanEventAttributes(attrs))
+			s.AddEvent("test-event-3")
+		})
+	})
+
 	t.Run("with native events support", func(t *testing.T) {
 		s := newBasicSpan("test")
 		s.supportsEvents = true

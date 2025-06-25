@@ -10,7 +10,7 @@
 
 This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
 
-- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases, and microservices so that developers have great visiblity into bottlenecks and troublesome requests.  
+- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases, and microservices so that developers have great visibility into bottlenecks and troublesome requests.  
 The package [`github.com/DataDog/dd-trace-go/v2/ddtrace/tracer`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`github.com/DataDog/dd-trace-go/v2/contrib`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib).
 <!-- # TODO: review contrib URL -->
 
@@ -58,7 +58,7 @@ Tests can be run locally using the Go toolset.
 
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
 
-The best way to run the entire test suite is using the [test.sh](./test.sh) script. You'll need Docker and docker-compose installed. If this is your first time running the tests, you should run `./test.sh -t` to install any missing test tools/dependencies. Run `./test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./test.sh --help` for more options.
+The best way to run the entire test suite is using the [scripts/test.sh](./scripts/test.sh) script. You'll need Docker and docker-compose installed. If this is your first time running the tests, you should run `./scripts/test.sh -t` to install any missing test tools/dependencies. Run `./scripts/test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./scripts/test.sh --help` for more options.
 
 If you're only interested in the tests for a specific integration it can be useful to spin up just the required containers via docker-compose.
 For example if you're running tests that need the `mysql` database container to be up:

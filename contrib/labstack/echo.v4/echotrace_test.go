@@ -510,7 +510,7 @@ func TestNoDebugStack(t *testing.T) {
 	span := spans[0]
 	require.NotNil(t, span.Tag(ext.ErrorMsg))
 	assert.Equal(errWant.Error(), span.Tag(ext.ErrorMsg))
-	assert.Nil(span.Tags()[ext.ErrorStack])
+	assert.Empty(span.Tags()[ext.ErrorStack])
 	assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
 	assert.Equal(string(instrumentation.PackageLabstackEchoV4), span.Integration())
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))

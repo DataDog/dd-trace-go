@@ -74,6 +74,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			if err != nil {
 				log.Debug("%s\n", err.Error())
 			} else {
+				// TODO: Baggage?
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 				if spanParentErr == nil {
 					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
@@ -83,6 +84,16 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
 			}
 		}
+	}
+
+	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+	if extractErr == nil && parentCtx != nil {
+		ctx2 := r.Context()
+		parentCtx.ForeachBaggageItem(func(k, v string) bool {
+			ctx2 = baggage.Set(ctx2, k, v)
+			return true
+		})
+		r = r.WithContext(ctx2)
 	}
 
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
@@ -102,31 +113,11 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-			} else {
-				if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header)); err == nil {
-					// If there are span links as a result of context extraction, add them as a StartSpanOption
-					if spanctx != nil && spanctx.SpanLinks() != nil {
-						tracer.WithSpanLinks(spanctx.SpanLinks())(ssCfg)
-					}
-					tracer.ChildOf(spanctx)(ssCfg)
-
-					var baggageMap map[string]string
-					spanctx.ForeachBaggageItem(func(k, v string) bool {
-						// Make the map only if we actually discover any baggage items.
-						if baggageMap == nil {
-							baggageMap = make(map[string]string)
-						}
-						baggageMap[k] = v
-						return true
-					})
-					if len(baggageMap) > 0 {
-						ctx := r.Context()
-						for k, v := range baggageMap {
-							ctx = baggage.Set(ctx, k, v)
-						}
-						r = r.WithContext(ctx)
-					}
+			} else if extractErr == nil && parentCtx != nil {
+				if links := parentCtx.SpanLinks(); links != nil {
+					tracer.WithSpanLinks(links)(ssCfg)
 				}
+				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
 			for k, v := range ipTags {
@@ -136,9 +127,9 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	nopts = append(nopts, opts...)
 
-	var requestContext = r.Context()
+	requestContext := r.Context()
 	if inferredProxySpan != nil {
-		requestContext = context.WithValue(r.Context(), inferredSpanCreatedCtxKey{}, true)
+		requestContext = context.WithValue(requestContext, inferredSpanCreatedCtxKey{}, true)
 	}
 
 	span, ctx := tracer.StartSpanFromContext(requestContext, instr.OperationName(instrumentation.ComponentServer, nil), nopts...)
@@ -174,8 +165,24 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		}
 	}
+	fc := &tracer.FinishConfig{}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		opt(fc)
+	}
+	if fc.NoDebugStack {
+		// This is a workaround to ensure that the error stack is not set when NoDebugStack is true.
+		// This is required because the error stack is set when we call `s.SetTag(ext.Error, err)` just
+		// a few lines above.
+		// This is also caused by the fact that the error stack generation is controlled by `tracer.WithDebugStack` (globally)
+		// or `tracer.NoDebugStack` (per span, but only when we finish the span). These two options don't allow to control
+		// the error stack generation per span that happens in `FinishRequestSpan` before calling `s.Finish`.
+		s.SetTag("error.stack", "")
+	}
 	s.SetTag(ext.HTTPCode, statusStr)
-	s.Finish(opts...)
+	s.Finish(tracer.WithFinishConfig(fc))
 }
 
 // URLFromRequest returns the full URL from the HTTP request. If queryString is true, params are collected and they are obfuscated either by the default query string obfuscator or the custom obfuscator provided by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)

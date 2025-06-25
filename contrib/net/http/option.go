@@ -54,8 +54,8 @@ func WithHeaderTags(headers []string) HandlerOptionFn {
 
 // WithStatusCheck sets a span to be an error if the passed function
 // returns true for a given status code.
-func WithStatusCheck(fn func(statusCode int) bool) HandlerOptionFn {
-	return func(cfg *internal.Config) {
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
+	return func(cfg *internal.CommonConfig) {
 		cfg.IsStatusError = fn
 	}
 }

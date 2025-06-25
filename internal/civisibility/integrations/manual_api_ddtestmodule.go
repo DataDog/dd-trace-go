@@ -8,6 +8,7 @@ package integrations
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 
 	var sessionTags []tracer.StartSpanOption
 	if session != nil {
-		sessionTags = session.tags
+		sessionTags = slices.Clone(session.tags)
 	}
 
 	// Module tags should include session tags so the backend can calculate the session fingerprint from the module.

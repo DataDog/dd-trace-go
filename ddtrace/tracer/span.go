@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate msgp -unexported -marshal=false -o=span_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
 package tracer
 
@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -112,7 +111,7 @@ func (s *Span) spanEventsAsJSONString() string {
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
 type Span struct {
-	sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
+	mu sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
 	name       string             `msg:"name"`                  // operation name
 	service    string             `msg:"service"`               // service name (i.e. "grpc.server", "http.request")
@@ -139,7 +138,6 @@ type Span struct {
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
-	finishGuard     atomic.Uint32   `msg:"-"` // finishGuard value to detect if Span.Finish has been called to only finish the span once
 
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
@@ -181,8 +179,9 @@ func (s *Span) SetTag(key string, value interface{}) {
 	// To avoid dumping the memory address in case value is a pointer, we dereference it.
 	// Any pointer value that is a pointer to a pointer will be dumped as a string.
 	value = dereference(value)
-	s.Lock()
-	defer s.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -242,6 +241,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 
 	if v, ok := value.([]byte); ok {
 		s.setMeta(key, string(v))
+		return
 	}
 
 	if value != nil {
@@ -293,8 +293,8 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	if s == nil {
 		return
 	}
-	s.Lock()
-	defer s.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
@@ -327,8 +327,9 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	}
 	root := s.Root()
 	trace := root.context.trace
-	root.Lock()
-	defer root.Unlock()
+	root.mu.Lock()
+	defer root.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -376,7 +377,7 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 		return nil
 	}
 	opts = append(opts, ChildOf(s.Context()))
-	return GetGlobalTracer().StartSpan(operationName, opts...)
+	return getGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // setSamplingPriorityLocked updates the sampling priority.
@@ -399,17 +400,20 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		if yes {
 			if s.error == 0 {
 				// new error
-				atomic.AddInt32(&s.context.errors, 1)
+				s.context.errors.Add(1)
 			}
 			s.error = 1
 		} else {
 			if s.error > 0 {
 				// flip from active to inactive
-				atomic.AddInt32(&s.context.errors, -1)
+				s.context.errors.Add(-1)
 			}
 			s.error = 0
 		}
 	}
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
@@ -554,6 +558,19 @@ func (s *Span) setMetric(key string, v float64) {
 
 // AddLink appends the given link to the span's span links.
 func (s *Span) AddLink(link SpanLink) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		// already finished
+		return
+	}
 	s.spanLinks = append(s.spanLinks, link)
 }
 
@@ -601,35 +618,29 @@ func (s *Span) Finish(opts ...FinishOption) {
 	if s == nil {
 		return
 	}
-	// If Span.Finish has already been called, do nothing.
-	// In this way, we can ensure that Span.Finish is called at most once.
-	if !s.finishGuard.CompareAndSwap(0, 1) {
-		return
-	}
+
 	t := now()
 	if len(opts) > 0 {
 		cfg := FinishConfig{
 			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {
+			if fn == nil {
+				continue
+			}
 			fn(&cfg)
 		}
 		if !cfg.FinishTime.IsZero() {
 			t = cfg.FinishTime.UnixNano()
 		}
-		if cfg.NoDebugStack {
-			s.Lock()
-			delete(s.meta, ext.ErrorStack)
-			s.Unlock()
-		}
 		if cfg.Error != nil {
-			s.Lock()
+			s.mu.Lock()
 			s.setTagError(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
 				stackFrames:  cfg.StackFrames,
 				stackSkip:    cfg.SkipStackFrames,
 			})
-			s.Unlock()
+			s.mu.Unlock()
 		}
 	}
 
@@ -651,15 +662,12 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := GetGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
 		}
 	}
-
-	s.serializeSpanLinksInMeta()
-	s.serializeSpanEvents()
 
 	s.finish(t)
 	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
@@ -670,8 +678,9 @@ func (s *Span) SetOperationName(operationName string) {
 	if s == nil {
 		return
 	}
-	s.Lock()
-	defer s.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -683,8 +692,9 @@ func (s *Span) SetOperationName(operationName string) {
 }
 
 func (s *Span) finish(finishTime int64) {
-	s.Lock()
-	defer s.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -692,6 +702,10 @@ func (s *Span) finish(finishTime int64) {
 		// already finished
 		return
 	}
+
+	s.serializeSpanLinksInMeta()
+	s.serializeSpanEvents()
+
 	if s.duration == 0 {
 		s.duration = finishTime - s.start
 	}
@@ -703,20 +717,20 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	if t, ok := GetGlobalTracer().(*tracer); ok {
-		if !t.config.enabled.current {
+	tracer, hasTracer := getGlobalTracer().(*tracer)
+	if hasTracer {
+		if !tracer.config.enabled.current {
 			return
 		}
-		t.Submit(s)
-		if t.config.canDropP0s() {
+		if tracer.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
 			keep = shouldKeep(s)
 		}
-		if t.config.debugAbandonedSpans {
+		if tracer.config.debugAbandonedSpans {
 			// the tracer supports debugging abandoned spans
-			t.submitAbandonedSpan(s, true)
+			tracer.submitAbandonedSpan(s, true)
 		}
-		t.spansFinished.Inc(s.integration)
+		tracer.spansFinished.Inc(s.integration)
 	}
 	if keep {
 		// a single kept span keeps the whole trace.
@@ -728,6 +742,11 @@ func (s *Span) finish(finishTime int64) {
 			s, s.name, s.resource, s.meta, s.metrics)
 	}
 	s.context.finish()
+
+	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
+	if hasTracer {
+		tracer.submit(s)
+	}
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this
@@ -768,7 +787,7 @@ func shouldKeep(s *Span) bool {
 		// positive sampling priorities stay
 		return true
 	}
-	if atomic.LoadInt32(&s.context.errors) > 0 {
+	if s.context.errors.Load() > 0 {
 		// traces with any span containing an error get kept
 		return true
 	}
@@ -796,8 +815,8 @@ func (s *Span) String() string {
 	if s == nil {
 		return "<nil>"
 	}
-	s.RLock()
-	defer s.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	lines := []string{
 		fmt.Sprintf("Name: %s", s.name),
 		fmt.Sprintf("Service: %s", s.service),
@@ -833,7 +852,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := GetGlobalTracer(); tr != nil {
+		if tr := getGlobalTracer(); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
@@ -862,6 +881,15 @@ func (s *Span) Format(f fmt.State, c rune) {
 
 // AddEvent attaches a new event to the current span.
 func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
@@ -884,10 +912,19 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.spanEvents = append(s.spanEvents, event)
 }
 
+// used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMeta(s *Span, key string) (string, bool) {
-	s.RLock()
-	defer s.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	val, ok := s.meta[key]
+	return val, ok
+}
+
+// used in internal/civisibility/integrations/manual_api_common.go using linkname
+func getMetric(s *Span, key string) (float64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	val, ok := s.metrics[key]
 	return val, ok
 }
 
@@ -931,6 +968,8 @@ const (
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
 	keyBaseService = "_dd.base_service"
+	// keyProcessTags contains a list of process tags to indentify the service.
+	keyProcessTags = "_dd.tags.process"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

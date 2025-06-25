@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"testing"
 
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
@@ -33,7 +34,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -110,7 +111,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -234,7 +235,7 @@ func TestBlockingWithUserRulesFile(t *testing.T) {
 
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -323,7 +324,7 @@ func TestXForwardedForHeaderClientIp(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -411,7 +412,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false)
+		rig, err := newEnvoyAppsecRig(t, false, false, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -457,7 +458,7 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, true)
+		rig, err := newEnvoyAppsecRig(t, false, true, false)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -492,7 +493,7 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
+func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, blockingUnavailable bool, interceptorOpts ...ddgrpc.Option) (*envoyAppsecRig, error) {
 	t.Helper()
 
 	interceptorOpts = append([]ddgrpc.Option{ddgrpc.WithService("grpc")}, interceptorOpts...)
@@ -500,12 +501,15 @@ func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension boo
 	server := grpc.NewServer()
 	fixtureServer := new(envoyFixtureServer)
 
-	var appsecSrv envoyextproc.ExternalProcessorServer
-	if isGCPServiceExtension {
-		appsecSrv = AppsecEnvoyExternalProcessorServerGCPServiceExtension(fixtureServer)
-	} else {
-		appsecSrv = AppsecEnvoyExternalProcessorServer(fixtureServer)
+	if blockingUnavailable {
+		_ = os.Setenv("_DD_APPSEC_BLOCKING_UNAVAILABLE", "true")
 	}
+
+	var appsecSrv envoyextproc.ExternalProcessorServer
+	appsecSrv = AppsecEnvoyExternalProcessorServer(fixtureServer, AppsecEnvoyConfig{
+		IsGCPServiceExtension: isGCPServiceExtension,
+		BlockingUnavailable:   blockingUnavailable,
+	})
 
 	envoyextproc.RegisterExternalProcessorServer(server, appsecSrv)
 

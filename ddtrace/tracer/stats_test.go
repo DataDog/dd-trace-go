@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
@@ -129,6 +131,41 @@ func TestConcentrator(t *testing.T) {
 			c.Stop()
 			assert.NotEmpty(t, transport.Stats())
 		})
+
+		t.Run("processTagsEnabled", func(t *testing.T) {
+			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+			processtags.Reload()
+
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+
+			gotStats := transport.Stats()
+			require.Len(t, gotStats, 1)
+			assert.NotEmpty(t, gotStats[0].ProcessTags)
+		})
+		t.Run("processTagsDisabled", func(t *testing.T) {
+			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+			processtags.Reload()
+
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+
+			gotStats := transport.Stats()
+			require.Len(t, gotStats, 1)
+			assert.Empty(t, gotStats[0].ProcessTags)
+		})
 	})
 }
 
@@ -182,4 +219,28 @@ func TestObfuscation(t *testing.T) {
 	assert.Len(t, actualStats[0].Stats[0].Stats, 1)
 	assert.Equal(t, 2, tsp.obfVersion)
 	assert.Equal(t, "GET", actualStats[0].Stats[0].Stats[0].Resource)
+}
+
+func TestStatsByKind(t *testing.T) {
+	s1 := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano(),
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 0},
+	}
+	s2 := Span{
+		name:     "sql.query",
+		start:    time.Now().UnixNano(),
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 0},
+	}
+	s1.SetTag("span.kind", "client")
+	s2.SetTag("span.kind", "invalid")
+
+	c := newConcentrator(&config{transport: newDummyTransport(), env: "someEnv"}, 100, &statsd.NoOpClientDirect{})
+	_, ok := c.newTracerStatSpan(&s1, nil)
+	assert.True(t, ok)
+
+	_, ok = c.newTracerStatSpan(&s2, nil)
+	assert.False(t, ok)
 }

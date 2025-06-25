@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +67,7 @@ func TestSpanAsMap(t *testing.T) {
 			want: nil,
 		},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(_ *testing.T) {
 			assertions.Equal(tt.want, tt.span.AsMap()[ext.SpanName])
 		})
 	}
@@ -202,6 +202,56 @@ func TestSpanFinishTwice(t *testing.T) {
 	tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
 }
 
+func TestSpanFinishNilOption(t *testing.T) {
+	assert := assert.New(t)
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	tc := []struct {
+		name    string
+		wantErr bool
+		options []FinishOption
+	}{
+		{
+			name:    "all nil options",
+			options: []FinishOption{nil, nil, nil},
+			wantErr: false,
+		},
+		{
+			name:    "nil options at end",
+			options: []FinishOption{WithError(errors.New("test error")), nil, nil},
+			wantErr: true,
+		},
+		{
+			name:    "nil options at beginning and end",
+			options: []FinishOption{nil, WithError(errors.New("test error")), nil},
+			wantErr: true,
+		},
+		{
+			name:    "nil options at beginning",
+			options: []FinishOption{nil, nil, WithError(errors.New("test error"))},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.name, func(_ *testing.T) {
+			span := tracer.newRootSpan("pylons.request", "pylons", "/")
+			span.Finish(tc.options...)
+			if tc.wantErr {
+				assert.Equal(tc.wantErr, span.error != 0)
+				assert.Equal(span.meta[ext.ErrorMsg], "test error")
+				assert.Equal(span.meta[ext.ErrorType], "*errors.errorString")
+			} else {
+				assert.Equal(span.error, int32(0))
+				assert.Empty(span.meta[ext.ErrorMsg])
+				assert.Empty(span.meta[ext.ErrorType])
+			}
+		})
+	}
+}
+
 func TestShouldDrop(t *testing.T) {
 	for _, tt := range []struct {
 		prio   int
@@ -221,7 +271,7 @@ func TestShouldDrop(t *testing.T) {
 			s := newSpan("", "", "", 1, 1, 0)
 			s.setSamplingPriority(tt.prio, samplernames.Default)
 			s.SetTag(ext.EventSampleRate, tt.rate)
-			atomic.StoreInt32(&s.context.errors, tt.errors)
+			s.context.errors.Store(tt.errors)
 			assert.Equal(t, shouldKeep(s), tt.want)
 		})
 	}
@@ -577,11 +627,56 @@ func TestSpanStart(t *testing.T) {
 	assert.NotEqual(int64(0), span.start)
 }
 
+func TestSpanStartNilOption(t *testing.T) {
+	assert := assert.New(t)
+	tracer, err := newTracer(withTransport(newDefaultTransport()))
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	tc := []struct {
+		name    string
+		wantTag bool
+		options []StartSpanOption
+	}{
+		{
+			name:    "all nil options",
+			options: []StartSpanOption{nil, nil, nil},
+			wantTag: false,
+		},
+		{
+			name:    "nil options at end",
+			options: []StartSpanOption{Tag("tag", "value"), nil, nil},
+			wantTag: true,
+		},
+		{
+			name:    "nil options at beginning and end",
+			options: []StartSpanOption{nil, Tag("tag", "value"), nil},
+			wantTag: true,
+		},
+		{
+			name:    "nil options at beginning",
+			options: []StartSpanOption{nil, nil, Tag("tag", "value")},
+			wantTag: true,
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.name, func(_ *testing.T) {
+			span := tracer.StartSpan("pylons.request", tc.options...)
+			if tc.wantTag {
+				assert.Equal(tc.wantTag, span.meta["tag"] == "value")
+			} else {
+				assert.Empty(span.meta["tag"])
+			}
+		})
+	}
+}
+
 func TestSpanString(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 	// don't bother checking the contents, just make sure it works.
@@ -676,7 +771,7 @@ func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -724,7 +819,7 @@ func TestSpanErrorNil(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
 	assert.NoError(err)
-	SetGlobalTracer(tracer)
+	setGlobalTracer(tracer)
 	defer tracer.Stop()
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
@@ -1337,4 +1432,93 @@ func TestSpanLinksInMeta(t *testing.T) {
 		assert.Equal(t, uint64(789), links[1].SpanID)
 		assert.Equal(t, uint64(012), links[1].TraceID)
 	})
+}
+
+func TestStatsAfterFinish(t *testing.T) {
+	t.Run("peerServiceDefaults-enabled", func(t *testing.T) {
+		tracer, err := newTracer(
+			WithPeerServiceDefaults(true),
+			WithStatsComputation(true),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.transport = transport
+		tracer.config.agent.Stats = true
+		tracer.config.agent.DropP0s = true
+		tracer.config.agent.peerTags = []string{"peer.service"}
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag("span.kind", "client")
+		sp.SetTag("messaging.system", "kafka")
+		sp.SetTag("messaging.kafka.bootstrap.servers", "kafka-cluster")
+		sp.SetTag(keyMeasured, 1)
+		sp.Finish()
+
+		assert.Equal(t, "kafka-cluster", sp.meta["peer.service"])
+
+		// peer.service has been added on the span.Finish() call. Ensure the StatSpan is also accessing this.
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		peerTags := stats[0].Stats[0].Stats[0].PeerTags
+		assert.Contains(t, peerTags, "peer.service:kafka-cluster")
+	})
+	t.Run("peerServiceDefaults-disabled", func(t *testing.T) {
+		tracer, err := newTracer(
+			WithPeerServiceDefaults(false),
+			WithStatsComputation(true),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.transport = transport
+		tracer.config.agent.Stats = true
+		tracer.config.agent.DropP0s = true
+		tracer.config.agent.peerTags = []string{"peer.service"}
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag("span.kind", "client")
+		sp.SetTag("messaging.system", "kafka")
+		sp.SetTag("messaging.kafka.bootstrap.servers", "kafka-cluster")
+		sp.SetTag(keyMeasured, 1)
+		sp.Finish()
+
+		assert.Equal(t, "", sp.meta["peer.service"])
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		peerTags := stats[0].Stats[0].Stats[0].PeerTags
+		assert.Empty(t, peerTags)
+	})
+}
+
+func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	sp := tracer.StartSpan("test-error-stack")
+	sp.SetTag("error.stack", "boom")
+	sp.Finish(
+		WithError(errors.New("test error")),
+		NoDebugStack(),
+	)
+
+	assert.Equal(t, "boom", sp.meta["error.stack"])
 }

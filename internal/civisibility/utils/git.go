@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -49,7 +50,20 @@ var (
 
 	// gitFinder is a sync.Once instance used to ensure that the Git executable is only checked once.
 	gitFinder sync.Once
+
+	// Constants for base branch detection algorithm
+	possibleBaseBranches = []string{"main", "master", "preprod", "prod", "dev", "development", "trunk"}
+
+	// BASE_LIKE_BRANCH_FILTER - regex to check if the branch name is similar to a possible base branch
+	baseLikeBranchFilter = regexp.MustCompile(`^(main|master|preprod|prod|dev|development|trunk|release\/.*|hotfix\/.*)$`)
 )
+
+// branchMetrics holds metrics for evaluating base branch candidates
+type branchMetrics struct {
+	behind  int
+	ahead   int
+	baseSha string
+}
 
 // isGitFound checks if the Git executable is available on the system.
 func isGitFound() bool {
@@ -345,7 +359,7 @@ func UnshallowGitRepository() (bool, error) {
 	if err != nil || fetchOutput == "" {
 		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err)
 		// ***
-		// It could be that the CI is working on a detached HEAD or maybe branch tracking hasn’t been set up.
+		// It could be that the CI is working on a detached HEAD or maybe branch tracking hasn't been set up.
 		// In that case, this command will also fail, and we will finally fallback to we just unshallow all the things:
 		// `git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName)`
 		// ***
@@ -361,6 +375,44 @@ func UnshallowGitRepository() (bool, error) {
 
 	log.Debug("civisibility.unshallow: was completed successfully")
 	return true, nil
+}
+
+// GetGitDiff retrieves the diff between two Git commits using the `git diff` command.
+func GetGitDiff(baseCommit, headCommit string) (string, error) {
+	// git diff -U0 --word-diff=porcelain {baseCommit} {headCommit}
+	if len(baseCommit) != 40 {
+		// not a commit sha
+		var re = regexp.MustCompile(`(?i)^[a-f0-9]{40}$`)
+		if !re.MatchString(baseCommit) {
+			// first let's get the remote
+			remoteOut, err := execGitString(telemetry.GetRemoteCommandsType, "remote", "show")
+			if err != nil {
+				log.Debug("civisibility.git: error on git remote show origin: %v | %s", err, remoteOut)
+			}
+			if remoteOut == "" {
+				remoteOut = "origin"
+			}
+
+			// let's ensure we have all the branch names from the remote
+			fetchOut, err := execGitString(telemetry.GetHeadCommandsType, "fetch", remoteOut, baseCommit, "--depth=1")
+			if err != nil {
+				log.Debug("civisibility.git: error fetching %s/%s: %v | %s", remoteOut, baseCommit, err, fetchOut)
+			}
+
+			// then let's get the remote branch name
+			baseCommit = fmt.Sprintf("%s/%s", remoteOut, baseCommit)
+		}
+	}
+
+	log.Debug("civisibility.git: getting the diff between %s and %s", baseCommit, headCommit)
+	out, err := execGitString(telemetry.Diff, "diff", "-U0", "--word-diff=porcelain", baseCommit, headCommit)
+	if err != nil {
+		return "", fmt.Errorf("civisibility.git: error getting the diff from %s to %s: %s | %s", baseCommit, headCommit, err.Error(), out)
+	}
+	if out == "" {
+		return "", fmt.Errorf("civisibility.git: error getting the diff from %s to %s: empty output", baseCommit, headCommit)
+	}
+	return out, nil
 }
 
 // filterSensitiveInfo removes sensitive information from a given URL using a regular expression.
@@ -487,4 +539,305 @@ func getParentGitFolder(innerFolder string) (string, error) {
 	}
 
 	return "", nil
+}
+
+// isDefaultBranch checks if a branch is the default branch
+func isDefaultBranch(branch, defaultBranch, remoteName string) bool {
+	return branch == defaultBranch || branch == remoteName+"/"+defaultBranch
+}
+
+// detectDefaultBranch detects the default branch using git symbolic-ref
+func detectDefaultBranch(remoteName string) (string, error) {
+	// Try to get the default branch using symbolic-ref
+	defaultRef, err := execGitString(telemetry.NotSpecifiedCommandsType, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remoteName+"/HEAD")
+	if err == nil && defaultRef != "" {
+		// Remove the remote prefix to get just the branch name
+		defaultBranch := removeRemotePrefix(defaultRef, remoteName)
+		if defaultBranch != "" {
+			log.Debug("civisibility.git: detected default branch from symbolic-ref: %s", defaultBranch)
+			return defaultBranch, nil
+		}
+	}
+
+	log.Debug("civisibility.git: could not get symbolic-ref, trying to find a fallback (main, master)...")
+
+	// Fallback to checking for main/master
+	fallbackBranch := findFallbackDefaultBranch(remoteName)
+	if fallbackBranch != "" {
+		return fallbackBranch, nil
+	}
+
+	return "", errors.New("could not detect default branch")
+}
+
+// findFallbackDefaultBranch tries to find main or master as fallback default branches
+func findFallbackDefaultBranch(remoteName string) string {
+	fallbackBranches := []string{"main", "master"}
+
+	for _, fallback := range fallbackBranches {
+		// Check if the remote branch exists
+		_, err := execGitString(telemetry.NotSpecifiedCommandsType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+fallback)
+		if err == nil {
+			log.Debug("civisibility.git: found fallback default branch: %s", fallback)
+			return fallback
+		}
+	}
+
+	return ""
+}
+
+// GetBaseBranchSha detects the base branch SHA using the algorithm from algorithm.md
+func GetBaseBranchSha(defaultBranch string) (string, error) {
+	if !isGitFound() {
+		return "", errors.New("git executable not found")
+	}
+
+	// Step 1 - collect info we'll need later
+
+	// Step 1a - remote_name
+	remoteName, err := getRemoteName()
+	if err != nil {
+		return "", fmt.Errorf("failed to get remote name: %w", err)
+	}
+
+	// Step 1b - source_branch
+	sourceBranch, err := getSourceBranch()
+	if err != nil {
+		return "", fmt.Errorf("failed to get source branch: %w", err)
+	}
+
+	// Step 1c - Detect default branch automatically
+	detectedDefaultBranch, err := detectDefaultBranch(remoteName)
+	if err != nil {
+		// Fallback to the provided parameter if detection fails
+		if defaultBranch == "" {
+			defaultBranch = "main" // ultimate fallback
+		}
+		log.Debug("civisibility.git: failed to detect default branch, using fallback: %s", defaultBranch)
+		detectedDefaultBranch = defaultBranch
+	}
+
+	// Step 2 - build candidate branches list and fetch them from remote
+	var candidateBranches []string
+
+	// Check if we have git.pull_request.base_branch from CI provider environment variables
+	ciTags := GetCITags()
+	gitPrBaseBranch := ciTags[constants.GitPrBaseBranch]
+
+	if gitPrBaseBranch != "" {
+		// Step 2b - we have git.pull_request.base_branch
+		log.Debug("civisibility.git: using git.pull_request.base_branch from CI: %s", gitPrBaseBranch)
+		checkAndFetchBranch(gitPrBaseBranch, remoteName)
+		candidateBranches = []string{gitPrBaseBranch}
+	} else {
+		// Step 2a - we don't have git.pull_request.base_branch
+		// Fetch all possible base branches from remote
+		for _, branch := range possibleBaseBranches {
+			checkAndFetchBranch(branch, remoteName)
+		}
+
+		// Get the list of remote branches present in local repo and see which ones are base-like
+		remoteBranches, err := getRemoteBranches(remoteName)
+		if err != nil {
+			return "", fmt.Errorf("failed to get remote branches: %w", err)
+		}
+
+		for _, branch := range remoteBranches {
+			if branch != sourceBranch && isMainLikeBranch(branch, remoteName) {
+				candidateBranches = append(candidateBranches, branch)
+			}
+		}
+	}
+
+	if len(candidateBranches) == 0 {
+		return "", errors.New("no candidate base branches found")
+	}
+
+	// Step 3 - find the best base branch
+	if len(candidateBranches) == 1 {
+		// Step 3a - single candidate
+		baseSha, err := execGitString(telemetry.NotSpecifiedCommandsType, "merge-base", candidateBranches[0], sourceBranch)
+		if err != nil {
+			return "", fmt.Errorf("failed to find merge base for %s and %s: %w", candidateBranches[0], sourceBranch, err)
+		}
+		return baseSha, nil
+	}
+
+	// Step 3b - multiple candidates
+	metrics, err := computeBranchMetrics(candidateBranches, sourceBranch)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute branch metrics: %w", err)
+	}
+
+	baseSha := findBestBranch(metrics, detectedDefaultBranch, remoteName)
+	if baseSha == "" {
+		return "", errors.New("failed to find best base branch")
+	}
+
+	return baseSha, nil
+}
+
+// getRemoteName determines the remote name using the algorithm from algorithm.md
+func getRemoteName() (string, error) {
+	// Try to find remote from upstream tracking
+	upstream, err := execGitString(telemetry.GetRemoteCommandsType, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	if err == nil && upstream != "" {
+		parts := strings.Split(upstream, "/")
+		if len(parts) > 0 {
+			return parts[0], nil
+		}
+	}
+
+	// Fallback to first remote if no upstream
+	remotes, err := execGitString(telemetry.GetRemoteCommandsType, "remote")
+	if err != nil {
+		return "origin", nil // ultimate fallback
+	}
+
+	lines := strings.Split(strings.TrimSpace(remotes), "\n")
+	if len(lines) > 0 && lines[0] != "" {
+		return lines[0], nil
+	}
+
+	return "origin", nil
+}
+
+// getSourceBranch gets the current branch name
+func getSourceBranch() (string, error) {
+	return execGitString(telemetry.GetBranchCommandsType, "rev-parse", "--abbrev-ref", "HEAD")
+}
+
+// isMainLikeBranch checks if a branch name matches the base-like branch pattern
+func isMainLikeBranch(branchName, remoteName string) bool {
+	shortBranchName := removeRemotePrefix(branchName, remoteName)
+	return baseLikeBranchFilter.MatchString(shortBranchName)
+}
+
+// removeRemotePrefix removes the remote prefix from a branch name
+func removeRemotePrefix(branchName, remoteName string) string {
+	prefix := remoteName + "/"
+	if strings.HasPrefix(branchName, prefix) {
+		return strings.TrimPrefix(branchName, prefix)
+	}
+	return branchName
+}
+
+// checkAndFetchBranch checks if a branch exists and fetches it if needed
+func checkAndFetchBranch(branch, remoteName string) {
+	// Check if branch exists locally (as remote ref)
+	_, err := execGitString(telemetry.NotSpecifiedCommandsType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+branch)
+	if err == nil {
+		return // branch exists locally
+	}
+
+	// Check if branch exists in remote
+	remoteHeads, err := execGitString(telemetry.GetRemoteCommandsType, "ls-remote", "--heads", remoteName, branch)
+	if err != nil || remoteHeads == "" {
+		return // branch doesn't exist in remote
+	}
+
+	// Fetch the latest commit for this branch from remote (without creating local branch)
+	_, err = execGitString(telemetry.NotSpecifiedCommandsType, "fetch", "--depth", "1", remoteName, branch)
+	if err != nil {
+		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err)
+	}
+}
+
+// getRemoteBranches gets list of remote tracking branches only (for Step 2a in algorithm)
+func getRemoteBranches(remoteName string) ([]string, error) {
+	// Get remote tracking branches as per algorithm update
+	remoteOut, err := execGitString(telemetry.NotSpecifiedCommandsType, "for-each-ref", "--format=%(refname:short)", "refs/remotes/"+remoteName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote branches: %w", err)
+	}
+
+	var branches []string
+	if remoteOut != "" {
+		remoteBranches := strings.Split(strings.TrimSpace(remoteOut), "\n")
+		for _, branch := range remoteBranches {
+			if strings.TrimSpace(branch) != "" {
+				branches = append(branches, strings.TrimSpace(branch))
+			}
+		}
+	}
+
+	return branches, nil
+}
+
+// computeBranchMetrics calculates metrics for candidate branches
+func computeBranchMetrics(candidates []string, sourceBranch string) (map[string]branchMetrics, error) {
+	metrics := make(map[string]branchMetrics)
+
+	for _, candidate := range candidates {
+		// Find common ancestor
+		baseSha, err := execGitString(telemetry.NotSpecifiedCommandsType, "merge-base", candidate, sourceBranch)
+		if err != nil || baseSha == "" {
+			continue
+		}
+
+		// Count commits ahead/behind
+		counts, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-list", "--left-right", "--count", candidate+"..."+sourceBranch)
+		if err != nil {
+			continue
+		}
+
+		parts := strings.Fields(counts)
+		if len(parts) != 2 {
+			continue
+		}
+
+		behind, err1 := strconv.Atoi(parts[0])
+		ahead, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil {
+			continue
+		}
+
+		metrics[candidate] = branchMetrics{
+			behind:  behind,
+			ahead:   ahead,
+			baseSha: baseSha,
+		}
+	}
+
+	return metrics, nil
+}
+
+// findBestBranch finds the best branch from metrics, preferring default branch on tie
+func findBestBranch(metrics map[string]branchMetrics, defaultBranch, remoteName string) string {
+	if len(metrics) == 0 {
+		return ""
+	}
+
+	var bestBranch string
+	bestScore := []int{int(^uint(0) >> 1), 1, 1} // [ahead, is_not_default, is_remote_prefixed] - max int, not default, remote prefixed
+
+	for branch, data := range metrics {
+		isDefault := 0
+		if isDefaultBranch(branch, defaultBranch, remoteName) {
+			isDefault = 0
+		} else {
+			isDefault = 1
+		}
+
+		// Check if this branch is remote-prefixed (prefer exact branch names)
+		isRemotePrefixed := 0
+		if strings.HasPrefix(branch, remoteName+"/") {
+			isRemotePrefixed = 1
+		}
+
+		score := []int{data.ahead, isDefault, isRemotePrefixed}
+
+		// Compare scores: prefer smaller ahead count, then prefer default branch, then prefer exact branch names
+		if score[0] < bestScore[0] ||
+			(score[0] == bestScore[0] && score[1] < bestScore[1]) ||
+			(score[0] == bestScore[0] && score[1] == bestScore[1] && score[2] < bestScore[2]) {
+			bestScore = score
+			bestBranch = branch
+		}
+	}
+
+	if bestBranch != "" {
+		return metrics[bestBranch].baseSha
+	}
+	return ""
 }

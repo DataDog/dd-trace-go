@@ -21,7 +21,7 @@ type logRecord struct {
 
 func TestAdaptLogger(t *testing.T) {
 	recorder := make([]logRecord, 0)
-	l := tracer.AdaptLogger(func(lvl tracer.LogLevel, msg string, a ...any) {
+	l := tracer.AdaptLogger(func(lvl tracer.LogLevel, msg string, _ ...any) {
 		recorder = append(recorder, logRecord{
 			level: lvl,
 			msg:   msg,

@@ -68,12 +68,6 @@ type Tracer interface {
 	// Inject injects a span context into the given carrier.
 	Inject(context *SpanContext, carrier interface{}) error
 
-	// Submit submits a span to the tracer.
-	Submit(s *Span)
-
-	// SubmitChunk submits a trace chunk to the tracer.
-	SubmitChunk(c *Chunk)
-
 	// TracerConf returns a snapshot of the current configuration of the tracer.
 	TracerConf() TracerConf
 
@@ -109,7 +103,7 @@ type tracer struct {
 	traceWriter traceWriter
 
 	// out receives chunk with spans to be added to the payload.
-	out chan *Chunk
+	out chan *chunk
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -205,7 +199,7 @@ func Start(opts ...StartOption) error {
 		// share control of the global telemetry client.
 		return nil
 	}
-	SetGlobalTracer(t)
+	setGlobalTracer(t)
 	if t.config.logStartup {
 		logStartup(t)
 	}
@@ -240,6 +234,7 @@ func Start(opts ...StartOption) error {
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
+
 	appsec.Start(appsecopts...)
 
 	// start instrumentation telemetry unless it is disabled through the
@@ -279,7 +274,7 @@ func storeConfig(c *config) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
-	SetGlobalTracer(&NoopTracer{})
+	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
 }
@@ -287,21 +282,21 @@ func Stop() {
 // StartSpan starts a new span with the given operation name and set of options.
 // If the tracer is not started, calling this function is a no-op.
 func StartSpan(operationName string, opts ...StartSpanOption) *Span {
-	return GetGlobalTracer().StartSpan(operationName, opts...)
+	return getGlobalTracer().StartSpan(operationName, opts...)
 }
 
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
 func Extract(carrier interface{}) (*SpanContext, error) {
-	return GetGlobalTracer().Extract(carrier)
+	return getGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
 func Inject(ctx *SpanContext, carrier interface{}) error {
-	return GetGlobalTracer().Inject(ctx, carrier)
+	return getGlobalTracer().Inject(ctx, carrier)
 }
 
 // SetUser associates user information to the current trace which the
@@ -318,11 +313,6 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
-
-// NewUnstartedTracer returns a new Tracer instance without starting it. This is
-func NewUnstartedTracer(opts ...StartOption) (Tracer, error) {
-	return newUnstartedTracer(opts...)
-}
 
 func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	c, err := newConfig(opts...)
@@ -381,7 +371,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan *Chunk, payloadQueueSize),
+		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,
@@ -410,7 +400,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 // NOTE: This function does NOT set the global tracer, which is required for
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
-// SetGlobalTracer(...) with the tracer provided by this function.
+// setGlobalTracer(...) with the tracer provided by this function.
 func newTracer(opts ...StartOption) (*tracer, error) {
 	t, err := newUnstartedTracer(opts...)
 	if err != nil {
@@ -470,7 +460,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 // whereas the invocation can make use of Flush to ensure any created spans
 // reach the agent.
 func Flush() {
-	if t := GetGlobalTracer(); t != nil {
+	if t := getGlobalTracer(); t != nil {
 		t.Flush()
 	}
 }
@@ -492,7 +482,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 		select {
 		case trace := <-t.out:
 			t.sampleChunk(trace)
-			t.traceWriter.add(trace.spans)
+			if len(trace.spans) > 0 {
+				t.traceWriter.add(trace.spans)
+			}
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -517,7 +509,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				select {
 				case trace := <-t.out:
 					t.sampleChunk(trace)
-					t.traceWriter.add(trace.spans)
+					if len(trace.spans) > 0 {
+						t.traceWriter.add(trace.spans)
+					}
 				default:
 					break loop
 				}
@@ -527,23 +521,18 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-// Chunk holds information about a trace chunk to be flushed, including its spans.
+// chunk holds information about a trace chunk to be flushed, including its spans.
 // The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
-type Chunk struct {
+//
+// It's exported for supporting `mocktracer`.
+type chunk struct {
 	spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
-func NewChunk(spans []*Span, willSend bool) *Chunk {
-	return &Chunk{
-		spans:    spans,
-		willSend: willSend,
-	}
-}
-
 // sampleChunk applies single-span sampling to the provided trace.
-func (t *tracer) sampleChunk(c *Chunk) {
+func (t *tracer) sampleChunk(c *chunk) {
 	if len(c.spans) > 0 {
 		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
@@ -572,7 +561,7 @@ func (t *tracer) sampleChunk(c *Chunk) {
 	}
 }
 
-func (t *tracer) pushChunk(trace *Chunk) {
+func (t *tracer) pushChunk(trace *chunk) {
 	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
@@ -597,6 +586,9 @@ func (t *tracer) pushChunk(trace *Chunk) {
 func spanStart(operationName string, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
+		if fn == nil {
+			continue
+		}
 		fn(&opts)
 	}
 	var startTime int64
@@ -611,11 +603,13 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	pprofContext := opts.Context
 	if opts.Parent != nil {
 		context = opts.Parent
-		if pprofContext == nil && opts.Parent.span != nil {
+		if pprofContext == nil && context.span != nil {
 			// Inherit the context.Context from parent span if it was propagated
 			// using ChildOf() rather than StartSpanFromContext(), see
 			// applyPPROFLabels() below.
-			pprofContext = opts.Parent.span.pprofCtxActive
+			context.span.mu.RLock()
+			pprofContext = context.span.pprofCtxActive
+			context.span.mu.RUnlock()
 		}
 	}
 	if pprofContext == nil {
@@ -645,7 +639,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil {
+	if context != nil && !context.baggageOnly {
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
@@ -654,9 +648,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		}
 		if context.span != nil {
 			// local parent, inherit service
-			context.span.RLock()
+			context.span.mu.RLock()
 			span.service = context.span.service
-			context.span.RUnlock()
+			context.span.mu.RUnlock()
 		} else {
 			// remote parent
 			if context.origin != "" {
@@ -681,6 +675,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		traceprof.SetProfilerRootTags(span)
 	}
 	if isRootSpan || context.span.service != span.service {
+		// The span is the local root span.
 		span.setMetric(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.metrics, keyMeasured)
@@ -749,10 +744,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 			log.Error("Abandoned spans channel full, disregarding span.")
 		}
 	}
-	if span.parentID == 0 {
-		// TODO(kjn v2): This is incorrect. It needs to be applied when the span
-		// is the local root, not the global root. Need to investigate injecting
-		// this data into TracerConfig, not doing it like this.
+	if span.metrics[keyTopLevel] == 1 {
+		// The span is the local root span.
 		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
 	span.setMetric(ext.Pid, float64(t.pid))
@@ -773,19 +766,25 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
 	if t.config.profilerHotspots && localRootSpan != nil {
+		localRootSpan.mu.RLock()
 		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
+		localRootSpan.mu.RUnlock()
 	}
 	if t.config.profilerHotspots {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if t.config.profilerEndpoints && spanResourcePIISafe(localRootSpan) && localRootSpan != nil {
-		labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
-		if span == localRootSpan {
-			// Inform the profiler of endpoint hits. This is used for the unit of
-			// work feature. We can't use APM stats for this since the stats don't
-			// have enough cardinality (e.g. runtime-id tags are missing).
-			traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
+	if t.config.profilerEndpoints && localRootSpan != nil {
+		localRootSpan.mu.RLock()
+		if spanResourcePIISafe(localRootSpan) {
+			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
+			if span == localRootSpan {
+				// Inform the profiler of endpoint hits. This is used for the unit of
+				// work feature. We can't use APM stats for this since the stats don't
+				// have enough cardinality (e.g. runtime-id tags are missing).
+				traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
+			}
 		}
+		localRootSpan.mu.RUnlock()
 	}
 	if len(labels) > 0 {
 		span.pprofCtxRestore = ctx
@@ -904,7 +903,7 @@ func (t *tracer) TracerConf() TracerConf {
 	}
 }
 
-func (t *tracer) Submit(s *Span) {
+func (t *tracer) submit(s *Span) {
 	if !t.config.enabled.current {
 		return
 	}
@@ -934,7 +933,7 @@ func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	}
 }
 
-func (t *tracer) SubmitChunk(c *Chunk) {
+func (t *tracer) submitChunk(c *chunk) {
 	t.pushChunk(c)
 }
 
@@ -979,6 +978,12 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 	if !spanResourcePIISafe(span) {
 		taskName = span.spanType
 	}
+	// The task name is an arbitrary string from the user. If it's too
+	// large, like a big SQL query, the execution tracer can crash when we
+	// create the task. Cap it at an arbirary length.  For "normal" task
+	// names this should be plenty that we can still have the task names for
+	// debugging.
+	taskName = taskName[:min(128, len(taskName))]
 	end := noopTaskEnd
 	if !globalinternal.IsExecutionTraced(ctx) {
 		var task *rt.Task

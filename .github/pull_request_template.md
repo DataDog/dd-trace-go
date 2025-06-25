@@ -33,7 +33,6 @@
 - [ ] New code is free of linting errors. You can check this by running `golangci-lint run` locally.
 - [ ] Add an appropriate team label so this PR gets put in the right place for the release notes.
 - [ ] Non-trivial go.mod changes, e.g. adding new modules, are reviewed by @DataDog/dd-trace-go-guild.
-- [ ] For internal contributors, a matching PR should be created to the `v2-dev` branch and reviewed by @DataDog/apm-go.
 
 
 Unsure? Have a question? Request a review!

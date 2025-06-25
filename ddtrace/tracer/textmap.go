@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"maps"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -277,17 +279,20 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) er
 func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	var ctx *SpanContext
 	var links []SpanLink
+	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
 
 	for _, v := range p.extractors {
 		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
 		extractedCtx, err := v.Extract(carrier)
 
-		// If the extractor is the baggage propagator and its baggage is empty,
-		// treat it as if nothing was extracted.
-		if _, ok := v.(*propagatorBaggage); ok {
-			if len(extractedCtx.baggage) == 0 {
-				extractedCtx = nil
+		// If this is the baggage propagator, just stash its items into pendingBaggage
+		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
+			if extractedCtx != nil && len(extractedCtx.baggage) > 0 {
+				for k, v := range extractedCtx.baggage {
+					pendingBaggage[k] = v
+				}
 			}
+			continue
 		}
 
 		if firstExtract {
@@ -306,6 +311,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		} else { // A local trace context has already been extracted
 			extractedCtx2 := extractedCtx
 			ctx2 := ctx
+
 			// If we can't cast to spanContext, we can't propgate tracestate or create span links
 			if extractedCtx2.TraceID() == ctx2.TraceID() {
 				if pW3C, ok := v.(*propagatorW3c); ok {
@@ -335,20 +341,31 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 				links = append(links, link)
 			}
 		}
-
-		if _, ok := v.(*propagatorBaggage); ok && extractedCtx != nil {
-			if len(extractedCtx.baggage) > 0 {
-				ctx.baggage = extractedCtx.baggage
-				atomic.StoreUint32(&ctx.hasBaggage, 1)
-			}
-
-		}
 	}
 
-	// 0 successful extractions
 	if ctx == nil {
+		if len(pendingBaggage) > 0 {
+			ctx := &SpanContext{
+				baggage:     make(map[string]string, len(pendingBaggage)),
+				baggageOnly: true,
+			}
+			maps.Copy(ctx.baggage, pendingBaggage)
+			atomic.StoreUint32(&ctx.hasBaggage, 1)
+			return ctx, nil
+		}
+		// 0 successful extractions
 		return nil, ErrSpanContextNotFound
 	}
+	if len(pendingBaggage) > 0 {
+		if ctx.baggage == nil {
+			ctx.baggage = make(map[string]string, len(pendingBaggage))
+		}
+		for k, v := range pendingBaggage {
+			ctx.baggage[k] = v
+		}
+		atomic.StoreUint32(&ctx.hasBaggage, 1)
+	}
+
 	if len(links) > 0 {
 		ctx.spanLinks = links
 	}
@@ -1144,7 +1161,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 // - flags - represents the propagated flags in the format of 2 hex-encoded digits, and supports 8 unique flags.
 // Example value of HTTP `traceparent` header: `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`,
 // Currently, Go tracer doesn't support 128-bit traceIDs, so the full traceID (32 hex-encoded digits) must be
-// stored into a field that is accessible from the span’s context. TraceId will be parsed from the least significant 16
+// stored into a field that is accessible from the span's context. TraceId will be parsed from the least significant 16
 // hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *SpanContext, header string) error {
 	nonWordCutset := "_-\t \n"
@@ -1218,7 +1235,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 // with up to 32 comma-separated (,) list-members.
 // An example value would be: `vendorname1=opaqueValue1,vendorname2=opaqueValue2,dd=s:1;o:synthetics`,
 // Where `dd` list contains values that would be in x-datadog-tags as well as those needed for propagation information.
-// The keys to the “dd“ values have been shortened as follows to save space:
+// The keys to the "dd" values have been shortened as follows to save space:
 // `sampling_priority` = `s`
 // `origin` = `o`
 // `last parent` = `p`
@@ -1372,52 +1389,31 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		return nil
 	}
 
-	// Copy the baggage map under the read lock to avoid data races.
-	ctx.mu.RLock()
-	baggageCopy := make(map[string]string, len(ctx.baggage))
-	for k, v := range ctx.baggage {
-		baggageCopy[k] = v
-	}
-	ctx.mu.RUnlock()
-
-	// If the baggage is empty, do nothing.
-	if len(baggageCopy) == 0 {
-		return nil
-	}
-
-	baggageItems := make([]string, 0, len(baggageCopy))
-	totalSize := 0
-	count := 0
-
-	for key, value := range baggageCopy {
-		if count >= baggageMaxItems {
-			log.Warn("Baggage item limit exceeded. Only the first %d items will be propagated.", baggageMaxItems)
-			break
+	ctr := 0
+	var baggageBuilder strings.Builder
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		if ctr >= baggageMaxItems {
+			return false
 		}
 
-		encodedKey := encodeKey(key)
-		encodedValue := encodeValue(value)
-		item := fmt.Sprintf("%s=%s", encodedKey, encodedValue)
-
-		itemSize := len(item)
-		if count > 0 {
-			itemSize++ // account for the comma separator
+		var itemBuilder strings.Builder
+		if ctr > 0 {
+			itemBuilder.WriteRune(',')
 		}
 
-		if totalSize+itemSize > baggageMaxBytes {
-			log.Warn("Baggage size limit exceeded. Only the first %d bytes will be propagated.", baggageMaxBytes)
-			break
+		itemBuilder.WriteString(encodeKey(k))
+		itemBuilder.WriteRune('=')
+		itemBuilder.WriteString(encodeValue(v))
+		if itemBuilder.Len()+baggageBuilder.Len() > baggageMaxBytes {
+			return false
 		}
-
-		baggageItems = append(baggageItems, item)
-		totalSize += itemSize
-		count++
+		baggageBuilder.WriteString(itemBuilder.String())
+		ctr++
+		return true
+	})
+	if baggageBuilder.Len() > 0 {
+		writer.Set("baggage", baggageBuilder.String())
 	}
-
-	if len(baggageItems) > 0 {
-		writer.Set("baggage", strings.Join(baggageItems, ","))
-	}
-
 	return nil
 }
 
@@ -1435,7 +1431,9 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		if strings.ToLower(k) == "baggage" {
+			// Expect only one baggage header, return early
 			baggageHeader = v
+			return nil
 		}
 		return nil
 	})
@@ -1443,33 +1441,32 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		return nil, err
 	}
 
-	ctx.baggage = make(map[string]string)
-
 	if baggageHeader == "" {
 		return &ctx, nil
 	}
 
-	pairs := strings.Split(baggageHeader, ",")
-	for _, pair := range pairs {
-		pair = strings.TrimSpace(pair)
-		if !strings.Contains(pair, "=") {
-			// If a pair doesn't contain '=', treat it as invalid.
-			return nil, fmt.Errorf("invalid baggage item: %s", pair)
-		}
+	parts := strings.Split(baggageHeader, ",")
 
-		keyValue := strings.SplitN(pair, "=", 2)
-		rawKey := strings.TrimSpace(keyValue[0])
-		rawValue := strings.TrimSpace(keyValue[1])
-
-		decKey, errKey := url.QueryUnescape(rawKey)
-		decVal, errVal := url.QueryUnescape(rawValue)
-		if errKey != nil || errVal != nil {
-			return nil, fmt.Errorf("invalid baggage item: %s", pair)
+	// 1) validation & single-trim pass
+	for i, kv := range parts {
+		k, v, ok := strings.Cut(kv, "=")
+		trimmedK := strings.TrimSpace(k)
+		trimmedV := strings.TrimSpace(v)
+		if !ok || trimmedK == "" || trimmedV == "" {
+			log.Warn("invalid baggage item: %q, dropping entire header", kv)
+			return &ctx, nil
 		}
-		ctx.baggage[decKey] = decVal
+		// store back the trimmed pair so we don't re-trim below
+		parts[i] = trimmedK + "=" + trimmedV
 	}
-	if len(ctx.baggage) > 0 {
-		atomic.StoreUint32(&ctx.hasBaggage, 1)
+
+	// 2) safe to URL-decode & apply
+	for _, kv := range parts {
+		rawK, rawV, _ := strings.Cut(kv, "=")
+		key, _ := url.QueryUnescape(rawK)
+		val, _ := url.QueryUnescape(rawV)
+		ctx.setBaggageItem(key, val)
 	}
+
 	return &ctx, nil
 }

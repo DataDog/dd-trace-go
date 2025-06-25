@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -60,7 +61,7 @@ type tracerStatSpan struct {
 // configuration c. It creates buckets of bucketSize nanoseconds duration.
 func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdClient) *concentrator {
 	sCfg := &stats.SpanConcentratorConfig{
-		ComputeStatsBySpanKind: false,
+		ComputeStatsBySpanKind: true,
 		BucketInterval:         defaultStatsBucketSize,
 	}
 	env := c.agent.defaultEnv
@@ -233,6 +234,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	// Given we use a constant PayloadAggregationKey there should only ever be 1 of these, but to be forward
 	// compatible in case this ever changes we can just iterate through all of them.
 	for _, csp := range csps {
+		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
 		if err := c.cfg.transport.sendStats(csp, obfVersion); err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)

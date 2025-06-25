@@ -52,7 +52,15 @@ func main() {
 	_, thisFile, _, _ := runtime.Caller(0)
 	rootDir := filepath.Join(thisFile, "..", "..", "..", "..")
 
-	modules, err := generateRootConfig(rootDir)
+	var buf bytes.Buffer
+	cmd := exec.Command("go", "list", "-m", "--versions", `-f={{ $v := "" }}{{ range .Versions }}{{ $v = . }}{{ end }}{{ $v }}`, "github.com/DataDog/orchestrion")
+	cmd.Stdout = &buf
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		log.Fatalln(err)
+	}
+
+	modules, err := generateRootConfig(rootDir, strings.TrimSpace(buf.String()))
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -62,7 +70,7 @@ func main() {
 	}
 }
 
-func generateRootConfig(rootDir string) (map[string]string, error) {
+func generateRootConfig(rootDir string, orchestrionLatestVersion string) (map[string]string, error) {
 	var (
 		paths   = []string{"github.com/DataDog/dd-trace-go/v2/orchestrion"} // Allows access to the `/internal/` stuff such as CI Viz.
 		modules = make(map[string]string)
@@ -142,9 +150,10 @@ func generateRootConfig(rootDir string) (map[string]string, error) {
 	}
 	var goMod bytes.Buffer
 	if err := goModTemplate.Execute(&goMod, map[string]any{
-		"GoVersion":  goVersion,
-		"Modules":    replaces,
-		"VersionTag": version.Tag,
+		"GoVersion":         goVersion,
+		"OrchestrionLatest": orchestrionLatestVersion,
+		"Modules":           replaces,
+		"VersionTag":        version.Tag,
 	}); err != nil {
 		return nil, fmt.Errorf("rendering go.mod from template: %w", err)
 	}

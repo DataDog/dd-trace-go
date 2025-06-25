@@ -30,20 +30,18 @@ func (*raceTestTracer) TracerConf() TracerConf {
 	return TracerConf{}
 }
 
-func (*raceTestTracer) Submit(*Span)       {}
-func (*raceTestTracer) SubmitChunk(*Chunk) {}
-func (*raceTestTracer) Flush()             {}
+func (*raceTestTracer) Flush() {}
 
 func TestGlobalTracer(t *testing.T) {
 	// at module initialization, the tracer must be seet
-	if GetGlobalTracer() == nil {
-		t.Fatal("GetGlobalTracer() must never return nil")
+	if getGlobalTracer() == nil {
+		t.Fatal("getGlobalTracer() must never return nil")
 	}
-	SetGlobalTracer(&raceTestTracer{})
-	SetGlobalTracer(&NoopTracer{})
+	setGlobalTracer(&raceTestTracer{})
+	setGlobalTracer(&NoopTracer{})
 
 	// ensure the test resets the global tracer back to nothing
-	defer SetGlobalTracer(&raceTestTracer{})
+	defer setGlobalTracer(&raceTestTracer{})
 
 	const numGoroutines = 10
 
@@ -58,18 +56,18 @@ func TestGlobalTracer(t *testing.T) {
 		go func(index int) {
 			defer wg.Done()
 			var tracer Tracer = tracers[index]
-			SetGlobalTracer(tracer)
+			setGlobalTracer(tracer)
 
 			// get the global tracer: it must be any raceTestTracer
-			tracer = GetGlobalTracer()
+			tracer = getGlobalTracer()
 			if _, ok := tracer.(*raceTestTracer); !ok {
-				t.Errorf("GetGlobalTracer() expected to return a *rateTestTracer was %T", tracer)
+				t.Errorf("getGlobalTracer() expected to return a *rateTestTracer was %T", tracer)
 			}
 		}(i)
 	}
 	wg.Wait()
 
-	SetGlobalTracer(&raceTestTracer{})
+	setGlobalTracer(&raceTestTracer{})
 
 	// all tracers must be stopped
 	for i, tracer := range tracers {
@@ -81,7 +79,7 @@ func TestGlobalTracer(t *testing.T) {
 
 func BenchmarkGetGlobalTracerSerial(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		tracer := GetGlobalTracer()
+		tracer := getGlobalTracer()
 		if tracer == nil {
 			b.Fatal("BUG: tracer must not be nil")
 		}
@@ -91,7 +89,7 @@ func BenchmarkGetGlobalTracerSerial(b *testing.B) {
 func BenchmarkGetGlobalTracerParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			tracer := GetGlobalTracer()
+			tracer := getGlobalTracer()
 			if tracer == nil {
 				b.Fatal("BUG: tracer must not be nil")
 			}

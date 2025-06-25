@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Please see our [Support Policy](README.md#support-policy)
+Please see our [Support Policy](README.md#go-support-policy)
 
 ## Reporting a Vulnerability
 

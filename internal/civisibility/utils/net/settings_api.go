@@ -63,6 +63,7 @@ type (
 		RequireGit              bool `json:"require_git"`
 		TestsSkipping           bool `json:"tests_skipping"`
 		KnownTestsEnabled       bool `json:"known_tests_enabled"`
+		ImpactedTestsEnabled    bool `json:"impacted_tests_enabled"`
 		TestManagement          struct {
 			Enabled             bool `json:"enabled"`
 			AttemptToFixRetries int  `json:"attempt_to_fix_retries"`

@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -378,7 +379,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			),
 		}
 
-		tr, ok := GetGlobalTracer().(*tracer)
+		tr, ok := getGlobalTracer().(*tracer)
 		require.Equal(t, true, ok)
 		applyStatus := tr.onRemoteConfigUpdate(input)
 		require.Equal(t, state.ApplyStateAcknowledged, applyStatus["path"].State)
@@ -740,4 +741,27 @@ func TestStartRemoteConfig(t *testing.T) {
 	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingEnabled)
 	require.NoError(t, err)
 	require.True(t, found)
+}
+
+func TestDeadLockIssue3541(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+
+	ctx, cancel := context.WithCancel(context.TODO())
+
+	// It's not possible to use startTestTracer to reproduce the issue,
+	// because it doesn't start the remote config client.
+	Start(WithRuntimeMetrics(), WithTestDefaults(nil))
+	defer Stop()
+
+	go func() {
+		span := StartSpan("test")
+
+		// close the context
+		cancel()
+		span.Finish()
+	}()
+
+	// wait for the goroutine to finish
+	<-ctx.Done()
+	assert.Equal(t, context.Canceled, ctx.Err())
 }

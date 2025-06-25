@@ -22,6 +22,7 @@ import (
 
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/gorilla/mux"
@@ -35,23 +36,26 @@ type AppsecCalloutExtensionService struct {
 }
 
 type serviceExtensionConfig struct {
-	extensionPort   string
-	extensionHost   string
-	healthcheckPort string
+	extensionPort     string
+	extensionHost     string
+	healthcheckPort   string
+	observabilityMode bool
 }
 
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := intEnv("DD_SERVICE_EXTENSION_PORT", 443)
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
 	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
+	observabilityMode := boolEnv("DD_SERVICE_EXTENSION_OBSERVABILITY_MODE", false)
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
 
 	return serviceExtensionConfig{
-		extensionPort:   extensionPortStr,
-		extensionHost:   extensionHostStr,
-		healthcheckPort: healthcheckPortStr,
+		extensionPort:     extensionPortStr,
+		extensionHost:     extensionHostStr,
+		healthcheckPort:   healthcheckPortStr,
+		observabilityMode: observabilityMode,
 	}
 }
 
@@ -60,12 +64,18 @@ var log = NewLogger()
 func main() {
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
-		if err := os.Setenv("DD_VERSION", version); err != nil {
+		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
 			log.Error("service_extension: failed to set DD_VERSION environment variable: %v\n", err)
 		}
 	}
 
 	config := loadConfig()
+
+	// If the observability mode is enabled, disable blocking
+	if config.observabilityMode {
+		_ = os.Setenv("_DD_APPSEC_BLOCKING_UNAVAILABLE", "true")
+		log.Debug("service_extension: observability mode enabled, disabling blocking\n")
+	}
 
 	if err := startService(config); err != nil {
 		log.Error("service_extension: %v\n", err)
@@ -106,7 +116,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version + `"}}`))
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + instrumentation.Version() + `"}}`))
 	})
 
 	server := &http.Server{
@@ -145,7 +155,13 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
 	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
 
-	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServerGCPServiceExtension(service)
+	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
+		service,
+		gocontrolplane.AppsecEnvoyConfig{
+			IsGCPServiceExtension: true,
+			BlockingUnavailable:   config.observabilityMode,
+			Context:               ctx,
+		})
 
 	go func() {
 		<-ctx.Done()

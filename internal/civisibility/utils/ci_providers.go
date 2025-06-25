@@ -191,6 +191,9 @@ func extractAppveyor() map[string]string {
 	tags[constants.GitCommitMessage] = fmt.Sprintf("%s\n%s", os.Getenv("APPVEYOR_REPO_COMMIT_MESSAGE"), os.Getenv("APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED"))
 	tags[constants.GitCommitAuthorName] = os.Getenv("APPVEYOR_REPO_COMMIT_AUTHOR")
 	tags[constants.GitCommitAuthorEmail] = os.Getenv("APPVEYOR_REPO_COMMIT_AUTHOR_EMAIL")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("APPVEYOR_REPO_BRANCH")
+
 	return tags
 }
 
@@ -234,6 +237,8 @@ func extractAzurePipelines() map[string]string {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}
 
+	tags[constants.GitPrBaseBranch] = os.Getenv("SYSTEM_PULLREQUEST_TARGETBRANCH")
+
 	return tags
 }
 
@@ -243,7 +248,7 @@ func extractBitrise() map[string]string {
 	tags[constants.CIProviderName] = "bitrise"
 	tags[constants.GitRepositoryURL] = os.Getenv("GIT_REPOSITORY_URL")
 	tags[constants.GitCommitSHA] = firstEnv("BITRISE_GIT_COMMIT", "GIT_CLONE_COMMIT_HASH")
-	tags[constants.GitBranch] = firstEnv("BITRISEIO_GIT_BRANCH_DEST", "BITRISE_GIT_BRANCH")
+	tags[constants.GitBranch] = firstEnv("BITRISEIO_PULL_REQUEST_HEAD_BRANCH", "BITRISE_GIT_BRANCH")
 	tags[constants.GitTag] = os.Getenv("BITRISE_GIT_TAG")
 	tags[constants.CIWorkspacePath] = os.Getenv("BITRISE_SOURCE_DIR")
 	tags[constants.CIPipelineID] = os.Getenv("BITRISE_BUILD_SLUG")
@@ -251,6 +256,9 @@ func extractBitrise() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("BITRISE_BUILD_NUMBER")
 	tags[constants.CIPipelineURL] = os.Getenv("BITRISE_BUILD_URL")
 	tags[constants.GitCommitMessage] = os.Getenv("BITRISE_GIT_MESSAGE")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("BITRISEIO_GIT_BRANCH_DEST")
+
 	return tags
 }
 
@@ -269,6 +277,9 @@ func extractBitbucket() map[string]string {
 	tags[constants.CIPipelineName] = os.Getenv("BITBUCKET_REPO_FULL_NAME")
 	tags[constants.CIPipelineURL] = url
 	tags[constants.CIJobURL] = url
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("BITBUCKET_PR_DESTINATION_BRANCH")
+
 	return tags
 }
 
@@ -287,6 +298,9 @@ func extractBuddy() map[string]string {
 	tags[constants.GitCommitMessage] = os.Getenv("BUDDY_EXECUTION_REVISION_MESSAGE")
 	tags[constants.GitCommitCommitterName] = os.Getenv("BUDDY_EXECUTION_REVISION_COMMITTER_NAME")
 	tags[constants.GitCommitCommitterEmail] = os.Getenv("BUDDY_EXECUTION_REVISION_COMMITTER_EMAIL")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("BUDDY_RUN_PR_BASE_BRANCH")
+
 	return tags
 }
 
@@ -334,6 +348,8 @@ func extractBuildkite() map[string]string {
 			tags[constants.CINodeLabels] = string(jsonString)
 		}
 	}
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("BUILDKITE_PULL_REQUEST_BASE_BRANCH")
 
 	return tags
 }
@@ -414,7 +430,7 @@ func extractGithubActions() map[string]string {
 		if eventFile, err := os.Open(eventFilePath); err == nil {
 			defer eventFile.Close()
 
-			var eventJson struct {
+			var eventJSON struct {
 				PullRequest struct {
 					Base struct {
 						Sha string `json:"sha"`
@@ -427,10 +443,10 @@ func extractGithubActions() map[string]string {
 			}
 
 			eventDecoder := json.NewDecoder(eventFile)
-			if eventDecoder.Decode(&eventJson) == nil {
-				tags[constants.GitHeadCommit] = eventJson.PullRequest.Head.Sha
-				tags[constants.GitPrBaseCommit] = eventJson.PullRequest.Base.Sha
-				tags[constants.GitPrBaseBranch] = eventJson.PullRequest.Base.Ref
+			if eventDecoder.Decode(&eventJSON) == nil {
+				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
+				tags[constants.GitPrBaseCommit] = eventJSON.PullRequest.Base.Sha
+				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
 			}
 		}
 	}
@@ -477,6 +493,10 @@ func extractGitlab() map[string]string {
 	if err == nil {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}
+
+	tags[constants.GitHeadCommit] = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA")
+	tags[constants.GitPrBaseCommit] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_SHA")
+	tags[constants.GitPrBaseBranch] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
 
 	return tags
 }
@@ -563,6 +583,8 @@ func extractCodefresh() map[string]string {
 	}
 	tags[refKey] = normalizeRef(cfBranch)
 
+	tags[constants.GitPrBaseBranch] = os.Getenv("CF_PULL_REQUEST_TARGET")
+
 	return tags
 }
 
@@ -586,6 +608,8 @@ func extractTravis() map[string]string {
 	tags[constants.CIPipelineURL] = os.Getenv("TRAVIS_BUILD_WEB_URL")
 	tags[constants.CIJobURL] = os.Getenv("TRAVIS_JOB_WEB_URL")
 	tags[constants.GitCommitMessage] = os.Getenv("TRAVIS_COMMIT_MESSAGE")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("TRAVIS_PULL_REQUEST_BRANCH")
 	return tags
 }
 

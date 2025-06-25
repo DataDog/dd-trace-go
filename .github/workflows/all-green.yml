@@ -1,0 +1,29 @@
+name: Check Pull Request CI Status
+
+on:
+  workflow_dispatch: # allow to trigger the workflow on main, to add it in suggestion on branch protection rules
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  checks: read
+  statuses: read
+
+jobs:
+  all-jobs-are-green:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Ensure CI Success
+        uses: DataDog/ensure-ci-success@a874030af0d650da8864aff94b8b42f83e88a0b5
+        with:
+          initial-delay-seconds: "1000"  # smoke tests takes approx 20 mn to finish
+          max-retries: "60"
+          ignored-name-patterns: |
+            devflow/merge
+
+# Reason for ignored-name-patterns:
+#
+# * devflow/merge: technical job used by the merge queue, do not remove it.

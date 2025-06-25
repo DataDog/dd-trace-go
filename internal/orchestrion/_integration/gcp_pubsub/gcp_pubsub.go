@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tclog "github.com/testcontainers/testcontainers-go/log"
 	"github.com/testcontainers/testcontainers-go/modules/gcloud"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -44,7 +45,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	tc.container, err = gcloud.RunPubsub(ctx,
 		"gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators",
 		gcloud.WithProjectID("pstest-orchestrion"),
-		testcontainers.WithLogger(testcontainers.TestLogger(t)),
+		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 	)
 	containers.AssertTestContainersError(t, err)

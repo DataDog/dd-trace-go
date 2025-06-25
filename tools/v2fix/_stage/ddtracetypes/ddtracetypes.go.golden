@@ -1,0 +1,31 @@
+-- the declared type is in the ddtrace/tracer package now --
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2023 Datadog, Inc.
+
+package main
+
+import (
+	"time"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+)
+
+func main() {
+	var (
+		_ tracer.FinishConfig // want `the declared type is in the ddtrace/tracer package now`
+		_ tracer.FinishOption // want `the declared type is in the ddtrace/tracer package now`
+		_ tracer.Logger       // want `the declared type is in the ddtrace/tracer package now`
+		_ tracer.Span         // want `the declared type is in the ddtrace/tracer package now`
+		_ ddtrace.SpanContext
+		_ tracer.SpanLink        // want `the declared type is in the ddtrace/tracer package now`
+		_ tracer.StartSpanConfig // want `the declared type is in the ddtrace/tracer package now`
+		_ tracer.StartSpanOption // want `the declared type is in the ddtrace/tracer package now`
+		_ tracer.Tracer          // want `the declared type is in the ddtrace/tracer package now`
+		_ time.Time
+	)
+}
+
+func spanConsumer(_ tracer.Span) { // want `the declared type is in the ddtrace/tracer package now`
+}

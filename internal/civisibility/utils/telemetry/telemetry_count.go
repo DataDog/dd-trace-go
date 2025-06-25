@@ -6,7 +6,8 @@
 package telemetry
 
 import (
-	utils "github.com/DataDog/dd-trace-go/v2/internal"
+	"os"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -40,9 +41,8 @@ func GetErrorTypeFromStatusCode(statusCode int) ErrorType {
 			return StatusCode5xxErrorType
 		} else if statusCode >= 400 && statusCode < 500 {
 			return StatusCode4xxErrorType
-		} else {
-			return StatusCodeErrorType
 		}
+		return StatusCodeErrorType
 	}
 }
 
@@ -84,7 +84,7 @@ func getProviderTestSessionTypeFromProviderString(provider string) TestSessionTy
 func TestSession(providerName string) {
 	var tags []string
 	tags = append(tags, getProviderTestSessionTypeFromProviderString(providerName)...)
-	if utils.BoolEnv(constants.CIVisibilityAutoInstrumentationProviderEnvironmentVariable, false) {
+	if os.Getenv(constants.CIVisibilityAutoInstrumentationProviderEnvironmentVariable) != "" {
 		tags = append(tags, IsAutoInstrumentationTestSessionType...)
 	}
 	telemetry.Count(telemetry.NamespaceCIVisibility, "test_session", removeEmptyStrings(tags)).Submit(1.0)
@@ -267,4 +267,21 @@ func TestManagementTestsRequest(requestCompressed RequestCompressedType) {
 // TestManagementTestsRequestErrors the number of requests sent to the test management tests endpoint that errored, tagged by the error type.
 func TestManagementTestsRequestErrors(errorType ErrorType) {
 	telemetry.Count(telemetry.NamespaceCIVisibility, "test_management_tests.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
+}
+
+// ImpactedTestsRequest the number of requests sent to the impacted tests endpoint, tagged by the request compressed type.
+func ImpactedTestsRequest(requestCompressed RequestCompressedType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.request", removeEmptyStrings([]string{
+		string(requestCompressed),
+	})).Submit(1.0)
+}
+
+// ImpactedTestsRequestErrors the number of requests sent to the impacted tests endpoint that errored, tagged by the error type.
+func ImpactedTestsRequestErrors(errorType ErrorType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
+}
+
+// ImpactedTestsModified the number of impacted tests that were modified by CI Visibility.
+func ImpactedTestsModified() {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.is_modified", nil).Submit(1.0)
 }

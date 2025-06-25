@@ -17,7 +17,11 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	utils "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -57,13 +61,23 @@ type Tracer interface {
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
-	t := newMockTracer()
-	old := tracer.GetGlobalTracer()
-	if _, ok := old.(*mocktracer); ok {
-		tracer.StopTestTracer()
+	if utils.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) && !civisibility.IsTestMode() {
+		// If CI Visibility is enabled (and we are not in a CI Visibility testing mode), we need to use the CIVisibilityMockTracer
+		// to bypass the CI Visibility spans from the mocktracer.
+		// This supports the scenario where the mocktracer is used in a test (we need to keep reporting test spans)
+		t := newCIVisibilityMockTracer()
+		// Set the global tracer to the mock tracer without stopping the old one (inside the mock tracer)
+		internal.StoreGlobalTracer[Tracer, tracer.Tracer](t)
+		return t
 	}
-	tracer.SetGlobalTracer(t)
-	return t
+
+	var t tracer.Tracer = newMockTracer()
+	internal.SetGlobalTracer(t)
+	return t.(Tracer)
+}
+
+func getGlobalTracer() tracer.Tracer {
+	return internal.GetGlobalTracer[tracer.Tracer]()
 }
 
 type mocktracer struct {
@@ -99,7 +113,7 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (t *mocktracer) Stop() {
-	tracer.StopTestTracer()
+	tracer.Stop()
 	t.dsmProcessor.Stop()
 }
 
@@ -193,8 +207,6 @@ func (t *mocktracer) TracerConf() tracer.TracerConf {
 	return tracer.TracerConf{}
 }
 
-func (t *mocktracer) Submit(*tracer.Span)       {}
-func (t *mocktracer) SubmitChunk(*tracer.Chunk) {}
 func (t *mocktracer) Flush() {
 	t.dsmProcessor.Flush()
 	for _, s := range t.OpenSpans() {

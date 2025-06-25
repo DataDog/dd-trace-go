@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
@@ -28,7 +28,7 @@ type coveragePayload struct {
 	off int
 
 	// count specifies the number of items in the stream.
-	count uint32
+	count int
 
 	// buf holds the sequence of msgpack-encoded items.
 	buf bytes.Buffer
@@ -38,6 +38,9 @@ type coveragePayload struct {
 
 	// serializationTime time to do serialization
 	serializationTime time.Duration
+
+	// mu is a mutex to protect concurrent access to the payload.
+	mu sync.RWMutex
 }
 
 var _ io.Reader = (*coveragePayload)(nil)
@@ -53,27 +56,33 @@ func newCoveragePayload() *coveragePayload {
 
 // push pushes a new item into the stream.
 func (p *coveragePayload) push(testCoverageData *ciTestCoverageData) error {
-	p.buf.Grow(testCoverageData.Msgsize())
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	startTime := time.Now()
 	defer func() {
 		p.serializationTime += time.Since(startTime)
 	}()
+	p.buf.Grow(testCoverageData.Msgsize())
 	if err := msgp.Encode(&p.buf, testCoverageData); err != nil {
 		return err
 	}
-	atomic.AddUint32(&p.count, 1)
+	p.count = p.count + 1
 	p.updateHeader()
 	return nil
 }
 
 // itemCount returns the number of items available in the srteam.
 func (p *coveragePayload) itemCount() int {
-	return int(atomic.LoadUint32(&p.count))
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.count
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
 // inaccurate by up to 8 bytes.
 func (p *coveragePayload) size() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.buf.Len() + len(p.header) - p.off
 }
 
@@ -81,6 +90,8 @@ func (p *coveragePayload) size() int {
 // underlying byte contents of the buffer. reset should not be used in order to
 // reuse the payload for another set of traces.
 func (p *coveragePayload) reset() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.updateHeader()
 	if p.reader != nil {
 		p.reader.Seek(0, 0)
@@ -89,6 +100,8 @@ func (p *coveragePayload) reset() {
 
 // clear empties the payload buffers.
 func (p *coveragePayload) clear() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.buf = bytes.Buffer{}
 	p.reader = nil
 }
@@ -103,7 +116,7 @@ const (
 // updateHeader updates the payload header based on the number of items currently
 // present in the stream.
 func (p *coveragePayload) updateHeader() {
-	n := uint64(atomic.LoadUint32(&p.count))
+	n := uint64(p.count)
 	switch {
 	case n <= 15:
 		p.header[7] = msgpackArrayFix + byte(n)
@@ -126,6 +139,8 @@ func (p *coveragePayload) Close() error {
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
 func (p *coveragePayload) Read(b []byte) (n int, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.off < len(p.header) {
 		// reading header
 		n = copy(b, p.header[p.off:])

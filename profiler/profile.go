@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -100,7 +101,9 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			if err := p.startCPUProfile(&buf); err != nil {
+			compressor := p.compressors[CPUProfile]
+			compressor.Reset(&buf)
+			if err := p.startCPUProfile(compressor); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
@@ -110,6 +113,9 @@ var profileTypes = map[ProfileType]profileType{
 			// the other profile types
 			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
+			if err := compressor.Close(); err != nil {
+				return nil, err
+			}
 			return buf.Bytes(), nil
 		},
 	},
@@ -168,7 +174,11 @@ var profileTypes = map[ProfileType]profileType{
 			if err := p.lookupProfile("goroutine", text, 2); err != nil {
 				return nil, err
 			}
-			err := goroutineDebug2ToPprof(text, pprof, now)
+
+			compressor := p.compressors[expGoroutineWaitProfile]
+			compressor.Reset(pprof)
+			err := goroutineDebug2ToPprof(text, compressor, now)
+			err = cmp.Or(err, compressor.Close())
 			return pprof.Bytes(), err
 		},
 	},
@@ -177,8 +187,11 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			compressor := p.compressors[MetricsProfile]
+			compressor.Reset(&buf)
 			interrupted := p.interruptibleSleep(p.cfg.period)
-			err := p.met.report(now(), &buf)
+			err := p.met.report(now(), compressor)
+			err = cmp.Or(err, compressor.Close())
 			if err != nil && interrupted {
 				err = errProfilerStopped
 			}
@@ -191,7 +204,9 @@ var profileTypes = map[ProfileType]profileType{
 		Collect: func(p *profiler) ([]byte, error) {
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
-			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))
+			compressor := p.compressors[executionTrace]
+			compressor.Reset(buf)
+			lt := newLimitedTraceCollector(compressor, int64(p.cfg.traceConfig.Limit))
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
@@ -202,6 +217,9 @@ var profileTypes = map[ProfileType]profileType{
 			case <-lt.done: // The trace size limit was exceeded
 			}
 			trace.Stop()
+			if err := compressor.Close(); err != nil {
+				return nil, err
+			}
 			return buf.Bytes(), nil
 		},
 	},
@@ -264,15 +282,21 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 		p.interruptibleSleep(p.cfg.period)
 
 		var buf bytes.Buffer
-		err := p.lookupProfile(name, &buf, 0)
-		data := buf.Bytes()
 		dp, ok := p.deltas[pt]
 		if !ok || !p.cfg.deltaProfiles {
-			return data, err
+			compressor := p.compressors[pt]
+			compressor.Reset(&buf)
+			err := p.lookupProfile(name, compressor, 0)
+			err = cmp.Or(err, compressor.Close())
+			return buf.Bytes(), err
+		}
+
+		if err := p.lookupProfile(name, &buf, 0); err != nil {
+			return nil, err
 		}
 
 		start := time.Now()
-		delta, err := dp.Delta(data)
+		delta, err := dp.Delta(buf.Bytes())
 		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
@@ -361,17 +385,17 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 }
 
 type fastDeltaProfiler struct {
-	dc  *fastdelta.DeltaComputer
-	buf bytes.Buffer
-	gzr gzip.Reader
-	gzw *gzip.Writer
+	dc         *fastdelta.DeltaComputer
+	buf        bytes.Buffer
+	gzr        gzip.Reader
+	compressor compressor
 }
 
-func newFastDeltaProfiler(v ...pprofutils.ValueType) *fastDeltaProfiler {
+func newFastDeltaProfiler(compressor compressor, v ...pprofutils.ValueType) *fastDeltaProfiler {
 	fd := &fastDeltaProfiler{
-		dc: fastdelta.NewDeltaComputer(v...),
+		dc:         fastdelta.NewDeltaComputer(v...),
+		compressor: compressor,
 	}
-	fd.gzw = gzip.NewWriter(&fd.buf)
 	return fd
 }
 
@@ -391,12 +415,12 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	}
 
 	fdp.buf.Reset()
-	fdp.gzw.Reset(&fdp.buf)
+	fdp.compressor.Reset(&fdp.buf)
 
-	if err = fdp.dc.Delta(data, fdp.gzw); err != nil {
+	if err = fdp.dc.Delta(data, fdp.compressor); err != nil {
 		return nil, fmt.Errorf("error computing delta: %v", err)
 	}
-	if err = fdp.gzw.Close(); err != nil {
+	if err = fdp.compressor.Close(); err != nil {
 		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
 	}
 	// The returned slice will be retained in case the profile upload fails,
@@ -498,7 +522,7 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 
 	if err := p.CheckValid(); err != nil {
 		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
-	} else if err := p.Write(w); err != nil {
+	} else if err := p.WriteUncompressed(w); err != nil {
 		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
 	}
 	return nil

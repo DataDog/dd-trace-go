@@ -47,6 +47,13 @@ To run golangci-lint locally:
 docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-lint run -v --timeout 5m
 ```
 
+### Code quality
+
+#### Favor string concatenation and string builders over fmt.Sprintf and its variants
+
+[fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor [string builders](https://pkg.go.dev/strings#Builder), or simple string concatenation, `a + "b" + c` over `fmt.Sprintf` when possible, especially in hot paths. 
+Sample PR: https://github.com/DataDog/dd-trace-go/pull/3365
+
 ### Integrations
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.

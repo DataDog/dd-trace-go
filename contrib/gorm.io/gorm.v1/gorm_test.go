@@ -444,16 +444,14 @@ func TestAnalyticsSettings(t *testing.T) {
 	}
 
 	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		assertRate(t, mt, nil)
 	})
 
 	t.Run("global", func(t *testing.T) {
 		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
@@ -461,22 +459,19 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 
 	t.Run("enabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		assertRate(t, mt, 1.0, WithAnalytics(true))
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		assertRate(t, mt, nil, WithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
@@ -531,14 +526,13 @@ func TestError(t *testing.T) {
 	}
 
 	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
+
 		assertErrCheck(t, mt, true)
 	})
 
 	t.Run("errcheck", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 		errFn := func(err error) bool {
 			return err != gorm.ErrRecordNotFound
 		}

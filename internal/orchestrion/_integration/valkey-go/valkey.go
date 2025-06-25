@@ -23,7 +23,7 @@ type TestCase struct {
 	client valkey.Client
 }
 
-func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
+func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 	_, addr := containers.StartValkeyTestContainer(t)
 	var err error
@@ -51,7 +51,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				{
 					Tags: map[string]any{
 						"name":     "valkey.command",
-						"service":  "valkey-go.test",
+						"service":  "valkey.client",
 						"resource": "SET",
 						"type":     "valkey",
 					},
@@ -67,7 +67,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				{
 					Tags: map[string]any{
 						"name":     "valkey.command",
-						"service":  "valkey-go.test",
+						"service":  "valkey.client",
 						"resource": "GET",
 						"type":     "valkey",
 					},

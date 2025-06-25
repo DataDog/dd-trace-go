@@ -119,3 +119,20 @@ func TestManagementTestsResponseBytes(responseCompressedType ResponseCompressedT
 func TestManagementTestsResponseTests(value float64) {
 	telemetry.Distribution(telemetry.NamespaceCIVisibility, "test_management_tests.response_tests", nil).Submit(value)
 }
+
+// ImpactedTestsRequestMs records the time it takes to get the response of the impacted tests endpoint request in ms by CI Visibility.
+func ImpactedTestsRequestMs(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "impacted_tests_detection.request_ms", nil).Submit(value)
+}
+
+// ImpactedTestsResponseBytes records the number of bytes received by the endpoint. Tagged with a boolean flag set to true if response body is compressed.
+func ImpactedTestsResponseBytes(responseCompressedType ResponseCompressedType, value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "impacted_tests_detection.response_bytes", removeEmptyStrings([]string{
+		string(responseCompressedType),
+	})).Submit(value)
+}
+
+// ImpactedTestsResponseFiles records the number of files in the response of the impacted tests endpoint by CI Visibility.
+func ImpactedTestsResponseFiles(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "impacted_tests_detection.response_files", nil).Submit(value)
+}

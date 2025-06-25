@@ -10,19 +10,18 @@ import (
 	"strconv"
 	"testing"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEnabled(t *testing.T) {
 	enabledConfig, _ := strconv.ParseBool(os.Getenv(config.EnvEnabled))
-	wafSupported, _ := waf.Health()
+	wafSupported, _ := libddwaf.Usable()
 	canBeEnabled := enabledConfig && wafSupported
 
 	require.False(t, appsec.Enabled())

@@ -95,7 +95,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 							Tags: map[string]any{
 								"name":     "graphql.server",
 								"resource": "graphql.server",
-								"service":  "graphql",
+								"service":  "graphql.server",
 								"type":     "graphql",
 							},
 							Meta: map[string]string{
@@ -107,7 +107,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.parse",
 										"resource": "graphql.parse",
-										"service":  "graphql",
+										"service":  "graphql.server",
 										"type":     "graphql",
 									},
 									Meta: map[string]string{
@@ -119,7 +119,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.validate",
 										"resource": "graphql.validate",
-										"service":  "graphql",
+										"service":  "graphql.server",
 										"type":     "graphql",
 									},
 									Meta: map[string]string{
@@ -132,7 +132,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 									Tags: map[string]any{
 										"name":     "graphql.execute",
 										"resource": "graphql.execute",
-										"service":  "graphql",
+										"service":  "graphql.server",
 										"type":     "graphql",
 									},
 									Meta: map[string]string{
@@ -145,7 +145,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 											Tags: map[string]any{
 												"name":     "graphql.resolve",
 												"resource": "Query.hello",
-												"service":  "graphql",
+												"service":  "graphql.server",
 												"type":     "graphql",
 											},
 											Meta: map[string]string{

@@ -29,6 +29,7 @@ const (
 	PackageGin                  Package = "gin-gonic/gin"
 	PackageGlobalsignMgo        Package = "globalsign/mgo"
 	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
+	PackageMongoDriverV2        Package = "go.mongodb.org/mongo-driver.v2"
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
 	PackageGoPGV10              Package = "go-pg/pg.v10"
@@ -57,6 +58,7 @@ const (
 	PackageMiekgDNS                Package = "miekg/dns"
 	PackageLabstackEchoV4          Package = "labstack/echo.v4"
 	PackageK8SClientGo             Package = "k8s.io/client-go"
+	PackageK8SGatewayAPI           Package = "k8s.io/gateway-api"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
 	PackageJackcPGXV5              Package = "jackc/pgx.v5"
@@ -73,8 +75,10 @@ const (
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
 	PackageOS                       Package = "os"
 	PackageRedisRueidis             Package = "redis/rueidis"
+)
 
-	// Deprecated packages
+// These packages have been removed in v2, but they are kept here for the transitional version.
+const (
 	PackageEmickleiGoRestful Package = "emicklei/go-restful"
 	PackageGaryburdRedigo    Package = "garyburd/redigo"
 	PackageGopkgJinZhuGormV1 Package = "gopkg.in/jinzhu/gorm.v1"
@@ -312,6 +316,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageMongoDriver: {
 		TracedPackage: "go.mongodb.org/mongo-driver",
+		EnvVarPrefix:  "MONGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("mongo"),
+				buildOpNameV0:      staticName("mongodb.query"),
+				buildOpNameV1:      staticName("mongodb.query"),
+			},
+		},
+	},
+	PackageMongoDriverV2: {
+		TracedPackage: "go.mongodb.org/mongo-driver/v2",
 		EnvVarPrefix:  "MONGO",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
@@ -645,12 +661,15 @@ var packages = map[Package]PackageInfo{
 	PackageK8SClientGo: {
 		TracedPackage: "k8s.io/client-go",
 	},
+	PackageK8SGatewayAPI: {
+		TracedPackage: "sigs.k8s.io/gateway-api",
+	},
 	PackageJulienschmidtHTTPRouter: {
 		TracedPackage: "github.com/julienschmidt/httprouter",
 		EnvVarPrefix:  "HTTPROUTER",
 		naming: map[Component]componentNames{
 			ComponentServer: {
-				useDDServiceV0:     false,
+				useDDServiceV0:     true,
 				buildServiceNameV0: staticName("http.router"),
 				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("http.server.request"),
@@ -706,7 +725,7 @@ var packages = map[Package]PackageInfo{
 			ComponentDefault: {
 				useDDServiceV0:     false,
 				buildServiceNameV0: staticName("vault"),
-				buildOpNameV0:      staticName("vault.command"),
+				buildOpNameV0:      staticName("http.request"),
 				buildOpNameV1:      staticName("vault.query"),
 			},
 		},
@@ -716,8 +735,8 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "GRAPHQL",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				useDDServiceV0:     false,
-				buildServiceNameV0: staticName("graphql"),
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("graphql.server"),
 			},
 		},
 	},
@@ -727,7 +746,7 @@ var packages = map[Package]PackageInfo{
 		naming: map[Component]componentNames{
 			ComponentDefault: {
 				useDDServiceV0:     true,
-				buildServiceNameV0: staticName("graphql"),
+				buildServiceNameV0: staticName("graphql.server"),
 				buildOpNameV0:      staticName("graphql.request"),
 				buildOpNameV1:      staticName("graphql.server.request"),
 			},

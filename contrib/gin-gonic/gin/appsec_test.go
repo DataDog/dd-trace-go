@@ -39,6 +39,11 @@ func TestAppSec(t *testing.T) {
 		appsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
 		c.String(200, "Hello Body!\n")
 	})
+	r.Any("/response-body", func(c *gin.Context) {
+		body := map[string]string{"hello": "world"}
+		appsec.MonitorHTTPResponseBody(c.Request.Context(), body)
+		c.JSON(200, body)
+	})
 
 	srv := httptest.NewServer(r)
 	defer srv.Close()
@@ -119,30 +124,54 @@ func TestAppSec(t *testing.T) {
 
 	})
 
-	// Test a PHP injection attack via request parsed body
-	t.Run("SDK-body", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	t.Run("SDK", func(t *testing.T) {
+		// Test a PHP injection attack via request parsed body
+		t.Run("parsed-body", func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		defer res.Body.Close()
+			req, err := http.NewRequest("POST", srv.URL+"/body", nil)
+			require.NoError(t, err)
 
-		// Check that the handler was properly called
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello Body!\n", string(b))
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
 
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
+			// Check that the handler was properly called
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			require.Equal(t, "Hello Body!\n", string(b))
 
-		event := finished[0].Tag("_dd.appsec.json")
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-933-130"))
+			finished := mt.FinishedSpans()
+			require.Len(t, finished, 1)
+
+			event := finished[0].Tag("_dd.appsec.json")
+			require.NotNil(t, event)
+			require.True(t, strings.Contains(event.(string), "crs-933-130"))
+		})
+
+		t.Run("response-body", func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", srv.URL+"/response-body", nil)
+			require.NoError(t, err)
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			// Check that the handler was properly called
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			require.Equal(t, `{"hello":"world"}`, string(b))
+
+			// Verify the WAF has indeed been able to see the response body, which means it produced the
+			// response body schema derivative.
+			finished := mt.FinishedSpans()
+			require.Len(t, finished, 1)
+			require.Equal(t, `[{"hello":[8]}]`, finished[0].Tag("_dd.appsec.s.res.body"))
+		})
 	})
 }
 

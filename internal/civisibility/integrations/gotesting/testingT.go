@@ -40,12 +40,7 @@ func (ddt *T) Run(name string, f func(*testing.T)) bool {
 // integration tests.
 func (ddt *T) Context() context.Context {
 	t := (*testing.T)(ddt)
-	ciTestItem := getTestMetadata(t)
-	if ciTestItem != nil && ciTestItem.test != nil {
-		return ciTestItem.test.Context()
-	}
-
-	return context.Background()
+	return getTestOptimizationContext(t)
 }
 
 // Fail marks the function as having failed but continues execution.

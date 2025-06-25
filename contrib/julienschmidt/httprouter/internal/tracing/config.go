@@ -28,7 +28,7 @@ func NewConfig(opts ...Option) *Config {
 	} else {
 		cfg.analyticsRate = instr.AnalyticsRate(true)
 	}
-	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	for _, fn := range opts {
 		fn(cfg)

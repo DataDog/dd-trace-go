@@ -20,7 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-const componentName = "segmentio/kafka-go"
+const componentName = "segmentio/kafka.go.v0"
 
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{

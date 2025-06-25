@@ -11,6 +11,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -20,6 +21,7 @@ type otelDDEnv struct {
 	dd       string
 	ot       string
 	remapper func(string) (string, error)
+	handsOff bool // if true, check for configuration set in application_monitoring.yaml file
 }
 
 var otelDDConfigs = map[string]*otelDDEnv{
@@ -27,36 +29,43 @@ var otelDDConfigs = map[string]*otelDDEnv{
 		dd:       "DD_SERVICE",
 		ot:       "OTEL_SERVICE_NAME",
 		remapper: mapService,
+		handsOff: false,
 	},
 	"metrics": {
 		dd:       "DD_RUNTIME_METRICS_ENABLED",
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapMetrics,
+		handsOff: true,
 	},
 	"debugMode": {
 		dd:       "DD_TRACE_DEBUG",
 		ot:       "OTEL_LOG_LEVEL",
 		remapper: mapLogLevel,
+		handsOff: true,
 	},
 	"enabled": {
 		dd:       "DD_TRACE_ENABLED",
 		ot:       "OTEL_TRACES_EXPORTER",
 		remapper: mapEnabled,
+		handsOff: false,
 	},
 	"sampleRate": {
 		dd:       "DD_TRACE_SAMPLE_RATE",
 		ot:       "OTEL_TRACES_SAMPLER",
 		remapper: mapSampleRate,
+		handsOff: false,
 	},
 	"propagationStyle": {
 		dd:       "DD_TRACE_PROPAGATION_STYLE",
 		ot:       "OTEL_PROPAGATORS",
 		remapper: mapPropagationStyle,
+		handsOff: false,
 	},
 	"resourceAttributes": {
 		dd:       "DD_TAGS",
 		ot:       "OTEL_RESOURCE_ATTRIBUTES",
 		remapper: mapDDTags,
+		handsOff: false,
 	},
 }
 
@@ -87,6 +96,15 @@ func getDDorOtelConfig(configName string) string {
 		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
 	}
 
+	// TODO: APMAPI-1358
+	// Check for stable configuration keys
+	if config.handsOff {
+		if v := stableconfig.ManagedConfig.Get(config.dd); v != "" {
+			return v
+		}
+	}
+
+	// Resolve from Datadog and Opentelemetry env vars
 	val := os.Getenv(config.dd)
 	if otVal := os.Getenv(config.ot); otVal != "" {
 		ddPrefix := "config_datadog:"
@@ -105,6 +123,15 @@ func getDDorOtelConfig(configName string) string {
 			val = v
 		}
 	}
+
+	// TODO: APMAPI-1358
+	// If val was not already resolved, and it's compatible with hands-off config, check local config source
+	if val == "" && config.handsOff {
+		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {
+			return v
+		}
+	}
+
 	return val
 }
 
