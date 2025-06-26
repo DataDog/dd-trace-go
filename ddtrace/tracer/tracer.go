@@ -621,7 +621,7 @@ func (t *tracer) StartSpan(operationName string, options ...ddtrace.StartSpanOpt
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}
-	if context != nil {
+	if context != nil && !context.baggageOnly {
 		// this is a child span
 		span.TraceID = context.traceID.Lower()
 		span.ParentID = context.spanID
