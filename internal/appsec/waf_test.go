@@ -585,6 +585,70 @@ func TestAPISecurity(t *testing.T) {
 	})
 }
 
+func TestAPISecurityProxy(t *testing.T) {
+	if wafOK, err := libddwaf.Usable(); !wafOK {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/apisec/{id}", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	req, err := http.NewRequest("POST", srv.URL+"/apisec/1337?vin=AAAAAAAAAAAAAAAAA", nil)
+	require.NoError(t, err)
+
+	t.Run("rate-limits", func(t *testing.T) {
+		t.Setenv(config.EnvEnabled, "true")
+		t.Setenv(internal.EnvAPISecEnabled, "true")
+		t.Setenv(internal.EnvAPISecProxySampleRate, "1")
+		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithProxy()))
+		require.True(t, appsec.Enabled())
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// First request should be sampled
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+
+		// Second request should be dropped
+		res, err = srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		spans = mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		assert.Nil(t, spans[1].Tag("_dd.appsec.s.req.query"))
+	})
+
+	t.Run("disabled-with-rate-0", func(t *testing.T) {
+		t.Setenv(config.EnvEnabled, "true")
+		t.Setenv(internal.EnvAPISecEnabled, "true")
+		t.Setenv(internal.EnvAPISecProxySampleRate, "0")
+		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithProxy()))
+		require.True(t, appsec.Enabled())
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+	})
+}
+
 func TestRASPLFI(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
 	testutils.StartAppSec(t)
