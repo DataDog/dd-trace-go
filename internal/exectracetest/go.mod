@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/exectracetest/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.1.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/mattn/go-sqlite3 v1.14.18
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
@@ -12,14 +12,14 @@ require (
 
 require (
 	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
-	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/proto v0.66.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/trace v0.66.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/log v0.66.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.66.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/version v0.66.0 // indirect
+	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/proto v0.66.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/trace v0.66.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/log v0.66.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.66.1 // indirect
+	github.com/DataDog/datadog-agent/pkg/version v0.66.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.2.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a // indirect

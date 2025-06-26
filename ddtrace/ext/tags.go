@@ -19,6 +19,9 @@ const (
 	// NetworkDestinationIP is the remote address where the outbound connection is being made to.
 	NetworkDestinationIP = "network.destination.ip"
 
+	// NetworkClientIP is the client IP address.
+	NetworkClientIP = "network.client.ip"
+
 	// TargetPort sets the target host port.
 	// Legacy: Kept for backwards compatability. Use NetworkDestinationPort instead.
 	TargetPort = "out.port"

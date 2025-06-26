@@ -103,7 +103,7 @@ type tracer struct {
 	traceWriter traceWriter
 
 	// out receives chunk with spans to be added to the payload.
-	out chan *Chunk
+	out chan *chunk
 
 	// flush receives a channel onto which it will confirm after a flush has been
 	// triggered and completed.
@@ -371,7 +371,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	t := &tracer{
 		config:           c,
 		traceWriter:      writer,
-		out:              make(chan *Chunk, payloadQueueSize),
+		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,
@@ -521,18 +521,18 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	}
 }
 
-// Chunk holds information about a trace chunk to be flushed, including its spans.
+// chunk holds information about a trace chunk to be flushed, including its spans.
 // The chunk may be a fully finished local trace chunk, or only a portion of the local trace chunk in the case of
 // partial flushing.
 //
 // It's exported for supporting `mocktracer`.
-type Chunk struct {
+type chunk struct {
 	spans    []*Span
 	willSend bool // willSend indicates whether the trace will be sent to the agent.
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
-func (t *tracer) sampleChunk(c *Chunk) {
+func (t *tracer) sampleChunk(c *chunk) {
 	if len(c.spans) > 0 {
 		if p, ok := c.spans[0].context.SamplingPriority(); ok && p > 0 {
 			// The trace is kept, no need to run single span sampling rules.
@@ -561,7 +561,7 @@ func (t *tracer) sampleChunk(c *Chunk) {
 	}
 }
 
-func (t *tracer) pushChunk(trace *Chunk) {
+func (t *tracer) pushChunk(trace *chunk) {
 	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
@@ -639,7 +639,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil {
+	if context != nil && !context.baggageOnly {
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
@@ -903,7 +903,7 @@ func (t *tracer) TracerConf() TracerConf {
 	}
 }
 
-func (t *tracer) Submit(s *Span) {
+func (t *tracer) submit(s *Span) {
 	if !t.config.enabled.current {
 		return
 	}
@@ -933,7 +933,7 @@ func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	}
 }
 
-func (t *tracer) SubmitChunk(c *Chunk) {
+func (t *tracer) submitChunk(c *chunk) {
 	t.pushChunk(c)
 }
 
@@ -978,6 +978,12 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 	if !spanResourcePIISafe(span) {
 		taskName = span.spanType
 	}
+	// The task name is an arbitrary string from the user. If it's too
+	// large, like a big SQL query, the execution tracer can crash when we
+	// create the task. Cap it at an arbirary length.  For "normal" task
+	// names this should be plenty that we can still have the task names for
+	// debugging.
+	taskName = taskName[:min(128, len(taskName))]
 	end := noopTaskEnd
 	if !globalinternal.IsExecutionTraced(ctx) {
 		var task *rt.Task

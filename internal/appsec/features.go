@@ -67,10 +67,10 @@ func (a *appsec) SwapRootOperation() error {
 	a.features = newFeatures
 
 	if len(oldFeatures) > 0 {
-		log.Debug("appsec: stopping the following features: %v", oldFeatures)
+		log.Debug("appsec: stopping the following features: %q", oldFeatures)
 	}
 	if len(newFeatures) > 0 {
-		log.Debug("appsec: starting the following features: %v", newFeatures)
+		log.Debug("appsec: starting the following features: %q", newFeatures)
 	}
 
 	dyngo.SwapRootOperation(newRoot)

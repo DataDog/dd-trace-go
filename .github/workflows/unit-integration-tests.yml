@@ -20,6 +20,7 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
+  TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
   contents: read
@@ -123,7 +124,6 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
         INTEGRATION: true
     strategy:
       matrix:
@@ -238,8 +238,12 @@ jobs:
           xpack.security.enabled: false
         ports:
           - 9204:9200
-      mongo:
+      mongo3:
         image: mongo:3
+        ports:
+          - 27018:27017
+      mongo:
+        image: mongo:8
         ports:
           - 27017:27017
       memcached:
@@ -283,8 +287,25 @@ jobs:
 
       - name: Test Contrib
         if: always()
+        env:
+          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
           ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
+      
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ env.TEST_RESULT_PATH }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
   test-contrib:
     needs:
@@ -305,7 +326,6 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
        INTEGRATION: true
     services:
       datadog-agent:
@@ -337,17 +357,32 @@ jobs:
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
+          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
             ./scripts/ci-test-core.sh
+
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ env.TEST_RESULT_PATH }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
   upload-test-results:
     needs:
       - test-contrib
       - test-core
+    if: always() # Make sure this always runs, even if test-contrib or test-core fails
     runs-on:
       group: "APM Larger Runners"
-    env:
-        TEST_RESULTS: /tmp/test-results # path to where test results will be saved
     services:
       datadog-agent:
         image: datadog/agent:latest
@@ -376,21 +411,6 @@ jobs:
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
     steps:
-      - name: Upload the results to Datadog CI App
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/dd-ci-upload
-        with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report*.xml
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
-
       - name: Get Datadog APM Test Agent Logs
         if: always()
         shell: bash

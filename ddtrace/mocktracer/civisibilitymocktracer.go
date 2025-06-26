@@ -165,14 +165,6 @@ func (t *civisibilitymocktracer) Inject(context *tracer.SpanContext, carrier int
 func (t *civisibilitymocktracer) TracerConf() tracer.TracerConf {
 	return t.real.TracerConf()
 }
-func (t *civisibilitymocktracer) Submit(span *tracer.Span) {
-	t.mock.Submit(span)
-}
-func (t *civisibilitymocktracer) SubmitChunk(ch *tracer.Chunk) {
-	if mtr, ok := t.real.(interface{ SubmitChunk(*tracer.Chunk) }); ok {
-		mtr.SubmitChunk(ch)
-	}
-}
 
 // Flush forces a flush of both the mock tracer and the real tracer.
 // This ensures that all buffered spans are processed and ready for inspection.
