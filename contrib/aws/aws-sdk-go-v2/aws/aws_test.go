@@ -866,10 +866,10 @@ func TestAppendMiddleware_ChainTerminated(t *testing.T) {
 
 	s3Client := s3.NewFromConfig(awsCfg)
 	stackFn := func(stack *middleware.Stack) error {
-		return stack.Finalize.Add(middleware.FinalizeMiddlewareFunc("stop", func(
-			ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler,
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("stop", func(
+			ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 		) (
-			out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
+			out middleware.InitializeOutput, metadata middleware.Metadata, err error,
 		) {
 			// Terminate the middleware chain by not calling the next handler
 			out.Result = &s3.ListObjectsOutput{}
@@ -909,15 +909,15 @@ func TestAppendMiddleware_InnerSpan(t *testing.T) {
 
 	s3Client := s3.NewFromConfig(awsCfg)
 	stackFn := func(stack *middleware.Stack) error {
-		return stack.Finalize.Add(middleware.FinalizeMiddlewareFunc("stop", func(
-			ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler,
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("stop", func(
+			ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 		) (
-			out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
+			out middleware.InitializeOutput, metadata middleware.Metadata, err error,
 		) {
 			// Start a new child span
 			span, ctx := tracer.StartSpanFromContext(ctx, "inner span")
 			defer span.Finish()
-			out, metadata, err = next.HandleFinalize(ctx, in)
+			out, metadata, err = next.HandleInitialize(ctx, in)
 			return
 		}), middleware.After)
 	}
