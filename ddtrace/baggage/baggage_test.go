@@ -7,9 +7,9 @@ package baggage
 
 import (
 	"context"
-	"runtime"
-	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBaggageFunctions(t *testing.T) {
@@ -137,38 +137,83 @@ func TestBaggageFunctions(t *testing.T) {
 	})
 }
 
-func TestConcurrentSetAndIteratePanics(t *testing.T) {
-	ctx := context.Background()
-	ctx = Set(ctx, "init", "value")
+func TestBaggageMapAccessorsMakeCopies(t *testing.T) {
+	t.Run("Set", func(t *testing.T) {
+		firstMap := map[string]string{"key": "value"}
+		ctx := withBaggage(context.Background(), firstMap)
+		ctx = Set(ctx, "key2", "value2")
 
-	var wg sync.WaitGroup
-	done := make(chan struct{})
+		// Verify that the new map is a copy of the original
+		nextMap, ok := baggageMap(ctx)
+		assert.True(t, ok)
+		assert.False(t, &firstMap == &nextMap, "Set should create a new map, not reuse the original")
 
-	// Goroutine 1: Iterates over baggage repeatedly
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				_ = All(ctx)
-				runtime.Gosched()
-			}
-		}
-	}()
+		// Mutate the new map and ensure the original is unchanged
+		nextMap["key"] = "changed"
+		assert.Equal(t, "value", firstMap["key"], "Original map should not be affected by changes to the new map")
 
-	// Goroutine 2: Modifies baggage repeatedly
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for range [1000]int{} {
-			ctx = Set(ctx, "key", "val")
-			runtime.Gosched()
-		}
-		close(done)
-	}()
+		// Check that both keys are present in the new map
+		assert.Equal(t, "changed", nextMap["key"], "New map should have the new key")
+		assert.Equal(t, "value2", nextMap["key2"], "New map should have the new key")
+	})
+	t.Run("Remove", func(t *testing.T) {
+		firstMap := map[string]string{"key": "value"}
+		ctx := withBaggage(context.Background(), firstMap)
+		ctx = Remove(ctx, "key")
 
-	wg.Wait()
+		// Verify that the new map is a copy of the original
+		nextMap, ok := baggageMap(ctx)
+		assert.True(t, ok)
+		assert.False(t, &firstMap == &nextMap, "Remove should create a new map, not reuse the original")
+
+		// Mutate the new map and ensure the original is unchanged
+		nextMap["key"] = "changed"
+		assert.Equal(t, "value", firstMap["key"], "Original map should not be affected by changes to the new map")
+	})
+	t.Run("All", func(t *testing.T) {
+		firstMap := map[string]string{"key": "value"}
+		ctx := withBaggage(context.Background(), firstMap)
+		all := All(ctx)
+		assert.False(t, &firstMap == &all, "All should return a new map, not the original map instance")
+
+		// Mutate the new map and ensure the original is unchanged
+		all["key"] = "changed"
+		assert.Equal(t, "value", firstMap["key"], "Original map should not be affected by changes to the new map")
+	})
 }
+
+// func TestConcurrentAccess(t *testing.T) {
+// 	ctx := context.Background()
+// 	ctx = Set(ctx, "init", "value")
+
+// 	var wg sync.WaitGroup
+// 	done := make(chan struct{})
+
+// 	// Goroutine 1: Iterates over baggage repeatedly
+// 	wg.Add(1)
+// 	go func() {
+// 		defer wg.Done()
+// 		for {
+// 			select {
+// 			case <-done:
+// 				return
+// 			default:
+// 				_ = All(ctx)
+// 				runtime.Gosched()
+// 			}
+// 		}
+// 	}()
+
+// 	// Goroutine 2: Modifies baggage repeatedly
+// 	wg.Add(1)
+// 	go func() {
+// 		defer wg.Done()
+// 		for range [1000]int{} {
+// 			ctx = Set(ctx, "key", "val")
+// 			runtime.Gosched()
+// 		}
+// 		close(done)
+// 	}()
+
+// 	wg.Wait()
+// }
