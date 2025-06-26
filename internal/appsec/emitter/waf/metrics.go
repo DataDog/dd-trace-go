@@ -203,7 +203,7 @@ func (m *ContextMetrics) Submit(truncations map[libddwaf.TruncationReason][]int,
 		// Add metrics `{waf,rasp}.duration_ext`
 		metric, found := m.externalTimerDistributions[scope]
 		if !found {
-			telemetrylog.Error("unexpected scope name: %v", scope, telemetry.WithTags([]string{"product:appsec"}))
+			telemetrylog.Error("unexpected scope name: %s", scope, telemetry.WithTags([]string{"product:appsec"}))
 			continue
 		}
 
@@ -327,7 +327,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStat
 			m.Milestones.wafError = true
 		}
 	default:
-		telemetrylog.Error("unexpected scope name: %v", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
+		telemetrylog.Error("unexpected scope name: %s", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
 	}
 }
 
@@ -341,7 +341,7 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 	}
 
 	if !errors.Is(in, waferrors.ErrTimeout) {
-		telemetrylog.Error("unexpected WAF error: %v", in, telemetry.WithTags(append([]string{
+		telemetrylog.Error("unexpected WAF error: %s", in, telemetry.WithTags(append([]string{
 			"product:appsec",
 		}, m.baseTags...)))
 	}
@@ -350,13 +350,13 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 	case addresses.RASPScope:
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
-			telemetrylog.Error("unexpected call to RASPRuleTypeFromAddressSet: %v", in, telemetry.WithTags([]string{"product:appsec"}))
+			telemetrylog.Error("unexpected call to RASPRuleTypeFromAddressSet: %s", in, telemetry.WithTags([]string{"product:appsec"}))
 		}
 		m.raspError(in, ruleType)
 	case addresses.WAFScope, "":
 		m.wafError(in)
 	default:
-		telemetrylog.Error("unexpected scope name: %v", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
+		telemetrylog.Error("unexpected scope name: %s", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
 	}
 }
 

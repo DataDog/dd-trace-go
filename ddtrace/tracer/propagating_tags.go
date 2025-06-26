@@ -39,7 +39,7 @@ func (t *trace) setTraceSourcePropagatingTag(key string, value internal.TraceSou
 	if source := t.propagatingTags[key]; source != "" {
 		tSource, err := internal.ParseTraceSource(source)
 		if err != nil {
-			log.Error("failed to parse trace source tag: %v", err)
+			log.Error("failed to parse trace source tag: %v", err.Error())
 		}
 
 		tSource |= value

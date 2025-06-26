@@ -138,7 +138,7 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	}
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])
 	if err != nil {
-		log.Debug("Couldn't parse tracestate: %v", err)
+		log.Debug("Couldn't parse tracestate: %v", err.Error())
 		return
 	}
 	c.TraceState = state
@@ -149,7 +149,7 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 		// where flags represents the propagated flags in the format of 2 hex-encoded digits at the end of the traceparent.
 		otelFlagLen := 2
 		if f, err := strconv.ParseUint(parent[len(parent)-otelFlagLen:], 16, 8); err != nil {
-			log.Debug("Couldn't parse traceparent: %v", err)
+			log.Debug("Couldn't parse traceparent: %v", err.Error())
 		} else {
 			c.TraceFlags = oteltrace.TraceFlags(f)
 		}

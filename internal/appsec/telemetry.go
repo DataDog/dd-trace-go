@@ -67,7 +67,7 @@ func detectLibDL() {
 			telemetry.RegisterAppConfig("libdl_present", true, telemetry.OriginCode)
 			return
 		} else if err != nil {
-			log.Debug("failed to detect libdl with method %s: %v", method.name, err)
+			log.Debug("failed to detect libdl with method %s: %v", method.name, err.Error())
 		}
 	}
 

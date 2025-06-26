@@ -108,7 +108,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = TestCycleSubdomain
 		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
-	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, urlsanitizer.SanitizeURL(testCycleURL))
+	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %t, testcycleurl: %s]", agentlessEnabled, urlsanitizer.SanitizeURL(testCycleURL))
 
 	return &ciVisibilityTransport{
 		config:           config,
@@ -161,9 +161,8 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 	if t.agentless {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
-	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
+	log.Debug("ciVisibilityTransport: sending transport request: %d bytes", buffer.Len())
 
-	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
 	startTime := time.Now()
 	response, err := t.config.httpClient.Do(req)
 	telemetry.EndpointPayloadRequestsMs(telemetry.TestCycleEndpointType, float64(time.Since(startTime).Milliseconds()))

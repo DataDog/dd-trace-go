@@ -322,7 +322,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
 	if err != nil {
-		log.Error("Runtime and health metrics disabled: %v", err)
+		log.Error("Runtime and health metrics disabled: %v", err.Error())
 		return nil, fmt.Errorf("could not initialize statsd client: %v", err)
 	}
 	var writer traceWriter
@@ -335,8 +335,8 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors:%s", err)
-		return nil, fmt.Errorf("found errors when parsing sampling rules: %v", err)
+		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors: %v", err.Error())
+		return nil, fmt.Errorf("found errors when parsing sampling rules: %w", err)
 	}
 	if traces != nil {
 		c.traceRules = traces
@@ -364,7 +364,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	if v := c.logDirectory; v != "" {
 		logFile, err = log.OpenFileAtPath(v)
 		if err != nil {
-			log.Warn("%v", err)
+			log.Warn("%v", err.Error())
 			c.logDirectory = ""
 		}
 	}
@@ -728,7 +728,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
-		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, span.meta, span.metrics)
 	}
 	if t.config.profilerHotspots || t.config.profilerEndpoints {

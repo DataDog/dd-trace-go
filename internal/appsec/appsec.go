@@ -67,14 +67,14 @@ func Start(opts ...config.StartOption) {
 	}
 
 	// Check whether libddwaf - required for Threats Detection - is ok or not
-	if ok, err := libddwaf.Usable(); !ok {
+	if ok, err := libddwaf.Usable(); !ok && err != nil {
 		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
 		if mode == config.ForcedOn {
 			logUnexpectedStartError(err)
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.
-			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v", err)
+			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled for the following reasons: %s", err)
 		}
 		return
 	}
@@ -90,7 +90,7 @@ func Start(opts ...config.StartOption) {
 	// Start the remote configuration client
 	log.Debug("appsec: starting the remote configuration client")
 	if err := appsec.startRC(); err != nil {
-		telemetrylog.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
+		telemetrylog.Error("appsec: Remote config: disabled due to an instanciation error: %s", err.Error())
 	}
 
 	if mode == config.RCStandby {
@@ -119,7 +119,7 @@ func Start(opts ...config.StartOption) {
 
 // Implement the AppSec log message C1
 func logUnexpectedStartError(err error) {
-	log.Error("appsec: could not start because of an unexpected error: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+	log.Error("appsec: could not start because of an unexpected error: %s\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err.Error())
 	telemetry.Log(telemetry.LogError, fmt.Sprintf("appsec: could not start because of an unexpected error: %v", err), telemetry.WithTags([]string{"product:appsec"}))
 	telemetry.ProductStartError(telemetry.NamespaceAppSec, err)
 }
@@ -168,7 +168,7 @@ func (a *appsec) start() error {
 			return fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
+		log.Error("appsec: non-critical error while loading libddwaf: %s", err.Error())
 	}
 
 	// Register dyngo listeners
@@ -223,7 +223,7 @@ func init() {
 		Warn:  log.Warn,
 		Errorf: func(s string, a ...any) error {
 			err := fmt.Errorf(s, a...)
-			log.Error("%v", err)
+			log.Error("%s", err.Error())
 			return err
 		},
 	})

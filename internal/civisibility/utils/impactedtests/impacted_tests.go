@@ -93,7 +93,7 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 		modifiedFiles = []fileWithBitmap{}
 	}
 
-	logger.Debug("civisibility.ImpactedTests: loaded [from: %s to %s]: %v", baseCommitSha, currentCommitSha, modifiedFiles)
+	logger.Debug("civisibility.ImpactedTests: loaded [from: %s to %s]: %v", baseCommitSha, currentCommitSha, modifiedFiles) //nolint:gocritic // File list debug logging
 	return &ImpactedTestAnalyzer{
 		modifiedFiles:    modifiedFiles,
 		currentCommitSha: currentCommitSha,

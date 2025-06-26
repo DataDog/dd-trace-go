@@ -167,12 +167,12 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 
 		if log.DebugEnabled() {
-			var files []string
+			var fileNames []string
 			for _, f := range config.Files {
-				files = append(files, f.FieldName)
+				fileNames = append(fileNames, f.FieldName)
 			}
-			log.Debug("ciVisibilityHttpClient: new request with files [method: %v, url: %v, attempt: %v, maxRetries: %v] %v",
-				config.Method, config.URL, attempt, config.MaxRetries, files)
+			log.Debug("ciVisibilityHttpClient: new request with files [method: %s, url: %s, attempt: %d, maxRetries: %d] %s",
+				config.Method, config.URL, attempt, config.MaxRetries, fileNames)
 		}
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
 		if err != nil {
@@ -198,7 +198,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 
 		if log.DebugEnabled() {
-			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
+			log.Debug("ciVisibilityHttpClient: new request with body [method: %s, url: %s, attempt: %d, maxRetries: %d, compressed: %t] %d bytes",
 				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
 		}
 
@@ -223,7 +223,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			return true, nil, err
 		}
 
-		log.Debug("ciVisibilityHttpClient: new request [method: %v, url: %v, attempt: %v, maxRetries: %v]",
+		log.Debug("ciVisibilityHttpClient: new request [method: %s, url: %s, attempt: %d, maxRetries: %d]",
 			config.Method, config.URL, attempt, config.MaxRetries)
 	}
 
@@ -237,7 +237,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	resp, err := rh.Client.Do(req)
 	if err != nil {
-		log.Debug("ciVisibilityHttpClient: error = %v", err)
+		log.Debug("ciVisibilityHttpClient: error = %s", err)
 		// Retry if there's an error
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
@@ -250,7 +250,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	// Check for rate-limiting (HTTP 429)
 	if resp.StatusCode == HTTPStatusTooManyRequests {
-		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
+		log.Debug("ciVisibilityHttpClient: response status code = %d", resp.StatusCode)
 
 		rateLimitReset := resp.Header.Get(HeaderRateLimitReset)
 		if rateLimitReset != "" {
@@ -278,7 +278,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	// Check status code for retries
 	if statusCode >= 406 {
 		// Retry if the status code is >= 406
-		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
+		log.Debug("ciVisibilityHttpClient: response status code = %d", resp.StatusCode)
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
 	}
@@ -308,7 +308,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	}
 
 	if log.DebugEnabled() {
-		log.Debug("ciVisibilityHttpClient: response received [method: %v, url: %v, status_code: %v, format: %v] %v bytes",
+		log.Debug("ciVisibilityHttpClient: response received [method: %s, url: %s, status_code: %d, format: %s] %d bytes",
 			config.Method, config.URL, resp.StatusCode, responseFormat, len(responseBody))
 	}
 

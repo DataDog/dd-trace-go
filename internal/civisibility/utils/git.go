@@ -191,7 +191,7 @@ func getLocalGitData() (localGitData, error) {
 		if gitDir, err := getParentGitFolder(currentDir); err == nil && gitDir != "" {
 			log.Debug("civisibility.git: setting permissions to git folder: %s", gitDir)
 			if out, err := execGitString(telemetry.NotSpecifiedCommandsType, "config", "--global", "--add", "safe.directory", gitDir); err != nil {
-				log.Debug("civisibility.git: error while setting permissions to git folder: %s\n%s\n%s", gitDir, err.Error(), out)
+				log.Debug("civisibility.git: error while setting permissions to git folder: %s\n out: %s\n error: %s", gitDir, out, err.Error())
 			}
 		} else {
 			log.Debug("civisibility.git: error getting the parent git folder.")
@@ -296,7 +296,7 @@ func UnshallowGitRepository() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("civisibility.unshallow: error getting the git version: %s", err.Error())
 	}
-	log.Debug("civisibility.unshallow: git version: %v.%v.%v", major, minor, patch)
+	log.Debug("civisibility.unshallow: git version: %d.%d.%d", major, minor, patch)
 	if major < 2 || (major == 2 && minor < 27) {
 		log.Debug("civisibility.unshallow: the git version is less than 2.27.0 we cannot unshallow the repository")
 		return false, nil
@@ -314,7 +314,7 @@ func UnshallowGitRepository() (bool, error) {
 		// if the origin name is empty, we fallback to "origin"
 		originName = "origin"
 	}
-	log.Debug("civisibility.unshallow: origin name: %v", originName)
+	log.Debug("civisibility.unshallow: origin name: %s", originName)
 
 	// let's get the sha of the HEAD (git rev-parse HEAD)
 	headSha, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD")
@@ -328,7 +328,7 @@ func UnshallowGitRepository() (bool, error) {
 			return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err.Error(), headSha)
 		}
 	}
-	log.Debug("civisibility.unshallow: HEAD sha: %v", headSha)
+	log.Debug("civisibility.unshallow: HEAD sha: %s", headSha)
 
 	// let's fetch the missing commits and trees from the last month
 	// git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse HEAD)
@@ -337,7 +337,7 @@ func UnshallowGitRepository() (bool, error) {
 
 	// let's check if the last command was unsuccessful
 	if err != nil || fetchOutput == "" {
-		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err)
+		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err.Error())
 		// ***
 		// The previous command has a drawback: if the local HEAD is a commit that has not been pushed to the remote, it will fail.
 		// If this is the case, we fallback to: `git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream})`
@@ -357,7 +357,7 @@ func UnshallowGitRepository() (bool, error) {
 
 	// let's check if the last command was unsuccessful
 	if err != nil || fetchOutput == "" {
-		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err)
+		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err.Error())
 		// ***
 		// It could be that the CI is working on a detached HEAD or maybe branch tracking hasn't been set up.
 		// In that case, this command will also fail, and we will finally fallback to we just unshallow all the things:
@@ -387,7 +387,7 @@ func GetGitDiff(baseCommit, headCommit string) (string, error) {
 			// first let's get the remote
 			remoteOut, err := execGitString(telemetry.GetRemoteCommandsType, "remote", "show")
 			if err != nil {
-				log.Debug("civisibility.git: error on git remote show origin: %v | %s", err, remoteOut)
+				log.Debug("civisibility.git: error on git remote show origin: %s , error: %s", remoteOut, err.Error())
 			}
 			if remoteOut == "" {
 				remoteOut = "origin"
@@ -396,7 +396,7 @@ func GetGitDiff(baseCommit, headCommit string) (string, error) {
 			// let's ensure we have all the branch names from the remote
 			fetchOut, err := execGitString(telemetry.GetHeadCommandsType, "fetch", remoteOut, baseCommit, "--depth=1")
 			if err != nil {
-				log.Debug("civisibility.git: error fetching %s/%s: %v | %s", remoteOut, baseCommit, err, fetchOut)
+				log.Debug("civisibility.git: error fetching %s/%s: %s, error: %s", remoteOut, baseCommit, fetchOut, err.Error())
 			}
 
 			// then let's get the remote branch name
@@ -484,7 +484,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	// get a temporary path to store the pack files
 	temporaryPath, err := os.MkdirTemp("", "pack-objects")
 	if err != nil {
-		log.Warn("civisibility: error creating temporary directory: %s", err)
+		log.Warn("civisibility: error creating temporary directory: %v", err.Error())
 		return nil
 	}
 
@@ -492,7 +492,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	out, err := execGitStringWithInput(telemetry.PackObjectsCommandsType, objectsShasString,
 		"pack-objects", "--compression=9", "--max-pack-size="+strconv.Itoa(MaxPackFileSizeInMb)+"m", temporaryPath+"/")
 	if err != nil {
-		log.Warn("civisibility: error creating pack files: %s", err)
+		log.Warn("civisibility: error creating pack files: %v", err.Error())
 		return nil
 	}
 
@@ -739,7 +739,7 @@ func checkAndFetchBranch(branch, remoteName string) {
 	// Fetch the latest commit for this branch from remote (without creating local branch)
 	_, err = execGitString(telemetry.NotSpecifiedCommandsType, "fetch", "--depth", "1", remoteName, branch)
 	if err != nil {
-		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err)
+		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err.Error())
 	}
 }
 

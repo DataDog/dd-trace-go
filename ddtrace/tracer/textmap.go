@@ -483,7 +483,7 @@ func (p *propagator) marshalPropagatingTags(ctx *SpanContext) string {
 			return true // don't propagate W3C headers with the DD propagator
 		}
 		if err := isValidPropagatableTag(k, v); err != nil {
-			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
+			log.Warn("Won't propagate tag %q: %s", k, err.Error())
 			properr = "encoding_error"
 			return true
 		}
@@ -619,7 +619,7 @@ func unmarshalPropagatingTags(ctx *SpanContext, v string) {
 	}
 	tags, err := parsePropagatableTraceTags(v)
 	if err != nil {
-		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
+		log.Warn("Did not extract %q: %s. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
 		ctx.trace.setTag(keyPropagationError, "decoding_error")
 	}
 	ctx.trace.replacePropagatingTags(tags)

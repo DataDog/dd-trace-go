@@ -213,9 +213,12 @@ func (w *writer) newRequest(endpoint *http.Request, requestType transport.Reques
 		defer func() {
 			// This should normally never happen but since we are encoding arbitrary data in client configuration values payload we need to be careful.
 			if panicValue := recover(); panicValue != nil {
-				log.Error("telemetry/writer: panic while encoding payload: %v", panicValue)
+				log.Error("telemetry/writer: panic while encoding payload!")
 				if err == nil {
-					panicErr, _ := panicValue.(error)   // check if we can use the panic value as an error
+					panicErr, ok := panicValue.(error) // check if we can use the panic value as an error
+					if ok {
+						log.Error("telemetry/writer: panic while encoding payload: %v", panicErr.Error())
+					}
 					pipeWriter.CloseWithError(panicErr) // CloseWithError with nil as parameter is like Close()
 				}
 			}

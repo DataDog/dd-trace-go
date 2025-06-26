@@ -6,6 +6,7 @@
 package httptrace
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -39,6 +40,10 @@ type config struct {
 	traceClientIP                bool
 	isStatusError                func(statusCode int) bool
 	inferredProxyServicesEnabled bool
+}
+
+func (c config) String() string {
+	return fmt.Sprintf("config{queryString: %t, traceClientIP: %t, inferredProxyServicesEnabled: %t}", c.queryString, c.traceClientIP, c.inferredProxyServicesEnabled)
 }
 
 // ResetCfg sets local variable cfg back to its defaults (mainly useful for testing)
@@ -96,24 +101,24 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 		if strings.Contains(val, "-") {
 			bounds := strings.Split(val, "-")
 			if len(bounds) != 2 {
-				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				log.Debug("Trouble parsing %q due to entry %q, using default error status determination logic", s, val)
 				return nil
 			}
 			before, err := strconv.Atoi(bounds[0])
 			if err != nil {
-				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				log.Debug("Trouble parsing %q due to entry %q, using default error status determination logic", s, val)
 				return nil
 			}
 			after, err := strconv.Atoi(bounds[1])
 			if err != nil {
-				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				log.Debug("Trouble parsing %q due to entry %q, using default error status determination logic", s, val)
 				return nil
 			}
 			ranges = append(ranges, []int{before, after})
 		} else {
 			intVal, err := strconv.Atoi(val)
 			if err != nil {
-				log.Debug("Trouble parsing %v due to entry %v, using default error status determination logic", s, val)
+				log.Debug("Trouble parsing %q due to entry %q, using default error status determination logic", s, val)
 				return nil
 			}
 			codes = append(codes, intVal)
