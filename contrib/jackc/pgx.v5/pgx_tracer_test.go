@@ -7,6 +7,7 @@ package pgx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -154,6 +155,35 @@ func TestQuery(t *testing.T) {
 	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
 	assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
+}
+
+func TestIgnoreError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceQuery(true), WithIgnoreError(func(err error) bool {
+		return errors.Is(err, context.Canceled)
+	}))
+
+	parent, ctx := tracer.StartSpanFromContext(t.Context(), "parent")
+	defer parent.Finish()
+
+	// Connect
+	conn := newPoolCreator(nil, opts...)(t, ctx)
+
+	ctx, cancel := context.WithCancel(ctx)
+	// Forcefully cancel the context to simulate an error
+	cancel()
+
+	// Query
+	var x int
+	err := conn.QueryRow(ctx, `SELECT 1`).Scan(&x)
+	require.NoError(t, err)
+	require.Equal(t, 1, x)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	require.Equal(t, nil, spans[0].Tag(ext.Error))
 }
 
 func TestPrepare(t *testing.T) {
