@@ -3,7 +3,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package mgo provides functions and types which allow tracing of the MGO MongoDB client (https://github.com/globalsign/mgo)
+// Package mgo provides functions and types which allow tracing of the MGO MongoDB client (https://github.com/globalsign/mgo).
+//
+// Deprecated: github.com/globalsign/mgo is unmaintained, please migrate to the official MongoDB driver
+// https://github.com/mongodb/mongo-go-driver. This integration will be removed in a future release.
 package mgo // import "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
 
 import (

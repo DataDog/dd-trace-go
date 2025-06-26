@@ -9,55 +9,39 @@ package mongo
 
 import (
 	"context"
-	"net/url"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	tclog "github.com/testcontainers/testcontainers-go/log"
-	testmongo "github.com/testcontainers/testcontainers-go/modules/mongodb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type TestCase struct {
-	server *testmongo.MongoDBContainer
-	*mongo.Client
+	client *mongo.Client
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
-
-	var err error
-	tc.server, err = testmongo.Run(ctx,
-		"mongo:6",
-		testcontainers.WithLogger(tclog.TestLogger(t)),
-		containers.WithTestLogConsumer(t),
-	)
-	containers.AssertTestContainersError(t, err)
-	containers.RegisterContainerCleanup(t, tc.server)
-
-	mongoURI, err := tc.server.ConnectionString(ctx)
-	require.NoError(t, err)
-	_, err = url.Parse(mongoURI)
-	require.NoError(t, err)
+	_, mongoURI := containers.StartMongoDBTestContainer(t)
 
 	opts := options.Client()
 	opts.ApplyURI(mongoURI)
 	client, err := mongo.Connect(ctx, opts)
 	require.NoError(t, err)
-	tc.Client = client
+	tc.client = client
+
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		assert.NoError(t, tc.Client.Disconnect(ctx))
+		assert.NoError(t, tc.client.Disconnect(ctx))
 	})
 }
 
@@ -65,7 +49,7 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
-	db := tc.Client.Database("test")
+	db := tc.client.Database("test")
 	c := db.Collection("coll")
 
 	_, err := c.InsertOne(ctx, bson.M{"test_key": "test_value"})

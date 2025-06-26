@@ -26,17 +26,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: echo 'Smoke Tests workflow passed'
-      - run: go run .github/workflows/apps/gen_supported_versions_doc.go
+      - run: go run ./scripts/gen_integrations_doc.go
       - run: git diff
       # note: This will only run when there *are* changes to integration versions
       - name: Create Pull Request
         id: pr
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: "update-latest-supported-versions"
-          commit-message: "docs: update latest supported integration versions doc"
+          commit-message: "docs: update supported integrations documentation"
           base: main
-          title: "docs: update latest supported integration versions doc"
-          labels: changelog/no-changelog
-          body: "Test"
+          title: "docs: update supported integrations documentation"
+          labels: changelog/no-changelog,docs
+          body: "Update supported integrations documentation"
+          sign-commits: true

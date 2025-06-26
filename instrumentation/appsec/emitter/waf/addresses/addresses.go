@@ -13,6 +13,7 @@ const (
 	ServerRequestQueryAddr             = "server.request.query"
 	ServerRequestPathParamsAddr        = "server.request.path_params"
 	ServerRequestBodyAddr              = "server.request.body"
+	ServerResponseBodyAddr             = "server.response.body"
 	ServerResponseStatusAddr           = "server.response.status"
 	ServerResponseHeadersNoCookiesAddr = "server.response.headers.no_cookies"
 

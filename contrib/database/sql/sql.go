@@ -22,6 +22,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sqlinternal "github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
@@ -32,7 +33,10 @@ const componentName = instrumentation.PackageDatabaseSQL
 
 var instr *instrumentation.Instrumentation
 
-var testMode *bool
+var (
+	testMode         atomic.Bool
+	testModeInitOnce sync.Once
+)
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageDatabaseSQL)
@@ -118,11 +122,11 @@ func Register(driverName string, driver driver.Driver, opts ...Option) {
 	if driver == nil {
 		panic("sqltrace: Register driver is nil")
 	}
-	if testMode == nil {
+	testModeInitOnce.Do(func() {
 		_, ok := os.LookupEnv("__DD_TRACE_SQL_TEST")
-		testMode = &ok
-	}
-	testModeEnabled := *testMode
+		testMode.Store(ok)
+	})
+	testModeEnabled := testMode.Load()
 	if registeredDrivers.isRegistered(driverName) {
 		// already registered, don't change things
 		if !testModeEnabled {

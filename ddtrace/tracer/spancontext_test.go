@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -244,12 +246,11 @@ func TestSpanTracePushOne(t *testing.T) {
 
 	assert := assert.New(t)
 
-	_, transport, flush, stop, err := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t)
 	assert.Nil(err)
 	defer stop()
 
-	traceID := randUint64()
-	root := newSpan("name1", "a-service", "a-resource", traceID, traceID, 0)
+	root := tracer.newRootSpan("name1", "a-service", "a-resource")
 	trace := root.context.trace
 
 	assert.Len(trace.spans, 1)
@@ -279,7 +280,7 @@ func TestTraceFinishChunk(t *testing.T) {
 
 	for i := 0; i < payloadQueueSize+1; i++ {
 		trace.mu.Lock()
-		c := Chunk{spans: make([]*Span, 1)}
+		c := chunk{spans: make([]*Span, 1)}
 		trace.finishChunk(tracer, &c)
 		trace.mu.Unlock()
 	}
@@ -1023,6 +1024,59 @@ func TestSpanIDHexEncoded(t *testing.T) {
 	assert.Equal(t, "ffffffffffffffff", sid)
 	assert.Equal(t, spanIDHexEncoded(math.MaxUint64, 0), sid)
 	assert.Equal(t, spanIDHexEncoded(math.MaxUint64, 16), sid)
+}
+
+func TestSpanProcessTags(t *testing.T) {
+	testCases := []struct {
+		name    string
+		enabled bool
+	}{
+		{
+			name:    "disabled",
+			enabled: false,
+		},
+		{
+			name:    "enabled",
+			enabled: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
+			processtags.Reload()
+			tracer, transport, flush, stop, err := startTestTracer(t)
+			assert.NoError(t, err)
+			t.Cleanup(stop)
+
+			p := tracer.StartSpan("p")
+			c1 := p.StartChild("c1")
+			c2 := p.StartChild("c2")
+			c11 := c1.StartChild("c1-1")
+
+			c11.Finish()
+			c2.Finish()
+			c1.Finish()
+			p.Finish()
+
+			flush(1)
+			traces := transport.Traces()
+			require.Len(t, traces, 1)
+			require.Len(t, traces[0], 4)
+
+			root := traces[0][0]
+			assert.Equal(t, "p", root.name)
+			if tc.enabled {
+				assert.NotEmpty(t, root.meta["_dd.tags.process"])
+			} else {
+				assert.NotContains(t, root.meta, "_dd.tags.process")
+			}
+
+			for _, s := range traces[0][1:] {
+				assert.NotContains(t, s.meta, "_dd.tags.process")
+			}
+		})
+	}
 }
 
 func BenchmarkSpanIDHexEncoded(b *testing.B) {

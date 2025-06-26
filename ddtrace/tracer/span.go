@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -401,13 +400,13 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		if yes {
 			if s.error == 0 {
 				// new error
-				atomic.AddInt32(&s.context.errors, 1)
+				s.context.errors.Add(1)
 			}
 			s.error = 1
 		} else {
 			if s.error > 0 {
 				// flip from active to inactive
-				atomic.AddInt32(&s.context.errors, -1)
+				s.context.errors.Add(-1)
 			}
 			s.error = 0
 		}
@@ -626,6 +625,9 @@ func (s *Span) Finish(opts ...FinishOption) {
 			NoDebugStack: s.noDebugStack,
 		}
 		for _, fn := range opts {
+			if fn == nil {
+				continue
+			}
 			fn(&cfg)
 		}
 		if !cfg.FinishTime.IsZero() {
@@ -743,7 +745,7 @@ func (s *Span) finish(finishTime int64) {
 
 	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
 	if hasTracer {
-		tracer.Submit(s)
+		tracer.submit(s)
 	}
 
 	if s.pprofCtxRestore != nil {
@@ -785,7 +787,7 @@ func shouldKeep(s *Span) bool {
 		// positive sampling priorities stay
 		return true
 	}
-	if atomic.LoadInt32(&s.context.errors) > 0 {
+	if s.context.errors.Load() > 0 {
 		// traces with any span containing an error get kept
 		return true
 	}
@@ -879,6 +881,9 @@ func (s *Span) Format(f fmt.State, c rune) {
 
 // AddEvent attaches a new event to the current span.
 func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -963,6 +968,8 @@ const (
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
 	keyBaseService = "_dd.base_service"
+	// keyProcessTags contains a list of process tags to indentify the service.
+	keyProcessTags = "_dd.tags.process"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

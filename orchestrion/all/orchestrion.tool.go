@@ -38,6 +38,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2"                           // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2/mongo"     // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2/mongo"        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"                              // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"                         // integration

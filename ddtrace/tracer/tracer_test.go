@@ -210,7 +210,7 @@ func TestTracerStart(t *testing.T) {
 		Start()
 
 		// ensure at least one worker started and handles requests
-		getGlobalTracer().(*tracer).pushChunk(&Chunk{spans: []*Span{}})
+		getGlobalTracer().(*tracer).pushChunk(&chunk{spans: []*Span{}})
 
 		Stop()
 		Stop()
@@ -222,7 +222,7 @@ func TestTracerStart(t *testing.T) {
 		tr, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tr.pushChunk(&Chunk{spans: []*Span{}}) // blocks until worker is started
+		tr.pushChunk(&chunk{spans: []*Span{}}) // blocks until worker is started
 		select {
 		case <-tr.stop:
 			t.Fatal("stopped channel should be open")
@@ -370,24 +370,24 @@ func TestSamplingDecision(t *testing.T) {
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
 			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
+			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.prioritySampling.defaultRate = 0
+		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
-		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
+		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
 	t.Run("dropped_sent", func(t *testing.T) {
 		// Even if DropP0s is enabled, spans should always be kept unless
 		// client-side stats are also enabled.
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false))
 		assert.Nil(t, err)
 		defer func() {
 			// Must check these after tracer is stopped to avoid flakiness
@@ -395,7 +395,6 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -417,9 +416,6 @@ func TestSamplingDecision(t *testing.T) {
 		}()
 		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
-		tracer.config.agent.DropP0s = true
-		tracer.config.agent.Stats = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -440,7 +436,6 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -492,9 +487,7 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -578,7 +571,6 @@ func TestSamplingDecision(t *testing.T) {
 			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		}()
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
@@ -624,20 +616,23 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		tracer.Stop()
 
+		keptTraces := map[uint64]struct{}{}
 		var singleSpans, keptSpans int
 		for _, s := range spans {
 			if _, ok := s.metrics[keySpanSamplingMechanism]; ok {
 				singleSpans++
+				keptTraces[s.traceID] = struct{}{}
 				assert.Equal(t, 1.0, s.metrics[keySingleSpanSamplingRuleRate])
 				assert.Equal(t, 50.0, s.metrics[keySingleSpanSamplingMPS])
 			}
 			if s.metrics[keySamplingPriority] == ext.PriorityUserKeep {
 				keptSpans++
+				keptTraces[s.traceID] = struct{}{}
 			}
 		}
 		assert.Equal(t, 50, singleSpans)
 		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.19)
-		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(100-len(keptTraces)), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
@@ -696,14 +691,17 @@ func TestSamplingDecision(t *testing.T) {
 			s.Finish()
 		}
 		tracer.Stop()
+		keptTraces := map[uint64]struct{}{}
 		singleSpans, keptTotal, keptChildren := 0, 0, 0
 		for _, s := range spans {
 			if _, ok := s.metrics[keySpanSamplingMechanism]; ok {
 				singleSpans++
+				keptTraces[s.traceID] = struct{}{}
 				continue
 			}
 			if s.metrics[keySamplingPriority] == ext.PriorityUserKeep {
 				keptTotal++
+				keptTraces[s.traceID] = struct{}{}
 				if s.context.trace.root.spanID != s.spanID {
 					keptChildren++
 				}
@@ -711,7 +709,7 @@ func TestSamplingDecision(t *testing.T) {
 		}
 		assert.InDelta(t, 0.5, float64(singleSpans)/(float64(900-keptChildren)), 0.15)
 		assert.InDelta(t, 0.8, float64(keptTotal)/1000, 0.15)
-		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(100-len(keptTraces)), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 }
 
@@ -1429,7 +1427,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 	}
 
 	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
-	tracer1.awaitPayload(t, count*2)
+	tracer1.awaitPayload(t, count)
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -1747,11 +1745,11 @@ func TestPushPayload(t *testing.T) {
 	s.meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
 
 	// half payload size reached
-	tracer.pushChunk(&Chunk{[]*Span{s}, true})
+	tracer.pushChunk(&chunk{[]*Span{s}, true})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushChunk(&Chunk{[]*Span{s}, true})
+	tracer.pushChunk(&chunk{[]*Span{s}, true})
 	flush(2)
 }
 
@@ -1775,16 +1773,16 @@ func TestPushTrace(t *testing.T) {
 			resource: "/foo",
 		},
 	}
-	tracer.pushChunk(&Chunk{spans: trace})
+	tracer.pushChunk(&chunk{spans: trace})
 
 	assert.Len(tracer.out, 1)
 
 	t0 := <-tracer.out
-	assert.Equal(&Chunk{spans: trace}, t0)
+	assert.Equal(&chunk{spans: trace}, t0)
 
 	many := payloadQueueSize + 2
 	for i := 0; i < many; i++ {
-		tracer.pushChunk(&Chunk{spans: make([]*Span, i)})
+		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
 	log.Flush()
@@ -2319,6 +2317,9 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	if err != nil {
 		return tracer, transport, nil, nil, err
 	}
+	// These settings are always enabled on the trace-agent.
+	tracer.config.agent.Stats = true
+	tracer.config.agent.DropP0s = true
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		if n < 0 {
@@ -2612,7 +2613,6 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2634,7 +2634,6 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2660,7 +2659,6 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.agent.DropP0s = true
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.featureFlags["discovery"] = struct{}{}
 		tracer.config.sampler = NewRateSampler(0)
@@ -2782,4 +2780,75 @@ type customLogger struct{ l *llog.Logger }
 
 func (c customLogger) Log(msg string) {
 	c.l.Print(msg)
+}
+
+// TestEmptyChunksNotSent verifies that empty trace chunks are not
+// sent to the trace writer when P0 dropping and stats computation are enabled.
+func TestEmptyChunksNotSent(t *testing.T) {
+	assert := assert.New(t)
+
+	// Use the same setup as the working "dropped_stats" test but add stats computation
+	tracer, transport, _, stop, err := startTestTracer(t, WithStatsComputation(true))
+	assert.NoError(err)
+	defer stop()
+
+	tracer.config.statsComputationEnabled = true
+	tracer.prioritySampling.defaultRate = 0
+	tracer.config.serviceName = "test_service"
+
+	span := tracer.StartSpan("name_1")
+	child := tracer.StartSpan("name_2", ChildOf(span.Context()))
+	child.Finish()
+	span.Finish()
+
+	tracer.Flush()
+
+	traces := transport.Traces()
+	assert.Empty(traces, "No traces should be sent when all spans are dropped")
+
+	assert.Equal(decisionNone, span.context.trace.samplingDecision)
+}
+
+func TestPPROFLabelRootSpanRace(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+	parent := tracer.StartSpan("parent")
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			tracer.StartSpan("child", ChildOf(parent.Context()))
+		}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			parent.SetTag(ext.ResourceName, "x")
+		}
+	}()
+	wg.Wait()
+}
+
+func TestExecTraceLargeTaskNameRegression(t *testing.T) {
+	if rt.IsEnabled() {
+		t.Skip("execution tracing is already enabled")
+	}
+	rt.Start(io.Discard)
+	defer rt.Stop()
+
+	Start()
+	defer Stop()
+
+	// Create a string big enough that in practice the execution tracer will
+	// crash if we try to use it as a task name
+	var b strings.Builder
+	for range 160000 {
+		b.WriteByte('a')
+	}
+
+	s := StartSpan("test", ResourceName(b.String()))
+	s.Finish()
 }
