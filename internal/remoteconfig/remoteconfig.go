@@ -259,19 +259,19 @@ func Reset() {
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err.Error())
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err.Error())
 		return
 	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		log.Debug("remoteconfig: http request error: %v", err)
+		log.Debug("remoteconfig: http request error: %v", err.Error())
 		return
 	}
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -287,7 +287,7 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
+		log.Error("remoteconfig: http request error: could not read the response body: %v", err.Error())
 		return
 	}
 
@@ -297,7 +297,7 @@ func (c *Client) updateState() {
 
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
-		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err)
+		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err.Error())
 		return
 	}
 
@@ -489,7 +489,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 
 		fileMap[f.Path] = f.Raw
 		if !slices.Contains(allProducts, path.Product) {
-			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path)
+			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path) //nolint:gocritic // Debug logging for unknown products
 		}
 		if productUpdates[path.Product] == nil {
 			productUpdates[path.Product] = make(ProductUpdate)

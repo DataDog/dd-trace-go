@@ -34,7 +34,7 @@ func AgentURLFromEnv() *url.URL {
 	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %v", err)
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
 		} else {
 			switch u.Scheme {
 			case "unix", "http", "https":

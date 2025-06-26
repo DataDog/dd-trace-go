@@ -869,7 +869,7 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 func (sr SamplingRule) String() string {
 	s, err := sr.MarshalJSON()
 	if err != nil {
-		log.Error("Error marshalling SamplingRule to json: %v", err)
+		log.Error("Error marshalling SamplingRule to json: %s", err)
 	}
 	return string(s)
 }

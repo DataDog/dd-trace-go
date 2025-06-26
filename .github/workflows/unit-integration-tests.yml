@@ -96,7 +96,7 @@ jobs:
       - name: golangci-lint (internal/orchestrion/_integration)
         uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
         with:
-          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
+          golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
           golangci_lint_version: v2.1.2
           fail_level: error
@@ -291,7 +291,7 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
           ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
-      
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true

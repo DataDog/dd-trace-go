@@ -47,7 +47,7 @@ func newLogsWriter() *logsWriter {
 
 func (w *logsWriter) add(entry *logEntry) {
 	if err := w.payload.push(entry); err != nil {
-		log.Error("logsWriter: Error encoding msgpack: %v", err)
+		log.Error("logsWriter: Error encoding msgpack: %v", err.Error())
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {
 		w.flush()
@@ -87,7 +87,7 @@ func (w *logsWriter) flush() {
 
 		err := w.client.SendLogs(p)
 		if err != nil {
-			log.Error("logsWriter: failure sending logs data data: %v", err)
+			log.Error("logsWriter: failure sending logs data data: %v", err.Error())
 		}
 	}(oldp)
 }

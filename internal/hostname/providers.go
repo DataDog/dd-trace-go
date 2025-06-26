@@ -150,7 +150,7 @@ func updateHostname(now time.Time) {
 	for _, p := range providerCatalog {
 		detectedHostname, err := p.pf(ctx, hostname)
 		if err != nil {
-			log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
+			log.Debug("Unable to get hostname from provider %q: %v", p.name, err.Error())
 			continue
 		}
 		hostname = detectedHostname

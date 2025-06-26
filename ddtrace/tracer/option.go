@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -351,7 +352,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		var err error
 		sampleRate, err = strconv.ParseFloat(r, 64)
 		if err != nil {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err.Error())
 			sampleRate = math.NaN()
 		} else if sampleRate < 0.0 || sampleRate > 1.0 {
 			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
@@ -366,7 +367,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
 		l, err := strconv.ParseFloat(v, 64)
 		if err != nil {
-			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err)
+			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err.Error())
 		} else if l < 0.0 {
 			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
 		} else {
@@ -387,7 +388,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		var err error
 		c.hostname, err = os.Hostname()
 		if err != nil {
-			log.Warn("unable to look up hostname: %v", err)
+			log.Warn("unable to look up hostname: %v", err.Error())
 			return c, fmt.Errorf("unable to look up hostnamet: %v", err)
 		}
 	}
@@ -771,7 +772,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
 	if err != nil {
-		log.Error("Loading features: %v", err)
+		log.Error("Loading features: %v", err.Error())
 		return
 	}
 	if resp.StatusCode == http.StatusNotFound {
@@ -794,7 +795,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err)
+		log.Error("Decoding features: %v", err.Error())
 		return
 	}
 
@@ -918,7 +919,7 @@ func WithFeatureFlags(feats ...string) StartOption {
 		for _, f := range feats {
 			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
 		}
-		log.Info("FEATURES enabled: %v", feats)
+		log.Info("FEATURES enabled: %s", feats)
 	}
 }
 
@@ -1013,7 +1014,18 @@ func WithAgentURL(agentURL string) StartOption {
 	return func(c *config) {
 		u, err := url.Parse(agentURL)
 		if err != nil {
-			log.Warn("Fail to parse Agent URL: %v", err)
+			var urlErr *url.Error
+			if errors.As(err, &urlErr) {
+				u, err = url.Parse(urlErr.URL)
+				if u != nil {
+					urlErr.URL = u.Redacted()
+					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
+					return
+				}
+				log.Warn("Fail to parse Agent URL")
+				return
+			}
+			log.Warn("Fail to parse Agent URL: %v", err.Error())
 			return
 		}
 		switch u.Scheme {
@@ -1533,7 +1545,7 @@ func setHeaderTags(headerAsTags []string) bool {
 	for _, h := range headerAsTags {
 		header, tag := normalizer.HeaderTag(h)
 		if len(header) == 0 || len(tag) == 0 {
-			log.Debug("Header-tag input is in unsupported format; dropping input value %v", h)
+			log.Debug("Header-tag input is in unsupported format; dropping input value %q", h)
 			continue
 		}
 		globalconfig.SetHeaderTag(header, tag)
