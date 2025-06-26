@@ -7,6 +7,7 @@ package baggage
 
 import (
 	"context"
+	"maps"
 )
 
 // baggageKey is an unexported type used as a context key. It is used to store baggage in the context.
@@ -37,6 +38,10 @@ func Set(ctx context.Context, key, value string) context.Context {
 	if !ok {
 		// If there's no baggage map yet, create one
 		bm = make(map[string]string)
+	} else {
+		bmCopy := make(map[string]string, len(bm))
+		maps.Copy(bmCopy, bm)
+		bm = bmCopy
 	}
 	bm[key] = value
 	return withBaggage(ctx, bm)
@@ -60,8 +65,10 @@ func Remove(ctx context.Context, key string) context.Context {
 		// nothing to remove
 		return ctx
 	}
-	delete(bm, key)
-	return withBaggage(ctx, bm)
+	bmCopy := make(map[string]string, len(bm))
+	maps.Copy(bmCopy, bm)
+	delete(bmCopy, key)
+	return withBaggage(ctx, bmCopy)
 }
 
 // All returns a **copy** of all baggage items in the context,
@@ -71,9 +78,7 @@ func All(ctx context.Context) map[string]string {
 		return nil
 	}
 	copyMap := make(map[string]string, len(bm))
-	for k, v := range bm {
-		copyMap[k] = v
-	}
+	maps.Copy(copyMap, bm)
 	return copyMap
 }
 

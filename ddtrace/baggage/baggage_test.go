@@ -7,6 +7,8 @@ package baggage
 
 import (
 	"context"
+	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -133,4 +135,40 @@ func TestBaggageFunctions(t *testing.T) {
 			t.Errorf("Expected \"testVal\"; got %q", val)
 		}
 	})
+}
+
+func TestConcurrentSetAndIteratePanics(t *testing.T) {
+	ctx := context.Background()
+	ctx = Set(ctx, "init", "value")
+
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+
+	// Goroutine 1: Iterates over baggage repeatedly
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				_ = All(ctx)
+				runtime.Gosched()
+			}
+		}
+	}()
+
+	// Goroutine 2: Modifies baggage repeatedly
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range [1000]int{} {
+			ctx = Set(ctx, "key", "val")
+			runtime.Gosched()
+		}
+		close(done)
+	}()
+
+	wg.Wait()
 }
