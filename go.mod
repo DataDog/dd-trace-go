@@ -397,4 +397,5 @@ retract (
 	[v1.999.0-rc.1, v1.999.0-rc.41]
 	[v1.999.0-beta.5, v1.999.0-beta.13]
 	v1.74.0 // Security vulnerability discovered
+	v1.74.1 // Unwanted dependencies upgrade
 )
