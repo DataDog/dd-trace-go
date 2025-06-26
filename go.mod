@@ -45,7 +45,7 @@ require (
 )
 
 // todo: remove before merge
-replace github.com/DataDog/appsec-internal-go => github.com/e-n-0/appsec-internal-go v0.0.0-20250625123741-b8d9260934f4
+replace github.com/DataDog/appsec-internal-go => github.com/e-n-0/appsec-internal-go v0.0.0-20250626131752-f76d0fa9a9b9
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
