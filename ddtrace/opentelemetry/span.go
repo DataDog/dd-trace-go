@@ -83,8 +83,10 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
-		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
-		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		// obey error set by the client
+		if v, ok := s.attributes[ext.Error]; !ok || (ok && v.(error) == nil) {
+			opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		}
 	}
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)
