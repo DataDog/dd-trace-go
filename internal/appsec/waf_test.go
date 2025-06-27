@@ -604,6 +604,7 @@ func TestAPISecurityProxy(t *testing.T) {
 	t.Run("rate-limits", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "true")
 		t.Setenv(internal.EnvAPISecEnabled, "true")
+		// Set the rate to 1 schema per minute
 		t.Setenv(internal.EnvAPISecProxySampleRate, "1")
 		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithProxy()))
 		require.True(t, appsec.Enabled())
