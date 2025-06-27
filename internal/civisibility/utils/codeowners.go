@@ -99,7 +99,7 @@ func parseCodeOwners(filePath string) (*CodeOwners, error) {
 	cow, err := NewCodeOwners(filePath)
 	if err == nil {
 		if logger.DebugEnabled() {
-			logger.Debug("civisibility: codeowner file '%v' was loaded successfully.", filePath)
+			logger.Debug("civisibility: codeowner file '%s' was loaded successfully.", filePath)
 		}
 		return cow, nil
 	}
