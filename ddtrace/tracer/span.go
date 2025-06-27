@@ -426,9 +426,17 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		// and provide all the benefits.
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
-		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
+
+		// set error type if not set already
+		if m, ok := getMeta(s, ext.ErrorType); !ok || m == "" {
+			s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
+		}
+		
 		if !cfg.noDebugStack {
-			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
+			// set error stack if not set already
+			if m, ok := getMeta(s, ext.ErrorStack); !ok || m == "" {
+				s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
+			}
 		}
 		switch v.(type) {
 		case xerrors.Formatter:
