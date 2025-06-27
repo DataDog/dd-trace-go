@@ -3,8 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.2.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.0.1
 	github.com/DataDog/go-libddwaf/v4 v4.2.0
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
 	github.com/gorilla/mux v1.8.1
@@ -86,7 +85,5 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../google.golang.org/grpc
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
