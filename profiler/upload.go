@@ -48,7 +48,7 @@ func (p *profiler) upload(bat batch) error {
 		if rerr, ok := err.(*retriableError); ok {
 			statsd.Count("datadog.profiling.go.upload_retry", 1, nil, 1)
 			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds())) * time.Nanosecond
-			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
+			log.Error("Uploading profile failed: %s. Trying again in %s...", rerr.Error(), wait)
 			p.interruptibleSleep(wait)
 			continue
 		}

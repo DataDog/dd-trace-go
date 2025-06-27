@@ -168,6 +168,7 @@ func logStartup(t *tracer) {
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
+		//nolint:gocritic // Diagnostic logging needs full struct representation
 		log.Warn("DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
 		return
 	}

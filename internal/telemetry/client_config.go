@@ -194,7 +194,7 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	envVal := globalinternal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", heartBeatInterval.Seconds())
 	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(time.Duration(envVal * float64(time.Second)))
 	if config.HeartbeatInterval != defaultHeartbeatInterval {
-		log.Debug("telemetry: using custom heartbeat interval %v", config.HeartbeatInterval)
+		log.Debug("telemetry: using custom heartbeat interval %s", config.HeartbeatInterval)
 	}
 	// Make sure we flush at least at each heartbeat interval
 	config.FlushInterval = config.FlushInterval.ReduceMax(config.HeartbeatInterval)

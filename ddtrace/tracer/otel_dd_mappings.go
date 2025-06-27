@@ -110,13 +110,13 @@ func getDDorOtelConfig(configName string) string {
 		ddPrefix := "config_datadog:"
 		otelPrefix := "config_opentelemetry:"
 		if val != "" {
-			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
+			log.Warn("Both %s and %s are set, using %s=%s", config.ot, config.dd, config.dd, val)
 			telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 			telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
-				log.Warn("%v", err)
+				log.Warn("%v", err.Error())
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
@@ -149,7 +149,7 @@ func mapDDTags(ot string) (string, error) {
 	})
 
 	if len(ddTags) > 10 {
-		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %v", ddTags[10:], ddTags[:10])
+		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10]) //nolint:gocritic // Slice logging for debugging
 		ddTags = ddTags[:10]
 	}
 
@@ -198,7 +198,7 @@ func otelTraceIDRatio() string {
 func mapSampleRate(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if v, ok := unsupportedSamplerMapping[ot]; ok {
-		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%v. %v will be used", ot, v)
+		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%s. %s will be used", ot, v)
 		ot = v
 	}
 
@@ -222,7 +222,7 @@ func mapPropagationStyle(ot string) (string, error) {
 		if _, ok := propagationMapping[otStyle]; ok {
 			supportedStyles = append(supportedStyles, propagationMapping[otStyle])
 		} else {
-			log.Warn("Invalid configuration: %v is not supported. This propagation style will be ignored.", otStyle)
+			log.Warn("Invalid configuration: %s is not supported. This propagation style will be ignored.", otStyle)
 		}
 	}
 	return strings.Join(supportedStyles, ","), nil
