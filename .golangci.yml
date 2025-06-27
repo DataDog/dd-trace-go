@@ -5,6 +5,7 @@ linters:
     - bodyclose
     - govet
     - revive
+    - depguard
   exclusions:
     generated: lax
     presets:
@@ -22,6 +23,24 @@ linters:
       disable:
         - fieldalignment
         - shadow # TODO: Enable this once we've fixed all the shadowing issues.
+    depguard:
+      rules:
+        main:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/scripts/**"
+            - "!**/tools/**"
+            - "!**/*_test.go"
+            - "!**/example_test.go"
+            - "!**/internal/log/log.go"
+            - "!**/internal/orchestrion/**"
+            - "!**/instrumentation/testutils/sql/sql.go"
+          deny:
+            - pkg: "log"
+              desc: "Use github.com/DataDog/dd-trace-go/v2/internal/log instead of standard log package"
+          allow:
+            - "log/slog"
 formatters:
   enable:
     - gofmt
