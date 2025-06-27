@@ -52,7 +52,7 @@ require (
 	cloud.google.com/go/iam v1.1.7 // indirect
 	cloud.google.com/go/pubsub v1.37.0 // indirect
 	github.com/99designs/gqlgen v0.17.36 // indirect
-	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.66.1 // indirect

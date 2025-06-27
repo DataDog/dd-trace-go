@@ -44,6 +44,9 @@ func Start(opts ...config.StartOption) {
 	if globalinternal.BoolEnv("_DD_APPSEC_BLOCKING_UNAVAILABLE", false) {
 		opts = append(opts, config.WithBlockingUnavailable(true))
 	}
+	if globalinternal.BoolEnv("_DD_APPSEC_PROXY_ENVIRONMENT", false) {
+		opts = append(opts, config.WithProxyEnvironment())
+	}
 
 	startConfig := config.NewStartConfig(opts...)
 
