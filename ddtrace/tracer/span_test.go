@@ -521,6 +521,14 @@ func TestSpanSetTagError(t *testing.T) {
 		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
 		assert.NotEmpty(t, span.meta[ext.ErrorStack])
 	})
+
+	t.Run("incomingStack", func(t *testing.T) {
+		span := newBasicSpan("web.request")
+		incomingStack := "this is an incoming stack trace"
+		span.meta[ext.ErrorStack] = incomingStack
+		span.setTagError(errors.New("error value with incoming stack"), errorConfig{noDebugStack: false})
+		assert.Equal(t, incomingStack, span.meta[ext.ErrorStack])
+	})
 }
 
 func TestTraceManualKeepAndManualDrop(t *testing.T) {

@@ -431,7 +431,7 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		if m, ok := getMeta(s, ext.ErrorType); !ok || m == "" {
 			s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		}
-		
+
 		if !cfg.noDebugStack {
 			// set error stack if not set already
 			if m, ok := getMeta(s, ext.ErrorStack); !ok || m == "" {
