@@ -39,9 +39,7 @@ func Set(ctx context.Context, key, value string) context.Context {
 		// If there's no baggage map yet, create one
 		bm = make(map[string]string)
 	} else {
-		bmCopy := make(map[string]string, len(bm))
-		maps.Copy(bmCopy, bm)
-		bm = bmCopy
+		bm = maps.Clone(bm)
 	}
 	bm[key] = value
 	return withBaggage(ctx, bm)
