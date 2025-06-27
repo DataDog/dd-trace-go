@@ -63,8 +63,7 @@ func Remove(ctx context.Context, key string) context.Context {
 		// nothing to remove
 		return ctx
 	}
-	bmCopy := make(map[string]string, len(bm))
-	maps.Copy(bmCopy, bm)
+	bmCopy := maps.Clone(bm)
 	delete(bmCopy, key)
 	return withBaggage(ctx, bmCopy)
 }
