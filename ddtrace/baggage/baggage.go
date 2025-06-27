@@ -75,8 +75,7 @@ func All(ctx context.Context) map[string]string {
 		return nil
 	}
 	copyMap := make(map[string]string, len(bm))
-	maps.Copy(copyMap, bm)
-	return copyMap
+	return maps.Clone(bm)
 }
 
 // Clear completely removes all baggage items from the context.
