@@ -13,6 +13,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TODO: ensure that when tests use createTestError, the stack trace
+// includes a call to createTestError.
+func createTestError() error {
+	return errors.New("Something wrong")
+}
+
 func TestWrap(t *testing.T) {
 	t.Run("wrap nil", func(t *testing.T) {
 		err := Wrap(nil, 0, 0)

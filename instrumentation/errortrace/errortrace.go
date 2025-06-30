@@ -19,6 +19,9 @@ type TracerError struct {
 	inner       error
 }
 
+// defaultStackLength specifies the default maximum size of a stack trace.
+const defaultStackLength = 32
+
 func (err *TracerError) Error() string {
 	return err.inner.Error()
 }
@@ -35,6 +38,9 @@ func Wrap(err error, n uint, skip uint) *TracerError {
 	}
 	if e, ok := err.(*TracerError); ok {
 		return e
+	}
+	if n <= 0 {
+		n = defaultStackLength
 	}
 
 	pcs := make([]uintptr, n)
