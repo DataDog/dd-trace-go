@@ -57,6 +57,10 @@ type StartConfig struct {
 
 	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
 	BlockingUnavailable bool
+
+	// ProxyEnvironment is true if the application is running in a proxy environment,
+	// such as within an Envoy External Processor.
+	ProxyEnvironment bool
 }
 
 type EnablementMode int8
@@ -126,6 +130,12 @@ func WithAPISecOptions(opts ...internal.APISecOption) StartOption {
 func WithBlockingUnavailable(unavailable bool) StartOption {
 	return func(c *StartConfig) {
 		c.BlockingUnavailable = unavailable
+	}
+}
+
+func WithProxyEnvironment() StartOption {
+	return func(c *StartConfig) {
+		c.APISecOptions = append(c.APISecOptions, internal.WithProxy())
 	}
 }
 
