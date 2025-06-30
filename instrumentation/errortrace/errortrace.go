@@ -27,7 +27,8 @@ func (err *TracerError) Error() string {
 }
 
 func New(text string) *TracerError {
-	return Wrap(errors.New(text), 0, 0)
+	// Skip one to exclude New(...)
+	return Wrap(errors.New(text), 0, 1)
 }
 
 // Wrap takes in an error and records the stack trace at the moment that it was thrown.
