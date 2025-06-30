@@ -15,8 +15,9 @@ import (
 // TracerError is an error type that holds stackframes from when the error was thrown.
 // It can be used interchangeably with the built-in Go error type.
 type TracerError struct {
-	stackFrames []uintptr
+	stackFrames *runtime.Frames
 	inner       error
+	stack       *bytes.Buffer
 }
 
 // defaultStackLength specifies the default maximum size of a stack trace.
@@ -45,13 +46,13 @@ func Wrap(err error, n uint, skip uint) *TracerError {
 	}
 
 	pcs := make([]uintptr, n)
-	var stackFrames []uintptr
+	var stackFrames *runtime.Frames
 	// +2 to exclude runtime.Callers and Wrap
 	numFrames := runtime.Callers(2+int(skip), pcs)
 	if numFrames == 0 {
 		stackFrames = nil
 	} else {
-		stackFrames = pcs[:numFrames]
+		stackFrames = runtime.CallersFrames(pcs[:numFrames])
 	}
 
 	tracerErr := &TracerError{
@@ -66,14 +67,13 @@ func (err *TracerError) Stack() *bytes.Buffer {
 	if err == nil || err.stackFrames == nil {
 		return nil
 	}
+	if err.stack != nil {
+		return err.stack
+	}
 
 	out := bytes.Buffer{}
-
-	// CallersFrames returns an iterator that is consumed as we read it. In order to
-	// allow calling Stack() multiple times, we call CallersFrames here, and not in Wrap.
-	frames := runtime.CallersFrames(err.stackFrames)
 	for i := 0; ; i++ {
-		frame, more := frames.Next()
+		frame, more := err.stackFrames.Next()
 		if i != 0 {
 			out.WriteByte('\n')
 		}
@@ -87,7 +87,10 @@ func (err *TracerError) Stack() *bytes.Buffer {
 			break
 		}
 	}
-
+	// CallersFrames returns an iterator that is consumed as we read it. In order to
+	// allow calling Stack() multiple times, we save the result into err.stack, which can be
+	// returned in future calls
+	err.stack = &out
 	return &out
 }
 
