@@ -37,7 +37,7 @@ func Wrap(err error, n uint, skip uint) *TracerError {
 		return nil
 	}
 	if e, ok := err.(*TracerError); ok {
-		return e
+		return e // TODO: what happens if users specify n/skip here, but created err using New()...?
 	}
 	if n <= 0 {
 		n = defaultStackLength

@@ -13,6 +13,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Creates an additional level of callers around the error returned by createTestError
+// Helps us test that TracerErrors contain all callers after an error is created.
+func testErrorWrapper() *TracerError {
+	return createTestError()
+}
+
+// Creates a new TracerError instance with default parameters (n = 32, skip = 0)
 func createTestError() *TracerError {
 	return New("Something wrong")
 }
@@ -70,6 +77,19 @@ func TestErrorStack(t *testing.T) {
 		stack := err.Stack()
 		assert.NotNil(stack)
 		assert.Greater(stack.Len(), 0)
+		assert.Contains(stack.String(), "errortrace.createTestError")
+		assert.Contains(stack.String(), "errortrace.TestErrorStack")
+		assert.Contains(stack.String(), "testing.tRunner")
+		assert.Contains(stack.String(), "runtime.goexit")
+	})
+
+	t.Run("layered tracererror", func(t *testing.T) {
+		assert := assert.New(t)
+		err := testErrorWrapper()
+		stack := err.Stack()
+		assert.NotNil(stack)
+		assert.Greater(stack.Len(), 0)
+		assert.Contains(stack.String(), "errortrace.testErrorWrapper")
 		assert.Contains(stack.String(), "errortrace.createTestError")
 		assert.Contains(stack.String(), "errortrace.TestErrorStack")
 		assert.Contains(stack.String(), "testing.tRunner")
