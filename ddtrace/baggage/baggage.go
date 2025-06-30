@@ -74,7 +74,6 @@ func All(ctx context.Context) map[string]string {
 	if !ok {
 		return nil
 	}
-	copyMap := make(map[string]string, len(bm))
 	return maps.Clone(bm)
 }
 
