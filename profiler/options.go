@@ -132,6 +132,7 @@ func logStartup(c *config) {
 		"target_url":                 c.targetURL,
 		"tags":                       c.tags.Slice(),
 		"custom_profiler_label_keys": c.customProfilerLabels,
+		"enabled":                    c.enabled,
 	}
 	for _, tc := range telemetryConfiguration(c) {
 		info[tc.Name] = tc.Value
@@ -206,11 +207,9 @@ func defaultConfig() (*config, error) {
 	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
 	// the Datadog admission controller, so we set it to true.
 	if v, _ := stableconfig.String("DD_PROFILING_ENABLED", ""); v == "auto" {
-		fmt.Print("MTOFF: DD_PROFILING_ENABLED is auto\n")
 		c.enabled = true
 	} else {
 		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
-		fmt.Print("MTOFF: DD_PROFILING_ENABLED is", c.enabled, "\n")
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
