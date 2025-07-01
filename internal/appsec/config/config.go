@@ -26,10 +26,13 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
-	_, _, err := stableconfig.Bool(EnvSCAEnabled, false)
+	val, origin, err := stableconfig.Bool(EnvSCAEnabled, false)
 	if err != nil {
 		log.Error("appsec: %v", err)
 		return
+	}
+	if origin != telemetry.OriginDefault {
+		telemetry.RegisterAppConfig(EnvSCAEnabled, val, origin)
 	}
 }
 
@@ -191,6 +194,7 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // If the [EnvEnabled] variable is set to a value that is not a valid boolean (according to
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
+	// TODO: APMAPI-1358
 	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
 	if origin != telemetry.OriginDefault {
 		set = true

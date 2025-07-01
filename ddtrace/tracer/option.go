@@ -455,6 +455,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	// TODO: APMAPI-1358
 	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
@@ -469,6 +470,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
 
+	// TODO: APMAPI-1358
 	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
@@ -605,6 +607,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// This allows persisting the initial value of globalTags for future resets and updates.
 	globalTagsOrigin := c.globalTags.cfgOrigin
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
+	// TODO: APMAPI-1358
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
@@ -944,7 +947,6 @@ func WithDebugStack(enabled bool) StartOption {
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
-		telemetry.RegisterAppConfig("trace_debug_enabled", enabled, telemetry.OriginCode)
 		c.debug = enabled
 	}
 }
@@ -1158,7 +1160,6 @@ func WithAnalyticsRate(rate float64) StartOption {
 // WithRuntimeMetrics enables automatic collection of runtime metrics every 10 seconds.
 func WithRuntimeMetrics() StartOption {
 	return func(cfg *config) {
-		telemetry.RegisterAppConfig("runtime_metrics_enabled", true, telemetry.OriginCode)
 		cfg.runtimeMetrics = true
 	}
 }
@@ -1222,7 +1223,6 @@ func WithHostname(name string) StartOption {
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		telemetry.RegisterAppConfig("trace_enabled", enabled, telemetry.OriginCode)
 		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(_ bool) bool { return true }, equal[bool])
 	}
 }

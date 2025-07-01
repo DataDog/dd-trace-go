@@ -63,6 +63,7 @@ func telemetryConfiguration(c *config) []telemetry.Configuration {
 		{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
 		{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
 		{Name: "num_custom_profiler_label_keys", Value: len(c.customProfilerLabels)},
+		{Name: "enabled", Value: c.enabled},
 		{Name: "flush_on_exit", Value: c.flushOnExit},
 		{Name: "debug_compression_settings", Value: c.compressionConfig},
 	}

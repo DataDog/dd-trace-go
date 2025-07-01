@@ -10,21 +10,12 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBool(t *testing.T) {
 	// Test typical operation with valid files
 	t.Run("valid configurations", func(t *testing.T) {
-		// Setup mock telemetry client
-		telemetryClient := new(telemetrytest.MockClient)
-		telemetryClient.On("RegisterAppConfig", "UNKNOWN_KEY", true, telemetry.OriginDefault).Return()
-		telemetryClient.On("RegisterAppConfig", "DD_KEY", true, telemetry.OriginLocalStableConfig).Return()
-		telemetryClient.On("RegisterAppConfig", "DD_KEY", false, telemetry.OriginEnvVar).Return()
-		telemetryClient.On("RegisterAppConfig", "DD_KEY", false, telemetry.OriginManagedStableConfig).Return()
-		defer telemetry.MockClient(telemetryClient)()
-
 		tests := []struct {
 			name           string
 			localYaml      string           // YAML content for local config file
@@ -105,9 +96,6 @@ func TestBool(t *testing.T) {
 				assert.Equal(t, tt.expectedValue, val)
 				assert.Equal(t, tt.expectedOrigin, origin)
 				assert.Equal(t, tt.expectedErr, err)
-
-				// Verify telemetry was called
-				telemetryClient.AssertCalled(t, "RegisterAppConfig", tt.key, tt.expectedValue, tt.expectedOrigin)
 			})
 		}
 	})
@@ -227,19 +215,10 @@ apm_configuration_default:
 	assert.NoError(t, err)
 	defer os.Remove(tempManagedPath)
 
-	// Setup mock telemetry client
-	telemetryClient := new(telemetrytest.MockClient)
-	telemetryClient.On("RegisterAppConfig", "DD_KEY", "default", telemetry.OriginDefault).Return()
-	telemetryClient.On("RegisterAppConfig", "DD_KEY", "local", telemetry.OriginLocalStableConfig).Return()
-	telemetryClient.On("RegisterAppConfig", "DD_KEY", "env", telemetry.OriginEnvVar).Return()
-	telemetryClient.On("RegisterAppConfig", "DD_KEY", "managed", telemetry.OriginManagedStableConfig).Return()
-	defer telemetry.MockClient(telemetryClient)()
-
 	t.Run("default", func(t *testing.T) {
-		val, origin := String("DD_KEY", "default")
+		val, origin := String("UNKNOWN_KEY", "default")
 		assert.Equal(t, "default", val)
 		assert.Equal(t, telemetry.OriginDefault, origin)
-		telemetryClient.AssertCalled(t, "RegisterAppConfig", "DD_KEY", "default", telemetry.OriginDefault)
 	})
 	t.Run("localStableconfig only", func(t *testing.T) {
 		LocalConfig = newStableConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
@@ -247,7 +226,6 @@ apm_configuration_default:
 		val, origin := String("DD_KEY", "default")
 		assert.Equal(t, "local", val)
 		assert.Equal(t, telemetry.OriginLocalStableConfig, origin)
-		telemetryClient.AssertCalled(t, "RegisterAppConfig", "DD_KEY", "local", telemetry.OriginLocalStableConfig)
 	})
 	t.Run("env overrides localStableConfig", func(t *testing.T) {
 		t.Setenv("DD_KEY", "env")
@@ -256,7 +234,6 @@ apm_configuration_default:
 		val, origin := String("DD_KEY", "default")
 		assert.Equal(t, "env", val)
 		assert.Equal(t, telemetry.OriginEnvVar, origin)
-		telemetryClient.AssertCalled(t, "RegisterAppConfig", "DD_KEY", "env", telemetry.OriginEnvVar)
 	})
 	t.Run("managedStableConfig overrides env", func(t *testing.T) {
 		t.Setenv("DD_KEY", "env")
@@ -270,7 +247,5 @@ apm_configuration_default:
 		val, origin := String("DD_KEY", "default")
 		assert.Equal(t, "managed", val)
 		assert.Equal(t, telemetry.OriginManagedStableConfig, origin)
-
-		telemetryClient.AssertCalled(t, "RegisterAppConfig", "DD_KEY", "managed", telemetry.OriginManagedStableConfig)
 	})
 }
