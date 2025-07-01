@@ -159,6 +159,8 @@ require (
 	modernc.org/sqlite v1.28.0
 )
 
+replace github.com/DataDog/datadog-agent/pkg/trace => github.com/DataDog/datadog-agent/pkg/trace v0.66.1
+
 require (
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
