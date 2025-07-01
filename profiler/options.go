@@ -142,6 +142,7 @@ func logStartup(c *config) {
 		log.Error("Marshaling profiler configuration: %s", err)
 		return
 	}
+	fmt.Print("MTOFF: Profiler configuration: ", string(b), "\n")
 	log.Info("Profiler configuration: %s\n", b)
 }
 
