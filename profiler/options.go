@@ -132,6 +132,7 @@ func logStartup(c *config) {
 		"target_url":                 c.targetURL,
 		"tags":                       c.tags.Slice(),
 		"custom_profiler_label_keys": c.customProfilerLabels,
+		"enabled":                    c.enabled,
 	}
 	for _, tc := range telemetryConfiguration(c) {
 		info[tc.Name] = tc.Value
