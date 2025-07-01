@@ -62,13 +62,13 @@ func Wrap(err error, n uint, skip uint) *TracerError {
 	return tracerErr
 }
 
-// Stack returns a string representation of the stack trace.
-func (err *TracerError) Stack() *bytes.Buffer {
+// Format returns a string representation of the stack trace.
+func (err *TracerError) Format() string {
 	if err == nil || err.stackFrames == nil {
-		return nil
+		return ""
 	}
 	if err.stack != nil {
-		return err.stack
+		return err.stack.String()
 	}
 
 	out := bytes.Buffer{}
@@ -88,10 +88,10 @@ func (err *TracerError) Stack() *bytes.Buffer {
 		}
 	}
 	// CallersFrames returns an iterator that is consumed as we read it. In order to
-	// allow calling Stack() multiple times, we save the result into err.stack, which can be
+	// allow calling Format() multiple times, we save the result into err.stack, which can be
 	// returned in future calls
 	err.stack = &out
-	return &out
+	return out.String()
 }
 
 // Unwrap takes a wrapped error and returns the inner error.
