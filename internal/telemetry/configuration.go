@@ -170,6 +170,8 @@ func EnvToTelemetryName(env string) string {
 		return "appsec_enabled"
 	case "DD_DYNAMIC_INSTRUMENTATION_ENABLED":
 		return "dynamic_instrumentation_enabled"
+	case "DD_PROFILING_ENABLED":
+		return "profiling_enabled"
 	default:
 		return env
 	}

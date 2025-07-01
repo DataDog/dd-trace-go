@@ -82,7 +82,7 @@ require (
 	cloud.google.com/go/iam v1.1.7 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
-	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.1 // indirect
