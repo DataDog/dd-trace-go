@@ -132,13 +132,13 @@ func logStartup(c *config) {
 		"target_url":                 c.targetURL,
 		"tags":                       c.tags.Slice(),
 		"custom_profiler_label_keys": c.customProfilerLabels,
-		"enabled":                    c.enabled,
 	}
 	for _, tc := range telemetryConfiguration(c) {
 		info[tc.Name] = tc.Value
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
+		fmt.Printf("MTOFF: Marshaling profiler configuration: %s\n", err)
 		log.Error("Marshaling profiler configuration: %s", err)
 		return
 	}
