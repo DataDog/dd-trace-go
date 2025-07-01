@@ -131,6 +131,13 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 		return
 	}
 
+	// GraphQL tracing sometimes has too many spans.
+	// So we can skip the span creation if the function is provided and returns false.
+	if t.cfg.shouldStartSpanFunc != nil && !t.cfg.shouldStartSpanFunc(ctx, fieldCtx) {
+		res, err = next(ctx)
+		return
+	}
+
 	opts := make([]tracer.StartSpanOption, 0, 6+len(t.cfg.tags))
 	for k, v := range t.cfg.tags {
 		opts = append(opts, tracer.Tag(k, v))
