@@ -35,8 +35,8 @@ func withBaggage(ctx context.Context, baggage map[string]string) context.Context
 // If the key already exists, this function overwrites the existing value.
 func Set(ctx context.Context, key, value string) context.Context {
 	bm, ok := baggageMap(ctx)
-	if !ok {
-		// If there's no baggage map yet, create one
+	if !ok || bm == nil {
+		// If there's no baggage map yet, or it's nil, create one
 		bm = make(map[string]string)
 	} else {
 		bm = maps.Clone(bm)
@@ -59,7 +59,7 @@ func Get(ctx context.Context, key string) (string, bool) {
 // Remove removes the specified key from the baggage (if present).
 func Remove(ctx context.Context, key string) context.Context {
 	bm, ok := baggageMap(ctx)
-	if !ok {
+	if !ok || bm == nil {
 		// nothing to remove
 		return ctx
 	}
