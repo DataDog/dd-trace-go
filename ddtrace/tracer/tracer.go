@@ -645,7 +645,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
 			// inheriting the sampling priority from the parent trace; do not re-sample
-			context.trace.setLocked(true)
+			// context.trace.setLocked(true)
 			span.setMetric(keySamplingPriority, float64(p))
 		}
 		if context.span != nil {
