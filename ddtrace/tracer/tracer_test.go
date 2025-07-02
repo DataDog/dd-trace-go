@@ -919,6 +919,25 @@ func TestStartSpanOrigin(t *testing.T) {
 	assert.Equal("synthetics", carrier2[originHeader])
 }
 
+func TestInjectNotOverwriteSampling(t *testing.T) {
+	assert := assert.New(t)
+
+	tracer, err := newTracer(WithSamplingRules([]SamplingRule{
+		{Rate: 0},
+	}))
+	assert.NoError(err)
+	defer tracer.Stop()
+	root := tracer.StartSpan("web.request")
+	root.SetBaggageItem("x", "y")
+	root.setMetric(keySamplingPriority, float64(2))
+	ctx := root.Context()
+	headers := http.Header{}
+	carrier := HTTPHeadersCarrier(headers)
+	tracer.Inject(ctx, carrier)
+
+	assert.Equal("2", headers.Get(DefaultPriorityHeader))
+}
+
 func TestPropagationDefaults(t *testing.T) {
 	t.Setenv(headerPropagationStyleExtract, "datadog")
 	t.Setenv(headerPropagationStyleInject, "datadog")
