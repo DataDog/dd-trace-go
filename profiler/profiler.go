@@ -220,7 +220,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg.cpuDuration = cfg.period
 	}
 	if cfg.logStartup {
-		fmt.Print("MTOFF: logStartup\n")
 		logStartup(cfg)
 	}
 	var tags []string

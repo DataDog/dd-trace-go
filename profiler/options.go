@@ -139,11 +139,9 @@ func logStartup(c *config) {
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		fmt.Printf("MTOFF: Marshaling profiler configuration: %s\n", err)
 		log.Error("Marshaling profiler configuration: %s", err)
 		return
 	}
-	fmt.Print("MTOFF: Profiler configuration: ", string(b), "\n")
 	log.Info("Profiler configuration: %s\n", b)
 }
 
