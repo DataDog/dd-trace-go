@@ -7,6 +7,10 @@ package baggage
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -182,38 +186,46 @@ func TestBaggageMapAccessorsMakeCopies(t *testing.T) {
 	})
 }
 
-// func TestConcurrentAccess(t *testing.T) {
-// 	ctx := context.Background()
-// 	ctx = Set(ctx, "init", "value")
-
-// 	var wg sync.WaitGroup
-// 	done := make(chan struct{})
-
-// 	// Goroutine 1: Iterates over baggage repeatedly
-// 	wg.Add(1)
-// 	go func() {
-// 		defer wg.Done()
-// 		for {
-// 			select {
-// 			case <-done:
-// 				return
-// 			default:
-// 				_ = All(ctx)
-// 				runtime.Gosched()
-// 			}
-// 		}
-// 	}()
-
-// 	// Goroutine 2: Modifies baggage repeatedly
-// 	wg.Add(1)
-// 	go func() {
-// 		defer wg.Done()
-// 		for range [1000]int{} {
-// 			ctx = Set(ctx, "key", "val")
-// 			runtime.Gosched()
-// 		}
-// 		close(done)
-// 	}()
-
-// 	wg.Wait()
-// }
+// guarantees we also test the Clear→Set path
+func TestConcurrentAccessAndClear(t *testing.T) {
+	base := Set(context.Background(), "init", "val")
+	want := All(base)
+	const readers = 4
+	const writers = 4
+	const iters = 10_000
+	var wg sync.WaitGroup
+	wg.Add(readers + writers)
+	errCh := make(chan string, readers)
+	// Readers – must ALWAYS observe the original baggage
+	for r := 0; r < readers; r++ {
+		go func(c context.Context) {
+			defer wg.Done()
+			for i := 0; i < iters; i++ {
+				if got := All(c); !reflect.DeepEqual(got, want) {
+					errCh <- fmt.Sprintf("baggage mutated: want %v, got %v", want, got)
+					return
+				}
+				runtime.Gosched()
+			}
+		}(base)
+	}
+	// Writers – they fork their own context chains, never sharing variables
+	for w := 0; w < writers; w++ {
+		go func(c context.Context) {
+			defer wg.Done()
+			local := c
+			for i := 0; i < iters; i++ {
+				// alternates Set / Clear / Set to hit the nil‑map path
+				local = Set(local, "k", "v")
+				local = Clear(local)
+				local = Set(local, "k2", "v2")
+				runtime.Gosched()
+			}
+		}(base)
+	}
+	wg.Wait()
+	close(errCh)
+	if err, ok := <-errCh; ok {
+		t.Fatalf("%s", err)
+	}
+}
