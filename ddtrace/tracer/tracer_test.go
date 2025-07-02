@@ -891,7 +891,6 @@ func TestStartSpanOrigin(t *testing.T) {
 }
 
 func TestInjectNotOverwriteSampling(t *testing.T) {
-
 	assert := assert.New(t)
 
 	tracer := newTracer(WithSamplingRules([]SamplingRule{
@@ -907,7 +906,6 @@ func TestInjectNotOverwriteSampling(t *testing.T) {
 	tracer.Inject(ctx, carrier)
 
 	assert.Equal("2", headers.Get(DefaultPriorityHeader))
-
 }
 
 func TestPropagationDefaults(t *testing.T) {
