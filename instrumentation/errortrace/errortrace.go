@@ -33,13 +33,12 @@ func New(text string) *TracerError {
 }
 
 // Wrap takes in an error and records the stack trace at the moment that it was thrown.
-// TODO: this still doesn't find the root cause of an error.
 func Wrap(err error, n uint, skip uint) *TracerError {
 	if err == nil {
 		return nil
 	}
 	if e, ok := err.(*TracerError); ok {
-		return e // TODO: what happens if users specify n/skip here, but created err using New()...?
+		return e
 	}
 	if n <= 0 {
 		n = defaultStackLength
