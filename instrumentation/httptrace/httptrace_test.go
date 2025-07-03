@@ -620,6 +620,7 @@ func TestBaggageSpanTagsCaseSensitive(t *testing.T) {
 	assert.Equal(t, "doggo", m["baggage.user.id"], "should contain baggage.user.id value")
 
 	span.Finish()
+}
 
 // TestStartRequestSpanOnlyBaggageCreatesNewTrace verifies that when only baggage headers are present
 // (no trace/span IDs), a new trace is created with a non-zero trace ID while still preserving the baggage.
