@@ -138,12 +138,12 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		sc.baggage[k] = v
 		return true
 	})
+	sc.trace = newTrace()
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
 		return &sc
 	}
 	sc.origin = ctx.Origin()
-	sc.trace = newTrace()
 	sc.trace.priority = ctx.Priority()
 	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
 	sc.trace.tags = ctx.Tags()
