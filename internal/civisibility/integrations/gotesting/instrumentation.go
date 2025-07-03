@@ -29,6 +29,7 @@ type (
 	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
 		test                         integrations.Test // internal CI Visibility test event
+		originalTest                 *testing.T        // original test that was executed
 		error                        atomic.Int32      // flag to check if the test event has error data already
 		skipped                      atomic.Int32      // flag to check if the test event has skipped data already
 		panicData                    any               // panic data recovered from an internal test execution when using an additional feature wrapper
@@ -144,10 +145,10 @@ func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetad
 }
 
 // createTestMetadata creates the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
-func createTestMetadata(tb testing.TB) *testExecutionMetadata {
+func createTestMetadata(tb testing.TB, originalTest *testing.T) *testExecutionMetadata {
 	ciVisibilityTestMetadataMutex.Lock()
 	defer ciVisibilityTestMetadataMutex.Unlock()
-	execMetadata := &testExecutionMetadata{}
+	execMetadata := &testExecutionMetadata{originalTest: originalTest}
 	ciVisibilityTestMetadata[reflect.ValueOf(tb).UnsafePointer()] = execMetadata
 	return execMetadata
 }
@@ -550,7 +551,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
 
 	// Create an execution metadata instance
-	execMeta := createTestMetadata(ptrToLocalT)
+	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
 	execMeta.hasAdditionalFeatureWrapper = true
 
 	// Propagate set tags from a parent wrapper
