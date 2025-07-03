@@ -7,7 +7,7 @@ godebug x509negativeserial=1
 replace github.com/DataDog/datadog-agent/pkg/trace => github.com/DataDog/datadog-agent/pkg/trace v0.66.1
 
 require (
-	github.com/DataDog/appsec-internal-go v1.12.0
+	github.com/DataDog/appsec-internal-go v1.13.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1
 	github.com/DataDog/datadog-agent/pkg/proto v0.66.1
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.1
@@ -19,7 +19,7 @@ require (
 	github.com/DataDog/sketches-go v1.4.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
-	github.com/go-viper/mapstructure/v2 v2.2.1
+	github.com/go-viper/mapstructure/v2 v2.3.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.0
@@ -43,6 +43,9 @@ require (
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+// todo: remove before merge
+replace github.com/DataDog/appsec-internal-go => github.com/e-n-0/appsec-internal-go v0.0.0-20250626131752-f76d0fa9a9b9
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
