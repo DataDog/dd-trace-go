@@ -262,7 +262,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
-		log.Debug("instrumentSetErrorInfo: setting error info", "name", ciTestItem.test.Name(), "type", errType, "message", errMessage)
+		log.Debug("instrumentSetErrorInfo: setting error info [name: %v, type: %v, message: %v]", ciTestItem.test.Name(), errType, errMessage)
 		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
 
 		// Ensure to close the test with error before CI visibility exits. In CI visibility mode, we try to never lose data.
@@ -285,7 +285,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		log.Debug("instrumentCloseAndSkip: skipping test", "name", ciTestItem.test.Name(), "reason", skipReason)
+		log.Debug("instrumentCloseAndSkip: skipping test [name: %v, reason: %v]", ciTestItem.test.Name(), skipReason)
 		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
@@ -302,7 +302,7 @@ func instrumentSkipNow(tb testing.TB) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		log.Debug("instrumentSkipNow: skipping test", "name", ciTestItem.test.Name())
+		log.Debug("instrumentSkipNow: skipping test [name: %v]", ciTestItem.test.Name())
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
@@ -316,7 +316,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		return name, f
 	}
 
-	log.Debug("instrumentTestingBFunc: instrumenting benchmark function", "name", name)
+	log.Debug("instrumentTestingBFunc: instrumenting benchmark function [name: %v]", name)
 
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
