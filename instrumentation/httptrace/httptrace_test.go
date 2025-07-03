@@ -420,7 +420,6 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
 }
 
-
 func TestBaggageSpanTagsDefault(t *testing.T) {
 	tracer.Start()
 	defer tracer.Stop()
