@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // ******************************************************************************************************************
@@ -41,6 +42,8 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return func(_ int) {}
 	}
+
+	log.Debug("instrumentTestingM: initializing CI Visibility for testing.M")
 
 	// Initialize CI Visibility
 	integrations.EnsureCiVisibilityInitialization()
@@ -112,6 +115,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		return f
 	}
 
+	log.Debug("instrumentTestingTFunc: instrumenting test function")
+
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
 	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
@@ -166,7 +171,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
 			// in case there's no additional features then we create the metadata for this execution and defer the disposal
-			execMeta = createTestMetadata(t)
+			execMeta = createTestMetadata(t, nil)
 			defer deleteTestMetadata(t)
 		}
 
@@ -257,6 +262,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
+		log.Debug("instrumentSetErrorInfo: setting error info", "name", ciTestItem.test.Name(), "type", errType, "message", errMessage)
 		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
 
 		// Ensure to close the test with error before CI visibility exits. In CI visibility mode, we try to never lose data.
@@ -279,6 +285,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
+		log.Debug("instrumentCloseAndSkip: skipping test", "name", ciTestItem.test.Name(), "reason", skipReason)
 		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
@@ -295,6 +302,7 @@ func instrumentSkipNow(tb testing.TB) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
+		log.Debug("instrumentSkipNow: skipping test", "name", ciTestItem.test.Name())
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
@@ -307,6 +315,8 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 	if !isCiVisibilityEnabled() {
 		return name, f
 	}
+
+	log.Debug("instrumentTestingBFunc: instrumenting benchmark function", "name", name)
 
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
@@ -395,7 +405,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
 				// in case there's no additional features then we create the metadata for this execution and defer the disposal
-				execMeta = createTestMetadata(b)
+				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
 
@@ -476,6 +486,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 //
 //go:linkname instrumentTestifySuiteRun
 func instrumentTestifySuiteRun(t *testing.T, suite any) {
+	log.Debug("instrumentTestifySuiteRun: instrumenting testify suite run")
 	registerTestifySuite(t, suite)
 }
 
@@ -484,6 +495,7 @@ func instrumentTestifySuiteRun(t *testing.T, suite any) {
 //go:linkname getTestOptimizationContext
 func getTestOptimizationContext(tb testing.TB) context.Context {
 	if iTest := getTestOptimizationTest(tb); iTest != nil {
+		log.Debug("getTestOptimizationContext: returning context from test")
 		return iTest.Context()
 	}
 
@@ -496,8 +508,29 @@ func getTestOptimizationContext(tb testing.TB) context.Context {
 func getTestOptimizationTest(tb testing.TB) integrations.Test {
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil {
+		log.Debug("getTestOptimizationTest: returning test from metadata")
 		return ciTestItem.test
 	}
 
 	return nil
+}
+
+// instrumentTestingParallel helper function to instrument the Parallel method of a `*testing.T` instance
+//
+//go:linkname instrumentTestingParallel
+func instrumentTestingParallel(t *testing.T) bool {
+	// Check if CI Visibility was disabled using the kill switch before
+	if !isCiVisibilityEnabled() {
+		return false
+	}
+
+	meta := getTestMetadata(t)
+	if meta != nil && meta.originalTest != nil {
+		// if we have an original test, we call parallel on it
+		log.Debug("instrumentTestingParallel: calling Parallel on original test")
+		meta.originalTest.Parallel()
+		return true
+	}
+
+	return false
 }

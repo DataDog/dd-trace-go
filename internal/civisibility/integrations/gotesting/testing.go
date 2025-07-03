@@ -8,7 +8,6 @@ package gotesting
 import (
 	"bufio"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"reflect"
 	"runtime"
 	"slices"
@@ -22,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
@@ -213,7 +213,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
 			// in case there's no additional features then we create the metadata for this execution and defer the disposal
-			execMeta = createTestMetadata(t)
+			execMeta = createTestMetadata(t, nil)
 			defer deleteTestMetadata(t)
 		}
 
@@ -498,7 +498,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
 				// in case there's no additional features then we create the metadata for this execution and defer the disposal
-				execMeta = createTestMetadata(b)
+				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
 
