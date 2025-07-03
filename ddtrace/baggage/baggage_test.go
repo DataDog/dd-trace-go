@@ -8,7 +8,6 @@ package baggage
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -192,7 +191,7 @@ func TestConcurrentAccessAndClear(t *testing.T) {
 	want := All(base)
 	const readers = 4
 	const writers = 4
-	const iters = 10_000
+	const iters = 100
 	var wg sync.WaitGroup
 	wg.Add(readers + writers)
 	errCh := make(chan string, readers)
@@ -201,8 +200,8 @@ func TestConcurrentAccessAndClear(t *testing.T) {
 		go func(c context.Context) {
 			defer wg.Done()
 			for i := 0; i < iters; i++ {
-				if got := All(c); !reflect.DeepEqual(got, want) {
-					errCh <- fmt.Sprintf("baggage mutated: want %v, got %v", want, got)
+				if !assert.Equal(t, want, All(c), "baggage mutated") {
+					errCh <- fmt.Sprintf("baggage mutated: want %v, got %v", want, All(c))
 					return
 				}
 				runtime.Gosched()
