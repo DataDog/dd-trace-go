@@ -27,14 +27,14 @@ func NewQueue() (q *Queue, err error) {
 	q = &Queue{}
 	q.listener, err = net.Listen("tcp", "localhost:0")
 	if err != nil {
-		return nil, fmt.Errorf("failed to start TCP server: %v", err)
+		return nil, fmt.Errorf("failed to start TCP server: %s", err.Error())
 	}
 
 	go q.echoServer()
 
 	q.conn, err = net.Dial("tcp", q.listener.Addr().String())
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial TCP server: %v", err)
+		return nil, fmt.Errorf("failed to dial TCP server: %s", err.Error())
 	}
 
 	return q, nil
@@ -43,13 +43,13 @@ func NewQueue() (q *Queue, err error) {
 func (q *Queue) echoServer() {
 	conn, err := q.listener.Accept()
 	if err != nil {
-		log.Fatalf("failed to accept connection: %v\n", err)
+		log.Fatalf("failed to accept connection: %s\n", err.Error())
 		return
 	}
 	defer conn.Close()
 
 	if _, err := io.Copy(conn, conn); err != nil {
-		log.Fatalf("failed to copy data: %v\n", err)
+		log.Fatalf("failed to copy data: %s\n", err.Error())
 		return
 	}
 }
@@ -61,13 +61,13 @@ func (q *Queue) Push(data []byte) error {
 	// Send the length of the message first
 	err := binary.Write(q.conn, binary.BigEndian, uint64(len(data)))
 	if err != nil {
-		return fmt.Errorf("failed to send message length: %v", err)
+		return fmt.Errorf("failed to send message length: %s", err.Error())
 	}
 
 	// Send the actual message
 	_, err = q.conn.Write(data)
 	if err != nil {
-		return fmt.Errorf("failed to send message: %v", err)
+		return fmt.Errorf("failed to send message: %s", err.Error())
 	}
 	return nil
 }
@@ -80,14 +80,14 @@ func (q *Queue) Pull() ([]byte, error) {
 	var length uint64
 	err := binary.Read(q.conn, binary.BigEndian, &length)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read message length: %v", err)
+		return nil, fmt.Errorf("failed to read message length: %s", err.Error())
 	}
 
 	// Read the actual message
 	data := make([]byte, length)
 	_, err = io.ReadFull(q.conn, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read message: %v", err)
+		return nil, fmt.Errorf("failed to read message: %s", err.Error())
 	}
 	return data, nil
 }

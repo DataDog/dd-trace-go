@@ -81,7 +81,7 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 		err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 		if err != nil {
 			// this should never happen
-			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %v\n", err)
+			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %s\n", err.Error())
 		}
 	}
 

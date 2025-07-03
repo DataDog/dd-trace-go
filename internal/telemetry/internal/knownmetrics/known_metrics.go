@@ -34,7 +34,7 @@ var (
 func parseMetricNames(bytes []byte) []Declaration {
 	var names []Declaration
 	if err := json.Unmarshal(bytes, &names); err != nil {
-		log.Error("telemetry: failed to parse metric names: %v", err)
+		log.Error("telemetry: failed to parse metric names: %s", err.Error())
 	}
 	return names
 }

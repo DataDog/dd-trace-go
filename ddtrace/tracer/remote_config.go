@@ -197,7 +197,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		log.Debug("Processing config from RC. Path: %s. Raw: %s", path, raw)
 		var c configData
 		if err := json.Unmarshal(raw, &c); err != nil {
-			log.Debug("Error while unmarshalling payload for %s: %v. Configuration won't be applied.", path, err)
+			log.Debug("Error while unmarshalling payload for %q: %v. Configuration won't be applied.", path, err.Error())
 			statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 			continue
 		}

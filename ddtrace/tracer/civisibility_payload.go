@@ -73,7 +73,7 @@ func newCiVisibilityPayload() *ciVisibilityPayload {
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 	startTime := time.Now()
-	log.Debug("ciVisibilityPayload: .getBuffer (count: %v)", p.itemCount())
+	log.Debug("ciVisibilityPayload: .getBuffer (count: %d)", p.itemCount())
 
 	// Create a buffer to read the current payload
 	payloadBuf := new(bytes.Buffer)

@@ -68,7 +68,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 func (h *agentTraceWriter) add(trace []*Span) {
 	if err := h.payload.push(trace); err != nil {
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
-		log.Error("Error encoding msgpack: %v", err)
+		log.Error("Error encoding msgpack: %s", err.Error())
 	}
 	atomic.AddUint32(&h.tracesQueued, 1) // TODO: This does not differentiate between complete traces and partial chunks
 	if h.payload.size() > payloadSizeLimit {
@@ -122,12 +122,12 @@ func (h *agentTraceWriter) flush() {
 				}
 				return
 			}
-			log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err)
+			log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
 			p.reset()
 			time.Sleep(h.config.retryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
-		log.Error("lost %d traces: %v", count, err)
+		log.Error("lost %d traces: %v", count, err.Error())
 	}(oldp)
 }
 
@@ -235,7 +235,7 @@ func (h *logTraceWriter) encodeSpan(s *Span) {
 		h.buf.WriteString(":")
 		jsonValue, err := json.Marshal(v)
 		if err != nil {
-			log.Error("Error marshaling value %q: %v", v, err)
+			log.Error("Error marshaling value %q: %v", v, err.Error())
 			continue
 		}
 		h.marshalString(string(jsonValue))
@@ -270,7 +270,7 @@ func (h *logTraceWriter) encodeSpan(s *Span) {
 func (h *logTraceWriter) marshalString(str string) {
 	m, err := json.Marshal(str)
 	if err != nil {
-		log.Error("Error marshaling value %q: %v", str, err)
+		log.Error("Error marshaling value %q: %v", str, err.Error())
 	} else {
 		h.buf.Write(m)
 	}

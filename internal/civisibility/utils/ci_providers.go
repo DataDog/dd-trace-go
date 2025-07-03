@@ -80,7 +80,7 @@ func getProviderTags() map[string]string {
 
 	if log.DebugEnabled() {
 		if providerName, ok := tags[constants.CIProviderName]; ok {
-			log.Debug("civisibility: detected ci provider: %v", providerName)
+			log.Debug("civisibility: detected ci provider: %s", providerName)
 		} else {
 			log.Debug("civisibility: no ci provider was detected.")
 		}

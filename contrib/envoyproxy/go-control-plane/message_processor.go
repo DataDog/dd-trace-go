@@ -41,7 +41,7 @@ func (mp *messageProcessor) ProcessRequestHeaders(ctx context.Context, req *envo
 
 	httpReq, err := newRequest(ctx, req)
 	if err != nil {
-		return nil, requestState{}, status.Errorf(codes.InvalidArgument, "Error processing request headers from ext_proc: %v", err)
+		return nil, requestState{}, status.Errorf(codes.InvalidArgument, "Error processing request headers from ext_proc: %s", err.Error())
 	}
 
 	state, blocked := newRequestState(httpReq, mp.config.BodyParsingSizeLimit, mp.config.IsGCPServiceExtension)
@@ -122,7 +122,7 @@ func (mp *messageProcessor) ProcessResponseHeaders(req *envoyextproc.ProcessingR
 
 	if err := initFakeResponseWriter(state.WrappedResponseWriter, req); err != nil {
 		state.Close()
-		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: %s", err.Error())
 	}
 
 	// We need to know if the request has been blocked, but we don't have any other way than to look for the operation and bind a blocking data listener to it

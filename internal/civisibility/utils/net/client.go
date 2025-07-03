@@ -206,7 +206,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
-	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v, subdomain: %v]",
+	log.Debug("ciVisibilityHttpClient: new client created [id: %s, agentless: %t, url: %s, env: %s, serviceName: %s, subdomain: %s]",
 		id, agentlessEnabled, baseURL, environment, serviceName, subdomain)
 
 	if !telemetry.Disabled() {
@@ -230,7 +230,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			}
 			client, err := telemetry.NewClient(serviceName, environment, os.Getenv("DD_VERSION"), cfg)
 			if err != nil {
-				log.Debug("civisibility: failed to create telemetry client: %v", err)
+				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return
 			}
 			telemetry.StartApp(client)

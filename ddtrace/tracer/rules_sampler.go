@@ -773,7 +773,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 	//	 if the JSON is an array, unmarshal it as an array of rules
 	err := json.Unmarshal(b, &jsonRules)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
+		return nil, fmt.Errorf("error unmarshalling JSON: %s", err.Error())
 	}
 	return validateRules(jsonRules, spanType)
 }
@@ -869,7 +869,7 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 func (sr SamplingRule) String() string {
 	s, err := sr.MarshalJSON()
 	if err != nil {
-		log.Error("Error marshalling SamplingRule to json: %v", err)
+		log.Error("Error marshalling SamplingRule to json: %s", err.Error())
 	}
 	return string(s)
 }
