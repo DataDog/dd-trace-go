@@ -66,14 +66,14 @@ func (c *Config) RunHTTP(handler func() http.Handler) {
 			profiler.GoroutineProfile,
 		),
 	); err != nil {
-		log.Fatalf("failed to start profiler: %s", err)
+		log.Fatalf("failed to start profiler: %s", err.Error())
 	}
 	defer profiler.Stop()
 
 	// Start http server
 	l, err := net.Listen("tcp", *httpF)
 	if err != nil {
-		log.Fatalf("failed to listen: %s", err)
+		log.Fatalf("failed to listen: %s", err.Error())
 	}
 	defer l.Close()
 	c.httpAddr = l.Addr()

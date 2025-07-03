@@ -68,7 +68,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 func (h *agentTraceWriter) add(trace []*Span) {
 	if err := h.payload.push(trace); err != nil {
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
-		log.Error("Error encoding msgpack: %v", err.Error())
+		log.Error("Error encoding msgpack: %s", err.Error())
 	}
 	atomic.AddUint32(&h.tracesQueued, 1) // TODO: This does not differentiate between complete traces and partial chunks
 	if h.payload.size() > payloadSizeLimit {

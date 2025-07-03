@@ -152,7 +152,7 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+		return nil, fmt.Errorf("cannot create http request: %s", err.Error())
 	}
 	req.ContentLength = int64(p.size())
 	for header, value := range t.headers {

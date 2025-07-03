@@ -225,7 +225,7 @@ func injectSpanIntoContext(ctx context.Context) context.Context {
 		md = metadata.MD{}
 	}
 	if err := tracer.Inject(span.Context(), grpcutil.MDCarrier(md)); err != nil {
-		instr.Logger().Warn("ddtrace: failed to inject the span context into the gRPC metadata: %v", err)
+		instr.Logger().Warn("ddtrace: failed to inject the span context into the gRPC metadata: %s", err.Error())
 	}
 	return metadata.NewOutgoingContext(ctx, md)
 }

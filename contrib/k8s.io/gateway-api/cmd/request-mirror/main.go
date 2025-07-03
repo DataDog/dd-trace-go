@@ -47,7 +47,7 @@ func main() {
 	config := getConfig()
 
 	if err := tracer.Start(tracer.WithServiceVersion(instrumentation.Version())); err != nil {
-		logger.Error("Failed to start tracer: %v", err)
+		logger.Error("Failed to start tracer: %s", err.Error())
 		os.Exit(1)
 	}
 

@@ -259,19 +259,19 @@ func Reset() {
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err.Error())
+		log.Error("remoteconfig: unexpected error while creating a new update request payload: %s", err.Error())
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err.Error())
+		log.Error("remoteconfig: unexpected error while creating a new http request: %s", err.Error())
 		return
 	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		log.Debug("remoteconfig: http request error: %v", err.Error())
+		log.Debug("remoteconfig: http request error: %s", err.Error())
 		return
 	}
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -287,7 +287,7 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %v", err.Error())
+		log.Error("remoteconfig: http request error: could not read the response body: %s", err.Error())
 		return
 	}
 
@@ -297,7 +297,7 @@ func (c *Client) updateState() {
 
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
-		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err.Error())
+		log.Error("remoteconfig: http request error: could not parse the json response body: %s", err.Error())
 		return
 	}
 
@@ -512,7 +512,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// are provided with this information in this case
 	stateBefore, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error: %v", err)
+		return fmt.Errorf("repository current state error: %s", err.Error())
 	}
 	products, err := c.repository.Update(rc.Update{
 		TUFRoots:      pbUpdate.Roots,
@@ -521,11 +521,11 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	})
 	if err != nil {
-		return fmt.Errorf("repository update error: %v", err)
+		return fmt.Errorf("repository update error: %s", err.Error())
 	}
 	stateAfter, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error after update: %v", err)
+		return fmt.Errorf("repository current state error after update: %s", err.Error())
 	}
 
 	// Create a config files diff between before/after the update to see which config files are missing

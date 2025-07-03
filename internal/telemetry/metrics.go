@@ -106,7 +106,7 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 
 	if !loaded && !m.skipAllowlist { // The metric is new: validate and log issues about it
 		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
-			log.Warn("telemetry: %v", err.Error())
+			log.Warn("telemetry: %s", err.Error())
 		}
 	}
 

@@ -117,7 +117,7 @@ func getDDorOtelConfig(configName string) string {
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
-				log.Warn("%v", err.Error())
+				log.Warn("%s", err.Error())
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}

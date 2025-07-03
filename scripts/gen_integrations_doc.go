@@ -72,10 +72,10 @@ type modUpdate struct {
 func main() {
 	integrations, err := fetchIntegrations()
 	if err != nil {
-		log.Fatalf("failed to fetch integrations: %v\n", err)
+		log.Fatalf("failed to fetch integrations: %s\n", err.Error())
 	}
 	if err := writeMarkdownFile(integrations, outputPath); err != nil {
-		log.Fatalf("failed to write markdown file: %v\n", err)
+		log.Fatalf("failed to write markdown file: %s\n", err.Error())
 	}
 	log.Printf("integration docs has been written to: %s\n", outputPath)
 }
@@ -99,7 +99,7 @@ func fetchIntegrations() ([]integration, error) {
 
 			ig, err := fetchIntegrationInfo(string(integrationName), modName)
 			if err != nil {
-				log.Printf("WARN: failed to read integration info: %v\n", err)
+				log.Printf("WARN: failed to read integration info: %s\n", err.Error())
 				return
 			}
 
@@ -124,7 +124,7 @@ func fetchIntegrationInfo(name, tracedPackage string) (integration, error) {
 
 	packages, err := parseIntegrationPackages(contribPath)
 	if err != nil {
-		return integration{}, fmt.Errorf("failed to fetch integration packages: %v", err)
+		return integration{}, fmt.Errorf("failed to fetch integration packages: %s", err.Error())
 	}
 
 	orchestrionSupported := false
@@ -144,7 +144,7 @@ func fetchIntegrationInfo(name, tracedPackage string) (integration, error) {
 	if _, ok := stdlibPackages[name]; !ok {
 		minVersion, maxVersion, repository, err = fetchVersionInfo(goModPath, tracedPackage)
 		if err != nil {
-			return integration{}, fmt.Errorf("failed to fetch version info: %v", err)
+			return integration{}, fmt.Errorf("failed to fetch version info: %s", err.Error())
 		}
 	}
 	return integration{
@@ -211,7 +211,7 @@ func fetchLatestVersion(module string) (string, error) {
 
 	var m modUpdate
 	if err := json.Unmarshal(out, &m); err != nil {
-		return "", fmt.Errorf("unexpected 'go list -m -u -json' output: %v", err)
+		return "", fmt.Errorf("unexpected 'go list -m -u -json' output: %s", err.Error())
 	}
 
 	latest := m.Version
@@ -377,7 +377,7 @@ func parseIntegrationPackages(contribPath string) (map[string]integrationPackage
 
 		apkg, err := doc.NewFromFiles(fset, files, path)
 		if err != nil {
-			return fmt.Errorf("failed to compute documentation for package: %v", err)
+			return fmt.Errorf("failed to compute documentation for package: %s", err.Error())
 		}
 
 		docStr := apkg.Doc

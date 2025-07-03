@@ -225,7 +225,7 @@ func Start(opts ...StartOption) error {
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	if err := t.startRemoteConfig(cfg); err != nil {
-		log.Warn("Remote config startup error: %s", err)
+		log.Warn("Remote config startup error: %s", err.Error())
 	}
 
 	// appsec.Start() may use the telemetry client to report activation, so it is
@@ -268,7 +268,7 @@ func storeConfig(c *config) {
 	data, _ := metadata.MarshalMsg(nil)
 	_, err := globalinternal.CreateMemfd(name, data)
 	if err != nil {
-		log.Error("failed to store the configuration: %s", err)
+		log.Error("failed to store the configuration: %s", err.Error())
 	}
 }
 
@@ -322,8 +322,8 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
 	if err != nil {
-		log.Error("Runtime and health metrics disabled: %v", err.Error())
-		return nil, fmt.Errorf("could not initialize statsd client: %v", err)
+		log.Error("Runtime and health metrics disabled: %s", err.Error())
+		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
 	}
 	var writer traceWriter
 	if c.ciVisibilityEnabled {
@@ -335,7 +335,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors: %v", err.Error())
+		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors: %s", err.Error())
 		return nil, fmt.Errorf("found errors when parsing sampling rules: %w", err)
 	}
 	if traces != nil {
@@ -364,7 +364,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	if v := c.logDirectory; v != "" {
 		logFile, err = log.OpenFileAtPath(v)
 		if err != nil {
-			log.Warn("%v", err.Error())
+			log.Warn("%s", err.Error())
 			c.logDirectory = ""
 		}
 	}

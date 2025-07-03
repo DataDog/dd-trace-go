@@ -52,7 +52,7 @@ aspects:
                   // The tracer and profiler already use the stdlib logger, so
                   // we're not adding anything new. But users might be using a
                   // different logger.
-                  log.Printf("failed to start profiling: %s", err)
+                  log.Printf("failed to start profiling: %s", err.Error())
                 }
               }
             }

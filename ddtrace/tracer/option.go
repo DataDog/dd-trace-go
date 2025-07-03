@@ -352,7 +352,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		var err error
 		sampleRate, err = strconv.ParseFloat(r, 64)
 		if err != nil {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err.Error())
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %s", err.Error())
 			sampleRate = math.NaN()
 		} else if sampleRate < 0.0 || sampleRate > 1.0 {
 			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
@@ -388,8 +388,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 		var err error
 		c.hostname, err = os.Hostname()
 		if err != nil {
-			log.Warn("unable to look up hostname: %v", err.Error())
-			return c, fmt.Errorf("unable to look up hostnamet: %v", err)
+			log.Warn("unable to look up hostname: %s", err.Error())
+			return c, fmt.Errorf("unable to look up hostnamet: %s", err.Error())
 		}
 	}
 	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
@@ -772,7 +772,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
 	if err != nil {
-		log.Error("Loading features: %v", err.Error())
+		log.Error("Loading features: %s", err.Error())
 		return
 	}
 	if resp.StatusCode == http.StatusNotFound {
@@ -795,7 +795,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err.Error())
+		log.Error("Decoding features: %s", err.Error())
 		return
 	}
 
@@ -1025,7 +1025,7 @@ func WithAgentURL(agentURL string) StartOption {
 				log.Warn("Fail to parse Agent URL")
 				return
 			}
-			log.Warn("Fail to parse Agent URL: %v", err.Error())
+			log.Warn("Fail to parse Agent URL: %s", err.Error())
 			return
 		}
 		switch u.Scheme {

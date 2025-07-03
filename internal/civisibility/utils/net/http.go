@@ -237,7 +237,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	resp, err := rh.Client.Do(req)
 	if err != nil {
-		log.Debug("ciVisibilityHttpClient: error = %s", err)
+		log.Debug("ciVisibilityHttpClient: error = %s", err.Error())
 		// Retry if there's an error
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
@@ -365,12 +365,12 @@ func compressData(data []byte) ([]byte, error) {
 func decompressData(data []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gzip reader: %v", err)
+		return nil, fmt.Errorf("failed to create gzip reader: %s", err.Error())
 	}
 	defer reader.Close()
 	decompressedData, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decompress data: %v", err)
+		return nil, fmt.Errorf("failed to decompress data: %s", err.Error())
 	}
 	return decompressedData, nil
 }

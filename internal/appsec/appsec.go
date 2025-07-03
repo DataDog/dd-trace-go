@@ -74,7 +74,7 @@ func Start(opts ...config.StartOption) {
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.
-			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled for the following reasons: %s", err)
+			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled for the following reasons: %s", err.Error())
 		}
 		return
 	}
@@ -120,7 +120,7 @@ func Start(opts ...config.StartOption) {
 // Implement the AppSec log message C1
 func logUnexpectedStartError(err error) {
 	log.Error("appsec: could not start because of an unexpected error: %s\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err.Error())
-	telemetry.Log(telemetry.LogError, fmt.Sprintf("appsec: could not start because of an unexpected error: %v", err), telemetry.WithTags([]string{"product:appsec"}))
+	telemetry.Log(telemetry.LogError, fmt.Sprintf("appsec: could not start because of an unexpected error: %s", err.Error()), telemetry.WithTags([]string{"product:appsec"}))
 	telemetry.ProductStartError(telemetry.NamespaceAppSec, err)
 }
 

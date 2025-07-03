@@ -141,18 +141,18 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 		gzipWriter := gzip.NewWriter(&gzipBuffer)
 		_, err = io.Copy(gzipWriter, buffer)
 		if err != nil {
-			return nil, fmt.Errorf("cannot compress request body: %v", err)
+			return nil, fmt.Errorf("cannot compress request body: %s", err.Error())
 		}
 		err = gzipWriter.Close()
 		if err != nil {
-			return nil, fmt.Errorf("cannot compress request body: %v", err)
+			return nil, fmt.Errorf("cannot compress request body: %s", err.Error())
 		}
 		buffer = &gzipBuffer
 	}
 
 	req, err := http.NewRequest("POST", t.testCycleURLPath, buffer)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+		return nil, fmt.Errorf("cannot create http request: %s", err.Error())
 	}
 	req.ContentLength = int64(buffer.Len())
 	for header, value := range t.headers {

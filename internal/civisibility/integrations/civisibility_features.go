@@ -85,7 +85,7 @@ func ensureSettingsInitialization(serviceName string) {
 		go func() {
 			bytes, err := uploadRepositoryChanges()
 			if err != nil {
-				log.Error("civisibility: error uploading repository changes: %v", err.Error())
+				log.Error("civisibility: error uploading repository changes: %s", err.Error())
 			} else {
 				log.Debug("civisibility: uploaded %d bytes in pack files", bytes)
 			}
@@ -95,7 +95,7 @@ func ensureSettingsInitialization(serviceName string) {
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
 		if err != nil || ciSettings == nil {
-			log.Error("civisibility: error getting CI visibility settings: %v", err.Error())
+			log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
 			log.Debug("civisibility: no need to wait for the git upload to finish")
 			// Enqueue a close action to wait for the upload to finish before finishing the process
 			PushCiVisibilityCloseAction(func() {
@@ -110,7 +110,7 @@ func ensureSettingsInitialization(serviceName string) {
 			<-uploadChannel
 			ciSettings, err = ciVisibilityClient.GetSettings()
 			if err != nil {
-				log.Error("civisibility: error getting CI visibility settings: %v", err.Error())
+				log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
 				return
 			}
 		} else if ciSettings.ImpactedTestsEnabled {
@@ -217,7 +217,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				defer wg.Done()
 				ciEfdData, err := ciVisibilityClient.GetKnownTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility known tests data: %v", err.Error())
+					log.Error("civisibility: error getting CI visibility known tests data: %s", err.Error())
 				} else if ciEfdData != nil {
 					ciVisibilityKnownTests = *ciEfdData
 					log.Debug("civisibility: known tests data loaded.")
@@ -233,7 +233,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				// get the skippable tests
 				correlationID, skippableTests, err := ciVisibilityClient.GetSkippableTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility skippable tests: %v", err.Error())
+					log.Error("civisibility: error getting CI visibility skippable tests: %s", err.Error())
 				} else if skippableTests != nil {
 					log.Debug("civisibility: skippable tests loaded: %d suites", len(skippableTests))
 					setAdditionalTags(constants.ItrCorrelationIDTag, correlationID)
@@ -249,7 +249,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				defer wg.Done()
 				testManagementTests, err := ciVisibilityClient.GetTestManagementTests()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility test management tests: %v", err.Error())
+					log.Error("civisibility: error getting CI visibility test management tests: %s", err.Error())
 				} else if testManagementTests != nil {
 					ciVisibilityTestManagementTests = *testManagementTests
 					log.Debug("civisibility: test management loaded [attemptToFixRetries: %d]", currentSettings.TestManagement.AttemptToFixRetries)
@@ -265,7 +265,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 				defer wg.Done()
 				iTests, err := impactedtests.NewImpactedTestAnalyzer()
 				if err != nil {
-					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %v", err.Error())
+					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %s", err.Error())
 				} else {
 					ciVisibilityImpactedTestsAnalyzer = iTests
 					log.Debug("civisibility: impacted tests analyzer loaded")
@@ -351,7 +351,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	hasBeenUnshallowed, err := utils.UnshallowGitRepository()
 	if err != nil || !hasBeenUnshallowed {
 		if err != nil {
-			log.Warn("%v", err.Error())
+			log.Warn("%s", err.Error())
 		}
 		// if unshallowing the repository failed or if there's nothing to unshallow then we try to upload the packfiles from
 		// the initial commit data

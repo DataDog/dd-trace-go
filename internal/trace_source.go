@@ -49,7 +49,7 @@ func VerifyTraceSourceEnabled(hexStr string, target TraceSource) bool {
 	ts, err := ParseTraceSource(hexStr)
 	if err != nil {
 		if len(hexStr) != 0 { // Empty trace source should not trigger an error log.
-			log.Error("invalid trace-source hex string given for source verification: %v", err.Error())
+			log.Error("invalid trace-source hex string given for source verification: %s", err.Error())
 		}
 		return false
 	}

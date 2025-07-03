@@ -238,7 +238,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		flushedBuckets += len(csp.Stats)
 		if err := c.cfg.transport.sendStats(csp, obfVersion); err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
-			log.Error("Error sending stats payload: %v", err.Error())
+			log.Error("Error sending stats payload: %s", err.Error())
 		}
 	}
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))

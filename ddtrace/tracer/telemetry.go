@@ -115,7 +115,7 @@ func startTelemetry(c *config) {
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
 	if err != nil {
-		log.Debug("tracer: failed to create telemetry client: %v", err.Error())
+		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
 		return
 	}
 

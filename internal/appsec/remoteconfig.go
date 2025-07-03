@@ -369,14 +369,14 @@ func (a *appsec) enableRASP() {
 		return
 	}
 	if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPSSRF); err != nil {
-		log.Debug("appsec: remote config: couldn't register RASP SSRF: %v", err.Error())
+		log.Debug("appsec: remote config: couldn't register RASP SSRF: %s", err.Error())
 	}
 	if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPSQLI); err != nil {
-		log.Debug("appsec: remote config: couldn't register RASP SQLI: %v", err.Error())
+		log.Debug("appsec: remote config: couldn't register RASP SQLI: %s", err.Error())
 	}
 	if orchestrion.Enabled() {
 		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPLFI); err != nil {
-			log.Debug("appsec: remote config: couldn't register RASP LFI: %v", err.Error())
+			log.Debug("appsec: remote config: couldn't register RASP LFI: %s", err.Error())
 		}
 	}
 }
@@ -387,17 +387,17 @@ func (a *appsec) disableRCBlocking() {
 	}
 	for _, c := range baseCapabilities {
 		if err := a.unregisterRCCapability(c); err != nil {
-			log.Debug("appsec: remote config: couldn't unregister capability %d: %v", c, err.Error())
+			log.Debug("appsec: remote config: couldn't unregister capability %d: %s", c, err.Error())
 		}
 	}
 	if !a.cfg.BlockingUnavailable {
 		for _, c := range blockingCapabilities {
 			if err := a.unregisterRCCapability(c); err != nil {
-				log.Debug("appsec: remote config: couldn't unregister capability %d: %v", c, err.Error())
+				log.Debug("appsec: remote config: couldn't unregister capability %d: %s", c, err.Error())
 			}
 		}
 	}
 	if err := remoteconfig.UnregisterCallback(a.onRCRulesUpdate); err != nil {
-		log.Debug("appsec: remote config: couldn't unregister callback: %v", err.Error())
+		log.Debug("appsec: remote config: couldn't unregister callback: %s", err.Error())
 	}
 }

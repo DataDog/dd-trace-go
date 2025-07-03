@@ -230,7 +230,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			}
 			client, err := telemetry.NewClient(serviceName, environment, os.Getenv("DD_VERSION"), cfg)
 			if err != nil {
-				log.Debug("civisibility: failed to create telemetry client: %v", err.Error())
+				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return
 			}
 			telemetry.StartApp(client)
