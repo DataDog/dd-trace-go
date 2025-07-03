@@ -3,8 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.2.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.0.1
 	github.com/DataDog/go-libddwaf/v4 v4.2.0
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
 	github.com/gorilla/mux v1.8.1
@@ -16,7 +15,7 @@ require (
 )
 
 require (
-	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.66.1 // indirect
@@ -42,7 +41,7 @@ require (
 	github.com/ebitengine/purego v0.8.3 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -86,7 +85,5 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../google.golang.org/grpc
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..

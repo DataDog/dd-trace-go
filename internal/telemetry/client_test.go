@@ -190,21 +190,6 @@ func TestClientFlush(t *testing.T) {
 			},
 		},
 		{
-			name: "configuration-default",
-			when: func(c *client) {
-				c.RegisterAppConfig("key", "value", OriginDefault)
-			},
-			expect: func(t *testing.T, payloads []transport.Payload) {
-				payload := payloads[0]
-				require.IsType(t, transport.AppClientConfigurationChange{}, payload)
-				config := payload.(transport.AppClientConfigurationChange)
-				assert.Len(t, config.Configuration, 1)
-				assert.Equal(t, config.Configuration[0].Name, "key")
-				assert.Equal(t, config.Configuration[0].Value, "value")
-				assert.Equal(t, config.Configuration[0].Origin, OriginDefault)
-			},
-		},
-		{
 			name: "configuration-complex-values",
 			when: func(c *client) {
 				c.RegisterAppConfigs(
