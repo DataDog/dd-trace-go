@@ -12,7 +12,7 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
-	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.66.1 // indirect

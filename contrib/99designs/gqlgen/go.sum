@@ -1,7 +1,7 @@
 github.com/99designs/gqlgen v0.17.36 h1:u/o/rv2SZ9s5280dyUOOrkpIIkr/7kITMXYD3rkJ9go=
 github.com/99designs/gqlgen v0.17.36/go.mod h1:6RdyY8puhCoWAQVr2qzF2OMVfudQzc8ACxzpzluoQm4=
-github.com/DataDog/appsec-internal-go v1.12.0 h1:pfeFYcCQ5r0qGLsnzeQKfKLfkCqqwsULG7g5y7ziKu8=
-github.com/DataDog/appsec-internal-go v1.12.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
+github.com/DataDog/appsec-internal-go v1.13.0 h1:aO6DmHYsAU8BNFuvYJByhMKGgcQT3WAbj9J/sgAJxtA=
+github.com/DataDog/appsec-internal-go v1.13.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 h1:tUnckL/NqYQiSN4ceOe5E/qM9vxmU3p77RdHgXC3VNE=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1/go.mod h1:u/ZS2pzrBQ1LokbEvFULjn1SfX+If31uqtz6MJ7UaFo=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 h1:sZEua4ArlPJyn8DxpIw85iYuDSmCXp1h/utS4jHj8Lo=

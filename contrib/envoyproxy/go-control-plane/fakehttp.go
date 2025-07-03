@@ -8,6 +8,7 @@ package gocontrolplane
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -71,7 +72,12 @@ func splitPseudoHeaders(receivedHeaders []*corev3.HeaderValue) (headers map[stri
 			continue
 		}
 
-		headers[http.CanonicalHeaderKey(key)] = []string{string(v.GetRawValue())}
+		canonKey := http.CanonicalHeaderKey(key)
+		if headers[canonKey] == nil {
+			headers[canonKey] = make([]string, 0, 1)
+		}
+
+		headers[canonKey] = append(headers[canonKey], string(v.GetRawValue()))
 	}
 	return headers, pseudoHeaders
 }
@@ -98,7 +104,7 @@ func mergeMetadataHeaders(md metadata.MD, headers http.Header) {
 	}
 }
 
-func createFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequest_ResponseHeaders) error {
+func initFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequest_ResponseHeaders) error {
 	headers, pseudoHeaders := splitPseudoHeaders(res.ResponseHeaders.GetHeaders().GetHeaders())
 
 	if err := checkPseudoResponseHeaders(pseudoHeaders); err != nil {
@@ -111,11 +117,38 @@ func createFakeResponseWriter(w http.ResponseWriter, res *extproc.ProcessingRequ
 	}
 
 	for k, v := range headers {
-		w.Header().Set(k, strings.Join(v, ","))
+		w.Header()[k] = v
 	}
 
 	w.WriteHeader(status)
 	return nil
+}
+
+func urlParse(scheme, authority, rest string) (*url.URL, error) {
+	var escapeErr url.EscapeError
+
+	// Parse the URL from the scheme, authority and path
+	parsedURL, err := url.Parse(fmt.Sprintf("%s://%s%s", scheme, authority, rest))
+	for i := 0; i < 5 && errors.As(err, &escapeErr); i++ {
+		// If an unknown escape sequence is found, we try to escape the path again by adding a % in front
+		i := strings.Index(rest, string(escapeErr)) // This is to trigger the escape error
+		if i < 0 {
+			return nil, fmt.Errorf("error parsing URL: %w", err)
+		}
+
+		rest = rest[:i] + "%25" + rest[i+1:]
+		parsedURL, err = url.Parse(fmt.Sprintf("%s://%s%s", scheme, authority, rest))
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error building envoy URI from scheme %q, from host %q and from path %q: %w",
+			scheme,
+			authority,
+			rest,
+			err)
+	}
+	return parsedURL, nil
 }
 
 // newRequest creates a new http.Request from an ext_proc RequestHeaders message
@@ -132,14 +165,16 @@ func newRequest(ctx context.Context, req *extproc.ProcessingRequest_RequestHeade
 		remoteAddr = getRemoteAddr(md)
 	}
 
-	parsedURL, err := url.Parse(fmt.Sprintf("%s://%s%s", pseudoHeaders[":scheme"], pseudoHeaders[":authority"], pseudoHeaders[":path"]))
+	path, _, _ := strings.Cut(pseudoHeaders[":path"], "#")
+	splitedPath := strings.Split(path, "/")
+	splitedEscapedPath := make([]string, len(splitedPath))
+	for _, part := range splitedPath {
+		splitedEscapedPath = append(splitedEscapedPath, url.PathEscape(part))
+	}
+
+	parsedURL, err := urlParse(pseudoHeaders[":scheme"], pseudoHeaders[":authority"], pseudoHeaders[":path"])
 	if err != nil {
-		return nil, fmt.Errorf(
-			"error building envoy URI from scheme %q, from host %q and from path %q: %w",
-			pseudoHeaders[":scheme"],
-			pseudoHeaders[":host"],
-			pseudoHeaders[":path"],
-			err)
+		return nil, err
 	}
 
 	var tlsState *tls.ConnectionState

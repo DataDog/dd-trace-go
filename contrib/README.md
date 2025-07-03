@@ -1,8 +1,8 @@
 [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib)
 
-The purpose of these packages is to provide tracing on top of commonly used packages from the standard library as well as the 
+The purpose of these packages is to provide tracing on top of commonly used packages from the standard library as well as the
 community in a "plug-and-play" manner. This means that by simply importing the appropriate path, functions are exposed having
- the same signature as the original package. These functions return structures that embed the original return value, allowing 
+ the same signature as the original package. These functions return structures that embed the original return value, allowing
 them to be used as they normally would with tracing activated out of the box.
 
 All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
@@ -35,6 +35,10 @@ Third, some guidelines to follow on naming functions:
 * Use `WithService` instead of `WithServiceName` when setting the service name.
 
 Each integration comes with a thorough documentation and usage examples. A good overview can be seen on our [godoc](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib) page.
+
+### Tests
+
+Write tests for your new integration and include them in a file ``<name>_test.go``. This will cause your new tests to be automatically run by the Continuous Integration system on new pull requests.
 
 ### Instrumentation telemetry
 

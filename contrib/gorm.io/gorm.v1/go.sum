@@ -5,8 +5,8 @@ github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.2.1/go.mod h1:gLa1CL2RNE4s7M
 github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.0/go.mod h1:eWRD7oawr1Mu1sLCawqVc0CUiF43ia3qQMxLscsKQ9w=
 github.com/AzureAD/microsoft-authentication-library-for-go v0.5.1/go.mod h1:Vt9sXTKwMyGcOxSmLDMnGPgqsUg7m8pe215qMLrDXw4=
 github.com/AzureAD/microsoft-authentication-library-for-go v0.8.1/go.mod h1:4qFor3D/HDsvBME35Xy9rwW9DecL+M2sNw1ybjPtwA0=
-github.com/DataDog/appsec-internal-go v1.12.0 h1:pfeFYcCQ5r0qGLsnzeQKfKLfkCqqwsULG7g5y7ziKu8=
-github.com/DataDog/appsec-internal-go v1.12.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
+github.com/DataDog/appsec-internal-go v1.13.0 h1:aO6DmHYsAU8BNFuvYJByhMKGgcQT3WAbj9J/sgAJxtA=
+github.com/DataDog/appsec-internal-go v1.13.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 h1:tUnckL/NqYQiSN4ceOe5E/qM9vxmU3p77RdHgXC3VNE=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1/go.mod h1:u/ZS2pzrBQ1LokbEvFULjn1SfX+If31uqtz6MJ7UaFo=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 h1:sZEua4ArlPJyn8DxpIw85iYuDSmCXp1h/utS4jHj8Lo=

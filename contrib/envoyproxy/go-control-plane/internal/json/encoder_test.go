@@ -34,7 +34,7 @@ type testCase struct {
 func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiallyTruncated bool, checkOutput bool) {
 	for name, encodableFunc := range map[string]func([]byte, bool) libddwaf.Encodable{
 		"jsoniter": newJSONIterEncodableFromData,
-		"simdjson": newEncodableFromData,
+		"simdjson": NewEncodableFromData,
 	} {
 
 		t.Run(name, func(t *testing.T) {
@@ -680,7 +680,7 @@ func BenchmarkEncoder(b *testing.B) {
 				return newJSONIterEncodableFromData(data, false)
 			},
 			"simdjson": func(data []byte) libddwaf.Encodable {
-				return newEncodableFromData(data, false)
+				return NewEncodableFromData(data, false)
 			},
 		} {
 			b.Run(fmt.Sprintf("%s/%d", name, l), func(b *testing.B) {

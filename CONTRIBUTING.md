@@ -20,17 +20,22 @@ the official [Go language](https://github.com/golang/go/pulls).
 
 All new code is expected to be covered by tests.
 
-#### PR Checks
+#### Continuous Integration on Pull Requests
 
-We expect all PR checks to pass before we merge a PR, which can be investigated by following the `Details` links to CircleCI and CodeCov for unit/integration tests and code coverage checks.
+We expect all PR checks to pass before we merge a PR.
 
-![Screen Shot 2021-08-31 at 10 35 37 AM](https://user-images.githubusercontent.com/1819836/131533266-7c87305d-37df-4bd5-a9ea-6fb8e51e4b50.png)
-
-The code coverage report has a target of 90%. This is the goal, but is not a hard requirement. Reviewers ultimately make the decision about code coverage and quality and will merge PR's at their discretion. Any divergence from the expected 90% should be communicated by the reviewers to the PR author.
+The code coverage report has a target of 90%. This is the goal, but is not a hard requirement. Reviewers ultimately make the decision about code coverage and quality and will merge PRs at their discretion. Any divergence from the expected 90% should be communicated by the reviewers to the PR author.
 
 Please feel free to comment on a PR if there is any difficulty or confusion about any of the checks.
 
-#### What to expect
+Sometimes a pull request's checks will show failures that aren't related to its changes. When this happens, you can try the following steps:
+
+1. look through the gitlab job logs for an obvious cause
+2. retry the test a few times to see if it flakes
+3. for internal contributors, ask the #dd-trace-go channel for help
+4. if you are not an internal contributor, [open an issue](https://github.com/DataDog/dd-trace-go/issues/new/choose) or ping @Datadog/apm-go
+
+#### Getting a PR Reviewed
 
 We try to review new PRs within a week of them being opened. If more than two weeks have passed with no reply, please feel free to comment on the PR to bubble it up.
 
@@ -51,7 +56,7 @@ docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-l
 
 #### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
-[fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor [string builders](https://pkg.go.dev/strings#Builder), or simple string concatenation, `a + "b" + c` over `fmt.Sprintf` when possible, especially in hot paths. 
+[fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor [string builders](https://pkg.go.dev/strings#Builder), or simple string concatenation, `a + "b" + c` over `fmt.Sprintf` when possible, especially in hot paths.
 Sample PR: https://github.com/DataDog/dd-trace-go/pull/3365
 
 ### Integrations
@@ -74,4 +79,4 @@ Some benchmarks will run on any new PR commits, the results will be commented in
 
 #### Adding a new benchmark
 To add additional benchmarks that should run for every PR, go to `.gitlab-ci.yml`.
-Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators. 
+Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators.

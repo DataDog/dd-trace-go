@@ -48,10 +48,10 @@ func NewEncodable(reader io.ReadCloser, limit int64) (libddwaf.Encodable, error)
 		truncated = true
 	}
 
-	return newEncodableFromData(data, truncated), nil
+	return NewEncodableFromData(data, truncated), nil
 }
 
-func newEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
+func NewEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
 	parsedJson, _ := parsedJsonPool.Get().(*json.ParsedJson)
 	pj, err := json.Parse(data, parsedJson, json.WithCopyStrings(false))
 	if err != nil {
