@@ -123,9 +123,9 @@ func Errorf(format string, a ...any) *TracerError {
 			}
 			if _, ok := a[aIndex].(*TracerError); ok {
 				newFormat.WriteString("v")
-				i += 1
+				i++
 			}
-			aIndex += 1
+			aIndex++
 		}
 		format = newFormat.String()
 	}
