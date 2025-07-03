@@ -44,8 +44,8 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
-			fmt.Printf("MTOFF: sctx %+v\n", tracer.FromGenericCtx(&otelCtxToDDCtx{sctx}))
-			ddopts = append(ddopts, tracer.ChildOf(tracer.FromGenericCtx(&otelCtxToDDCtx{sctx})))
+			fmt.Printf("MTOFF: sctx %+v\n", tracer.FromGenericCtx(otelToDDSpanContext(sctx)))
+			ddopts = append(ddopts, tracer.ChildOf(tracer.FromGenericCtx(otelToDDSpanContext(sctx))))
 		}
 	}
 	if t := ssConfig.Timestamp(); !t.IsZero() {
@@ -167,3 +167,25 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 }
 
 func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
+
+// TODO: add baggage??
+func otelToDDSpanContext(otelCtx oteltrace.SpanContext) *tracer.SpanContext {
+	// otelCtx.TraceID() and SpanID() are arrays, so we can assign directly.
+	var traceID [16]byte = otelCtx.TraceID()
+	spanIDBytes := otelCtx.SpanID()
+	var spanID uint64 = binary.BigEndian.Uint64(spanIDBytes[:])
+
+	// Interpret TraceFlags as sampling priority
+	var samplingPriority *int
+	if otelCtx.IsSampled() {
+		p := 1
+		samplingPriority = &p
+	} else {
+		samplingPriority = nil
+	}
+	// Traceflags??
+	sc := tracer.NewSpanContextFromFields(traceID, spanID, samplingPriority, nil)
+	tracer.ParseTracestate(sc, otelCtx.TraceState().String())
+
+	return sc
+}

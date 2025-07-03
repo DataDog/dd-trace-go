@@ -2390,7 +2390,7 @@ func FuzzComposeTracestate(f *testing.F) {
 			t.Skipf("Skipping invalid tags")
 		}
 		traceState := composeTracestate(sendCtx, priority, oldState)
-		parseTracestate(recvCtx, traceState)
+		ParseTracestate(recvCtx, traceState)
 		setPropagatingTag(sendCtx, tracestateHeader, traceState)
 		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
 			t.Fatalf(`Inconsistent composing/parsing:

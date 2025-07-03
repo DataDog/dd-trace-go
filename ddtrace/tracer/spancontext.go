@@ -138,12 +138,12 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		sc.baggage[k] = v
 		return true
 	})
-	sc.trace = newTrace()
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
 		return &sc
 	}
 	sc.origin = ctx.Origin()
+	sc.trace = newTrace()
 	sc.trace.priority = ctx.Priority()
 	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
 	sc.trace.tags = ctx.Tags()
@@ -708,4 +708,22 @@ func spanIDHexEncoded(u uint64, padding int) string {
 		buf[i] = '0'
 	}
 	return string(buf[i:])
+}
+
+// NewSpanContextFromFields creates a new SpanContext from primitive fields.
+// This is intended for use by integrations (e.g., OpenTelemetry).
+func NewSpanContextFromFields(traceID [16]byte, spanID uint64, samplingPriority *int, baggage map[string]string) *SpanContext {
+	sc := &SpanContext{
+		traceID: traceID,
+		spanID:  spanID,
+		baggage: make(map[string]string, len(baggage)),
+		trace:   newTrace(),
+	}
+	for k, v := range baggage {
+		sc.setBaggageItem(k, v)
+	}
+	if samplingPriority != nil {
+		sc.setSamplingPriority(*samplingPriority, samplernames.Unknown)
+	}
+	return sc
 }
