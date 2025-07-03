@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -44,7 +43,6 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 		} else if sctx := oteltrace.SpanFromContext(ctx).SpanContext(); sctx.IsValid() {
 			// if the span doesn't originate from the Datadog tracer,
 			// use SpanContextW3C implementation struct to pass span context information
-			fmt.Printf("MTOFF: sctx %+v\n", tracer.FromGenericCtx(otelToDDSpanContext(sctx)))
 			ddopts = append(ddopts, tracer.ChildOf(tracer.FromGenericCtx(otelToDDSpanContext(sctx))))
 		}
 	}
