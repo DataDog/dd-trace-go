@@ -20,6 +20,7 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -879,6 +880,91 @@ func TestSpanErrorNil(t *testing.T) {
 	span.SetTag(ext.Error, nil)
 	assert.Equal(int32(0), span.error)
 	assert.Equal(nMeta, len(span.meta))
+}
+
+func TestSpanErrorStackMetrics(t *testing.T) {
+	t.Run("debug stack disabled", func(t *testing.T) {
+		assert := assert.New(t)
+		var tg statsdtest.TestStatsdClient
+
+		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(false))
+		assert.Nil(err)
+		defer stop()
+
+		tracer.StartSpan("operation").Finish(WithError(errors.New("test")))
+		flush(1)
+		tg.Wait(assert, 1, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		durations := tg.CallsByName()
+		assert.Equal(int64(0), counts["datadog.span.errorstack.source"])
+		assert.NotContains(durations, "datadog.span.errorstack.duration")
+	})
+
+	t.Run("error:with debugstack", func(t *testing.T) {
+		assert := assert.New(t)
+		var tg statsdtest.TestStatsdClient
+
+		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+		assert.Nil(err)
+		defer stop()
+
+		tracer.StartSpan("operation").Finish(WithError(errors.New("test")))
+		flush(1)
+		tg.Wait(assert, 2, 100*time.Millisecond)
+
+		counts := tg.Counts()
+		durations := tg.CallsByName()
+		assert.Equal(int64(1), counts["datadog.span.errorstack.source"])
+		assert.Contains(durations, "datadog.span.errorstack.duration")
+	})
+
+	t.Run("error:multiple spans", func(t *testing.T) {
+		assert := assert.New(t)
+		var tg statsdtest.TestStatsdClient
+		numSpans := 5
+
+		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+		assert.Nil(err)
+		defer stop()
+
+		for range numSpans {
+			tracer.StartSpan("operation").Finish(WithError(errors.New("test")))
+		}
+		flush(numSpans)
+		tg.Wait(assert, 2*numSpans, 100*time.Millisecond)
+
+		durations := tg.CallsByName()
+		countCalls := statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.span.errorstack.source")
+		fmt.Println(countCalls)
+		assert.Equal(int64(numSpans), tg.CountCallsByTag(countCalls, "source:takeStacktrace"))
+		assert.Contains(durations, "datadog.span.errorstack.duration")
+	})
+
+	// TODO(hannahkm): re-enable this test after finding a good place to report metrics for TracerError
+	// t.Run("errortrace", func(t *testing.T) {
+	// 	assert := assert.New(t)
+	// 	var tg statsdtest.TestStatsdClient
+	// 	numSpans := 5
+
+	// 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+	// 	assert.Nil(err)
+	// 	defer stop()
+
+	// 	for range numSpans {
+	// 		tracer.StartSpan("operation").Finish(WithError(errortrace.New("test")))
+	// 	}
+	// 	flush(numSpans)
+	// 	tg.Wait(assert, 2*numSpans, 100*time.Millisecond)
+
+	// 	counts := tg.Counts()
+	// 	durations := tg.CallsByName()
+	// 	assert.Equal(int64(numSpans), counts["datadog.span.errorstack.source"])
+	// 	assert.Contains(durations, "datadog.span.errorstack.duration")
+
+	// 	byTag := tg.CountCallsByTag(tg.CountCalls(), "source:TracerError")
+	// 	assert.Equal(int64(numSpans), byTag)
+	// })
 }
 
 func TestUniqueTagKeys(t *testing.T) {
