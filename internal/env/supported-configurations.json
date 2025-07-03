@@ -1,0 +1,18 @@
+{
+  "supportedConfigurations": {
+    "DD_TRACE_BAR": [
+      "A"
+    ],
+    "DD_TRACE_FOO": [
+      "A"
+    ]
+  },
+  "aliases": {
+    "DD_BAR": [
+      "DD_TRACE_BAR"
+    ],
+    "DD_FOO": [
+      "DD_TRACE_FOO"
+    ]
+  }
+}
