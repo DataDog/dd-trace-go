@@ -75,7 +75,6 @@ func (logger *logger) Add(level LogLevel, text string, opts ...LogOption) {
 }
 
 func (logger *logger) add(level LogLevel, text string, opts ...LogOption) {
-
 	key := loggerKey{
 		message: text,
 		level:   level,

@@ -369,7 +369,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	if len(links) > 0 {
 		ctx.spanLinks = links
 	}
-	log.Debug("Extracted span context: %#v", ctx)
+	log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	return ctx, nil
 }
 

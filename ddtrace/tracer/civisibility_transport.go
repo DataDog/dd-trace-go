@@ -17,10 +17,12 @@ import (
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -106,9 +108,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = TestCycleSubdomain
 		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
-	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
-
-	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
+	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, urlsanitizer.SanitizeURL(testCycleURL))
 
 	return &ciVisibilityTransport{
 		config:           config,
