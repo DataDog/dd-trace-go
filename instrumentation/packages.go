@@ -29,6 +29,7 @@ const (
 	PackageGin                  Package = "gin-gonic/gin"
 	PackageGlobalsignMgo        Package = "globalsign/mgo"
 	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
+	PackageMongoDriverV2        Package = "go.mongodb.org/mongo-driver.v2"
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
 	PackageGoPGV10              Package = "go-pg/pg.v10"
@@ -74,8 +75,10 @@ const (
 	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
 	PackageOS                       Package = "os"
 	PackageRedisRueidis             Package = "redis/rueidis"
+)
 
-	// Deprecated packages
+// These packages have been removed in v2, but they are kept here for the transitional version.
+const (
 	PackageEmickleiGoRestful Package = "emicklei/go-restful"
 	PackageGaryburdRedigo    Package = "garyburd/redigo"
 	PackageGopkgJinZhuGormV1 Package = "gopkg.in/jinzhu/gorm.v1"
@@ -313,6 +316,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageMongoDriver: {
 		TracedPackage: "go.mongodb.org/mongo-driver",
+		EnvVarPrefix:  "MONGO",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("mongo"),
+				buildOpNameV0:      staticName("mongodb.query"),
+				buildOpNameV1:      staticName("mongodb.query"),
+			},
+		},
+	},
+	PackageMongoDriverV2: {
+		TracedPackage: "go.mongodb.org/mongo-driver/v2",
 		EnvVarPrefix:  "MONGO",
 		naming: map[Component]componentNames{
 			ComponentDefault: {

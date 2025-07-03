@@ -19,11 +19,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type TestCase struct {
+type TestCaseBase struct {
 	*http.Server
 }
 
-func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
+func (tc *TestCaseBase) Setup(_ context.Context, t *testing.T) {
 	gin.SetMode(gin.ReleaseMode) // Silence start-up logging
 	engine := gin.New()
 
@@ -43,13 +43,13 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	})
 }
 
-func (tc *TestCase) Run(_ context.Context, t *testing.T) {
+func (tc *TestCaseBase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.Server.Addr + "/ping")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func (tc *TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 	httpUrl := "http://" + tc.Server.Addr + "/ping"
 	return trace.Traces{
 		{

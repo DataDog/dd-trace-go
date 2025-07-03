@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/go-libddwaf/v4"
@@ -49,7 +50,6 @@ func registerAppsecStartTelemetry(mode config.EnablementMode, origin telemetry.O
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceAppSec)
-	telemetry.RegisterAppConfig("DD_APPSEC_ENABLED", mode == config.ForcedOn, origin)
 	// TODO: add appsec.enabled metric once this metric is enabled backend-side
 
 	detectLibDLOnce.Do(detectLibDL)
@@ -61,12 +61,13 @@ func detectLibDL() {
 	}
 
 	for _, method := range detectLibDLMethods {
-		if ok, err := method.method(); err != nil {
-			telemetrylog.Debug("failed to detect libdl: %v", err, telemetry.WithTags([]string{"method:" + method.name}))
-		} else if ok {
+		if ok, err := method.method(); ok {
 			telemetrylog.Debug("libdl detected using method: %s", method.name, telemetry.WithTags([]string{"method:" + method.name}))
+			log.Debug("libdl detected using method: %s", method.name)
 			telemetry.RegisterAppConfig("libdl_present", true, telemetry.OriginCode)
 			return
+		} else if err != nil {
+			log.Debug("failed to detect libdl with method %s: %v", method.name, err)
 		}
 	}
 
@@ -81,6 +82,9 @@ var detectLibDLMethods = []struct {
 	name   string
 	method func() (bool, error)
 }{
+	{"cgo", func() (bool, error) {
+		return cgoEnabled, nil
+	}},
 	{"ldconfig", ldconfig},
 	{"ldsocache", ldCache},
 	{"ldd", ldd},
@@ -117,9 +121,7 @@ func ldd() (bool, error) {
 	cmd.Stdout = &output
 	cmd.Stderr = io.Discard
 
-	if err := cmd.Run(); err != nil {
-		return false, err
-	}
+	oneErr := cmd.Run()
 
 	if searchLibdl(output.Bytes()) {
 		return true, nil
@@ -130,11 +132,9 @@ func ldd() (bool, error) {
 	cmd.Stdout = &output
 	cmd.Stderr = io.Discard
 
-	if err := cmd.Run(); err != nil {
-		return false, err
-	}
+	selfErr := cmd.Run()
 
-	return searchLibdl(selfOutput.Bytes()), nil
+	return searchLibdl(selfOutput.Bytes()), errors.Join(oneErr, selfErr)
 }
 
 // ldconfig -p is the most reliable way to check for libdl.so presence but it does not work on musl. It also
@@ -166,7 +166,7 @@ func procMaps() (bool, error) {
 
 	defer fp.Close()
 
-	output, _ := io.ReadAll(io.LimitReader(fp, libDLReadLimit))
+	output, oneErr := io.ReadAll(io.LimitReader(fp, libDLReadLimit))
 
 	if searchLibdl(output) {
 		return true, nil
@@ -182,9 +182,9 @@ func procMaps() (bool, error) {
 
 	defer fp.Close()
 
-	output, _ = io.ReadAll(io.LimitReader(fp, libDLReadLimit))
+	output, selfErr := io.ReadAll(io.LimitReader(fp, libDLReadLimit))
 
-	return searchLibdl(output), nil
+	return searchLibdl(output), errors.Join(oneErr, selfErr)
 }
 
 // manualSearch is a fallback method to search for libdl.so.2 in common library directories.

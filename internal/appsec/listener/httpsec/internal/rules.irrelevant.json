@@ -1,0 +1,27 @@
+{
+  "version": "2.2",
+  "metadata": {
+    "rules_version": "1.2.6"
+  },
+  "rules": [
+    {
+      "id": "irrelevant-address",
+      "name": "Block on some irrelevant address",
+      "tags": {
+        "type": "block_user",
+        "category": "security_response"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [{ "address": "usr.id" }],
+            "list": ["nobody"]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
+    }
+  ]
+}

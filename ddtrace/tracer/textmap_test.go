@@ -2312,6 +2312,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
+	log.SetLevel(log.LevelError)
 	for i := 0; i < b.N; i++ {
 		propagator.Extract(carrier)
 	}
@@ -2874,4 +2875,130 @@ func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
 		})
 		assert.Len(t, got, 0)
 	})
+}
+
+func TestExtractOnlyBaggage(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
+	headers := TextMapCarrier(map[string]string{
+		"baggage": "foo=bar,baz=qux",
+	})
+
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(headers)
+	assert.Nil(t, err)
+
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 2)
+	assert.Equal(t, "bar", got["foo"])
+	assert.Equal(t, "qux", got["baz"])
+}
+
+// TestExtractBaggageFirstThenDatadog verifies that when both baggage and trace headers are present,
+// the trace context (trace ID, parent ID, etc.) is extracted from trace headers, and the baggage items are properly inherited,
+// specifically when baggage has a higher precedence than trace headers in the propagation style.
+func TestExtractBaggageFirstThenDatadog(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage,datadog")
+
+	// Set up headers with both baggage and Datadog trace context
+	headers := TextMapCarrier(map[string]string{
+		"baggage":             "item=xyz",
+		DefaultTraceIDHeader:  "12345",
+		DefaultParentIDHeader: "67890",
+		DefaultPriorityHeader: "1",
+	})
+
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	ctx, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
+	expectedTraceID := traceIDFrom64Bits(12345)
+	assert.Equal(t, expectedTraceID, ctx.traceID)
+	assert.Equal(t, uint64(67890), ctx.spanID)
+
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 1)
+	assert.Equal(t, "xyz", got["item"])
+}
+
+// TestSpanContextDebugLoggingSecurity verifies that debug logging of span context
+// does not expose sensitive data from baggage or other fields.
+func TestSpanContextDebugLoggingSecurity(t *testing.T) {
+	// Set up a record logger to capture debug output
+	tp := new(log.RecordLogger)
+
+	// Enable debug mode to trigger the debug logging
+	tracer, err := newTracer(WithLogger(tp), WithDebugMode(true))
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	// Create headers with sensitive data in baggage
+	headers := TextMapCarrier(map[string]string{
+		"baggage":             "api_key=secret123,password=sensitive_password,token=bearer_token_abc",
+		DefaultTraceIDHeader:  "12345",
+		DefaultParentIDHeader: "67890",
+		DefaultPriorityHeader: "1",
+	})
+
+	// Clear any existing logs before extraction
+	tp.Reset()
+
+	// Extract span context - this should trigger the debug log
+	ctx, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+	assert.NotNil(t, ctx)
+
+	// Verify that baggage was extracted
+	got := make(map[string]string)
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, 3)
+	assert.Equal(t, "secret123", got["api_key"])
+	assert.Equal(t, "sensitive_password", got["password"])
+	assert.Equal(t, "bearer_token_abc", got["token"])
+
+	// Check the debug logs - they should NOT contain sensitive data
+	logs := tp.Logs()
+
+	// Find the span context debug log
+	var contextLog string
+	for _, logEntry := range logs {
+		if strings.Contains(logEntry, "Extracted span context:") {
+			contextLog = logEntry
+			break
+		}
+	}
+
+	// The log should exist
+	assert.NotEmpty(t, contextLog, "Expected to find span context debug log")
+
+	// The log should NOT contain sensitive baggage values
+	assert.NotContains(t, contextLog, "secret123", "Debug log should not expose API key")
+	assert.NotContains(t, contextLog, "sensitive_password", "Debug log should not expose password")
+	assert.NotContains(t, contextLog, "bearer_token_abc", "Debug log should not expose token")
+
+	// The log should still contain useful debug information (trace ID, span ID)
+	assert.Contains(t, contextLog, "67890", "Debug log should contain span ID")
+	assert.Contains(t, contextLog, "traceID=", "Debug log should contain trace ID field")
+	assert.Contains(t, contextLog, "hasBaggage=true", "Debug log should indicate baggage presence")
+	assert.Contains(t, contextLog, "baggageCount=3", "Debug log should show baggage count")
+
+	// This test ensures that the SafeDebugString() method is used instead of %#v
+	// to prevent sensitive baggage data from being exposed in debug logs.
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // OperationContext holds metadata about an instrumentation operation.
@@ -26,7 +27,7 @@ type OperationContext map[string]string
 func Load(pkg Package) *Instrumentation {
 	info, ok := packages[pkg]
 	if !ok {
-		panic("instrumentation package: " + pkg + " was not found. If this is an external package, you must" +
+		panic("instrumentation package: " + pkg + " was not found. If this is an external package, you must " +
 			"call instrumentation.Register first")
 	}
 
@@ -43,6 +44,11 @@ func Load(pkg Package) *Instrumentation {
 // ReloadConfig reloads config read from environment variables. This is useful for tests.
 func ReloadConfig() {
 	namingschema.ReloadConfig()
+}
+
+// Version returns the version of the dd-trace-go package.
+func Version() string {
+	return version.Tag
 }
 
 // Instrumentation represents instrumentation for a package.
@@ -110,7 +116,6 @@ func (i *Instrumentation) AppSecRASPEnabled() bool {
 }
 
 func (i *Instrumentation) DataStreamsEnabled() bool {
-	// TODO: APMAPI-1358
 	v, _, _ := stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	return v
 }

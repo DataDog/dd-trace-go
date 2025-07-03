@@ -19,14 +19,15 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/credentials"
 
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // AppsecCalloutExtensionService defines the struct that follows the ExternalProcessorServer interface.
@@ -35,10 +36,11 @@ type AppsecCalloutExtensionService struct {
 }
 
 type serviceExtensionConfig struct {
-	extensionPort     string
-	extensionHost     string
-	healthcheckPort   string
-	observabilityMode bool
+	extensionPort        string
+	extensionHost        string
+	healthcheckPort      string
+	observabilityMode    bool
+	bodyParsingSizeLimit int
 }
 
 func loadConfig() serviceExtensionConfig {
@@ -46,15 +48,17 @@ func loadConfig() serviceExtensionConfig {
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
 	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 	observabilityMode := boolEnv("DD_SERVICE_EXTENSION_OBSERVABILITY_MODE", false)
+	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", 0)
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
 
 	return serviceExtensionConfig{
-		extensionPort:     extensionPortStr,
-		extensionHost:     extensionHostStr,
-		healthcheckPort:   healthcheckPortStr,
-		observabilityMode: observabilityMode,
+		extensionPort:        extensionPortStr,
+		extensionHost:        extensionHostStr,
+		healthcheckPort:      healthcheckPortStr,
+		observabilityMode:    observabilityMode,
+		bodyParsingSizeLimit: bodyParsingSizeLimit,
 	}
 }
 
@@ -63,7 +67,7 @@ var log = NewLogger()
 func main() {
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
-		if err := os.Setenv("DD_VERSION", version); err != nil {
+		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
 			log.Error("service_extension: failed to set DD_VERSION environment variable: %v\n", err)
 		}
 	}
@@ -115,7 +119,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + version + `"}}`))
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + instrumentation.Version() + `"}}`))
 	})
 
 	server := &http.Server{
@@ -141,24 +145,24 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 }
 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
-	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
-	if err != nil {
-		return fmt.Errorf("failed to load key pair: %v", err)
-	}
-
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
 		return fmt.Errorf("gRPC server: %v", err)
 	}
 
-	grpcCredentials := credentials.NewServerTLSFromCert(&cert)
-	grpcServer := grpc.NewServer(grpc.Creds(grpcCredentials))
+	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
+	if err != nil {
+		return fmt.Errorf("failed to load key pair: %v", err)
+	}
 
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
 		gocontrolplane.AppsecEnvoyConfig{
 			IsGCPServiceExtension: true,
 			BlockingUnavailable:   config.observabilityMode,
+			Context:               ctx,
+			BodyParsingSizeLimit:  config.bodyParsingSizeLimit,
 		})
 
 	go func() {
