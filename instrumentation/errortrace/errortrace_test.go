@@ -201,3 +201,54 @@ func TestUnwrap(t *testing.T) {
 		assert.Equal(err, unwrapped)
 	})
 }
+
+func TestErrorf(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		assert := assert.New(t)
+		err := Errorf("")
+		assert.NotNil(err)
+		assert.Equal("", err.Error())
+	})
+
+	t.Run("single, non-error", func(t *testing.T) {
+		assert := assert.New(t)
+		err := Errorf("val: %d", 1)
+		assert.NotNil(err)
+		assert.Equal("val: 1", err.Error())
+	})
+
+	t.Run("%w, error", func(t *testing.T) {
+		assert := assert.New(t)
+		err := Errorf("val: %w", errors.New("Something wrong"))
+		assert.NotNil(err)
+		assert.Equal("val: Something wrong", err.Error())
+	})
+
+	t.Run("%w, TracerError", func(t *testing.T) {
+		assert := assert.New(t)
+		err := Errorf("val: %w", createTestError())
+		assert.NotNil(err)
+		assert.Equal("val: Something wrong", err.Error())
+	})
+
+	t.Run("multiple args, error", func(t *testing.T) {
+		assert := assert.New(t)
+		err := Errorf("val: %w, %w", errors.New("e1"), errors.New("e2"))
+		assert.NotNil(err)
+		assert.Equal("val: e1, e2", err.Error())
+	})
+
+	t.Run("multiple args, TracerError", func(t *testing.T) {
+		assert := assert.New(t)
+		err := Errorf("val: %w, %w", createTestError(), createTestError())
+		assert.NotNil(err)
+		assert.Equal("val: Something wrong, Something wrong", err.Error())
+	})
+
+	t.Run("multiple args, different types", func(t *testing.T) {
+		assert := assert.New(t)
+		err := Errorf("val: %w, %d, %w", errors.New("err"), 1, createTestError())
+		assert.NotNil(err)
+		assert.Equal("val: err, 1, Something wrong", err.Error())
+	})
+}

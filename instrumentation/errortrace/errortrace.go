@@ -8,8 +8,10 @@ package errortrace
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 // TracerError is an error type that holds stackframes from when the error was thrown.
@@ -91,6 +93,44 @@ func (err *TracerError) Format() string {
 	// returned in future calls
 	err.stack = &out
 	return out.String()
+}
+
+// Errorf serves the same purpose as fmt.Errorf, but returns a TracerError
+// and prevents wrapping errors of type TracerError twice.
+// The %w flag will only wrap errors if they are not already of type *TracerError.
+func Errorf(format string, a ...any) *TracerError {
+	switch len(a) {
+	case 0:
+		return New(format)
+	case 1:
+		if _, ok := a[0].(*TracerError); ok {
+			format = strings.Replace(format, "%w", "%v", 1)
+		}
+	default:
+		aIndex := 0
+		var newFormat strings.Builder
+		for i := 0; i < len(format); i++ {
+			c := format[i]
+			newFormat.WriteByte(c)
+			if c != '%' {
+				continue
+			}
+			if i+1 >= len(format) {
+				break
+			}
+			if format[i+1] != 'w' {
+				continue
+			}
+			if _, ok := a[aIndex].(*TracerError); ok {
+				newFormat.WriteString("v")
+				i += 1
+			}
+			aIndex += 1
+		}
+		format = newFormat.String()
+	}
+	err := fmt.Errorf(format, a...)
+	return Wrap(err, 0, 1)
 }
 
 // Unwrap takes a wrapped error and returns the inner error.
