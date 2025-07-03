@@ -122,7 +122,7 @@ func collect() map[string]string {
 	tags := make(map[string]string)
 	execPath, err := os.Executable()
 	if err != nil {
-		log.Debug("failed to get binary path: %v", err.Error())
+		log.Debug("failed to get binary path: %s", err.Error())
 	} else {
 		baseDirName := filepath.Base(filepath.Dir(execPath))
 		tags[tagEntrypointName] = filepath.Base(execPath)
@@ -131,7 +131,7 @@ func collect() map[string]string {
 	}
 	wd, err := os.Getwd()
 	if err != nil {
-		log.Debug("failed to get working directory: %v", err.Error())
+		log.Debug("failed to get working directory: %s", err.Error())
 	} else {
 		tags[tagEntrypointWorkdir] = filepath.Base(wd)
 	}

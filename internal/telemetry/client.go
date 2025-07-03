@@ -210,7 +210,7 @@ func (c *client) Flush() {
 			return
 		}
 		if err, ok := r.(error); ok {
-			log.Warn("panic while flushing telemetry data, stopping telemetry: %v", err.Error())
+			log.Warn("panic while flushing telemetry data, stopping telemetry: %s", err.Error())
 		} else {
 			log.Warn("panic while flushing telemetry data, stopping telemetry!")
 		}
@@ -248,9 +248,9 @@ func (c *client) Flush() {
 			}
 		}
 		if dependenciesFound {
-			log.Warn("appsec: error while flushing SCA Security Data: %v", err.Error())
+			log.Warn("appsec: error while flushing SCA Security Data: %s", err.Error())
 		} else {
-			log.Debug("telemetry: error while flushing telemetry data: %v", err.Error())
+			log.Debug("telemetry: error while flushing telemetry data: %s", err.Error())
 		}
 
 		return

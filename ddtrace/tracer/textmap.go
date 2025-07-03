@@ -557,10 +557,10 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	if ctx.trace != nil {
 		tid := ctx.trace.propagatingTag(keyTraceID128)
 		if err := validateTID(tid); err != nil {
-			log.Debug("Invalid hex traceID: %s", err)
+			log.Debug("Invalid hex traceID: %s", err.Error())
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		} else if err := ctx.traceID.SetUpperFromHex(tid); err != nil {
-			log.Debug("Attempted to set an invalid hex traceID: %s", err)
+			log.Debug("Attempted to set an invalid hex traceID: %s", err.Error())
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
 	}

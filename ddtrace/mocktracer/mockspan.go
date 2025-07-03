@@ -257,7 +257,7 @@ func (s *Span) Events() []SpanEvent {
 
 	var events []SpanEvent
 	if err := json.Unmarshal([]byte(eventsJSON), &events); err != nil {
-		log.Error("mocktracer: failed to unmarshal span events: %v", err.Error())
+		log.Error("mocktracer: failed to unmarshal span events: %s", err.Error())
 		return nil
 	}
 	return events

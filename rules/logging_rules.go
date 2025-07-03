@@ -44,12 +44,12 @@
 //
 // ✅ Allowed (internal):
 //
-//	log.Error("operation failed: %v", err.Error()) // err.Error() with %v is fine
+//	log.Error("operation failed: %s", err.Error()) // err.Error() with %v is fine
 //	log.Error("failed with %v\n", err.Error())     // %v at end, trailing chars OK
 //
 // 🔍 Suggested improvement (internal):
 //
-//	log.Error("operation failed: %v", err)         // Raw error - suggest err.Error()
+//	log.Error("operation failed: %s", err.Error())         // Raw error - suggest err.Error()
 //	log.Error("failed with %v\n", err)             // Raw error - suggest err.Error()
 package gorules
 
@@ -92,7 +92,7 @@ const (
 )
 
 //doc:summary TELEMETRY SECURITY: detects usage of %v, %+v, %#v format verbs in telemetry logging
-//doc:before  telemetrylog.Error("unexpected error: %v", err)
+//doc:before  telemetrylog.Error("unexpected error: %s", err.Error())
 //doc:after   telemetrylog.Error("unexpected error: %s", err.Error())
 //doc:tags    security telemetry data-leak format-verbs
 func telemetryLogFormatVerbs(m dsl.Matcher) {
@@ -264,7 +264,7 @@ func stdLogVariableFormat(m dsl.Matcher) {
 }
 
 //doc:summary AUTO-FIX: suggests err.Error() with %s for error types in internal logging
-//doc:before  log.Error("operation failed: %v", err)
+//doc:before  log.Error("operation failed: %s", err.Error())
 //doc:after   log.Error("operation failed: %s", err.Error())
 //doc:tags    best-practice internal-log error-handling auto-fix
 func internalLogSuggestErrorString(m dsl.Matcher) {

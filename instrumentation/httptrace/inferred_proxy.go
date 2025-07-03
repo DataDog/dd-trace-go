@@ -105,7 +105,7 @@ func extractInferredProxyContext(headers http.Header) (*proxyContext, error) {
 
 	startTimeUnixMilli, err := strconv.ParseInt(headers[ProxyHeaderStartTimeMs][0], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing time string: %v", err)
+		return nil, fmt.Errorf("error parsing time string: %s", err.Error())
 	}
 	pc.startTime = time.UnixMilli(startTimeUnixMilli)
 

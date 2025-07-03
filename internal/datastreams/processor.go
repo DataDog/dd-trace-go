@@ -84,17 +84,17 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 	for _, s := range b.points {
 		pathwayLatency, err := proto.Marshal(s.pathwayLatency.ToProto())
 		if err != nil {
-			log.Error("can't serialize pathway latency. Ignoring: %v", err.Error())
+			log.Error("can't serialize pathway latency. Ignoring: %s", err.Error())
 			continue
 		}
 		edgeLatency, err := proto.Marshal(s.edgeLatency.ToProto())
 		if err != nil {
-			log.Error("can't serialize edge latency. Ignoring: %v", err.Error())
+			log.Error("can't serialize edge latency. Ignoring: %s", err.Error())
 			continue
 		}
 		payloadSize, err := proto.Marshal(s.payloadSize.ToProto())
 		if err != nil {
-			log.Error("can't serialize payload size. Ignoring: %v", err.Error())
+			log.Error("can't serialize payload size. Ignoring: %s", err.Error())
 			continue
 		}
 		stats = append(stats, StatsPoint{

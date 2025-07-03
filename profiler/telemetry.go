@@ -30,7 +30,7 @@ func startTelemetry(c *config) {
 			AgentURL:   c.agentURL,
 		})
 		if err != nil {
-			log.Debug("profiler: failed to create telemetry client: %v", err.Error())
+			log.Debug("profiler: failed to create telemetry client: %s", err.Error())
 			return
 		}
 		telemetry.StartApp(client)

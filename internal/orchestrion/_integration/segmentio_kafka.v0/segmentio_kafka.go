@@ -89,7 +89,7 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 			if !errors.Is(err, kafka.UnknownTopicOrPartition) {
 				return backoff.Permanent(err)
 			}
-			t.Logf("failed to produce messages (retrying...): %v", err)
+			t.Logf("failed to produce messages (retrying...): %s", err.Error())
 			return err
 		},
 		backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(30*time.Second)),

@@ -76,7 +76,7 @@ func main() {
 
 		origin, err := getModuleOrigin(repo, version)
 		if err != nil {
-			log.Printf("failed to get module origin: %v\n", err)
+			log.Printf("failed to get module origin: %s\n", err.Error())
 			continue
 		}
 
@@ -84,7 +84,7 @@ func main() {
 		//    Parse the tags, and extract all the majors from them (ex v2, v3, v4)
 		tags, err := getTags(origin)
 		if err != nil {
-			log.Printf("error fetching tags from origin: %v", err)
+			log.Printf("error fetching tags from origin: %s", err.Error())
 			continue
 		}
 

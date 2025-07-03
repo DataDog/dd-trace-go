@@ -255,7 +255,7 @@ type WriterStatusCodeError struct {
 }
 
 func (w *WriterStatusCodeError) Error() string {
-	return fmt.Sprintf("unexpected status code: %q (received body: %q)", w.Status, w.Body)
+	return fmt.Sprintf("unexpected status code: %q (received body: %d bytes)", w.Status, len(w.Body))
 }
 
 func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, error) {

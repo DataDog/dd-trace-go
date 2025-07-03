@@ -102,7 +102,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %v", err.Error())
+		log.Error("failed to marshal span events: %s", err.Error())
 		return ""
 	}
 	return string(events)
@@ -606,7 +606,7 @@ func (s *Span) serializeSpanEvents() {
 	b, err := json.Marshal(s.spanEvents)
 	s.spanEvents = nil
 	if err != nil {
-		log.Debug("Unable to marshal span events; events dropped from span meta\n%v", err.Error())
+		log.Debug("Unable to marshal span events; events dropped from span meta\n%s", err.Error())
 		return
 	}
 	s.meta["events"] = string(b)

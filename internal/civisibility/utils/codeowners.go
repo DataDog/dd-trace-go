@@ -103,7 +103,7 @@ func parseCodeOwners(filePath string) (*CodeOwners, error) {
 		}
 		return cow, nil
 	}
-	logger.Debug("Error parsing codeowners: %s", err)
+	logger.Debug("Error parsing codeowners: %s", err.Error())
 	return nil, err
 }
 

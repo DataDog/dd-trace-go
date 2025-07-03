@@ -337,7 +337,7 @@ func UnshallowGitRepository() (bool, error) {
 
 	// let's check if the last command was unsuccessful
 	if err != nil || fetchOutput == "" {
-		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err.Error())
+		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %s", err.Error())
 		// ***
 		// The previous command has a drawback: if the local HEAD is a commit that has not been pushed to the remote, it will fail.
 		// If this is the case, we fallback to: `git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream})`
@@ -357,7 +357,7 @@ func UnshallowGitRepository() (bool, error) {
 
 	// let's check if the last command was unsuccessful
 	if err != nil || fetchOutput == "" {
-		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err.Error())
+		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %s", err.Error())
 		// ***
 		// It could be that the CI is working on a detached HEAD or maybe branch tracking hasn't been set up.
 		// In that case, this command will also fail, and we will finally fallback to we just unshallow all the things:
@@ -484,7 +484,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	// get a temporary path to store the pack files
 	temporaryPath, err := os.MkdirTemp("", "pack-objects")
 	if err != nil {
-		log.Warn("civisibility: error creating temporary directory: %v", err.Error())
+		log.Warn("civisibility: error creating temporary directory: %s", err.Error())
 		return nil
 	}
 
@@ -492,7 +492,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	out, err := execGitStringWithInput(telemetry.PackObjectsCommandsType, objectsShasString,
 		"pack-objects", "--compression=9", "--max-pack-size="+strconv.Itoa(MaxPackFileSizeInMb)+"m", temporaryPath+"/")
 	if err != nil {
-		log.Warn("civisibility: error creating pack files: %v", err.Error())
+		log.Warn("civisibility: error creating pack files: %s", err.Error())
 		return nil
 	}
 
