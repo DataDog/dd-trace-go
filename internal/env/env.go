@@ -52,8 +52,6 @@ func verifySupportedConfiguration(name string) bool {
 		if _, ok := SupportedConfigurations[name]; !ok {
 			if testing.Testing() {
 				addSupportedConfigurationToFile(name)
-				// TODO: add value to supported configurations
-				// TODO: git status supported-configurations.json in CI
 			}
 
 			log.Error("config: usage of a unlisted environment variable: %s", name)

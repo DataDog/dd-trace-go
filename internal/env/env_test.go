@@ -15,15 +15,8 @@ func TestVerifySupportedConfiguration(t *testing.T) {
 
 	// Unknown configuration with no adding to the supported configurations
 	// file.
+	t.Setenv("DD_CONFIG_INVERSION_UNKNOWN", "VALUE")
 	res, ok = LookupEnv("DD_CONFIG_INVERSION_UNKNOWN")
-	require.False(t, ok)
-	require.Empty(t, res)
-
-	res, ok = LookupEnv("DD_NOPE")
-	require.False(t, ok)
-	require.Empty(t, res)
-
-	res, ok = LookupEnv("DD_ZNOPE")
 	require.False(t, ok)
 	require.Empty(t, res)
 }

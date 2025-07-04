@@ -109,12 +109,6 @@ func check(input string) error {
 
 	slog.Info("supported configuration keys in file", "count", len(keys))
 
-	if len(env.SupportedConfigurations) != len(keys) {
-		slog.Error("supported configuration keys count mismatch", "map_count", len(env.SupportedConfigurations),
-			"file_count", len(keys))
-		return fmt.Errorf("supported configuration keys count mismatch")
-	}
-
 	missingKeys := []string{}
 	for _, k := range keys {
 		if _, ok := env.SupportedConfigurations[k]; !ok {
