@@ -51,5 +51,8 @@ func addSupportedConfigurationToFile(name string) {
 		return
 	}
 
-	os.WriteFile("supported-configurations.json", jsonFile, 0644)
+	if err := os.WriteFile("supported-configurations.json", jsonFile, 0644); err != nil {
+		log.Error("config: failed to write supported configuration: %v", err)
+		return
+	}
 }
