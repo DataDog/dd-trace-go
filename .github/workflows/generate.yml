@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go

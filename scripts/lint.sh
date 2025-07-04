@@ -50,6 +50,7 @@ run_linters() {
 	run "goimports -e -l -local github.com/DataDog/dd-trace-go/v2 ."
 	run "golangci-lint run ./..."
 	run "./scripts/checklocks.sh --ignore-errors ./ddtrace/tracer"
+	run "go run ./scripts/checkcopyright.go"
 }
 
 # Parse command line arguments

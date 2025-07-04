@@ -48,23 +48,6 @@ jobs:
         run: |
           go run ./scripts/checkcopyright.go
 
-  generate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-      - name: Run generator
-        run: |-
-          ./scripts/generate.sh
-      - name: Check for changes
-        run: git diff --exit-code
-
   check-modules:
     runs-on: ubuntu-latest
     steps:
