@@ -6,75 +6,60 @@
 package env
 
 import (
-	"fmt"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-func init() {
-	var err error
-	reader, err = newConfigurationInversionReader()
-	if err != nil {
-		panic(fmt.Errorf("failed to initialize configuration inversion reader: %w", err))
-	}
-}
-
-var reader *configurationInversionReader
-
 // GetEnv is a wrapper around os.GetEnv that validates the environment variable
-// against a configuration file listing every known environment variable.
+// against a list of supported environment variables.
 //
 // When a environment variable is not supported because it is not
-// listed in the configuration file, the reader will log an error
+// listed in the list of supported environment variables, the function will log an error
 // and behave as if the environment variable was not set.
 //
 // In testing mode, the reader will automatically add the environment variable
 // to the configuration file.
 func GetEnv(name string) string {
-	return reader.getEnv(name)
-}
-
-// LookupEnv is a wrapper around os.LookupEnv that validates the environment variable
-// against a configuration file listing every known environment variable.
-//
-// When a environment variable is not supported because it is not
-// listed in the configuration file, the reader will log an error
-// and behave as if the environment variable was not set.
-//
-// In testing mode, the reader will automatically add the environment variable
-// to the configuration file.
-func LookupEnv(name string) (string, bool) {
-	return reader.lookupEnv(name)
-}
-
-const (
-	defaultSupportedConfigurationPath = "./supported-configurations.json"
-)
-
-func newConfigurationInversionReader() (*configurationInversionReader, error) {
-	return &configurationInversionReader{}, nil
-}
-
-// configurationInversionReader is a wrapper used to read the environment variables
-// and validate their usage against a configuration file listing every
-// known environment variable.
-//
-// This allows us to have a single point of truth for the environment variables
-// and ensure that we are not using any environment variable that is not
-// explicitly listed in the configuration file.
-type configurationInversionReader struct {
-}
-
-func (e *configurationInversionReader) getEnv(name string) string {
-	if testing.Testing() {
-		// error log
-		// add value to supported configurations
-		// git status supported-configurations.json
+	if !verifySupportedConfiguration(name) {
+		return ""
 	}
 
 	return os.Getenv(name)
 }
 
-func (e *configurationInversionReader) lookupEnv(name string) (string, bool) {
+// LookupEnv is a wrapper around os.LookupEnv that validates the environment variable
+// against a list of supported environment variables.
+//
+// When a environment variable is not supported because it is not
+// listed in the list of supported environment variables, the function will log an error
+// and behave as if the environment variable was not set.
+//
+// In testing mode, the reader will automatically add the environment variable
+// to the configuration file.
+func LookupEnv(name string) (string, bool) {
+	if !verifySupportedConfiguration(name) {
+		return "", false
+	}
+
 	return os.LookupEnv(name)
+}
+
+func verifySupportedConfiguration(name string) bool {
+	if strings.HasPrefix(name, "DD_") || strings.HasPrefix(name, "OTEL_") {
+		if _, ok := SupportedConfigurations[name]; !ok {
+			if testing.Testing() {
+				// TODO: add value to supported configurations
+				// TODO: git status supported-configurations.json in CI
+			}
+
+			log.Error("config: usage of a unlisted environment variable: %s", name)
+
+			return false
+		}
+	}
+
+	return true
 }
