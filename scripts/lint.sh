@@ -49,7 +49,7 @@ run_linters() {
 	export PATH="$(go env GOPATH)/bin:$PATH"
 	run "goimports -e -l -local github.com/DataDog/dd-trace-go/v2 ."
 	run "golangci-lint run ./..."
-	run "./scripts/checklocks.sh --ignore-errors ./ddtrace/tracer"
+	run "./scripts/checklocks.sh ./ddtrace/tracer"
 	run "go run ./scripts/checkcopyright.go"
 }
 
