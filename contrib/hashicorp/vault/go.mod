@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
 
-go 1.23.0
+go 1.23.1
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.2.0-dev

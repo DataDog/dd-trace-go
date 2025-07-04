@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
 
-go 1.23.0
+go 1.23.1
 
 godebug x509negativeserial=1
 

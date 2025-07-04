@@ -134,7 +134,7 @@ jobs:
       - name: Run generate scripts and check diff
         run: |-
           ./scripts/generate.sh
-          ./scripts/fix-modules.sh
+          ./scripts/fix_modules.sh
           git diff --exit-code
 
   # TODO: macos setup requirements (xcode tools installation, etc.)

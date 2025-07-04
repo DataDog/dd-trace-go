@@ -35,19 +35,22 @@ Please feel free to comment on a PR if there is any difficulty or confusion abou
 Our CI pipeline includes several automated checks:
 
 #### Static Checks Workflow
+
 - **Copyright Check**: Verifies all files have proper copyright headers
 - **Generate Check**: Ensures generated code is up-to-date
-- **Module Check**: Validates Go module consistency using `./scripts/fix-modules.sh`
+- **Module Check**: Validates Go module consistency using `./scripts/fix_modules.sh`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
 
 #### Unit and Integration Tests
+
 - **Core Tests**: Tests the main library functionality
 - **Integration Tests**: Tests against real services using Docker
 - **Contrib Tests**: Tests all third-party integrations
 - **Race Detection**: Tests with Go race detector enabled
 
 #### Generate Workflow
+
 - **Code Generation**: Ensures all generated code is current and consistent
 
 ### CI Troubleshooting
@@ -71,7 +74,7 @@ Before submitting a PR, you can run the same checks locally:
 ./scripts/format.sh --all
 
 # Check module consistency
-./scripts/fix-modules.sh
+./scripts/fix_modules.sh
 
 # Run all tests
 ./scripts/test.sh --all
@@ -151,12 +154,12 @@ Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ### Module Management Scripts
 
-#### `./scripts/fix-modules.sh`
+#### `./scripts/fix_modules.sh`
 
 Maintains Go module consistency across the repository by running `go mod tidy` on all modules and adding missing replace directives for local imports.
 
 ```shell
-./scripts/fix-modules.sh
+./scripts/fix_modules.sh
 ```
 
 This script:
@@ -221,7 +224,7 @@ For local development, you can use the provided scripts instead of running tools
 ./scripts/format.sh --all
 
 # Instead of running go mod tidy manually
-./scripts/fix-modules.sh
+./scripts/fix_modules.sh
 ```
 
 ### Docker Alternative
