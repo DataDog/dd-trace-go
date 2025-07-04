@@ -13,7 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// GetEnv is a wrapper around os.GetEnv that validates the environment variable
+// Getenv is a wrapper around os.Getenv that validates the environment variable
 // against a list of supported environment variables.
 //
 // When a environment variable is not supported because it is not
@@ -22,7 +22,7 @@ import (
 //
 // In testing mode, the reader will automatically add the environment variable
 // to the configuration file.
-func GetEnv(name string) string {
+func Getenv(name string) string {
 	if !verifySupportedConfiguration(name) {
 		return ""
 	}

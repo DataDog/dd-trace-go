@@ -9,6 +9,25 @@ package env
 
 // SupportedConfigurations is a map of supported configuration keys.
 var SupportedConfigurations = map[string]struct{}{
-	"DD_TRACE_BAR": {},
-	"DD_TRACE_FOO": {},
+	"DD_APPSEC_ENABLED":                                 {},
+	"DD_CIVISIBILITY_ENABLED":                           {},
+	"DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED":    {},
+	"DD_INSTRUMENTATION_TELEMETRY_ENABLED":              {},
+	"DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED":     {},
+	"DD_PROFILING_ENDPOINT_COLLECTION_ENABLED":          {},
+	"DD_RUNTIME_METRICS_V2_ENABLED":                     {},
+	"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED":       {},
+	"DD_TRACE_ANALYTICS_ENABLED":                        {},
+	"DD_TRACE_BAR":                                      {},
+	"DD_TRACE_DEBUG_ABANDONED_SPANS":                    {},
+	"DD_TRACE_FOO":                                      {},
+	"DD_TRACE_GIT_METADATA_ENABLED":                     {},
+	"DD_TRACE_PARTIAL_FLUSH_ENABLED":                    {},
+	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS":                  {},
+	"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED":            {},
+	"DD_TRACE_PROPAGATION_EXTRACT_FIRST":                {},
+	"DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED": {},
+	"DD_TRACE_STARTUP_LOGS":                             {},
+	"DD_TRACE_STATS_COMPUTATION_ENABLED":                {},
+	"DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH":                {},
 }

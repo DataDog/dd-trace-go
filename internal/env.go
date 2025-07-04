@@ -7,18 +7,18 @@ package internal
 
 import (
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // BoolEnv returns the parsed boolean value of an environment variable, or
 // def otherwise.
 func BoolEnv(key string, def bool) bool {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.LookupEnv(key)
 	if !ok {
 		return def
 	}
@@ -33,7 +33,7 @@ func BoolEnv(key string, def bool) bool {
 // IntEnv returns the parsed int value of an environment variable, or
 // def otherwise.
 func IntEnv(key string, def int) int {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.LookupEnv(key)
 	if !ok {
 		return def
 	}
@@ -48,7 +48,7 @@ func IntEnv(key string, def int) int {
 // DurationEnv returns the parsed duration value of an environment variable, or
 // def otherwise.
 func DurationEnv(key string, def time.Duration) time.Duration {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.LookupEnv(key)
 	if !ok {
 		return def
 	}
@@ -77,7 +77,7 @@ func DurationEnvWithUnit(key string, unit string, def time.Duration) time.Durati
 
 // IPEnv returns the valid IP value of an environment variable, or def otherwise.
 func IPEnv(key string, def net.IP) net.IP {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.LookupEnv(key)
 	if !ok {
 		return def
 	}
@@ -128,7 +128,7 @@ func ParseTagString(str string) map[string]string {
 // FloatEnv returns the parsed float64 value of an environment variable,
 // or def otherwise.
 func FloatEnv(key string, def float64) float64 {
-	env, ok := os.LookupEnv(key)
+	env, ok := env.LookupEnv(key)
 	if !ok {
 		return def
 	}
@@ -151,5 +151,5 @@ func BoolVal(val string, def bool) bool {
 
 // ExternalEnvironment returns the value of the DD_EXTERNAL_ENV environment variable.
 func ExternalEnvironment() string {
-	return os.Getenv("DD_EXTERNAL_ENV")
+	return env.Getenv("DD_EXTERNAL_ENV")
 }
