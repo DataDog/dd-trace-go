@@ -51,6 +51,7 @@ func verifySupportedConfiguration(name string) bool {
 	if strings.HasPrefix(name, "DD_") || strings.HasPrefix(name, "OTEL_") {
 		if _, ok := SupportedConfigurations[name]; !ok {
 			if testing.Testing() {
+				addSupportedConfigurationToFile(name)
 				// TODO: add value to supported configurations
 				// TODO: git status supported-configurations.json in CI
 			}
