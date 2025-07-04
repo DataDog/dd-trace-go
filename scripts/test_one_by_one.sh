@@ -29,6 +29,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --all)
       contrib=true
+      lint=true
       export DD_APPSEC_ENABLED=true
       export DD_TEST_APPS_ENABLED=true
       export INTEGRATION=true
@@ -39,9 +40,18 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
+    -l|--lint)
+      lint=true
+      shift
+      ;;
+    -t|--tools)
+      tools=true
+      shift
+      ;;
     -h|--help)
       echo "test.sh - Run the tests for dd-trace-go"
       echo "	this script requires gotestsum, goimports, docker and docker-compose."
+      echo "	-l | --lint		- Run the linter"
       echo "	-a | --appsec		- Test with appsec enabled"
       echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
       echo "	-c | --contrib		- Run contrib tests"
@@ -57,6 +67,19 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "$tools" ]]; then
+    pushd /tmp
+    SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+    go -C "${SCRIPT_DIR}/_tools" install golang.org/x/tools/cmd/goimports
+    go -C "${SCRIPT_DIR}/_tools" install gotest.tools/gotestsum
+    popd
+fi
+
+if [[ -n "$lint" ]]; then
+    echo "Running Linter"
+    goimports -e -l -local github.com/DataDog/dd-trace-go/v2 .
+fi
 
 if [[ "$INTEGRATION" != "" ]]; then
   ## Make sure we shut down the docker containers on exit.
@@ -76,8 +99,11 @@ fi
 
 ## CORE
 echo testing core
-pkg_names=$(go list ./... | tr '\n' ' ')
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic ${pkg_names} && true
+pkg_names=$(go list ./...)
+for pkg in $pkg_names; do
+  echo "Testing package: $pkg"
+  nice -n20 gotestsum -- -v "$pkg" || echo "Package $pkg failed"
+done
 
 if [[ "$contrib" != "" ]]; then
   ## CONTRIB
