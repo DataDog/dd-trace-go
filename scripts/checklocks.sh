@@ -10,14 +10,14 @@ TARGET_DIR="./ddtrace/tracer"
 # Parse arguments
 while [[ $# -gt 0 ]]; do
 	case $1 in
-		--ignore-errors|-i)
-			IGNORE_ERRORS=true
-			shift
-			;;
-		*)
-			TARGET_DIR="$1"
-			shift
-			;;
+	--ignore-errors | -i)
+		IGNORE_ERRORS=true
+		shift
+		;;
+	*)
+		TARGET_DIR="$1"
+		shift
+		;;
 	esac
 done
 

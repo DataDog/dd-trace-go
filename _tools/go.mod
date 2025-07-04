@@ -10,6 +10,7 @@ require (
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.3.0
 	google.golang.org/protobuf v1.36.6
 	gotest.tools/gotestsum v1.12.0
+	gvisor.dev/gvisor/tools/checklocks/cmd/checklocks v0.0.0-00010101000000-000000000000
 	mvdan.cc/sh/v3 v3.11.0
 
 )
@@ -224,4 +225,6 @@ require (
 	mvdan.cc/unparam v0.0.0-20250301125049-0df0534333a4 // indirect
 )
 
+// This is a fork of the original "checklocks" analyzer that lives in the gvisor repository.
+// This is a temporary fork to allow for the development of the analyzer and testing.
 replace gvisor.dev/gvisor/tools/checklocks/cmd/checklocks => github.com/kakkoyun/checklocks v0.0.0-20250610135432-8760de581dc3

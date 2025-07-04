@@ -15,5 +15,6 @@ import (
 	_ "google.golang.org/grpc/cmd/protoc-gen-go-grpc"
 	_ "google.golang.org/protobuf/cmd/protoc-gen-go"
 	_ "gotest.tools/gotestsum"
+	_ "gvisor.dev/gvisor/tools/checklocks/cmd/checklocks"
 	_ "mvdan.cc/sh/v3/cmd/shfmt"
 )
