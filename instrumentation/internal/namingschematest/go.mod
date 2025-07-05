@@ -66,7 +66,7 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
 	github.com/go-chi/chi v1.5.4
-	github.com/go-chi/chi/v5 v5.0.10
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/go-pg/pg/v10 v10.11.1
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
