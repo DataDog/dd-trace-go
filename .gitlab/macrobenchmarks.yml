@@ -197,6 +197,77 @@ go124-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+check-slo-breaches:
+  stage: gates
+  needs: [
+    "go123-baseline",
+    "go123-only-trace",
+    "go123-only-trace-with-runtime-metrics",
+    "go123-only-profile",
+    "go123-profile-trace",
+    "go123-trace-asm",
+    "go123-profile-trace-asm",
+    "go124-baseline",
+    "go124-only-trace",
+    "go124-only-trace-with-runtime-metrics",
+    "go124-only-profile",
+    "go124-profile-trace",
+    "go124-trace-asm",
+    "go124-profile-trace-asm",
+  ]
+  when: on_success
+  tags: ["arch:amd64"]
+  image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:latest
+  script:
+    - export ARTIFACTS_DIR="$(pwd)/platform/artifacts-se"
+    - bp-runner .gitlab/benchmarks/bp-runner.fail-on-breach.yml
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - platform/artifacts/
+    expire_in: 3 months
+
+notify-slo-breaches:
+  stage: gates
+  needs: ["check-slo-breaches"]
+  when: on_failure
+  # See https://github.com/DataDog/slack-notifier/blob/master/gitlab-pipeline-templates/v3-sdm/template.yml.
+  tags: ["arch:amd64"]
+  image: "registry.ddbuild.io/slack-notifier:v27936653-9a2a7db-sdm-gbi-jammy@sha256:c9d1145319d1904fa72ea97904a15200d3cb684324723f9e1700bc02cc85065c"
+  variables:
+    ARTIFACTS_DIR: "$(pwd)/platform/artifacts-se"
+    CHANNEL: "guild-dd-trace-go-notifications"
+  script:
+    - |
+      if [ -z "${CHANNEL:-}" ]; then
+        echo "ERROR: 'CHANNEL' is required but not set. Add it to the 'variables' section of your notification job."
+        exit 1
+      fi
+    - |
+      if [ -z "${MESSAGE:-}" ]; then
+        echo "Using default SLO breach detection/warning message."
+        BRANCH_URL="https://github.com/DataDog/$CI_PROJECT_NAME/tree/$CI_COMMIT_REF_NAME"
+        COMMIT_URL="https://github.com/DataDog/$CI_PROJECT_NAME/commit/$CI_COMMIT_SHA"
+        BUILD_URL="$CI_PROJECT_URL/pipelines/$CI_PIPELINE_ID"
+        
+        if [ -f "$ARTIFACTS_DIR/threshold_breach_detected" ]; then
+          MESSAGE=":x: <$BRANCH_URL|$CI_COMMIT_REF_NAME> <$COMMIT_URL|$CI_COMMIT_SHORT_SHA> - Performance SLOs in $CI_PROJECT_NAME were breached in <$BUILD_URL|$CI_PIPELINE_ID>! Please look into it."
+        elif [ -f "$ARTIFACTS_DIR/warning_breach_detected" ]; then
+          MESSAGE=":warning: <$BRANCH_URL|$CI_COMMIT_REF_NAME> <$COMMIT_URL|$CI_COMMIT_SHORT_SHA> - Performance SLOs in $CI_PROJECT_NAME are about to be breached! A warning threshold in <$BUILD_URL|$CI_PIPELINE_ID> was triggered. Please look into it."
+        else
+          echo "INFO: No breach detection files ('threshold_breach_detected' or 'warning_breach_detected') found in '$ARTIFACTS_DIR'. This may indicate the gating job hasn't run yet or no breaches occurred."
+          exit 0
+        fi
+      fi
+    - postmessage "$CHANNEL" "$MESSAGE"
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - platform/artifacts/
+    expire_in: 3 months
+
 #
 # Macro benchmarks for Service Extensions
 # (using Envoy External Processing)
