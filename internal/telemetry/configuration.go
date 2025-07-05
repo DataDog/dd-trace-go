@@ -35,6 +35,7 @@ func (c *configuration) Add(kv Configuration) {
 		Name:   kv.Name,
 		Value:  kv.Value,
 		Origin: kv.Origin,
+		ID:     kv.ID,
 	}
 }
 
