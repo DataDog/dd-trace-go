@@ -23,6 +23,9 @@ const (
 	// agent in headers as well as counting them with statsd.
 	AgentDroppedP0Traces
 	AgentDroppedP0Spans
+
+	ErrorTraceStack
+	TakeStacktraceStack
 )
 
 // These integers track metrics about spans and traces as they are started,
@@ -37,6 +40,9 @@ var partialTraces uint32
 
 // Copies of the stats to be sent to the agent.
 var agentDroppedP0Traces, agentDroppedP0Spans uint32
+
+// Reports on which type of error the user is using.
+var errorTraceStack, takeStacktraceStack uint32
 
 func Signal(e Event, count uint32) {
 	switch e {
@@ -54,6 +60,10 @@ func Signal(e Event, count uint32) {
 		atomic.AddUint32(&agentDroppedP0Spans, count)
 	case PartialTraces:
 		atomic.AddUint32(&partialTraces, count)
+	case ErrorTraceStack:
+		atomic.AddUint32(&errorTraceStack, count)
+	case TakeStacktraceStack:
+		atomic.AddUint32(&takeStacktraceStack, count)
 	}
 }
 
@@ -75,6 +85,10 @@ func Count(e Event) uint32 {
 		return atomic.SwapUint32(&agentDroppedP0Traces, 0)
 	case AgentDroppedP0Spans:
 		return atomic.SwapUint32(&agentDroppedP0Spans, 0)
+	case ErrorTraceStack:
+		return atomic.SwapUint32(&errorTraceStack, 0)
+	case TakeStacktraceStack:
+		return atomic.SwapUint32(&takeStacktraceStack, 0)
 	}
 	return 0
 }
@@ -88,4 +102,6 @@ func Reset() {
 	atomic.StoreUint32(&partialTraces, 0)
 	atomic.StoreUint32(&agentDroppedP0Traces, 0)
 	atomic.StoreUint32(&agentDroppedP0Spans, 0)
+	atomic.StoreUint32(&errorTraceStack, 0)
+	atomic.StoreUint32(&takeStacktraceStack, 0)
 }

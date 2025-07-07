@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -433,6 +434,7 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		if !cfg.noDebugStack {
 			s.errTraceStack = "takeStacktrace"
+			tracerstats.Signal(tracerstats.TakeStacktraceStack, 1)
 			now := time.Now()
 			st := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 			s.errTraceDuration = time.Since(now)
@@ -744,7 +746,7 @@ func (s *Span) finish(finishTime int64) {
 		}
 		if !s.noDebugStack {
 			// if debug stacks are enabled, send metrics on how we are calculating error stacks
-			tracer.statsd.Count("datadog.span.errorstack.source", 1, []string{"source:" + s.errTraceStack}, 1)
+			// tracer.statsd.Count("datadog.span.errorstack.source", 1, []string{"source:" + s.errTraceStack}, 1)
 			tracer.statsd.Timing("datadog.span.errorstack.duration", s.errTraceDuration, []string{"source:" + s.errTraceStack}, 1)
 		}
 		tracer.spansFinished.Inc(s.integration)

@@ -905,6 +905,9 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		assert := assert.New(t)
 		var tg statsdtest.TestStatsdClient
 
+		defer func(old time.Duration) { statsInterval = old }(statsInterval)
+		statsInterval = time.Millisecond
+
 		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
 		assert.Nil(err)
 		defer stop()
@@ -924,6 +927,9 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		numSpans := 5
 
+		defer func(old time.Duration) { statsInterval = old }(statsInterval)
+		statsInterval = time.Millisecond
+
 		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
 		assert.Nil(err)
 		defer stop()
@@ -936,7 +942,6 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 
 		durations := tg.CallsByName()
 		countCalls := statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.span.errorstack.source")
-		fmt.Println(countCalls)
 		assert.Equal(int64(numSpans), tg.CountCallsByTag(countCalls, "source:takeStacktrace"))
 		assert.Contains(durations, "datadog.span.errorstack.duration")
 	})
