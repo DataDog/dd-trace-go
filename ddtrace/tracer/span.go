@@ -913,7 +913,9 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.spanEvents = append(s.spanEvents, event)
 }
 
-// RecordException attaches error information to the current span as a span event
+// RecordException attaches error information to the current span as a span event.
+// Additional span event attributes can be provided. The values may be (array of)
+// string, boolean, int or float type.
 func (s *Span) RecordException(err error, attributes ...map[string]any) {
 	if err == nil {
 		return
