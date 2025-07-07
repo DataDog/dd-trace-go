@@ -37,7 +37,7 @@ jobs:
   build-service-extensions-callout:
     if: >
       github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/envoyproxy/go-control-plane')
-      || github.event.inputs.build_service_extensions == 'true
+      || github.event.inputs.build_service_extensions == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -45,7 +45,7 @@ jobs:
         id: image_tag
         env:
           RAW_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
-          PREFIX: contrib/envoyproxy/go-control-plane/
+          PREFIX: refs/tags/contrib/envoyproxy/go-control-plane/
         run: echo "image_tag=${RAW_TAG#$PREFIX}" >> $GITHUB_OUTPUT
 
       - name: Build and Push Service Extensions Callout Image
@@ -71,7 +71,7 @@ jobs:
         id: image_tag
         env:
           RAW_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
-          PREFIX: contrib/k8s.io/gateway-api/
+          PREFIX: refs/tags/contrib/k8s.io/gateway-api/
         run: echo "image_tag=${RAW_TAG#$PREFIX}" >> $GITHUB_OUTPUT
 
       - name: Build and Push Request Mirror Image
