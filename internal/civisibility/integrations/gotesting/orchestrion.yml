@@ -27,7 +27,7 @@ aspects:
       - prepend-statements:
           template: |-
             exitFunc := __dd_civisibility_instrumentTestingM({{ .Function.Receiver }})
-            defer exitFunc({{ .Function.Receiver }}.exitCode)
+            defer func() { exitFunc({{ .Function.Receiver }}.exitCode) }()
 
   - id: T.Run
     join-point:

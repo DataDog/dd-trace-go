@@ -85,6 +85,8 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	}
 
 	return func(exitCode int) {
+		log.Debug("instrumentTestingM: finished with exit code: %v", exitCode)
+
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
 			// let's try first with our coverage package

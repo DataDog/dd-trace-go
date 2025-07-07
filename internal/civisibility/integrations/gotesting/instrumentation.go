@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 type (
@@ -380,6 +381,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 			postOnRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 				// if the test is disabled or quarantined, skip the test result to the testing framework
 				if ptrMeta.isDisabled || ptrMeta.isQuarantined {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Skipping test result for disabled or quarantined test")
 					t.SkipNow()
 					return
 				}
@@ -394,6 +396,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew
 				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified && !ptrMeta.isAttemptToFix
 				if efdOnNewTest || efdOnModifiedTest {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Early Flake Detection")
 					status := "passed"
 					if testPassCount == 0 {
 						if testSkipCount > 0 {
@@ -418,6 +421,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 
 				// if the test is a flaky test retries test, we need to set the test status
 				if ptrMeta.isFlakyTestRetriesEnabled {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Flaky Test Retries")
 					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
 					tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
 					if lastPtrToLocalT.Failed() {
@@ -440,6 +444,17 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 						}
 					}
 					return
+				}
+
+				log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for regular test execution")
+				tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
+				tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
+				if lastPtrToLocalT.Failed() {
+					tParentCommonPrivates := getTestParentPrivateFields(t)
+					if tParentCommonPrivates == nil {
+						panic("getting test parent private fields failed")
+					}
+					tParentCommonPrivates.SetFailed(true)
 				}
 			},
 		})
