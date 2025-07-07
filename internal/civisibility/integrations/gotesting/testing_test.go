@@ -65,7 +65,11 @@ func Test_Foo(gt *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
+			// let's run the subtest in parallel
+			it := (*T)(t)
+			it.Parallel()
 			t.Log(test.name)
+			<-time.After(100 * time.Millisecond) // Simulate some work
 			buf = append(buf, test.index)
 		})
 	}

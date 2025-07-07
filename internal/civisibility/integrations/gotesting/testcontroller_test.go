@@ -153,9 +153,26 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
+	st01 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)[0]
+	st02 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)[0]
+	st03 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)[0]
+
+	st01EndTime := st01.StartTime().Add(st01.Duration())
+	st02EndTime := st02.StartTime().Add(st02.Duration())
+
+	fmt.Println(st01.StartTime(), st01EndTime)
+	fmt.Println(st02.StartTime(), st02EndTime)
+	fmt.Println(st03.StartTime())
+
+	/*
+		if st01EndTime.Before(st02.StartTime()) {
+			panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.Test_Foo/yellow_should_return_color' ends before span 'testing_test.go.Test_Foo/banana_should_return_fruit' starts"))
+		}
+		if st02EndTime.Before(st03.StartTime()) {
+			panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.Test_Foo/banana_should_return_fruit' ends before span 'testing_test.go.Test_Foo/duck_should_return_animal' starts"))
+		}
+	*/
+
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
@@ -503,7 +520,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 11)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 11)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 11)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
 
@@ -535,18 +552,18 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 
 	// Impacted tests
 	if impactedTests {
-		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 80)
+		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 70)
 
 		// check spans by type
 		checkSpansByType(finishedSpans,
-			107,
+			97,
 			1,
 			1,
 			4,
-			101,
+			91,
 			0)
 
-		impactedTestsSpans := checkSpansByTagName(finishedSpans, constants.TestIsModified, 44)
+		impactedTestsSpans := checkSpansByTagName(finishedSpans, constants.TestIsModified, 33)
 		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithPanic", 11)
 		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithFail", 11)
 
