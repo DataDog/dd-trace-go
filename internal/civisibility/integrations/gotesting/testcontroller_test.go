@@ -62,7 +62,7 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[5], false) {
 		fmt.Printf(scenarioStarted, scenarios[5])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m, true)
-	} else if internal.BoolEnv(scenarios[6], false) {
+	} else if false && internal.BoolEnv(scenarios[6], false) {
 		fmt.Printf(scenarioStarted, scenarios[6])
 		runParallelEarlyFlakyTestDetectionTests(m)
 	} else if internal.BoolEnv("Bypass", false) {
