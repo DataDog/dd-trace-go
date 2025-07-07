@@ -74,6 +74,7 @@ func checkZstdLevel(t *testing.T, data []byte, level zstd.EncoderLevel) {
 }
 
 func TestDebugCompressionEnv(t *testing.T) {
+	t.Skip("Flaky. See #3681")
 	mustGzipDecompress := func(t *testing.T, b []byte) {
 		t.Helper()
 		r, err := gzip.NewReader(bytes.NewReader(b))

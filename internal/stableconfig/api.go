@@ -17,26 +17,39 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
+func reportTelemetryAndReturnWithErr(env string, value bool, origin telemetry.Origin, err error) (bool, telemetry.Origin, error) {
+	if env == "DD_APPSEC_SCA_ENABLED" && origin == telemetry.OriginDefault {
+		return value, origin, err
+	}
+	telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(env), value, origin)
+	return value, origin, err
+}
+
+func reportTelemetryAndReturn(env string, value string, origin telemetry.Origin) (string, telemetry.Origin) {
+	telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(env), value, origin)
+	return value, origin
+}
+
 // Bool returns a boolean config value from managed file-based config, environment variable,
 // or local file-based config, in that order. If none provide a valid boolean, it returns the default.
 // Also returns the value's origin and any parse error encountered.
 func Bool(env string, def bool) (value bool, origin telemetry.Origin, err error) {
 	for o, v := range stableConfigByPriority(env) {
 		if val, err := strconv.ParseBool(v); err == nil {
-			return val, o, nil
+			return reportTelemetryAndReturnWithErr(env, val, o, nil)
 		}
 		err = errors.Join(err, fmt.Errorf("non-boolean value for %s: '%s' in %s configuration, dropping", env, v, o))
 	}
-	return def, telemetry.OriginDefault, err
+	return reportTelemetryAndReturnWithErr(env, def, telemetry.OriginDefault, err)
 }
 
 // String returns a string config value from managed file-based config, environment variable,
 // or local file-based config, in that order. If none are set, it returns the default value and origin.
 func String(env string, def string) (string, telemetry.Origin) {
 	for origin, value := range stableConfigByPriority(env) {
-		return value, origin
+		return reportTelemetryAndReturn(env, value, origin)
 	}
-	return def, telemetry.OriginDefault
+	return reportTelemetryAndReturn(env, def, telemetry.OriginDefault)
 }
 
 func stableConfigByPriority(env string) iter.Seq2[telemetry.Origin, string] {

@@ -272,14 +272,14 @@ jobs:
         uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
         with:
           repository: 'DataDog/dd-trace-go'
-          ref: 'main'
+          ref:  ${{ inputs.orchestrion-version != '' && 'main' || github.ref }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_API_KEY }}
-          files: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.

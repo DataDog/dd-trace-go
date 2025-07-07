@@ -63,6 +63,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.21
 	github.com/xlab/treeprint v1.2.0
 	go.mongodb.org/mongo-driver v1.17.1
+	go.mongodb.org/mongo-driver/v2 v2.2.2
 	google.golang.org/api v0.176.1
 	google.golang.org/grpc v1.71.1
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
@@ -81,7 +82,7 @@ require (
 	cloud.google.com/go/iam v1.1.7 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
-	github.com/DataDog/appsec-internal-go v1.12.0 // indirect
+	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.1 // indirect
@@ -106,6 +107,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.2.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.2.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.2.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.2.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.2.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.2.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.2.0-dev // indirect
@@ -209,13 +211,13 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/goccy/go-yaml v1.17.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/golang/snappy v0.0.4 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-tpm v0.9.3 // indirect
@@ -454,3 +456,5 @@ replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../orchestrio
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
 
 replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
+
+replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2
