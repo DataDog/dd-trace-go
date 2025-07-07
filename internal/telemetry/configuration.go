@@ -23,6 +23,13 @@ type configuration struct {
 	seqID  uint64
 }
 
+func idOrEmpty(id string) string {
+	if id == EmptyID {
+		return ""
+	}
+	return id
+}
+
 func (c *configuration) Add(kv Configuration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -31,11 +38,13 @@ func (c *configuration) Add(kv Configuration) {
 		c.config = make(map[string]transport.ConfKeyValue)
 	}
 
+	ID := idOrEmpty(kv.ID)
+
 	c.config[kv.Name] = transport.ConfKeyValue{
 		Name:   kv.Name,
 		Value:  kv.Value,
 		Origin: kv.Origin,
-		ID:     kv.ID,
+		ID:     ID,
 	}
 }
 

@@ -63,6 +63,8 @@ const (
 	OriginManagedStableConfig Origin = transport.OriginManagedStableConfig
 )
 
+// EmptyID represents the absence of a configuration ID.
+// It can be assigned to the ID field of a Configuration when no ID is available or required.
 const EmptyID = ""
 
 // LogLevel describes the level of a log message
