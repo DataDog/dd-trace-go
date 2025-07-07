@@ -142,19 +142,17 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 		// Initialize module counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
+			modulesCounters[moduleName] = &atomic.Int32{}
 		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		modulesCounters[moduleName].Add(1)
 
 		// Initialize suite counters if not already present.
 		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
+			suitesCounters[suiteName] = &atomic.Int32{}
 		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		suitesCounters[suiteName].Add(1)
 
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModule(moduleName)
@@ -342,19 +340,17 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 
 		// Initialize module counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
+			modulesCounters[moduleName] = &atomic.Int32{}
 		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		modulesCounters[moduleName].Add(1)
 
 		// Initialize suite counters if not already present.
 		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
+			suitesCounters[suiteName] = &atomic.Int32{}
 		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		suitesCounters[suiteName].Add(1)
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)

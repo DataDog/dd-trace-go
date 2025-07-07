@@ -754,7 +754,7 @@ func runTestManagementTests(m *testing.M) {
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 
-	testRetryWithPanicRunNumber = -10 // this makes TestRetryWithPanic to always fail (required by this test)
+	testRetryWithPanicRunNumber.Store(-10) // this makes TestRetryWithPanic to always fail (required by this test)
 	exitCode := RunM(m)
 	if exitCode != 0 {
 		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))

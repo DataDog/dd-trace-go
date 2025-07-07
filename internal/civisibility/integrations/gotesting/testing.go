@@ -43,10 +43,10 @@ var (
 	benchmarkInfos []*testingBInfo
 
 	// modulesCounters keeps track of the number of tests per module.
-	modulesCounters = map[string]*int32{}
+	modulesCounters = map[string]*atomic.Int32{}
 
 	// suitesCounters keeps track of the number of tests per suite.
-	suitesCounters = map[string]*int32{}
+	suitesCounters = map[string]*atomic.Int32{}
 
 	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
 	numOfTestsSkipped atomic.Uint64
@@ -145,18 +145,16 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 		// Initialize module and suite counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
+			modulesCounters[moduleName] = &atomic.Int32{}
 		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		modulesCounters[moduleName].Add(1)
 
 		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
+			suitesCounters[suiteName] = &atomic.Int32{}
 		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		suitesCounters[suiteName].Add(1)
 
 		testInfos[idx] = testInfo
 	}
@@ -397,18 +395,16 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 
 		// Initialize module and suite counters if not already present.
 		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
+			modulesCounters[moduleName] = &atomic.Int32{}
 		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		modulesCounters[moduleName].Add(1)
 
 		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
+			suitesCounters[suiteName] = &atomic.Int32{}
 		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		suitesCounters[suiteName].Add(1)
 
 		benchmarkInfos[idx] = benchmarkInfo
 	}
@@ -581,12 +577,12 @@ func RunM(m *testing.M) int {
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
 func checkModuleAndSuite(module integrations.TestModule, suite integrations.TestSuite) {
 	// If all tests in a suite has been executed we can close the suite
-	if atomic.AddInt32(suitesCounters[suite.Name()], -1) <= 0 {
+	if suitesCounters[suite.Name()].Add(-1) <= 0 {
 		suite.Close()
 	}
 
 	// If all tests in a module has been executed we can close the module
-	if atomic.AddInt32(modulesCounters[module.Name()], -1) <= 0 {
+	if modulesCounters[module.Name()].Add(-1) <= 0 {
 		module.Close()
 	}
 }

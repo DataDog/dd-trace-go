@@ -90,36 +90,34 @@ func TestSkip(gt *testing.T) {
 
 // Tests for test retries feature
 
-var testRetryWithPanicRunNumber = 0
+var testRetryWithPanicRunNumber atomic.Int32
 
 func TestRetryWithPanic(t *testing.T) {
 	t.Cleanup(func() {
-		if testRetryWithPanicRunNumber == 1 {
+		if testRetryWithPanicRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")
 		} else {
 			fmt.Println("CleanUp from the retry")
 		}
 	})
 
-	testRetryWithPanicRunNumber++
-	if testRetryWithPanicRunNumber < 4 {
+	if testRetryWithPanicRunNumber.Add(1) < 4 {
 		panic("Test Panic")
 	}
 }
 
-var testRetryWithFailRunNumber = 0
+var testRetryWithFailRunNumber atomic.Int32
 
 func TestRetryWithFail(t *testing.T) {
 	t.Cleanup(func() {
-		if testRetryWithFailRunNumber == 1 {
+		if testRetryWithFailRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")
 		} else {
 			fmt.Println("CleanUp from the retry")
 		}
 	})
 
-	testRetryWithFailRunNumber++
-	if testRetryWithFailRunNumber < 4 {
+	if testRetryWithFailRunNumber.Add(1) < 4 {
 		t.Fatal("Failed due the wrong execution number")
 	}
 }
@@ -127,11 +125,11 @@ func TestRetryWithFail(t *testing.T) {
 //dd:test.unskippable
 func TestNormalPassingAfterRetryAlwaysFail(_ *testing.T) {}
 
-var run int32
+var run atomic.Int32
 
 //dd:test.unskippable
 func TestEarlyFlakeDetection(t *testing.T) {
-	runValue := atomic.AddInt32(&run, 1)
+	runValue := run.Add(1)
 	if os.Getenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled) == "true" {
 		<-time.After(4 * time.Second)
 	}
