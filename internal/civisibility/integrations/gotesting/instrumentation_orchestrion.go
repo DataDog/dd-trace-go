@@ -140,19 +140,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			suiteName = testifyData.suiteName
 		}
 
-		// Initialize module counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			modulesCounters[moduleName] = &atomic.Int32{}
-		}
 		// Increment the test count in the module.
-		modulesCounters[moduleName].Add(1)
+		addModulesCounters(moduleName, 1)
 
-		// Initialize suite counters if not already present.
-		if _, ok := suitesCounters[suiteName]; !ok {
-			suitesCounters[suiteName] = &atomic.Int32{}
-		}
 		// Increment the test count in the suite.
-		suitesCounters[suiteName].Add(1)
+		addSuitesCounters(suiteName, 1)
 
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModule(moduleName)
@@ -338,19 +330,11 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		//		benchmark/[DD:TestVisibility]/child
 		// We use regex and decrement the depth level of the benchmark to restore the original name
 
-		// Initialize module counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			modulesCounters[moduleName] = &atomic.Int32{}
-		}
 		// Increment the test count in the module.
-		modulesCounters[moduleName].Add(1)
+		addModulesCounters(moduleName, 1)
 
-		// Initialize suite counters if not already present.
-		if _, ok := suitesCounters[suiteName]; !ok {
-			suitesCounters[suiteName] = &atomic.Int32{}
-		}
 		// Increment the test count in the suite.
-		suitesCounters[suiteName].Add(1)
+		addSuitesCounters(suiteName, 1)
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)

@@ -42,11 +42,17 @@ var (
 	// benchmarkInfos holds information about the instrumented benchmarks.
 	benchmarkInfos []*testingBInfo
 
+	// modulesCountersMutex is a mutex to protect access to the modulesCounters map.
+	modulesCountersMutex sync.Mutex
+
 	// modulesCounters keeps track of the number of tests per module.
-	modulesCounters = map[string]*atomic.Int32{}
+	modulesCounters = map[string]int{}
+
+	// suitesCountersMutex is a mutex to protect access to the suitesCounters map.
+	suitesCountersMutex sync.Mutex
 
 	// suitesCounters keeps track of the number of tests per suite.
-	suitesCounters = map[string]*atomic.Int32{}
+	suitesCounters = map[string]int{}
 
 	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
 	numOfTestsSkipped atomic.Uint64
@@ -143,18 +149,11 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			modulesCounters[moduleName] = &atomic.Int32{}
-		}
 		// Increment the test count in the module.
-		modulesCounters[moduleName].Add(1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			suitesCounters[suiteName] = &atomic.Int32{}
-		}
 		// Increment the test count in the suite.
-		suitesCounters[suiteName].Add(1)
+		addSuitesCounters(suiteName, 1)
 
 		testInfos[idx] = testInfo
 	}
@@ -393,18 +392,11 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			modulesCounters[moduleName] = &atomic.Int32{}
-		}
 		// Increment the test count in the module.
-		modulesCounters[moduleName].Add(1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			suitesCounters[suiteName] = &atomic.Int32{}
-		}
 		// Increment the test count in the suite.
-		suitesCounters[suiteName].Add(1)
+		addSuitesCounters(suiteName, 1)
 
 		benchmarkInfos[idx] = benchmarkInfo
 	}
@@ -577,14 +569,32 @@ func RunM(m *testing.M) int {
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
 func checkModuleAndSuite(module integrations.TestModule, suite integrations.TestSuite) {
 	// If all tests in a suite has been executed we can close the suite
-	if suitesCounters[suite.Name()].Add(-1) <= 0 {
+	if addSuitesCounters(suite.Name(), -1) <= 0 {
 		suite.Close()
 	}
 
 	// If all tests in a module has been executed we can close the module
-	if modulesCounters[module.Name()].Add(-1) <= 0 {
+	if addModulesCounters(module.Name(), -1) <= 0 {
 		module.Close()
 	}
+}
+
+// addSuitesCounters increments the suite counters for a given suite name.
+func addSuitesCounters(suiteName string, delta int) int {
+	suitesCountersMutex.Lock()
+	defer suitesCountersMutex.Unlock()
+	nValue := suitesCounters[suiteName] + delta
+	suitesCounters[suiteName] = nValue
+	return nValue
+}
+
+// addModulesCounters increments the module counters for a given module name.
+func addModulesCounters(moduleName string, delta int) int {
+	modulesCountersMutex.Lock()
+	defer modulesCountersMutex.Unlock()
+	nValue := modulesCounters[moduleName] + delta
+	modulesCounters[moduleName] = nValue
+	return nValue
 }
 
 // isKnownTest checks if a test is a known test or a new one

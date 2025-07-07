@@ -41,8 +41,7 @@ func TestMain(m *testing.M) {
 
 	const scenarioStarted = "Scenario %s started.\n"
 	// We need to spawn separated test process for each scenario
-	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests"}
-	// "TestParallelEarlyFlakeDetection" is flaky in CI, I'll work on this later
+	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection"}
 
 	if internal.BoolEnv(scenarios[0], false) {
 		fmt.Printf(scenarioStarted, scenarios[0])
@@ -62,7 +61,7 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[5], false) {
 		fmt.Printf(scenarioStarted, scenarios[5])
 		runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m, true)
-	} else if false && internal.BoolEnv(scenarios[6], false) {
+	} else if internal.BoolEnv(scenarios[6], false) {
 		fmt.Printf(scenarioStarted, scenarios[6])
 		runParallelEarlyFlakyTestDetectionTests(m)
 	} else if internal.BoolEnv("Bypass", false) {

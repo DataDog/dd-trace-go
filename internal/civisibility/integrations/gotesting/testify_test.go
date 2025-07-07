@@ -17,10 +17,7 @@ func TestTestifyLikeTest(t *testing.T) {
 
 	tParent := t
 	t.Run("check_suite_registration", func(t *testing.T) {
-		testifyTestsByParentTMutex.Lock()
-		defer testifyTestsByParentTMutex.Unlock()
-
-		if tests, ok := testifyTestsByParentT[reflect.ValueOf(tParent).UnsafePointer()]; ok {
+		if tests, ok := getTestifyTestsByParentT(reflect.ValueOf(tParent).UnsafePointer()); ok {
 			if len(tests) != 1 {
 				t.Errorf("Expected 1 test to be registered, got %d", len(tests))
 			}
