@@ -321,18 +321,22 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				return 0
 			},
 			postPerExecution: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, _ time.Duration) {
-				if ptrToLocalT.Failed() || ptrToLocalT.Skipped() {
+				failed := ptrToLocalT.Failed()
+				skipped := ptrToLocalT.Skipped()
+				log.Debug("applyAdditionalFeaturesToTestFunc: postPerExecution called for execution %d, failed: %v, skipped: %v", executionIndex, failed, skipped)
+
+				if failed || skipped {
 					atomic.StoreInt32(&allAttemptsPassed, 0)
 				}
-				if !ptrToLocalT.Failed() {
+				if !failed {
 					atomic.StoreInt32(&allRetriesFailed, 0)
 				}
 
 				if execMeta.isAttemptToFix {
 					status := "PASS"
-					if ptrToLocalT.Failed() {
+					if failed {
 						status = "FAIL"
-					} else if ptrToLocalT.Skipped() {
+					} else if skipped {
 						status = "SKIP"
 					}
 
@@ -341,11 +345,14 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				}
 
 				if isAnEfdExecution(execMeta) {
-					if ptrToLocalT.Failed() {
-						testFailCount++
-					} else if ptrToLocalT.Skipped() {
+					if skipped {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test skipped, incrementing skip count")
 						testSkipCount++
+					} else if failed {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test failed, incrementing fail count")
+						testFailCount++
 					} else {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test passed, incrementing pass count")
 						testPassCount++
 					}
 					return
@@ -490,6 +497,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		if options.isEfdInParallel && isAnEfdExecution(execOpts.executionMetadata) {
 			// In parallel, we use the retry count set in the first execution
 			calculatedRetryCount := execOpts.retryCount
+			log.Debug("runTestWithRetry: executing test in parallel with retry count: %v", calculatedRetryCount)
 			var wg sync.WaitGroup
 			wg.Add(int(calculatedRetryCount + 1))
 			for i := int64(0); i <= calculatedRetryCount; i++ {

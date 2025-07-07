@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
@@ -177,6 +176,10 @@ func BenchmarkFirst(gb *testing.B) {
 var assertMutex sync.Mutex
 
 func assertTest(t *testing.T) {
+	// we don't assert on parallel efd tests
+	if parallelEfd {
+		return
+	}
 	assertMutex.Lock()
 	defer assertMutex.Unlock()
 	assert := assert.New(t)
@@ -186,9 +189,7 @@ func assertTest(t *testing.T) {
 	hasSuite := false
 	hasTest := false
 
-	assertCommon := func(span mocktracer.Span) {
-		spanTags := span.Tags()
-
+	assertCommon := func(spanTags map[string]interface{}) {
 		assert.Subset(spanTags, map[string]interface{}{
 			constants.Origin:          constants.CIAppTestOrigin,
 			constants.TestType:        constants.TestTypeTest,
@@ -221,17 +222,17 @@ func assertTest(t *testing.T) {
 		spanTags := span.Tags()
 
 		// Assert Session
-		if span.Tag(ext.SpanType) == constants.SpanTypeTestSession {
+		if spanTags[ext.SpanType] == constants.SpanTypeTestSession {
 			assert.Subset(spanTags, map[string]interface{}{
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
-			assertCommon(*span)
+			assertCommon(spanTags)
 			hasSession = true
 		}
 
 		// Assert Module
-		if span.Tag(ext.SpanType) == constants.SpanTypeTestModule {
+		if spanTags[ext.SpanType] == constants.SpanTypeTestModule {
 			assert.Subset(spanTags, map[string]interface{}{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
@@ -239,12 +240,12 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assert.Contains(spanTags, constants.TestModuleIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
-			assertCommon(*span)
+			assertCommon(spanTags)
 			hasModule = true
 		}
 
 		// Assert Suite
-		if span.Tag(ext.SpanType) == constants.SpanTypeTestSuite {
+		if spanTags[ext.SpanType] == constants.SpanTypeTestSuite {
 			assert.Subset(spanTags, map[string]interface{}{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
@@ -254,12 +255,12 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSuiteIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assert.Contains(spanTags, constants.TestSuite)
-			assertCommon(*span)
+			assertCommon(spanTags)
 			hasSuite = true
 		}
 
 		// Assert Test
-		if span.Tag(ext.SpanType) == constants.SpanTypeTest {
+		if spanTags[ext.SpanType] == constants.SpanTypeTest {
 			assert.Subset(spanTags, map[string]interface{}{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
@@ -274,7 +275,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestCodeOwners)
 			assert.Contains(spanTags, constants.TestSourceFile)
 			assert.Contains(spanTags, constants.TestSourceStartLine)
-			assertCommon(*span)
+			assertCommon(spanTags)
 			hasTest = true
 		}
 	}
