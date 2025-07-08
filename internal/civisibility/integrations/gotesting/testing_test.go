@@ -66,10 +66,7 @@ func Test_Foo(gt *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			// let's run the subtest in parallel
-			it := (*T)(t)
-			it.Parallel()
 			t.Log(test.name)
-			<-time.After(100 * time.Millisecond) // Simulate some work
 			buf = append(buf, test.index)
 		})
 	}
@@ -90,6 +87,31 @@ func TestSkip(gt *testing.T) {
 	// because we use the instrumented Skip
 	// the message will be reported as the skip reason.
 	t.Skip("Nothing to do here, skipping!")
+}
+
+func TestParallelSubTests(gt *testing.T) {
+	assertTest(gt)
+
+	// To instrument parallel sub-tests we just need to cast
+	t := (*T)(gt)
+
+	t.Run("parallel_subtest_1", func(t *testing.T) {
+		t.Parallel()
+		<-time.After(300 * time.Millisecond) // Simulate some work
+		fmt.Println("Running parallel subtest 1")
+	})
+
+	t.Run("parallel_subtest_2", func(t *testing.T) {
+		t.Parallel()
+		<-time.After(200 * time.Millisecond) // Simulate some work
+		fmt.Println("Running parallel subtest 2")
+	})
+
+	t.Run("parallel_subtest_3", func(t *testing.T) {
+		t.Parallel()
+		<-time.After(100 * time.Millisecond) // Simulate some work
+		fmt.Println("Running parallel subtest 3")
+	})
 }
 
 // Tests for test retries feature

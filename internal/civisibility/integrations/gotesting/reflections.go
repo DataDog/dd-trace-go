@@ -80,6 +80,8 @@ type commonPrivateFields struct {
 	skipped *bool           // Test or benchmark has been skipped.
 	parent  *unsafe.Pointer // Parent common
 	barrier *chan bool      // Barrier for parallel tests
+	signal  *chan bool      // Signal channel for test completion
+	sub     *[]*testing.T   // Queue of subtests to be run in parallel.
 }
 
 // AddLevel increase or decrease the testing.common.level field value, used by
@@ -191,6 +193,12 @@ func getTestPrivateFields(t *testing.T) *commonPrivateFields {
 	}
 	if ptr, err := getFieldPointerFrom(t, "barrier"); err == nil {
 		testFields.barrier = (*chan bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "signal"); err == nil {
+		testFields.signal = (*chan bool)(ptr)
+	}
+	if ptr, err := getFieldPointerFrom(t, "sub"); err == nil {
+		testFields.sub = (*[]*testing.T)(ptr)
 	}
 
 	return testFields
@@ -327,6 +335,31 @@ func copyTestWithoutParent(source *testing.T, target *testing.T) {
 
 	_ = copyFieldUsingPointers[bool](source, target, "denyParallel")
 	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "tstate") // For running tests and subtests.
+}
+
+// createNewTest creates a new testing.T instance
+func createNewTest() *testing.T {
+	nT := &testing.T{}
+	var ctxPtr *context.Context = nil
+	if ptr, err := getFieldPointerFrom(nT, "barrier"); err == nil && ptr != nil {
+		value := (*chan bool)(ptr)
+		*value = make(chan bool) // Initialize the barrier channel
+	}
+	if ptr, err := getFieldPointerFrom(nT, "signal"); err == nil && ptr != nil {
+		value := (*chan bool)(ptr)
+		*value = make(chan bool, 1) // Initialize the signal channel
+	}
+	if ptr, err := getFieldPointerFrom(nT, "ctx"); err == nil && ptr != nil {
+		ctxPtr = (*context.Context)(ptr)
+		*ctxPtr = context.Background() // Initialize the context
+	}
+	if ptr, err := getFieldPointerFrom(nT, "cancelCtx"); err == nil && ptr != nil && ctxPtr != nil {
+		ctx, cancelCtx := context.WithCancel(*ctxPtr)
+		value := (*context.CancelFunc)(ptr)
+		*ctxPtr = ctx      // Update the context with the new one
+		*value = cancelCtx // Initialize the cancel function
+	}
+	return nT
 }
 
 // chattyPrinter is a struct that holds the private fields of testing.T.chatty

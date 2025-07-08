@@ -557,7 +557,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	currentIndex := execOpts.executionIndex
 
 	// Create a new local copy of `t` to isolate execution results
-	ptrToLocalT := &testing.T{}
+	ptrToLocalT := createNewTest()
 	copyTestWithoutParent(execOpts.options.t, ptrToLocalT)
 	ptrToLocalT.Helper()
 	execOpts.options.t.Helper()
@@ -598,17 +598,36 @@ func executeTestIteration(execOpts *executionOptions) bool {
 
 	// Run original func similar to how it gets run internally in tRunner
 	startTime := time.Now()
+	duration := time.Duration(0)
 	chn := make(chan struct{}, 1)
 	go func(pLocalT *testing.T, opts *runTestWithRetryOptions, cn *chan struct{}) {
 		defer func() {
 			*cn <- struct{}{}
+		}()
+		defer func() {
+			// handle parallel sub tests execution
+			if localTPrivateFields.sub != nil {
+				if len(*localTPrivateFields.sub) > 0 {
+					if localTPrivateFields.barrier != nil {
+						close(*localTPrivateFields.barrier)
+					}
+					for _, sub := range *localTPrivateFields.sub {
+						pvSub := getTestPrivateFields(sub)
+						if pvSub.signal != nil {
+							<-*pvSub.signal
+						}
+					}
+				}
+			}
+		}()
+		defer func() {
+			duration = time.Since(startTime)
 		}()
 		pLocalT.Helper()
 		opts.t.Helper()
 		opts.targetFunc(pLocalT)
 	}(ptrToLocalT, execOpts.options, &chn)
 	<-chn
-	duration := time.Since(startTime)
 
 	// Call cleanup functions after this execution
 	if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {

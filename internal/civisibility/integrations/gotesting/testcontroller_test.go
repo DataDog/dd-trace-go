@@ -153,9 +153,13 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
-	st01 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)[0]
-	st02 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)[0]
-	st03 := checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)[0]
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
+
+	st01 := getSpansWithResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_1")[0]
+	st02 := getSpansWithResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_2")[0]
+	st03 := getSpansWithResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_3")[0]
 
 	st01EndTime := st01.StartTime().Add(st01.Duration())
 	st02EndTime := st02.StartTime().Add(st02.Duration())
@@ -164,14 +168,12 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	fmt.Println(st02.StartTime(), st02EndTime)
 	fmt.Println(st03.StartTime())
 
-	/*
-		if st01EndTime.Before(st02.StartTime()) {
-			panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.Test_Foo/yellow_should_return_color' ends before span 'testing_test.go.Test_Foo/banana_should_return_fruit' starts"))
-		}
-		if st02EndTime.Before(st03.StartTime()) {
-			panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.Test_Foo/banana_should_return_fruit' ends before span 'testing_test.go.Test_Foo/duck_should_return_animal' starts"))
-		}
-	*/
+	if st01EndTime.Before(st02.StartTime()) {
+		panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_1' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' starts"))
+	}
+	if st02EndTime.Before(st03.StartTime()) {
+		panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_3' starts"))
+	}
 
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
@@ -195,15 +197,15 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	}
 
 	// check the test is new tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 22)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 26)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		28,
+		32,
 		1,
 		1,
 		4,
-		27,
+		31,
 		0)
 
 	// check capabilities tags
@@ -294,9 +296,9 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	}
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 176)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 160)
-	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 160)[0]
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 220)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 200)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 200)[0]
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
@@ -307,7 +309,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		1,
 		1,
 		4,
-		181,
+		225,
 		0)
 
 	// check capabilities tags
@@ -399,9 +401,9 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	}
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 176)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 160)
-	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 160)[0]
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 220)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 200)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 200)[0]
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
@@ -521,8 +523,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 11)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 11)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
 
 	} else {
 		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
@@ -548,11 +550,11 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	checkCapabilitiesTags(finishedSpans)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 11)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 55)
 
 	// Impacted tests
 	if impactedTests {
-		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 70)
+		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 96)
 
 		// check spans by type
 		checkSpansByType(finishedSpans,
@@ -560,15 +562,12 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 			1,
 			1,
 			4,
-			91,
+			121,
 			0)
 
-		impactedTestsSpans := checkSpansByTagName(finishedSpans, constants.TestIsModified, 33)
-		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithPanic", 11)
-		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithFail", 11)
-
+		checkSpansByTagName(finishedSpans, constants.TestIsModified, 33)
 	} else {
-		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 16)
+		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 56)
 
 		// check spans by type
 		checkSpansByType(finishedSpans,
@@ -576,7 +575,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 			1,
 			1,
 			4,
-			37,
+			81,
 			0)
 
 		checkSpansByTagName(finishedSpans, constants.TestIsModified, 0)
@@ -703,7 +702,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		1,
 		1,
 		4,
-		16,
+		20,
 		0)
 
 	// check capabilities tags
