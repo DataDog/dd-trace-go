@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.5
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/stretchr/testify v1.10.0
 )
