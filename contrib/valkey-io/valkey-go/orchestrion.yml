@@ -11,8 +11,7 @@ meta:
 aspects:
   - id: NewClient
     join-point:
-      one-of:
-        - function-call: github.com/valkey-io/valkey-go.NewClient
+      function-call: github.com/valkey-io/valkey-go.NewClient
     advice:
       - wrap-expression:
           imports:
