@@ -131,4 +131,15 @@ func TestGlobalClient(t *testing.T) {
 		require.Contains(t, recorder.Metrics, MetricKey{Name: "init_time", Namespace: telemetry.NamespaceGeneral, Kind: string(transport.DistMetric)})
 		assert.Equal(t, 1.0, recorder.Metrics[MetricKey{Name: "init_time", Namespace: telemetry.NamespaceGeneral, Kind: string(transport.DistMetric)}].Get())
 	})
+
+	t.Run("timing", func(t *testing.T) {
+		recorder := new(RecordClient)
+		recorder.knownMetrics = true
+		defer telemetry.MockClient(recorder)()
+
+		telemetry.Timing(telemetry.NamespaceTracers, "init_time", nil).Submit(1)
+		assert.Len(t, recorder.Metrics, 1)
+		require.Contains(t, recorder.Metrics, MetricKey{Name: "init_time", Namespace: telemetry.NamespaceTracers, Kind: string(transport.TimeMetric)})
+		assert.Equal(t, 1.0, recorder.Metrics[MetricKey{Name: "init_time", Namespace: telemetry.NamespaceTracers, Kind: string(transport.TimeMetric)}].Get())
+	})
 }

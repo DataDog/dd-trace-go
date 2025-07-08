@@ -66,6 +66,13 @@ func (m *MockClient) Distribution(namespace telemetry.Namespace, name string, ta
 	return m.Called(namespace, name, tags).Get(0).(telemetry.MetricHandle)
 }
 
+func (m *MockClient) Timing(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
+	if !m.knownMetrics && !knownmetrics.IsKnownMetric(namespace, transport.TimeMetric, name) {
+		panic("telemetrytest.RecordClient should only be used with backend-side known metrics")
+	}
+	return m.Called(namespace, name, tags).Get(0).(telemetry.MetricHandle)
+}
+
 func (m *MockClient) Log(level telemetry.LogLevel, text string, options ...telemetry.LogOption) {
 	m.Called(level, text, options)
 }

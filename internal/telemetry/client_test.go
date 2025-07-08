@@ -973,6 +973,73 @@ func TestClientFlush(t *testing.T) {
 				assert.NotContains(t, distributions.Series[0].Points, 0.0)
 			},
 		},
+		{
+			name: "simple-timing",
+			when: func(c *client) {
+				c.Timing(NamespaceGeneral, "init_time", nil).Submit(1)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 1)
+				assert.Equal(t, transport.TimeMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceGeneral, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+			},
+		},
+		{
+			name: "multiple-timing-by-name",
+			when: func(c *client) {
+				c.Timing(NamespaceGeneral, "init_time_1", nil).Submit(1)
+				c.Timing(NamespaceGeneral, "init_time_2", nil).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 2)
+
+				assert.Equal(t, transport.TimeMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceGeneral, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(metrics.Series[0].Points[0][1].(float64))), metrics.Series[0].Metric)
+				assert.Empty(t, metrics.Series[0].Tags)
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+
+				assert.Equal(t, transport.TimeMetric, metrics.Series[1].Type)
+				assert.Equal(t, NamespaceGeneral, metrics.Series[1].Namespace)
+				assert.Equal(t, "init_time_"+strconv.Itoa(int(metrics.Series[1].Points[0][1].(float64))), metrics.Series[1].Metric)
+				assert.Empty(t, metrics.Series[1].Tags)
+				assert.NotZero(t, metrics.Series[1].Points[0][0])
+			},
+		},
+		{
+			name: "multiple-timing-by-tags",
+			when: func(c *client) {
+				c.Timing(NamespaceGeneral, "init_time", []string{"tag:1"}).Submit(1)
+				c.Timing(NamespaceGeneral, "init_time", []string{"tag:2"}).Submit(2)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.GenerateMetrics{}, payload)
+				metrics := payload.(transport.GenerateMetrics)
+				require.Len(t, metrics.Series, 2)
+
+				assert.Equal(t, transport.TimeMetric, metrics.Series[0].Type)
+				assert.Equal(t, NamespaceGeneral, metrics.Series[0].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[0].Metric)
+				assert.Contains(t, metrics.Series[0].Tags, "tag:"+strconv.Itoa(int(metrics.Series[0].Points[0][1].(float64))))
+				assert.NotZero(t, metrics.Series[0].Points[0][0])
+
+				assert.Equal(t, transport.TimeMetric, metrics.Series[1].Type)
+				assert.Equal(t, NamespaceGeneral, metrics.Series[1].Namespace)
+				assert.Equal(t, "init_time", metrics.Series[1].Metric)
+				assert.Contains(t, metrics.Series[1].Tags, "tag:"+strconv.Itoa(int(metrics.Series[1].Points[0][1].(float64))))
+				assert.NotZero(t, metrics.Series[1].Points[0][0])
+			},
+		},
 	}
 
 	for _, test := range testcases {

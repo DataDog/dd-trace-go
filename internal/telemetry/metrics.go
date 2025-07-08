@@ -99,6 +99,8 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 			rate.intervalStart.Store(&now)
 			return rate
 		})
+	case transport.TimeMetric:
+		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle { return &gauge{metric: metric{key: key}} })
 	default:
 		log.Warn("telemetry: unknown metric type %q", kind)
 		return nil
@@ -253,4 +255,20 @@ func (r *rate) Payload() transport.MetricData {
 	payload := r.metric.payload(point)
 	payload.Interval = int64(intervalSeconds)
 	return payload
+}
+
+type timing struct {
+	metric
+}
+
+func (t *timing) Submit(duration time.Duration) {
+	newPoint := new(metricPoint)
+	newPoint.time = time.Now()
+	newPoint.value = float64(duration.Milliseconds())
+	for {
+		oldPoint := t.ptr.Load()
+		if t.ptr.CompareAndSwap(oldPoint, newPoint) {
+			return
+		}
+	}
 }

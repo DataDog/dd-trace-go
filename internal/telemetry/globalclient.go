@@ -142,6 +142,13 @@ func Distribution(namespace Namespace, name string, tags []string) MetricHandle 
 	return globalClientNewMetric(namespace, transport.DistMetric, name, tags)
 }
 
+// Timing creates a new metric handle for the given parameters that can be used to submit values.
+// Timing will always return a [MetricHandle], even if telemetry is disabled or the client has yet to start.
+// The [MetricHandle] is then swapped with the actual [MetricHandle] once the client is started.
+func Timing(namespace Namespace, name string, tags []string) MetricHandle {
+	return globalClientNewMetric(namespace, transport.TimeMetric, name, tags)
+}
+
 func Log(level LogLevel, text string, options ...LogOption) {
 	globalClientCall(func(client Client) {
 		client.Log(level, text, options...)
@@ -256,6 +263,8 @@ func globalClientNewMetric(namespace Namespace, kind transport.MetricType, name 
 				return client.Gauge(namespace, name, tags)
 			case transport.DistMetric:
 				return client.Distribution(namespace, name, tags)
+			case transport.TimeMetric:
+				return client.Timing(namespace, name, tags)
 			}
 			log.Warn("telemetry: unknown metric type %q", kind)
 			return nil
