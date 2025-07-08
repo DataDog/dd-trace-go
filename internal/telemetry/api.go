@@ -130,6 +130,10 @@ type Client interface {
 	// Tags cannot contain commas.
 	Distribution(namespace Namespace, name string, tags []string) MetricHandle
 
+	// Timing obtains the metric handle for the given parameters, or creates a new one if none was created just yet.
+	// Tags cannot contain commas.
+	Timing(namespace Namespace, name string, tags []string) MetricHandle
+
 	// Log sends a telemetry log at the desired level with the given text and options.
 	// Options include sending key-value pairs as tags, and a stack trace frozen from inside the Log function.
 	Log(level LogLevel, text string, options ...LogOption)

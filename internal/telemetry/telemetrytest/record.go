@@ -52,6 +52,7 @@ type RecordMetricHandle struct {
 	rate      float64
 	rateStart time.Time
 	gauge     float64
+	timing    float64
 	distrib   []float64
 
 	submit func(handle *RecordMetricHandle, value float64)
@@ -127,6 +128,14 @@ func (r *RecordClient) Distribution(namespace telemetry.Namespace, name string, 
 			sum += v
 		}
 		return sum
+	})
+}
+
+func (r *RecordClient) Timing(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
+	return r.metric(string(transport.TimeMetric), namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
+		handle.timing = value
+	}, func(handle *RecordMetricHandle) float64 {
+		return handle.timing
 	})
 }
 
