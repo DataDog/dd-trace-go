@@ -471,22 +471,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
-	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
-	if v, ok := namingschema.ParseVersion(schemaVersionStr); ok {
-		namingschema.SetVersion(v)
-		c.spanAttributeSchemaVersion = int(v)
-	} else {
-		v := namingschema.SetDefaultVersion()
-		c.spanAttributeSchemaVersion = int(v)
-		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
-	}
-	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
-	// These default service names are always disabled for v1 onwards.
-	namingschema.SetUseGlobalServiceName(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
+	namingschema.LoadFromEnv()
+	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
 
 	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
 	c.peerServiceDefaultsEnabled = true
-	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
+	if c.spanAttributeSchemaVersion == int(namingschema.VersionV0) {
 		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	}
 	c.peerServiceMappings = make(map[string]string)
@@ -993,7 +983,7 @@ func WithService(name string) StartOption {
 // This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
 func WithGlobalServiceName(enabled bool) StartOption {
 	return func(_ *config) {
-		namingschema.SetUseGlobalServiceName(enabled)
+		namingschema.SetRemoveFakeServices(enabled)
 	}
 }
 

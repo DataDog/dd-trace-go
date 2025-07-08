@@ -8,70 +8,94 @@
 package namingschema
 
 import (
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Version represents the available naming schema versions.
 type Version int
 
 const (
-	// SchemaV0 represents naming schema v0.
-	SchemaV0 Version = iota
-	// SchemaV1 represents naming schema v1.
-	SchemaV1
+	// VersionV0 represents naming schema v0.
+	VersionV0 Version = iota
+	// VersionV1 represents naming schema v1.
+	VersionV1
 )
 
-const (
-	defaultSchemaVersion = SchemaV0
-)
+type Config struct {
+	NamingSchemaVersion    Version
+	RemoveFakeServiceNames bool
+	DDService              string
+}
 
 var (
-	sv int32
-
-	useGlobalServiceName   bool
-	useGlobalServiceNameMu sync.RWMutex
+	activeNamingSchema     int32
+	removeFakeServiceNames bool
+	mu                     sync.RWMutex
 )
-
-// ParseVersion attempts to parse the version string.
-func ParseVersion(v string) (Version, bool) {
-	switch strings.ToLower(v) {
-	case "", "v0":
-		return SchemaV0, true
-	case "v1":
-		return SchemaV1, true
-	default:
-		return SchemaV0, false
-	}
-}
 
 // GetVersion returns the global naming schema version used for this application.
 func GetVersion() Version {
-	return Version(atomic.LoadInt32(&sv))
+	return Version(atomic.LoadInt32(&activeNamingSchema))
 }
 
-// SetVersion sets the global naming schema version used for this application.
-func SetVersion(v Version) {
-	atomic.StoreInt32(&sv, int32(v))
+// SetRemoveFakeServices is equivalent to the DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED environment variable.
+func SetRemoveFakeServices(v bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	removeFakeServiceNames = v
 }
 
-// SetDefaultVersion sets the default global naming schema version.
-func SetDefaultVersion() Version {
-	SetVersion(defaultSchemaVersion)
-	return defaultSchemaVersion
+func LoadFromEnv() {
+	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+	if v, ok := parseVersionStr(schemaVersionStr); ok {
+		setVersion(v)
+	} else {
+		setVersion(VersionV0)
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+	}
+	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
+	// These default service names are always disabled for v1 onwards.
+	removeFakeServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
 }
 
-// UseGlobalServiceName returns the value of the useGlobalServiceName setting for this application.
-func UseGlobalServiceName() bool {
-	useGlobalServiceNameMu.RLock()
-	defer useGlobalServiceNameMu.RUnlock()
-	return useGlobalServiceName
+// ReloadConfig is used to reload the configuration in tests.
+func ReloadConfig() {
+	LoadFromEnv()
+	globalconfig.SetServiceName(os.Getenv("DD_SERVICE"))
 }
 
-// SetUseGlobalServiceName sets the value of the useGlobalServiceName setting used for this application.
-func SetUseGlobalServiceName(v bool) {
-	useGlobalServiceNameMu.Lock()
-	defer useGlobalServiceNameMu.Unlock()
-	useGlobalServiceName = v
+// GetConfig returns the naming schema config.
+func GetConfig() Config {
+	mu.Lock()
+	defer mu.Unlock()
+
+	return Config{
+		NamingSchemaVersion:    GetVersion(),
+		RemoveFakeServiceNames: removeFakeServiceNames,
+		DDService:              globalconfig.ServiceName(),
+	}
+}
+
+// setVersion sets the global naming schema version used for this application.
+func setVersion(v Version) {
+	atomic.StoreInt32(&activeNamingSchema, int32(v))
+}
+
+// parseVersionStr attempts to parse the version string.
+func parseVersionStr(v string) (Version, bool) {
+	switch strings.ToLower(v) {
+	case "", "v0":
+		return VersionV0, true
+	case "v1":
+		return VersionV1, true
+	default:
+		return VersionV0, false
+	}
 }
