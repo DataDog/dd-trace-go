@@ -23,13 +23,13 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
@@ -433,12 +433,7 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		if !cfg.noDebugStack {
-			s.errTraceStack = "takeStacktrace"
-			tracerstats.Signal(tracerstats.TakeStacktraceStack, 1)
-			now := time.Now()
-			st := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-			s.errTraceDuration = time.Since(now)
-			s.setMeta(ext.ErrorStack, st)
+			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 		}
 		switch err := v.(type) {
 		case xerrors.Formatter:
@@ -467,6 +462,12 @@ const defaultStackLength = 32
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
 // If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
+	now := time.Now()
+	defer func() {
+		dur := float64(time.Since(now))
+		telemetry.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
+	}()
 	if n == 0 {
 		n = defaultStackLength
 	}

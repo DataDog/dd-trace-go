@@ -21,6 +21,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -887,39 +889,41 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		assert := assert.New(t)
 		var tg statsdtest.TestStatsdClient
 
-		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(false))
+		telemetryClient := new(telemetrytest.RecordClient)
+		telemetryClient.ProductStarted(telemetry.NamespaceTracers)
+		defer telemetry.MockClient(telemetryClient)()
+
+		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(false))
 		assert.Nil(err)
 		defer stop()
 
 		tracer.StartSpan("operation").Finish(WithError(errors.New("test")))
-		flush(1)
-		tg.Wait(assert, 1, 100*time.Millisecond)
 
-		counts := tg.Counts()
-		durations := tg.CallsByName()
-		assert.Equal(int64(0), counts["datadog.span.errorstack.source"])
-		assert.NotContains(durations, "datadog.span.errorstack.duration")
+		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
+		assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get())
+
+		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
+		assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get())
 	})
 
 	t.Run("error:with debugstack", func(t *testing.T) {
 		assert := assert.New(t)
-		var tg statsdtest.TestStatsdClient
 
-		defer func(old time.Duration) { statsInterval = old }(statsInterval)
-		statsInterval = time.Millisecond
+		telemetryClient := new(telemetrytest.RecordClient)
+		telemetryClient.ProductStarted(telemetry.NamespaceTracers)
+		defer telemetry.MockClient(telemetryClient)()
 
-		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+		tracer, _, _, stop, err := startTestTracer(t, WithDebugStack(true))
 		assert.Nil(err)
 		defer stop()
 
 		tracer.StartSpan("operation").Finish(WithError(errors.New("test")))
-		flush(1)
-		tg.Wait(assert, 2, 100*time.Millisecond)
 
-		counts := tg.Counts()
-		durations := tg.CallsByName()
-		assert.Equal(int64(1), counts["datadog.span.errorstack.source"])
-		assert.Contains(durations, "datadog.span.errorstack.duration")
+		assert.Equal(1.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
+		assert.Greater(telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get(), 0.0)
+
+		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
+		assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get())
 	})
 
 	t.Run("error:multiple spans", func(t *testing.T) {
@@ -927,48 +931,48 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		var tg statsdtest.TestStatsdClient
 		numSpans := 5
 
-		defer func(old time.Duration) { statsInterval = old }(statsInterval)
-		statsInterval = time.Millisecond
+		telemetryClient := new(telemetrytest.RecordClient)
+		telemetryClient.ProductStarted(telemetry.NamespaceTracers)
+		defer telemetry.MockClient(telemetryClient)()
 
-		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
 		assert.Nil(err)
 		defer stop()
 
 		for range numSpans {
 			tracer.StartSpan("operation").Finish(WithError(errors.New("test")))
 		}
-		flush(numSpans)
-		tg.Wait(assert, 2*numSpans, 100*time.Millisecond)
 
-		durations := tg.CallsByName()
-		countCalls := statsdtest.FilterCallsByName(tg.CountCalls(), "datadog.span.errorstack.source")
-		assert.Equal(int64(numSpans), tg.CountCallsByTag(countCalls, "source:takeStacktrace"))
-		assert.Contains(durations, "datadog.span.errorstack.duration")
+		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
+		assert.Greater(telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get(), 0.0)
+
+		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
+		assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get())
 	})
 
-	// TODO(hannahkm): re-enable this test after finding a good place to report metrics for TracerError
+	// TODO(hannahkm): debug this
 	// t.Run("errortrace", func(t *testing.T) {
 	// 	assert := assert.New(t)
 	// 	var tg statsdtest.TestStatsdClient
 	// 	numSpans := 5
 
-	// 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+	// 	telemetryClient := new(telemetrytest.RecordClient)
+	// 	telemetryClient.ProductStarted(telemetry.NamespaceTracers)
+	// 	defer telemetry.MockClient(telemetryClient)()
+
+	// 	tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
 	// 	assert.Nil(err)
 	// 	defer stop()
 
 	// 	for range numSpans {
 	// 		tracer.StartSpan("operation").Finish(WithError(errortrace.New("test")))
 	// 	}
-	// 	flush(numSpans)
-	// 	tg.Wait(assert, 2*numSpans, 100*time.Millisecond)
 
-	// 	counts := tg.Counts()
-	// 	durations := tg.CallsByName()
-	// 	assert.Equal(int64(numSpans), counts["datadog.span.errorstack.source"])
-	// 	assert.Contains(durations, "datadog.span.errorstack.duration")
+	// 	assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
+	// 	assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get())
 
-	// 	byTag := tg.CountCallsByTag(tg.CountCalls(), "source:TracerError")
-	// 	assert.Equal(int64(numSpans), byTag)
+	// 	assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
+	// 	assert.Greater(telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get(), 0.0)
 	// })
 }
 
