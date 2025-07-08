@@ -62,7 +62,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.1.0-rc.4
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.1.0-rc.4
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.1.0-rc.4
-	github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.5
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/IBM/sarama v1.40.0
 	github.com/Shopify/sarama v1.38.1
