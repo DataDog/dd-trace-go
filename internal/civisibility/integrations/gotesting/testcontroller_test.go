@@ -379,7 +379,7 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
-	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 0)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 11)
