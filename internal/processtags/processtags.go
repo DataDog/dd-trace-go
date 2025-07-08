@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/datadog-agent/pkg/trace/traceutil"
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -97,7 +97,7 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 			b.WriteByte(',')
 		}
 		first = false
-		keyVal := traceutil.NormalizeTag(k + ":" + val)
+		keyVal := normalize.NormalizeTag(k + ":" + val)
 		b.WriteString(keyVal)
 		tagsSlice = append(tagsSlice, keyVal)
 	}
