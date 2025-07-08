@@ -340,7 +340,7 @@ func copyTestWithoutParent(source *testing.T, target *testing.T) {
 // createNewTest creates a new testing.T instance
 func createNewTest() *testing.T {
 	nT := &testing.T{}
-	var ctxPtr *context.Context = nil
+	var ctxPtr *context.Context
 	if ptr, err := getFieldPointerFrom(nT, "barrier"); err == nil && ptr != nil {
 		value := (*chan bool)(ptr)
 		*value = make(chan bool) // Initialize the barrier channel
