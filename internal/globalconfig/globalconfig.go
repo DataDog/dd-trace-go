@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/google/uuid"
 )
@@ -60,6 +61,7 @@ func ServiceName() string {
 func SetServiceName(name string) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
+	log.Debug("internal/globalconfig: setting service name to: %q (previous value: %q)", name, cfg.serviceName)
 	cfg.serviceName = name
 }
 

@@ -61,6 +61,7 @@ type Instrumentation struct {
 // ServiceName returns the default service name to be set for the given instrumentation component.
 func (i *Instrumentation) ServiceName(component Component, opCtx OperationContext) string {
 	cfg := namingschema.GetConfig()
+	i.logger.Debug("%s: reading integration ServiceName | config: %+v", i.pkg, cfg)
 
 	n, ok := i.info.naming[component]
 	if !ok {
