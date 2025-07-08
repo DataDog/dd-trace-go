@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package env
 
 import (
@@ -51,5 +56,8 @@ func addSupportedConfigurationToFile(name string) {
 		return
 	}
 
-	os.WriteFile("supported-configurations.json", jsonFile, 0644)
+	if err := os.WriteFile("supported-configurations.json", jsonFile, 0644); err != nil {
+		log.Error("config: failed to write supported configuration: %v", err)
+		return
+	}
 }
