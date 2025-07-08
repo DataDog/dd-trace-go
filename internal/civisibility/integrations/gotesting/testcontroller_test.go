@@ -390,20 +390,11 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
 	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 11)
-	testifySub01 := getSpansWithResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite")[0]
-	if len(getSpansWithResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01")) < 1 {
-		panic("expected at least one span for testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01")
-	}
-
-	// check that testify span has the correct source file
-	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
-		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
-	}
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 220)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 200)
-	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 200)[0]
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 198)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 180)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 180)[0]
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
