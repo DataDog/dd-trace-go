@@ -11,6 +11,9 @@ import (
 )
 
 func TestTestifyLikeTest(t *testing.T) {
+	if parallelEfd {
+		t.Skip("Skipping TestTestifyLikeTest in parallel mode")
+	}
 	mySuite := new(MySuite)
 	registerTestifySuite(t, mySuite)
 	Run(t, mySuite)
