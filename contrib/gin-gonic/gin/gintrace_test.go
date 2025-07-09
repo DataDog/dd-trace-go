@@ -651,7 +651,7 @@ func TestServiceName(t *testing.T) {
 func TestTracerStartedMultipleTimes(t *testing.T) {
 	tt1 := testtracer.Start(t)
 	defer tt1.Stop()
-	tt2 := testtracer.Start(t, tracer.WithService("global_service"))
+	tt2 := testtracer.Start(t, testtracer.WithTracerStartOpts(tracer.WithService("global_service")))
 	defer tt2.Stop()
 
 	router := gin.New()

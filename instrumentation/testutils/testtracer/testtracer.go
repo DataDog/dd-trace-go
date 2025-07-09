@@ -25,10 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-type AgentConfig struct {
-	StatsdPort int `json:"statsd_port"`
-}
-
+// AgentInfo defines the response from the agent /info endpoint.
 type AgentInfo struct {
 	Endpoints          []string    `json:"endpoints"`
 	ClientDropP0s      bool        `json:"client_drop_p0s"`
@@ -39,6 +36,12 @@ type AgentInfo struct {
 	Config             AgentConfig `json:"config"`
 }
 
+// AgentConfig defines the agent config.
+type AgentConfig struct {
+	StatsdPort int `json:"statsd_port"`
+}
+
+// Span defines a span with the same format as it is sent to the agent.
 type Span struct {
 	Name       string             `json:"name"`
 	Service    string             `json:"service"`
@@ -56,6 +59,7 @@ type Span struct {
 	SpanLinks  []SpanLink         `json:"span_links"`
 }
 
+// SpanLink defines a span link with the same format as it is sent to the agent.
 type SpanLink struct {
 	TraceID     uint64            `json:"trace_id"`
 	TraceIDHigh uint64            `json:"trace_id_high"`
@@ -63,6 +67,106 @@ type SpanLink struct {
 	Attributes  map[string]string `json:"attributes"`
 	Tracestate  string            `json:"tracestate"`
 	Flags       uint32            `json:"flags"`
+}
+
+// TestTracer is an inspectable tracer useful for tests.
+type TestTracer struct {
+	Spans        <-chan Span
+	roundTripper *mockTransport
+}
+
+// Start calls [tracer.Start] with a mocked transport and provides a new [TestTracer] that allows to inspect
+// the spans produced by this application.
+func Start(t *testing.T, opts ...Option) TestTracer {
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	spansChan := make(chan Span)
+	rt := &mockTransport{
+		T:         t,
+		spansChan: spansChan,
+		agentInfo: cfg.AgentInfoResponse,
+	}
+	httpClient := &http.Client{
+		Transport: rt,
+	}
+	tt := TestTracer{Spans: spansChan, roundTripper: rt}
+	t.Cleanup(tt.Stop)
+
+	startOpts := append([]tracer.StartOption{
+		tracer.WithEnv("TestTracer"),
+		tracer.WithService("TestTracer"),
+		tracer.WithServiceVersion("1.0.0"),
+		tracer.WithHTTPClient(httpClient),
+		tracer.WithLogger(&testLogger{T: t}),
+	}, cfg.TracerStartOpts...)
+
+	err := tracer.Start(startOpts...)
+	require.NoError(t, err)
+
+	return tt
+}
+
+type config struct {
+	TracerStartOpts   []tracer.StartOption
+	AgentInfoResponse AgentInfo
+}
+
+func defaultConfig() *config {
+	return &config{
+		TracerStartOpts:   nil,
+		AgentInfoResponse: AgentInfo{},
+	}
+}
+
+type Option func(*config)
+
+// WithTracerStartOpts allows to set [tracer.StartOption] on the tracer.
+func WithTracerStartOpts(opts ...tracer.StartOption) Option {
+	return func(cfg *config) {
+		cfg.TracerStartOpts = opts
+	}
+}
+
+// WithAgentInfoResponse sets a custom /info agent response. It can be used to enable/disable certain features
+// from the tracer that depend on whether the agent supports them or not.
+func WithAgentInfoResponse(response AgentInfo) Option {
+	return func(cfg *config) {
+		cfg.AgentInfoResponse = response
+	}
+}
+
+// Stop stops the tracer. It should be called after the test finishes.
+func (tt TestTracer) Stop() {
+	tt.roundTripper.Stop()
+	tracer.Stop()
+}
+
+// WaitForSpans returns when receiving a number of Span equal to count. It fails the test if it did not receive
+// that number of spans after 5 seconds.
+func (tt TestTracer) WaitForSpans(t *testing.T, count int) []Span {
+	if count == 0 {
+		return nil
+	}
+	// force a flush so we don't need to wait for the default flush interval.
+	tracer.Flush()
+
+	timeoutChan := time.After(5 * time.Second)
+	spans := make([]Span, 0)
+
+	for {
+		select {
+		case span := <-tt.Spans:
+			spans = append(spans, span)
+			if len(spans) == count {
+				return spans
+			}
+		case <-timeoutChan:
+			assert.FailNowf(t, "timeout waiting for spans", "got: %d, want: %d", len(spans), count)
+		}
+	}
 }
 
 type mockTransport struct {
@@ -157,73 +261,6 @@ func (rt *mockTransport) handleTraces(r *http.Request) (resp *http.Response) {
 		}
 	}
 	return
-}
-
-type TestTracer struct {
-	Spans        <-chan Span
-	roundTripper *mockTransport
-}
-
-func (tt TestTracer) WaitForSpans(t *testing.T, count int) []Span {
-	if count == 0 {
-		return nil
-	}
-	timeoutChan := time.After(5 * time.Second)
-	spans := make([]Span, 0)
-
-	for {
-		select {
-		case span := <-tt.Spans:
-			spans = append(spans, span)
-			if len(spans) == count {
-				return spans
-			}
-		case <-timeoutChan:
-			assert.FailNowf(t, "timeout waiting for spans", "got: %d, want: %d", len(spans), count)
-		}
-	}
-}
-
-func (tt TestTracer) Stop() {
-	tt.roundTripper.Stop()
-	tracer.Stop()
-}
-
-func Start(t *testing.T, opts ...tracer.StartOption) TestTracer {
-	spansChan := make(chan Span)
-	rt := &mockTransport{
-		T:         t,
-		spansChan: spansChan,
-		agentInfo: AgentInfo{
-			Endpoints:          nil,
-			ClientDropP0s:      false,
-			FeatureFlags:       nil,
-			PeerTags:           nil,
-			SpanMetaStruct:     false,
-			ObfuscationVersion: 0,
-			Config: AgentConfig{
-				StatsdPort: 0,
-			},
-		},
-	}
-	httpClient := &http.Client{
-		Transport: rt,
-	}
-	tt := TestTracer{Spans: spansChan, roundTripper: rt}
-	t.Cleanup(tt.Stop)
-
-	startOpts := append([]tracer.StartOption{
-		tracer.WithEnv("test"),
-		tracer.WithService("mocktracerv2"),
-		tracer.WithServiceVersion("1.0.0"),
-		tracer.WithHTTPClient(httpClient),
-		tracer.WithLogger(&testLogger{T: t}),
-	}, opts...)
-
-	err := tracer.Start(startOpts...)
-	require.NoError(t, err)
-
-	return tt
 }
 
 type testLogger struct {
