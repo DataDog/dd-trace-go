@@ -38,9 +38,6 @@ var partialTraces uint32
 // Copies of the stats to be sent to the agent.
 var agentDroppedP0Traces, agentDroppedP0Spans uint32
 
-// Reports on which type of error the user is using.
-var errorTraceStack, takeStacktraceStack uint32
-
 func Signal(e Event, count uint32) {
 	switch e {
 	case SpanStarted:
@@ -91,6 +88,4 @@ func Reset() {
 	atomic.StoreUint32(&partialTraces, 0)
 	atomic.StoreUint32(&agentDroppedP0Traces, 0)
 	atomic.StoreUint32(&agentDroppedP0Spans, 0)
-	atomic.StoreUint32(&errorTraceStack, 0)
-	atomic.StoreUint32(&takeStacktraceStack, 0)
 }
