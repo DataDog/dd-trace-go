@@ -35,7 +35,7 @@ func TestNamingSchema(t *testing.T) {
 
 	t.Run("options", func(t *testing.T) {
 		LoadFromEnv()
-		SetRemoveFakeServices(true)
+		SetRemoveIntegrationServiceNames(true)
 
 		cfg := GetConfig()
 		assert.EqualValues(t, 0, cfg.NamingSchemaVersion)

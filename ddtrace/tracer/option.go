@@ -983,7 +983,7 @@ func WithService(name string) StartOption {
 // This is synonymous with `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED`.
 func WithGlobalServiceName(enabled bool) StartOption {
 	return func(_ *config) {
-		namingschema.SetRemoveFakeServices(enabled)
+		namingschema.SetRemoveIntegrationServiceNames(enabled)
 	}
 }
 

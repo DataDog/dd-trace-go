@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
 
 func init() {
@@ -643,4 +644,31 @@ func TestServiceName(t *testing.T) {
 		span := spans[0]
 		assert.Equal("my-service", span.Tag(ext.ServiceName))
 	})
+}
+
+// TestTracerStartedMultipleTimes tests a v2 regression where the global service name was being set to an empty string
+// when the tracer is started more than once.
+func TestTracerStartedMultipleTimes(t *testing.T) {
+	tt1 := testtracer.Start(t)
+	defer tt1.Stop()
+	tt2 := testtracer.Start(t, tracer.WithService("global_service"))
+	defer tt2.Stop()
+
+	router := gin.New()
+	router.Use(Middleware(""))
+	router.GET("/ping", func(c *gin.Context) {
+		c.Status(200)
+	})
+
+	r := httptest.NewRequest("GET", "/ping", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	response := w.Result()
+	defer response.Body.Close()
+	assert.Equal(t, response.StatusCode, 200)
+
+	spans := tt2.WaitForSpans(t, 1)
+	span := spans[0]
+
+	assert.Equal(t, "global_service", span.Service)
 }

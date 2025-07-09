@@ -45,8 +45,8 @@ func GetVersion() Version {
 	return Version(atomic.LoadInt32(&activeNamingSchema))
 }
 
-// SetRemoveFakeServices is equivalent to the DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED environment variable.
-func SetRemoveFakeServices(v bool) {
+// SetRemoveIntegrationServiceNames sets the value of the RemoveIntegrationServiceNames setting for this application.
+func SetRemoveIntegrationServiceNames(v bool) {
 	mu.Lock()
 	defer mu.Unlock()
 	removeIntegrationServiceNames = v
