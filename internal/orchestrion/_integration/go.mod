@@ -8,7 +8,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/proto v0.66.1
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.1.0-rc.5
 	github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.5
-	github.com/DataDog/go-libddwaf/v4 v4.2.1-0.20250613111738-824b8f59fcd9
+	github.com/DataDog/go-libddwaf/v4 v4.3.0
 	github.com/DataDog/orchestrion v1.4.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
