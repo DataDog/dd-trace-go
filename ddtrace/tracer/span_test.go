@@ -950,30 +950,29 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get())
 	})
 
-	// TODO(hannahkm): debug this
-	// t.Run("errortrace", func(t *testing.T) {
-	// 	assert := assert.New(t)
-	// 	var tg statsdtest.TestStatsdClient
-	// 	numSpans := 5
+	t.Run("errortrace", func(t *testing.T) {
+		assert := assert.New(t)
+		var tg statsdtest.TestStatsdClient
+		numSpans := 5
 
-	// 	telemetryClient := new(telemetrytest.RecordClient)
-	// 	telemetryClient.ProductStarted(telemetry.NamespaceTracers)
-	// 	defer telemetry.MockClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		telemetryClient.ProductStarted(telemetry.NamespaceTracers)
+		defer telemetry.MockClient(telemetryClient)()
 
-	// 	tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
-	// 	assert.Nil(err)
-	// 	defer stop()
+		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+		assert.Nil(err)
+		defer stop()
 
-	// 	for range numSpans {
-	// 		tracer.StartSpan("operation").Finish(WithError(errortrace.New("test")))
-	// 	}
+		for range numSpans {
+			tracer.StartSpan("operation").Finish(WithError(errortrace.New("test")))
+		}
 
-	// 	assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
-	// 	assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get())
+		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
+		assert.Equal(0.0, telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get())
 
-	// 	assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
-	// 	assert.Greater(telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get(), 0.0)
-	// })
+		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
+		assert.Greater(telemetryClient.Timing(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get(), 0.0)
+	})
 }
 
 func TestUniqueTagKeys(t *testing.T) {
