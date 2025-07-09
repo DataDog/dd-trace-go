@@ -8,6 +8,9 @@ package env
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -16,6 +19,22 @@ import (
 type SupportedConfiguration struct {
 	SupportedConfigurations map[string][]string `json:"supportedConfigurations"`
 	Aliases                 map[string][]string `json:"aliases"`
+}
+
+var (
+	configFilePath string
+	once           sync.Once
+)
+
+// getConfigFilePath returns the path to the supported-configurations.json file
+// in the same directory as this Go file. The path is calculated once and cached.
+func getConfigFilePath() string {
+	once.Do(func() {
+		_, filename, _, _ := runtime.Caller(0)
+		dir := filepath.Dir(filename)
+		configFilePath = filepath.Join(dir, "supported-configurations.json")
+	})
+	return configFilePath
 }
 
 // addSupportedConfigurationToFile adds a supported configuration to the json file.
@@ -32,8 +51,10 @@ func addSupportedConfigurationToFile(name string) {
 		return
 	}
 
+	filePath := getConfigFilePath()
+
 	// read the json file
-	jsonFile, err := os.ReadFile("supported-configurations.json")
+	jsonFile, err := os.ReadFile(filePath)
 	if err != nil {
 		log.Error("config: failed to open supported-configurations.json: %v", err)
 		return
@@ -56,7 +77,7 @@ func addSupportedConfigurationToFile(name string) {
 		return
 	}
 
-	if err := os.WriteFile("supported-configurations.json", jsonFile, 0644); err != nil {
+	if err := os.WriteFile(filePath, jsonFile, 0644); err != nil {
 		log.Error("config: failed to write supported configuration: %v", err)
 		return
 	}
