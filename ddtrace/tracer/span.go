@@ -132,14 +132,12 @@ type Span struct {
 	spanLinks  []SpanLink         `msg:"span_links,omitempty"`  // links to other spans
 	spanEvents []spanEvent        `msg:"span_events,omitempty"` // events produced related to this span
 
-	goExecTraced     bool          `msg:"-"`
-	noDebugStack     bool          `msg:"-"` // disables debug stack traces
-	finished         bool          `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context          *SpanContext  `msg:"-"` // span propagation context
-	integration      string        `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
-	supportsEvents   bool          `msg:"-"` // whether the span supports native span events or not
-	errTraceStack    string        `msg:"-"` // whether the error stack was calculated using TracerError or takeStacktrace. nil if noDebugStack false.
-	errTraceDuration time.Duration `msg:"-"` // how long it took for the error stack to be calculated. nil if noDebugStack false.
+	goExecTraced   bool         `msg:"-"`
+	noDebugStack   bool         `msg:"-"` // disables debug stack traces
+	finished       bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	context        *SpanContext `msg:"-"` // span propagation context
+	integration    string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
+	supportsEvents bool         `msg:"-"` // whether the span supports native span events or not
 
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
@@ -747,11 +745,6 @@ func (s *Span) finish(finishTime int64) {
 		if tracer.config.debugAbandonedSpans {
 			// the tracer supports debugging abandoned spans
 			tracer.submitAbandonedSpan(s, true)
-		}
-		if !s.noDebugStack {
-			// if debug stacks are enabled, send metrics on how we are calculating error stacks
-			// tracer.statsd.Count("datadog.span.errorstack.source", 1, []string{"source:" + s.errTraceStack}, 1)
-			tracer.statsd.Timing("datadog.span.errorstack.duration", s.errTraceDuration, []string{"source:" + s.errTraceStack}, 1)
 		}
 		tracer.spansFinished.Inc(s.integration)
 	}
