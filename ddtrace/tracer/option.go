@@ -476,7 +476,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
 	c.peerServiceDefaultsEnabled = true
-	if c.spanAttributeSchemaVersion == int(namingschema.VersionV0) {
+	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
 		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	}
 	c.peerServiceMappings = make(map[string]string)

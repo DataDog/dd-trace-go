@@ -22,22 +22,22 @@ import (
 type Version int
 
 const (
-	// VersionV0 represents naming schema v0.
-	VersionV0 Version = iota
-	// VersionV1 represents naming schema v1.
-	VersionV1
+	// SchemaV0 represents naming schema v0.
+	SchemaV0 Version = iota
+	// SchemaV1 represents naming schema v1.
+	SchemaV1
 )
 
 type Config struct {
-	NamingSchemaVersion    Version
-	RemoveFakeServiceNames bool
-	DDService              string
+	NamingSchemaVersion           Version
+	RemoveIntegrationServiceNames bool
+	DDService                     string
 }
 
 var (
-	activeNamingSchema     int32
-	removeFakeServiceNames bool
-	mu                     sync.RWMutex
+	activeNamingSchema            int32
+	removeIntegrationServiceNames bool
+	mu                            sync.RWMutex
 )
 
 // GetVersion returns the global naming schema version used for this application.
@@ -49,7 +49,7 @@ func GetVersion() Version {
 func SetRemoveFakeServices(v bool) {
 	mu.Lock()
 	defer mu.Unlock()
-	removeFakeServiceNames = v
+	removeIntegrationServiceNames = v
 }
 
 func LoadFromEnv() {
@@ -57,12 +57,12 @@ func LoadFromEnv() {
 	if v, ok := parseVersionStr(schemaVersionStr); ok {
 		setVersion(v)
 	} else {
-		setVersion(VersionV0)
+		setVersion(SchemaV0)
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
 	}
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.
-	removeFakeServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
+	removeIntegrationServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
 }
 
 // ReloadConfig is used to reload the configuration in tests.
@@ -77,9 +77,9 @@ func GetConfig() Config {
 	defer mu.Unlock()
 
 	return Config{
-		NamingSchemaVersion:    GetVersion(),
-		RemoveFakeServiceNames: removeFakeServiceNames,
-		DDService:              globalconfig.ServiceName(),
+		NamingSchemaVersion:           GetVersion(),
+		RemoveIntegrationServiceNames: removeIntegrationServiceNames,
+		DDService:                     globalconfig.ServiceName(),
 	}
 }
 
@@ -92,10 +92,10 @@ func setVersion(v Version) {
 func parseVersionStr(v string) (Version, bool) {
 	switch strings.ToLower(v) {
 	case "", "v0":
-		return VersionV0, true
+		return SchemaV0, true
 	case "v1":
-		return VersionV1, true
+		return SchemaV1, true
 	default:
-		return VersionV0, false
+		return SchemaV0, false
 	}
 }

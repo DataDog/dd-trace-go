@@ -61,14 +61,13 @@ type Instrumentation struct {
 // ServiceName returns the default service name to be set for the given instrumentation component.
 func (i *Instrumentation) ServiceName(component Component, opCtx OperationContext) string {
 	cfg := namingschema.GetConfig()
-	i.logger.Debug("%s: reading integration ServiceName | config: %+v", i.pkg, cfg)
 
 	n, ok := i.info.naming[component]
 	if !ok {
 		return cfg.DDService
 	}
 
-	useDDService := cfg.NamingSchemaVersion == namingschema.VersionV1 || cfg.RemoveFakeServiceNames || n.useDDServiceV0 || n.buildServiceNameV0 == nil
+	useDDService := cfg.NamingSchemaVersion == namingschema.SchemaV1 || cfg.RemoveIntegrationServiceNames || n.useDDServiceV0 || n.buildServiceNameV0 == nil
 	if useDDService && cfg.DDService != "" {
 		return cfg.DDService
 	}
@@ -83,7 +82,7 @@ func (i *Instrumentation) OperationName(component Component, opCtx OperationCont
 	}
 
 	switch namingschema.GetVersion() {
-	case namingschema.VersionV1:
+	case namingschema.SchemaV1:
 		return op.buildOpNameV1(opCtx)
 	default:
 		return op.buildOpNameV0(opCtx)

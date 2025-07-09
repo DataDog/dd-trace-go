@@ -806,7 +806,6 @@ func (t *tracer) Stop() {
 		close(t.stop)
 		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
-	globalconfig.SetServiceName("")
 	t.abandonedSpansDebugger.Stop()
 	t.stats.Stop()
 	t.wg.Wait()

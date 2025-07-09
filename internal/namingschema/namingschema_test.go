@@ -17,7 +17,7 @@ func TestNamingSchema(t *testing.T) {
 
 		cfg := GetConfig()
 		assert.EqualValues(t, 0, cfg.NamingSchemaVersion)
-		assert.Equal(t, false, cfg.RemoveFakeServiceNames)
+		assert.Equal(t, false, cfg.RemoveIntegrationServiceNames)
 		assert.Equal(t, "", cfg.DDService)
 	})
 
@@ -29,7 +29,7 @@ func TestNamingSchema(t *testing.T) {
 
 		cfg := GetConfig()
 		assert.EqualValues(t, 1, cfg.NamingSchemaVersion)
-		assert.Equal(t, true, cfg.RemoveFakeServiceNames)
+		assert.Equal(t, true, cfg.RemoveIntegrationServiceNames)
 		assert.Equal(t, "", cfg.DDService)
 	})
 
@@ -39,7 +39,7 @@ func TestNamingSchema(t *testing.T) {
 
 		cfg := GetConfig()
 		assert.EqualValues(t, 0, cfg.NamingSchemaVersion)
-		assert.Equal(t, true, cfg.RemoveFakeServiceNames)
+		assert.Equal(t, true, cfg.RemoveIntegrationServiceNames)
 		assert.Equal(t, "", cfg.DDService)
 	})
 }

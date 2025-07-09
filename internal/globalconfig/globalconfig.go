@@ -61,7 +61,6 @@ func ServiceName() string {
 func SetServiceName(name string) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	log.Debug("internal/globalconfig: setting service name to: %q (previous value: %q)", name, cfg.serviceName)
 	cfg.serviceName = name
 }
 
