@@ -189,6 +189,8 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			return true, nil, err
 		}
 
+		originalSerializedBody := serializedBody
+
 		// Compress body if needed
 		if config.Compressed {
 			serializedBody, err = compressData(serializedBody)
@@ -198,8 +200,15 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 
 		if log.DebugEnabled() {
-			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
-				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
+			strBody := "(binary data)"
+			if config.Format == FormatJSON {
+				strBody = string(originalSerializedBody)
+				if len(strBody) > 4096 {
+					strBody = strBody[:4096] + "..." // Truncate for logging
+				}
+			}
+			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v, format: %v] %v bytes: %v",
+				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, config.Format, len(serializedBody), strBody)
 		}
 
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(serializedBody))
