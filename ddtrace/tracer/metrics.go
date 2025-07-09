@@ -111,8 +111,6 @@ func (t *tracer) reportHealthMetricsAtInterval(interval time.Duration) {
 			}
 
 			t.statsd.Count("datadog.tracer.traces_dropped", int64(tracerstats.Count(tracerstats.TracesDropped)), []string{"reason:trace_too_large"}, 1)
-			t.statsd.Count("datadog.span.errorstack.source", int64(tracerstats.Count(tracerstats.TakeStacktraceStack)), []string{"source:takeStacktrace"}, 1)
-			t.statsd.Count("datadog.span.errorstack.source", int64(tracerstats.Count(tracerstats.ErrorTraceStack)), []string{"source:TracerError"}, 1)
 		case <-t.stop:
 			return
 		}

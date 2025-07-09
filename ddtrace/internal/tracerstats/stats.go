@@ -23,9 +23,6 @@ const (
 	// agent in headers as well as counting them with statsd.
 	AgentDroppedP0Traces
 	AgentDroppedP0Spans
-
-	ErrorTraceStack
-	TakeStacktraceStack
 )
 
 // These integers track metrics about spans and traces as they are started,
@@ -60,10 +57,6 @@ func Signal(e Event, count uint32) {
 		atomic.AddUint32(&agentDroppedP0Spans, count)
 	case PartialTraces:
 		atomic.AddUint32(&partialTraces, count)
-	case ErrorTraceStack:
-		atomic.AddUint32(&errorTraceStack, count)
-	case TakeStacktraceStack:
-		atomic.AddUint32(&takeStacktraceStack, count)
 	}
 }
 
@@ -85,10 +78,6 @@ func Count(e Event) uint32 {
 		return atomic.SwapUint32(&agentDroppedP0Traces, 0)
 	case AgentDroppedP0Spans:
 		return atomic.SwapUint32(&agentDroppedP0Spans, 0)
-	case ErrorTraceStack:
-		return atomic.SwapUint32(&errorTraceStack, 0)
-	case TakeStacktraceStack:
-		return atomic.SwapUint32(&takeStacktraceStack, 0)
 	}
 	return 0
 }
