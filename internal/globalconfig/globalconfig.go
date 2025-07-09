@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/google/uuid"
 )
