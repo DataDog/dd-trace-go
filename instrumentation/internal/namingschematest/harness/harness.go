@@ -6,6 +6,7 @@
 package harness
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"os"
 	"strings"
 	"testing"
@@ -69,6 +70,25 @@ func RunTest(t *testing.T, tc TestCase) {
 				instrumentation.ReloadConfig()
 				spans := tc.GenSpans(t, TestServiceOverride)
 				assertServiceNames(t, spans, tc.WantServiceNameV0.ServiceOverride)
+			})
+			t.Run("v0_dd_service_remove_integration_service_names", func(t *testing.T) {
+				t.Setenv("DD_SERVICE", TestDDService)
+				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+				t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
+				instrumentation.ReloadConfig()
+				spans := tc.GenSpans(t, "")
+				// in this setup, we should always have DD_SERVICE even if using schema v0
+				assertServiceNames(t, spans, RepeatString(TestDDService, len(tc.WantServiceNameV0.DDService)))
+			})
+			t.Run("v0_dd_service_remove_integration_service_names_tracer_option", func(t *testing.T) {
+				t.Setenv("DD_SERVICE", TestDDService)
+				t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+				// this option is equivalent to setting the environment variable DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED
+				tracer.WithGlobalServiceName(true)(nil)
+				instrumentation.ReloadConfig()
+				spans := tc.GenSpans(t, "")
+				// in this setup, we should always have DD_SERVICE even if using schema v0
+				assertServiceNames(t, spans, RepeatString(TestDDService, len(tc.WantServiceNameV0.DDService)))
 			})
 
 			// v1
