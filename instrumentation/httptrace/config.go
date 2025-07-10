@@ -7,13 +7,12 @@ package httptrace
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -60,7 +59,7 @@ func newConfig() config {
 		isStatusError:                isServerError,
 		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
 	}
-	v := os.Getenv(envServerErrorStatuses)
+	v := env.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
 		c.isStatusError = fn
 	}

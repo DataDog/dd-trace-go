@@ -13,7 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// Getenv is a wrapper around os.Getenv that validates the environment variable
+// Getenv is a wrapper around env.Getenv that validates the environment variable
 // against a list of supported environment variables.
 //
 // When a environment variable is not supported because it is not
