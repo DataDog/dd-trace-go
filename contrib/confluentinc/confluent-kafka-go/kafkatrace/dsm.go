@@ -14,7 +14,7 @@ import (
 )
 
 func (tr *Tracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
-	if err != nil || tr.groupID == "" || !tr.dsmEnabled {
+	if err != nil || tr.groupID == "" || !tr.DSMEnabled() {
 		return
 	}
 	for _, tp := range offsets {
@@ -23,7 +23,7 @@ func (tr *Tracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
 }
 
 func (tr *Tracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Consumer) {
-	if !tr.dsmEnabled {
+	if !tr.DSMEnabled() {
 		return
 	}
 	for _, tp := range offsets {
@@ -34,8 +34,8 @@ func (tr *Tracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Co
 }
 
 func (tr *Tracer) TrackProduceOffsets(msg Message) {
-	err := msg.GetTopicPartition().GetError()
-	if err != nil || !tr.dsmEnabled || msg.GetTopicPartition().GetTopic() == "" {
+	err := msg.GetTopicPartition().GetError().Error()
+	if err != nil || !tr.DSMEnabled() || msg.GetTopicPartition().GetTopic() == "" {
 		return
 	}
 	tp := msg.GetTopicPartition()
@@ -43,7 +43,7 @@ func (tr *Tracer) TrackProduceOffsets(msg Message) {
 }
 
 func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
-	if !tr.dsmEnabled || msg == nil {
+	if !tr.DSMEnabled() || msg == nil {
 		return
 	}
 	edges := []string{"direction:in", "topic:" + msg.GetTopicPartition().GetTopic(), "type:kafka"}
@@ -63,7 +63,7 @@ func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
 }
 
 func (tr *Tracer) SetProduceCheckpoint(msg Message) {
-	if !tr.dsmEnabled || msg == nil {
+	if !tr.DSMEnabled() || msg == nil {
 		return
 	}
 	edges := []string{"direction:out", "topic:" + msg.GetTopicPartition().GetTopic(), "type:kafka"}
