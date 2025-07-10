@@ -124,7 +124,7 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-        INTEGRATION: true
+      INTEGRATION: true
     strategy:
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
