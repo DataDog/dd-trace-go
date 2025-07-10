@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"golang.org/x/mod/semver"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -36,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -346,6 +346,15 @@ const partialFlushMinSpansDefault = 1000
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
+
+	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
+	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
+	// which is necessary for some tests to work properly.
+	c.orchestrionCfg.Enabled = orchestrion.Enabled()
+	if orchestrion.Version != "" {
+		c.orchestrionCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
+	}
+
 	c.sampler = NewAllSampler()
 	sampleRate := math.NaN()
 	if r := getDDorOtelConfig("sampleRate"); r != "" {

@@ -628,6 +628,10 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	capa := c.allCapabilities()
+	var tags []string
+	for k, v := range internal.GetGitMetadataTags() {
+		tags = append(tags, k+":"+v)
+	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -648,6 +652,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 				ProcessTags:   processtags.GlobalTags().Slice(),
+				Tags:          tags,
 			},
 			Capabilities: capa.Bytes(),
 		},
