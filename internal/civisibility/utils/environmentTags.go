@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 )
@@ -248,7 +249,7 @@ func createCITagsMap() map[string]string {
 	log.Debug("civisibility: test command: %s", cmd)
 
 	// Populate the test session name
-	if testSessionName, ok := os.LookupEnv(constants.CIVisibilityTestSessionNameEnvironmentVariable); ok {
+	if testSessionName, ok := env.LookupEnv(constants.CIVisibilityTestSessionNameEnvironmentVariable); ok {
 		localTags[constants.TestSessionName] = testSessionName
 	} else if jobName, ok := localTags[constants.CIJobName]; ok {
 		localTags[constants.TestSessionName] = fmt.Sprintf("%s-%s", jobName, cmd)

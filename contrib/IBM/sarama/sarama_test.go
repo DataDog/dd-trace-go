@@ -7,7 +7,6 @@ package sarama
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +26,7 @@ var (
 )
 
 func newIntegrationTestConfig(t *testing.T) *sarama.Config {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
 
