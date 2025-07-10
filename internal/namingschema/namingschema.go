@@ -10,7 +10,6 @@ package namingschema
 import (
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -35,22 +34,9 @@ type Config struct {
 }
 
 var (
-	activeNamingSchema            int32
-	removeIntegrationServiceNames bool
-	mu                            sync.RWMutex
+	activeNamingSchema            atomic.Int32
+	removeIntegrationServiceNames atomic.Bool
 )
-
-// GetVersion returns the global naming schema version used for this application.
-func GetVersion() Version {
-	return Version(atomic.LoadInt32(&activeNamingSchema))
-}
-
-// SetRemoveIntegrationServiceNames sets the value of the RemoveIntegrationServiceNames setting for this application.
-func SetRemoveIntegrationServiceNames(v bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	removeIntegrationServiceNames = v
-}
 
 func LoadFromEnv() {
 	schemaVersionStr := os.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
@@ -62,7 +48,7 @@ func LoadFromEnv() {
 	}
 	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
 	// These default service names are always disabled for v1 onwards.
-	removeIntegrationServiceNames = internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false)
+	SetRemoveIntegrationServiceNames(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
 }
 
 // ReloadConfig is used to reload the configuration in tests.
@@ -73,19 +59,21 @@ func ReloadConfig() {
 
 // GetConfig returns the naming schema config.
 func GetConfig() Config {
-	mu.Lock()
-	defer mu.Unlock()
-
 	return Config{
 		NamingSchemaVersion:           GetVersion(),
-		RemoveIntegrationServiceNames: removeIntegrationServiceNames,
+		RemoveIntegrationServiceNames: getRemoveIntegrationServiceNames(),
 		DDService:                     globalconfig.ServiceName(),
 	}
 }
 
+// GetVersion returns the global naming schema version used for this application.
+func GetVersion() Version {
+	return Version(activeNamingSchema.Load())
+}
+
 // setVersion sets the global naming schema version used for this application.
 func setVersion(v Version) {
-	atomic.StoreInt32(&activeNamingSchema, int32(v))
+	activeNamingSchema.Store(int32(v))
 }
 
 // parseVersionStr attempts to parse the version string.
@@ -98,4 +86,13 @@ func parseVersionStr(v string) (Version, bool) {
 	default:
 		return SchemaV0, false
 	}
+}
+
+func getRemoveIntegrationServiceNames() bool {
+	return removeIntegrationServiceNames.Load()
+}
+
+// SetRemoveIntegrationServiceNames sets the value of the RemoveIntegrationServiceNames setting for this application.
+func SetRemoveIntegrationServiceNames(v bool) {
+	removeIntegrationServiceNames.Store(v)
 }

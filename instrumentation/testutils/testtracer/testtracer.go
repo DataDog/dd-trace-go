@@ -77,7 +77,7 @@ type TestTracer struct {
 
 // Start calls [tracer.Start] with a mocked transport and provides a new [TestTracer] that allows to inspect
 // the spans produced by this application.
-func Start(t *testing.T, opts ...Option) TestTracer {
+func Start(t *testing.T, opts ...Option) *TestTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
@@ -92,7 +92,7 @@ func Start(t *testing.T, opts ...Option) TestTracer {
 	httpClient := &http.Client{
 		Transport: rt,
 	}
-	tt := TestTracer{Spans: spansChan, roundTripper: rt}
+	tt := &TestTracer{Spans: spansChan, roundTripper: rt}
 	t.Cleanup(tt.Stop)
 
 	startOpts := append([]tracer.StartOption{
@@ -139,14 +139,14 @@ func WithAgentInfoResponse(response AgentInfo) Option {
 }
 
 // Stop stops the tracer. It should be called after the test finishes.
-func (tt TestTracer) Stop() {
+func (tt *TestTracer) Stop() {
 	tt.roundTripper.Stop()
 	tracer.Stop()
 }
 
 // WaitForSpans returns when receiving a number of Span equal to count. It fails the test if it did not receive
 // that number of spans after 5 seconds.
-func (tt TestTracer) WaitForSpans(t *testing.T, count int) []Span {
+func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 	if count == 0 {
 		return nil
 	}

@@ -42,4 +42,16 @@ func TestNamingSchema(t *testing.T) {
 		assert.Equal(t, true, cfg.RemoveIntegrationServiceNames)
 		assert.Equal(t, "", cfg.DDService)
 	})
+
+	t.Run("fallback to v0", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "invalid")
+		t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
+
+		LoadFromEnv()
+
+		cfg := GetConfig()
+		assert.EqualValues(t, 0, cfg.NamingSchemaVersion)
+		assert.Equal(t, true, cfg.RemoveIntegrationServiceNames)
+		assert.Equal(t, "", cfg.DDService)
+	})
 }
