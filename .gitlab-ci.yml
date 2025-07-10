@@ -45,7 +45,7 @@ check-big-regressions:
   needs:
     - job: trigger_child_pipeline
   when: on_success
-  tags: 
+  tags:
     - "arch:amd64"
   image: $BASE_CI_IMAGE
   script:
@@ -64,6 +64,23 @@ check-big-regressions:
     paths:
       - reports/
     expire_in: "30 days"
+
+# check_config_inversion_local_file:
+#   rules:
+#     - when: on_success
+#   extends: .check_config_inversion_local_file
+#   variables:
+#     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+
+# config-inversion-update-supported-range:
+#   extends: .config_inversion_update_central
+#   variables:
+#     LOCAL_REPO_NAME: "dd-trace-go"
+#     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+#     LANGUAGE_NAME: "go"
+
+# - local: ".gitlab/one-pipeline.yml"
+
 
 include:
   - local: ".gitlab/macrobenchmarks.yml"

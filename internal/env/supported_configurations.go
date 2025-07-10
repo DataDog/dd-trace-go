@@ -15,7 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// SupportedConfiguration represents the content of the supported-configurations.json file.
+// SupportedConfiguration represents the content of the supported_configurations.json file.
 type SupportedConfiguration struct {
 	SupportedConfigurations map[string][]string `json:"supportedConfigurations"`
 	Aliases                 map[string][]string `json:"aliases"`
@@ -27,13 +27,13 @@ var (
 	mu             sync.Mutex
 )
 
-// getConfigFilePath returns the path to the supported-configurations.json file
+// getConfigFilePath returns the path to the supported_configurations.json file
 // in the same directory as this Go file. The path is calculated once and cached.
 func getConfigFilePath() string {
 	once.Do(func() {
 		_, filename, _, _ := runtime.Caller(0)
 		dir := filepath.Dir(filename)
-		configFilePath = filepath.Join(dir, "supported-configurations.json")
+		configFilePath = filepath.Join(dir, "supported_configurations.json")
 	})
 	return configFilePath
 }
@@ -60,7 +60,7 @@ func addSupportedConfigurationToFile(name string) {
 	// read the json file
 	jsonFile, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Error("config: failed to open supported-configurations.json: %v", err)
+		log.Error("config: failed to open supported_configurations.json: %v", err)
 		return
 	}
 
