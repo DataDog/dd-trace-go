@@ -161,6 +161,13 @@ func (c *client) Gauge(namespace Namespace, name string, tags []string) MetricHa
 	return c.metrics.LoadOrStore(namespace, transport.GaugeMetric, name, tags)
 }
 
+func (c *client) Timing(namespace Namespace, name string, tags []string) MetricHandle {
+	if !c.clientConfig.MetricsEnabled {
+		return noopMetricHandle{}
+	}
+	return c.metrics.LoadOrStore(namespace, transport.TimeMetric, name, tags)
+}
+
 func (c *client) Distribution(namespace Namespace, name string, tags []string) MetricHandle {
 	if !c.clientConfig.MetricsEnabled {
 		return noopMetricHandle{}

@@ -28,6 +28,7 @@ const (
 	CountMetric MetricType = "count"
 	GaugeMetric MetricType = "gauge"
 	DistMetric  MetricType = "distribution"
+	TimeMetric  MetricType = "timing"
 )
 
 // MetricData is a sequence of observations for a single named metric.
