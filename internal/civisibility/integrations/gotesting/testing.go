@@ -302,7 +302,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					if execMeta.allRetriesFailed {
 						test.SetTag(constants.TestHasFailedAllRetries, "true")
 					}
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
+					if execMeta.isAttemptToFix {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
@@ -322,19 +324,21 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 						if execMeta.allRetriesFailed {
 							test.SetTag(constants.TestHasFailedAllRetries, "true")
 						}
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
 					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
 				} else if t.Skipped() {
-					if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						test.SetTag(constants.TestAttemptToFixPassed, "false")
 					}
 					test.Close(integrations.ResultStatusSkip)
 				} else {
-					if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						if execMeta.allAttemptsPassed {
 							test.SetTag(constants.TestAttemptToFixPassed, "true")
 						} else {
@@ -648,12 +652,6 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 
 	// If the execution is for a modified test
 	execMeta.isAModifiedTest = execMeta.isAModifiedTest || (settings.ImpactedTestsEnabled && test.Context().Value(constants.TestIsModified) == true)
-	if execMeta.isAModifiedTest {
-		if execMeta.isDisabled || execMeta.isQuarantined {
-			// automatic attempt to fix if a disabled or quarantined test is modified
-			execMeta.isAttemptToFix = true
-		}
-	}
 
 	// If the execution is a retry we tag the test event
 	if execMeta.isARetry {

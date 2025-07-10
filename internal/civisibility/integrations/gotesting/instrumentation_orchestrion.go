@@ -191,7 +191,9 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					if execMeta.allRetriesFailed {
 						test.SetTag(constants.TestHasFailedAllRetries, "true")
 					}
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
+					if execMeta.isAttemptToFix {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 				test.Close(integrations.ResultStatusFail)
@@ -210,19 +212,21 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					if execMeta.allRetriesFailed {
 						test.SetTag(constants.TestHasFailedAllRetries, "true")
 					}
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
+					if execMeta.isAttemptToFix {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 				}
 				test.SetTag(ext.Error, true)
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
 				test.Close(integrations.ResultStatusFail)
 			} else if t.Skipped() {
-				if execMeta.isARetry && execMeta.isLastRetry {
+				if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 					test.SetTag(constants.TestAttemptToFixPassed, "false")
 				}
 				test.Close(integrations.ResultStatusSkip)
 			} else {
-				if execMeta.isARetry && execMeta.isLastRetry {
+				if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 					if execMeta.allAttemptsPassed {
 						test.SetTag(constants.TestAttemptToFixPassed, "true")
 					} else {

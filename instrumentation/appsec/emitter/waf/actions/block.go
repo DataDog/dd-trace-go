@@ -37,7 +37,7 @@ func init() {
 	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
 		if path, ok := os.LookupEnv(env); ok {
 			if t, err := os.ReadFile(path); err != nil {
-				log.Error("Could not read template at %s: %v", path, err)
+				log.Error("Could not read template at %q: %v", path, err.Error())
 			} else {
 				*template = t
 			}

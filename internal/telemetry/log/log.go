@@ -49,6 +49,6 @@ func log(lvl telemetry.LogLevel, format string, args []any) {
 	telemetry.Log(lvl, fmt.Sprintf(format, fmtArgs...), opts...)
 
 	if lvl != telemetry.LogDebug {
-		internallog.Debug(format, fmtArgs...)
+		internallog.Debug(format, fmtArgs...) //nolint:gocritic // Telemetry log plumbing needs to pass through variable format strings
 	}
 }

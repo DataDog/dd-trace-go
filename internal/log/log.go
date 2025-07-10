@@ -124,7 +124,7 @@ func OpenFileAtPath(dirPath string) (*ManagedFile, error) {
 	filepath := dirPath + "/" + LoggerFile
 	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		return nil, fmt.Errorf("using default logger to stderr due to error creating or opening log file: %v", err)
+		return nil, fmt.Errorf("using default logger to stderr due to error creating or opening log file: %s", err.Error())
 	}
 	UseLogger(&defaultLogger{l: log.New(f, "", log.LstdFlags)})
 	return &ManagedFile{
@@ -199,7 +199,7 @@ func init() {
 
 func setLoggingRate(v string) {
 	if sec, err := strconv.ParseInt(v, 10, 64); err != nil {
-		Warn("Invalid value for DD_LOGGING_RATE: %v", err)
+		Warn("Invalid value for DD_LOGGING_RATE: %s", err.Error())
 	} else {
 		if sec < 0 {
 			Warn("Invalid value for DD_LOGGING_RATE: negative value")

@@ -42,7 +42,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	addr, err := tc.server.HttpHostAddress(ctx)
 	if err != nil {
 		defer tc.server.Terminate(ctx)
-		t.Skipf("Failed to get vault container address: %v\n", err)
+		t.Skipf("Failed to get vault container address: %s\n", err.Error())
 	}
 	c, err := api.NewClient(&api.Config{
 		Address: addr,

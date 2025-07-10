@@ -28,7 +28,7 @@ func init() {
 func registerSCAAppConfigTelemetry() {
 	_, _, err := stableconfig.Bool(EnvSCAEnabled, false)
 	if err != nil {
-		log.Error("appsec: %v", err)
+		log.Error("appsec: %s", err.Error())
 		return
 	}
 }
