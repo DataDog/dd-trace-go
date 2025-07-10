@@ -22,7 +22,7 @@ func main() {
 		input  string
 		output string
 	)
-	flag.StringVar(&input, "input", "./internal/env/supported-configurations.json", "Path to the input file")
+	flag.StringVar(&input, "input", "./internal/env/supported_configurations.json", "Path to the input file")
 	flag.StringVar(&output, "output", "./internal/env", "Path to the output directory")
 	flag.Parse()
 

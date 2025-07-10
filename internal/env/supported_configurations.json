@@ -75,16 +75,10 @@
     "DD_TRACE_ANALYTICS_ENABLED": [
       "A"
     ],
-    "DD_TRACE_BAR": [
-      "A"
-    ],
     "DD_TRACE_CLIENT_IP_ENABLED": [
       "A"
     ],
     "DD_TRACE_DEBUG_ABANDONED_SPANS": [
-      "A"
-    ],
-    "DD_TRACE_FOO": [
       "A"
     ],
     "DD_TRACE_GIT_METADATA_ENABLED": [
@@ -128,11 +122,5 @@
     ]
   },
   "aliases": {
-    "DD_BAR": [
-      "DD_TRACE_BAR"
-    ],
-    "DD_FOO": [
-      "DD_TRACE_FOO"
-    ]
   }
 }
