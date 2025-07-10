@@ -657,8 +657,8 @@ func TestBaggageSpanTagsOpentracer(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
 	req.Header.Set("x-datadog-trace-id", "1")
 	req.Header.Set("x-datadog-parent-id", "2")
-	req.Header.Set("ot-baggage-user.id", "1234") // opentracer baggage header
-	req.Header.Set("baggage", "session.id=789")  // w3c baggage header
+	req.Header.Set("baggage", "session.id=789") // w3c baggage header
+	req.Header.Set("baggage", "session.id=789") // w3c baggage header
 
 	// Start the request span, which will extract baggage and add it as span tags
 	reqSpan, _, _ := StartRequestSpan(req)
