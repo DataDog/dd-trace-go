@@ -41,7 +41,7 @@ func (c *config) checkStatsdRequired() {
 		if err == nil {
 			c.statsdClient = sc
 		} else {
-			instr.Logger().Warn("Error creating statsd client for database/sql contrib; DB Stats disabled: %v", err)
+			instr.Logger().Warn("Error creating statsd client for database/sql contrib; DB Stats disabled: %s", err.Error())
 			c.dbStats = false
 		}
 	}
