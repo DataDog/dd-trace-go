@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -166,7 +167,7 @@ func main() {
 	}
 
 	version := version.Tag
-	envVersion := os.Getenv("VERSION")
+	envVersion := env.Getenv("VERSION")
 	if envVersion != "" {
 		version = envVersion
 	}

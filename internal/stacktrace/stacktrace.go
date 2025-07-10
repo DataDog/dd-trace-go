@@ -9,12 +9,12 @@ package stacktrace
 
 import (
 	"errors"
-	"os"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/eapache/queue/v2"
@@ -44,7 +44,7 @@ const (
 )
 
 func init() {
-	if env := os.Getenv(envStackTraceEnabled); env != "" {
+	if env := env.Getenv(envStackTraceEnabled); env != "" {
 		if e, err := strconv.ParseBool(env); err == nil {
 			enabled = e
 		} else {
@@ -52,7 +52,7 @@ func init() {
 		}
 	}
 
-	if env := os.Getenv(envStackTraceDepth); env != "" {
+	if env := env.Getenv(envStackTraceDepth); env != "" {
 		if !enabled {
 			log.Warn("Ignoring %s because stacktrace generation is disable", envStackTraceDepth)
 			return
