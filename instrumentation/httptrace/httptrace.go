@@ -50,7 +50,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	// is not initialized yet
 	reportTelemetryConfigOnce.Do(func() {
 		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
-		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %v", cfg)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
 	})
 
 	var ipTags map[string]string

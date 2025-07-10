@@ -139,7 +139,7 @@ func logStartup(c *config) {
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err)
+		log.Error("Marshaling profiler configuration: %s", err.Error())
 		return
 	}
 	log.Info("Profiler configuration: %s\n", b)
@@ -214,7 +214,7 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
+			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err.Error())
 		}
 		WithUploadTimeout(d)(&c)
 	}
@@ -271,7 +271,7 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
+			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err.Error())
 		}
 		c.maxGoroutinesWait = n
 	}

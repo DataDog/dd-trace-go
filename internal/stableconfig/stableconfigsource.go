@@ -57,7 +57,7 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to stat stable config file %s, dropping: %v", filePath, err)
+			log.Warn("Failed to stat stable config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyStableConfig()
 	}
@@ -72,7 +72,7 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to read stable config file %s, dropping: %v", filePath, err)
+			log.Warn("Failed to read stable config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyStableConfig()
 	}
@@ -86,7 +86,7 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	scfg := &stableConfig{}
 	err := yaml.Unmarshal(data, scfg)
 	if err != nil {
-		log.Warn("Parsing stable config file" + fileName + "failed due to error, dropping: " + err.Error())
+		log.Warn("Parsing stable config file %q failed due to error, dropping: %s", fileName, err)
 		return emptyStableConfig()
 	}
 	if scfg.Config == nil {

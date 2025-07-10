@@ -194,7 +194,7 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	envVal := globalinternal.FloatEnv("DD_TELEMETRY_HEARTBEAT_INTERVAL", heartBeatInterval.Seconds())
 	config.HeartbeatInterval = defaultAuthorizedHearbeatRange.Clamp(time.Duration(envVal * float64(time.Second)))
 	if config.HeartbeatInterval != defaultHeartbeatInterval {
-		log.Debug("telemetry: using custom heartbeat interval %v", config.HeartbeatInterval)
+		log.Debug("telemetry: using custom heartbeat interval %s", config.HeartbeatInterval)
 	}
 	// Make sure we flush at least at each heartbeat interval
 	config.FlushInterval = config.FlushInterval.ReduceMax(config.HeartbeatInterval)
@@ -255,13 +255,13 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 	if config.AgentURL != "" {
 		baseURL, err := url.Parse(config.AgentURL)
 		if err != nil {
-			return internal.WriterConfig{}, fmt.Errorf("invalid agent URL: %v", err)
+			return internal.WriterConfig{}, fmt.Errorf("invalid agent URL: %s", err.Error())
 		}
 
 		baseURL.Path = agentProxyAPIPath
 		request, err := http.NewRequest(http.MethodPost, baseURL.String(), nil)
 		if err != nil {
-			return internal.WriterConfig{}, fmt.Errorf("failed to create request: %v", err)
+			return internal.WriterConfig{}, fmt.Errorf("failed to create request: %s", err.Error())
 		}
 
 		endpoints = append(endpoints, request)
@@ -270,7 +270,7 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 	if config.AgentlessURL != "" && config.APIKey != "" {
 		request, err := http.NewRequest(http.MethodPost, config.AgentlessURL, nil)
 		if err != nil {
-			return internal.WriterConfig{}, fmt.Errorf("failed to create request: %v", err)
+			return internal.WriterConfig{}, fmt.Errorf("failed to create request: %s", err.Error())
 		}
 
 		request.Header.Set("DD-API-KEY", config.APIKey)
