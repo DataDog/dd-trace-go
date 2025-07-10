@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 type (
@@ -29,6 +30,7 @@ type (
 	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
 		test                         integrations.Test // internal CI Visibility test event
+		originalTest                 *testing.T        // original test that was executed
 		error                        atomic.Int32      // flag to check if the test event has error data already
 		skipped                      atomic.Int32      // flag to check if the test event has skipped data already
 		panicData                    any               // panic data recovered from an internal test execution when using an additional feature wrapper
@@ -144,10 +146,10 @@ func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetad
 }
 
 // createTestMetadata creates the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
-func createTestMetadata(tb testing.TB) *testExecutionMetadata {
+func createTestMetadata(tb testing.TB, originalTest *testing.T) *testExecutionMetadata {
 	ciVisibilityTestMetadataMutex.Lock()
 	defer ciVisibilityTestMetadataMutex.Unlock()
-	execMetadata := &testExecutionMetadata{}
+	execMetadata := &testExecutionMetadata{originalTest: originalTest}
 	ciVisibilityTestMetadata[reflect.ValueOf(tb).UnsafePointer()] = execMetadata
 	return execMetadata
 }
@@ -319,18 +321,22 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				return 0
 			},
 			postPerExecution: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, _ time.Duration) {
-				if ptrToLocalT.Failed() || ptrToLocalT.Skipped() {
+				failed := ptrToLocalT.Failed()
+				skipped := ptrToLocalT.Skipped()
+				log.Debug("applyAdditionalFeaturesToTestFunc: postPerExecution called for execution %d, failed: %v, skipped: %v", executionIndex, failed, skipped)
+
+				if failed || skipped {
 					atomic.StoreInt32(&allAttemptsPassed, 0)
 				}
-				if !ptrToLocalT.Failed() {
+				if !failed {
 					atomic.StoreInt32(&allRetriesFailed, 0)
 				}
 
 				if execMeta.isAttemptToFix {
 					status := "PASS"
-					if ptrToLocalT.Failed() {
+					if failed {
 						status = "FAIL"
-					} else if ptrToLocalT.Skipped() {
+					} else if skipped {
 						status = "SKIP"
 					}
 
@@ -339,11 +345,14 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				}
 
 				if isAnEfdExecution(execMeta) {
-					if ptrToLocalT.Failed() {
-						testFailCount++
-					} else if ptrToLocalT.Skipped() {
+					if skipped {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test skipped, incrementing skip count")
 						testSkipCount++
+					} else if failed {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test failed, incrementing fail count")
+						testFailCount++
 					} else {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test passed, incrementing pass count")
 						testPassCount++
 					}
 					return
@@ -379,6 +388,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 			postOnRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
 				// if the test is disabled or quarantined, skip the test result to the testing framework
 				if ptrMeta.isDisabled || ptrMeta.isQuarantined {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Skipping test result for disabled or quarantined test")
 					t.SkipNow()
 					return
 				}
@@ -393,6 +403,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew
 				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified && !ptrMeta.isAttemptToFix
 				if efdOnNewTest || efdOnModifiedTest {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Early Flake Detection")
 					status := "passed"
 					if testPassCount == 0 {
 						if testSkipCount > 0 {
@@ -417,6 +428,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 
 				// if the test is a flaky test retries test, we need to set the test status
 				if ptrMeta.isFlakyTestRetriesEnabled {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Flaky Test Retries")
 					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
 					tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
 					if lastPtrToLocalT.Failed() {
@@ -439,6 +451,17 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 						}
 					}
 					return
+				}
+
+				log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for regular test execution")
+				tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
+				tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
+				if lastPtrToLocalT.Failed() {
+					tParentCommonPrivates := getTestParentPrivateFields(t)
+					if tParentCommonPrivates == nil {
+						panic("getting test parent private fields failed")
+					}
+					tParentCommonPrivates.SetFailed(true)
 				}
 			},
 		})
@@ -474,6 +497,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		if options.isEfdInParallel && isAnEfdExecution(execOpts.executionMetadata) {
 			// In parallel, we use the retry count set in the first execution
 			calculatedRetryCount := execOpts.retryCount
+			log.Debug("runTestWithRetry: executing test in parallel with retry count: %v", calculatedRetryCount)
 			var wg sync.WaitGroup
 			wg.Add(int(calculatedRetryCount + 1))
 			for i := int64(0); i <= calculatedRetryCount; i++ {
@@ -533,7 +557,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	currentIndex := execOpts.executionIndex
 
 	// Create a new local copy of `t` to isolate execution results
-	ptrToLocalT := &testing.T{}
+	ptrToLocalT := createNewTest()
 	copyTestWithoutParent(execOpts.options.t, ptrToLocalT)
 	ptrToLocalT.Helper()
 	execOpts.options.t.Helper()
@@ -550,7 +574,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
 
 	// Create an execution metadata instance
-	execMeta := createTestMetadata(ptrToLocalT)
+	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
 	execMeta.hasAdditionalFeatureWrapper = true
 
 	// Propagate set tags from a parent wrapper
@@ -574,17 +598,36 @@ func executeTestIteration(execOpts *executionOptions) bool {
 
 	// Run original func similar to how it gets run internally in tRunner
 	startTime := time.Now()
+	duration := time.Duration(0)
 	chn := make(chan struct{}, 1)
 	go func(pLocalT *testing.T, opts *runTestWithRetryOptions, cn *chan struct{}) {
 		defer func() {
 			*cn <- struct{}{}
+		}()
+		defer func() {
+			// handle parallel sub tests execution
+			if localTPrivateFields.sub != nil {
+				if len(*localTPrivateFields.sub) > 0 {
+					if localTPrivateFields.barrier != nil {
+						close(*localTPrivateFields.barrier)
+					}
+					for _, sub := range *localTPrivateFields.sub {
+						pvSub := getTestPrivateFields(sub)
+						if pvSub.signal != nil {
+							<-*pvSub.signal
+						}
+					}
+				}
+			}
+		}()
+		defer func() {
+			duration = time.Since(startTime)
 		}()
 		pLocalT.Helper()
 		opts.t.Helper()
 		opts.targetFunc(pLocalT)
 	}(ptrToLocalT, execOpts.options, &chn)
 	<-chn
-	duration := time.Since(startTime)
 
 	// Call cleanup functions after this execution
 	if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {

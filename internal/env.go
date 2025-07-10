@@ -24,7 +24,7 @@ func BoolEnv(key string, def bool) bool {
 	}
 	v, err := strconv.ParseBool(vv)
 	if err != nil {
-		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v
@@ -39,7 +39,7 @@ func IntEnv(key string, def int) int {
 	}
 	v, err := strconv.Atoi(vv)
 	if err != nil {
-		log.Warn("Non-integer value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-integer value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v
@@ -54,7 +54,7 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 	}
 	v, err := time.ParseDuration(vv)
 	if err != nil {
-		log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v
@@ -119,7 +119,7 @@ func FloatEnv(key string, def float64) float64 {
 	}
 	v, err := strconv.ParseFloat(env, 64)
 	if err != nil {
-		log.Warn("Non-float value for env var %s, defaulting to %f. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-float value for env var %s, defaulting to %f. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v

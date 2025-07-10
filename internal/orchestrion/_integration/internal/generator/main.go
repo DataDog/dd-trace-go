@@ -77,7 +77,7 @@ func parseCode(testDir string) testCases {
 		parser.ParseComments,
 	)
 	if err != nil {
-		log.Fatalf("failed to parse AST for dir: %v\n", err)
+		log.Fatalf("failed to parse AST for dir: %s\n", err.Error())
 	}
 	if len(pkgs) != 1 {
 		log.Fatalf("%s: expected exactly 1 package, got %d", testDir, len(pkgs))

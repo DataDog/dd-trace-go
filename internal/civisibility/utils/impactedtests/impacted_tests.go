@@ -72,7 +72,7 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 		var err error
 		baseCommitSha, err = utils.GetBaseBranchSha("") // empty string triggers auto-detection
 		if err != nil {
-			logger.Debug("civisibility.ImpactedTests: Failed to get base commit SHA from git CLI: %s", err)
+			logger.Debug("civisibility.ImpactedTests: Failed to get base commit SHA from git CLI: %s", err.Error())
 			// Don't fail here - we might be on a base branch or in a scenario where
 			// base branch detection isn't possible. Return an analyzer with no modified files.
 		}
@@ -93,7 +93,7 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 		modifiedFiles = []fileWithBitmap{}
 	}
 
-	logger.Debug("civisibility.ImpactedTests: loaded [from: %s to %s]: %v", baseCommitSha, currentCommitSha, modifiedFiles)
+	logger.Debug("civisibility.ImpactedTests: loaded [from: %s to %s]: %v", baseCommitSha, currentCommitSha, modifiedFiles) //nolint:gocritic // File list debug logging
 	return &ImpactedTestAnalyzer{
 		modifiedFiles:    modifiedFiles,
 		currentCommitSha: currentCommitSha,
@@ -157,7 +157,7 @@ func getGitDiffFrom(baseCommitSha string, currentCommitSha string) []fileWithBit
 	// Milestone 1.5 : Retrieve diff files and lines from Git Diff CLI
 	output, err := utils.GetGitDiff(baseCommitSha, currentCommitSha)
 	if err != nil {
-		logger.Debug("civisibility.ImpactedTests: Failed to get diff files from Git CLI: %s", err)
+		logger.Debug("civisibility.ImpactedTests: Failed to get diff files from Git CLI: %s", err.Error())
 	} else if output != "" {
 		modifiedFiles = parseGitDiffOutput(output)
 	} else {

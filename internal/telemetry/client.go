@@ -209,7 +209,11 @@ func (c *client) Flush() {
 		if r == nil {
 			return
 		}
-		log.Warn("panic while flushing telemetry data, stopping telemetry: %v", r)
+		if err, ok := r.(error); ok {
+			log.Warn("panic while flushing telemetry data, stopping telemetry: %s", err.Error())
+		} else {
+			log.Warn("panic while flushing telemetry data, stopping telemetry!")
+		}
 		telemetryClientDisabled = true
 		if gc, ok := GlobalClient().(*client); ok && gc == c {
 			SwapClient(nil)
@@ -244,9 +248,9 @@ func (c *client) Flush() {
 			}
 		}
 		if dependenciesFound {
-			log.Warn("appsec: error while flushing SCA Security Data: %v", err)
+			log.Warn("appsec: error while flushing SCA Security Data: %s", err.Error())
 		} else {
-			log.Debug("telemetry: error while flushing telemetry data: %v", err)
+			log.Debug("telemetry: error while flushing telemetry data: %s", err.Error())
 		}
 
 		return
@@ -318,7 +322,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		for _, call := range failedCalls {
 			errs = append(errs, call.Error)
 		}
-		log.Debug("non-fatal error(s) while flushing telemetry data: %v", errors.Join(errs...))
+		log.Debug("non-fatal error(s) while flushing telemetry data: %v", errors.Join(errs...).Error())
 	}
 
 	return nbBytes, nil

@@ -58,7 +58,7 @@ func main() {
 	if *namespace == "" {
 		cfg, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
 		if err != nil {
-			log.Fatalf("Failed to load kubeconfig: %v", err)
+			log.Fatalf("Failed to load kubeconfig: %s", err.Error())
 		}
 
 		namespace = &cfg.Contexts[cfg.CurrentContext].Namespace
@@ -66,13 +66,13 @@ func main() {
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		log.Fatalf("Failed to load kubeconfig: %v", err)
+		log.Fatalf("Failed to load kubeconfig: %s", err.Error())
 	}
 
 	// Create dynamic client
 	dynClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		log.Fatalf("Failed to create dynamic client: %v", err)
+		log.Fatalf("Failed to create dynamic client: %s", err.Error())
 	}
 
 	log.Println("Listing gateway.networking.k8s.io/v1/HTTPRoute...")
@@ -82,7 +82,7 @@ func main() {
 		LabelSelector: *selector,
 	})
 	if err != nil {
-		log.Fatalf("Failed to list HTTPRoutes: %v", err)
+		log.Fatalf("Failed to list HTTPRoutes: %s", err.Error())
 	}
 
 	for _, rawRoute := range routes.Items {
@@ -194,7 +194,7 @@ func promptUser(route *gatewayv1.HTTPRoute, patchData []byte) bool {
 	fmt.Printf("Patch HTTPRoute %s/%s? (y/n): ", route.Namespace, route.Name)
 	var response string
 	if _, err := fmt.Scanln(&response); err != nil {
-		log.Fatalf("Failed to read response: %v", err)
+		log.Fatalf("Failed to read response: %s", err.Error())
 	}
 	if resp, err := strconv.ParseBool(response); err != nil || !resp {
 		return false

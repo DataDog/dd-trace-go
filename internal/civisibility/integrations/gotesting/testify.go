@@ -29,6 +29,7 @@ type TestifyTest struct {
 var (
 	// testifyTestsByParentT is a map that stores the TestifyTest structs for each parent T.
 	testifyTestsByParentT = map[unsafe.Pointer][]TestifyTest{}
+
 	// testifyTestsByParentTMutex is a mutex to protect the testifyTestsByParentT map.
 	testifyTestsByParentTMutex sync.RWMutex
 )
@@ -52,10 +53,7 @@ func getTestifyTestFromReflectValue(tValue reflect.Value) *TestifyTest {
 	memberPtr := unsafe.Pointer(member.UnsafeAddr())
 
 	// let's check if the test parent was registered before (`suite.Run(*testing.T, TestSuite)` auto-instrumentation should register the parent T with the suite instance)
-	testifyTestsByParentTMutex.RLock()
-	defer testifyTestsByParentTMutex.RUnlock()
-
-	if tests, ok := testifyTestsByParentT[*(*unsafe.Pointer)(memberPtr)]; ok {
+	if tests, ok := getTestifyTestsByParentT(*(*unsafe.Pointer)(memberPtr)); ok {
 		// get the name of the test (not the parent)
 		var tName string
 		if ptr, err := getFieldPointerFromValue(reflect.Indirect(tValue), "name"); err == nil && ptr != nil {
@@ -98,13 +96,9 @@ func registerTestifySuite(t *testing.T, suite any) {
 	// get the parent T pointer
 	tPtr := reflect.ValueOf(t).UnsafePointer()
 
-	// lock the mutex to protect the testifyTestsByParentT map
-	testifyTestsByParentTMutex.Lock()
-	defer testifyTestsByParentTMutex.Unlock()
-
 	// get the TestifyTest structs for the parent T in case is not the first Suite registration for the test
 	var tests []TestifyTest
-	if tmpTests, ok := testifyTestsByParentT[tPtr]; ok {
+	if tmpTests, ok := getTestifyTestsByParentT(tPtr); ok {
 		tests = tmpTests
 	}
 
@@ -146,5 +140,20 @@ func registerTestifySuite(t *testing.T, suite any) {
 	}
 
 	// store the TestifyTest structs for the parent T
-	testifyTestsByParentT[tPtr] = tests
+	setTestifyTestsByParentT(tPtr, tests)
+}
+
+func getTestifyTestsByParentT(ptr unsafe.Pointer) ([]TestifyTest, bool) {
+	testifyTestsByParentTMutex.RLock()
+	defer testifyTestsByParentTMutex.RUnlock()
+	if tests, ok := testifyTestsByParentT[ptr]; ok {
+		return tests, true
+	}
+	return nil, false
+}
+
+func setTestifyTestsByParentT(ptr unsafe.Pointer, tests []TestifyTest) {
+	testifyTestsByParentTMutex.Lock()
+	defer testifyTestsByParentTMutex.Unlock()
+	testifyTestsByParentT[ptr] = tests
 }

@@ -63,7 +63,7 @@ Sample PR: https://github.com/DataDog/dd-trace-go/pull/3365
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
-### Go Modules
+### Adding Go Modules
 
 When adding a new dependency, especially for `contrib/` packages, prefer the minimum secure versions of any modules rather than the latest versions. This is to avoid forcing upgrades on downstream users for modules such as `google.golang.org/grpc` which often introduce breaking changes within minor versions.
 
@@ -72,6 +72,24 @@ This repository used to omit many dependencies from the `go.mod` file due to con
 ```
 git update-index --no-assume-unchanged go.*
 ```
+
+### Uprading Go Modules
+
+Please also see the section about "Adding Go modules" when it comes to selecting the minimum secure versions of a module rather than the latest versions.
+
+Then start by updating the main `go.mod` file, e.g. by running a `go get` command in the root of the repository like this:
+
+```
+go get <import-path>@<new-version>
+```
+
+Then run the following script in order to update all `go.mod` and `go.sum` files in the repository:
+
+```
+./scripts/fix_modules.sh
+```
+
+This is neccessary because dd-trace-go is a multi-module repository.
 
 ### Benchmarks
 

@@ -57,12 +57,12 @@ func loadEndpointsFromJSON() ([]*tree.Endpoint, error) {
 func initAPIEndpointsTree() {
 	apiEndpoints, err := loadEndpointsFromJSON()
 	if err != nil {
-		instr.Logger().Warn("contrib/google.golang.org/api: failed load json endpoints: %v", err)
+		instr.Logger().Warn("contrib/google.golang.org/api: failed load json endpoints: %s", err.Error())
 		return
 	}
 	tr, err := tree.New(apiEndpoints...)
 	if err != nil {
-		instr.Logger().Warn("contrib/google.golang.org/api: failed to create endpoints tree: %v", err)
+		instr.Logger().Warn("contrib/google.golang.org/api: failed to create endpoints tree: %s", err.Error())
 		return
 	}
 	apiEndpointsTree = tr

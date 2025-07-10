@@ -33,7 +33,7 @@ type collectionTooFrequent struct {
 }
 
 func (e collectionTooFrequent) Error() string {
-	return fmt.Sprintf("period between metrics collection is too small min=%v observed=%v", e.min, e.observed)
+	return fmt.Sprintf("period between metrics collection is too small min=%d observed=%d", e.min, e.observed)
 }
 
 type metrics struct {

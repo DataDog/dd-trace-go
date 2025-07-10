@@ -7,7 +7,12 @@ package baggage
 
 import (
 	"context"
+	"fmt"
+	"runtime"
+	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBaggageFunctions(t *testing.T) {
@@ -133,4 +138,93 @@ func TestBaggageFunctions(t *testing.T) {
 			t.Errorf("Expected \"testVal\"; got %q", val)
 		}
 	})
+}
+
+func TestBaggageMapAccessorsMakeCopies(t *testing.T) {
+	t.Run("Set", func(t *testing.T) {
+		firstMap := map[string]string{"key": "value"}
+		ctx := withBaggage(context.Background(), firstMap)
+		ctx = Set(ctx, "key2", "value2")
+
+		// Verify that the new map is a copy of the original
+		nextMap, ok := baggageMap(ctx)
+		assert.True(t, ok)
+		assert.False(t, &firstMap == &nextMap, "Set should create a new map, not reuse the original")
+
+		// Mutate the new map and ensure the original is unchanged
+		nextMap["key"] = "changed"
+		assert.Equal(t, "value", firstMap["key"], "Original map should not be affected by changes to the new map")
+
+		// Check that both keys are present in the new map
+		assert.Equal(t, "changed", nextMap["key"], "New map should have the new key")
+		assert.Equal(t, "value2", nextMap["key2"], "New map should have the new key")
+	})
+	t.Run("Remove", func(t *testing.T) {
+		firstMap := map[string]string{"key": "value"}
+		ctx := withBaggage(context.Background(), firstMap)
+		ctx = Remove(ctx, "key")
+
+		// Verify that the new map is a copy of the original
+		nextMap, ok := baggageMap(ctx)
+		assert.True(t, ok)
+		assert.False(t, &firstMap == &nextMap, "Remove should create a new map, not reuse the original")
+
+		// Mutate the new map and ensure the original is unchanged
+		nextMap["key"] = "changed"
+		assert.Equal(t, "value", firstMap["key"], "Original map should not be affected by changes to the new map")
+	})
+	t.Run("All", func(t *testing.T) {
+		firstMap := map[string]string{"key": "value"}
+		ctx := withBaggage(context.Background(), firstMap)
+		all := All(ctx)
+		assert.False(t, &firstMap == &all, "All should return a new map, not the original map instance")
+
+		// Mutate the new map and ensure the original is unchanged
+		all["key"] = "changed"
+		assert.Equal(t, "value", firstMap["key"], "Original map should not be affected by changes to the new map")
+	})
+}
+
+// guarantees we also test the Clear→Set path
+func TestConcurrentAccessAndClear(t *testing.T) {
+	base := Set(context.Background(), "init", "val")
+	want := All(base)
+	const readers = 4
+	const writers = 4
+	const iters = 100
+	var wg sync.WaitGroup
+	wg.Add(readers + writers)
+	errCh := make(chan string, readers)
+	// Readers – must ALWAYS observe the original baggage
+	for r := 0; r < readers; r++ {
+		go func(c context.Context) {
+			defer wg.Done()
+			for i := 0; i < iters; i++ {
+				if !assert.Equal(t, want, All(c), "baggage mutated") {
+					errCh <- fmt.Sprintf("baggage mutated: want %v, got %v", want, All(c))
+					return
+				}
+				runtime.Gosched()
+			}
+		}(base)
+	}
+	// Writers – they fork their own context chains, never sharing variables
+	for w := 0; w < writers; w++ {
+		go func(c context.Context) {
+			defer wg.Done()
+			local := c
+			for i := 0; i < iters; i++ {
+				// alternates Set / Clear / Set to hit the nil‑map path
+				local = Set(local, "k", "v")
+				local = Clear(local)
+				local = Set(local, "k2", "v2")
+				runtime.Gosched()
+			}
+		}(base)
+	}
+	wg.Wait()
+	close(errCh)
+	if err, ok := <-errCh; ok {
+		t.Fatalf("%s", err)
+	}
 }

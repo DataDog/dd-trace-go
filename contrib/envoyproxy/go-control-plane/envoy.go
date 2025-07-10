@@ -110,7 +110,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 		// Process the message
 		processingResponse, err := s.processMessage(ctx, &processingRequest, &currentRequest)
 		if err != nil {
-			instr.Logger().Error("external_processing: error processing request: %v\n", err)
+			instr.Logger().Error("external_processing: error processing request: %s\n", err.Error())
 			return err
 		}
 
@@ -149,8 +149,8 @@ func (s *appsecEnvoyExternalProcessorServer) handleReceiveError(err error) error
 		return nil
 	}
 
-	instr.Logger().Error("external_processing: error receiving request/response: %v\n", err)
-	return status.Errorf(codes.Unknown, "Error receiving request/response: %v", err)
+	instr.Logger().Error("external_processing: error receiving request/response: %s\n", err.Error())
+	return status.Errorf(codes.Unknown, "Error receiving request/response: %s", err.Error())
 }
 
 // processMessage processes a single message based on its type
@@ -209,8 +209,8 @@ func (s *appsecEnvoyExternalProcessorServer) sendResponse(processServer envoyext
 	instr.Logger().Debug("external_processing: sending response: %v\n", response)
 
 	if err := processServer.SendMsg(response); err != nil {
-		instr.Logger().Error("external_processing: error sending response (probably because of an Envoy timeout): %v", err)
-		return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %v", err)
+		instr.Logger().Error("external_processing: error sending response (probably because of an Envoy timeout): %s", err.Error())
+		return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %s", err.Error())
 	}
 
 	return nil

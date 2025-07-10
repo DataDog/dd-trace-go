@@ -8,7 +8,6 @@ package gotesting
 import (
 	"bufio"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"reflect"
 	"runtime"
 	"slices"
@@ -22,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
@@ -42,11 +42,17 @@ var (
 	// benchmarkInfos holds information about the instrumented benchmarks.
 	benchmarkInfos []*testingBInfo
 
+	// modulesCountersMutex is a mutex to protect access to the modulesCounters map.
+	modulesCountersMutex sync.Mutex
+
 	// modulesCounters keeps track of the number of tests per module.
-	modulesCounters = map[string]*int32{}
+	modulesCounters = map[string]int{}
+
+	// suitesCountersMutex is a mutex to protect access to the suitesCounters map.
+	suitesCountersMutex sync.Mutex
 
 	// suitesCounters keeps track of the number of tests per suite.
-	suitesCounters = map[string]*int32{}
+	suitesCounters = map[string]int{}
 
 	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
 	numOfTestsSkipped atomic.Uint64
@@ -143,20 +149,11 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		addSuitesCounters(suiteName, 1)
 
 		testInfos[idx] = testInfo
 	}
@@ -213,7 +210,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
 			// in case there's no additional features then we create the metadata for this execution and defer the disposal
-			execMeta = createTestMetadata(t)
+			execMeta = createTestMetadata(t, nil)
 			defer deleteTestMetadata(t)
 		}
 
@@ -305,7 +302,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					if execMeta.allRetriesFailed {
 						test.SetTag(constants.TestHasFailedAllRetries, "true")
 					}
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
+					if execMeta.isAttemptToFix {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
@@ -325,19 +324,21 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 						if execMeta.allRetriesFailed {
 							test.SetTag(constants.TestHasFailedAllRetries, "true")
 						}
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
 					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
 				} else if t.Skipped() {
-					if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						test.SetTag(constants.TestAttemptToFixPassed, "false")
 					}
 					test.Close(integrations.ResultStatusSkip)
 				} else {
-					if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						if execMeta.allAttemptsPassed {
 							test.SetTag(constants.TestAttemptToFixPassed, "true")
 						} else {
@@ -395,20 +396,11 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		addSuitesCounters(suiteName, 1)
 
 		benchmarkInfos[idx] = benchmarkInfo
 	}
@@ -498,7 +490,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
 				// in case there's no additional features then we create the metadata for this execution and defer the disposal
-				execMeta = createTestMetadata(b)
+				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
 
@@ -581,14 +573,32 @@ func RunM(m *testing.M) int {
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
 func checkModuleAndSuite(module integrations.TestModule, suite integrations.TestSuite) {
 	// If all tests in a suite has been executed we can close the suite
-	if atomic.AddInt32(suitesCounters[suite.Name()], -1) <= 0 {
+	if addSuitesCounters(suite.Name(), -1) <= 0 {
 		suite.Close()
 	}
 
 	// If all tests in a module has been executed we can close the module
-	if atomic.AddInt32(modulesCounters[module.Name()], -1) <= 0 {
+	if addModulesCounters(module.Name(), -1) <= 0 {
 		module.Close()
 	}
+}
+
+// addSuitesCounters increments the suite counters for a given suite name.
+func addSuitesCounters(suiteName string, delta int) int {
+	suitesCountersMutex.Lock()
+	defer suitesCountersMutex.Unlock()
+	nValue := suitesCounters[suiteName] + delta
+	suitesCounters[suiteName] = nValue
+	return nValue
+}
+
+// addModulesCounters increments the module counters for a given module name.
+func addModulesCounters(moduleName string, delta int) int {
+	modulesCountersMutex.Lock()
+	defer modulesCountersMutex.Unlock()
+	nValue := modulesCounters[moduleName] + delta
+	modulesCounters[moduleName] = nValue
+	return nValue
 }
 
 // isKnownTest checks if a test is a known test or a new one
@@ -642,12 +652,6 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 
 	// If the execution is for a modified test
 	execMeta.isAModifiedTest = execMeta.isAModifiedTest || (settings.ImpactedTestsEnabled && test.Context().Value(constants.TestIsModified) == true)
-	if execMeta.isAModifiedTest {
-		if execMeta.isDisabled || execMeta.isQuarantined {
-			// automatic attempt to fix if a disabled or quarantined test is modified
-			execMeta.isAttemptToFix = true
-		}
-	}
 
 	// If the execution is a retry we tag the test event
 	if execMeta.isARetry {

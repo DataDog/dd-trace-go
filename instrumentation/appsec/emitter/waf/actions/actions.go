@@ -39,7 +39,7 @@ func registerActionHandler(aType string, handler actionHandler) {
 func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
 	var blocked bool
 	for aType, params := range actions {
-		log.Debug("appsec: processing %s action with params %v", aType, params)
+		log.Debug("appsec: processing %q action with params %v", aType, params) //nolint:gocritic
 		params, ok := params.(map[string]any)
 		if !ok {
 			telemetrylog.Error("appsec: could not cast action params to map[string]any from %T", params)

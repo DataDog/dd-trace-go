@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/datadog-agent/pkg/trace/traceutil"
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -97,7 +97,7 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 			b.WriteByte(',')
 		}
 		first = false
-		keyVal := traceutil.NormalizeTag(k + ":" + val)
+		keyVal := normalize.NormalizeTag(k + ":" + val)
 		b.WriteString(keyVal)
 		tagsSlice = append(tagsSlice, keyVal)
 	}
@@ -122,7 +122,7 @@ func collect() map[string]string {
 	tags := make(map[string]string)
 	execPath, err := os.Executable()
 	if err != nil {
-		log.Debug("failed to get binary path: %v", err)
+		log.Debug("failed to get binary path: %s", err.Error())
 	} else {
 		baseDirName := filepath.Base(filepath.Dir(execPath))
 		tags[tagEntrypointName] = filepath.Base(execPath)
@@ -131,7 +131,7 @@ func collect() map[string]string {
 	}
 	wd, err := os.Getwd()
 	if err != nil {
-		log.Debug("failed to get working directory: %v", err)
+		log.Debug("failed to get working directory: %s", err.Error())
 	} else {
 		tags[tagEntrypointWorkdir] = filepath.Base(wd)
 	}

@@ -101,7 +101,7 @@ func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 
 	err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 	if err != nil {
-		instr.Logger().Warn("contrib/twitchtv/twirp.wrappedClient: failed to inject http headers: %v\n", err)
+		instr.Logger().Warn("contrib/twitchtv/twirp.wrappedClient: failed to inject http headers: %s\n", err.Error())
 	}
 
 	req = req.WithContext(ctx)
