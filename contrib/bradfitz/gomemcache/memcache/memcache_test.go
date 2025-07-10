@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -32,7 +32,7 @@ func TestMemcache(t *testing.T) {
 }
 
 func TestMemcacheIntegration(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 

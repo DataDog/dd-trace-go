@@ -19,7 +19,6 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"os"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -27,6 +26,7 @@ import (
 
 	sqlinternal "github.com/DataDog/dd-trace-go/contrib/database/sql/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 const componentName = instrumentation.PackageDatabaseSQL
@@ -123,7 +123,7 @@ func Register(driverName string, driver driver.Driver, opts ...Option) {
 		panic("sqltrace: Register driver is nil")
 	}
 	testModeInitOnce.Do(func() {
-		_, ok := os.LookupEnv("__DD_TRACE_SQL_TEST")
+		_, ok := env.LookupEnv("__DD_TRACE_SQL_TEST")
 		testMode.Store(ok)
 	})
 	testModeEnabled := testMode.Load()

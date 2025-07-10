@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -89,7 +90,7 @@ func isServerError(statusCode int) bool {
 }
 
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := os.LookupEnv(EnvQueryStringRegexp); !ok {
+	if s, ok := env.LookupEnv(EnvQueryStringRegexp); !ok {
 		return defaultQueryStringRegexp
 	} else if s == "" {
 		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", EnvQueryStringRegexp)

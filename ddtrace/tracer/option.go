@@ -33,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
@@ -384,7 +385,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	c.traceRateLimitPerSecond = defaultRateLimit
 	origin := telemetry.OriginDefault
-	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
+	if v, ok := env.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
 		l, err := strconv.ParseFloat(v, 64)
 		if err != nil {
 			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err.Error())
@@ -451,7 +452,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
-	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
+	if _, ok := env.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
@@ -462,7 +463,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
 	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
-	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
+	if _, ok := env.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)

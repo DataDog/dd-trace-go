@@ -13,6 +13,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +26,7 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	_, ok := os.LookupEnv("INTEGRATION")
+	_, ok := env.LookupEnv("INTEGRATION")
 	if !ok {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)

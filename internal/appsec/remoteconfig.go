@@ -10,12 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -351,7 +351,7 @@ func (a *appsec) enableRCBlocking() {
 		}
 	}
 
-	if localRulesPath, hasLocalRules := os.LookupEnv(config.EnvRules); hasLocalRules {
+	if localRulesPath, hasLocalRules := env.LookupEnv(config.EnvRules); hasLocalRules {
 		log.Debug("appsec: remote config: using rules from %s; will not register blocking capabilities", localRulesPath)
 		return
 	}

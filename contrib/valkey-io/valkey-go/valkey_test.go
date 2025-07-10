@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -34,7 +35,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	_, ok := os.LookupEnv("INTEGRATION")
+	_, ok := env.LookupEnv("INTEGRATION")
 	if !ok {
 		fmt.Println("--- SKIP: to enable integration test, set the INTEGRATION environment variable")
 		os.Exit(0)

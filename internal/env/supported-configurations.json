@@ -6,6 +6,15 @@
     "DD_APPSEC_ENABLED": [
       "A"
     ],
+    "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML": [
+      "A"
+    ],
+    "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON": [
+      "A"
+    ],
+    "DD_APPSEC_SCA_ENABLED": [
+      "A"
+    ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
       "A"
     ],
@@ -49,6 +58,12 @@
       "A"
     ],
     "DD_TELEMETRY_METRICS_ENABLED": [
+      "A"
+    ],
+    "DD_TEST_AGENT_HOST": [
+      "A"
+    ],
+    "DD_TEST_AGENT_PORT": [
       "A"
     ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
