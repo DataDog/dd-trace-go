@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -37,11 +36,12 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func newIntegrationTestSession(t *testing.T, opts ...Option) *session.Session {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
 	cfg := aws.NewConfig().

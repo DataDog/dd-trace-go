@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -45,8 +46,8 @@ func AgentURLFromEnv() *url.URL {
 		}
 	}
 
-	host, providedHost := os.LookupEnv("DD_AGENT_HOST")
-	port, providedPort := os.LookupEnv("DD_TRACE_AGENT_PORT")
+	host, providedHost := env.LookupEnv("DD_AGENT_HOST")
+	port, providedPort := env.LookupEnv("DD_TRACE_AGENT_PORT")
 	if host == "" {
 		// We treat set but empty the same as unset
 		providedHost = false

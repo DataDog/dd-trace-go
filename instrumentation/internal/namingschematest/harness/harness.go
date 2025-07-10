@@ -6,7 +6,6 @@
 package harness
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 const (
@@ -42,7 +42,7 @@ type TestCase struct {
 }
 
 func RunTest(t *testing.T, tc TestCase) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
 

@@ -6,14 +6,14 @@
 package namingschematest
 
 import (
-	"os"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 func TestNamingSchema(t *testing.T) {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
 	t.Setenv("__DD_TRACE_SQL_TEST", "true")
