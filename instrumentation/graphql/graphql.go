@@ -8,7 +8,6 @@ package graphql
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"slices"
@@ -18,12 +17,13 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // ErrorExtensionsFromEnv returns the configured error extensions from an environment variable.
 func ErrorExtensionsFromEnv() []string {
-	s := os.Getenv("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
+	s := env.Getenv("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
 	if s == "" {
 		return nil
 	}

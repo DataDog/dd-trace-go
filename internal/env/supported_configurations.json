@@ -122,5 +122,8 @@
     ]
   },
   "aliases": {
+    "DD_API_KEY": [
+      "DD-API-KEY"
+    ]
   }
 }

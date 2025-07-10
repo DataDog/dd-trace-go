@@ -9,16 +9,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname/cachedfetch"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils"
 )
 
 // declare these as vars not const to ease testing
 var (
-	metadataURL = os.Getenv("ECS_CONTAINER_METADATA_URI_V4")
+	metadataURL = env.Getenv("ECS_CONTAINER_METADATA_URI_V4")
 	timeout     = 300 * time.Millisecond
 )
 

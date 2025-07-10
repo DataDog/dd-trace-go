@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -172,8 +172,8 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := os.Getenv(headerPropagationStyleInject)
-	extractorsPs := os.Getenv(headerPropagationStyleExtract)
+	injectorsPs := env.Getenv(headerPropagationStyleInject)
+	extractorsPs := env.Getenv(headerPropagationStyleExtract)
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp

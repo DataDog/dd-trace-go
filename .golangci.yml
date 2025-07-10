@@ -30,7 +30,10 @@ linters:
       - builtin$
       - examples$
     rules:
-      - path: internal/env/
+      - path: "internal/(env|log)/"
+        linters:
+          - forbidigo
+      - path: "_test\\.go$"
         linters:
           - forbidigo
   settings:

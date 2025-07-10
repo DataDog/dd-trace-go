@@ -21,6 +21,7 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
@@ -186,7 +187,7 @@ func defaultConfig() (*config, error) {
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
-		compressionConfig:    os.Getenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"),
+		compressionConfig:    env.Getenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"),
 		traceConfig: executionTraceConfig{
 			Enabled: internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault),
 			Period:  internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute),
@@ -211,33 +212,33 @@ func defaultConfig() (*config, error) {
 	} else {
 		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
 	}
-	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
+	if v := env.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err.Error())
 		}
 		WithUploadTimeout(d)(&c)
 	}
-	if v := os.Getenv("DD_API_KEY"); v != "" {
+	if v := env.Getenv("DD_API_KEY"); v != "" {
 		c.apiKey = v
 	}
 	c.agentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
-	if v := os.Getenv("DD_SITE"); v != "" {
+	if v := env.Getenv("DD_SITE"); v != "" {
 		WithSite(v)(&c)
 	}
-	if v := os.Getenv("DD_ENV"); v != "" {
+	if v := env.Getenv("DD_ENV"); v != "" {
 		WithEnv(v)(&c)
 	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
+	if v := env.Getenv("DD_SERVICE"); v != "" {
 		WithService(v)(&c)
 	}
-	if v := os.Getenv("DD_VERSION"); v != "" {
+	if v := env.Getenv("DD_VERSION"); v != "" {
 		WithVersion(v)(&c)
 	}
 	c.flushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
 
 	tags := make(map[string]string)
-	if v := os.Getenv("DD_TAGS"); v != "" {
+	if v := env.Getenv("DD_TAGS"); v != "" {
 		tags = internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 	}
@@ -261,14 +262,14 @@ func defaultConfig() (*config, error) {
 		"runtime-id:"+globalconfig.RuntimeID(),
 	)(&c)
 	// not for public use
-	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
+	if v := env.Getenv("DD_PROFILING_URL"); v != "" {
 		WithURL(v)(&c)
 	}
 	// not for public use
-	if v := os.Getenv("DD_PROFILING_OUTPUT_DIR"); v != "" {
+	if v := env.Getenv("DD_PROFILING_OUTPUT_DIR"); v != "" {
 		withOutputDir(v)(&c)
 	}
-	if v := os.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
+	if v := env.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err.Error())

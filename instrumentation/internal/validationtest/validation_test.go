@@ -19,7 +19,6 @@ import (
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2/testcases"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,7 +64,7 @@ type testAgentRoundTripper struct {
 
 // RoundTrip adds the DD Tracer configuration environment and test session token to the trace request headers
 func (rt *testAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	sessionTokenEnv, ok := env.LookupEnv("CI_TEST_AGENT_SESSION_TOKEN")
+	sessionTokenEnv, ok := os.LookupEnv("CI_TEST_AGENT_SESSION_TOKEN")
 	if !ok {
 		sessionTokenEnv = "default"
 	}
@@ -75,12 +74,12 @@ func (rt *testAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 }
 
 func buildAgentAddr() string {
-	testAgentHost, exists := env.LookupEnv("DD_TEST_AGENT_HOST")
+	testAgentHost, exists := os.LookupEnv("DD_TEST_AGENT_HOST")
 	if !exists {
 		testAgentHost = "localhost"
 	}
 
-	testAgentPort, exists := env.LookupEnv("DD_TEST_AGENT_PORT")
+	testAgentPort, exists := os.LookupEnv("DD_TEST_AGENT_PORT")
 	if !exists {
 		testAgentPort = "9126"
 	}
@@ -92,7 +91,7 @@ var (
 )
 
 func TestIntegrations(t *testing.T) {
-	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 	integrations := []Integration{

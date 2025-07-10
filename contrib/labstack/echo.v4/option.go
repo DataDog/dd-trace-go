@@ -8,9 +8,9 @@ package echo
 import (
 	"errors"
 	"math"
-	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 
 	"github.com/labstack/echo/v4"
@@ -49,7 +49,7 @@ type IgnoreRequestFunc func(c echo.Context) bool
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.analyticsRate = math.NaN()
-	if fn := httptrace.GetErrorCodesFromInput(os.Getenv(envServerErrorStatuses)); fn != nil {
+	if fn := httptrace.GetErrorCodesFromInput(env.Getenv(envServerErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
 	} else {
 		cfg.isStatusError = isServerError

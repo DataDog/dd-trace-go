@@ -31,7 +31,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -78,7 +77,7 @@ func TestMain(m *testing.M) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
 	}
-	_, integration = env.LookupEnv("INTEGRATION")
+	_, integration = os.LookupEnv("INTEGRATION")
 
 	// Run the tests and exit on failure
 	if code := m.Run(); code != 0 {

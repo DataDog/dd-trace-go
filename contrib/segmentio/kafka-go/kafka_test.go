@@ -21,7 +21,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	kafka "github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +39,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	_, ok := env.LookupEnv("INTEGRATION")
+	_, ok := os.LookupEnv("INTEGRATION")
 	if !ok {
 		log.Println("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 		os.Exit(0)

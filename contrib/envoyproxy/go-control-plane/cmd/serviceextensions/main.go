@@ -24,6 +24,7 @@ import (
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc"
@@ -56,7 +57,7 @@ func getDefaultEnvVars() map[string]string {
 // initializeEnvironment sets up required environment variables with their defaults
 func initializeEnvironment() {
 	for k, v := range getDefaultEnvVars() {
-		if os.Getenv(k) == "" {
+		if env.Getenv(k) == "" {
 			if err := os.Setenv(k, v); err != nil {
 				log.Error("service_extension: failed to set %s environment variable: %s\n", k, err.Error())
 			}
@@ -101,6 +102,7 @@ func loadConfig() serviceExtensionConfig {
 
 func main() {
 	initializeEnvironment()
+
 	config := loadConfig()
 
 	if err := configureObservabilityMode(config.observabilityMode); err != nil {

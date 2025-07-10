@@ -402,13 +402,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Set the trace protocol to use.
 	c.traceProtocol = internal.FloatEnv("DD_TRACE_AGENT_PROTOCOL_VERSION", traceProtocolV04)
 
-	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
+	if v := env.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
-	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
+	if env.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
 		c.hostname, err = os.Hostname()
 		if err != nil {
@@ -416,13 +416,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostnamet: %s", err.Error())
 		}
 	}
-	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
+	if v := env.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
 		c.hostname = v
 	}
-	if v := os.Getenv("DD_ENV"); v != "" {
+	if v := env.Getenv("DD_ENV"); v != "" {
 		c.env = v
 	}
-	if v := os.Getenv("DD_TRACE_FEATURES"); v != "" {
+	if v := env.Getenv("DD_TRACE_FEATURES"); v != "" {
 		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
 			return r == ',' || r == ' '
 		})...)(c)
@@ -431,14 +431,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
-	if ver := os.Getenv("DD_VERSION"); ver != "" {
+	if ver := env.Getenv("DD_VERSION"); ver != "" {
 		c.version = ver
 	}
-	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
+	if v := env.Getenv("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
-	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
+	if v := env.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
 		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
 		// Required to ensure that the startup header tags are set on reset.
 		c.headerAsTags.startup = c.headerAsTags.current
@@ -461,14 +461,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
-	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
+	c.logDirectory = env.Getenv("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.LookupEnv("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
-	if compatMode := os.Getenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
+	if compatMode := env.Getenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
 		if semver.IsValid(compatMode) {
 			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
 		} else {
@@ -505,7 +505,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	}
 	c.peerServiceMappings = make(map[string]string)
-	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
+	if v := env.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
@@ -712,9 +712,9 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 
 // defaultDogstatsdAddr returns the default connection address for Dogstatsd.
 func defaultDogstatsdAddr() string {
-	envHost, envPort := os.Getenv("DD_DOGSTATSD_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	envHost, envPort := env.Getenv("DD_DOGSTATSD_HOST"), env.Getenv("DD_DOGSTATSD_PORT")
 	if envHost == "" {
-		envHost = os.Getenv("DD_AGENT_HOST")
+		envHost = env.Getenv("DD_AGENT_HOST")
 	}
 	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
 		// socket exists and user didn't specify otherwise via env vars

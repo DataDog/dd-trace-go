@@ -8,6 +8,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 var (
@@ -174,7 +174,7 @@ func TestConsumerFunctional(t *testing.T) {
 // This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
 // instead of the one passed in the message.
 func TestDeprecatedContext(t *testing.T) {
-	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 
@@ -335,7 +335,7 @@ func TestProduceError(t *testing.T) {
 }
 
 func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
-	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
 	mt := mocktracer.Start()

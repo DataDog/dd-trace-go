@@ -172,7 +172,7 @@ func updateHostname(now time.Time) {
 }
 
 func fromConfig(_ context.Context, _ string) (string, error) {
-	hn := os.Getenv("DD_HOSTNAME")
+	hn := env.Getenv("DD_HOSTNAME")
 	err := validate.ValidHostname(hn)
 	if err != nil {
 		return "", err
