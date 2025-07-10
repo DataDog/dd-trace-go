@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pprofutils"
 
 	pprofile "github.com/google/pprof/profile"
@@ -21,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testRunDeltaProfile(t *testing.T) {
+func TestRunDeltaProfile(t *testing.T) {
 	t.Helper()
 	var (
 		deltaPeriod = DefaultPeriod
@@ -170,45 +171,8 @@ main;bar 0 0 8 16
 	}
 }
 
-func TestRunProfile(t *testing.T) {
-	// TODO(felixge): These tests are directly calling the internal runProfile()
-	// function which is brittle. We should refactor them to use the public API.
-	t.Run("delta", func(t *testing.T) {
-		testRunDeltaProfile(t)
-	})
-
-	t.Run("cpu", func(t *testing.T) {
-		p, err := unstartedProfiler(CPUDuration(10*time.Millisecond), WithPeriod(10*time.Millisecond), WithProfileTypes(CPUProfile))
-		p.testHooks.startCPUProfile = func(w io.Writer) error {
-			_, err := w.Write([]byte("my-cpu-profile"))
-			return err
-		}
-		p.testHooks.stopCPUProfile = func() {}
-		require.NoError(t, err)
-		start := time.Now()
-		profs, err := p.runProfile(CPUProfile)
-		end := time.Now()
-		require.NoError(t, err)
-		assert.True(t, end.Sub(start) > 10*time.Millisecond)
-		assert.Equal(t, "cpu.pprof", profs[0].name)
-		assert.Equal(t, []byte("my-cpu-profile"), profs[0].data)
-	})
-
-	t.Run("goroutine", func(t *testing.T) {
-		p, err := unstartedProfiler(WithPeriod(time.Millisecond), WithProfileTypes(GoroutineProfile))
-		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(name))
-			return err
-		}
-		require.NoError(t, err)
-		profs, err := p.runProfile(GoroutineProfile)
-		require.NoError(t, err)
-		assert.Equal(t, "goroutines.pprof", profs[0].name)
-		assert.Equal(t, []byte("goroutine"), profs[0].data)
-	})
-
-	t.Run("goroutinewait", func(t *testing.T) {
-		const sample = `
+func TestGoroutineWait(t *testing.T) {
+	const sample = `
 goroutine 1 [running]:
 main.main()
 	/example/main.go:152 +0x3d2
@@ -230,100 +194,100 @@ main.main()
 ...additional frames elided...
 `
 
-		p, err := unstartedProfiler(WithPeriod(10*time.Millisecond), WithProfileTypes(expGoroutineWaitProfile))
-		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(sample))
-			return err
+	requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
+		t.Helper()
+		var got []string
+		for _, loc := range s.Location {
+			got = append(got, loc.Line[0].Function.Name)
 		}
+		require.Equal(t, want, got)
+	}
+	var buf bytes.Buffer
+	require.NoError(t, goroutineDebug2ToPprof(bytes.NewReader([]byte(sample)), &buf, time.Now()))
 
-		require.NoError(t, err)
-		profs, err := p.runProfile(expGoroutineWaitProfile)
-		require.NoError(t, err)
-		require.Equal(t, "goroutineswait.pprof", profs[0].name)
-
-		// pro tip: enable line below to inspect the pprof output using cli tools
-		// os.WriteFile(prof.name, prof.data, 0644)
-
-		requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
-			t.Helper()
-			var got []string
-			for _, loc := range s.Location {
-				got = append(got, loc.Line[0].Function.Name)
-			}
-			require.Equal(t, want, got)
-		}
-
-		pp, err := pprofile.Parse(bytes.NewReader(profs[0].data))
-		require.NoError(t, err)
-		// timestamp
-		require.NotEqual(t, int64(0), pp.TimeNanos)
-		// 1 sample type
-		require.Equal(t, 1, len(pp.SampleType))
-		// 3 valid samples, 1 invalid sample (added as comment)
-		require.Equal(t, 3, len(pp.Sample))
-		require.Equal(t, 1, len(pp.Comments))
-		// Wait duration
-		require.Equal(t, []int64{time.Minute.Nanoseconds()}, pp.Sample[1].Value)
-		// Labels
-		require.Equal(t, []string{"running"}, pp.Sample[0].Label["state"])
-		require.Equal(t, []string{"false"}, pp.Sample[0].Label["lockedm"])
-		require.Equal(t, []int64{3}, pp.Sample[1].NumLabel["goid"])
-		require.Equal(t, []string{"id"}, pp.Sample[1].NumUnit["goid"])
-		// Virtual frame for "frames elided" goroutine
-		requireFunctions(t, pp.Sample[2], []string{
-			"main.stackDump",
-			"main.main",
-			"...additional frames elided...",
-		})
-		// Virtual frame go "created by" frame
-		requireFunctions(t, pp.Sample[1], []string{
-			"time.Sleep",
-			"main.indirectShortSleepLoop2",
-		})
+	pp, err := pprofile.Parse(&buf)
+	require.NoError(t, err)
+	// timestamp
+	require.NotEqual(t, int64(0), pp.TimeNanos)
+	// 1 sample type
+	require.Equal(t, 1, len(pp.SampleType))
+	// 3 valid samples, 1 invalid sample (added as comment)
+	require.Equal(t, 3, len(pp.Sample))
+	require.Equal(t, 1, len(pp.Comments))
+	// Wait duration
+	require.Equal(t, []int64{time.Minute.Nanoseconds()}, pp.Sample[1].Value)
+	// Labels
+	require.Equal(t, []string{"running"}, pp.Sample[0].Label["state"])
+	require.Equal(t, []string{"false"}, pp.Sample[0].Label["lockedm"])
+	require.Equal(t, []int64{3}, pp.Sample[1].NumLabel["goid"])
+	require.Equal(t, []string{"id"}, pp.Sample[1].NumUnit["goid"])
+	// Virtual frame for "frames elided" goroutine
+	requireFunctions(t, pp.Sample[2], []string{
+		"main.stackDump",
+		"main.main",
+		"...additional frames elided...",
 	})
+	// Virtual frame go "created by" frame
+	requireFunctions(t, pp.Sample[1], []string{
+		"time.Sleep",
+		"main.indirectShortSleepLoop2",
+	})
+}
 
-	t.Run("goroutineswaitLimit", func(t *testing.T) {
-		// spawGoroutines spawns n goroutines, waits for them to start executing,
-		// and then returns a func to stop them. For more details about `executing`
-		// see:
-		// https://github.com/DataDog/dd-trace-go/pull/942#discussion_r656924335
-		spawnGoroutines := func(n int) func() {
-			executing := make(chan struct{})
-			stopping := make(chan struct{})
+func TestGoroutinesWaitLimit(t *testing.T) {
+	rl := &log.RecordLogger{}
+	defer log.UseLogger(rl)()
+
+	// spawGoroutines spawns n goroutines, waits for them to start executing,
+	// and then returns a func to stop them. For more details about `executing`
+	// see:
+	// https://github.com/DataDog/dd-trace-go/pull/942#discussion_r656924335
+	spawnGoroutines := func(n int) func() {
+		executing := make(chan struct{})
+		stopping := make(chan struct{})
+		for i := 0; i < n; i++ {
+			go func() {
+				executing <- struct{}{}
+				stopping <- struct{}{}
+			}()
+			<-executing
+		}
+		return func() {
 			for i := 0; i < n; i++ {
-				go func() {
-					executing <- struct{}{}
-					stopping <- struct{}{}
-				}()
-				<-executing
-			}
-			return func() {
-				for i := 0; i < n; i++ {
-					<-stopping
-				}
+				<-stopping
 			}
 		}
+	}
 
-		goroutines := 100
-		limit := 10
+	goroutines := 100
+	limit := 10
 
-		stop := spawnGoroutines(goroutines)
-		defer stop()
-		t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
+	stop := spawnGoroutines(goroutines)
+	defer stop()
+	t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "true")
 
-		p, err := unstartedProfiler(WithProfileTypes(expGoroutineWaitProfile))
-		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(""))
-			return err
+	c := startTestProfiler(t, 1, WithPeriod(time.Millisecond))
+	// Wait for two profiles so we can be sure we would have logged the error from the first one
+	assert.NotContains(t, (<-c).attachments, "goroutineswait.pprof")
+	assert.NotContains(t, (<-c).attachments, "goroutineswait.pprof")
+	// Need to flush errors
+	log.Flush()
+
+	var errRoutines, errLimit int
+	for _, l := range rl.Logs() {
+		_, after, found := strings.Cut(l, "skipping goroutines wait profile: ")
+		if !found {
+			continue
 		}
-		require.NoError(t, err)
-		_, err = p.runProfile(expGoroutineWaitProfile)
-		var errRoutines, errLimit int
-		msg := "skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d"
-		fmt.Sscanf(err.Error(), msg, &errRoutines, &errLimit)
-		require.GreaterOrEqual(t, errRoutines, goroutines)
-		require.Equal(t, limit, errLimit)
-	})
+		msg := "%d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d"
+		if n, _ := fmt.Sscanf(after, msg, &errRoutines, &errLimit); n == 2 {
+			require.GreaterOrEqual(t, errRoutines, goroutines)
+			require.Equal(t, limit, errLimit)
+			return
+		}
+	}
+	t.Fatal("did not see goroutine wait profile limit error")
 }
 
 func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {
