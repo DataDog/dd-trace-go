@@ -42,6 +42,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 
@@ -1114,7 +1115,7 @@ func (m *mockSampler) DecisionFor(key apisec.SamplingKey) bool {
 func init() {
 	// This permits running the tests locally without defining the env var manually
 	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
-	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
+	if _, ok := env.LookupEnv(internal.EnvWAFTimeout); !ok {
 		os.Setenv(internal.EnvWAFTimeout, "1s")
 	}
 }

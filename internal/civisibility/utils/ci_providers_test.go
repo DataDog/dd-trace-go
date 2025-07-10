@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 func setEnvs(t *testing.T, env map[string]any) {
@@ -50,7 +51,7 @@ func TestTags(t *testing.T) {
 	// Reset provider env key when running in CI
 	resetProviders := map[string]string{}
 	for key := range providers {
-		if value, ok := os.LookupEnv(key); ok {
+		if value, ok := env.LookupEnv(key); ok {
 			resetProviders[key] = value
 			_ = os.Unsetenv(key)
 		}
