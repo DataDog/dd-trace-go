@@ -24,6 +24,7 @@ type SupportedConfiguration struct {
 var (
 	configFilePath string
 	once           sync.Once
+	mu             sync.Mutex
 )
 
 // getConfigFilePath returns the path to the supported-configurations.json file
@@ -50,6 +51,9 @@ func addSupportedConfigurationToFile(name string) {
 		// noop for unit test scenario
 		return
 	}
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	filePath := getConfigFilePath()
 

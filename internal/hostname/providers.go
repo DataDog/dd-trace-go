@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname/azure"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname/ec2"
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname/ecs"
@@ -184,7 +185,7 @@ func fromFargate(ctx context.Context, _ string) (string, error) {
 }
 
 func fargate(ctx context.Context) (string, error) {
-	if _, ok := os.LookupEnv("ECS_CONTAINER_METADATA_URI_V4"); !ok {
+	if _, ok := env.LookupEnv("ECS_CONTAINER_METADATA_URI_V4"); !ok {
 		return "", fmt.Errorf("not running in fargate")
 	}
 	launchType, err := ecs.GetLaunchType(ctx)

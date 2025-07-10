@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -55,7 +56,7 @@ func getEnvVarsJSON(envVars ...string) ([]byte, error) {
 func getProviderTags() map[string]string {
 	tags := map[string]string{}
 	for key, provider := range providers {
-		if _, ok := os.LookupEnv(key); !ok {
+		if _, ok := env.LookupEnv(key); !ok {
 			continue
 		}
 		tags = provider()
@@ -141,7 +142,7 @@ func replaceWithUserSpecificTags(tags map[string]string) {
 
 // getEnvironmentVariableIfIsNotEmpty returns the environment variable value if it is not empty, otherwise returns the default value.
 func getEnvironmentVariableIfIsNotEmpty(key string, defaultValue string) string {
-	if value, ok := os.LookupEnv(key); ok && value != "" {
+	if value, ok := env.LookupEnv(key); ok && value != "" {
 		return value
 	}
 	return defaultValue
@@ -164,7 +165,7 @@ func normalizeRef(name string) string {
 // firstEnv returns the value of the first non-empty environment variable from the provided list.
 func firstEnv(keys ...string) string {
 	for _, key := range keys {
-		if value, ok := os.LookupEnv(key); ok {
+		if value, ok := env.LookupEnv(key); ok {
 			if value != "" {
 				return value
 			}
@@ -533,7 +534,7 @@ func extractJenkins() map[string]string {
 
 	branchOrTag := os.Getenv("GIT_BRANCH")
 	empty := []byte("")
-	name, hasName := os.LookupEnv("JOB_NAME")
+	name, hasName := env.LookupEnv("JOB_NAME")
 
 	if strings.Contains(branchOrTag, "tags/") {
 		tags[constants.GitTag] = branchOrTag
