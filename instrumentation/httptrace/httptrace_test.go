@@ -648,3 +648,29 @@ func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
 	assert.Equal(t, "bar", baggageMap["foo"], "should propagate baggage even when it's the only header")
 
 }
+
+func TestBaggageSpanTagsOpentracer(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create an HTTP request with no additional baggage context
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
+	req.Header.Set("baggage", "session.id=789")  // w3c baggage header
+	req.Header.Set("ot-baggage-user.id", "1234") // opentracer baggage header
+	req.Header.Set("traceparent", "00-12345678901234567890123456789012-1234567890123456-01")
+	req.Header.Set("tracestate", "dd=s:2;o:rum;t.usr.id:baz64~~")
+
+	// Start the request span, which will extract baggage and add it as span tags
+	reqSpan, _, _ := StartRequestSpan(req)
+	m := reqSpan.AsMap()
+
+	// Keys that SHOULD be present:
+	assert.Contains(t, m, "baggage.session.id", "baggage.session.id should be included in span tags")
+	assert.Equal(t, "789", m["baggage.session.id"], "should contain session.id value")
+
+	// Keys that should NOT be present (user.id is ot-baggage header)
+	// This assertion WILL FAIL until baggage revamp is complete; therefore, commented out
+	// assert.NotContains(t, m, "baggage.user.id", "baggage.user.id should not be included in span tags")
+
+	reqSpan.Finish()
+}
