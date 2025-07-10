@@ -24,6 +24,7 @@ import (
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc"
@@ -65,7 +66,7 @@ var log = NewLogger()
 
 func main() {
 	// Set the DD_VERSION to the current tracer version if not set
-	if os.Getenv("DD_VERSION") == "" {
+	if env.Getenv("DD_VERSION") == "" {
 		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
 			log.Error("service_extension: failed to set DD_VERSION environment variable: %s\n", err.Error())
 		}

@@ -32,7 +32,7 @@ var DefaultTraceAgentUDSPath = "/var/run/datadog/apm.socket"
 //   - Then, DefaultTraceAgentUDSPath, if the path exists
 //   - Finally, localhost:8126
 func AgentURLFromEnv() *url.URL {
-	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
+	if agentURL := env.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
 			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
