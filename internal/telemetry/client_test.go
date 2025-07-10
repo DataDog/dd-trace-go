@@ -1469,6 +1469,7 @@ func benchMetrics(b *testing.B, getHandle, reusedHandle func(*testing.B, func(Cl
 		{"distribution", func(c Client, name string) MetricHandle {
 			return c.Distribution(NamespaceGeneral, name, []string{"test:1"})
 		}},
+		{"timing", func(c Client, name string) MetricHandle { return c.Timing(NamespaceGeneral, name, []string{"test:1"}) }},
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			b.Run("get-handle", func(b *testing.B) {
