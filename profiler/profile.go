@@ -300,7 +300,7 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
-			return nil, fmt.Errorf("delta profile error: %s", err)
+			return nil, fmt.Errorf("delta profile error: %s", err.Error())
 		}
 		return delta, err
 	}
@@ -410,7 +410,7 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 		}
 		data, err = io.ReadAll(&fdp.gzr)
 		if err != nil {
-			return nil, fmt.Errorf("decompressing profile: %v", err)
+			return nil, fmt.Errorf("decompressing profile: %s", err.Error())
 		}
 	}
 
@@ -418,10 +418,10 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	fdp.compressor.Reset(&fdp.buf)
 
 	if err = fdp.dc.Delta(data, fdp.compressor); err != nil {
-		return nil, fmt.Errorf("error computing delta: %v", err)
+		return nil, fmt.Errorf("error computing delta: %s", err.Error())
 	}
 	if err = fdp.compressor.Close(); err != nil {
-		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
+		return nil, fmt.Errorf("error flushing gzip writer: %s", err.Error())
 	}
 	// The returned slice will be retained in case the profile upload fails,
 	// so we need to return a copy of the buffer's bytes to avoid a data
@@ -521,9 +521,9 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 	}
 
 	if err := p.CheckValid(); err != nil {
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
+		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err.Error())
 	} else if err := p.WriteUncompressed(w); err != nil {
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
+		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err.Error())
 	}
 	return nil
 }

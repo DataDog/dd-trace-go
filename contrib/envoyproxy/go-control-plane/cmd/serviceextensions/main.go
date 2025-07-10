@@ -68,7 +68,7 @@ func main() {
 	// Set the DD_VERSION to the current tracer version if not set
 	if os.Getenv("DD_VERSION") == "" {
 		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
-			log.Error("service_extension: failed to set DD_VERSION environment variable: %v\n", err)
+			log.Error("service_extension: failed to set DD_VERSION environment variable: %s\n", err.Error())
 		}
 	}
 
@@ -81,7 +81,7 @@ func main() {
 	}
 
 	if err := startService(config); err != nil {
-		log.Error("service_extension: %v\n", err)
+		log.Error("service_extension: %s\n", err.Error())
 		os.Exit(1)
 	}
 
@@ -132,13 +132,13 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Error("service_extension: health check server shutdown: %v\n", err)
+			log.Error("service_extension: health check server shutdown: %s\n", err.Error())
 		}
 	}()
 
 	log.Info("service_extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("health check http server: %v", err)
+		return fmt.Errorf("health check http server: %s", err.Error())
 	}
 
 	return nil
@@ -147,12 +147,12 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
-		return fmt.Errorf("gRPC server: %v", err)
+		return fmt.Errorf("gRPC server: %s", err.Error())
 	}
 
 	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
 	if err != nil {
-		return fmt.Errorf("failed to load key pair: %v", err)
+		return fmt.Errorf("failed to load key pair: %s", err.Error())
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
@@ -173,7 +173,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	extproc.RegisterExternalProcessorServer(grpcServer, appsecEnvoyExternalProcessorServer)
 	log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 	if err := grpcServer.Serve(lis); err != nil {
-		return fmt.Errorf("error starting gRPC server: %v", err)
+		return fmt.Errorf("error starting gRPC server: %s", err.Error())
 	}
 
 	return nil

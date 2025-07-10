@@ -162,7 +162,7 @@ func (p *coveragePayload) Read(b []byte) (n int, err error) {
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *coveragePayload) getBuffer() (*bytes.Buffer, error) {
 	startTime := time.Now()
-	log.Debug("coveragePayload: .getBuffer (count: %v)", p.itemCount())
+	log.Debug("coveragePayload: .getBuffer (count: %d)", p.itemCount())
 
 	// Create a buffer to read the current payload
 	payloadBuf := new(bytes.Buffer)

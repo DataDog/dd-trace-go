@@ -171,6 +171,8 @@ func (t *tslvTest) internalClose(options ...tracer.FinishOption) {
 	t.closed = true
 
 	// Creating telemetry event finished
+	t.ctxMutex.Lock()
+	defer t.ctxMutex.Unlock()
 	testingEventType := telemetry.TestEventType
 	if t.ctx.Value(constants.TestIsNew) == "true" {
 		testingEventType = append(testingEventType, telemetry.IsNewEventType...)
@@ -205,22 +207,15 @@ func (t *tslvTest) internalClose(options ...tracer.FinishOption) {
 // SetTag sets a tag on the test event.
 func (t *tslvTest) SetTag(key string, value interface{}) {
 	t.ciVisibilityCommon.SetTag(key, value)
-	if key == constants.TestIsNew {
-		t.ctx = context.WithValue(t.ctx, constants.TestIsNew, value)
-	} else if key == constants.TestIsRetry {
-		t.ctx = context.WithValue(t.ctx, constants.TestIsRetry, value)
-	} else if key == constants.TestEarlyFlakeDetectionRetryAborted {
-		t.ctx = context.WithValue(t.ctx, constants.TestEarlyFlakeDetectionRetryAborted, value)
-	} else if key == constants.TestIsAttempToFix {
-		t.ctx = context.WithValue(t.ctx, constants.TestIsAttempToFix, value)
-	} else if key == constants.TestIsQuarantined {
-		t.ctx = context.WithValue(t.ctx, constants.TestIsQuarantined, value)
-	} else if key == constants.TestIsDisabled {
-		t.ctx = context.WithValue(t.ctx, constants.TestIsDisabled, value)
-	} else if key == constants.TestHasFailedAllRetries {
-		t.ctx = context.WithValue(t.ctx, constants.TestHasFailedAllRetries, value)
-	} else if key == constants.TestRetryReason {
-		t.ctx = context.WithValue(t.ctx, constants.TestRetryReason, value)
+	if key == constants.TestIsNew ||
+		key == constants.TestIsRetry ||
+		key == constants.TestEarlyFlakeDetectionRetryAborted ||
+		key == constants.TestIsAttempToFix ||
+		key == constants.TestIsQuarantined ||
+		key == constants.TestIsDisabled ||
+		key == constants.TestHasFailedAllRetries ||
+		key == constants.TestRetryReason {
+		t.setContextValue(key, value)
 	}
 }
 
@@ -251,7 +246,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	if err == nil {
 
 		// let's check if the suite was marked as unskippable before
-		isUnskippable, hasUnskippableValue := t.suite.ctx.Value(constants.TestUnskippable).(bool)
+		isUnskippable, hasUnskippableValue := t.suite.getContextValue(constants.TestUnskippable).(bool)
 		if !hasUnskippableValue {
 			// check for suite level unskippable comment at the top of the file
 			for _, commentGroup := range fileNode.Comments {
@@ -265,7 +260,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 					break
 				}
 			}
-			t.suite.ctx = context.WithValue(t.suite.ctx, constants.TestUnskippable, isUnskippable)
+			t.suite.setContextValue(constants.TestUnskippable, isUnskippable)
 		}
 
 		// get the function name without the package name
@@ -326,7 +321,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		if isUnskippable {
 			t.SetTag(constants.TestUnskippable, "true")
 			telemetry.ITRUnskippable(telemetry.TestEventType)
-			t.ctx = context.WithValue(t.ctx, constants.TestUnskippable, true)
+			t.setContextValue(constants.TestUnskippable, true)
 		}
 
 		// if impacted tests analyzer was loaded, we run it
@@ -334,7 +329,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 			if analyzer.IsImpacted(t.Name(), file, startLine, endLine) {
 				t.SetTag(constants.TestIsModified, "true")
 				telemetry.ImpactedTestsModified()
-				t.ctx = context.WithValue(t.ctx, constants.TestIsModified, true)
+				t.setContextValue(constants.TestIsModified, true)
 			}
 		}
 	}
@@ -352,7 +347,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 // SetBenchmarkData sets benchmark data for the test.
 func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
 	t.span.SetTag(constants.TestType, constants.TestTypeBenchmark)
-	t.ctx = context.WithValue(t.ctx, constants.TestType, constants.TestTypeBenchmark)
+	t.setContextValue(constants.TestType, constants.TestTypeBenchmark)
 	for k, v := range data {
 		t.span.SetTag(fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
 	}
