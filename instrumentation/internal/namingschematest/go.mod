@@ -339,6 +339,10 @@ require (
 	mellium.im/sasl v0.3.1 // indirect
 )
 
+// Pin Shopify/sarama to the last version available to avoid breaking changes
+// caused by the IBM/sarama fork.
+replace github.com/Shopify/sarama => github.com/Shopify/sarama v1.38.1
+
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
 
 replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../../contrib/IBM/sarama
