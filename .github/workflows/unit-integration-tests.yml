@@ -291,7 +291,7 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
           ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
-      
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -306,6 +306,14 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Config inversion diff check
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |-
+          git diff --exit-code internal/env/supported-configurations.json
+          go run ./scripts/configinverter check
 
   test-contrib:
     needs:
@@ -375,6 +383,14 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Config inversion diff check
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |-
+          git diff --exit-code internal/env/supported-configurations.json
+          go run ./scripts/configinverter check
 
   upload-test-results:
     needs:
