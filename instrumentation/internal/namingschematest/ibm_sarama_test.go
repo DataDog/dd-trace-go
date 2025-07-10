@@ -8,13 +8,18 @@ package namingschematest
 import (
 	"testing"
 
+	"github.com/IBM/sarama"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	saramatrace "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/IBM/sarama"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+)
+
+const (
+	saramaTopic = "sarama-gotest"
 )
 
 func ibmSaramaGenSpans() harness.GenSpansFn {
@@ -32,14 +37,14 @@ func ibmSaramaGenSpans() harness.GenSpansFn {
 		broker.SetHandlerByMap(map[string]sarama.MockResponse{
 			"MetadataRequest": sarama.NewMockMetadataResponse(t).
 				SetBroker(broker.Addr(), broker.BrokerID()).
-				SetLeader("test-topic", 0, broker.BrokerID()),
+				SetLeader(saramaTopic, 0, broker.BrokerID()),
 			"OffsetRequest": sarama.NewMockOffsetResponse(t).
-				SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
-				SetOffset("test-topic", 0, sarama.OffsetNewest, 1),
+				SetOffset(saramaTopic, 0, sarama.OffsetOldest, 0).
+				SetOffset(saramaTopic, 0, sarama.OffsetNewest, 1),
 			"FetchRequest": sarama.NewMockFetchResponse(t, 1).
-				SetMessage("test-topic", 0, 0, sarama.StringEncoder("hello")),
+				SetMessage(saramaTopic, 0, 0, sarama.StringEncoder("hello")),
 			"ProduceRequest": sarama.NewMockProduceResponse(t).
-				SetError("test-topic", 0, sarama.ErrNoError),
+				SetError(saramaTopic, 0, sarama.ErrNoError),
 		})
 		cfg := sarama.NewConfig()
 		cfg.Version = sarama.MinVersion
@@ -59,14 +64,14 @@ func ibmSaramaGenSpans() harness.GenSpansFn {
 		c = saramatrace.WrapConsumer(c, opts...)
 
 		msg1 := &sarama.ProducerMessage{
-			Topic:    "test-topic",
+			Topic:    saramaTopic,
 			Value:    sarama.StringEncoder("test 1"),
 			Metadata: "test",
 		}
 		_, _, err = producer.SendMessage(msg1)
 		require.NoError(t, err)
 
-		pc, err := c.ConsumePartition("test-topic", 0, 0)
+		pc, err := c.ConsumePartition(saramaTopic, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

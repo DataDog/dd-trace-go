@@ -46,7 +46,6 @@ func RunTest(t *testing.T, tc TestCase) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
-
 	t.Run(strings.ReplaceAll(string(tc.Name), "/", "_"), func(t *testing.T) {
 		t.Run("ServiceName", func(t *testing.T) {
 			// v0
