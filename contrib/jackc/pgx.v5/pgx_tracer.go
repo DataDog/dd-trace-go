@@ -305,9 +305,8 @@ func (t *pgxTracer) finishSpan(ctx context.Context, err error) {
 	if !ok {
 		return
 	}
-	if t.cfg.ignoreError != nil && t.cfg.ignoreError(err) {
-		span.Finish()
-		return
+	if err != nil && (t.cfg.errCheck == nil || t.cfg.errCheck(err)) {
+		span.SetTag(ext.Error, err)
 	}
-	span.Finish(tracer.WithError(err))
+	span.Finish()
 }

@@ -18,7 +18,7 @@ type config struct {
 	traceConnect  bool
 	traceAcquire  bool
 	poolStats     bool
-	ignoreError   func(error) bool
+	errCheck      func(error) bool
 	statsdClient  instrumentation.StatsdClient
 }
 
@@ -31,7 +31,6 @@ func defaultConfig() *config {
 		tracePrepare:  true,
 		traceConnect:  true,
 		traceAcquire:  true,
-		ignoreError:   func(err error) bool { return false },
 	}
 }
 

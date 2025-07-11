@@ -161,7 +161,7 @@ func TestIgnoreError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	opts := append(tracingAllDisabled(), WithTraceQuery(true), WithIgnoreError(func(err error) bool {
+	opts := append(tracingAllDisabled(), WithTraceQuery(true), WithErrCheck(func(err error) bool {
 		return errors.Is(err, context.Canceled)
 	}))
 
@@ -372,7 +372,7 @@ func tracingAllDisabled() []Option {
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
 		WithTraceAcquire(false),
-		WithIgnoreError(func(err error) bool { return false }),
+		WithErrCheck(func(err error) bool { return false }),
 	}
 }
 
