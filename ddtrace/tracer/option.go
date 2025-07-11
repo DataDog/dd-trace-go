@@ -8,6 +8,7 @@ package tracer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -23,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"golang.org/x/mod/semver"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -35,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -345,13 +346,22 @@ const partialFlushMinSpansDefault = 1000
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
+
+	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
+	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
+	// which is necessary for some tests to work properly.
+	c.orchestrionCfg.Enabled = orchestrion.Enabled()
+	if orchestrion.Version != "" {
+		c.orchestrionCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
+	}
+
 	c.sampler = NewAllSampler()
 	sampleRate := math.NaN()
 	if r := getDDorOtelConfig("sampleRate"); r != "" {
 		var err error
 		sampleRate, err = strconv.ParseFloat(r, 64)
 		if err != nil {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %v", err)
+			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %s", err.Error())
 			sampleRate = math.NaN()
 		} else if sampleRate < 0.0 || sampleRate > 1.0 {
 			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
@@ -366,7 +376,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
 		l, err := strconv.ParseFloat(v, 64)
 		if err != nil {
-			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err)
+			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err.Error())
 		} else if l < 0.0 {
 			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
 		} else {
@@ -387,8 +397,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 		var err error
 		c.hostname, err = os.Hostname()
 		if err != nil {
-			log.Warn("unable to look up hostname: %v", err)
-			return c, fmt.Errorf("unable to look up hostnamet: %v", err)
+			log.Warn("unable to look up hostname: %s", err.Error())
+			return c, fmt.Errorf("unable to look up hostnamet: %s", err.Error())
 		}
 	}
 	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
@@ -771,7 +781,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	}
 	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
 	if err != nil {
-		log.Error("Loading features: %v", err)
+		log.Error("Loading features: %s", err.Error())
 		return
 	}
 	if resp.StatusCode == http.StatusNotFound {
@@ -794,7 +804,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 
 	var info infoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %v", err)
+		log.Error("Decoding features: %s", err.Error())
 		return
 	}
 
@@ -918,7 +928,7 @@ func WithFeatureFlags(feats ...string) StartOption {
 		for _, f := range feats {
 			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
 		}
-		log.Info("FEATURES enabled: %v", feats)
+		log.Info("FEATURES enabled: %s", feats)
 	}
 }
 
@@ -1013,7 +1023,18 @@ func WithAgentURL(agentURL string) StartOption {
 	return func(c *config) {
 		u, err := url.Parse(agentURL)
 		if err != nil {
-			log.Warn("Fail to parse Agent URL: %v", err)
+			var urlErr *url.Error
+			if errors.As(err, &urlErr) {
+				u, err = url.Parse(urlErr.URL)
+				if u != nil {
+					urlErr.URL = u.Redacted()
+					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
+					return
+				}
+				log.Warn("Fail to parse Agent URL")
+				return
+			}
+			log.Warn("Fail to parse Agent URL: %s", err.Error())
 			return
 		}
 		switch u.Scheme {
@@ -1533,7 +1554,7 @@ func setHeaderTags(headerAsTags []string) bool {
 	for _, h := range headerAsTags {
 		header, tag := normalizer.HeaderTag(h)
 		if len(header) == 0 || len(tag) == 0 {
-			log.Debug("Header-tag input is in unsupported format; dropping input value %v", h)
+			log.Debug("Header-tag input is in unsupported format; dropping input value %q", h)
 			continue
 		}
 		globalconfig.SetHeaderTag(header, tag)

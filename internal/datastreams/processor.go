@@ -84,17 +84,17 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 	for _, s := range b.points {
 		pathwayLatency, err := proto.Marshal(s.pathwayLatency.ToProto())
 		if err != nil {
-			log.Error("can't serialize pathway latency. Ignoring: %v", err)
+			log.Error("can't serialize pathway latency. Ignoring: %s", err.Error())
 			continue
 		}
 		edgeLatency, err := proto.Marshal(s.edgeLatency.ToProto())
 		if err != nil {
-			log.Error("can't serialize edge latency. Ignoring: %v", err)
+			log.Error("can't serialize edge latency. Ignoring: %s", err.Error())
 			continue
 		}
 		payloadSize, err := proto.Marshal(s.payloadSize.ToProto())
 		if err != nil {
-			log.Error("can't serialize payload size. Ignoring: %v", err)
+			log.Error("can't serialize payload size. Ignoring: %s", err.Error())
 			continue
 		}
 		stats = append(stats, StatsPoint{
@@ -256,13 +256,13 @@ func (p *Processor) addToBuckets(point statsPoint, btime int64, buckets map[buck
 		b.points[point.hash] = group
 	}
 	if err := group.pathwayLatency.Add(math.Max(float64(point.pathwayLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add pathway latency. Ignoring %v.", err)
+		log.Error("failed to add pathway latency. Ignoring %v.", err.Error())
 	}
 	if err := group.edgeLatency.Add(math.Max(float64(point.edgeLatency)/float64(time.Second), 0)); err != nil {
-		log.Error("failed to add edge latency. Ignoring %v.", err)
+		log.Error("failed to add edge latency. Ignoring %v.", err.Error())
 	}
 	if err := group.payloadSize.Add(float64(point.payloadSize)); err != nil {
-		log.Error("failed to add payload size. Ignoring %v.", err)
+		log.Error("failed to add payload size. Ignoring %v.", err.Error())
 	}
 }
 

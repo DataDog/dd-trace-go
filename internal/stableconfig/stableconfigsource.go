@@ -61,7 +61,7 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to stat stable config file %s, dropping: %v", filePath, err)
+			log.Warn("Failed to stat stable config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyStableConfig()
 	}
@@ -76,7 +76,7 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to read stable config file %s, dropping: %v", filePath, err)
+			log.Warn("Failed to read stable config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyStableConfig()
 	}
