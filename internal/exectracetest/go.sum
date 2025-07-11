@@ -1,5 +1,5 @@
-github.com/DataDog/appsec-internal-go v1.12.0 h1:pfeFYcCQ5r0qGLsnzeQKfKLfkCqqwsULG7g5y7ziKu8=
-github.com/DataDog/appsec-internal-go v1.12.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
+github.com/DataDog/appsec-internal-go v1.13.0 h1:aO6DmHYsAU8BNFuvYJByhMKGgcQT3WAbj9J/sgAJxtA=
+github.com/DataDog/appsec-internal-go v1.13.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1 h1:tUnckL/NqYQiSN4ceOe5E/qM9vxmU3p77RdHgXC3VNE=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1/go.mod h1:u/ZS2pzrBQ1LokbEvFULjn1SfX+If31uqtz6MJ7UaFo=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1 h1:sZEua4ArlPJyn8DxpIw85iYuDSmCXp1h/utS4jHj8Lo=
@@ -18,12 +18,12 @@ github.com/DataDog/datadog-agent/pkg/version v0.66.1 h1:8eJdgkO/o4/5RlF3u29j0QO8
 github.com/DataDog/datadog-agent/pkg/version v0.66.1/go.mod h1:LXOHXAHH+vqBwmQKcZa5FgBEi4ECKIC2WsV2Jd9VVJ0=
 github.com/DataDog/datadog-go/v5 v5.6.0 h1:2oCLxjF/4htd55piM75baflj/KoE6VYS7alEUqFvRDw=
 github.com/DataDog/datadog-go/v5 v5.6.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.1.0-rc.4 h1:cQb7Il76BYXP3YKm7toqQAUKLNsM0Nh58w1z+yD1hxo=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.1.0-rc.4/go.mod h1:l8/QFmrGIdAhHD3/QWva2dalTgTFkloc6KMxiErW2mc=
-github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.5 h1:S1Cu2s0i6R4h/5mroZAgZpnfamryaiAo5JSuaXxN+r4=
-github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.5/go.mod h1:w3oaQmMJ74J0SOCR5cxOSF5Ma70XC9wkts/IVkhWlxg=
-github.com/DataDog/go-libddwaf/v4 v4.2.0 h1:a93qQpZKoJgNJEZkY5wERKqXGCjBNUB/uxxAZ6uBFNw=
-github.com/DataDog/go-libddwaf/v4 v4.2.0/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.1.0-rc.6 h1:32ewZV5AfpFoi73iH8m0rGGDMLBq2c1X1onzj/F3apw=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.1.0-rc.6/go.mod h1:0/25kYvA83a6/I7sSgSGQuz5GZsvMLBRYtpsMSpVAVc=
+github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.6 h1:QV7mxviLTbtPr6sT6/699hoUHg4HlGDqnGofdk9f8V4=
+github.com/DataDog/dd-trace-go/v2 v2.1.0-rc.6/go.mod h1:W1W3dR5b77xwozt/o9JqLGh1cdhydIQOHIfzcyQVHVs=
+github.com/DataDog/go-libddwaf/v4 v4.3.0 h1:BZfKyLSbY2YMSn7hEBFN1qlDXI2rMEquOeTiRbSg4xk=
+github.com/DataDog/go-libddwaf/v4 v4.3.0/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a h1:+tlbkP/WtD+t0ZDoXIkvqeCd5kj8sl5jN/POUhqFNS8=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a/go.mod h1:quaQJ+wPN41xEC458FCpTwyROZm3MzmTZ8q8XOXQiPs=
 github.com/DataDog/go-sqllexer v0.1.6 h1:skEXpWEVCpeZFIiydoIa2f2rf+ymNpjiIMqpW4w3YAk=
