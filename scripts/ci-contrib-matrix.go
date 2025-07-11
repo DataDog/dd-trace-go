@@ -35,6 +35,8 @@ func main() {
 		log.Fatalln(err)
 	}
 
+	contribRe := regexp.MustCompile(`/(contrib|instrumentation)/.*/`)
+
 	contribs := make([]string, numRunners)
 	i := 0
 	dec := json.NewDecoder(&stdout)
@@ -46,7 +48,7 @@ func main() {
 			continue
 		}
 		// we want to only count packages in the contrib directory
-		validContrib := regexp.MustCompile(`/contrib/.*/`).FindStringSubmatch(pkg.Path)
+		validContrib := contribRe.FindStringSubmatch(pkg.Path)
 		if validContrib == nil {
 			continue
 		}

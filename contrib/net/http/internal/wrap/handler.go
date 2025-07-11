@@ -28,6 +28,11 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.Component, internal.ComponentName))
 	instr.Logger().Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
+	// if the service provided from parameters is empty,
+	// use the one from the config (which should default to DD_SERVICE / "http.router")
+	if service == "" {
+		service = cfg.ServiceName
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if cfg.IgnoreRequest(req) {
 			h.ServeHTTP(w, req)

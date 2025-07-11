@@ -1338,8 +1338,8 @@ github.com/grpc-ecosystem/grpc-gateway v1.16.0/go.mod h1:BDjrQk3hbvj6Nolgz8mAMFb
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0/go.mod h1:hgWBS7lorOAVIJEQMi4ZsPv9hVvWI6+ch50m39Pf2Ks=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3/go.mod h1:o//XUCC/F+yRGJoPO/VU0GSB0f8Nhgmxx0VIRUvaC0w=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0/go.mod h1:YN5jB8ie0yfIUg6VvR9Kz84aCaG7AsGZnLjhHbUqwPg=
-github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 h1:e9Rjr40Z98/clHv5Yg79Is0NtosR5LXRvdr7o/6NwbA=
-github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1/go.mod h1:tIxuGz/9mpox++sgp9fJjHO0+q1X9/UOWd798aAm22M=
+github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 h1:X5VWvz21y3gzm9Nw/kaUeku/1+uBhcekkmy4IkffJww=
+github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1/go.mod h1:Zanoh4+gvIgluNqcfMVTJueD4wSS5hT7zTt4Mrutd90=
 github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed h1:5upAirOpQc1Q53c0bnx2ufif5kANL7bfZWcc6VJWJd8=
 github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed/go.mod h1:tMWxXQ9wFIaZeTI9F+hmhFiGpFmhOHzyShyFUhRm0H4=
 github.com/hamba/avro v1.5.6/go.mod h1:3vNT0RLXXpFm2Tb/5KC71ZRJlOroggq1Rcitb6k4Fr8=
@@ -1742,8 +1742,8 @@ github.com/testcontainers/testcontainers-go/modules/postgres v0.37.0 h1:hsVwFkS6
 github.com/testcontainers/testcontainers-go/modules/postgres v0.37.0/go.mod h1:Qj/eGbRbO/rEYdcRLmN+bEojzatP/+NS1y8ojl2PQsc=
 github.com/testcontainers/testcontainers-go/modules/redis v0.37.0 h1:9HIY28I9ME/Zmb+zey1p/I1mto5+5ch0wLX+nJdOsQ4=
 github.com/testcontainers/testcontainers-go/modules/redis v0.37.0/go.mod h1:Abu9g/25Qv+FkYVx3U4Voaynou1c+7D0HIhaQJXvk6E=
-github.com/testcontainers/testcontainers-go/modules/valkey v0.35.0 h1:0cX9txu8oW4NVXzaGMLBEOX/BBmWmQtd1X55JILNb6E=
-github.com/testcontainers/testcontainers-go/modules/valkey v0.35.0/go.mod h1:Bro7Md5b9MoFzM1bs/NWEwazdePpYBy96thih94pYxs=
+github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0 h1:eIf5TWPO7Oq/h2Hb6UVn5r/x0ucGRxcKkbNtqCRzH9k=
+github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0/go.mod h1:bOuF2ueLQxiK44g7y90UT2lf3qitxUHV8ax2OHrPGT4=
 github.com/testcontainers/testcontainers-go/modules/vault v0.37.0 h1:4vMGutogL0vz+PV3LKlxEVKwO2AndirEkfvoTp0SHyI=
 github.com/testcontainers/testcontainers-go/modules/vault v0.37.0/go.mod h1:BzVDYWZ5KZcsAN4KR/OIjM74TJt4NahOPKaKKJBI2dI=
 github.com/theupdateframework/notary v0.7.0 h1:QyagRZ7wlSpjT5N2qQAh/pN+DVqgekv4DzbAiAiEL3c=

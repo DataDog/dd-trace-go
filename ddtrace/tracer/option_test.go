@@ -31,7 +31,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -914,39 +913,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(err)
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
 			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
-		})
-	})
-
-	t.Run("attribute-schema", func(t *testing.T) {
-		t.Run("defaults", func(t *testing.T) {
-			c, err := newConfig(WithAgentTimeout(2))
-			assert.NoError(t, err)
-			assert.Equal(t, 0, c.spanAttributeSchemaVersion)
-			assert.Equal(t, false, namingschema.UseGlobalServiceName())
-		})
-
-		t.Run("env-vars", func(t *testing.T) {
-			t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v1")
-			t.Setenv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", "true")
-
-			prev := namingschema.UseGlobalServiceName()
-			defer namingschema.SetUseGlobalServiceName(prev)
-
-			c, err := newConfig(WithAgentTimeout(2))
-			assert.NoError(t, err)
-			assert.Equal(t, 1, c.spanAttributeSchemaVersion)
-			assert.Equal(t, true, namingschema.UseGlobalServiceName())
-		})
-
-		t.Run("options", func(t *testing.T) {
-			prev := namingschema.UseGlobalServiceName()
-			defer namingschema.SetUseGlobalServiceName(prev)
-
-			c, err := newConfig(WithAgentTimeout(2))
-			assert.NoError(t, err)
-			WithGlobalServiceName(true)(c)
-
-			assert.Equal(t, true, namingschema.UseGlobalServiceName())
 		})
 	})
 

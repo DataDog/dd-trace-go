@@ -124,7 +124,7 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     env:
-        INTEGRATION: true
+      INTEGRATION: true
     strategy:
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
@@ -270,6 +270,9 @@ jobs:
           KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
         ports:
           - 9092:9092
+          - 9093:9093
+        options: >-
+          --name "kafka"
       localstack:
         image: localstack/localstack:latest
         ports:

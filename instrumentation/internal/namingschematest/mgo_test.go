@@ -28,7 +28,7 @@ var globalsignMgo = harness.TestCase{
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		session, err := mgotrace.Dial("localhost:27017", opts...)
+		session, err := mgotrace.Dial("localhost:27018", opts...)
 		require.NoError(t, err)
 		err = session.
 			DB("my_db").

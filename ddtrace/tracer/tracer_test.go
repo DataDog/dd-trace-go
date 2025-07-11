@@ -2852,3 +2852,20 @@ func TestExecTraceLargeTaskNameRegression(t *testing.T) {
 	s := StartSpan("test", ResourceName(b.String()))
 	s.Finish()
 }
+
+// Test a v2 regression where the global service name is removed if the tracer is started more than once.
+func TestTracerStartMultipleTimesGlobalService(t *testing.T) {
+	prev := globalconfig.ServiceName()
+	t.Cleanup(func() {
+		globalconfig.SetServiceName(prev)
+	})
+
+	err := Start()
+	require.NoError(t, err)
+	defer Stop()
+
+	err = Start(WithService("global_service"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "global_service", globalconfig.ServiceName())
+}

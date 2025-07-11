@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.37.0
 	github.com/99designs/gqlgen v0.17.62
 	github.com/DataDog/datadog-agent/pkg/proto v0.67.0
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
 	github.com/DataDog/go-libddwaf/v4 v4.3.0
@@ -20,7 +21,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/confluentinc/confluent-kafka-go/v2 v2.4.0
-	github.com/docker/go-connections v0.5.0
 	github.com/elastic/go-elasticsearch/v6 v6.8.5
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/elastic/go-elasticsearch/v8 v8.12.1
@@ -52,10 +52,8 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/elasticsearch v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/gcloud v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/kafka v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/mongodb v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/valkey v0.35.0
 	github.com/testcontainers/testcontainers-go/modules/vault v0.37.0
 	github.com/tinylib/msgp v1.2.5
 	github.com/twitchtv/twirp v8.1.3+incompatible
@@ -65,7 +63,7 @@ require (
 	go.mongodb.org/mongo-driver v1.17.1
 	go.mongodb.org/mongo-driver/v2 v2.2.2
 	google.golang.org/api v0.176.1
-	google.golang.org/grpc v1.72.0
+	google.golang.org/grpc v1.73.0
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
@@ -186,6 +184,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker v28.0.1+incompatible // indirect
+	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/go-resiliency v1.7.0 // indirect
@@ -310,6 +309,8 @@ require (
 	github.com/sosodev/duration v1.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/testcontainers/testcontainers-go/modules/mongodb v0.37.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
@@ -464,3 +465,5 @@ replace github.com/DataDog/dd-trace-go/v2 => ../../..
 replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
 
 replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../../instrumentation/testutils/containers
