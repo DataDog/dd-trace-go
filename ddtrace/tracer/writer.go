@@ -114,7 +114,7 @@ func (h *agentTraceWriter) flush() {
 			var rc io.ReadCloser
 			rc, err = h.config.transport.send(p)
 			if err == nil {
-				log.Info("sent traces after %d attempts", attempt+1)
+				log.Debug("sent traces after %d attempts", attempt+1)
 				h.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
 				h.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
 				if err := h.prioritySampling.readRatesJSON(rc); err != nil {
@@ -122,7 +122,7 @@ func (h *agentTraceWriter) flush() {
 				}
 				return
 			}
-			log.Warn("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+			log.Debug("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
 			p.reset()
 			time.Sleep(h.config.retryInterval)
 		}
