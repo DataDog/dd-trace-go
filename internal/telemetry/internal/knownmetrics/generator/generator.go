@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,7 @@ func base64Decode(encoded string) string {
 }
 
 func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames func(map[string]any) []knownmetrics.Declaration, symbolName string) error {
-	request, err := http.NewRequest(http.MethodGet, remoteURL+"?ref="+branch, nil)
+	request, err := http.NewRequest(http.MethodGet, remoteURL+"?ref="+url.QueryEscape(branch), nil)
 	if err != nil {
 		return err
 	}
