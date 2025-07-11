@@ -132,13 +132,14 @@ func logStartup(c *config) {
 		"target_url":                 c.targetURL,
 		"tags":                       c.tags.Slice(),
 		"custom_profiler_label_keys": c.customProfilerLabels,
+		"enabled":                    c.enabled,
 	}
 	for _, tc := range telemetryConfiguration(c) {
 		info[tc.Name] = tc.Value
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err)
+		log.Error("Marshaling profiler configuration: %s", err.Error())
 		return
 	}
 	log.Info("Profiler configuration: %s\n", b)
@@ -205,17 +206,15 @@ func defaultConfig() (*config, error) {
 	}
 	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
 	// the Datadog admission controller, so we set it to true.
-	// TODO: APMAPI-1358
 	if v, _ := stableconfig.String("DD_PROFILING_ENABLED", ""); v == "auto" {
 		c.enabled = true
 	} else {
-		// TODO: APMAPI-1358
 		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
 	}
 	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
+			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err.Error())
 		}
 		WithUploadTimeout(d)(&c)
 	}
@@ -272,7 +271,7 @@ func defaultConfig() (*config, error) {
 	if v := os.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
+			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err.Error())
 		}
 		c.maxGoroutinesWait = n
 	}

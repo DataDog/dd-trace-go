@@ -36,7 +36,6 @@ func startTelemetry(c *config) {
 
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
@@ -50,7 +49,6 @@ func startTelemetry(c *config) {
 		{Name: "version", Value: c.version},
 		{Name: "trace_agent_url", Value: c.agentURL.String()},
 		{Name: "agent_hostname", Value: c.hostname},
-		{Name: "runtime_metrics_enabled", Value: c.runtimeMetrics},
 		{Name: "runtime_metrics_v2_enabled", Value: c.runtimeMetricsV2},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
 		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
@@ -117,7 +115,7 @@ func startTelemetry(c *config) {
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
 	if err != nil {
-		log.Debug("tracer: failed to create telemetry client: %v", err)
+		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
 		return
 	}
 

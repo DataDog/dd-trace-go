@@ -26,13 +26,10 @@ func init() {
 // Report over telemetry whether SCA's enablement env var was set or not along with its value. Nothing is reported in
 // case of an error or if the env var is not set.
 func registerSCAAppConfigTelemetry() {
-	val, origin, err := stableconfig.Bool(EnvSCAEnabled, false)
+	_, _, err := stableconfig.Bool(EnvSCAEnabled, false)
 	if err != nil {
-		log.Error("appsec: %v", err)
+		log.Error("appsec: %s", err.Error())
 		return
-	}
-	if origin != telemetry.OriginDefault {
-		telemetry.RegisterAppConfig(EnvSCAEnabled, val, origin)
 	}
 }
 
@@ -60,6 +57,10 @@ type StartConfig struct {
 
 	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
 	BlockingUnavailable bool
+
+	// ProxyEnvironment is true if the application is running in a proxy environment,
+	// such as within an Envoy External Processor.
+	ProxyEnvironment bool
 }
 
 type EnablementMode int8
@@ -132,6 +133,12 @@ func WithBlockingUnavailable(unavailable bool) StartOption {
 	}
 }
 
+func WithProxyEnvironment() StartOption {
+	return func(c *StartConfig) {
+		c.APISecOptions = append(c.APISecOptions, internal.WithProxy())
+	}
+}
+
 // Config is the AppSec configuration.
 type Config struct {
 	*WAFManager
@@ -184,7 +191,6 @@ func (set AddressSet) AnyOf(anyOf ...string) bool {
 // If the [EnvEnabled] variable is set to a value that is not a valid boolean (according to
 // [strconv.ParseBool]), it is considered false-y, and a detailed error is also returned.
 func IsEnabledByEnvironment() (enabled bool, set bool, err error) {
-	// TODO: APMAPI-1358
 	enabled, origin, err := stableconfig.Bool(EnvEnabled, false)
 	if origin != telemetry.OriginDefault {
 		set = true

@@ -329,7 +329,7 @@ func main() {
 
 	dir := args[0]
 	if err := run(dir, goModPath); err != nil {
-		fmt.Printf("Error extracting public API: %v\n", err)
+		fmt.Printf("Error extracting public API: %s\n", err.Error())
 		os.Exit(1)
 	}
 }

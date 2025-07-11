@@ -194,9 +194,9 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		hostname, err := os.Hostname()
 		if err != nil {
 			if cfg.targetURL == cfg.apiURL {
-				return nil, fmt.Errorf("could not obtain hostname: %v", err)
+				return nil, fmt.Errorf("could not obtain hostname: %s", err.Error())
 			}
-			log.Warn("unable to look up hostname: %v", err)
+			log.Warn("unable to look up hostname: %s", err.Error())
 		}
 		cfg.hostname = hostname
 	}
@@ -385,7 +385,7 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 				profs, err := p.runProfile(t)
 				if err != nil {
 					if err != errProfilerStopped {
-						log.Error("Error getting %s profile: %v; skipping.", t, err)
+						log.Error("Error getting %s profile: %v; skipping.", t, err.Error())
 						tags := append(p.cfg.tags.Slice(), t.Tag())
 						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
 					}
@@ -500,10 +500,10 @@ func (p *profiler) send() {
 				return
 			}
 			if err := p.outputDir(bat); err != nil {
-				log.Error("Failed to output profile to dir: %v", err)
+				log.Error("Failed to output profile to dir: %s", err.Error())
 			}
 			if err := p.uploadFunc(bat); err != nil {
-				log.Error("Failed to upload profile: %v", err)
+				log.Error("Failed to upload profile: %s", err.Error())
 			}
 		}
 	}

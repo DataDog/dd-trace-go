@@ -44,7 +44,7 @@ func (c *config) checkStatsdRequired() {
 		if err == nil {
 			c.statsdClient = sc
 		} else {
-			instr.Logger().Warn("contrib/jackc/pgx.v5: Error creating statsd client; Pool stats will be dropped: %v", err)
+			instr.Logger().Warn("contrib/jackc/pgx.v5: Error creating statsd client; Pool stats will be dropped: %s", err.Error())
 		}
 	}
 }

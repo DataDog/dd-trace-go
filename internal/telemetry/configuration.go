@@ -154,3 +154,24 @@ func SanitizeConfigValue(value any) any {
 
 	return fmt.Sprintf("%v", value)
 }
+
+func EnvToTelemetryName(env string) string {
+	switch env {
+	case "DD_TRACE_DEBUG":
+		return "trace_debug_enabled"
+	case "DD_APM_TRACING_ENABLED":
+		return "apm_tracing_enabled"
+	case "DD_RUNTIME_METRICS_ENABLED":
+		return "runtime_metrics_enabled"
+	case "DD_DATA_STREAMS_ENABLED":
+		return "data_streams_enabled"
+	case "DD_APPSEC_ENABLED":
+		return "appsec_enabled"
+	case "DD_DYNAMIC_INSTRUMENTATION_ENABLED":
+		return "dynamic_instrumentation_enabled"
+	case "DD_PROFILING_ENABLED":
+		return "profiling_enabled"
+	default:
+		return env
+	}
+}
