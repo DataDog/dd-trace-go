@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed" // For go:embed
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"text/template"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
@@ -30,13 +32,16 @@ const (
 	goMetricsURL     = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9EYXRhRG9nL2RkLWdvL2NvbnRlbnRzL3RyYWNlL2FwcHMvdHJhY2VyLXRlbGVtZXRyeS1pbnRha2UvdGVsZW1ldHJ5LW1ldHJpY3Mvc3RhdGljL2dvbGFuZ19tZXRyaWNzLmpzb24="
 )
 
+//go:embed template.tmpl
+var codegenTemplate string
+
 func base64Decode(encoded string) string {
 	decoded, _ := base64.StdEncoding.DecodeString(encoded)
 	return string(decoded)
 }
 
-func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames func(map[string]any) []knownmetrics.Declaration) error {
-	request, err := http.NewRequest(http.MethodGet, remoteURL, nil)
+func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames func(map[string]any) []knownmetrics.Declaration, symbolName string) error {
+	request, err := http.NewRequest(http.MethodGet, remoteURL+"?ref="+branch, nil)
 	if err != nil {
 		return err
 	}
@@ -47,7 +52,6 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 	request.Header.Add("Authorization", "Bearer "+token)
 	request.Header.Add("Accept", "application/vnd.github.v3.raw")
 	request.Header.Add("X-GitHub-Api-Version", "2022-11-28")
-	request.URL.Query().Add("ref", branch)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -81,12 +85,13 @@ func downloadFromDdgo(remoteURL, localPath, branch, token string, getMetricNames
 	if err != nil {
 		return err
 	}
-
 	defer fp.Close()
 
-	encoder := json.NewEncoder(fp)
-	encoder.SetIndent("", "    ")
-	return encoder.Encode(metricNames)
+	codegen := template.Must(template.New("").Parse(codegenTemplate))
+	return codegen.Execute(fp, map[string]any{
+		"symbolName": symbolName,
+		"metrics":    metricNames,
+	})
 }
 
 func getCommonMetricNames(input map[string]any) []knownmetrics.Declaration {
@@ -154,12 +159,12 @@ func main() {
 
 	_, thisFile, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(thisFile)
-	if err := downloadFromDdgo(base64Decode(commonMetricsURL), filepath.Join(dir, "..", "common_metrics.json"), *branch, githubToken, getCommonMetricNames); err != nil {
+	if err := downloadFromDdgo(base64Decode(commonMetricsURL), filepath.Join(dir, "..", "known_metrics.common.go"), *branch, githubToken, getCommonMetricNames, "commonMetrics"); err != nil {
 		fmt.Println("Failed to download common metrics:", err)
 		os.Exit(1)
 	}
 
-	if err := downloadFromDdgo(base64Decode(goMetricsURL), filepath.Join(dir, "..", "golang_metrics.json"), *branch, githubToken, getGoMetricNames); err != nil {
+	if err := downloadFromDdgo(base64Decode(goMetricsURL), filepath.Join(dir, "..", "known_metric.golang.go"), *branch, githubToken, getGoMetricNames, "golangMetrics"); err != nil {
 		fmt.Println("Failed to download golang metrics:", err)
 		os.Exit(1)
 	}
