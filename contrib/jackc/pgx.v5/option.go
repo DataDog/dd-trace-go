@@ -110,9 +110,11 @@ func WithPoolStats() Option {
 	}
 }
 
-// WithIgnoreError specifies a function that determines whether the error should be ignored.
-func WithIgnoreError(fn func(err error) bool) Option {
+// WithErrCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever a pgx operation
+// finishes with an error
+func WithErrCheck(fn func(err error) bool) Option {
 	return func(cfg *config) {
-		cfg.ignoreError = fn
+		cfg.errCheck = fn
 	}
 }
