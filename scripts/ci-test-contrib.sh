@@ -23,7 +23,7 @@ for contrib in $CONTRIBS; do
   contrib_id=$(echo $contrib | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd $contrib
   [[ "$1" = "smoke" ]] && go get -u -t ./...
-  if [[ "$1" = "smoke" && $contrib = "./contrib/k8s.io/client-go/"]]; then
+  if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
     # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
@@ -38,7 +38,7 @@ for mod in $INSTRUMENTATION_SUBMODULES; do
   mod_id=$(echo $mod | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd $mod
   [[ "$1" = "smoke" ]] && go get -u -t ./...
-  if [[ "$1" = "smoke" && $contrib = "./contrib/k8s.io/client-go/"]]; then
+  if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
     # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
