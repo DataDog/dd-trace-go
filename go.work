@@ -1,4 +1,4 @@
-go 1.23.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.23.5 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
@@ -75,6 +75,7 @@ use (
 	./scripts/autoreleasetagger/testdata/root
 	./scripts/autoreleasetagger/testdata/root/moduleA
 	./scripts/autoreleasetagger/testdata/root/moduleB
+	./scripts/configinverter
 	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage

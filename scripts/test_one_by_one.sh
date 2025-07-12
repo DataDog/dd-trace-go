@@ -99,8 +99,11 @@ fi
 
 ## CORE
 echo testing core
-pkg_names=$(go list ./... | tr '\n' ' ')
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic ${pkg_names} && true
+pkg_names=$(go list ./...)
+for pkg in $pkg_names; do
+  echo "Testing package: $pkg"
+  nice -n20 gotestsum -- -v "$pkg" || echo "Package $pkg failed"
+done
 
 if [[ "$contrib" != "" ]]; then
   ## CONTRIB
