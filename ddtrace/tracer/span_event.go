@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"math"
+
 	"golang.org/x/exp/constraints"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -172,9 +174,13 @@ func intValue[T constraints.Integer](v T) *spanEventAttribute {
 }
 
 func floatValue[T constraints.Float](v T) *spanEventAttribute {
+	f := float64(v)
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return nil
+	}
 	return &spanEventAttribute{
 		Type:        spanEventAttributeTypeDouble,
-		DoubleValue: float64(v),
+		DoubleValue: f,
 	}
 }
 
@@ -229,9 +235,13 @@ func intSliceValue[T constraints.Integer](values []T) *spanEventAttribute {
 func floatSliceValue[T constraints.Float](values []T) *spanEventAttribute {
 	arrayVal := make([]*spanEventArrayAttributeValue, 0, len(values))
 	for _, v := range values {
+		f := float64(v)
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			continue // Skip non-finite values
+		}
 		arrayVal = append(arrayVal, &spanEventArrayAttributeValue{
 			Type:        spanEventArrayAttributeValueTypeDouble,
-			DoubleValue: float64(v),
+			DoubleValue: f,
 		})
 	}
 	return &spanEventAttribute{
