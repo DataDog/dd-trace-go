@@ -40,6 +40,8 @@ type config struct {
 	traceClientIP                bool
 	isStatusError                func(statusCode int) bool
 	inferredProxyServicesEnabled bool
+	allowAllBaggage              bool                // tag all baggage items when true (DD_TRACE_BAGGAGE_TAG_KEYS="*").
+	baggageTagKeys               map[string]struct{} // when allowAllBaggage is false, only tag baggage items whose keys are listed here.
 }
 
 func (c config) String() string {
@@ -58,6 +60,22 @@ func newConfig() config {
 		traceClientIP:                internal.BoolEnv(envTraceClientIPEnabled, false),
 		isStatusError:                isServerError,
 		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
+		baggageTagKeys:               make(map[string]struct{}),
+	}
+	if v, ok := os.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+		if v == "*" {
+			c.allowAllBaggage = true
+		} else {
+			for _, part := range strings.Split(v, ",") {
+				key := strings.TrimSpace(part)
+				if key == "" {
+					continue
+				}
+				c.baggageTagKeys[key] = struct{}{}
+			}
+		}
+	} else {
+		c.baggageTagKeys = defaultBaggageTagKeys()
 	}
 	v := os.Getenv(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
@@ -137,4 +155,21 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 		}
 		return false
 	}
+}
+
+func defaultBaggageTagKeys() map[string]struct{} {
+	return map[string]struct{}{
+		"user.id":    {},
+		"account.id": {},
+		"session.id": {},
+	}
+}
+
+// tagBaggageKey returns true if we should tag this baggage key.
+func (c *config) tagBaggageKey(key string) bool {
+	if c.allowAllBaggage {
+		return true
+	}
+	_, ok := c.baggageTagKeys[key]
+	return ok
 }
