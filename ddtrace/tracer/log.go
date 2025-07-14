@@ -71,7 +71,7 @@ type startupInfo struct {
 func checkEndpoint(c *http.Client, endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
+		return fmt.Errorf("cannot create http request: %s", err.Error())
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
@@ -155,19 +155,20 @@ func logStartup(t *tracer) {
 		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err)
+		info.SamplingRulesError = fmt.Sprintf("%s", err.Error())
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
-			info.AgentError = fmt.Sprintf("%s", err)
-			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err)
+			info.AgentError = fmt.Sprintf("%s", err.Error())
+			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
+		//nolint:gocritic // Diagnostic logging needs full struct representation
 		log.Warn("DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
 		return
 	}
