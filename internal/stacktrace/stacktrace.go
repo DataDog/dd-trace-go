@@ -48,7 +48,7 @@ func init() {
 		if e, err := strconv.ParseBool(env); err == nil {
 			enabled = e
 		} else {
-			log.Error("Failed to parse %s env var as boolean: %v (using default value: %v)", envStackTraceEnabled, err, enabled)
+			log.Error("Failed to parse %s env var as boolean: (using default value: %t) %v", envStackTraceEnabled, enabled, err.Error())
 		}
 	}
 
@@ -64,7 +64,7 @@ func init() {
 			if depth <= 0 {
 				err = errors.New("value is not a strictly positive integer")
 			}
-			log.Error("Failed to parse %s env var as a positive integer: %v (using default value: %v)", envStackTraceDepth, err, defaultMaxDepth)
+			log.Error("Failed to parse %s env var as a positive integer: (using default value: %d) %v", envStackTraceDepth, defaultMaxDepth, err.Error())
 		}
 	}
 

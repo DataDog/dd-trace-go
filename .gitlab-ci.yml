@@ -2,6 +2,7 @@ stages:
   - generate
   - benchmarks
   - macrobenchmarks
+  - gates
   - test-apps
 
 variables:

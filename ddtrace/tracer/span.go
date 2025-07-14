@@ -104,7 +104,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %v", err)
+		log.Error("failed to marshal span events: %s", err.Error())
 		return ""
 	}
 	return string(events)
@@ -615,7 +615,7 @@ func (s *Span) serializeSpanEvents() {
 	b, err := json.Marshal(s.spanEvents)
 	s.spanEvents = nil
 	if err != nil {
-		log.Debug("Unable to marshal span events; events dropped from span meta\n%v", err)
+		log.Debug("Unable to marshal span events; events dropped from span meta\n%s", err.Error())
 		return
 	}
 	s.meta["events"] = string(b)
@@ -747,7 +747,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
-		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			s, s.name, s.resource, s.meta, s.metrics)
 	}
 	s.context.finish()
@@ -778,7 +778,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err)
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error())
 			return textNonParsable
 		}
 		return oq.Query

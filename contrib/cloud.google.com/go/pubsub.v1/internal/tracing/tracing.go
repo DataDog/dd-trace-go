@@ -70,7 +70,7 @@ func TracePublish(ctx context.Context, topic Topic, msg *Message, opts ...Option
 		msg.Attributes = make(map[string]string)
 	}
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
-		instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %v", err)
+		instr.Logger().Debug("contrib/cloud.google.com/go/pubsub.v1/trace: failed injecting tracing attributes: %s", err.Error())
 	}
 	span.SetTag("num_attributes", len(msg.Attributes))
 

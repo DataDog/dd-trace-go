@@ -74,7 +74,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"name":     "http.request",
 						"resource": "GET /ping",
 						"type":     "web",
-						"service":  "gorilla_mux.test",
+						"service":  "http.router",
 					},
 					Meta: map[string]string{
 						"http.url":  url,
