@@ -65,7 +65,7 @@ func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 	for _, s := range trace {
 		cvEvent := getCiVisibilityEvent(s)
 		if err := w.payload.push(cvEvent); err != nil {
-			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %v", err)
+			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error())
 		}
 		if w.payload.size() > agentlessPayloadSizeLimit {
 			w.flush()
@@ -120,11 +120,11 @@ func (w *ciVisibilityTraceWriter) flush() {
 				log.Debug("ciVisibilityTraceWriter: sent events after %d attempts", attempt+1)
 				return
 			}
-			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, w.config.sendRetries+1, err)
+			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, w.config.sendRetries+1, err.Error())
 			p.reset()
 			time.Sleep(w.config.retryInterval)
 		}
-		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err)
+		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error())
 		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
 	}(oldp)
 }

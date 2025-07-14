@@ -84,13 +84,13 @@ func getEnvironmentalData() *fileEnvironmentalData {
 	}
 	file, err := os.Open(envDataFileName)
 	if err != nil {
-		logger.Error("civisibility: error reading environmental data from %s: %v", envDataFileName, err)
+		logger.Error("civisibility: error reading environmental data from %s: %v", envDataFileName, err.Error())
 		return nil
 	}
 	defer file.Close()
 	var envData fileEnvironmentalData
 	if err := json.NewDecoder(file).Decode(&envData); err != nil {
-		logger.Error("civisibility: error decoding environmental data from %s: %v", envDataFileName, err)
+		logger.Error("civisibility: error decoding environmental data from %s: %v", envDataFileName, err.Error())
 		return nil
 	}
 	logger.Debug("civisibility: loaded environmental data from %s", envDataFileName)

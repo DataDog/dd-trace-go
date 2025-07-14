@@ -51,7 +51,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 			return nil, fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		telemetrylog.Warn("appsec: non-critical error while loading libddwaf: %v", err, telemetry.WithTags([]string{"product:appsec"}))
+		telemetrylog.Warn("appsec: non-critical error while loading libddwaf: %s", err.Error(), telemetry.WithTags([]string{"product:appsec"}))
 	}
 
 	newHandle, rulesVersion := cfg.NewHandle()
@@ -94,7 +94,7 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 
 	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
 	if err != nil {
-		log.Debug("appsec: failed to create WAF context: %v", err)
+		log.Debug("appsec: failed to create WAF context: %s", err.Error())
 	}
 
 	op.SwapContext(ctx)

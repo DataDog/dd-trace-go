@@ -13,7 +13,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.67.0
 	github.com/DataDog/datadog-agent/pkg/trace v0.67.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/go-libddwaf/v4 v4.2.0
+	github.com/DataDog/go-libddwaf/v4 v4.3.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
@@ -24,6 +24,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
+	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.10.0
