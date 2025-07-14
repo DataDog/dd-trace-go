@@ -113,7 +113,6 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
-
 			} else if extractErr == nil && parentCtx != nil {
 				if links := parentCtx.SpanLinks(); links != nil {
 					tracer.WithSpanLinks(links)(ssCfg)
