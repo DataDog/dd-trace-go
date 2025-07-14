@@ -26,7 +26,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
 )
 
@@ -115,7 +114,7 @@ func startService(config serviceExtensionConfig) error {
 }
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
-	muxServer := mux.NewRouter()
+	muxServer := http.NewServeMux()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
