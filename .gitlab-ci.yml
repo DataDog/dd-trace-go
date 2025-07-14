@@ -54,7 +54,7 @@ check-big-regressions:
       pwd
       export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
       git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-      git clone --branch dario.castane/APMSP-2043/prerelease-perf-quality-gate https://github.com/DataDog/benchmarking-platform platform && cd platform
+      git clone --branch hannahkm/parallel2 https://github.com/DataDog/benchmarking-platform platform && cd platform
       ./steps/download-child-pipeline-artifacts.sh
       pushd "${ARTIFACTS_DIR}/"
       pwd
