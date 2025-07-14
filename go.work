@@ -63,6 +63,7 @@ use (
 	./contrib/valyala/fasthttp
 	./instrumentation/internal/namingschematest
 	./instrumentation/internal/validationtest
+	./instrumentation/testutils/containers
 	./instrumentation/testutils/grpc
 	./internal/apps
 	./internal/exectracetest
