@@ -9,6 +9,8 @@ variables:
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
+    - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+      when: always
     - when: manual
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
