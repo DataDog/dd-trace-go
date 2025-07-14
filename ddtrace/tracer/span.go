@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -32,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
+
 	"golang.org/x/xerrors"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -428,15 +430,22 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
-		if !cfg.noDebugStack {
-			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
-		}
-		switch v.(type) {
+		switch err := v.(type) {
 		case xerrors.Formatter:
 			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
 			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+		case *errortrace.TracerError:
+			// instrumentation/errortrace approach
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			if !cfg.noDebugStack {
+				s.setMeta(ext.ErrorStack, err.Format())
+			}
+			return
+		}
+		if !cfg.noDebugStack {
+			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 		}
 	case nil:
 		// no error

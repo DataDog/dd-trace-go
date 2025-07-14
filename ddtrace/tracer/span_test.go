@@ -771,6 +771,56 @@ func TestSpanProfilingTags(t *testing.T) {
 	}
 }
 
+func createErrorTrace() error {
+	return errortrace.New("Something wrong")
+}
+
+func createTestError() error {
+	return errors.New("Something wrong")
+}
+
+func TestErrorStack(t *testing.T) {
+	t.Run("with errortrace", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newTracer()
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := tracer.StartSpan("test")
+
+		err = createErrorTrace()
+		span.SetTag(ext.Error, err)
+		assert.Equal(int32(1), span.error)
+		assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
+		assert.Equal("*errortrace.TracerError", span.meta[ext.ErrorType])
+
+		stack := span.meta[ext.ErrorStack]
+		assert.NotEqual("", stack)
+		assert.Contains(stack, "tracer.TestErrorStack")
+		assert.Contains(stack, "tracer.createErrorTrace")
+		span.Finish()
+	})
+
+	t.Run("with standard error", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newTracer()
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := tracer.StartSpan("test")
+
+		err = createTestError()
+		span.SetTag(ext.Error, err)
+		assert.Equal(int32(1), span.error)
+		assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
+		assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
+
+		stack := span.meta[ext.ErrorStack]
+		assert.NotEqual("", stack)
+		assert.Contains(stack, "tracer.TestErrorStack")
+		assert.NotContains(stack, "tracer.createTestError") // this checks our old behavior
+		span.Finish()
+	})
+}
+
 func TestSpanError(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newTracer(withTransport(newDefaultTransport()))
