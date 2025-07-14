@@ -28,6 +28,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
@@ -453,6 +454,12 @@ const defaultStackLength = 32
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
 // If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
+	now := time.Now()
+	defer func() {
+		dur := float64(time.Since(now))
+		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
+	}()
 	if n == 0 {
 		n = defaultStackLength
 	}

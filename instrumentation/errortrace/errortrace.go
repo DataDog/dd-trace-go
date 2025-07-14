@@ -10,6 +10,9 @@ import (
 	"errors"
 	"runtime"
 	"strconv"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // TracerError is an error type that holds stackframes from when the error was thrown.
@@ -33,6 +36,12 @@ func New(text string) *TracerError {
 // Wrap takes in an error and records the stack trace at the moment that it was thrown.
 // TODO: this still doesn't find the root cause of an error.
 func Wrap(err error, n uint, skip uint) *TracerError {
+	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Submit(1)
+	now := time.Now()
+	defer func() {
+		dur := float64(time.Since(now))
+		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Submit(dur)
+	}()
 	if err == nil {
 		return nil
 	}
