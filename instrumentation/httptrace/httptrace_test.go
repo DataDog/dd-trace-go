@@ -420,6 +420,34 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
 }
 
+func TestBaggageSpanTagsOpentracer(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+	ctx := context.Background()
+
+	// Create an HTTP request with no additional baggage context
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(ctx)
+	req.Header.Set("x-datadog-trace-id", "1")
+	req.Header.Set("x-datadog-parent-id", "2")
+	req.Header.Set("baggage", "session.id=789")  // w3c baggage header
+	req.Header.Set("ot-baggage-user.id", "1234") // opentracer baggage header
+
+	// Start the request span, which will extract baggage and add it as span tags
+	reqSpan, _, _ := StartRequestSpan(req)
+	m := reqSpan.AsMap()
+
+	// Keys that SHOULD be present:
+	assert.Contains(t, m, "baggage.session.id", "baggage.session.id should be included in span tags")
+	assert.Equal(t, "789", m["baggage.session.id"], "should contain session.id value")
+
+	// Keys that should NOT be present (user.id is ot-baggage header)
+	// This assertion WILL FAIL until baggage revamp is complete; therefore, commented out
+	// Baggage revamp Jira card: APMAPI-1442
+	// assert.NotContains(t, m, "baggage.user.id", "baggage.user.id should not be included in span tags")
+
+	reqSpan.Finish()
+}
+
 // baggageSpanTagTest represents a test case for baggage span tag functionality
 type baggageSpanTagTest struct {
 	name           string
@@ -600,31 +628,4 @@ func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
 	baggageMap := baggage.All(ctx)
 	assert.Equal(t, "bar", baggageMap["foo"], "should propagate baggage even when it's the only header")
 
-}
-
-func TestBaggageSpanTagsOpentracer(t *testing.T) {
-	tracer.Start()
-	defer tracer.Stop()
-
-	// Create an HTTP request with no additional baggage context
-	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(context.Background())
-	req.Header.Set("x-datadog-trace-id", "1")
-	req.Header.Set("x-datadog-parent-id", "2")
-	req.Header.Set("baggage", "session.id=789")  // w3c baggage header
-	req.Header.Set("ot-baggage-user.id", "1234") // opentracer baggage header
-
-	// Start the request span, which will extract baggage and add it as span tags
-	reqSpan, _, _ := StartRequestSpan(req)
-	m := reqSpan.AsMap()
-
-	// Keys that SHOULD be present:
-	assert.Contains(t, m, "baggage.session.id", "baggage.session.id should be included in span tags")
-	assert.Equal(t, "789", m["baggage.session.id"], "should contain session.id value")
-
-	// Keys that should NOT be present (user.id is ot-baggage header)
-	// This assertion WILL FAIL until baggage revamp is complete; therefore, commented out
-	// Baggage revamp Jira card: APMAPI-1442
-	// assert.NotContains(t, m, "baggage.user.id", "baggage.user.id should not be included in span tags")
-
-	reqSpan.Finish()
 }
