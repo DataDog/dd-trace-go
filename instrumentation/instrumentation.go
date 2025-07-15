@@ -10,10 +10,10 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -67,7 +67,7 @@ func (i *Instrumentation) ServiceName(component Component, opCtx OperationContex
 		return cfg.DDService
 	}
 
-	useDDService := cfg.NamingSchemaVersion == namingschema.VersionV1 || cfg.RemoveFakeServiceNames || n.useDDServiceV0 || n.buildServiceNameV0 == nil
+	useDDService := cfg.NamingSchemaVersion == namingschema.SchemaV1 || cfg.RemoveIntegrationServiceNames || n.useDDServiceV0 || n.buildServiceNameV0 == nil
 	if useDDService && cfg.DDService != "" {
 		return cfg.DDService
 	}
@@ -82,7 +82,7 @@ func (i *Instrumentation) OperationName(component Component, opCtx OperationCont
 	}
 
 	switch namingschema.GetVersion() {
-	case namingschema.VersionV1:
+	case namingschema.SchemaV1:
 		return op.buildOpNameV1(opCtx)
 	default:
 		return op.buildOpNameV0(opCtx)
