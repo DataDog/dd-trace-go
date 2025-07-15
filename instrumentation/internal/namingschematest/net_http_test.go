@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	netHTTPServer = harness.TestCase{
-		Name: instrumentation.PackageNetHTTP + "_server",
+	netHTTPServerServeMux = harness.TestCase{
+		Name: instrumentation.PackageNetHTTP + "_server_serve_mux",
 		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 			var opts []httptrace.Option
 			if serviceOverride != "" {
@@ -34,6 +34,44 @@ var (
 			mux.HandleFunc("/200", func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("OK\n"))
 			})
+			r := httptest.NewRequest("GET", "http://localhost/200", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+
+			return mt.FinishedSpans()
+		},
+		WantServiceNameV0: harness.ServiceNameAssertions{
+			Defaults:        []string{"http.router"},
+			DDService:       []string{harness.TestDDService},
+			ServiceOverride: []string{harness.TestServiceOverride},
+		},
+		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+			require.Len(t, spans, 1)
+			assert.Equal(t, "http.request", spans[0].OperationName())
+		},
+		AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+			require.Len(t, spans, 1)
+			assert.Equal(t, "http.server.request", spans[0].OperationName())
+		},
+	}
+
+	netHTTPServerWrapHandler = harness.TestCase{
+		Name: instrumentation.PackageNetHTTP + "_server_wrap_handler",
+		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+			var opts []httptrace.Option
+			if serviceOverride != "" {
+				opts = append(opts, httptrace.WithService(serviceOverride))
+			}
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			mux := http.NewServeMux()
+			var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("OK\n"))
+			})
+			h = httptrace.WrapHandler(h, "", "", opts...)
+			mux.Handle("/200", h)
+
 			r := httptest.NewRequest("GET", "http://localhost/200", nil)
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, r)
