@@ -9,8 +9,6 @@ variables:
   # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/56135449
   BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-56135449
   INDEX_FILE: index.txt
-  KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
-  FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
   BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics"
 
 # In order to run benchmarks in parallel, we generate a matrix of test names based on the BENCHMARK_TARGETS variable.
@@ -59,9 +57,6 @@ check-big-regressions:
       pushd "${ARTIFACTS_DIR}/"
       pwd
       bp-runner ../platform/bp-runner.fail-on-regression.yml --debug
-  variables:
-    # Gitlab and BP specific env vars. Do not modify.
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
   artifacts:
     name: "artifacts"
     when: always
