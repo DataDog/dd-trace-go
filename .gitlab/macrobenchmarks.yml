@@ -24,8 +24,6 @@ variables:
       - platform/artifacts/
     expire_in: 3 months
   variables:
-    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true" # Important tweak for stability of benchmarks
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
     DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     # Used to build the SUT
@@ -268,7 +266,6 @@ notify-slo-breaches:
       - platform/artifacts-se/
     expire_in: 3 months
   variables:
-    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true" # Important tweak for stability of benchmarks
     GO_VERSION: "1.23.0"
     ARTIFACTS_DIR: "./artifacts-se"
 
