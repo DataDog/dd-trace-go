@@ -1,5 +1,14 @@
 {
   "supportedConfigurations": {
+    "DD_ACTION_EXECUTION_ID": [
+      "A"
+    ],
+    "DD_AGENT_HOST": [
+      "A"
+    ],
+    "DD_API_KEY": [
+      "A"
+    ],
     "DD_APM_TRACING_ENABLED": [
       "A"
     ],
@@ -12,13 +21,64 @@
     "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON": [
       "A"
     ],
+    "DD_APPSEC_MAX_STACK_TRACE_DEPTH": [
+      "A"
+    ],
+    "DD_APPSEC_RULES": [
+      "A"
+    ],
     "DD_APPSEC_SCA_ENABLED": [
+      "A"
+    ],
+    "DD_APPSEC_STACK_TRACE_ENABLE": [
       "A"
     ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
       "A"
     ],
+    "DD_CIVISIBILITY_AGENTLESS_URL": [
+      "A"
+    ],
+    "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER": [
+      "A"
+    ],
     "DD_CIVISIBILITY_ENABLED": [
+      "A"
+    ],
+    "DD_CIVISIBILITY_FLAKY_RETRY_COUNT": [
+      "A"
+    ],
+    "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED": [
+      "A"
+    ],
+    "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED": [
+      "A"
+    ],
+    "DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED": [
+      "A"
+    ],
+    "DD_CIVISIBILITY_LOGS_ENABLED": [
+      "A"
+    ],
+    "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT": [
+      "A"
+    ],
+    "DD_CUSTOM_TRACE_ID": [
+      "A"
+    ],
+    "DD_DATA_STREAMS_ENABLED": [
+      "A"
+    ],
+    "DD_DOGSTATSD_HOST": [
+      "A"
+    ],
+    "DD_DOGSTATSD_PORT": [
+      "A"
+    ],
+    "DD_DYNAMIC_INSTRUMENTATION_ENABLED": [
+      "A"
+    ],
+    "DD_ENV": [
       "A"
     ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
@@ -27,13 +87,109 @@
     "DD_EXTERNAL_ENV": [
       "A"
     ],
+    "DD_GIT_BRANCH": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_AUTHOR_DATE": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_AUTHOR_EMAIL": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_AUTHOR_NAME": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_COMMITTER_DATE": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_COMMITTER_EMAIL": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_COMMITTER_NAME": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_MESSAGE": [
+      "A"
+    ],
+    "DD_GIT_COMMIT_SHA": [
+      "A"
+    ],
+    "DD_GIT_REPOSITORY_URL": [
+      "A"
+    ],
+    "DD_GIT_TAG": [
+      "A"
+    ],
+    "DD_HOSTNAME": [
+      "A"
+    ],
+    "DD_INSTRUMENTATION_INSTALL_ID": [
+      "A"
+    ],
+    "DD_INSTRUMENTATION_INSTALL_TIME": [
+      "A"
+    ],
+    "DD_INSTRUMENTATION_INSTALL_TYPE": [
+      "A"
+    ],
     "DD_INSTRUMENTATION_TELEMETRY_ENABLED": [
+      "A"
+    ],
+    "DD_KEY": [
+      "A"
+    ],
+    "DD_PIPELINE_EXECUTION_ID": [
+      "A"
+    ],
+    "DD_PROFILING_AGENTLESS": [
       "A"
     ],
     "DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED": [
       "A"
     ],
+    "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS": [
+      "A"
+    ],
+    "DD_PROFILING_DELTA": [
+      "A"
+    ],
+    "DD_PROFILING_ENABLED": [
+      "A"
+    ],
     "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED": [
+      "A"
+    ],
+    "DD_PROFILING_ENDPOINT_COUNT_ENABLED": [
+      "A"
+    ],
+    "DD_PROFILING_EXECUTION_TRACE_ENABLED": [
+      "A"
+    ],
+    "DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES": [
+      "A"
+    ],
+    "DD_PROFILING_EXECUTION_TRACE_PERIOD": [
+      "A"
+    ],
+    "DD_PROFILING_FLUSH_ON_EXIT": [
+      "A"
+    ],
+    "DD_PROFILING_OUTPUT_DIR": [
+      "A"
+    ],
+    "DD_PROFILING_UPLOAD_TIMEOUT": [
+      "A"
+    ],
+    "DD_PROFILING_URL": [
+      "A"
+    ],
+    "DD_PROFILING_WAIT_PROFILE": [
+      "A"
+    ],
+    "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES": [
+      "A"
+    ],
+    "DD_RC_TUF_ROOT": [
       "A"
     ],
     "DD_REMOTE_CONFIGURATION_ENABLED": [
@@ -42,7 +198,28 @@
     "DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS": [
       "A"
     ],
+    "DD_RUNTIME_METRICS_ENABLED": [
+      "A"
+    ],
     "DD_RUNTIME_METRICS_V2_ENABLED": [
+      "A"
+    ],
+    "DD_SERVICE": [
+      "A"
+    ],
+    "DD_SERVICE_MAPPING": [
+      "A"
+    ],
+    "DD_SITE": [
+      "A"
+    ],
+    "DD_SPAN_SAMPLING_RULES": [
+      "A"
+    ],
+    "DD_SPAN_SAMPLING_RULES_FILE": [
+      "A"
+    ],
+    "DD_TAGS": [
       "A"
     ],
     "DD_TELEMETRY_DEBUG": [
@@ -66,22 +243,64 @@
     "DD_TEST_AGENT_PORT": [
       "A"
     ],
+    "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES": [
+      "A"
+    ],
+    "DD_TEST_MANAGEMENT_ENABLED": [
+      "A"
+    ],
+    "DD_TEST_OPTIMIZATION_ENV_DATA_FILE": [
+      "A"
+    ],
+    "DD_TEST_SESSION_NAME": [
+      "A"
+    ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
       "A"
     ],
     "DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED": [
       "A"
     ],
+    "DD_TRACE_ABANDONED_SPAN_TIMEOUT": [
+      "A"
+    ],
+    "DD_TRACE_AGENT_PORT": [
+      "A"
+    ],
+    "DD_TRACE_AGENT_URL": [
+      "A"
+    ],
     "DD_TRACE_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_CLIENT_HOSTNAME_COMPAT": [
       "A"
     ],
     "DD_TRACE_CLIENT_IP_ENABLED": [
       "A"
     ],
+    "DD_TRACE_CLIENT_IP_HEADER": [
+      "A"
+    ],
+    "DD_TRACE_DEBUG": [
+      "A"
+    ],
     "DD_TRACE_DEBUG_ABANDONED_SPANS": [
       "A"
     ],
+    "DD_TRACE_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_FEATURES": [
+      "A"
+    ],
     "DD_TRACE_GIT_METADATA_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_HEADER_TAGS": [
+      "A"
+    ],
+    "DD_TRACE_HTTP_SERVER_ERROR_STATUSES": [
       "A"
     ],
     "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": [
@@ -93,6 +312,12 @@
     "DD_TRACE_KAFKA_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_LOG_DIRECTORY": [
+      "A"
+    ],
+    "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": [
+      "A"
+    ],
     "DD_TRACE_PARTIAL_FLUSH_ENABLED": [
       "A"
     ],
@@ -102,10 +327,49 @@
     "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_PEER_SERVICE_MAPPING": [
+      "A"
+    ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
       "A"
     ],
+    "DD_TRACE_PROPAGATION_STYLE": [
+      "A"
+    ],
+    "DD_TRACE_PROPAGATION_STYLE_EXTRACT": [
+      "A"
+    ],
+    "DD_TRACE_PROPAGATION_STYLE_INJECT": [
+      "A"
+    ],
+    "DD_TRACE_RATE_LIMIT": [
+      "A"
+    ],
     "DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_REPORT_HOSTNAME": [
+      "A"
+    ],
+    "DD_TRACE_SAMPLE_RATE": [
+      "A"
+    ],
+    "DD_TRACE_SAMPLING_RULES": [
+      "A"
+    ],
+    "DD_TRACE_SAMPLING_RULES_FILE": [
+      "A"
+    ],
+    "DD_TRACE_SOURCE_HOSTNAME": [
+      "A"
+    ],
+    "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA": [
+      "A"
+    ],
+    "DD_TRACE_SQL_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_SQL_COMMENT_INJECTION_MODE": [
       "A"
     ],
     "DD_TRACE_STARTUP_LOGS": [
@@ -118,6 +382,36 @@
       "A"
     ],
     "DD_TRACE__ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_VERSION": [
+      "A"
+    ],
+    "OTEL_LOGS_EXPORTER": [
+      "A"
+    ],
+    "OTEL_LOG_LEVEL": [
+      "A"
+    ],
+    "OTEL_METRICS_EXPORTER": [
+      "A"
+    ],
+    "OTEL_PROPAGATORS": [
+      "A"
+    ],
+    "OTEL_RESOURCE_ATTRIBUTES": [
+      "A"
+    ],
+    "OTEL_SERVICE_NAME": [
+      "A"
+    ],
+    "OTEL_TRACES_EXPORTER": [
+      "A"
+    ],
+    "OTEL_TRACES_SAMPLER": [
+      "A"
+    ],
+    "OTEL_TRACES_SAMPLER_ARG": [
       "A"
     ]
   },
