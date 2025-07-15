@@ -461,6 +461,8 @@ type baggageSpanTagTest struct {
 
 // runBaggageSpanTagTest is a helper function that runs a baggage span tag test case
 func runBaggageSpanTagTest(t *testing.T, tc baggageSpanTagTest) {
+	t.Helper()
+
 	// Set up environment variable if specified
 	if tc.envValue != "" {
 		os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", tc.envValue)
