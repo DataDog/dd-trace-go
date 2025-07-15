@@ -4,8 +4,7 @@ on:
   push:
     tags:
       # https://regex101.com/r/kZJmr3/1
-      - 'contrib/envoyproxy/go-control-plane/v[0-9]+\.[0-9]+\.[0-9]+(-docker\.[0-9]+)?'
-      - 'contrib/k8s.io/gateway-api/v[0-9]+\.[0-9]+\.[0-9]+(-docker\.[0-9]+)?'
+      - 'contrib/envoyproxy/go-control-plane/v99.99.99'
   workflow_dispatch:
     inputs:
       tag_name:
