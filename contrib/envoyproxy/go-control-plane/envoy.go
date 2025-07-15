@@ -13,5 +13,5 @@ import (
 
 // AppsecEnvoyExternalProcessorServer creates and returns a new instance of appsecEnvoyExternalProcessorServer.
 func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer) envoyextproc.ExternalProcessorServer {
-	return v2.AppsecEnvoyExternalProcessorServer(userImplementation)
+	return v2.AppsecEnvoyExternalProcessorServer(userImplementation, v2.AppsecEnvoyConfig{})
 }
