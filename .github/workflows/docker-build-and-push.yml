@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: '["linux/amd64", "linux/arm64"]'
+      version:
+        description: 'DD_VERSION to pass as build argument to Dockerfile'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   build-images:
@@ -84,6 +89,8 @@ jobs:
           file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            DD_VERSION=${{ inputs.version }}
           # This builds a Docker image and uploads it using a unique fingerprint, without a name
           outputs: type=image,name=${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
 
@@ -109,6 +116,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.tags.outputs.list }}
+          build-args: |
+            DD_VERSION=${{ inputs.version }}
           outputs: type=docker,dest=/tmp/${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}.tar
           push: false
 
