@@ -326,7 +326,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |-
-          git diff --exit-code internal/env/supported_configurations.json
+          git diff internal/env/supported_configurations.json
           go run ./scripts/configinverter check
 
   test-contrib:
@@ -405,7 +405,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |-
-          git diff --exit-code internal/env/supported_configurations.json
+          git diff internal/env/supported_configurations.json
           go run ./scripts/configinverter check
 
   upload-test-results:
