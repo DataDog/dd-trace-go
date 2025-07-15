@@ -1,0 +1,101 @@
+wait_for_github_workflow:
+  stage: docker-images-reliability-env
+  image: $BASE_CI_IMAGE
+  tags: ["arch:amd64"]
+
+  variables:
+    GITHUB_WORKFLOW_FILE: "docker-images-release.yml"
+    POLL_TIMEOUT: "900" # 15 min
+    POLL_INTERVAL: "60"  # 1 min
+    BYPASS: "false"
+
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/envoyproxy\/go-control-plane\/v[0-9]+\.[0-9]+\.[0-9]+/'
+      when: on_success
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/envoyproxy\/go-control-plane\/v[0-9]+\.[0-9]+\.[0-9]+-docker\.[0-9]+/'
+      when: on_success
+    - when: manual
+      allow_failure: true
+
+  script:
+    - |
+      echo "Waiting for GitHub workflow file: $GITHUB_WORKFLOW_FILE to complete on tag $CI_COMMIT_TAG"
+
+      if [ "$BYPASS" = "true" ]; then
+        echo "Bypassing GitHub workflow check"
+        exit 0
+      fi
+
+      check_workflow_status() {
+        # Hits the workflow-by-filename endpoint
+        local runs_url="https://api.github.com/repos/DataDog/dd-trace-go/actions/workflows/$GITHUB_WORKFLOW_FILE/runs?head_sha=$CI_COMMIT_SHA&event=push"
+        echo "Runs URL: $runs_url"
+        local payload
+        payload=$(curl -s "${runs_url}")
+        echo "Payload: $payload"
+
+        # newest run → conclusion
+        echo "$payload" \
+          | jq -r '.workflow_runs
+                    | sort_by(.created_at)
+                    | reverse
+                    | .[0].conclusion'
+      }
+
+      timeout=$POLL_TIMEOUT
+      interval=$POLL_INTERVAL
+      elapsed=0
+
+      while [ $elapsed -lt $timeout ]; do
+        status=$(check_workflow_status)
+        echo "GitHub workflow status: $status"
+
+        if [ "$status" = "success" ]; then
+          echo "Workflow completed successfully!"
+          break
+        elif [[ "$status" = "failure" || "$status" = "cancelled" ]]; then
+          echo "Workflow failed or cancelled—aborting."
+          exit 1
+        fi
+
+        sleep $interval
+        elapsed=$((elapsed + interval))
+      done
+
+      if [ $elapsed -ge $timeout ]; then
+        echo "Timeout waiting for workflow—exiting."
+        exit 1
+      fi
+
+prepare_release_tag:
+  stage: docker-images-reliability-env
+  image: $BASE_CI_IMAGE
+  tags: ["arch:amd64"]
+
+  needs:
+    - wait_for_github_workflow
+
+  script:
+    - |
+      echo "ENVOY_RELEASE_TAG=${CI_COMMIT_TAG#contrib/envoyproxy/go-control-plane/}" > release_tag.env
+
+  artifacts:
+    reports:
+      dotenv: release_tag.env
+
+deploy_new_release_service_extensions:
+  stage: docker-images-reliability-env
+
+  needs:
+    - prepare_release_tag
+
+  trigger:
+    project: DataDog/apm-reliability/datadog-reliability-env
+    branch: flavien.darche/envoy-aap
+  variables:
+    UPSTREAM_SUB_PROJECT_NAME: "envoy"
+    UPSTREAM_PIPELINE_ID: $CI_PIPELINE_ID
+    UPSTREAM_BRANCH: $CI_COMMIT_REF_NAME
+    UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA
+    ENVOY_EXT_PROC_RELEASED: "true"
+    ENVOY_RELEASE_TAG: $ENVOY_RELEASE_TAG
