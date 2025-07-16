@@ -127,7 +127,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DataDog/civis-gha-monitor-action
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.DD_CIVIS_GHA_MONITORING_ACTION_KEY }}
           ref: main
           path: .github/actions/civis-gha-monitor-action
       - name: Setup CI Visibility GitHub SaaS Runner Monitoring
