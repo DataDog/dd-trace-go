@@ -125,7 +125,7 @@ jobs:
           ref: main
           path: civis-gha-monitor-action
       - name: Setup CI Visibility GitHub SaaS Runner Monitoring
-        uses: civis-gha-monitor-action
+        uses: ./civis-gha-monitor-action
         if: ${{ matrix.runs-on == 'ubuntu' }}
         with:
           upload-artifacts: 'true'
