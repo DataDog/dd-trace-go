@@ -75,7 +75,7 @@ jobs:
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/request-mirror
-      dockerfile: ./contrib/k8s.io/cmd/request-mirror/Dockerfile
+      dockerfile: ./contrib/k8s.io/gateway-api/cmd/request-mirror/Dockerfile
       artifact_prefix: request-mirror
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
       tags: >-
