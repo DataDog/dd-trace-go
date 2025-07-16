@@ -69,6 +69,9 @@
     "DD_DATA_STREAMS_ENABLED": [
       "A"
     ],
+    "DD_DBM_PROPAGATION_MODE": [
+      "A"
+    ],
     "DD_DOGSTATSD_HOST": [
       "A"
     ],
@@ -273,6 +276,15 @@
     "DD_TRACE_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_AWS_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_BUNTDB_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_CHI_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_CLIENT_HOSTNAME_COMPAT": [
       "A"
     ],
@@ -282,10 +294,16 @@
     "DD_TRACE_CLIENT_IP_HEADER": [
       "A"
     ],
+    "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_DEBUG": [
       "A"
     ],
     "DD_TRACE_DEBUG_ABANDONED_SPANS": [
+      "A"
+    ],
+    "DD_TRACE_ELASTIC_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_ENABLED": [
@@ -294,10 +312,52 @@
     "DD_TRACE_FEATURES": [
       "A"
     ],
+    "DD_TRACE_FIBER_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_GIN_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_GIT_METADATA_ENABLED": [
       "A"
     ],
+    "DD_TRACE_GOCQL_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_GOCQL_COMPAT": [
+      "A"
+    ],
+    "DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_GOPG_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_GQLGEN_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_GRAPHQL_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_GRAPHQL_ERROR_EXTENSIONS": [
+      "A"
+    ],
+    "DD_TRACE_GRPC_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_HEADER_TAGS": [
+      "A"
+    ],
+    "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_HTTP_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES": [
+      "A"
+    ],
+    "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING": [
       "A"
     ],
     "DD_TRACE_HTTP_SERVER_ERROR_STATUSES": [
@@ -312,7 +372,25 @@
     "DD_TRACE_KAFKA_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_LEVELDB_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_LOG_DIRECTORY": [
+      "A"
+    ],
+    "DD_TRACE_MEMCACHE_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_MGO_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_MONGO_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_MUX_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_NEGRONI_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": [
@@ -345,10 +423,22 @@
     "DD_TRACE_RATE_LIMIT": [
       "A"
     ],
+    "DD_TRACE_REDIGO_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_REDIS_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_REDIS_RAW_COMMAND": [
+      "A"
+    ],
     "DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED": [
       "A"
     ],
     "DD_TRACE_REPORT_HOSTNAME": [
+      "A"
+    ],
+    "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_SAMPLE_RATE": [
@@ -358,6 +448,9 @@
       "A"
     ],
     "DD_TRACE_SAMPLING_RULES_FILE": [
+      "A"
+    ],
+    "DD_TRACE_SARAMA_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_SOURCE_HOSTNAME": [
@@ -376,6 +469,15 @@
       "A"
     ],
     "DD_TRACE_STATS_COMPUTATION_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_VALKEY_RAW_COMMAND": [
+      "A"
+    ],
+    "DD_TRACE_VAULT_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH": [
