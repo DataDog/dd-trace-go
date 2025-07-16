@@ -342,6 +342,9 @@
     "DD_TRACE_GRAPHQL_ERROR_EXTENSIONS": [
       "A"
     ],
+    "DD_TRACE_GRPC_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_HEADER_TAGS": [
       "A"
     ],
@@ -426,6 +429,9 @@
     "DD_TRACE_REDIS_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_REDIS_RAW_COMMAND": [
+      "A"
+    ],
     "DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED": [
       "A"
     ],
@@ -469,6 +475,9 @@
       "A"
     ],
     "DD_TRACE_VALKEY_RAW_COMMAND": [
+      "A"
+    ],
+    "DD_TRACE_VAULT_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH": [
