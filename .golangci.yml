@@ -8,6 +8,7 @@ linters:
     - bodyclose
     - depguard
     - gocritic
+    - forbidigo
     - govet
     - revive
     # - errorlint # TODO: Enable this once we've fixed all the errorlint issues.
@@ -24,7 +25,22 @@ linters:
       - third_party$
       - builtin$
       - examples$
+    rules:
+      - path: "internal/(env|log)/"
+        linters:
+          - forbidigo
+      - path: "_test\\.go$"
+        linters:
+          - forbidigo
   settings:
+    forbidigo:
+      forbid:
+        - pattern: "^os\\.Getenv$"
+          msg: "use internal/env.GetEnv instead of os.Getenv"
+        - pattern: "^os\\.LookupEnv$"
+          msg: "use internal/env.LookupEnv instead of os.LookupEnv"
+      exclude_godoc_examples: true
+      analyze_types: true
     govet:
       enable-all: true
       disable:

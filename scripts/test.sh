@@ -3,8 +3,10 @@ set -euo pipefail
 
 contrib=""
 sleeptime=10
-unset INTEGRATION
-unset DD_APPSEC_ENABLED
+tools=""
+lint=""
+INTEGRATION=""
+DD_APPSEC_ENABLED=""
 
 if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
   # Needed to run integration tests on Apple Silicon
@@ -97,8 +99,8 @@ fi
 
 ## CORE
 echo testing core
-pkg_names=$(go list ./...)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic "${pkg_names}" && true
+pkg_names=$(go list ./... | tr '\n' ' ')
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic ${pkg_names} && true
 
 if [[ "$contrib" != "" ]]; then
   ## CONTRIB
