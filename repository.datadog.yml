@@ -1,4 +1,5 @@
 ---
 schema-version: v1
 kind: mergequeue
-enable: false
+enable: true
+merge_method: squash
