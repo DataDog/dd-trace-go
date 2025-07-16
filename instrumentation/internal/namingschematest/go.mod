@@ -12,7 +12,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.2.0-dev
-	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.2.0-dev
 	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.2.0-dev
