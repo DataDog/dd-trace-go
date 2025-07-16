@@ -70,14 +70,15 @@ func initializeEnvironment() {
 // configureObservabilityMode disables blocking when observability mode is enabled.
 // Note: This requires the Envoy configuration option "observability_mode: true" to be set.
 // This option is only supported when configuring Envoy directly, and is not available when using GCP Service Extension.
-func configureObservabilityMode(config serviceExtensionConfig) error {
-	if config.observabilityMode {
-		internalBlockingUnavailableKey := "_DD_APPSEC_BLOCKING_UNAVAILABLE"
-		if err := os.Setenv(internalBlockingUnavailableKey, "true"); err != nil {
-			return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err.Error())
-		}
-		log.Debug("service_extension: observability mode enabled, disabling blocking\n")
+func configureObservabilityMode(mode bool) error {
+	if !mode {
+		return nil
 	}
+	const internalBlockingUnavailableKey = "_DD_APPSEC_BLOCKING_UNAVAILABLE"
+	if err := os.Setenv(internalBlockingUnavailableKey, "true"); err != nil {
+		return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err.Error())
+	}
+	log.Debug("service_extension: observability mode enabled, disabling blocking\n")
 	return nil
 }
 
@@ -105,7 +106,7 @@ func main() {
 	initializeEnvironment()
 	config := loadConfig()
 
-	if err := configureObservabilityMode(config); err != nil {
+	if err := configureObservabilityMode(config.observabilityMode); err != nil {
 		log.Error("service_extension: %s\n", err.Error())
 	}
 
