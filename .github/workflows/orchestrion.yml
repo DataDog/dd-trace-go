@@ -123,8 +123,15 @@ jobs:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      - name: Checkout CI Visibility GitHub SaaS Runner Monitoring action
+        uses: actions/checkout@v4
+        with:
+          repository: DataDog/civis-gha-monitor-action
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+          path: .github/actions/civis-gha-monitor-action
       - name: Setup CI Visibility GitHub SaaS Runner Monitoring
-        uses: DataDog/civis-gha-monitor-action@main
+        uses: ./.github/actions/civis-gha-monitor-action
         if: ${{ matrix.runs-on == 'ubuntu' }}
         with:
           upload-artifacts: 'true'
