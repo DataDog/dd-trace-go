@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/xlab/treeprint"
@@ -158,4 +159,138 @@ func printableSpanAttribute(attrs map[string]any, key string) string {
 		}
 	}
 	return fmt.Sprintf("%+v", val)
+}
+
+// FromSimplified parses a trace tree from a simplified string format, with the following criteria:
+// - 1 span per line
+// - Span format is [span.name | resource.name | component | span.kind]
+// - All values are optional except span.name
+// - Indentation (4 spaces or 1 tab) is used to represent parent-child relationships.
+//
+// Example:
+//
+//	[http.request | GET / | net/http | client]
+//	    [http.request | GET / | net/http | server]
+//	        [echo.someMiddleware | echo-ctx-someMiddleware]
+//	            [http.request | GET / | labstack/echo.v4 | server]
+//	                [some.span]
+//	                [other.span]
+//	[another.root]
+//	    [another.root.child1]
+//	    [another.root.child2]
+func FromSimplified(input string) Traces {
+	lines := strings.Split(input, "\n")
+	result := Traces{}
+
+	prevLevel := 0
+	var curParents []*Trace
+	for _, raw := range lines {
+		line := strings.TrimRight(raw, " \t\r\n")
+		if line == "" {
+			continue
+		}
+		lvl := computeIndentLevel(line)
+		if len(result) == 0 && lvl > 0 || lvl > prevLevel+1 {
+			panic(fmt.Sprintf("invalid indentation: %q", line))
+		}
+
+		content := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(content, "[") || !strings.HasSuffix(content, "]") {
+			panic(fmt.Sprintf("invalid span format: %q", content))
+		}
+
+		content = content[1 : len(content)-1]
+		parts := strings.Split(content, "|")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+
+		if len(parts) < 1 || parts[0] == "" {
+			panic(fmt.Sprintf("missing required span name: %q", line))
+		}
+
+		span := &Trace{
+			Tags: map[string]any{
+				"name": parts[0],
+			},
+			Meta: make(map[string]string),
+		}
+		if len(parts) > 1 && parts[1] != "" {
+			span.Tags["resource"] = parts[1]
+		}
+		if len(parts) > 2 && parts[2] != "" {
+			span.Meta["component"] = parts[2]
+		}
+		if len(parts) > 3 && parts[3] != "" {
+			span.Meta["span.kind"] = parts[3]
+		}
+
+		if lvl == 0 {
+			curParents = Traces{span}
+			result = append(result, span)
+		} else {
+			// pop for every lvl decrement
+			numPops := prevLevel - lvl + 1
+			for i := 0; i < numPops; i++ {
+				curParents = curParents[:len(curParents)-1]
+			}
+
+			parent := curParents[len(curParents)-1]
+			parent.Children = append(parent.Children, span)
+			curParents = append(curParents, span)
+		}
+		prevLevel = lvl
+	}
+	return result
+}
+
+// computeIndentLevel returns the indent level where 4 spaces or 1 tab = 1 level
+func computeIndentLevel(s string) int {
+	level := 0
+	spaces := 0
+	for _, r := range s {
+		switch r {
+		case ' ':
+			spaces++
+			if spaces == 4 {
+				level++
+				spaces = 0
+			}
+		case '\t':
+			level++
+			spaces = 0
+		default:
+			return level
+		}
+	}
+	return level
+}
+
+// ToSimplified returns the simplified version of a trace.
+func ToSimplified(tr Traces) string {
+	var sb strings.Builder
+	for _, t := range tr {
+		writeSimplifiedTrace(t, &sb, 0)
+	}
+	return sb.String()
+}
+
+func writeSimplifiedTrace(tr *Trace, sb *strings.Builder, indent int) {
+	prefix := strings.Repeat("    ", indent) // 4 spaces per level
+
+	fields := []string{fmt.Sprintf("[%s", tr.Tags["name"])}
+	if resource, ok := tr.Tags["resource"]; ok {
+		fields = append(fields, resource.(string))
+	}
+	if component, ok := tr.Meta["component"]; ok {
+		fields = append(fields, component)
+	}
+	if kind, ok := tr.Meta["span.kind"]; ok {
+		fields = append(fields, kind)
+	}
+	sb.WriteString(prefix + strings.Join(fields, " | ") + "]\n")
+
+	for _, child := range tr.Children {
+		writeSimplifiedTrace(child, sb, indent+1)
+	}
 }

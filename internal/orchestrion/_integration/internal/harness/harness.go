@@ -70,7 +70,10 @@ func Run(t *testing.T, tc TestCase) {
 		t.Logf("[%d] Trace contains a total of %d spans:\n%v", i, tr.NumSpans(), tr)
 	}
 
-	for _, expected := range tc.ExpectedTraces() {
+	want := tc.ExpectedTraces()
+
+	for _, expected := range want {
 		expected.RequireAnyMatch(t, got)
 	}
+	t.Logf("Trace simplified versions:\nWant:\n%s\nGot:\n%s", trace.ToSimplified(want), trace.ToSimplified(got))
 }
