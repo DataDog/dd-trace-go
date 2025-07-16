@@ -3,3 +3,6 @@ schema-version: v1
 kind: mergequeue
 enable: true
 merge_method: squash
+rules:
+  - require: commit-signatures
+    allow_unsigned_external: true
