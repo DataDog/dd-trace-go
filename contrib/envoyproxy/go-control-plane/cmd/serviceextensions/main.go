@@ -61,7 +61,7 @@ func initializeEnvironment() {
 	for _, env := range defaultEnvVars {
 		if os.Getenv(env.key) == "" {
 			if err := os.Setenv(env.key, env.value); err != nil {
-				log.Error("service_extension: failed to set %s environment variable: %w\n", env.key, err)
+				log.Error("service_extension: failed to set %s environment variable: %s\n", env.key, err.Error())
 			}
 		}
 	}
@@ -74,7 +74,7 @@ func configureObservabilityMode(config serviceExtensionConfig) error {
 	if config.observabilityMode {
 		internalBlockingUnavailableKey := "_DD_APPSEC_BLOCKING_UNAVAILABLE"
 		if err := os.Setenv(internalBlockingUnavailableKey, "true"); err != nil {
-			return fmt.Errorf("failed to set %s environment variable: %w", internalBlockingUnavailableKey, err)
+			return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err.Error())
 		}
 		log.Debug("service_extension: observability mode enabled, disabling blocking\n")
 	}
