@@ -79,8 +79,8 @@ func isGitFound() bool {
 
 // execGit executes a Git command with the given arguments.
 func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err error) {
+	startTime := time.Now()
 	if commandType != telemetry.NotSpecifiedCommandsType {
-		startTime := time.Now()
 		telemetry.GitCommand(commandType)
 		defer func() {
 			telemetry.GitCommandMs(commandType, float64(time.Since(startTime).Milliseconds()))
@@ -107,6 +107,16 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 			}
 		}()
 	}
+	if log.DebugEnabled() {
+		defer func() {
+			durationInMs := float64(time.Since(startTime).Milliseconds())
+			if err != nil {
+				log.Debug("civisibility.git.command [%v][%v][%vms]: git %s", commandType, err.Error(), durationInMs, strings.Join(args, " "))
+			} else {
+				log.Debug("civisibility.git.command [%v][%vms]: git %s", commandType, durationInMs, strings.Join(args, " "))
+			}
+		}()
+	}
 	if !isGitFound() {
 		return nil, errors.New("git executable not found")
 	}
@@ -122,9 +132,11 @@ func execGitString(commandType telemetry.CommandType, args ...string) (string, e
 
 // execGitStringWithInput executes a Git command with the given input and arguments and returns the output as a string.
 func execGitStringWithInput(commandType telemetry.CommandType, input string, args ...string) (val string, err error) {
+	startTime := time.Now()
 	if commandType != telemetry.NotSpecifiedCommandsType {
 		telemetry.GitCommand(commandType)
 		defer func() {
+			telemetry.GitCommandMs(commandType, float64(time.Since(startTime).Milliseconds()))
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
 				switch exitErr.ExitCode() {
@@ -145,6 +157,16 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 				}
 			} else if err != nil {
 				telemetry.GitCommandErrors(commandType, telemetry.MissingCommandExitCode)
+			}
+		}()
+	}
+	if log.DebugEnabled() {
+		defer func() {
+			durationInMs := float64(time.Since(startTime).Milliseconds())
+			if err != nil {
+				log.Debug("civisibility.git.command [%v][%v][%vms]: git %s", commandType, err.Error(), durationInMs, strings.Join(args, " "))
+			} else {
+				log.Debug("civisibility.git.command [%v][%vms]: git %s", commandType, durationInMs, strings.Join(args, " "))
 			}
 		}()
 	}
