@@ -53,7 +53,7 @@ func initializeEnvironment() {
 
 	defaultEnvVars := []envVar{
 		{key: "DD_VERSION", value: instrumentation.Version()}, // Version of the tracer
-		{key: "DD_TRACE_ENABLED", value: "false"},             // Appsec Standalone
+		{key: "DD_APM_TRACING_ENABLED", value: "false"},       // Appsec Standalone
 		{key: "DD_APPSEC_WAF_TIMEOUT", value: "10ms"},         // Proxy specific WAF timeout
 		{key: "_DD_APPSEC_PROXY_ENVIRONMENT", value: "true"},  // Internal config: Enable API Security proxy sampler
 	}
