@@ -123,6 +123,11 @@ jobs:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      - name: Setup CI Visibility GitHub SaaS Runner Monitoring
+        uses: DataDog/civis-gha-monitor-action@main
+        if: ${{ matrix.runs-on == 'ubuntu' }}
+        with:
+          upload-artifacts: 'true'
       # If we're in workflow_dispatch/call, maybe we need to up/downgrade orchestrion
       - name: Check out orchestrion
         if: inputs.orchestrion-version != ''
