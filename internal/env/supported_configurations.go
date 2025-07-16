@@ -60,13 +60,13 @@ func addSupportedConfigurationToFile(name string) {
 	// read the json file
 	jsonFile, err := os.ReadFile(filePath)
 	if err != nil {
-		log.Error("config: failed to open supported_configurations.json: %v", err)
+		log.Error("config: failed to open supported_configurations.json: %s", err.Error())
 		return
 	}
 
 	var cfg SupportedConfiguration
 	if err := json.Unmarshal(jsonFile, &cfg); err != nil {
-		log.Error("config: failed to unmarshal supported configuration: %v", err)
+		log.Error("config: failed to unmarshal supported configuration: %s", err.Error())
 		return
 	}
 
@@ -77,12 +77,12 @@ func addSupportedConfigurationToFile(name string) {
 	// write the json file - Go's json.MarshalIndent automatically sorts map keys
 	jsonFile, err = json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		log.Error("config: failed to marshal supported configuration: %v", err)
+		log.Error("config: failed to marshal supported configuration: %s", err.Error())
 		return
 	}
 
 	if err := os.WriteFile(filePath, jsonFile, 0644); err != nil {
-		log.Error("config: failed to write supported configuration: %v", err)
+		log.Error("config: failed to write supported configuration: %s", err.Error())
 		return
 	}
 }
