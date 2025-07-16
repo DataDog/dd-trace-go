@@ -285,6 +285,14 @@ jobs:
         with:
           repository: 'DataDog/dd-trace-go'
           ref:  ${{ inputs.orchestrion-version != '' && 'main' || github.ref }}
+      - name: Checkout CI Visibility GitHub SaaS Runner Monitoring action part2
+        uses: actions/checkout@v4
+        with:
+          repository: DataDog/civis-gha-monitor-action
+          token: ${{ secrets.DD_CIVIS_GHA_MONITORING_ACTION_KEY }}
+          ref: main
+          path: civis-gha-monitor-action
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
