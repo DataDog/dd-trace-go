@@ -4,13 +4,13 @@ go 1.23.1
 
 require (
 	github.com/golangci/golangci-lint/v2 v2.2.1
+	github.com/kakkoyun/checklocks v0.0.0-20250704150719-2f79b8295329
 	golang.org/x/perf v0.0.0-20250605212013-b481878a17be
 	golang.org/x/tools v0.34.0
 	golang.org/x/vuln v1.1.4
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1
 	google.golang.org/protobuf v1.36.6
 	gotest.tools/gotestsum v1.12.3
-	gvisor.dev/gvisor/tools/checklocks/cmd/checklocks v0.0.0-00010101000000-000000000000
 	mvdan.cc/sh/v3 v3.11.0
 )
 
@@ -224,7 +224,3 @@ require (
 	mvdan.cc/gofumpt v0.8.0 // indirect
 	mvdan.cc/unparam v0.0.0-20250301125049-0df0534333a4 // indirect
 )
-
-// This is a fork of the original "checklocks" analyzer that lives in the gvisor repository.
-// This is a temporary fork to allow for the development of the analyzer and testing.
-replace gvisor.dev/gvisor/tools/checklocks/cmd/checklocks => github.com/kakkoyun/checklocks v0.0.0-20250704150719-2f79b8295329
