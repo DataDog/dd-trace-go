@@ -115,7 +115,7 @@ jobs:
             go-version: oldstable
             mode: GOFLAGS
     name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }} | ${{ matrix.mode }})
-    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-16-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
+    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout CI Visibility GitHub SaaS Runner Monitoring action
         uses: actions/checkout@v4
