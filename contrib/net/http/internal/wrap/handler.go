@@ -55,6 +55,7 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			IsStatusError: cfg.IsStatusError,
 			Route:         pattern.Route(pttrn),
 			RouteParams:   pattern.PathParameters(pttrn, req),
+			Handler:       h,
 		})
 	})
 }
