@@ -135,12 +135,14 @@ func Errorf(format string, a ...any) *TracerError {
 			if i+1 >= len(format) {
 				break
 			}
-			if format[i+1] != 'w' {
+			if format[i+1] == '%' {
 				continue
 			}
-			if _, ok := a[aIndex].(*TracerError); ok {
-				newFormat.WriteString("v")
-				i++
+			if format[i+1] == 'w' {
+				if _, ok := a[aIndex].(*TracerError); ok {
+					newFormat.WriteString("v")
+					i++
+				}
 			}
 			aIndex++
 		}
