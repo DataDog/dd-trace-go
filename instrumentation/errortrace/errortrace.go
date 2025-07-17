@@ -49,7 +49,8 @@ func WrapN(err error, n uint, skip uint) *TracerError {
 	if err == nil {
 		return nil
 	}
-	if e, ok := err.(*TracerError); ok {
+	var e *TracerError
+	if errors.As(err, &e) {
 		return e
 	}
 	if n <= 0 {
