@@ -10,11 +10,11 @@
 
 This repository contains Go packages for the client-side components of the Datadog product suite for Application Performance Monitoring, Continuous Profiling and Application Security Monitoring of Go applications.
 
-- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases, and microservices so that developers have great visibility into bottlenecks and troublesome requests.  
+- [Datadog Application Performance Monitoring (APM)](https://docs.datadoghq.com/tracing/): Trace requests as they flow across web servers, databases, and microservices so that developers have great visibility into bottlenecks and troublesome requests.
 The package [`github.com/DataDog/dd-trace-go/v2/ddtrace/tracer`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace/tracer) allows you to trace any piece of your Go code, and commonly used Go libraries can be automatically traced thanks to our out-of-the-box integrations which can be found in the package [`github.com/DataDog/dd-trace-go/v2/contrib`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib).
 <!-- # TODO: review contrib URL -->
 
-- [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.  
+- [Datadog Go Continuous Profiler](https://docs.datadoghq.com/profiler/): Continuously profile your Go apps to find CPU, memory, and synchronization bottlenecks, broken down by function name, and line number, to significantly reduce end-user latency and infrastructure costs.
 The package [`github.com/DataDog/dd-trace-go/v2/profiler`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/profiler) allows you to periodically collect and send Go profiles to the Datadog API.
 
 - [Datadog Application Security Management (ASM)](https://docs.datadoghq.com/security_platform/application_security/) provides in-app monitoring and protection against application-level attacks that aim to exploit code-level vulnerabilities, such as a Server-Side-Request-Forgery (SSRF), a SQL injection (SQLi), or Reflected Cross-Site-Scripting (XSS). ASM identifies services exposed to application attacks and leverages in-app security rules to detect and protect against threats in your application environment. ASM is not a standalone Go package and is transparently integrated into the APM tracer. You can simply enable it with [`DD_APPSEC_ENABLED=true`](https://docs.datadoghq.com/security/application_security/enabling/go).
@@ -38,11 +38,11 @@ If you installed more packages than you intended, you can use `go mod tidy` to r
 
 ### Documentation
 
- - [APM Tracing API](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace)
- - [APM Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
- - [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go)
- - [Application Security Monitoring](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go)
- - If you are migrating from an older version of the tracer (e.g., 1.60.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
+- [APM Tracing API](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace)
+- [APM Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
+- [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go)
+- [Application Security Monitoring](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go)
+- If you are migrating from an older version of the tracer (e.g., 1.60.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
 
 ### Go Support Policy
 
@@ -62,6 +62,7 @@ The best way to run the entire test suite is using the [scripts/test.sh](./scrip
 
 If you're only interested in the tests for a specific integration it can be useful to spin up just the required containers via docker-compose.
 For example if you're running tests that need the `mysql` database container to be up:
+
 ```shell
 docker compose -f docker-compose.yaml -p dd-trace-go up -d mysql
 ```
