@@ -1,4 +1,5 @@
 stages:
+  - config-inversion
   - generate
   - benchmarks
   - macrobenchmarks
@@ -65,8 +66,9 @@ check-big-regressions:
     expire_in: "30 days"
 
 check_config_inversion_local_file:
-  stage: gates
-  image: registry.ddbuild.io/ci/libdatadog-build:68067123
+  stage: config-inversion
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  tags: ["runner:apm-k8s-tweaked-metal"]
   rules:
     - when: on_success
   extends: .check_config_inversion_local_file
@@ -74,8 +76,9 @@ check_config_inversion_local_file:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
 
 config-inversion-update-supported-range:
-  stage: gates
-  image: registry.ddbuild.io/ci/libdatadog-build:68067123
+  stage: config-inversion
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .config_inversion_update_central
   variables:
     LOCAL_REPO_NAME: "dd-trace-go"

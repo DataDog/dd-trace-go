@@ -2,7 +2,7 @@ variables: # These are repeated in .gitlab-ci.yml because there are no dependenc
   SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/include/scripts
 
 .download-scripts-from-template: &download-scripts-from-template
-  - mkdir -p scripts/lib-injection
+  - mkdir -p scripts
   - |
     for script_file in "config-inversion-local-validation.sh" "config-inversion-update-supported-range.sh"
     do
@@ -18,7 +18,7 @@ variables: # These are repeated in .gitlab-ci.yml because there are no dependenc
   rules:
     - when: on_success
   variables:
-    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    LOCAL_JSON_PATH: ""
   before_script:
     - *download-scripts-from-template
   script:
@@ -30,8 +30,8 @@ variables: # These are repeated in .gitlab-ci.yml because there are no dependenc
     - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/'
       when: on_success
   variables:
-    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
-    LANGUAGE_NAME: "golang"
+    LOCAL_JSON_PATH: ""
+    LANGUAGE_NAME: ""
     MULTIPLE_RELEASE_LINES: "false" # expect "true" or "false" as a value to determine if a new "branch" identifier is needed to differentiate between multiple release lines
   before_script:
     - *download-scripts-from-template
