@@ -221,7 +221,7 @@ func extractAzurePipelines() map[string]string {
 
 	tags[constants.CIStageName] = os.Getenv("SYSTEM_STAGEDISPLAYNAME")
 
-	tags[constants.CIJobId] = os.Getenv("SYSTEM_JOBID")
+	tags[constants.CIJobID] = os.Getenv("SYSTEM_JOBID")
 	tags[constants.CIJobName] = os.Getenv("SYSTEM_JOBDISPLAYNAME")
 	tags[constants.CIJobURL] = jobURL
 
@@ -316,7 +316,7 @@ func extractBuildkite() map[string]string {
 	tags[constants.CIPipelineName] = os.Getenv("BUILDKITE_PIPELINE_SLUG")
 	tags[constants.CIPipelineNumber] = os.Getenv("BUILDKITE_BUILD_NUMBER")
 	tags[constants.CIPipelineURL] = os.Getenv("BUILDKITE_BUILD_URL")
-	tags[constants.CIJobId] = os.Getenv("BUILDKITE_CI_JOB_ID")
+	tags[constants.CIJobID] = os.Getenv("BUILDKITE_CI_JOB_ID")
 	tags[constants.CIJobURL] = fmt.Sprintf("%s#%s", os.Getenv("BUILDKITE_BUILD_URL"), os.Getenv("BUILDKITE_JOB_ID"))
 	tags[constants.CIProviderName] = "buildkite"
 	tags[constants.CIWorkspacePath] = os.Getenv("BUILDKITE_BUILD_CHECKOUT_PATH")
@@ -370,7 +370,7 @@ func extractCircleCI() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("CIRCLE_BUILD_NUM")
 	tags[constants.CIPipelineURL] = fmt.Sprintf("https://app.circleci.com/pipelines/workflows/%s", os.Getenv("CIRCLE_WORKFLOW_ID"))
 	tags[constants.CIJobName] = os.Getenv("CIRCLE_JOB")
-	tags[constants.CIJobId] = os.Getenv("CIRCLE_BUILD_NUM")
+	tags[constants.CIJobID] = os.Getenv("CIRCLE_BUILD_NUM")
 	tags[constants.CIJobURL] = os.Getenv("CIRCLE_BUILD_URL")
 
 	jsonString, err := getEnvVarsJSON("CIRCLE_BUILD_NUM", "CIRCLE_WORKFLOW_ID")
@@ -413,7 +413,7 @@ func extractGithubActions() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("GITHUB_RUN_NUMBER")
 	tags[constants.CIPipelineName] = os.Getenv("GITHUB_WORKFLOW")
 	tags[constants.CIJobURL] = fmt.Sprintf("%s/commit/%s/checks", rawRepository, commitSha)
-	tags[constants.CIJobId] = os.Getenv("GITHUB_JOB")
+	tags[constants.CIJobID] = os.Getenv("GITHUB_JOB")
 	tags[constants.CIJobName] = os.Getenv("GITHUB_JOB")
 
 	attempts := os.Getenv("GITHUB_RUN_ATTEMPT")
@@ -479,7 +479,7 @@ func extractGitlab() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("CI_PIPELINE_IID")
 	tags[constants.CIPipelineURL] = url
 	tags[constants.CIJobURL] = os.Getenv("CI_JOB_URL")
-	tags[constants.CIJobId] = os.Getenv("CI_JOB_ID")
+	tags[constants.CIJobID] = os.Getenv("CI_JOB_ID")
 	tags[constants.CIJobName] = os.Getenv("CI_JOB_NAME")
 	tags[constants.CIStageName] = os.Getenv("CI_JOB_STAGE")
 	tags[constants.GitCommitMessage] = os.Getenv("CI_COMMIT_MESSAGE")
@@ -629,7 +629,7 @@ func extractAwsCodePipeline() map[string]string {
 
 	tags[constants.CIProviderName] = "awscodepipeline"
 	tags[constants.CIPipelineID] = os.Getenv("DD_PIPELINE_EXECUTION_ID")
-	tags[constants.CIJobId] = os.Getenv("DD_ACTION_EXECUTION_ID")
+	tags[constants.CIJobID] = os.Getenv("DD_ACTION_EXECUTION_ID")
 
 	jsonString, err := getEnvVarsJSON("CODEBUILD_BUILD_ARN", "DD_ACTION_EXECUTION_ID", "DD_PIPELINE_EXECUTION_ID")
 	if err == nil {
