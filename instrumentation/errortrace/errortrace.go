@@ -34,12 +34,12 @@ func (err *TracerError) Error() string {
 
 func New(text string) *TracerError {
 	// Skip one to exclude New(...)
-	return Wrap(errors.New(text), 0, 1)
+	return Wrap(errors.New(text))
 }
 
 // Wrap takes in an error and records the stack trace at the moment that it was thrown.
 func Wrap(err error) *TracerError {
-    return WrapN(err, 0, 1)
+	return WrapN(err, 0, 1)
 }
 
 // WrapN takes in an error and records the stack trace at the moment that it was thrown.
@@ -61,7 +61,7 @@ func WrapN(err error, n uint, skip uint) *TracerError {
 	defer func() {
 		dur := float64(time.Since(now))
 		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Submit(dur)
-	}() 
+	}()
 
 	pcs := make([]uintptr, n)
 	var stackFrames *runtime.Frames
@@ -147,7 +147,7 @@ func Errorf(format string, a ...any) *TracerError {
 		format = newFormat.String()
 	}
 	err := fmt.Errorf(format, a...)
-	return Wrap(err, 0, 1)
+	return Wrap(err)
 }
 
 // Unwrap takes a wrapped error and returns the inner error.

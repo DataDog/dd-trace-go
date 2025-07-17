@@ -27,14 +27,14 @@ func createTestError() *TracerError {
 func TestWrap(t *testing.T) {
 	t.Run("wrap nil", func(t *testing.T) {
 		assert := assert.New(t)
-		err := Wrap(nil, 0, 0)
+		err := WrapN(nil, 0, 0)
 		assert.Nil(err)
 	})
 
 	t.Run("wrap TracerError", func(t *testing.T) {
 		assert := assert.New(t)
 		err := createTestError()
-		wrappedErr := Wrap(err, 0, 0)
+		wrappedErr := WrapN(err, 0, 0)
 
 		assert.NotNil(wrappedErr)
 		assert.Equal(err, wrappedErr)
@@ -47,7 +47,7 @@ func TestWrap(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 0, 0)
+		wrappedErr := WrapN(err, 0, 0)
 
 		assert.NotNil(wrappedErr)
 		assert.Equal("msg", wrappedErr.Error())
@@ -60,7 +60,7 @@ func TestWrap(t *testing.T) {
 	t.Run("with Errorf", func(t *testing.T) {
 		assert := assert.New(t)
 		err := fmt.Errorf("val: %d", 1)
-		wrappedErr := Wrap(err, 0, 0)
+		wrappedErr := WrapN(err, 0, 0)
 
 		assert.NotNil(wrappedErr)
 		assert.Equal(err.Error(), wrappedErr.Error())
@@ -99,7 +99,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("wrapped error", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 0, 0)
+		wrappedErr := WrapN(err, 0, 0)
 		stack := wrappedErr.Format()
 		assert.NotNil(stack)
 		assert.Greater(len(stack), 0)
@@ -111,7 +111,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("skip 1", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 0, 1)
+		wrappedErr := WrapN(err, 0, 1)
 		stack := wrappedErr.Format()
 		assert.NotNil(stack)
 		assert.Greater(len(stack), 0)
@@ -123,7 +123,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("skip 2", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 0, 2)
+		wrappedErr := WrapN(err, 0, 2)
 		stack := wrappedErr.Format()
 		assert.NotNil(stack)
 		assert.Greater(len(stack), 0)
@@ -135,7 +135,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("skip > num frames", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 0, 3)
+		wrappedErr := WrapN(err, 0, 3)
 		stack := wrappedErr.Format()
 		assert.Empty(stack)
 	})
@@ -143,7 +143,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("n = 1", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 1, 0)
+		wrappedErr := WrapN(err, 1, 0)
 		stack := wrappedErr.Format()
 		assert.NotNil(stack)
 		assert.Greater(len(stack), 0)
@@ -155,7 +155,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("n = 2", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 2, 0)
+		wrappedErr := WrapN(err, 2, 0)
 		stack := wrappedErr.Format()
 		assert.NotNil(stack)
 		assert.Greater(len(stack), 0)
@@ -167,7 +167,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("skip == n", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 1, 1)
+		wrappedErr := WrapN(err, 1, 1)
 		stack := wrappedErr.Format()
 		assert.NotNil(stack)
 		assert.Greater(len(stack), 0)
@@ -179,7 +179,7 @@ func TestErrorStack(t *testing.T) {
 	t.Run("invalid skip", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("msg")
-		wrappedErr := Wrap(err, 0, 100)
+		wrappedErr := WrapN(err, 0, 100)
 		stack := wrappedErr.Format()
 		assert.Empty(stack)
 	})
@@ -188,7 +188,7 @@ func TestErrorStack(t *testing.T) {
 func TestUnwrap(t *testing.T) {
 	t.Run("unwrap nil", func(t *testing.T) {
 		assert := assert.New(t)
-		err := Wrap(nil, 0, 0)
+		err := WrapN(nil, 0, 0)
 		unwrapped := err.Unwrap()
 		assert.Nil(unwrapped)
 	})
@@ -196,7 +196,7 @@ func TestUnwrap(t *testing.T) {
 	t.Run("unwrap TracerError", func(t *testing.T) {
 		assert := assert.New(t)
 		err := errors.New("Something wrong")
-		wrapped := Wrap(err, 0, 0)
+		wrapped := WrapN(err, 0, 0)
 		unwrapped := wrapped.Unwrap()
 		assert.Equal(err, unwrapped)
 	})
