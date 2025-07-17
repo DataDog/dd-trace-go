@@ -6,6 +6,9 @@
 package constants
 
 const (
+	// CIJobId indicates the id of the CI job.
+	CIJobId = "ci.job.id"
+
 	// CIJobName indicates the name of the CI job.
 	CIJobName = "ci.job.name"
 
