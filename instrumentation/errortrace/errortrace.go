@@ -38,7 +38,14 @@ func New(text string) *TracerError {
 }
 
 // Wrap takes in an error and records the stack trace at the moment that it was thrown.
-func Wrap(err error, n uint, skip uint) *TracerError {
+func Wrap(err error) *TracerError {
+    return WrapN(err, 0, 1)
+}
+
+// WrapN takes in an error and records the stack trace at the moment that it was thrown.
+// It will capture a maximum of `n` entries, skipping the first `skip` entries.
+// If n is 0, it will capture up to 32 entries instead.
+func WrapN(err error, n uint, skip uint) *TracerError {
 	if err == nil {
 		return nil
 	}
