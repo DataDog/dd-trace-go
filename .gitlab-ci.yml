@@ -66,6 +66,7 @@ check-big-regressions:
 
 check_config_inversion_local_file:
   stage: gates
+  image: registry.ddbuild.io/ci/libdatadog-build:68067123
   rules:
     - when: on_success
   extends: .check_config_inversion_local_file
@@ -74,12 +75,12 @@ check_config_inversion_local_file:
 
 config-inversion-update-supported-range:
   stage: gates
+  image: registry.ddbuild.io/ci/libdatadog-build:68067123
   extends: .config_inversion_update_central
   variables:
     LOCAL_REPO_NAME: "dd-trace-go"
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
     LANGUAGE_NAME: "golang"
-
 
 include:
   - local: ".gitlab/macrobenchmarks.yml"
