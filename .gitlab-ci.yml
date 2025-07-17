@@ -64,23 +64,24 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
-# check_config_inversion_local_file:
-#   rules:
-#     - when: on_success
-#   extends: .check_config_inversion_local_file
-#   variables:
-#     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+check_config_inversion_local_file:
+  stage: gates
+  rules:
+    - when: on_success
+  extends: .check_config_inversion_local_file
+  variables:
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
 
-# config-inversion-update-supported-range:
-#   extends: .config_inversion_update_central
-#   variables:
-#     LOCAL_REPO_NAME: "dd-trace-go"
-#     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
-#     LANGUAGE_NAME: "go"
-
-# - local: ".gitlab/one-pipeline.yml"
+config-inversion-update-supported-range:
+  stage: gates
+  extends: .config_inversion_update_central
+  variables:
+    LOCAL_REPO_NAME: "dd-trace-go"
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    LANGUAGE_NAME: "golang"
 
 
 include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
+  - local: ".gitlab/config-inversion.yml"
