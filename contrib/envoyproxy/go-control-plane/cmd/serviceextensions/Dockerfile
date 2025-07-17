@@ -25,6 +25,10 @@ RUN go build -tags=appsec -o ./contrib/envoyproxy/go-control-plane/cmd/serviceex
 FROM alpine:3.20.3
 RUN apk --no-cache add ca-certificates tzdata libc6-compat libgcc libstdc++
 WORKDIR /app
+
+ARG DD_VERSION=""
+ENV DD_VERSION=${DD_VERSION}
+
 COPY --from=builder /app/contrib/envoyproxy/go-control-plane/cmd/serviceextensions/serviceextensions /app/serviceextensions
 COPY --from=builder /app/localhost.crt /app/localhost.crt
 COPY --from=builder /app/localhost.key /app/localhost.key

@@ -63,6 +63,7 @@ jobs:
       dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
       artifact_prefix: service-extensions
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
       tags: >-
         ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
         ${{ github.event.inputs.commit_sha || github.sha }}
@@ -79,6 +80,7 @@ jobs:
       dockerfile: ./contrib/k8s.io/gateway-api/cmd/request-mirror/Dockerfile
       artifact_prefix: request-mirror
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
       tags: >-
         ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
         ${{ github.event.inputs.commit_sha || github.sha }}
