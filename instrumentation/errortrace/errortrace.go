@@ -39,12 +39,6 @@ func New(text string) *TracerError {
 
 // Wrap takes in an error and records the stack trace at the moment that it was thrown.
 func Wrap(err error, n uint, skip uint) *TracerError {
-	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Submit(1)
-	now := time.Now()
-	defer func() {
-		dur := float64(time.Since(now))
-		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Submit(dur)
-	}()
 	if err == nil {
 		return nil
 	}
@@ -54,6 +48,13 @@ func Wrap(err error, n uint, skip uint) *TracerError {
 	if n <= 0 {
 		n = defaultStackLength
 	}
+
+	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Submit(1)
+	now := time.Now()
+	defer func() {
+		dur := float64(time.Since(now))
+		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Submit(dur)
+	}() 
 
 	pcs := make([]uintptr, n)
 	var stackFrames *runtime.Frames
