@@ -78,7 +78,17 @@ jobs:
   lint:
     runs-on:
       group: "APM Larger Runners"
+    permissions:
+      id-token: write
+      pull-requests: write
     steps:
+      - name: Get STS token
+        uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0 # v1.0.1
+        id: octo-sts
+        with:
+          policy: self.reviewdog
+          scope: DataDog/dd-trace-go
+
       - name: Checkout
         uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
         with:
@@ -92,6 +102,8 @@ jobs:
           golangci_lint_version: v2.1.2
           fail_level: error
           reporter: github-pr-review
+        env:
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
 
       - name: golangci-lint (internal/orchestrion/_integration)
         uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
@@ -102,6 +114,8 @@ jobs:
           fail_level: error
           reporter: github-pr-review
           workdir: internal/orchestrion/_integration
+        env:
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
 
   set-up:
     runs-on: ubuntu-latest
