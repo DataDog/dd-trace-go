@@ -7,6 +7,12 @@ RUN --mount=type=bind,src=.,dst=/build go -C /build build -tags=appsec -o /reque
 
 # Runtime stage
 FROM alpine:3.20.3
+
+# Set opencontainers labels for Github container registry
+LABEL org.opencontainers.image.source=https://github.com/DataDog/dd-trace-go/tree/main/contrib/k8s.io/gateway-api/
+LABEL org.opencontainers.image.description="A request mirror for the Kubernetes Gateway API with Datadog App & API Protection support"
+LABEL org.opencontainers.image.licenses=Apache-2.0
+
 RUN apk --no-cache add ca-certificates tzdata libc6-compat libgcc libstdc++
 WORKDIR /app
 
