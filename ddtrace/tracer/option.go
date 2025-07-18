@@ -681,7 +681,7 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
+				return defaultDialer(timeout).DialContext(ctx, "unix", (&net.UnixAddr{
 					Name: socketPath,
 					Net:  "unix",
 				}).String())
