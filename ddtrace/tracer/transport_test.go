@@ -78,8 +78,9 @@ func TestTracesAgentIntegration(t *testing.T) {
 		transport := newHTTPTransport(defaultURL, defaultHTTPClient(0))
 		p, err := encode(tc.payload)
 		assert.NoError(err)
-		_, err = transport.send(p)
+		body, err := transport.send(p)
 		assert.NoError(err)
+		defer body.Close()
 	}
 }
 
