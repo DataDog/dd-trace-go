@@ -219,7 +219,7 @@ jobs:
   golang-linux-container:
     name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     # We use ARM runners when needed to avoid the performance hit of QEMU
-    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'arm-4core-linux' }}
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'ubuntu-24.04-arm' }}
     needs: go-mod-caching
     strategy:
       matrix:
