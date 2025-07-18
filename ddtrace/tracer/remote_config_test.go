@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -710,6 +711,48 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	})
 
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
+}
+
+func TestDynamicInstrumentationRC(t *testing.T) {
+	getDiRCState := func() map[string]dynamicInstrumentationRCProbeConfig {
+		diRCState.Lock()
+		defer diRCState.Unlock()
+		return maps.Clone(diRCState.state)
+	}
+	initalizeDynamicInstrumentationRemoteConfigState()
+
+	t.Run("Deleted config removes from map", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		require.Nil(t, err)
+		defer stop()
+
+		require.Empty(t, getDiRCState())
+
+		status := tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
+			"key": []byte(`"value"`),
+		})
+		require.Equal(t, map[string]state.ApplyStatus{
+			"key": {State: state.ApplyStateUnknown},
+		}, status)
+		runtimeID := globalconfig.RuntimeID()
+		require.Equal(t, map[string]dynamicInstrumentationRCProbeConfig{
+			"key": {
+				configPath:    "key",
+				configContent: `"value"`,
+				runtimeID:     runtimeID,
+			},
+		}, getDiRCState())
+		status = tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
+			"key": nil,
+		})
+		require.Equal(t, map[string]state.ApplyStatus{
+			"key": {State: state.ApplyStateAcknowledged},
+		}, status)
+		require.Empty(t, getDiRCState())
+	})
 }
 
 func TestStartRemoteConfig(t *testing.T) {
