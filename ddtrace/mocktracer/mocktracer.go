@@ -113,7 +113,8 @@ func (t *mocktracer) FinishSpan(s *tracer.Span) {
 
 // Stop deactivates the mock tracer and sets the active tracer to a no-op.
 func (t *mocktracer) Stop() {
-	tracer.Stop()
+	// N.b.: The main reason for this call is to make TestTracerStop pass.
+	internal.SetGlobalTracer(tracer.Tracer(&tracer.NoopTracer{}))
 	t.dsmProcessor.Stop()
 }
 
