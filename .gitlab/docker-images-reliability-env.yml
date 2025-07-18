@@ -4,22 +4,30 @@ wait_for_github_workflow:
   tags: ["arch:amd64"]
 
   variables:
-    GITHUB_WORKFLOW_FILE: "docker-images-release.yml"
+    GITHUB_WORKFLOW_FILE: "generate.yml"
     POLL_TIMEOUT: "900" # 15 min
     POLL_INTERVAL: "60"  # 1 min
     BYPASS: "false"
 
   rules:
+    # CI_COMMIT_TAG = contrib/envoyproxy/go-control-plane/v2.1.0
     - if: '$CI_COMMIT_TAG =~ /^contrib\/envoyproxy\/go-control-plane\/v[0-9]+\.[0-9]+\.[0-9]+/'
       when: on_success
     - if: '$CI_COMMIT_TAG =~ /^contrib\/envoyproxy\/go-control-plane\/v[0-9]+\.[0-9]+\.[0-9]+-docker\.[0-9]+/'
       when: on_success
     - when: manual
-      allow_failure: true
+      allow_failure: false
 
   script:
     - |
       echo "Waiting for GitHub workflow file: $GITHUB_WORKFLOW_FILE to complete on tag $CI_COMMIT_TAG"
+      
+      export GITHUB_TOKEN=$(aws ssm get-parameter --region us-east-1 --name ci.datadog-reliability-env.github_token --with-decryption --query "Parameter.Value" --out text)
+      
+      runs_url_test="https://api.github.com/repos/DataDog/dd-trace-go/actions/workflows/$GITHUB_WORKFLOW_FILE/runs?head_sha=$CI_COMMIT_SHA&event=pull_request"
+      echo "Running on url: $runs_url_test"
+      payload_test=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "$runs_url_test")
+      echo "Payload test: $payload_test"
 
       if [ "$BYPASS" = "true" ]; then
         echo "Bypassing GitHub workflow check"
@@ -28,11 +36,15 @@ wait_for_github_workflow:
 
       check_workflow_status() {
         # Hits the workflow-by-filename endpoint
-        local runs_url="https://api.github.com/repos/DataDog/dd-trace-go/actions/workflows/$GITHUB_WORKFLOW_FILE/runs?head_sha=$CI_COMMIT_SHA&event=push"
-        echo "Runs URL: $runs_url"
+        local runs_url="https://api.github.com/repos/DataDog/dd-trace-go/actions/workflows/$GITHUB_WORKFLOW_FILE/runs?head_sha=$CI_COMMIT_SHA&event=pull_request"
         local payload
-        payload=$(curl -s "${runs_url}")
+        payload=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" "runs_url")
         echo "Payload: $payload"
+    
+        if [ "$payload" = "null" ]; then
+          echo "Failed to fetch data."
+          return
+        fi
 
         # newest run → conclusion
         echo "$payload" \
