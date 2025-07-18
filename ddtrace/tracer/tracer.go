@@ -157,6 +157,9 @@ type tracer struct {
 	// logFile is closed when tracer stops
 	// by default, tracer logs to stderr and this setting is unused
 	logFile *log.ManagedFile
+
+	// telemetry is the telemetry client for the tracer.
+	telemetry telemetry.Client
 }
 
 const (
@@ -211,7 +214,7 @@ func Start(opts ...StartOption) error {
 
 		// start instrumentation telemetry unless it is disabled through the
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-		startTelemetry(t.config)
+		t.telemetry = startTelemetry(t.config)
 
 		globalinternal.SetTracerInitialized(true)
 		return nil
@@ -239,7 +242,7 @@ func Start(opts ...StartOption) error {
 
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
+	t.telemetry = startTelemetry(t.config)
 
 	// store the configuration in an in-memory file, allowing it to be read to
 	// determine if the process is instrumented with a tracer and to retrive
@@ -824,6 +827,9 @@ func (t *tracer) Stop() {
 	// Close log file last to account for any logs from the above calls
 	if t.logFile != nil {
 		t.logFile.Close()
+	}
+	if t.telemetry != nil {
+		t.telemetry.Close()
 	}
 }
 
