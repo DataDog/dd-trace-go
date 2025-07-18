@@ -363,7 +363,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(10*time.Second, x.Timeout)
 		assert.Equal(x.Timeout, y.Timeout)
 		compareHTTPClients(t, x, y)
-		assert.True(getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer.DialContext))
+		assert.True(getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
 		assert.False(c.debug)
 	})
 
@@ -373,7 +373,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		x := *c.httpClient
 		y := *defaultHTTPClient(2 * time.Second)
 		compareHTTPClients(t, x, y)
-		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer.DialContext))
+		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
 		client := &http.Client{}
 		WithHTTPClient(client)(c)
 		assert.Equal(t, client, c.httpClient)
@@ -944,7 +944,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 		x := *defTracerClient(2)
 		y := *defaultHTTPClient(2)
 		compareHTTPClients(t, x, y)
-		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer.DialContext))
+		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
 	})
 
 	t.Run("socket", func(t *testing.T) {
@@ -961,7 +961,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 		x := *defTracerClient(2)
 		y := *defaultHTTPClient(2)
 		compareHTTPClients(t, x, y)
-		assert.False(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer.DialContext))
+		assert.False(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
 
 	})
 }
