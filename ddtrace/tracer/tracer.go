@@ -317,7 +317,7 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
+func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c, err := newConfig(opts...)
 	if err != nil {
 		return nil, err
@@ -328,6 +328,11 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
 		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
 	}
+	defer func() {
+		if err != nil {
+			statsd.Close()
+		}
+	}()
 	var writer traceWriter
 	if c.ciVisibilityEnabled {
 		writer = newCiVisibilityTraceWriter(c)
@@ -371,7 +376,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 			c.logDirectory = ""
 		}
 	}
-	t := &tracer{
+	t = &tracer{
 		config:           c,
 		traceWriter:      writer,
 		out:              make(chan *chunk, payloadQueueSize),
