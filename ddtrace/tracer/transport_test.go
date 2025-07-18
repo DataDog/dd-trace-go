@@ -391,8 +391,9 @@ func TestWithUDS(t *testing.T) {
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
-	_, err = trc.config.transport.send(p)
+	body, err := trc.config.transport.send(p)
 	assert.NoError(err)
+	defer body.Close()
 	// There are 2 requests, but one happens on tracer startup before we wrap the round tripper.
 	// This is OK for this test, since we just want to check that WithUDS allows communication
 	// between a server and client over UDS. hits tells us that there were 2 requests received.
