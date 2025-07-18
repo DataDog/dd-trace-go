@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"go.uber.org/goleak"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -77,7 +78,13 @@ func TestMain(m *testing.M) {
 		timeMultiplicator = time.Duration(2)
 	}
 	_, integration = os.LookupEnv("INTEGRATION")
-	os.Exit(m.Run())
+	// TODO(felixge): We should try to get rid of all the ignored functions
+	// below. And we should definitely try to not add any new ones here!
+	goleak.VerifyTestMain(
+		m,
+		goleak.IgnoreAnyFunction("github.com/cihub/seelog.(*asyncLoopLogger).processItem"),
+		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
+	)
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
@@ -114,7 +121,7 @@ func TestTracerCleanStop(t *testing.T) {
 		t.Skip("This test causes windows CI to fail due to out-of-memory issues")
 	}
 	// avoid CI timeouts due to AppSec and telemetry slowing down this test
-	t.Setenv("DD_APPSEC_ENABLED", "")
+	t.Setenv("DD_APPSEC_ENABLED", "false")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 
@@ -166,6 +173,7 @@ func TestTracerCleanStop(t *testing.T) {
 	}()
 
 	wg.Wait()
+	Stop()
 }
 
 func TestTracerStart(t *testing.T) {
@@ -249,6 +257,7 @@ func TestTracerLogFile(t *testing.T) {
 		}
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", dir)
 		tracer, err := newTracer()
+		defer tracer.Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, dir, tracer.config.logDirectory)
 		assert.NotNil(t, tracer.logFile)
@@ -258,7 +267,7 @@ func TestTracerLogFile(t *testing.T) {
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", "some/nonexistent/path")
 		tracer, err := newTracer()
 		assert.Nil(t, err)
-		defer Stop()
+		defer tracer.Stop()
 		assert.Empty(t, tracer.config.logDirectory)
 		assert.Nil(t, tracer.logFile)
 	})
@@ -1333,6 +1342,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 			}
 		}`))
 	}))
+	defer srv.Close()
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
@@ -2432,10 +2442,12 @@ func TestFlush(t *testing.T) {
 	tr.traceWriter = tw
 
 	ts := &statsdtest.TestStatsdClient{}
+	tr.statsd.Close()
 	tr.statsd = ts
 
 	transport := newDummyTransport()
 	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	tr.stats.Stop()
 	tr.stats = c
 	c.Start()
 	defer c.Stop()

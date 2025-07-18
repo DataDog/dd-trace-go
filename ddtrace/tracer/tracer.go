@@ -157,6 +157,9 @@ type tracer struct {
 	// logFile is closed when tracer stops
 	// by default, tracer logs to stderr and this setting is unused
 	logFile *log.ManagedFile
+
+	// telemetry is the telemetry client for the tracer.
+	telemetry telemetry.Client
 }
 
 const (
@@ -181,10 +184,20 @@ const (
 // statsd client; replaced in tests.
 var statsInterval = 10 * time.Second
 
+// startStopMu ensures that calling Start and Stop concurrently doesn't leak
+// goroutines. In particular, without this lock TestTracerCleanStop will leak
+// goroutines from the internal telemetry client.
+//
+// TODO: The entire Start/Stop code should be refactored, it's pretty gnarly.
+var startStopMu sync.Mutex
+
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+
 	defer func(now time.Time) {
 		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
 	}(time.Now())
@@ -197,6 +210,7 @@ func Start(opts ...StartOption) error {
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
 		// share control of the global telemetry client.
+		t.Stop()
 		return nil
 	}
 	setGlobalTracer(t)
@@ -211,7 +225,7 @@ func Start(opts ...StartOption) error {
 
 		// start instrumentation telemetry unless it is disabled through the
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-		startTelemetry(t.config)
+		t.telemetry = startTelemetry(t.config)
 
 		globalinternal.SetTracerInitialized(true)
 		return nil
@@ -239,7 +253,7 @@ func Start(opts ...StartOption) error {
 
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
+	t.telemetry = startTelemetry(t.config)
 
 	// store the configuration in an in-memory file, allowing it to be read to
 	// determine if the process is instrumented with a tracer and to retrive
@@ -274,6 +288,9 @@ func storeConfig(c *config) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+
 	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
@@ -314,7 +331,7 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
+func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c, err := newConfig(opts...)
 	if err != nil {
 		return nil, err
@@ -325,6 +342,11 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
 		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
 	}
+	defer func() {
+		if err != nil {
+			statsd.Close()
+		}
+	}()
 	var writer traceWriter
 	if c.ciVisibilityEnabled {
 		writer = newCiVisibilityTraceWriter(c)
@@ -368,7 +390,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 			c.logDirectory = ""
 		}
 	}
-	t := &tracer{
+	t = &tracer{
 		config:           c,
 		traceWriter:      writer,
 		out:              make(chan *chunk, payloadQueueSize),
@@ -396,7 +418,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	return t, nil
 }
 
-// newTracer creates a new no-op tracer for testing.
+// newTracer creates a new tracer and starts it.
 // NOTE: This function does NOT set the global tracer, which is required for
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
@@ -819,6 +841,9 @@ func (t *tracer) Stop() {
 	// Close log file last to account for any logs from the above calls
 	if t.logFile != nil {
 		t.logFile.Close()
+	}
+	if t.telemetry != nil {
+		t.telemetry.Close()
 	}
 }
 
