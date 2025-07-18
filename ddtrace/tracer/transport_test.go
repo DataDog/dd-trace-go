@@ -143,15 +143,12 @@ func TestTransportResponse(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
-			ln, err := net.Listen("tcp4", "localhost:0")
-			assert.Nil(err)
-			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				w.Write([]byte(tt.body))
 			}))
-			defer ln.Close()
-			url := "http://" + ln.Addr().String()
-			transport := newHTTPTransport(url, defaultHTTPClient(0))
+			defer srv.Close()
+			transport := newHTTPTransport(srv.URL, defaultHTTPClient(0))
 			rc, err := transport.send(newPayload())
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
