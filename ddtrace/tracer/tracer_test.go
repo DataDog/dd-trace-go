@@ -257,6 +257,7 @@ func TestTracerLogFile(t *testing.T) {
 		}
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", dir)
 		tracer, err := newTracer()
+		defer tracer.Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, dir, tracer.config.logDirectory)
 		assert.NotNil(t, tracer.logFile)
@@ -266,7 +267,7 @@ func TestTracerLogFile(t *testing.T) {
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", "some/nonexistent/path")
 		tracer, err := newTracer()
 		assert.Nil(t, err)
-		defer Stop()
+		defer tracer.Stop()
 		assert.Empty(t, tracer.config.logDirectory)
 		assert.Nil(t, tracer.logFile)
 	})
