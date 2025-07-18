@@ -9,11 +9,11 @@ set +e
 [[ -d ./contrib ]] || exit 0
 
 if [ $# -eq 2 ]; then
-  CONTRIBS="$2"
-  INSTRUMENTATION_SUBMODULES=""
+	CONTRIBS="$2"
+	INSTRUMENTATION_SUBMODULES=""
 else
-  CONTRIBS=$(find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \;)
-  INSTRUMENTATION_SUBMODULES=$(find ./instrumentation -mindepth 2 -type f -name go.mod -exec dirname {} \;)
+	CONTRIBS=$(find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \;)
+	INSTRUMENTATION_SUBMODULES=$(find ./instrumentation -mindepth 2 -type f -name go.mod -exec dirname {} \;)
 fi
 
 report_error=0

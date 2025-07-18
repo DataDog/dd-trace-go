@@ -41,6 +41,10 @@ func (s *stableConfigSource) Get(key string) string {
 	return s.config.get(key)
 }
 
+func (s *stableConfigSource) GetID() string {
+	return s.config.getID()
+}
+
 // newStableConfigSource initializes a new stableConfigSource from the given file.
 func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConfigSource {
 	return &stableConfigSource{
@@ -86,14 +90,11 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	scfg := &stableConfig{}
 	err := yaml.Unmarshal(data, scfg)
 	if err != nil {
-		log.Warn("Parsing stable config file %q failed due to error, dropping: %s", fileName, err)
+		log.Warn("Parsing stable config file %s failed due to error, dropping: %v", fileName, err.Error())
 		return emptyStableConfig()
 	}
 	if scfg.Config == nil {
 		scfg.Config = make(map[string]string, 0)
-	}
-	if scfg.ID == 0 {
-		scfg.ID = -1
 	}
 	return scfg
 }

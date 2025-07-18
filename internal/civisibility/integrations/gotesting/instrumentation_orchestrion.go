@@ -85,7 +85,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	}
 
 	return func(exitCode int) {
-		log.Debug("instrumentTestingM: finished with exit code: %v", exitCode)
+		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
 
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
@@ -258,7 +258,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
-		log.Debug("instrumentSetErrorInfo: setting error info [name: %v, type: %v, message: %v]", ciTestItem.test.Name(), errType, errMessage)
+		log.Debug("instrumentSetErrorInfo: setting error info [name: %q, type: %q, message: %q]", ciTestItem.test.Name(), errType, errMessage)
 		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
 
 		// Ensure to close the test with error before CI visibility exits. In CI visibility mode, we try to never lose data.
@@ -281,7 +281,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		log.Debug("instrumentCloseAndSkip: skipping test [name: %v, reason: %v]", ciTestItem.test.Name(), skipReason)
+		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
 		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
@@ -298,7 +298,7 @@ func instrumentSkipNow(tb testing.TB) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
-		log.Debug("instrumentSkipNow: skipping test [name: %v]", ciTestItem.test.Name())
+		log.Debug("instrumentSkipNow: skipping test [name: %q]", ciTestItem.test.Name())
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
@@ -312,7 +312,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		return name, f
 	}
 
-	log.Debug("instrumentTestingBFunc: instrumenting benchmark function [name: %v]", name)
+	log.Debug("instrumentTestingBFunc: instrumenting benchmark function [name: %q]", name)
 
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
