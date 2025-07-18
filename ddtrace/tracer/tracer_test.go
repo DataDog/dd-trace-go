@@ -2442,10 +2442,12 @@ func TestFlush(t *testing.T) {
 	tr.traceWriter = tw
 
 	ts := &statsdtest.TestStatsdClient{}
+	tr.statsd.Close()
 	tr.statsd = ts
 
 	transport := newDummyTransport()
 	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	tr.stats.Stop()
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
