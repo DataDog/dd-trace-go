@@ -1342,6 +1342,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 			}
 		}`))
 	}))
+	defer srv.Close()
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
