@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"go.uber.org/goleak"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -77,7 +78,13 @@ func TestMain(m *testing.M) {
 		timeMultiplicator = time.Duration(2)
 	}
 	_, integration = os.LookupEnv("INTEGRATION")
-	os.Exit(m.Run())
+	// TODO(felixge): We should try to get rid of all the ignored functions
+	// below. And we should definitely try to not add any new ones here!
+	goleak.VerifyTestMain(
+		m,
+		goleak.IgnoreAnyFunction("github.com/cihub/seelog.(*asyncLoopLogger).processItem"),
+		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
+	)
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
