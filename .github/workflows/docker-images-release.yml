@@ -3,9 +3,10 @@ name: Release Docker images
 on:
   push:
     tags:
-      # https://regex101.com/r/kZJmr3/1
-      - 'contrib/envoyproxy/go-control-plane/v[0-9]+\.[0-9]+\.[0-9]+(-docker\.[0-9]+)?'
-      - 'contrib/k8s.io/gateway-api/v[0-9]+\.[0-9]+\.[0-9]+(-docker\.[0-9]+)?'
+      - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
+      - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -62,6 +63,7 @@ jobs:
       dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
       artifact_prefix: service-extensions
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
       tags: >-
         ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
         ${{ github.event.inputs.commit_sha || github.sha }}
@@ -75,9 +77,10 @@ jobs:
     uses: ./.github/workflows/docker-build-and-push.yml
     with:
       image: ghcr.io/datadog/dd-trace-go/request-mirror
-      dockerfile: ./contrib/k8s.io/cmd/request-mirror/Dockerfile
+      dockerfile: ./contrib/k8s.io/gateway-api/cmd/request-mirror/Dockerfile
       artifact_prefix: request-mirror
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
       tags: >-
         ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
         ${{ github.event.inputs.commit_sha || github.sha }}

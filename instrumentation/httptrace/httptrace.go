@@ -120,11 +120,17 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
+			parentCtx.ForeachBaggageItem(func(k, v string) bool {
+				if cfg.tagBaggageKey(k) {
+					ssCfg.Tags["baggage."+k] = v
+				}
+				return true
+			})
+
 			for k, v := range ipTags {
 				ssCfg.Tags[k] = v
 			}
 		})
-
 	nopts = append(nopts, opts...)
 
 	requestContext := r.Context()
