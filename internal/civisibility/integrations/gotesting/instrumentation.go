@@ -323,7 +323,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 			postPerExecution: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, _ time.Duration) {
 				failed := ptrToLocalT.Failed()
 				skipped := ptrToLocalT.Skipped()
-				log.Debug("applyAdditionalFeaturesToTestFunc: postPerExecution called for execution %d, failed: %v, skipped: %v", executionIndex, failed, skipped)
+				log.Debug("applyAdditionalFeaturesToTestFunc: postPerExecution called for execution %d, failed: %t, skipped: %t", executionIndex, failed, skipped)
 
 				if failed || skipped {
 					atomic.StoreInt32(&allAttemptsPassed, 0)
@@ -497,7 +497,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		if options.isEfdInParallel && isAnEfdExecution(execOpts.executionMetadata) {
 			// In parallel, we use the retry count set in the first execution
 			calculatedRetryCount := execOpts.retryCount
-			log.Debug("runTestWithRetry: executing test in parallel with retry count: %v", calculatedRetryCount)
+			log.Debug("runTestWithRetry: executing test in parallel with retry count: %d", calculatedRetryCount)
 			var wg sync.WaitGroup
 			wg.Add(int(calculatedRetryCount + 1))
 			for i := int64(0); i <= calculatedRetryCount; i++ {
