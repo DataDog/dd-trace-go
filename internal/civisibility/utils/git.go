@@ -358,7 +358,7 @@ func fetchCommitData(commitSha string) (localCommitData, error) {
 		// git fetch --update-shallow --filter="blob:none" --recurse-submodules=no --no-write-fetch-head <remoteName> <commitSha>
 		log.Debug("civisibility.fetchCommitData: fetching the missing commits and trees from the last month")
 		if fetchOutput, fetchErr := execGitString(
-			telemetry.UnshallowCommandsType,
+			telemetry.FetchCommandType,
 			"fetch",
 			"--update-shallow",
 			"--filter=blob:none",
