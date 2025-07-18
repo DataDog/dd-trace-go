@@ -184,7 +184,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		additionalTags[constants.LibraryCapabilitiesTestImpactAnalysis] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestManagementQuarantine] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestManagementDisable] = "1"
-		additionalTags[constants.LibraryCapabilitiesTestManagementAttemptToFix] = "2"
+		additionalTags[constants.LibraryCapabilitiesTestManagementAttemptToFix] = "5"
 
 		// mutex to protect the additional tags map
 		var aTagsMutex sync.Mutex
