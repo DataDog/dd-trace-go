@@ -136,6 +136,7 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	if code := resp.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.
