@@ -420,7 +420,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	return t, nil
 }
 
-// newTracer creates a new no-op tracer for testing.
+// newTracer creates a new tracer and starts it.
 // NOTE: This function does NOT set the global tracer, which is required for
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
