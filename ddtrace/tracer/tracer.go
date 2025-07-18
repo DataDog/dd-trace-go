@@ -213,6 +213,7 @@ func Start(opts ...StartOption) error {
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
 		// share control of the global telemetry client.
+		t.Stop()
 		return nil
 	}
 	setGlobalTracer(t)
