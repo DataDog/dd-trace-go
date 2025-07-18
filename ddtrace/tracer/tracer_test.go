@@ -173,6 +173,7 @@ func TestTracerCleanStop(t *testing.T) {
 	}()
 
 	wg.Wait()
+	Stop()
 }
 
 func TestTracerStart(t *testing.T) {

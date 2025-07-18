@@ -187,10 +187,20 @@ const (
 // statsd client; replaced in tests.
 var statsInterval = 10 * time.Second
 
+// startStopMu ensures that calling Start and Stop concurrently doesn't leak
+// goroutines. In particular, without this lock TestTracerCleanStop will leak
+// goroutines from the internal telemetry client.
+//
+// TODO: The entire Start/Stop code should be refactored, it's pretty gnarly.
+var startStopMu sync.Mutex
+
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+
 	defer func(now time.Time) {
 		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
 	}(time.Now())
@@ -280,6 +290,9 @@ func storeConfig(c *config) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+
 	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
