@@ -236,7 +236,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 }
 
 type dynamicInstrumentationRCProbeConfig struct {
-	runtimeID     string
 	configPath    string
 	configContent string
 }
@@ -263,7 +262,6 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 		} else {
 			diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
-				runtimeID:     globalconfig.RuntimeID(),
 				configPath:    k,
 				configContent: string(v),
 			}
@@ -280,6 +278,27 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 //go:noinline
 func passProbeConfiguration(runtimeID, configPath, configContent string) {}
 
+// passAllProbeConfigurationsComplete is used to signal to the bpf program that
+// all probe configurations have been passed.
+//
+//nolint:all
+//go:noinline
+func passAllProbeConfigurationsComplete(runtimeID string) {}
+
+// passAllProbeConfigurations is used to pass all probe configurations to the
+// bpf program.
+//
+//go:noinline
+func passAllProbeConfigurations(runtimeID string) {
+	defer passAllProbeConfigurationsComplete(runtimeID)
+	diRCState.Lock()
+	defer diRCState.Unlock()
+	for _, v := range diRCState.state {
+		accessStringsToMitigatePageFault(runtimeID, v.configPath, v.configContent)
+		passProbeConfiguration(runtimeID, v.configPath, v.configContent)
+	}
+}
+
 func initalizeDynamicInstrumentationRemoteConfigState() {
 	diRCState = dynamicInstrumentationRCState{
 		state: map[string]dynamicInstrumentationRCProbeConfig{},
@@ -288,12 +307,7 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 	go func() {
 		for {
 			time.Sleep(time.Second * 5)
-			diRCState.Lock()
-			for _, v := range diRCState.state {
-				accessStringsToMitigatePageFault(v.runtimeID, v.configPath, v.configContent)
-				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
-			}
-			diRCState.Unlock()
+			passAllProbeConfigurations(globalconfig.RuntimeID())
 		}
 	}()
 }

@@ -769,12 +769,10 @@ func TestDynamicInstrumentationRC(t *testing.T) {
 		require.Equal(t, map[string]state.ApplyStatus{
 			"key": {State: state.ApplyStateUnknown},
 		}, status)
-		runtimeID := globalconfig.RuntimeID()
 		require.Equal(t, map[string]dynamicInstrumentationRCProbeConfig{
 			"key": {
 				configPath:    "key",
 				configContent: `"value"`,
-				runtimeID:     runtimeID,
 			},
 		}, getDiRCState())
 		status = tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
