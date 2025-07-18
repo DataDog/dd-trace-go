@@ -7,8 +7,7 @@ on:
       - release-*
   pull_request:
     branches:
-      - main
-      - release-*
+      - "**"
   workflow_call:
     inputs:
       go-version:
@@ -105,7 +104,7 @@ jobs:
           workdir: internal/orchestrion/_integration
         env:
           GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
-  
+
   checklocks:
     runs-on: ubuntu-latest
     steps:
