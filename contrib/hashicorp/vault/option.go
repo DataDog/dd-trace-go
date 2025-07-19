@@ -24,7 +24,7 @@ type Option interface {
 	apply(*config)
 }
 
-// OptionFn represents options applicable to NewHTTPClient and WrapHTTPClient.
+// OptionFn represents options applicable to [NewHTTPClient] and [WrapHTTPClient].
 type OptionFn func(*config)
 
 func (fn OptionFn) apply(cfg *config) {
@@ -52,7 +52,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 	}
 }
 
-// WithService sets the given service name for the http.Client.
+// WithService sets the given service name for the [*http.Client].
 func WithService(name string) OptionFn {
 	return func(c *config) {
 		c.serviceName = name
