@@ -83,7 +83,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	parsedURL, _ := url.Parse(srv.URL)
 	c := config{
 		ciVisibilityEnabled: true,
-		httpClient:          defaultHTTPClient(0),
+		httpClient:          defaultHTTPClient(0, false),
 		agentURL:            parsedURL,
 	}
 

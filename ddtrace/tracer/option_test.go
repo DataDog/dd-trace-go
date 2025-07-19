@@ -359,7 +359,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
 		x := *c.httpClient
-		y := *defaultHTTPClient(0)
+		y := *defaultHTTPClient(0, false)
 		assert.Equal(10*time.Second, x.Timeout)
 		assert.Equal(x.Timeout, y.Timeout)
 		compareHTTPClients(t, x, y)
@@ -371,7 +371,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c, err := newConfig(WithAgentTimeout(2))
 		assert.NoError(t, err)
 		x := *c.httpClient
-		y := *defaultHTTPClient(2 * time.Second)
+		y := *defaultHTTPClient(2*time.Second, false)
 		compareHTTPClients(t, x, y)
 		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
 		client := &http.Client{}
@@ -934,7 +934,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 			// we have the UDS socket file, use it
 			return udsClient(internal.DefaultTraceAgentUDSPath, 0)
 		}
-		return defaultHTTPClient(time.Second * time.Duration(timeout))
+		return defaultHTTPClient(time.Second*time.Duration(timeout), false)
 	}
 	t.Run("no-socket", func(t *testing.T) {
 		// We care that whether clients are different, but doing a deep
@@ -942,7 +942,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 		// just compare the pointers.
 
 		x := *defTracerClient(2)
-		y := *defaultHTTPClient(2)
+		y := *defaultHTTPClient(2, false)
 		compareHTTPClients(t, x, y)
 		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
 	})
@@ -959,7 +959,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 		defer func(old string) { internal.DefaultTraceAgentUDSPath = old }(internal.DefaultTraceAgentUDSPath)
 		internal.DefaultTraceAgentUDSPath = f.Name()
 		x := *defTracerClient(2)
-		y := *defaultHTTPClient(2)
+		y := *defaultHTTPClient(2, false)
 		compareHTTPClients(t, x, y)
 		assert.False(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
 

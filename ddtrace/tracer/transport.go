@@ -38,7 +38,7 @@ func defaultDialer(timeout time.Duration) *net.Dialer {
 	}
 }
 
-func defaultHTTPClient(timeout time.Duration) *http.Client {
+func defaultHTTPClient(timeout time.Duration, disableKeepAlives bool) *http.Client {
 	if timeout == 0 {
 		timeout = defaultHTTPTimeout
 	}
@@ -50,6 +50,7 @@ func defaultHTTPClient(timeout time.Duration) *http.Client {
 			IdleConnTimeout:       90 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
+			DisableKeepAlives:     disableKeepAlives,
 		},
 		Timeout: timeout,
 	}

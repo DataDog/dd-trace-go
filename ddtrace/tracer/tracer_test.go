@@ -1227,7 +1227,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultHTTPClient(0))
+	return newHTTPTransport(defaultURL, defaultHTTPClient(0, true))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1346,7 +1346,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultHTTPClient(0))),
+		withTransport(newHTTPTransport(url, defaultHTTPClient(0, false))),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -2322,6 +2322,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	o := append([]StartOption{
 		withTransport(transport),
 		withTickChan(tick),
+		// disable keep-alives to avoid goroutine leaks between tests
+		WithHTTPClient(defaultHTTPClient(0, true)),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {

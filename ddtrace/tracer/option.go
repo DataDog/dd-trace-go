@@ -520,7 +520,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
 			}
 		} else {
-			c.httpClient = defaultHTTPClient(c.httpClientTimeout)
+			c.httpClient = defaultHTTPClient(c.httpClientTimeout, false)
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
