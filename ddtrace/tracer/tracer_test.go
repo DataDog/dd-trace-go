@@ -2362,6 +2362,14 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	}, nil
 }
 
+// newTestConfig wraps newConfig to set a default HTTP client with keep-alives
+// disabled. This is necessary to avoid goroutine leaks between tests, see
+// TestMain.
+func newTestConfig(opts ...StartOption) (*config, error) {
+	opts = append([]StartOption{WithHTTPClient(defaultHTTPClient(0, true))}, opts...)
+	return newConfig(opts...)
+}
+
 // comparePayloadSpans allows comparing two spans which might have been
 // read from the msgpack payload. In that case the private fields will
 // not be available and the maps (meta & metrics will be nil for lengths
