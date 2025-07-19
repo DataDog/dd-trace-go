@@ -852,6 +852,7 @@ func (t *tracer) Stop() {
 	if t.telemetry != nil {
 		t.telemetry.Close()
 	}
+	t.config.httpClient.CloseIdleConnections()
 }
 
 // Inject uses the configured or default TextMap Propagator.
