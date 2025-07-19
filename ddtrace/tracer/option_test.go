@@ -206,14 +206,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		})
 
 		t.Run("unreachable", func(t *testing.T) {
-			if testing.Short() {
-				return
-			}
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusInternalServerError)
-			}))
-			defer srv.Close()
-			cfg, err := newConfig(WithAgentAddr("127.9.9.9:8181"), WithAgentTimeout(2))
+			cfg, err := newConfig(WithAgentAddr("127.0.0.1:0"))
 			assert.NoError(t, err)
 			assert.Zero(t, cfg.agent)
 		})
