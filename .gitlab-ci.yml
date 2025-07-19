@@ -1,4 +1,5 @@
 stages:
+  - docker-images-reliability-env
   - generate
   - benchmarks
   - macrobenchmarks
@@ -67,3 +68,4 @@ check-big-regressions:
 include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
+  - local: ".gitlab/docker-images-reliability-env.yml"
