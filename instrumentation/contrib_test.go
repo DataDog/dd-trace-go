@@ -6,11 +6,11 @@
 package instrumentation
 
 import (
-	"encoding/json"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -42,29 +42,9 @@ func TestIntegrationEnabled(t *testing.T) {
 func testIntegrationEnabled(t *testing.T, contribPath string) error {
 	t.Helper()
 	t.Log(contribPath)
-	pwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = os.Chdir(pwd)
-	}()
-	if err = os.Chdir(contribPath); err != nil {
-		return err
-	}
-	body, err := exec.Command("go", "list", "-json", "./...").Output()
+	packages, err := parsePackages(contribPath)
 	if err != nil {
 		return fmt.Errorf("unable to get package info: %w", err)
-	}
-	var packages []contribPkg
-	stream := json.NewDecoder(strings.NewReader(string(body)))
-	for stream.More() {
-		var out contribPkg
-		err := stream.Decode(&out)
-		if err != nil {
-			return err
-		}
-		packages = append(packages, out)
 	}
 	for _, pkg := range packages {
 		if strings.Contains(pkg.ImportPath, "/test") || strings.Contains(pkg.ImportPath, "/internal") || strings.Contains(pkg.ImportPath, "/cmd") {
@@ -77,6 +57,88 @@ func testIntegrationEnabled(t *testing.T, contribPath string) error {
 	return fmt.Errorf(`package %q is expected use instrumentation telemetry. For more info see https://github.com/DataDog/dd-trace-go/blob/main/contrib/README.md#instrumentation-telemetry`, contribPath)
 }
 
+func parsePackages(root string) ([]contribPkg, error) {
+	var packages []contribPkg
+	packageMap := make(map[string]*contribPkg)
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		node, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			return nil
+		}
+
+		dir := filepath.Dir(path)
+		relPath, err := filepath.Rel(root, dir)
+		if err != nil {
+			return err
+		}
+
+		importPath := filepath.Join(getModulePath(root), relPath)
+		importPath = filepath.ToSlash(importPath)
+
+		pkg, exists := packageMap[importPath]
+		if !exists {
+			pkg = &contribPkg{
+				ImportPath: importPath,
+				Imports:    make([]string, 0),
+			}
+			packageMap[importPath] = pkg
+		}
+
+		for _, imp := range node.Imports {
+			importStr := strings.Trim(imp.Path.Value, `"`)
+			found := false
+			for _, existing := range pkg.Imports {
+				if existing == importStr {
+					found = true
+					break
+				}
+			}
+			if !found {
+				pkg.Imports = append(pkg.Imports, importStr)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pkg := range packageMap {
+		packages = append(packages, *pkg)
+	}
+
+	return packages, nil
+}
+
+func getModulePath(root string) string {
+	goModPath := filepath.Join(root, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
+		}
+	}
+	return ""
+}
+
 func hasInstrumentationImport(p contribPkg) bool {
 	for _, imp := range p.Imports {
 		if imp == "github.com/DataDog/dd-trace-go/v2/instrumentation" {
@@ -87,9 +149,6 @@ func hasInstrumentationImport(p contribPkg) bool {
 }
 
 type contribPkg struct {
-	Dir        string
-	Root       string
 	ImportPath string
-	Name       string
 	Imports    []string
 }
