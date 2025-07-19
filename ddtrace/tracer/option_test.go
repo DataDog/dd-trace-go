@@ -151,6 +151,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		// Ensure globalconfig also gets the auto-detected UDS address
 		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
+		statsd.Flush()
 
 		buf := make([]byte, 17)
 		n, err := conn.Read(buf)
