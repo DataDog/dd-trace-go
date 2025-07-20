@@ -78,13 +78,25 @@ func TestMain(m *testing.M) {
 		timeMultiplicator = time.Duration(2)
 	}
 	_, integration = os.LookupEnv("INTEGRATION")
+
+	// Run the tests and exit on failure
+	if code := m.Run(); code != 0 {
+		os.Exit(code)
+	}
+
+	// If the tests pass, check for goroutine leaks:
+	//
 	// TODO(felixge): We should try to get rid of all the ignored functions
 	// below. And we should definitely try to not add any new ones here!
-	goleak.VerifyTestMain(
-		m,
+	opts := []goleak.Option{
 		goleak.IgnoreAnyFunction("github.com/cihub/seelog.(*asyncLoopLogger).processItem"),
 		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
-	)
+	}
+	if err := goleak.Find(opts...); err != nil {
+		fmt.Fprintf(os.Stderr, "goleak: Errors on successful test run: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "See Goroutine Leak section in CONTRIBUTING.md for more information on how to fix this.\n")
+		os.Exit(1)
+	}
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
