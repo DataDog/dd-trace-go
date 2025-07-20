@@ -2248,8 +2248,20 @@ func genBigTraces(b *testing.B) {
 				sp.Finish()
 			}
 			parent.Finish()
-			go flush(-1)         // act like a ticker
-			go transport.Reset() // pretend we sent any payloads
+			// TODO(fg): This test has historically not waited for the two
+			// goroutines below to finish. This was causing test failures when
+			// goroutine leak checks were added to TestMain. However, looking at
+			// the code, perhaps these goroutines should be required to finish
+			// before b.StopTimer() is called?
+			wg.Add(2)
+			go func() {
+				flush(-1) // act like a ticker
+				wg.Done()
+			}()
+			go func() {
+				transport.Reset() // pretend we sent any payloads
+				wg.Done()
+			}()
 		}
 	}
 	b.StopTimer()
