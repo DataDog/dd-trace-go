@@ -22,7 +22,7 @@ const logPrefixRegexp = `Datadog Tracer v[0-9]+\.[0-9]+\.[0-9]+(-((rc|beta)\.[0-
 
 // commonLogIgnore is a list of strings that are commonly ignored by tests
 // involving the output of the logger.
-var commonLogIgnore = []string{"appsec: ", "telemetry"}
+var commonLogIgnore = []string{"appsec: ", "telemetry", "Runtime metrics v2 enabled"}
 
 func TestStartupLog(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
