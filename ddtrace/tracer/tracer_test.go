@@ -1766,11 +1766,15 @@ func TestPushPayload(t *testing.T) {
 func TestPushTrace(t *testing.T) {
 	assert := assert.New(t)
 
+	oldLvl := log.GetLevel()
+	defer func() { log.SetLevel(oldLvl) }()
+	log.SetLevel(log.LevelDebug)
+
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
 	tracer, err := newUnstartedTracer()
 	assert.Nil(err)
-	defer tracer.statsd.Close()
+	defer tracer.Stop()
 	trace := []*Span{
 		{
 			name:     "pylons.request",
@@ -1790,7 +1794,7 @@ func TestPushTrace(t *testing.T) {
 	t0 := <-tracer.out
 	assert.Equal(&chunk{spans: trace}, t0)
 
-	many := payloadQueueSize + 2
+	many := payloadQueueSize * 2
 	for i := 0; i < many; i++ {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
