@@ -2047,7 +2047,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithLogger(tp), WithEnv("test"))
 		assert.Nil(t, err)
 		defer tracer.Stop()

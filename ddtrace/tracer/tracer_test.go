@@ -716,7 +716,7 @@ func TestSamplingDecision(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -733,7 +733,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
