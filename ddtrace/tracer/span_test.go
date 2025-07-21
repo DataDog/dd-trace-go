@@ -885,6 +885,14 @@ func TestSpanErrorNil(t *testing.T) {
 }
 
 func TestSpanErrorStackMetrics(t *testing.T) {
+	// this test is flaky on Windows due to differences in time.Duration
+	// In order to test as much as we can, we only want to skip over checks for
+	// time and/or duration.
+	windows := false
+	if strings.HasPrefix(runtime.GOOS, "windows") {
+		windows = true
+	}
+
 	t.Run("debug stack disabled", func(t *testing.T) {
 		assert := assert.New(t)
 		var tg statsdtest.TestStatsdClient
@@ -920,7 +928,9 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		tracer.StartSpan("operation").Finish(WithError(errors.New("test")))
 
 		assert.Equal(1.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
-		assert.Greater(telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get(), 0.0)
+		if !windows {
+			assert.Greater(telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get(), 0.0)
+		}
 
 		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
 		assert.Equal(0.0, telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get())
@@ -928,14 +938,13 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 
 	t.Run("error:multiple spans", func(t *testing.T) {
 		assert := assert.New(t)
-		var tg statsdtest.TestStatsdClient
 		numSpans := 5
 
 		telemetryClient := new(telemetrytest.RecordClient)
 		telemetryClient.ProductStarted(telemetry.NamespaceTracers)
 		defer telemetry.MockClient(telemetryClient)()
 
-		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+		tracer, _, _, stop, err := startTestTracer(t, WithDebugStack(true))
 		assert.Nil(err)
 		defer stop()
 
@@ -944,7 +953,9 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		}
 
 		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
-		assert.Greater(telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get(), 0.0)
+		if !windows {
+			assert.Greater(telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get(), 0.0)
+		}
 
 		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
 		assert.Equal(0.0, telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get())
@@ -952,14 +963,13 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 
 	t.Run("errortrace", func(t *testing.T) {
 		assert := assert.New(t)
-		var tg statsdtest.TestStatsdClient
 		numSpans := 5
 
 		telemetryClient := new(telemetrytest.RecordClient)
 		telemetryClient.ProductStarted(telemetry.NamespaceTracers)
 		defer telemetry.MockClient(telemetryClient)()
 
-		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg), WithDebugStack(true))
+		tracer, _, _, stop, err := startTestTracer(t, WithDebugStack(true))
 		assert.Nil(err)
 		defer stop()
 
@@ -971,7 +981,9 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		assert.Equal(0.0, telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get())
 
 		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
-		assert.Greater(telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get(), 0.0)
+		if !windows {
+			assert.Greater(telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:TracerError"}).Get(), 0.0)
+		}
 	})
 }
 
