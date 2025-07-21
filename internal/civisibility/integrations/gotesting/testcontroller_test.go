@@ -34,8 +34,6 @@ var parallelEfd bool
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
-	// log.SetLevel(log.LevelDebug)
-
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
