@@ -252,19 +252,24 @@ var (
 )
 
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	applyStatus := map[string]state.ApplyStatus{}
+	applyStatus := make(map[string]state.ApplyStatus, len(u))
 
 	diRCState.Lock()
+	defer diRCState.Unlock()
 	for k, v := range u {
 		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
-		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-		diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
-			runtimeID:     globalconfig.RuntimeID(),
-			configPath:    k,
-			configContent: string(v),
+		if len(v) == 0 {
+			delete(diRCState.state, k)
+			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
+		} else {
+			diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
+				runtimeID:     globalconfig.RuntimeID(),
+				configPath:    k,
+				configContent: string(v),
+			}
+			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
 		}
 	}
-	diRCState.Unlock()
 	return applyStatus
 }
 
