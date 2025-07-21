@@ -719,18 +719,50 @@ func TestDynamicInstrumentationRC(t *testing.T) {
 		defer diRCState.Unlock()
 		return maps.Clone(diRCState.state)
 	}
-	initalizeDynamicInstrumentationRemoteConfigState()
 
-	t.Run("Deleted config removes from map", func(t *testing.T) {
+	startTracer := func(t *testing.T) *tracer {
 		telemetryClient := new(telemetrytest.RecordClient)
-		defer telemetry.MockClient(telemetryClient)()
-
+		t.Cleanup(telemetry.MockClient(telemetryClient))
 		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		require.Nil(t, err)
-		defer stop()
+		t.Cleanup(stop)
+
+		tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+		return tracer
+	}
+
+	startRemoteConfig := func(t *testing.T, tracer *tracer) {
+		t.Cleanup(remoteconfig.Reset)
+		t.Cleanup(remoteconfig.Stop)
+		err := tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+		require.NoError(t, err)
+	}
+
+	checkRemoteConfigProductState := func(t *testing.T, product string, enabled bool) {
+		found, err := remoteconfig.HasProduct(product)
+		require.NoError(t, err)
+		require.Equal(t, enabled, found)
+	}
+
+	t.Run("Subscribes to LIVE_DEBUGGING product when enabled", func(t *testing.T) {
+		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
+		tracer := startTracer(t)
+		startRemoteConfig(t, tracer)
+		checkRemoteConfigProductState(t, state.ProductLiveDebugging, true)
+	})
+
+	t.Run("Does not subscribe to LIVE_DEBUGGING product when disabled", func(t *testing.T) {
+		tracer := startTracer(t)
+		startRemoteConfig(t, tracer)
+		checkRemoteConfigProductState(t, state.ProductLiveDebugging, false)
+	})
+
+	t.Run("Deleted config removes from map", func(t *testing.T) {
+		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
+		tracer := startTracer(t)
+		startRemoteConfig(t, tracer)
 
 		require.Empty(t, getDiRCState())
-
 		status := tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
 			"key": []byte(`"value"`),
 		})
@@ -761,6 +793,9 @@ func TestStartRemoteConfig(t *testing.T) {
 	defer stop()
 
 	tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+	defer remoteconfig.Reset()
+	defer remoteconfig.Stop()
+
 	found, err := remoteconfig.HasProduct(state.ProductAPMTracing)
 	require.NoError(t, err)
 	require.True(t, found)
