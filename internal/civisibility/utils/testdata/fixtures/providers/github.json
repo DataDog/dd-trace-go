@@ -710,5 +710,32 @@
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "git.repository_url": "https://1.1.1.1:1234/ghactions-repo.git"
     }
+  ],
+  [
+    {
+      "GITHUB_ACTION": "run",
+      "GITHUB_BASE_REF": "target-branch",
+      "GITHUB_JOB": "github-job-name",
+      "GITHUB_REPOSITORY": "ghactions-repo",
+      "GITHUB_RUN_ATTEMPT": "ghactions-run-attempt",
+      "GITHUB_RUN_ID": "ghactions-pipeline-id",
+      "GITHUB_RUN_NUMBER": "ghactions-pipeline-number",
+      "GITHUB_SERVER_URL": "https://github.com",
+      "GITHUB_SHA": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "GITHUB_WORKFLOW": "ghactions-pipeline-name"
+    },
+    {
+      "_dd.ci.env_vars": "{\"GITHUB_SERVER_URL\":\"https://github.com\",\"GITHUB_REPOSITORY\":\"ghactions-repo\",\"GITHUB_RUN_ID\":\"ghactions-pipeline-id\",\"GITHUB_RUN_ATTEMPT\":\"ghactions-run-attempt\"}",
+      "ci.job.name": "github-job-name",
+      "ci.job.url": "https://github.com/ghactions-repo/commit/b9f0fb3fdbb94c9d24b2c75b49663122a529e123/checks",
+      "ci.pipeline.id": "ghactions-pipeline-id",
+      "ci.pipeline.name": "ghactions-pipeline-name",
+      "ci.pipeline.number": "ghactions-pipeline-number",
+      "ci.pipeline.url": "https://github.com/ghactions-repo/actions/runs/ghactions-pipeline-id/attempts/ghactions-run-attempt",
+      "ci.provider.name": "github",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.pull_request.base_branch": "target-branch",
+      "git.repository_url": "https://github.com/ghactions-repo.git"
+    }
   ]
 ]
