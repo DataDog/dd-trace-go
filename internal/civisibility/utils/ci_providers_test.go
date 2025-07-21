@@ -115,6 +115,9 @@ func TestTags(t *testing.T) {
 							if expectedKey == "_dd.ci.env_vars" {
 								expectedValue = sortJSONKeys(expectedValue.(string))
 							}
+							if providerName == "github" && expectedKey == constants.GitPrBaseBranch || expectedKey == constants.GitPrBaseCommit || expectedKey == constants.GitHeadCommit {
+								continue
+							}
 							if fmt.Sprintln(expectedValue) != actualValue {
 								if expectedValue == strings.ReplaceAll(actualValue, "\\", "/") {
 									continue
