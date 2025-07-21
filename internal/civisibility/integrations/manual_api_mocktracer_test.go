@@ -23,12 +23,12 @@ import (
 var mockTracer mocktracer.Tracer
 
 func TestMain(m *testing.M) {
-	// Initialize civisibility using the mocktracer for testing
-	mockTracer = InitializeCIVisibilityMock()
-
 	// Avoid any backend calls during tests
 	additionalFeaturesInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce.Do(func() {})
+
+	// Initialize civisibility using the mocktracer for testing
+	mockTracer = InitializeCIVisibilityMock()
 
 	// Run tests
 	os.Exit(m.Run())
