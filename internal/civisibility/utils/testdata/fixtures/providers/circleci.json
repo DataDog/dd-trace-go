@@ -750,5 +750,28 @@
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "git.repository_url": "ssh://host.xz:54321/path/to/repo.git/"
     }
+  ],
+  [
+    {
+      "CIRCLECI": "circleCI",
+      "CIRCLE_BUILD_NUM": "circleci-pipeline-number",
+      "CIRCLE_BUILD_URL": "https://circleci-build-url.com/",
+      "CIRCLE_JOB": "circleci-job-name",
+      "CIRCLE_PROJECT_REPONAME": "circleci-pipeline-name",
+      "CIRCLE_PR_NUMBER": 42,
+      "CIRCLE_SHA1": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "CIRCLE_WORKFLOW_ID": "circleci-pipeline-id"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CIRCLE_WORKFLOW_ID\":\"circleci-pipeline-id\",\"CIRCLE_BUILD_NUM\":\"circleci-pipeline-number\"}",
+      "ci.job.name": "circleci-job-name",
+      "ci.job.url": "https://circleci-build-url.com/",
+      "ci.pipeline.id": "circleci-pipeline-id",
+      "ci.pipeline.name": "circleci-pipeline-name",
+      "ci.pipeline.url": "https://app.circleci.com/pipelines/workflows/circleci-pipeline-id",
+      "ci.provider.name": "circleci",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "pr.number": "42"
+    }
   ]
 ]

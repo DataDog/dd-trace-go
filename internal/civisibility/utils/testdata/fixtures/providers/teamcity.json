@@ -74,5 +74,21 @@
       "git.repository_url": "git@github.com:DataDog/userrepo.git",
       "git.tag": "0.0.2"
     }
+  ],
+  [
+    {
+      "BUILD_URL": "https://teamcity.com/repo",
+      "TEAMCITY_BUILDCONF_NAME": "Test 1",
+      "TEAMCITY_PULLREQUEST_NUMBER": 42,
+      "TEAMCITY_PULLREQUEST_TARGET_BRANCH": "target-branch",
+      "TEAMCITY_VERSION": "2022.10 (build 116751)"
+    },
+    {
+      "ci.job.name": "Test 1",
+      "ci.job.url": "https://teamcity.com/repo",
+      "ci.provider.name": "teamcity",
+      "git.pull_request.base_branch": "target-branch",
+      "pr.number": "42"
+    }
   ]
 ]

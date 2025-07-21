@@ -158,5 +158,25 @@
       "git.repository_url": "git@github.com:DataDog/userrepo.git",
       "git.tag": "0.0.2"
     }
+  ],
+  [
+    {
+      "CF_BUILD_ID": "6410367cee516146a4c4c66e",
+      "CF_BUILD_URL": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "CF_PIPELINE_NAME": "My simple project/Example Java Project Pipeline",
+      "CF_PULL_REQUEST_NUMBER": 42,
+      "CF_PULL_REQUEST_TARGET": "target-branch",
+      "CF_STEP_NAME": "mah-job-name"
+    },
+    {
+      "_dd.ci.env_vars": "{\"CF_BUILD_ID\":\"6410367cee516146a4c4c66e\"}",
+      "ci.job.name": "mah-job-name",
+      "ci.pipeline.id": "6410367cee516146a4c4c66e",
+      "ci.pipeline.name": "My simple project/Example Java Project Pipeline",
+      "ci.pipeline.url": "https://g.codefresh.io/build/6410367cee516146a4c4c66e",
+      "ci.provider.name": "codefresh",
+      "git.pull_request.base_branch": "target-branch",
+      "pr.number": "42"
+    }
   ]
 ]
