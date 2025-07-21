@@ -102,9 +102,6 @@ func normalizeTags(tags map[string]string) {
 		tags[constants.GitTag] = normalizeRef(tag)
 	}
 	if tag, ok := tags[constants.GitPrBaseBranch]; ok && tag != "" {
-		if strings.Contains(tag, "refs/tags") || strings.Contains(tag, "origin/tags") || strings.Contains(tag, "refs/heads/tags") {
-			tags[constants.GitPrBaseBranch] = normalizeRef(tag)
-		}
 		tags[constants.GitPrBaseBranch] = normalizeRef(tag)
 	}
 	if tag, ok := tags[constants.GitRepositoryURL]; ok && tag != "" {
