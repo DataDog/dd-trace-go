@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,10 @@ var mockTracer mocktracer.Tracer
 func TestMain(m *testing.M) {
 	// Initialize civisibility using the mocktracer for testing
 	mockTracer = InitializeCIVisibilityMock()
+
+	// Avoid any backend calls during tests
+	additionalFeaturesInitializationOnce = sync.Once{}
+	additionalFeaturesInitializationOnce.Do(func() {})
 
 	// Run tests
 	os.Exit(m.Run())

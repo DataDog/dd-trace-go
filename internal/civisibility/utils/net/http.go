@@ -386,12 +386,17 @@ func decompressData(data []byte) ([]byte, error) {
 
 // exponentialBackoff performs an exponential backoff with retries.
 func exponentialBackoff(retryCount int, initialDelay time.Duration) {
+	time.Sleep(getExponentialBackoffDuration(retryCount, initialDelay))
+}
+
+// getExponentialBackoffDuration calculates the backoff duration based on the retry count and initial delay.
+func getExponentialBackoffDuration(retryCount int, initialDelay time.Duration) time.Duration {
 	maxDelay := 10 * time.Second
 	delay := initialDelay * (1 << uint(retryCount)) // Exponential backoff
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	time.Sleep(delay)
+	return delay
 }
 
 // prepareContent prepares the content for a FormFile by serializing it if needed.
