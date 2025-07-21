@@ -128,7 +128,7 @@ func TestSendMultipartFormDataRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockMultipartHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method: "POST",
 		URL:    server.URL,
@@ -165,7 +165,7 @@ func TestSendJSONRequestWithGzipCompression(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockJSONMsgPackHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "POST",
 		URL:        server.URL,
@@ -191,7 +191,7 @@ func TestSendMultipartFormDataRequestWithGzipCompression(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockMultipartHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method: "POST",
 		URL:    server.URL,
@@ -229,7 +229,7 @@ func TestRateLimitHandlingWithRetries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockRateLimitHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET", // No body needed for GET
 		URL:        server.URL,
@@ -295,7 +295,7 @@ func TestRateLimitHandlingWithoutResetHeader(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockRateLimitHandlerWithoutHeader))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET", // No body needed for GET
 		URL:        server.URL,
@@ -316,7 +316,7 @@ func TestRateLimitHandlingWithoutResetHeader(t *testing.T) {
 
 func TestSendRequestWithInvalidURL(t *testing.T) {
 	t.Parallel()
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        "http://[::1]:namedport", // Invalid URL
@@ -333,7 +333,7 @@ func TestSendEmptyBodyWithGzipCompression(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockJSONMsgPackHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "POST",
 		URL:        server.URL,
@@ -359,7 +359,7 @@ func TestSendPUTRequestWithJSONBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockJSONMsgPackHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "PUT",
 		URL:        server.URL,
@@ -378,7 +378,7 @@ func TestSendDELETERequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockJSONMsgPackHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "DELETE",
 		URL:        server.URL,
@@ -395,7 +395,7 @@ func TestSendHEADRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockJSONMsgPackHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "HEAD",
 		URL:        server.URL,
@@ -412,7 +412,7 @@ func TestSendRequestWithCustomHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockJSONMsgPackHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	customHeaderKey := "X-Custom-Header"
 	customHeaderValue := "CustomValue"
 
@@ -446,7 +446,7 @@ func TestSendRequestWithTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockSlowHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	handler.Client.Timeout = 1 * time.Second // Set client timeout to 2 seconds
 
 	config := RequestConfig{
@@ -470,7 +470,7 @@ func TestSendRequestWithMaxRetriesExceeded(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockAlwaysFailHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        server.URL,
@@ -512,7 +512,7 @@ func TestGzipResponseDecompressionHandling(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(mockGzipResponseHandler))
 	defer server.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        server.URL,
@@ -533,7 +533,7 @@ func TestGzipResponseDecompressionHandling(t *testing.T) {
 
 func TestSendRequestWithUnsupportedFormat(t *testing.T) {
 	t.Parallel()
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "POST",
 		URL:        "http://example.com",
@@ -549,7 +549,7 @@ func TestSendRequestWithUnsupportedFormat(t *testing.T) {
 
 func TestSendRequestWithInvalidMethod(t *testing.T) {
 	t.Parallel()
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method: "",
 		URL:    "http://example.com",
@@ -562,7 +562,7 @@ func TestSendRequestWithInvalidMethod(t *testing.T) {
 
 func TestSendRequestWithEmptyURL(t *testing.T) {
 	t.Parallel()
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method: "GET",
 		URL:    "",
@@ -575,7 +575,7 @@ func TestSendRequestWithEmptyURL(t *testing.T) {
 
 func TestSendRequestWithNetworkError(t *testing.T) {
 	t.Parallel()
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:  "GET",
 		URL:     "http://invalid-url",
@@ -645,7 +645,7 @@ func TestSendRequestWithUnsupportedResponseFormat(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method: "GET",
 		URL:    ts.URL,
@@ -694,7 +694,7 @@ func TestCreateMultipartFormDataWithCompression(t *testing.T) {
 
 func TestSendRequestWithBodySerializationError(t *testing.T) {
 	t.Parallel()
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method: "POST",
 		URL:    "http://example.com",
@@ -722,7 +722,7 @@ func TestSendRequestWithCompressedResponse(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        ts.URL,
@@ -757,7 +757,7 @@ func TestSendRequestWithRetryAfterHeader(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        ts.URL,
@@ -796,7 +796,7 @@ func TestSendRequestWithInvalidRetryAfterHeader(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        ts.URL,
@@ -864,7 +864,7 @@ func TestSendRequestWithRateLimitButNoResetHeader(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        ts.URL,
@@ -893,7 +893,7 @@ func TestSendRequestWhenServerClosesConnection(t *testing.T) {
 	ts.Start()
 	defer ts.Close()
 
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        ts.URL,
@@ -908,7 +908,7 @@ func TestSendRequestWhenServerClosesConnection(t *testing.T) {
 
 func TestSendRequestWithInvalidPortAndMaxRetriesExceeded(t *testing.T) {
 	t.Parallel()
-	handler := NewRequestHandlerWithClient(createNewHttpClient())
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
 	config := RequestConfig{
 		Method:     "GET",
 		URL:        "http://localhost:0", // Invalid port to force error
