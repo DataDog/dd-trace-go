@@ -889,7 +889,7 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 	// In order to test as much as we can, we only want to skip over checks for
 	// time and/or duration.
 	windows := false
-	if strings.HasPrefix(runtime.GOOS, "windows") {
+	if runtime.GOOS == "windows" {
 		windows = true
 	}
 
