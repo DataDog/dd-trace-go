@@ -7,8 +7,7 @@ on:
       - release-*
   pull_request:
     branches:
-      - main
-      - release-*
+      - "**"
   workflow_call:
     inputs:
       go-version:
@@ -71,11 +70,20 @@ jobs:
       id-token: write
       pull-requests: write
     steps:
-      - name: Get STS token
+      - name: Get STS token for PR
         uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0 # v1.0.1
-        id: octo-sts
+        if: github.event_name == 'pull_request'
+        id: octo-sts-pr
         with:
+          # TODO(kakkoyun): Change to self.pr-static-checks
           policy: self.reviewdog
+          scope: DataDog/dd-trace-go
+      - name: Get STS token for push
+        uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0 # v1.0.1
+        if: github.event_name == 'push'
+        id: octo-sts-push
+        with:
+          policy: self.push-static-checks
           scope: DataDog/dd-trace-go
 
       - name: Checkout
@@ -105,7 +113,7 @@ jobs:
           workdir: internal/orchestrion/_integration
         env:
           GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
-  
+
   checklocks:
     runs-on: ubuntu-latest
     steps:

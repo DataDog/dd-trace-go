@@ -4,7 +4,7 @@ go 1.23.1
 
 require (
 	cloud.google.com/go/pubsub v1.49.0
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/api v0.237.0
 	google.golang.org/grpc v1.73.0
@@ -27,7 +27,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/version v0.67.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.3.0 // indirect
-	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a // indirect
+	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633 // indirect
 	github.com/DataDog/go-sqllexer v0.1.6 // indirect
 	github.com/DataDog/go-tuf v1.1.0-0.5.2 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.27.0 // indirect

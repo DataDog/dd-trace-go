@@ -157,6 +157,9 @@ type tracer struct {
 	// logFile is closed when tracer stops
 	// by default, tracer logs to stderr and this setting is unused
 	logFile *log.ManagedFile
+
+	// runtimeMetrics is submitting runtime metrics to the agent using statsd.
+	runtimeMetrics *runtimemetrics.Emitter
 }
 
 const (
@@ -418,7 +421,8 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	}
 	if c.runtimeMetricsV2 {
 		l := slog.New(slogHandler{})
-		if err := runtimemetrics.Start(t.statsd, l); err == nil {
+		opts := &runtimemetrics.Options{Logger: l}
+		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
 			l.Debug("Runtime metrics v2 enabled.")
 		} else {
 			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
@@ -810,6 +814,9 @@ func (t *tracer) Stop() {
 	t.stats.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
+	if t.runtimeMetrics != nil {
+		t.runtimeMetrics.Stop()
+	}
 	t.statsd.Close()
 	if t.dataStreams != nil {
 		t.dataStreams.Stop()

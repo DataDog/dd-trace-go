@@ -41,7 +41,7 @@ on:
 
 jobs:
   build-images:
-    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'arm-4core-linux' }}
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     strategy:
       matrix:
         platform: ${{ fromJSON(inputs.platforms) }}

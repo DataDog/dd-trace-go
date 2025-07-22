@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/apps/v2
 go 1.23.1
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.2.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
 	golang.org/x/sync v0.15.0
 )
 
@@ -20,7 +20,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/version v0.67.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.3.0 // indirect
-	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a // indirect
+	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633 // indirect
 	github.com/DataDog/go-sqllexer v0.1.6 // indirect
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.27.0 // indirect
 	github.com/DataDog/sketches-go v1.4.7 // indirect

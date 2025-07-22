@@ -268,6 +268,12 @@ func (c *Client) updateState() {
 		log.Error("remoteconfig: unexpected error while creating a new http request: %s", err.Error())
 		return
 	}
+	if internal.ContainerID() != "" {
+		req.Header.Set("Datadog-Container-ID", internal.ContainerID())
+	}
+	if internal.EntityID() != "" {
+		req.Header.Set("Datadog-Entity-ID", internal.EntityID())
+	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
