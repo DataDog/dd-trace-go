@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 go 1.23.1
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/stretchr/testify v1.10.0
 )
