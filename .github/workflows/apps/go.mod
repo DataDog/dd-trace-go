@@ -5,7 +5,7 @@ go 1.23.3
 require (
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/mod v0.23.0
+	golang.org/x/mod v0.25.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.70.3
 )
 
