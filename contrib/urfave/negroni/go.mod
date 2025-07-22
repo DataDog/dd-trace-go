@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2
 go 1.23.1
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/negroni v1.0.0
 )
