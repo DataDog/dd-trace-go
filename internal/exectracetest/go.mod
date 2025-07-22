@@ -6,7 +6,7 @@ toolchain go1.24.0
 
 require (
 	github.com/google/pprof v0.0.0-20250607225305-033d6d78b36a
-	github.com/mattn/go-sqlite3 v1.14.18
+	github.com/mattn/go-sqlite3 v1.14.22
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-rc.28
 )
@@ -22,7 +22,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.67.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.1.0 // indirect
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.2.0-rc.1 // indirect
 	github.com/DataDog/dd-trace-go/v2 v2.2.0-rc.1 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.3.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633 // indirect
