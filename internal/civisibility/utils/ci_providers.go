@@ -449,6 +449,7 @@ func extractGithubActions() map[string]string {
 			defer eventFile.Close()
 
 			var eventJSON struct {
+				Number      int `json:"number"`
 				PullRequest struct {
 					Base struct {
 						Sha string `json:"sha"`
@@ -465,6 +466,7 @@ func extractGithubActions() map[string]string {
 				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
 				tags[constants.GitPrBaseCommit] = eventJSON.PullRequest.Base.Sha
 				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
+				tags[constants.PrNumber] = fmt.Sprintf("%d", eventJSON.Number)
 			}
 		}
 	}

@@ -161,10 +161,12 @@ func TestGitHubEventFile(t *testing.T) {
 		expectedHeadCommit := "df289512a51123083a8e6931dd6f57bb3883d4c4"
 		expectedBaseCommit := "52e0974c74d41160a03d59ddc73bb9f5adab054b"
 		expectedBaseRef := "main"
+		expectedPrNumber := "1"
 
 		checkValue(tags, constants.GitHeadCommit, expectedHeadCommit)
 		checkValue(tags, constants.GitPrBaseCommit, expectedBaseCommit)
 		checkValue(tags, constants.GitPrBaseBranch, expectedBaseRef)
+		checkValue(tags, constants.PrNumber, expectedPrNumber)
 	})
 
 	t.Run("no event file", func(t *testing.T) {
