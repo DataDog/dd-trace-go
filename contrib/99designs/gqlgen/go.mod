@@ -4,7 +4,7 @@ go 1.23.1
 
 require (
 	github.com/99designs/gqlgen v0.17.62
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
 	github.com/stretchr/testify v1.10.0
 	github.com/vektah/gqlparser/v2 v2.5.21
 )
