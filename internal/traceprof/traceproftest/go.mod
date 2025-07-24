@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.2.0-rc.1
-	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.2.0-rc.1
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-rc.1
+	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.2.0-rc.2
+	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.2.0-rc.2
+	github.com/DataDog/dd-trace-go/v2 v2.2.0-rc.2
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/stretchr/testify v1.10.0
