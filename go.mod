@@ -105,3 +105,7 @@ retract (
 	[v2.0.0-rc.1, v2.0.0-rc.22]
 	[v2.0.0-beta.1, v2.0.0-beta.11]
 )
+
+retract v2.2.0 // Published accidentally
+
+retract v2.2.1 // Contains retractions only
