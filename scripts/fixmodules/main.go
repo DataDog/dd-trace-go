@@ -390,7 +390,7 @@ func findImports(goFiles []string) ([]string, error) {
 	}
 
 	var imports []string
-	for k := range importSet {
+	for k, _ := range importSet {
 		imports = append(imports, k)
 	}
 	sort.Strings(imports)

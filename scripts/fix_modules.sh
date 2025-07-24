@@ -5,12 +5,9 @@
 
 go run -tags=scripts ./scripts/fixmodules -root=. .
 
-for f in $(find . -name go.mod); do
-	(
-		cd $(dirname $f)
-		go mod tidy
-	)
+for f in $(find . -name go.mod)
+  do (cd $(dirname $f); go mod tidy)
 done
 
 # This command will update the go.work.sum file
-go list -m all >/dev/null
+go list -m all > /dev/null

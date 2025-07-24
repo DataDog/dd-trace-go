@@ -38,11 +38,11 @@ If you installed more packages than you intended, you can use `go mod tidy` to r
 
 ### Documentation
 
-- [APM Tracing API](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace)
-- [APM Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
-- [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go)
-- [Application Security Monitoring](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go)
-- If you are migrating from an older version of the tracer (e.g., 1.60.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
+ - [APM Tracing API](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/ddtrace)
+ - [APM Tracing Go Applications](https://docs.datadoghq.com/tracing/setup/go/)
+ - [Continuous Go Profiler](https://docs.datadoghq.com/tracing/profiler/enabling/go)
+ - [Application Security Monitoring](https://docs.datadoghq.com/security_platform/application_security/setup_and_configure/?code-lang=go)
+ - If you are migrating from an older version of the tracer (e.g., 1.60.x) you may also find the [migration document](MIGRATING.md) we've put together helpful.
 
 ### Go Support Policy
 
@@ -62,7 +62,6 @@ The best way to run the entire test suite is using the [scripts/test.sh](./scrip
 
 If you're only interested in the tests for a specific integration it can be useful to spin up just the required containers via docker-compose.
 For example if you're running tests that need the `mysql` database container to be up:
-
 ```shell
 docker compose -f docker-compose.yaml -p dd-trace-go up -d mysql
 ```
