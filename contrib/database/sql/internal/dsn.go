@@ -263,7 +263,7 @@ func isValidHostnameStart(s string) bool {
 	}
 	// Should contain hostname-like patterns
 	return strings.Contains(s, ".") || strings.Contains(s, ":") ||
-		strings.Contains(s, "/") || s == strings.TrimSpace(s)
+		   strings.Contains(s, "/") || s == strings.TrimSpace(s)
 }
 
 // sanitizeMySQLPasswords sanitizes passwords in MySQL DSN format (user:pass@tcp...).
