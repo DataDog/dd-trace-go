@@ -100,26 +100,31 @@ type RequestHandler struct {
 // This also permits orchestrion to disable tracing on this client.
 // See https://golang.org/pkg/net/http/#DefaultTransport .
 // Except we use a higher timeout for this
-var defaultHTTPClient = http.Client{
-	Timeout: 45 * time.Second,
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
+var defaultHTTPClient = createNewHTTPClient()
+
+// createNewHTTPClient creates a new HTTP client with custom transport settings.
+func createNewHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 45 * time.Second,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 }
 
 // NewRequestHandler creates a new RequestHandler with a default HTTP client.
 func NewRequestHandler() *RequestHandler {
 	return &RequestHandler{
-		Client: &defaultHTTPClient,
+		Client: defaultHTTPClient,
 	}
 }
 
@@ -386,12 +391,17 @@ func decompressData(data []byte) ([]byte, error) {
 
 // exponentialBackoff performs an exponential backoff with retries.
 func exponentialBackoff(retryCount int, initialDelay time.Duration) {
+	time.Sleep(getExponentialBackoffDuration(retryCount, initialDelay))
+}
+
+// getExponentialBackoffDuration calculates the backoff duration based on the retry count and initial delay.
+func getExponentialBackoffDuration(retryCount int, initialDelay time.Duration) time.Duration {
 	maxDelay := 10 * time.Second
 	delay := initialDelay * (1 << uint(retryCount)) // Exponential backoff
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	time.Sleep(delay)
+	return delay
 }
 
 // prepareContent prepares the content for a FormFile by serializing it if needed.

@@ -1,0 +1,130 @@
+name: Static Checks
+
+on:
+  push:
+    branches:
+      - main
+      - release-*
+  pull_request:
+    branches:
+      - "**"
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
+
+env:
+  # Users may build our library with GOTOOLCHAIN=local. If they do, and our
+  # go.mod file specifies a newer Go version than their local toolchain, their
+  # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
+  # our library builds with all of the Go versions we claim to support,
+  # without having to download a newer one.
+  GOTOOLCHAIN: local
+  GODEBUG: "x509negativeserial=1"
+  GOLANGCI_LINT_VERSION: v2.2.1
+
+permissions:
+  contents: read
+
+jobs:
+  copyright:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup go
+        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+        with:
+          go-version: ${{ inputs.go-version }}
+      - name: Copyright
+        run: |
+          go run ./scripts/checkcopyright.go
+
+  check-modules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+      - name: Run fixmodules
+        run: ./scripts/fix_modules.sh
+      - name: Check for changes
+        run: git diff --exit-code
+
+  lint:
+    runs-on:
+      group: "APM Larger Runners"
+    permissions:
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Get STS token for PR
+        uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0 # v1.0.1
+        if: github.event_name == 'pull_request'
+        id: octo-sts-pr
+        with:
+          # TODO(kakkoyun): Change to self.pr-static-checks
+          policy: self.reviewdog
+          scope: DataDog/dd-trace-go
+      - name: Get STS token for push
+        uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0 # v1.0.1
+        if: github.event_name == 'push'
+        id: octo-sts-push
+        with:
+          policy: self.push-static-checks
+          scope: DataDog/dd-trace-go
+
+      - name: Checkout
+        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: golangci-lint
+        uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
+        with:
+          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
+          go_version: ${{ inputs.go-version }}
+          golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
+          fail_level: error
+          reporter: github-pr-review
+        env:
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
+
+      - name: golangci-lint (internal/orchestrion/_integration)
+        uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
+        with:
+          golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
+          go_version: ${{ inputs.go-version }}
+          golangci_lint_version: ${{ env.GOLANGCI_LINT_VERSION }}
+          fail_level: error
+          reporter: github-pr-review
+          workdir: internal/orchestrion/_integration
+        env:
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
+
+  checklocks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+      - name: Run checklocks
+        # Errors are expected here, but we want to fail the CI if there are any errors for now
+        run: ./scripts/checklocks.sh || true

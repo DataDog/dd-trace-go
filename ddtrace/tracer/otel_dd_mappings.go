@@ -99,7 +99,7 @@ func getDDorOtelConfig(configName string) string {
 	// 1. Check managed stable config if handsOff
 	if config.handsOff {
 		if v := stableconfig.ManagedConfig.Get(config.dd); v != "" {
-			telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(config.dd), v, telemetry.OriginManagedStableConfig)
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: telemetry.EnvToTelemetryName(config.dd), Value: v, Origin: telemetry.OriginManagedStableConfig, ID: stableconfig.ManagedConfig.GetID()})
 			return v
 		}
 	}
@@ -133,7 +133,7 @@ func getDDorOtelConfig(configName string) string {
 	// 3. If handsOff, check local stable config
 	if config.handsOff {
 		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {
-			telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(config.dd), v, telemetry.OriginLocalStableConfig)
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: telemetry.EnvToTelemetryName(config.dd), Value: v, Origin: telemetry.OriginLocalStableConfig, ID: stableconfig.LocalConfig.GetID()})
 			return v
 		}
 	}

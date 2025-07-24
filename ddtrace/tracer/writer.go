@@ -122,7 +122,10 @@ func (h *agentTraceWriter) flush() {
 				}
 				return
 			}
-			log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+
+			if attempt+1%5 == 0 {
+				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+			}
 			p.reset()
 			time.Sleep(h.config.retryInterval)
 		}
