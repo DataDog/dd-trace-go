@@ -273,7 +273,7 @@ func TestTraceFinishChunk(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newUnstartedTracer()
 	assert.Nil(err)
-	defer tracer.statsd.Close()
+	defer tracer.Stop()
 
 	root := newSpan("name", "service", "resource", 0, 0, 0)
 	trace := root.context.trace

@@ -27,8 +27,9 @@ func TestStart(t *testing.T) {
 
 func TestTracerStop(t *testing.T) {
 	Start().Stop()
-	if _, ok := getGlobalTracer().(*tracer.NoopTracer); !ok {
-		t.Fail()
+	tr := getGlobalTracer()
+	if _, ok := tr.(*tracer.NoopTracer); !ok {
+		t.Errorf("tracer is not a NoopTracer: %T", tr)
 	}
 }
 

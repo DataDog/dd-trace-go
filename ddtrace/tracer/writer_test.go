@@ -100,7 +100,7 @@ func TestLogWriter(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		assert.NoError(err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -127,7 +127,7 @@ func TestLogWriter(t *testing.T) {
 	t.Run("inf+nan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -149,7 +149,7 @@ func TestLogWriter(t *testing.T) {
 	t.Run("fullspan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -257,7 +257,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg statsdtest.TestStatsdClient
-		cfg, err := newConfig(withStatsdClient(&tg))
+		cfg, err := newTestConfig(withStatsdClient(&tg))
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -278,7 +278,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg statsdtest.TestStatsdClient
-		cfg, err := newConfig(withStatsdClient(&tg))
+		cfg, err := newTestConfig(withStatsdClient(&tg))
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -310,7 +310,7 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("two-large", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -411,7 +411,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			c, err := newConfig(func(c *config) {
+			c, err := newTestConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
 				c.retryInterval = test.retryInterval
