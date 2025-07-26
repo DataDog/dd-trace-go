@@ -15,7 +15,7 @@ import (
 type clientConfig struct {
 	serviceName   string
 	spanName      string
-	transport     *http.Transport
+	transport     http.RoundTripper
 	analyticsRate float64
 	resourceNamer func(url, method string) string
 }
@@ -48,7 +48,7 @@ func WithService(name string) ClientOptionFn {
 }
 
 // WithTransport sets the given transport as an http.Transport for the client.
-func WithTransport(t *http.Transport) ClientOptionFn {
+func WithTransport(t http.RoundTripper) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.transport = t
 	}
