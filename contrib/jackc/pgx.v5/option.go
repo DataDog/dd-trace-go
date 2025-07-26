@@ -18,6 +18,7 @@ type config struct {
 	traceConnect  bool
 	traceAcquire  bool
 	poolStats     bool
+	errCheck      func(error) bool
 	statsdClient  instrumentation.StatsdClient
 }
 
@@ -105,5 +106,14 @@ func WithTraceConnect(enabled bool) Option {
 func WithPoolStats() Option {
 	return func(cfg *config) {
 		cfg.poolStats = true
+	}
+}
+
+// WithErrCheck specifies a function fn which determines whether the passed
+// error should be marked as an error. The fn is called whenever a pgx operation
+// finishes with an error
+func WithErrCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }
