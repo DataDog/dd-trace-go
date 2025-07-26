@@ -6,6 +6,7 @@
 package gqlgen
 
 import (
+	"context"
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
@@ -76,6 +77,49 @@ func TestOptions(t *testing.T) {
 					}
 				}
 				assert.Equal(false, hasFieldOperation)
+			},
+		},
+		"WithShouldStartSpanFuncTrue": {
+			tracerOpts: []Option{WithShouldStartSpanFunc(func(_ context.Context, _ *graphql.FieldContext) bool {
+				return true
+			})},
+			test: func(assert *assert.Assertions, _ *mocktracer.Span, spans []*mocktracer.Span) {
+				var hasFieldOperation bool
+				for _, span := range spans {
+					if span.OperationName() == fieldOp {
+						hasFieldOperation = true
+						break
+					}
+				}
+				assert.Equal(true, hasFieldOperation)
+			},
+		},
+		"WithShouldStartSpanFuncFalse": {
+			tracerOpts: []Option{WithShouldStartSpanFunc(func(_ context.Context, _ *graphql.FieldContext) bool {
+				return false
+			})},
+			test: func(assert *assert.Assertions, _ *mocktracer.Span, spans []*mocktracer.Span) {
+				var hasFieldOperation bool
+				for _, span := range spans {
+					if span.OperationName() == fieldOp {
+						hasFieldOperation = true
+						break
+					}
+				}
+				assert.Equal(false, hasFieldOperation)
+			},
+		},
+		"WithShouldStartSpanFuncNil": {
+			tracerOpts: []Option{WithShouldStartSpanFunc(nil)},
+			test: func(assert *assert.Assertions, _ *mocktracer.Span, spans []*mocktracer.Span) {
+				var hasFieldOperation bool
+				for _, span := range spans {
+					if span.OperationName() == fieldOp {
+						hasFieldOperation = true
+						break
+					}
+				}
+				assert.Equal(true, hasFieldOperation)
 			},
 		},
 		"WithCustomTag": {
@@ -364,5 +408,46 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 			continue
 		}
 		assert.Emptyf(t, s.Events(), "span %s should not have span events", s.OperationName())
+	}
+}
+
+func TestShouldStartSpanFunc(t *testing.T) {
+	query := `{ name }`
+	testCases := map[string]struct {
+		allow bool
+	}{
+		"returns true":  {allow: true},
+		"returns false": {allow: false},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			assertions := assert.New(t)
+
+			opt := OptionFn(func(cfg *config) {
+				cfg.shouldStartSpanFunc = func(ctx context.Context, fc *graphql.FieldContext) bool { return tc.allow }
+			})
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			c := newTestClient(t, testserver.New(), NewTracer(opt))
+			c.MustPost(query, &testServerResponse{})
+
+			spans := mt.FinishedSpans()
+			var hasFieldSpan bool
+			for _, s := range spans {
+				if s.OperationName() == fieldOp {
+					hasFieldSpan = true
+					break
+				}
+			}
+
+			if tc.allow {
+				assertions.True(hasFieldSpan)
+			} else {
+				assertions.False(hasFieldSpan)
+			}
+		})
 	}
 }
