@@ -30,5 +30,6 @@ const (
 
 	SFNStateMachineName = "statemachinename"
 
-	S3BucketName = "bucketname"
+	S3BucketName       = "bucketname"
+	SpanTypeServerless = "serverless"
 )

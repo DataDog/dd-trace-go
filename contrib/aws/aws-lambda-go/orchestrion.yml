@@ -1,0 +1,45 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/aws/aws-lambda-go/v2
+  description: AWS Lambda Go runtime auto-instrumentation with Datadog tracing
+
+aspects:
+  # Instrument lambda.Start function calls
+  - id: lambda.Start
+    join-point:
+      function-call: github.com/aws/aws-lambda-go/lambda.Start
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/aws/aws-lambda-go/v2.Start
+
+  # Instrument lambda.StartWithOptions function calls
+  - id: lambda.StartWithOptions
+    join-point:
+      function-call: github.com/aws/aws-lambda-go/lambda.StartWithOptions
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/aws/aws-lambda-go/v2.StartWithOptions
+
+  # Instrument lambda.StartWithContext function calls (deprecated but still used)
+  - id: lambda.StartWithContext
+    join-point:
+      function-call: github.com/aws/aws-lambda-go/lambda.StartWithContext
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/aws/aws-lambda-go/v2.StartWithContext
+
+  # Instrument lambda.StartHandler function calls (deprecated but still used)
+  - id: lambda.StartHandler
+    join-point:
+      function-call: github.com/aws/aws-lambda-go/lambda.StartHandler
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/aws/aws-lambda-go/v2.StartHandler
+
+  # Instrument lambda.StartHandlerWithContext function calls (deprecated but still used)
+  - id: lambda.StartHandlerWithContext
+    join-point:
+      function-call: github.com/aws/aws-lambda-go/lambda.StartHandlerWithContext
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/aws/aws-lambda-go/v2.StartHandlerWithContext
