@@ -328,7 +328,7 @@ func extractBuildkite() map[string]string {
 	tags[constants.CIPipelineName] = os.Getenv("BUILDKITE_PIPELINE_SLUG")
 	tags[constants.CIPipelineNumber] = os.Getenv("BUILDKITE_BUILD_NUMBER")
 	tags[constants.CIPipelineURL] = os.Getenv("BUILDKITE_BUILD_URL")
-	tags[constants.CIJobID] = os.Getenv("BUILDKITE_CI_JOB_ID")
+	tags[constants.CIJobID] = os.Getenv("BUILDKITE_JOB_ID")
 	tags[constants.CIJobURL] = fmt.Sprintf("%s#%s", os.Getenv("BUILDKITE_BUILD_URL"), os.Getenv("BUILDKITE_JOB_ID"))
 	tags[constants.CIProviderName] = "buildkite"
 	tags[constants.CIWorkspacePath] = os.Getenv("BUILDKITE_BUILD_CHECKOUT_PATH")
