@@ -26,12 +26,21 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane)
 }
 
+// Integration represents the proxy integration type that is used for the External Processing.
+type Integration int
+
+const (
+	GCPServiceExtensionIntegration Integration = iota
+	EnvoyIntegration
+	IstioIntegration
+)
+
 // AppsecEnvoyConfig contains configuration for the AppSec Envoy processor
 type AppsecEnvoyConfig struct {
-	IsGCPServiceExtension bool
-	BlockingUnavailable   bool
-	Context               context.Context
-	BodyParsingSizeLimit  int
+	Integration          Integration
+	BlockingUnavailable  bool
+	Context              context.Context
+	BodyParsingSizeLimit int
 }
 
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
@@ -56,6 +65,13 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 
 	if config.BodyParsingSizeLimit <= 0 {
 		instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The request and response bodies will be ignored.")
+	}
+
+	switch config.Integration {
+	case GCPServiceExtensionIntegration, EnvoyIntegration, IstioIntegration:
+	default:
+		instr.Logger().Error("external_processing: invalid proxy integration type %d. Defaulting to GCPServiceExtensionIntegration", config.Integration)
+		config.Integration = GCPServiceExtensionIntegration
 	}
 
 	return processor

@@ -21,11 +21,6 @@ import (
 
 var _ io.Closer = (*requestState)(nil)
 
-const (
-	componentNameEnvoy               = "envoyproxy/go-control-plane"
-	componentNameGCPServiceExtension = "gcp-service-extension"
-)
-
 // requestState manages the state of a single request through its lifecycle
 type requestState struct {
 	Ctx         context.Context
@@ -48,8 +43,8 @@ type requestState struct {
 }
 
 // newRequestState creates a new request state
-func newRequestState(ctx context.Context, request *http.Request, bodyLimit int, isGCPServiceExtension bool) (requestState, bool) {
-	componentName := determineComponentName(ctx, isGCPServiceExtension)
+func newRequestState(ctx context.Context, request *http.Request, bodyLimit int, integration Integration) (requestState, bool) {
+	componentName := determineComponentName(ctx, integration)
 
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
@@ -88,21 +83,46 @@ func newRequestState(ctx context.Context, request *http.Request, bodyLimit int, 
 	}, blocked
 }
 
-// determineComponentName decides which component name to use based on the context and configuration.
-func determineComponentName(ctx context.Context, isGCPServiceExtension bool) string {
-	// As the integration (callout container) is run by default with the GCP Service Extension flag set to true,
-	// we can consider that if this flag is false, it means that it is running in a custom integration.
-	if !isGCPServiceExtension {
+const (
+	componentNameGCPServiceExtension = "gcp-service-extension"
+	componentNameEnvoy               = "envoy"
+	componentNameIstio               = "istio"
+	datadogEnvoyIntegrationHeader    = "x-datadog-envoy-integration"
+	datadogIntegrationHeader         = "x-datadog-istio-integration"
+)
+
+func (i Integration) String() string {
+	switch i {
+	case GCPServiceExtensionIntegration:
+		return componentNameGCPServiceExtension
+	case EnvoyIntegration:
 		return componentNameEnvoy
+	case IstioIntegration:
+		return componentNameIstio
+	default:
+		return componentNameGCPServiceExtension
+	}
+}
+
+// determineComponentName decides which component name to use based on the context and configuration.
+func determineComponentName(ctx context.Context, integration Integration) string {
+	// As the integration (callout container) is run by default with the GCP Service Extension value,
+	// we can consider that if this flag is false, it means that it is running in a custom integration.
+	if integration != GCPServiceExtensionIntegration {
+		return integration.String()
 	}
 
-	// In newer version of the documentation, customers are instructed to inject the Datadog Envoy integration header
-	// in their Envoy configuration to identify the integration.
-	const DatadogEnvoyIntegrationHeader = "x-datadog-envoy-integration"
+	// In newer version of the documentation, customers are instructed to inject the
+	// Datadog integration header in their Envoy configuration to identify the integration.
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		values := md.Get(DatadogEnvoyIntegrationHeader)
-		if len(values) > 0 && values[0] == "1" {
+		valuesEnvoy := md.Get(datadogEnvoyIntegrationHeader)
+		if len(valuesEnvoy) > 0 && valuesEnvoy[0] == "1" {
 			return componentNameEnvoy
+		}
+
+		valuesIstio := md.Get(datadogIntegrationHeader)
+		if len(valuesIstio) > 0 && valuesIstio[0] == "1" {
+			return componentNameIstio
 		}
 	}
 
