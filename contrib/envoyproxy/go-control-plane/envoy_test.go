@@ -38,7 +38,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false, 0)
+		rig, err := newEnvoyAppsecRig(t, false, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -280,7 +280,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false, 256)
+		rig, err := newEnvoyAppsecRig(t, false, false, 256)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -624,7 +624,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false, 0)
+		rig, err := newEnvoyAppsecRig(t, false, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -712,7 +712,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, false, false, 0)
+		rig, err := newEnvoyAppsecRig(t, false, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -780,14 +780,14 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	})
 }
 
-func TestAppSecAsGCPServiceExtension(t *testing.T) {
+func TestAppSecComponentName(t *testing.T) {
 	testutils.StartAppSec(t)
 	if !instr.AppSecEnabled() {
 		t.Skip("appsec disabled")
 	}
 
-	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, false, true, false, 0)
+	setup := func(isGCPServiceExtensionEnabled bool) (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, isGCPServiceExtensionEnabled, false, 0)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -798,15 +798,15 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 		}
 	}
 
-	t.Run("gcp-se-component-monitoring-event-on-request", func(t *testing.T) {
-		client, mt, cleanup := setup()
+	t.Run("gcp-se-component-enabled-via-code-config", func(t *testing.T) {
+		client, mt, cleanup := setup(true)
 		defer cleanup()
 
 		ctx := context.Background()
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "dd-test-scanner-log"}, map[string]string{}, false, false, "", "body")
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{}, map[string]string{}, false, false, "", "")
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
@@ -814,15 +814,62 @@ func TestAppSecAsGCPServiceExtension(t *testing.T) {
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
-		checkForAppsecEvent(t, finished, map[string]int{"ua0-600-55x": 1})
 
 		// Check for component tag
 		span := finished[0]
 		require.Equal(t, "gcp-service-extension", span.Tag("component"))
 	})
+
+	t.Run("envoy-enabled-via-code-config", func(t *testing.T) {
+		client, mt, cleanup := setup(false)
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{}, map[string]string{}, false, false, "", "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for component tag
+		span := finished[0]
+		require.Equal(t, "envoyproxy/go-control-plane", span.Tag("component"))
+	})
+
+	t.Run("envoy-enabled-via-injected-header", func(t *testing.T) {
+		client, mt, cleanup := setup(true)
+		defer cleanup()
+
+		md := metadata.New(map[string]string{
+			"x-datadog-envoy-integration": "1",
+		})
+		ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{}, map[string]string{}, false, false, "", "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for component tag
+		span := finished[0]
+		require.Equal(t, "envoyproxy/go-control-plane", span.Tag("component"))
+	})
 }
 
-func newEnvoyAppsecRig(t *testing.T, traceClient bool, isGCPServiceExtension bool, blockingUnavailable bool, bodyParsingSizeLimit int) (*envoyAppsecRig, error) {
+func newEnvoyAppsecRig(t *testing.T, isGCPServiceExtension bool, blockingUnavailable bool, bodyParsingSizeLimit int) (*envoyAppsecRig, error) {
 	t.Helper()
 
 	server := grpc.NewServer()

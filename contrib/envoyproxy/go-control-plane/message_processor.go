@@ -44,7 +44,7 @@ func (mp *messageProcessor) ProcessRequestHeaders(ctx context.Context, req *envo
 		return nil, requestState{}, status.Errorf(codes.InvalidArgument, "Error processing request headers from ext_proc: %s", err.Error())
 	}
 
-	state, blocked := newRequestState(httpReq, mp.config.BodyParsingSizeLimit, mp.config.IsGCPServiceExtension)
+	state, blocked := newRequestState(ctx, httpReq, mp.config.BodyParsingSizeLimit, mp.config.IsGCPServiceExtension)
 	if state.Span == nil {
 		state.Close()
 		return nil, requestState{}, status.Errorf(codes.Unknown, "Error getting span from context")
