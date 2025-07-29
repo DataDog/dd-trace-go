@@ -520,7 +520,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
 			}
 		} else {
-			c.httpClient = defaultHTTPClient(c.httpClientTimeout)
+			c.httpClient = defaultHTTPClient(c.httpClientTimeout, false)
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
@@ -681,7 +681,7 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
+				return defaultDialer(timeout).DialContext(ctx, "unix", (&net.UnixAddr{
 					Name: socketPath,
 					Net:  "unix",
 				}).String())

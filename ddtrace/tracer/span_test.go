@@ -1610,6 +1610,7 @@ func TestStatsAfterFinish(t *testing.T) {
 		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 		assert.Len(t, transport.Stats(), 0)
 		c.Start()
+		tracer.stats.Stop()
 		tracer.stats = c
 
 		sp := tracer.StartSpan("sp1")
@@ -1646,6 +1647,7 @@ func TestStatsAfterFinish(t *testing.T) {
 		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 		assert.Len(t, transport.Stats(), 0)
 		c.Start()
+		tracer.stats.Stop()
 		tracer.stats = c
 
 		sp := tracer.StartSpan("sp1")

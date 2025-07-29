@@ -206,6 +206,11 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// check the test is new tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 26)
 
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
 	// check spans by type
 	checkSpansByType(finishedSpans,
 		32,
@@ -309,6 +314,11 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
@@ -550,6 +560,11 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 55)
 
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
 	// Impacted tests
 	if impactedTests {
 		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 96)
@@ -694,6 +709,11 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
 	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 1)
 
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
 	// check spans by type
 	checkSpansByType(finishedSpans,
 		17,
@@ -835,6 +855,11 @@ func runTestManagementTests(m *testing.M) {
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// check logs
 	checkLogs()
