@@ -18,6 +18,7 @@ require (
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
 	github.com/Masterminds/semver/v3 v3.3.1
+	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/go-viper/mapstructure/v2 v2.3.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
@@ -54,7 +55,6 @@ require (
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.27.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.8.3 // indirect
