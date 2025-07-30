@@ -113,15 +113,6 @@ func ensureSettingsInitialization(serviceName string) {
 				log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
 				return
 			}
-		} else if ciSettings.ImpactedTestsEnabled {
-			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
-			<-uploadChannel
-		} else {
-			log.Debug("civisibility: no need to wait for the git upload to finish")
-			// Enqueue a close action to wait for the upload to finish before finishing the process
-			PushCiVisibilityCloseAction(func() {
-				<-uploadChannel
-			})
 		}
 
 		// check if we need to disable EFD because known tests is not enabled
@@ -138,6 +129,12 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.FlakyTestRetriesEnabled = false
 		}
 
+		// check if impacted tests is disabled by env-vars
+		if ciSettings.ImpactedTestsEnabled && !internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, true) {
+			log.Warn("civisibility: impacted tests was disabled by the environment variable")
+			ciSettings.ImpactedTestsEnabled = false
+		}
+
 		// check if test management is disabled by env-vars
 		if ciSettings.TestManagement.Enabled && !internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
 			log.Warn("civisibility: test management was disabled by the environment variable")
@@ -148,6 +145,18 @@ func ensureSettingsInitialization(serviceName string) {
 		testManagementAttemptToFixRetriesEnv := internal.IntEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, -1)
 		if testManagementAttemptToFixRetriesEnv != -1 {
 			ciSettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
+		}
+
+		// check if we need to wait for the upload to finish before continuing
+		if ciSettings.ImpactedTestsEnabled {
+			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
+			<-uploadChannel
+		} else {
+			log.Debug("civisibility: no need to wait for the git upload to finish")
+			// Enqueue a close action to wait for the upload to finish before finishing the process
+			PushCiVisibilityCloseAction(func() {
+				<-uploadChannel
+			})
 		}
 
 		// set the ciVisibilitySettings with the settings from the backend
@@ -258,8 +267,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		}
 
 		// if wheter the settings response or the env var is true we load the impacted tests analyzer
-		if currentSettings.ImpactedTestsEnabled ||
-			internal.BoolEnv(constants.CIVisibilityImpactedTestsDetectionEnabled, false) {
+		if currentSettings.ImpactedTestsEnabled {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
