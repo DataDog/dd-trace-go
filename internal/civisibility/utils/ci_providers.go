@@ -517,6 +517,7 @@ func extractGitlab() map[string]string {
 
 	tags[constants.GitHeadCommit] = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA")
 	tags[constants.GitPrBaseHeadCommit] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_SHA")
+	tags[constants.GitPrBaseCommit] = os.Getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA")
 	tags[constants.GitPrBaseBranch] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
 	tags[constants.PrNumber] = os.Getenv("CI_MERGE_REQUEST_IID")
 
