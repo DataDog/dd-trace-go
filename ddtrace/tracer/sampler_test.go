@@ -214,7 +214,7 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "1point0", out: math.NaN()}, // default if invalid value
 		} {
 			t.Setenv("DD_TRACE_SAMPLE_RATE", tt.in)
-			c, err := newConfig()
+			c, err := newTestConfig()
 			assert.NoError(err)
 			res := c.globalSampleRate
 			if math.IsNaN(tt.out) {
@@ -241,7 +241,7 @@ func TestRuleEnvVars(t *testing.T) {
 				assert := assert.New(t)
 				t.Setenv("OTEL_TRACES_SAMPLER", tt.config)
 				t.Setenv("OTEL_TRACES_SAMPLER_ARG", fmt.Sprintf("%f", tt.rate))
-				c, err := newConfig()
+				c, err := newTestConfig()
 				assert.NoError(err)
 				res := c.globalSampleRate
 				assert.Equal(tt.rate, res)
@@ -264,7 +264,7 @@ func TestRuleEnvVars(t *testing.T) {
 			{in: "1point0", out: rate.NewLimiter(100.0, 100)}, // default if invalid value
 		} {
 			t.Setenv("DD_TRACE_RATE_LIMIT", tt.in)
-			c, err := newConfig()
+			c, err := newTestConfig()
 			assert.NoError(err)
 			res := newRateLimiter(c.traceRateLimitPerSecond)
 			assert.Equal(tt.out, res.limiter)
@@ -497,7 +497,7 @@ func TestRulesSampler(t *testing.T) {
 	}
 	t.Run("no-rules", func(t *testing.T) {
 		assert := assert.New(t)
-		c, err := newConfig()
+		c, err := newTestConfig()
 		assert.NoError(err)
 		rs := newRulesSampler(nil, nil, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -564,7 +564,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.Nil(t, err)
 
 				assert := assert.New(t)
-				c, err := newConfig()
+				c, err := newTestConfig()
 				assert.NoError(err)
 				rs := newRulesSampler(rules, nil, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -590,7 +590,7 @@ func TestRulesSampler(t *testing.T) {
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				c, err := newConfig()
+				c, err := newTestConfig()
 				assert.NoError(err)
 				rs := newRulesSampler(v, nil, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -618,7 +618,7 @@ func TestRulesSampler(t *testing.T) {
 		for _, v := range traceRules {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				c, err := newConfig()
+				c, err := newTestConfig()
 				assert.NoError(err)
 				rs := newRulesSampler(v, nil, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -666,7 +666,7 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, err := samplingRulesFromEnv()
 				assert.Nil(t, err)
 				assert := assert.New(t)
-				c, err := newConfig()
+				c, err := newTestConfig()
 				assert.NoError(err)
 				rs := newRulesSampler(nil, rules, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -790,7 +790,7 @@ func TestRulesSampler(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("%v", i), func(t *testing.T) {
 				assert := assert.New(t)
-				c, err := newConfig(WithSamplingRules(tt.rules))
+				c, err := newTestConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -860,7 +860,7 @@ func TestRulesSampler(t *testing.T) {
 				_, rules, _ := samplingRulesFromEnv()
 
 				assert := assert.New(t)
-				c, err := newConfig()
+				c, err := newTestConfig()
 				assert.NoError(err)
 				rs := newRulesSampler(nil, rules, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -969,7 +969,7 @@ func TestRulesSampler(t *testing.T) {
 		} {
 			t.Run("", func(t *testing.T) {
 				assert := assert.New(t)
-				c, err := newConfig(WithSamplingRules(tt.rules))
+				c, err := newTestConfig(WithSamplingRules(tt.rules))
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -1000,7 +1000,7 @@ func TestRulesSampler(t *testing.T) {
 				t.Run("", func(t *testing.T) {
 					assert := assert.New(t)
 					t.Setenv("DD_TRACE_SAMPLE_RATE", fmt.Sprint(rate))
-					c, err := newConfig()
+					c, err := newTestConfig()
 					assert.NoError(err)
 					rs := newRulesSampler(nil, rules, c.globalSampleRate, c.traceRateLimitPerSecond)
 
@@ -1288,7 +1288,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("full-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		c, err := newConfig()
+		c, err := newTestConfig()
 		assert.NoError(err)
 		rs := newRulesSampler(nil, nil, c.globalSampleRate, c.traceRateLimitPerSecond)
 		// set samplingLimiter to specific state
@@ -1305,7 +1305,7 @@ func TestRulesSamplerInternals(t *testing.T) {
 	t.Run("limited-rate", func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Now()
-		c, err := newConfig()
+		c, err := newTestConfig()
 		assert.NoError(err)
 		rs := newRulesSampler(nil, nil, c.globalSampleRate, c.traceRateLimitPerSecond)
 		// force sampling limiter to 1.0 spans/sec

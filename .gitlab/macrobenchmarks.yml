@@ -268,6 +268,7 @@ notify-slo-breaches:
   variables:
     GO_VERSION: "1.23.0"
     ARTIFACTS_DIR: "./artifacts-se"
+    SERVICE_EXTENSION: "true"
 
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
@@ -291,10 +292,26 @@ se-ext_proc-appsec:
     ENABLE_APPSEC: true
     TRACER: false
 
+se-ext_proc-body-appsec:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: true
+    EXT_PROC_BODY: true
+    ENABLE_APPSEC: true
+    TRACER: false
+
 se-ext_proc-only-tracing:
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
+    ENABLE_APPSEC: false
+    TRACER: false
+
+se-ext_proc-body-only-tracing:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: true
+    EXT_PROC_BODY: true
     ENABLE_APPSEC: false
     TRACER: false
 

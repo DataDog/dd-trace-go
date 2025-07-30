@@ -164,7 +164,7 @@ func TestGitHubEventFile(t *testing.T) {
 		expectedPrNumber := "1"
 
 		checkValue(tags, constants.GitHeadCommit, expectedHeadCommit)
-		checkValue(tags, constants.GitPrBaseCommit, expectedBaseCommit)
+		checkValue(tags, constants.GitPrBaseHeadCommit, expectedBaseCommit)
 		checkValue(tags, constants.GitPrBaseBranch, expectedBaseRef)
 		checkValue(tags, constants.PrNumber, expectedPrNumber)
 	})
