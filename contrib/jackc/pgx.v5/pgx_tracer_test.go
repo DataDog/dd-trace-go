@@ -165,7 +165,7 @@ func TestIgnoreError(t *testing.T) {
 		return errors.Is(err, context.Canceled)
 	}))
 
-	parent, ctx := tracer.StartSpanFromContext(t.Context(), "parent")
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	defer parent.Finish()
 
 	// Connect
