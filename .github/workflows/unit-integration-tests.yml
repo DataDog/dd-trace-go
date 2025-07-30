@@ -39,7 +39,7 @@ jobs:
           go-version: ${{ inputs.go-version }}
       - name: Copyright
         run: |
-          go run ./scripts/checkcopyright.go
+          go run ./scripts/check_copyright.go
 
   generate:
     runs-on: ubuntu-latest
@@ -117,7 +117,7 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
 
   test-contrib-matrix:
     needs: set-up
@@ -294,7 +294,7 @@ jobs:
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
-          ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
+          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
 
       - name: Upload the results to Datadog CI App
         if: always()
@@ -364,7 +364,7 @@ jobs:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
-            ./scripts/ci-test-core.sh
+            ./scripts/ci_test_core.sh
 
       - name: Upload the results to Datadog CI App
         if: always()
