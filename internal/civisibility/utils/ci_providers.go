@@ -464,7 +464,7 @@ func extractGithubActions() map[string]string {
 			eventDecoder := json.NewDecoder(eventFile)
 			if eventDecoder.Decode(&eventJSON) == nil {
 				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
-				tags[constants.GitPrBaseCommit] = eventJSON.PullRequest.Base.Sha
+				tags[constants.GitPrBaseHeadCommit] = eventJSON.PullRequest.Base.Sha
 				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
 				tags[constants.PrNumber] = fmt.Sprintf("%d", eventJSON.Number)
 			}
@@ -516,7 +516,8 @@ func extractGitlab() map[string]string {
 	}
 
 	tags[constants.GitHeadCommit] = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA")
-	tags[constants.GitPrBaseCommit] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_SHA")
+	tags[constants.GitPrBaseHeadCommit] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_SHA")
+	tags[constants.GitPrBaseCommit] = os.Getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA")
 	tags[constants.GitPrBaseBranch] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
 	tags[constants.PrNumber] = os.Getenv("CI_MERGE_REQUEST_IID")
 
