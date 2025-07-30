@@ -43,19 +43,19 @@ jobs:
         uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v2.7.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
-      - name: Install gotestsum
-        run: go -C _tools install gotest.tools/gotestsum@v1.12.3
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
       - name: "Runner ${{ matrix.runner-index }}: Test Core and Contrib (No Integration Tests)"
         shell: bash
         run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
           gotestsum --junitfile ${REPORT} -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
       - name: Upload the results to Datadog CI App

@@ -11,13 +11,13 @@ jobs:
   check-api-stability:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
 
-      - name: Set up Go
-        uses: actions/setup-go@v5.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: 'go.mod'
-          check-latest: true
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
 
       - name: Generate current API for ddtrace/tracer
         run: |

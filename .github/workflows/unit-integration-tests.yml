@@ -33,10 +33,12 @@ jobs:
         uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Copyright
         run: |
           go run ./scripts/check_copyright.go
@@ -48,12 +50,15 @@ jobs:
         uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run generator
         run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/generate.sh
       - name: Check for changes
         run: git diff --exit-code
@@ -65,12 +70,15 @@ jobs:
         uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run fixmodules
         run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/fix_modules.sh
       - name: Check for changes
         run: git diff --exit-code
@@ -284,16 +292,18 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
 
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Test Contrib
         if: always()
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
 
       - name: Upload the results to Datadog CI App
@@ -353,19 +363,20 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
-
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
-            ./scripts/ci_test_core.sh
-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ls -al "${{ github.workspace }}/bin"
+          ./scripts/ci_test_core.sh
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
