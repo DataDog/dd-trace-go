@@ -36,6 +36,9 @@ type agentTraceWriter struct {
 	// config holds the tracer configuration
 	config *config
 
+	// mu synchronizes access to payload operations
+	mu sync.Mutex
+
 	// payload encodes and buffers traces in msgpack format
 	payload *payload
 
@@ -67,12 +70,18 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 }
 
 func (h *agentTraceWriter) add(trace []*Span) {
+	h.mu.Lock()
 	if err := h.payload.push(trace); err != nil {
+		h.mu.Unlock()
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %s", err.Error())
+		return
 	}
 	atomic.AddUint32(&h.tracesQueued, 1) // TODO: This does not differentiate between complete traces and partial chunks
-	if h.payload.size() > payloadSizeLimit {
+	needsFlush := h.payload.size() > payloadSizeLimit
+	h.mu.Unlock()
+
+	if needsFlush {
 		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
 		h.flush()
 	}
@@ -93,13 +102,17 @@ func (h *agentTraceWriter) newPayload() *payload {
 
 // flush will push any currently buffered traces to the server.
 func (h *agentTraceWriter) flush() {
-	if h.payload.itemCount() == 0 {
+	h.mu.Lock()
+	oldp := h.payload
+	if oldp.itemCount() == 0 {
+		h.mu.Unlock()
 		return
 	}
-	h.wg.Add(1)
-	h.climit <- struct{}{}
-	oldp := h.payload
 	h.payload = h.newPayload()
+	h.mu.Unlock()
+
+	h.climit <- struct{}{}
+	h.wg.Add(1)
 	go func(p *payload) {
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
