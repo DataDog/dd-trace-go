@@ -115,7 +115,7 @@ func WithPoolStats() Option {
 //
 // When the function returns true, the span will be tagged with the error.
 // When the function returns false, the span will not be tagged with the error.
-// When the function is nil, the span will not be tagged with the error.
+// When the function is nil, the span will be tagged with the error.
 func WithErrCheck(fn func(err error) bool) Option {
 	return func(cfg *config) {
 		cfg.errCheck = fn
