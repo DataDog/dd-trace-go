@@ -27,14 +27,17 @@ jobs:
       - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - name: Checkout Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version: 'stable'
-      - name: Install govulncheck
-        run: |
-          go -C _tools install golang.org/x/vuln/cmd/govulncheck
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run govulncheck
-        run: govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/...
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/...
       - name: Run govulncheck-contribs
-        run: ./.github/workflows/apps/govulncheck-contribs-v2.sh
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./.github/workflows/apps/govulncheck-contribs-v2.sh

@@ -24,7 +24,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
       - run: echo 'Smoke Tests workflow passed'
       - run: go run ./scripts/gen_integrations_doc.go
       - run: git diff
