@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -154,6 +155,38 @@ func TestQuery(t *testing.T) {
 	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
 	assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
+}
+
+func TestIgnoreError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceQuery(true), WithErrCheck(func(err error) bool {
+		// Filter out errors that are not SQL error - undefined column or parameter name detected
+		return strings.Contains(err.Error(), "SQLSTATE 42703")
+	}))
+
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
+	// Connect
+	conn := newPoolCreator(nil, opts...)(t, ctx)
+
+	// Query
+	var x int
+	err := conn.QueryRow(ctx, `SELECT 1`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
+
+	err = conn.QueryRow(ctx, `SELECT unexisting_column`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+
+	require.Equal(t, nil, spans[0].Tag(ext.ErrorMsg))
+	require.Equal(t, "ERROR: column \"unexisting_column\" does not exist (SQLSTATE 42703)", spans[1].Tag(ext.ErrorMsg))
 }
 
 func TestPrepare(t *testing.T) {
@@ -342,6 +375,7 @@ func tracingAllDisabled() []Option {
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
 		WithTraceAcquire(false),
+		WithErrCheck(nil),
 	}
 }
 
