@@ -45,10 +45,12 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version: "stable"
-          cache: true
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
 
       - name: go get -u
         run: |-
@@ -70,7 +72,7 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
 
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
@@ -92,13 +94,17 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "stable"
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Test contribs
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
-        run: ./scripts/ci-test-contrib.sh smoke ${{ toJson(matrix.chunk) }}
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
 
   smoke-test-tracer:
     name: Test dd-trace-go
@@ -127,12 +133,15 @@ jobs:
       - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
           go-version: "1.23"
-          cache: true
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff
         run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/generate.sh
           ./scripts/fix_modules.sh
           git diff --exit-code

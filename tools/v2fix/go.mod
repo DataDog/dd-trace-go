@@ -1,8 +1,6 @@
 module github.com/DataDog/dd-trace-go/tools/v2fix
 
-go 1.23.1
-
-toolchain go1.24.0
+go 1.23.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.2.0-rc.2

@@ -32,8 +32,8 @@ func Example_server() {
 
 	// Register the appsec envoy external processor service
 	appsecSrv := AppsecEnvoyExternalProcessorServer(srv, AppsecEnvoyConfig{
-		IsGCPServiceExtension: false,
-		BlockingUnavailable:   false,
+		Integration:         EnvoyIntegration,
+		BlockingUnavailable: false,
 	})
 
 	extprocv3.RegisterExternalProcessorServer(s, appsecSrv)

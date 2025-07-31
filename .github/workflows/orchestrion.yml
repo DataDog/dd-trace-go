@@ -39,14 +39,15 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
-      - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
           go-version: stable
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run generator
         run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/generate.sh
       - name: Check for changes
         run: git diff --exit-code
@@ -143,6 +144,9 @@ jobs:
             ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
             ${{ github.workspace }}/orchestrion/all/go.mod
 
+      - name: Install development tools
+        run: make -C ${{ github.workspace }}/dd-trace-go tools-install
+
       - name: Set up orchestrion
         if: inputs.orchestrion-version != ''
         run: |-
@@ -167,9 +171,6 @@ jobs:
           mkdir -p "$(dirname "${bin}")"
           go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
-        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
-      - name: Install gotestsum
-        run: go -C ${{ github.workspace }}/dd-trace-go/_tools install gotest.tools/gotestsum
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
@@ -207,6 +208,8 @@ jobs:
       - name: Run Tests
         shell: bash
         run: |-
+          export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
+          echo "PATH: ${PATH}"
           echo "Working directory: ${PWD}"
           orchestrion version
           PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
