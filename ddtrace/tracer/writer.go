@@ -40,7 +40,7 @@ type agentTraceWriter struct {
 	mu sync.Mutex
 
 	// payload encodes and buffers traces in msgpack format
-	payload *payload
+	payload payload
 
 	// climit limits the number of concurrent outgoing connections
 	climit chan struct{}
@@ -113,7 +113,7 @@ func (h *agentTraceWriter) flush() {
 
 	h.climit <- struct{}{}
 	h.wg.Add(1)
-	go func(p *payload) {
+	go func(p payload) {
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object

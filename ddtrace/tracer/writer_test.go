@@ -347,7 +347,7 @@ type failingTransport struct {
 	assert       *assert.Assertions
 }
 
-func (t *failingTransport) send(p *payload) (io.ReadCloser, error) {
+func (t *failingTransport) send(p payload) (io.ReadCloser, error) {
 	t.sendAttempts++
 
 	traces, err := decode(p)
@@ -421,7 +421,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			assert.Nil(err)
 			var statsd statsdtest.TestStatsdClient
 
-			h := newAgentTraceWriter(c, nil, &statsd)
+			h := newAgentTraceWriter(c, newPrioritySampler(), &statsd)
 			h.add(ss)
 			start := time.Now()
 			h.flush()
@@ -522,7 +522,7 @@ func TestAgentWriterRaceCondition(t *testing.T) {
 	require.NoError(t, err)
 	defer statsd.Close()
 
-	writer := newAgentTraceWriter(cfg, nil, &tg)
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
 
 	const numGoroutines = 50
 	const numOperations = 100
@@ -589,7 +589,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 	require.NoError(t, err)
 	defer statsd.Close()
 
-	writer := newAgentTraceWriter(cfg, nil, &tg)
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
 
 	const numAddGoroutines = 20
 	const numFlushGoroutines = 10

@@ -10,6 +10,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -85,7 +86,7 @@ func BenchmarkPayloadThroughput(b *testing.B) {
 // payload is filled.
 func benchmarkPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
-		p := newPayload()
+		p := newUnsafePayload()
 		s := newBasicSpan("X")
 		s.meta["key"] = strings.Repeat("X", 10*1024)
 		trace := make(spanList, count)
@@ -106,5 +107,112 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 				p.push(trace)
 			}
 		}
+	}
+}
+
+// TestPayloadConcurrentAccess tests that payload operations are safe for concurrent use
+func TestPayloadConcurrentAccess(t *testing.T) {
+	p := newPayload()
+
+	// Create some test spans
+	spans := make(spanList, 10)
+	for i := 0; i < 10; i++ {
+		spans[i] = newBasicSpan("test-span")
+	}
+
+	var wg sync.WaitGroup
+
+	// Start multiple goroutines that perform concurrent operations
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Push some spans
+			for j := 0; j < 5; j++ {
+				_ = p.push(spans)
+			}
+
+			// Read size and item count concurrently
+			for j := 0; j < 10; j++ {
+				_ = p.size()
+				_ = p.itemCount()
+			}
+		}()
+	}
+
+	// Also perform operations from the main goroutine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			_ = p.size()
+		}
+	}()
+
+	wg.Wait()
+
+	// Verify the payload is in a consistent state
+	if p.itemCount() == 0 {
+		t.Error("Expected payload to have items after concurrent operations")
+	}
+
+	if p.size() <= 0 {
+		t.Error("Expected payload size to be positive after concurrent operations")
+	}
+}
+
+// TestPayloadConcurrentReadWrite tests concurrent read and write operations
+func TestPayloadConcurrentReadWrite(t *testing.T) {
+	p := newPayload()
+
+	// Add some initial data
+	span := newBasicSpan("test")
+	spans := spanList{span}
+	_ = p.push(spans)
+
+	var wg sync.WaitGroup
+
+	// Concurrent writers
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				_ = p.push(spans)
+			}
+		}()
+	}
+
+	// Concurrent readers
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			buf := make([]byte, 1024)
+			for j := 0; j < 10; j++ {
+				p.reset()
+				_, _ = p.Read(buf)
+			}
+		}()
+	}
+
+	// Concurrent size/count checkers
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				_ = p.size()
+				_ = p.itemCount()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Verify final state
+	if p.itemCount() == 0 {
+		t.Error("Expected payload to have items")
 	}
 }
