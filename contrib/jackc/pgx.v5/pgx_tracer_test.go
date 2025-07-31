@@ -7,10 +7,10 @@ package pgx
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,7 +162,8 @@ func TestIgnoreError(t *testing.T) {
 	defer mt.Stop()
 
 	opts := append(tracingAllDisabled(), WithTraceQuery(true), WithErrCheck(func(err error) bool {
-		return errors.Is(err, context.Canceled)
+		// Filter out errors that are not SQL error - undefined column or parameter name detected
+		return strings.Contains(err.Error(), "SQLSTATE 42703")
 	}))
 
 	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
@@ -171,19 +172,21 @@ func TestIgnoreError(t *testing.T) {
 	// Connect
 	conn := newPoolCreator(nil, opts...)(t, ctx)
 
-	ctx, cancel := context.WithCancel(ctx)
-	// Forcefully cancel the context to simulate an error
-	cancel()
-
 	// Query
 	var x int
-	err := conn.QueryRow(ctx, `SELECT 1`).Scan(&x)
-	require.NoError(t, err)
-	require.Equal(t, 1, x)
+	err := conn.QueryRow(ctx, `SELECT 1`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
+
+	err = conn.QueryRow(ctx, `SELECT unexisting_column`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
 
 	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	require.Equal(t, nil, spans[0].Tag(ext.Error))
+	require.Len(t, spans, 2)
+
+	require.Equal(t, nil, spans[0].Tag(ext.ErrorMsg))
+	require.Equal(t, "ERROR: column \"unexisting_column\" does not exist (SQLSTATE 42703)", spans[1].Tag(ext.ErrorMsg))
 }
 
 func TestPrepare(t *testing.T) {
@@ -372,7 +375,7 @@ func tracingAllDisabled() []Option {
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
 		WithTraceAcquire(false),
-		WithErrCheck(func(err error) bool { return false }),
+		WithErrCheck(nil),
 	}
 }
 
