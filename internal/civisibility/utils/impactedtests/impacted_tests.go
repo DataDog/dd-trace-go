@@ -63,9 +63,6 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 
 	// Get the base commit SHA
 	baseCommitSha := ciTags[constants.GitPrBaseCommit]
-	if baseCommitSha == "" {
-		baseCommitSha = ciTags[constants.GitPrBaseBranch]
-	}
 
 	// If we don't have the base commit from the tags, then let's try to calculate it using the git CLI
 	if baseCommitSha == "" {

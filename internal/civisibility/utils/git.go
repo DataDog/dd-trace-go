@@ -753,7 +753,7 @@ func findFallbackDefaultBranch(remoteName string) string {
 	return ""
 }
 
-// GetBaseBranchSha detects the base branch SHA using the algorithm from algorithm.md
+// GetBaseBranchSha detects the base branch SHA using the algorithm
 func GetBaseBranchSha(defaultBranch string) (string, error) {
 	if !isGitFound() {
 		return "", errors.New("git executable not found")

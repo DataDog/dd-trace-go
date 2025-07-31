@@ -89,7 +89,6 @@ func TestMain(m *testing.M) {
 	// TODO(felixge): We should try to get rid of all the ignored functions
 	// below. And we should definitely try to not add any new ones here!
 	opts := []goleak.Option{
-		goleak.IgnoreAnyFunction("github.com/cihub/seelog.(*asyncLoopLogger).processItem"),
 		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
 	}
 	if err := goleak.Find(opts...); err != nil {
