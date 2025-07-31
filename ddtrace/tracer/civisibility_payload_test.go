@@ -11,7 +11,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -152,10 +151,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		reset := func() {
-			p.header = make([]byte, 8)
-			p.off = 8
-			atomic.StoreUint32(&p.count, 0)
-			p.buf.Reset()
+			p = newCiVisibilityPayload()
 		}
 		for i := 0; i < b.N; i++ {
 			reset()
