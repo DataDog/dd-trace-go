@@ -17,6 +17,7 @@ import (
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -70,7 +71,7 @@ const (
 type transport interface {
 	// send sends the payload p to the agent using the transport set up.
 	// It returns a non-nil response body when no error occurred.
-	send(p *payload) (body io.ReadCloser, err error)
+	send(p payload) (body io.ReadCloser, err error)
 	// sendStats sends the given stats payload to the agent.
 	// tracerObfuscationVersion is the version of obfuscation applied (0 if none was applied)
 	sendStats(s *pb.ClientStatsPayload, tracerObfuscationVersion int) error
@@ -153,7 +154,7 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	return nil
 }
 
-func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
+func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %s", err.Error())
