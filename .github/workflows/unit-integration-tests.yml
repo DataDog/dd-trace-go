@@ -244,12 +244,10 @@ jobs:
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
+      # Run config inversion check to detect any changes in the supported configurations
       - name: Config inversion diff check
         if: always()
-        shell: bash
-        run: |-
-          git diff internal/env/supported_configurations.json
-          go run ./scripts/configinverter check
+        uses: ./.github/actions/config-inversion-check
 
   test-contrib:
     needs:
@@ -327,12 +325,10 @@ jobs:
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
+      # Run config inversion check to detect any changes in the supported configurations
       - name: Config inversion diff check
         if: always()
-        shell: bash
-        run: |-
-          git diff internal/env/supported_configurations.json
-          go run ./scripts/configinverter check
+        uses: ./.github/actions/config-inversion-check
 
   upload-test-results:
     needs:
