@@ -40,7 +40,7 @@ jobs:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -112,7 +112,7 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -130,7 +130,7 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
@@ -221,7 +221,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is

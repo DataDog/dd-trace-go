@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
@@ -88,7 +88,7 @@ jobs:
       group: "APM Larger Runners"
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -117,7 +117,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -287,7 +287,7 @@ jobs:
           - 4566:4566
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
@@ -359,7 +359,7 @@ jobs:
           - 8126:8126
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
