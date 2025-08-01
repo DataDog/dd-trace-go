@@ -197,6 +197,11 @@ func (s *Span) SetTag(key string, value interface{}) {
 			noDebugStack: s.noDebugStack,
 		})
 		return
+	case ext.ErrorNoStackTrace:
+		s.setTagError(value, errorConfig{
+			noDebugStack: true,
+		})
+		return
 	case ext.Component:
 		integration, ok := value.(string)
 		if ok {
