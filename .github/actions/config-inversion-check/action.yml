@@ -1,0 +1,11 @@
+name: 'Config Inversion Diff Check'
+description: 'Check for changes in supported configurations and run config inversion validation'
+runs:
+  using: "composite"
+  steps:
+    - name: Config inversion diff check
+      if: always()
+      shell: bash
+      run: |-
+        git diff internal/env/supported_configurations.json
+        go run ./scripts/configinverter/main.go check
