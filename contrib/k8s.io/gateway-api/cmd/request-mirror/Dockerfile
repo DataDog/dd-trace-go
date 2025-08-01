@@ -13,6 +13,9 @@ LABEL org.opencontainers.image.source=https://github.com/DataDog/dd-trace-go/tre
 LABEL org.opencontainers.image.description="A request mirror for the Kubernetes Gateway API with Datadog App & API Protection support"
 LABEL org.opencontainers.image.licenses=Apache-2.0
 
+ARG COMMIT_SHA=""
+LABEL org.opencontainers.image.revision=${COMMIT_SHA}
+
 RUN apk --no-cache add ca-certificates tzdata libc6-compat libgcc libstdc++
 WORKDIR /app
 
