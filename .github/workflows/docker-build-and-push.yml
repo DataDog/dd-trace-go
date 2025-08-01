@@ -91,6 +91,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             DD_VERSION=${{ inputs.version }}
+            COMMIT_SHA=${{ inputs.commit_sha }}
           # This builds a Docker image and uploads it using a unique fingerprint, without a name
           outputs: type=image,name=${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
 
@@ -118,6 +119,7 @@ jobs:
           tags: ${{ steps.tags.outputs.list }}
           build-args: |
             DD_VERSION=${{ inputs.version }}
+            COMMIT_SHA=${{ inputs.commit_sha }}
           outputs: type=docker,dest=/tmp/${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}.tar
           push: false
 
