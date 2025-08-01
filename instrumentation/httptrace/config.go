@@ -62,7 +62,7 @@ func newConfig() config {
 		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
 		baggageTagKeys:               make(map[string]struct{}),
 	}
-	if v, ok := os.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+	if v, ok := env.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
 		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
