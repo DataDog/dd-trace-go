@@ -117,6 +117,12 @@
     "DD_GIT_COMMIT_SHA": [
       "A"
     ],
+    "DD_GIT_PULL_REQUEST_BASE_BRANCH": [
+      "A"
+    ],
+    "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA": [
+      "A"
+    ],
     "DD_GIT_REPOSITORY_URL": [
       "A"
     ],
@@ -277,6 +283,9 @@
       "A"
     ],
     "DD_TRACE_AWS_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_BAGGAGE_TAG_KEYS": [
       "A"
     ],
     "DD_TRACE_BUNTDB_ANALYTICS_ENABLED": [
