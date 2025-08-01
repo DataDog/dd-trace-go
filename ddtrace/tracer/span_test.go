@@ -987,6 +987,24 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 	})
 }
 
+func TestSpanErrorNoStackTrace(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithDebugStack(true))
+		assert.Nil(err)
+		defer stop()
+
+		span := tracer.StartSpan("operation")
+		span.SetTag(ext.ErrorNoStackTrace, errors.New("test"))
+		span.Finish()
+
+		assert.Equal(int32(1), span.error)
+		assert.Equal("", span.meta[ext.ErrorStack])
+		assert.Equal("test", span.meta[ext.ErrorMsg])
+		assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
+	})
+}
+
 func TestUniqueTagKeys(t *testing.T) {
 	assert := assert.New(t)
 	span := newBasicSpan("web.request")

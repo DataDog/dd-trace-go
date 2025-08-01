@@ -93,6 +93,9 @@ const (
 	// ErrorDetails holds details about an error which implements a formatter.
 	ErrorDetails = "error.details"
 
+	// ErrorNoStackTrace is a tag that specifies that the error stack trace should not be captured.
+	ErrorNoStackTrace = "error.no_stack_trace"
+
 	// Environment specifies the environment to use with a trace.
 	Environment = "env"
 
