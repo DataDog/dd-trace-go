@@ -73,7 +73,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -82,7 +82,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -99,7 +99,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -108,7 +108,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -125,7 +125,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -134,7 +134,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -151,7 +151,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -160,7 +160,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -177,7 +177,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -186,7 +186,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -203,7 +203,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -212,7 +212,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -229,7 +229,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -238,7 +238,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -255,7 +255,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -264,7 +264,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -281,7 +281,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -290,7 +290,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
@@ -307,7 +307,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@8edcb1bdb4e267140fa742c62e395cd74f332709 # v3.6.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -316,7 +316,7 @@ jobs:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
       - name: Setup Go
-        uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+        uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v3.5.0
         with:
           go-version: stable
           check-latest: true
