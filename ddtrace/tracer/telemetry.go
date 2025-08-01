@@ -7,9 +7,9 @@ package tracer
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -111,7 +111,7 @@ func startTelemetry(c *config) telemetry.Client {
 		AgentURL:   c.agentURL.String(),
 	}
 	if c.logToStdout || c.ciVisibilityAgentless {
-		cfg.APIKey = os.Getenv("DD_API_KEY")
+		cfg.APIKey = env.Getenv("DD_API_KEY")
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
 	if err != nil {

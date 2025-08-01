@@ -24,6 +24,7 @@ import (
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc"
@@ -58,10 +59,10 @@ func initializeEnvironment() {
 		{key: "_DD_APPSEC_PROXY_ENVIRONMENT", value: "true"},  // Internal config: Enable API Security proxy sampler
 	}
 
-	for _, env := range defaultEnvVars {
-		if os.Getenv(env.key) == "" {
-			if err := os.Setenv(env.key, env.value); err != nil {
-				log.Error("service_extension: failed to set %s environment variable: %s\n", env.key, err.Error())
+	for _, envVar := range defaultEnvVars {
+		if env.Getenv(envVar.key) == "" {
+			if err := os.Setenv(envVar.key, envVar.value); err != nil {
+				log.Error("service_extension: failed to set %s environment variable: %s\n", envVar.key, err.Error())
 			}
 		}
 	}
@@ -104,6 +105,7 @@ func loadConfig() serviceExtensionConfig {
 
 func main() {
 	initializeEnvironment()
+
 	config := loadConfig()
 
 	if err := configureObservabilityMode(config.observabilityMode); err != nil {
