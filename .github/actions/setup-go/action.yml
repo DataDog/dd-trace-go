@@ -30,7 +30,4 @@ runs:
       if: steps.cache-tools.outputs.cache-hit != 'true'
       shell: bash
       run: |-
-        echo Installing tools from ${{ inputs.tools-dir }}/tools.go
-        mkdir -p ${{ inputs.tools-bin }}
-        cd ${{ inputs.tools-dir }} && GOWORK=off go mod download
-        cd ${{ inputs.tools-dir }} && GOWORK=off GOBIN=${{ inputs.tools-bin }} go install $(grep -E '^[[:space:]]*_[[:space:]]+".*"' tools.go | awk -F'"' '{print $2}')
+        ./scripts/install_tools.sh --tools-dir ${{ inputs.tools-dir }} --bin-dir ${{ inputs.tools-bin }}

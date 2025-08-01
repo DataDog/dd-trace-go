@@ -25,13 +25,26 @@ This directory contains scripts and small Go tool programs used for development,
 
 The Makefile provides convenient targets that automatically handle tool dependencies:
 
-```bash
-make test                # Run all tests
-make test-contrib        # Run contrib tests
-make test-integration    # Run integration tests
-make test-appsec         # Run AppSec tests
-make generate            # Run code generation
-make lint                # Run linting
+[embedmd]:# (../tmp/make-help.txt)
+```txt
+Usage: make [target]
+
+Targets:
+  help                 Show this help message
+  all                  Run complete build pipeline (tools, generate, lint, test)
+  tools-install        Install development tools
+  clean                Clean build artifacts
+  clean-all            Clean everything including tools and temporary files
+  generate             Run code generation
+  lint                 Run linting checks
+  lint-fix             Fix linting issues automatically
+  format               Format code
+  test                 Run all tests (core, integration, contrib)
+  test-appsec          Run tests with AppSec enabled
+  test-contrib         Run contrib package tests
+  test-integration     Run integration tests
+  fix-modules          Fix module dependencies and consistency
+  docs                 Update embedded documentation in README files
 ```
 
 ### Direct Execution
@@ -47,6 +60,23 @@ PATH="$(pwd)/bin:$PATH" ./scripts/script-name.sh
 
 # Or run directly if script doesn't need tools
 ./scripts/script-name.sh
+```
+
+#### Test Script Options
+
+The test script provides many options for different testing scenarios:
+
+[embedmd]:# (../tmp/test-help.txt)
+```txt
+test.sh - Run the tests for dd-trace-go
+	this script requires gotestsum, goimports, docker and docker-compose.
+	-a | --appsec		- Test with appsec enabled
+	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
+	-c | --contrib		- Run contrib tests
+	--all			- Synonym for -l -a -i -c
+	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds
+	-t | --tools		- Install gotestsum and goimports
+	-h | --help		- Print this help message
 ```
 
 ### Go Programs
@@ -67,8 +97,8 @@ go run ./scripts/program-name.go
 
 1. Create the script in the `scripts/` directory
 2. Make it executable: `chmod +x scripts/script-name.sh`
-3. Add a Makefile target if it's commonly used
-4. Use `$(BIN_PATH)` in Makefile targets to access tools
+3. Add a Makefile target if it's commonly used (follow the pattern of existing targets)
+4. Use `$(BIN_PATH)` in Makefile targets to access development tools from `bin/`
 
 ### Go Programs
 
