@@ -165,7 +165,7 @@ jobs:
         go: [ "1.23", "1.24" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
+        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratchy ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -208,7 +208,7 @@ jobs:
             deployment-env: busybox
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: scratch
+            deployment-env: scratchy
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
@@ -218,7 +218,7 @@ jobs:
           #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
           - build-with-cgo: 1
-            deployment-env: scratch
+            deployment-env: scratchy
 
     steps:
       - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
