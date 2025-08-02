@@ -42,6 +42,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.3.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
 	github.com/DataDog/orchestrion v1.5.0
 )
@@ -73,7 +74,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
-	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/aws/aws-sdk-go v1.44.327 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.26.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
@@ -241,7 +242,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.7 // indirect
 	github.com/valkey-io/valkey-go v1.0.55 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.51.0 // indirect
+	github.com/valyala/fasthttp v1.58.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.16 // indirect
