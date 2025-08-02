@@ -95,6 +95,7 @@ type RoundTripperConfig struct {
 	ErrCheck      func(err error) bool
 	QueryString   bool // reports whether the query string is included in the URL tag for http client spans
 	IsStatusError func(statusCode int) bool
+	ClientTrace   bool // reports whether httptrace.ClientTrace should be enabled for detailed timing
 }
 
 func (c *RoundTripperConfig) ApplyOpts(opts ...RoundTripperOption) {
