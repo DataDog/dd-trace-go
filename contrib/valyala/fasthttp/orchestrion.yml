@@ -10,15 +10,28 @@ meta:
     Package fasthttp provides a fast HTTP implementation for Go, with a focus on performance and low memory usage.
 
 aspects:
-  - id: New
+  # FastHTTP Server instrumentation
+  # All server startup methods (ListenAndServe, ServeTLS, etc.) eventually call Serve(ln)
+  # By targeting only Serve(), we avoid hot-path overhead and ensure complete coverage
+  - id: FastHTTPServerInstrumentation
     join-point:
       function-body:
         function:
           - receiver: '*github.com/valyala/fasthttp.Server'
+          - name: 'Serve'  # Single entry point for all server startup methods
     advice:
+      # Add instrumentation flag to prevent double-wrapping
+      - add-struct-field:
+          name: '__dd_instrumented'
+          type: 'bool'
+          
       - prepend-statements:
           imports:
             fasthttptrace: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
-          template: |-
-            {{- $srv := .Function.Receiver -}}
-            {{ $srv }}.Handler = fasthttptrace.WrapHandler({{ $srv }}.Handler)
+          template: |
+            {{ $srv := .Function.Receiver }}
+            // Only wrap Handler once, even if Serve() is called multiple times
+            if !{{ $srv }}.__dd_instrumented && {{ $srv }}.Handler != nil {
+              {{ $srv }}.Handler = fasthttptrace.WrapHandler({{ $srv }}.Handler)
+              {{ $srv }}.__dd_instrumented = true
+            }
