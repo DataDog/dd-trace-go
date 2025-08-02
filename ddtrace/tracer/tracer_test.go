@@ -939,6 +939,44 @@ func TestStartSpanOrigin(t *testing.T) {
 	assert.Equal("synthetics", carrier2[originHeader])
 }
 
+func TestInjectNotOverwriteSampling(t *testing.T) {
+	assert := assert.New(t)
+
+	// Start the tracer with a sampling rule that will drop all traces
+	tracer, err := newTracer(WithSamplingRules([]SamplingRule{
+		{Rate: 0},
+	}))
+	assert.NoError(err)
+	defer tracer.Stop()
+
+	// Create a carrier with a "keep" sampling priority of 2
+	extractCarrier := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultPriorityHeader: "2",
+	})
+	sctx, err := tracer.Extract(extractCarrier)
+	assert.Nil(err)
+
+	// Create a span with a parent trace that has a "keep" sampling priority
+	span := tracer.StartSpan("web.request", ChildOf(sctx))
+	ctx := span.Context()
+	v, ok := ctx.SamplingPriority()
+	assert.True(ok)
+	assert.Equal(2, v)
+
+	// Inject the span context into a carrier
+	headers := http.Header{}
+	carrier := HTTPHeadersCarrier(headers)
+	tracer.Inject(ctx, carrier)
+
+	// Verify that the sampling priority is still 2
+	assert.Equal("2", headers.Get(DefaultPriorityHeader))
+	v, ok = ctx.SamplingPriority()
+	assert.True(ok)
+	assert.Equal(2, v)
+}
+
 func TestPropagationDefaults(t *testing.T) {
 	t.Setenv(headerPropagationStyleExtract, "datadog")
 	t.Setenv(headerPropagationStyleInject, "datadog")
