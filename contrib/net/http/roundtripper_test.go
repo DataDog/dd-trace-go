@@ -581,6 +581,42 @@ func TestSpanOptions(t *testing.T) {
 	assert.Equal(t, tagValue, spans[0].Tag(tagKey))
 }
 
+func TestClientTrace(t *testing.T) {
+	assertClientTrace := func(t *testing.T, enabled bool, expectTags bool) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		rt := WrapRoundTripper(http.DefaultTransport, WithClientTrace(enabled))
+		client := &http.Client{Transport: rt}
+		resp, err := client.Get(srv.URL)
+		assert.Nil(t, err)
+		defer resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		span := spans[0]
+
+		hasTimingTags := span.Tag("http.connect.duration_ms") != nil ||
+			span.Tag("http.get_conn.duration_ms") != nil ||
+			span.Tag("http.first_byte.duration_ms") != nil
+
+		assert.Equal(t, expectTags, hasTimingTags)
+	}
+
+	t.Run("disabled", func(t *testing.T) {
+		assertClientTrace(t, false, false)
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		assertClientTrace(t, true, true)
+	})
+}
+
 func TestClientQueryStringCollected(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("Hello World"))
