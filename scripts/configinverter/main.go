@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/dave/jennifer/jen"
@@ -26,13 +27,23 @@ func main() {
 	flag.StringVar(&output, "output", "./internal/env", "Path to the output directory")
 	flag.Parse()
 
+	// Get command and keys from positional arguments
+	args := flag.Args()
+	if len(args) == 0 {
+		slog.Error("no command provided")
+		os.Exit(1)
+	}
+
+	command := args[0]
+
 	var err error
-	command := flag.Arg(0)
 	switch command {
 	case "generate":
 		err = generate(input, output)
 	case "check":
 		err = check(input)
+	case "add":
+		err = add(input, output, args[1:])
 	default:
 		err = fmt.Errorf("unknown command: %s", command)
 	}
@@ -79,28 +90,6 @@ func generate(input, output string) error {
 	return nil
 }
 
-func getSupportedConfigurationsKeys(input string) ([]string, error) {
-	fcontent, err := os.ReadFile(input)
-	if err != nil {
-		return nil, fmt.Errorf("error getting supported configuration keys from embed: %w", err)
-	}
-
-	slog.Info("read file", "file", input)
-
-	var cfg supportedConfiguration
-	if err := json.Unmarshal(fcontent, &cfg); err != nil {
-		return nil, fmt.Errorf("error unmarshalling supported configuration: %w", err)
-	}
-
-	mapVar := []string{}
-	for k := range cfg.SupportedConfigurations {
-		mapVar = append(mapVar, k)
-	}
-	sort.Strings(mapVar)
-
-	return mapVar, nil
-}
-
 func check(input string) error {
 	keys, err := getSupportedConfigurationsKeys(input)
 	if err != nil {
@@ -123,4 +112,96 @@ func check(input string) error {
 	}
 
 	return nil
+}
+
+func add(input, output string, newKeys []string) error {
+	cfg, err := getSupportedConfigurations(input)
+	if err != nil {
+		return fmt.Errorf("error getting supported configuration keys: %w", err)
+	}
+
+	filteredKeys := []string{}
+	for _, k := range newKeys {
+		// Filter out keys that don't start with DD_ or OTEL_
+		if strings.HasPrefix(strings.ToUpper(k), "DD_") || strings.HasPrefix(strings.ToUpper(k), "OTEL_") {
+			filteredKeys = append(filteredKeys, strings.ToUpper(k))
+		}
+	}
+
+	missingKeys := []string{}
+	for _, k := range filteredKeys {
+		_, ok := cfg.SupportedConfigurations[k]
+		if !ok {
+			missingKeys = append(missingKeys, k)
+		} else {
+			slog.Info("key already exists", "key", k)
+		}
+	}
+
+	if len(missingKeys) == 0 {
+		slog.Info("no new keys to add")
+		return nil
+	}
+
+	slog.Info("adding missing keys", "count", len(missingKeys), "keys", missingKeys)
+
+	err = addSupportedConfigurationsKeys(input, cfg, missingKeys)
+	if err != nil {
+		return fmt.Errorf("error adding supported configuration keys to file: %w", err)
+	}
+
+	if err := generate(input, output); err != nil {
+		return fmt.Errorf("error running generate command after adding supported configuration keys: %w", err)
+	}
+
+	return nil
+}
+
+// getSupportedConfigurationsKeys gets the supported configurations keys from the JSON file.
+// It returns a sorted list of env variables.
+func getSupportedConfigurationsKeys(input string) ([]string, error) {
+	cfg, err := getSupportedConfigurations(input)
+	if err != nil {
+		return nil, fmt.Errorf("error getting supported configuration: %w", err)
+	}
+
+	mapVar := []string{}
+	for k := range cfg.SupportedConfigurations {
+		mapVar = append(mapVar, k)
+	}
+	sort.Strings(mapVar)
+
+	return mapVar, nil
+}
+
+// getSupportedConfigurations gets the supported configurations from the JSON file.
+func getSupportedConfigurations(input string) (*supportedConfiguration, error) {
+	fcontent, err := os.ReadFile(input)
+	if err != nil {
+		return nil, fmt.Errorf("error getting supported configuration keys from embed: %w", err)
+	}
+
+	slog.Info("read file", "file", input)
+
+	var cfg supportedConfiguration
+	if err := json.Unmarshal(fcontent, &cfg); err != nil {
+		return nil, fmt.Errorf("error unmarshalling supported configuration: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+// addSupportedConfigurationsKeys adds new keys to the supported configurations JSON
+// file.
+func addSupportedConfigurationsKeys(input string, cfg *supportedConfiguration, newKeys []string) error {
+	for _, k := range newKeys {
+		cfg.SupportedConfigurations[k] = []string{"A"}
+	}
+
+	json, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshalling supported configuration: %w", err)
+	}
+
+	return os.WriteFile(input, json, 0644)
 }
