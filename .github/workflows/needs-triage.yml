@@ -18,8 +18,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Generate a GitHub token
         id: generate-token
