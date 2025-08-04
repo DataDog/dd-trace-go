@@ -44,24 +44,21 @@ type serviceExtensionConfig struct {
 
 var log = NewLogger()
 
+func getDefaultEnvVars() map[string]string {
+	return map[string]string{
+		"DD_VERSION":                   instrumentation.Version(), // Version of the tracer
+		"DD_APM_TRACING_ENABLED":       "false",                   // Appsec Standalone
+		"DD_APPSEC_WAF_TIMEOUT":        "10ms",                    // Proxy specific WAF timeout
+		"_DD_APPSEC_PROXY_ENVIRONMENT": "true",                    // Internal config: Enable API Security proxy sampler
+	}
+}
+
 // initializeEnvironment sets up required environment variables with their defaults
 func initializeEnvironment() {
-	type envVar struct {
-		key   string
-		value string
-	}
-
-	defaultEnvVars := []envVar{
-		{key: "DD_VERSION", value: instrumentation.Version()}, // Version of the tracer
-		{key: "DD_APM_TRACING_ENABLED", value: "false"},       // Appsec Standalone
-		{key: "DD_APPSEC_WAF_TIMEOUT", value: "10ms"},         // Proxy specific WAF timeout
-		{key: "_DD_APPSEC_PROXY_ENVIRONMENT", value: "true"},  // Internal config: Enable API Security proxy sampler
-	}
-
-	for _, env := range defaultEnvVars {
-		if os.Getenv(env.key) == "" {
-			if err := os.Setenv(env.key, env.value); err != nil {
-				log.Error("service_extension: failed to set %s environment variable: %s\n", env.key, err.Error())
+	for k, v := range getDefaultEnvVars() {
+		if os.Getenv(k) == "" {
+			if err := os.Setenv(k, v); err != nil {
+				log.Error("service_extension: failed to set %s environment variable: %s\n", k, err.Error())
 			}
 		}
 	}
