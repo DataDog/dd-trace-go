@@ -79,7 +79,7 @@ jobs:
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
           echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v5.3.0
         with:
           cache: false
 
@@ -121,7 +121,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v5.3.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
@@ -185,7 +185,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - uses: actions/setup-go@8e57b58e57be52ac95949151e2777ffda8501267 # v5.3.0
         with:
           go-version: stable
           cache: false # we manage the caching ourselves
