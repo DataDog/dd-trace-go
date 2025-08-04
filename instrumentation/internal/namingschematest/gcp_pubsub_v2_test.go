@@ -7,11 +7,13 @@ package namingschematest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
-	"cloud.google.com/go/pubsub"
-	"cloud.google.com/go/pubsub/pstest"
+	"cloud.google.com/go/pubsub/v2"
+	"cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
+	"cloud.google.com/go/pubsub/v2/pstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
@@ -20,13 +22,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"
+	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var gcpPubsub = harness.TestCase{
+var gcpPubsubV2 = harness.TestCase{
 	Name: instrumentation.PackageGCPPubsub,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		mt := mocktracer.Start()
@@ -36,11 +38,11 @@ var gcpPubsub = harness.TestCase{
 		if serviceOverride != "" {
 			opts = append(opts, pubsubtrace.WithService(serviceOverride))
 		}
-		topic, sub, srv, cleanup := newTestGCPPubsub(t)
+		pub, sub, srv, cleanup := newTestGCPPubsubV2(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		_, err := pubsubtrace.Publish(ctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}, opts...).Get(ctx)
+		_, err := pubsubtrace.Publish(ctx, pub, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}, opts...).Get(ctx)
 		require.NoError(t, err)
 
 		done := make(chan struct{})
@@ -80,7 +82,7 @@ var gcpPubsub = harness.TestCase{
 	},
 }
 
-func newTestGCPPubsub(t *testing.T) (*pubsub.Topic, *pubsub.Subscription, *pstest.Server, func()) {
+func newTestGCPPubsubV2(t *testing.T) (*pubsub.Publisher, *pubsub.Subscriber, *pstest.Server, func()) {
 	srv := pstest.NewServer()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -89,21 +91,26 @@ func newTestGCPPubsub(t *testing.T) (*pubsub.Topic, *pubsub.Subscription, *pstes
 	conn, err := grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
-	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
+	const projectID = "project"
+	client, err := pubsub.NewClient(ctx, projectID, option.WithGRPCConn(conn))
 	require.NoError(t, err)
 
-	_, err = client.CreateTopic(ctx, "topic")
-	require.NoError(t, err)
-
-	topic := client.Topic("topic")
-	topic.EnableMessageOrdering = true
-	_, err = client.CreateSubscription(ctx, "subscription", pubsub.SubscriptionConfig{
-		Topic: topic,
+	topic, err := client.TopicAdminClient.CreateTopic(ctx, &pubsubpb.Topic{
+		Name: fmt.Sprintf("projects/%s/topics/topic", projectID),
 	})
 	require.NoError(t, err)
 
-	sub := client.Subscription("subscription")
-	return topic, sub, srv, func() {
+	publisher := client.Publisher(topic.Name)
+	publisher.EnableMessageOrdering = true
+
+	subscription, err := client.SubscriptionAdminClient.CreateSubscription(ctx, &pubsubpb.Subscription{
+		Name:  fmt.Sprintf("projects/%s/subscriptions/subscription", projectID),
+		Topic: topic.Name,
+	})
+	require.NoError(t, err)
+
+	sub := client.Subscriber(subscription.Name)
+	return publisher, sub, srv, func() {
 		assert.NoError(t, conn.Close())
 		assert.NoError(t, srv.Close())
 	}

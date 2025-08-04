@@ -59,7 +59,7 @@ func TestNamingSchema(t *testing.T) {
 		netHTTPServerWrapHandler,
 		netHTTPClient,
 		gomemcache,
-		gcpPubsub,
+		gcpPubsubV2,
 		urfaveNegroni,
 		twitchTVTwirp,
 		tidwallBuntDB,
