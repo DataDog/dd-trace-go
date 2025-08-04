@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -24,7 +25,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var currentM *testing.M
@@ -34,8 +34,6 @@ var parallelEfd bool
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
-	log.SetLevel(log.LevelDebug)
-
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
@@ -68,24 +66,33 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	} else {
 		fmt.Println("Starting tests...")
+		var wg sync.WaitGroup
 		for _, v := range scenarios {
+			wg.Add(1)
 			cmd := exec.Command(os.Args[0], os.Args[1:]...)
 			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=true", v))
-			fmt.Printf("Running scenario: %s:\n", v)
-			fmt.Println(cmd.Env)
-			err := cmd.Run()
-			fmt.Printf("Done.\n\n")
-			if err != nil {
-				if exiterr, ok := err.(*exec.ExitError); ok {
-					fmt.Printf("Scenario %s failed with exit code: %d\n", v, exiterr.ExitCode())
-					os.Exit(exiterr.ExitCode())
+			go func() {
+				defer func() {
+					wg.Done()
+				}()
+
+				fmt.Printf("Running scenario: %s:\n", v)
+				fmt.Println(cmd.Env)
+				err := cmd.Run()
+				fmt.Printf("Done.\n\n")
+				if err != nil {
+					if exiterr, ok := err.(*exec.ExitError); ok {
+						fmt.Printf("Scenario %s failed with exit code: %d\n", v, exiterr.ExitCode())
+						os.Exit(exiterr.ExitCode())
+					}
+					fmt.Printf("cmd.Run: %v\n", err)
+					os.Exit(1)
 				}
-				fmt.Printf("cmd.Run: %v\n", err)
-				os.Exit(1)
-			}
+			}()
 		}
+		wg.Wait()
 	}
 
 	os.Exit(0)
@@ -199,6 +206,11 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// check the test is new tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 26)
 
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
 	// check spans by type
 	checkSpansByType(finishedSpans,
 		32,
@@ -302,6 +314,11 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
@@ -543,6 +560,11 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	// check spans by tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 55)
 
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
 	// Impacted tests
 	if impactedTests {
 		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 96)
@@ -687,6 +709,11 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
 	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 1)
 
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
 	// check spans by type
 	checkSpansByType(finishedSpans,
 		17,
@@ -828,6 +855,11 @@ func runTestManagementTests(m *testing.M) {
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// check logs
 	checkLogs()

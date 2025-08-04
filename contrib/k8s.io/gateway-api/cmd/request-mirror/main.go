@@ -61,7 +61,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", gatewayapi.HTTPRequestMirrorHandler(gatewayapi.Config{
 		ServeConfig: httptrace.ServeConfig{
-			Framework: "sigs.k8s.io/gateway-api",
+			Framework: "k8s.io/gateway-api",
 			FinishOpts: []tracer.FinishOption{
 				tracer.NoDebugStack(),
 			},

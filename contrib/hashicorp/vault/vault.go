@@ -3,16 +3,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package vault contains functions to construct or augment an http.Client that
-// will integrate with the github.com/hashicorp/vault/api and collect traces to
+// Package vault contains functions to construct or augment an [*http.Client] that
+// will integrate with the [github.com/hashicorp/vault/api] and collect traces to
 // send to Datadog.
 //
-// The easiest way to use this package is to create an http.Client with
-// NewHTTPClient, and put it in the Vault API config that is passed to the
+// The easiest way to use this package is to create an [*http.Client] with
+// [NewHTTPClient], and put it in the Vault [api.Config] that is passed to
+// [api.NewClient].
 //
-// If you are already using your own http.Client with the Vault API, you can
-// use the WrapHTTPClient function to wrap the client with the tracer code.
-// Your http.Client will continue to work as before, but will also capture
+// If you are already using your own [*http.Client] with the Vault API, you can
+// use the [WrapHTTPClient] function to wrap the client with the tracer code.
+// Your [*http.Client] will continue to work as before, but will also capture
 // traces.
 package vault
 
@@ -36,8 +37,8 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageHashicorpVaultAPI)
 }
 
-// NewHTTPClient returns an http.Client for use in the Vault API config
-// Client. A set of options can be passed in for further configuration.
+// NewHTTPClient returns an [*http.Client] for use in the Vault API config
+// [*api.Client]. A set of options can be passed in for further configuration.
 func NewHTTPClient(opts ...Option) *http.Client {
 	dc := api.DefaultConfig()
 	c := dc.HttpClient
@@ -45,7 +46,7 @@ func NewHTTPClient(opts ...Option) *http.Client {
 	return c
 }
 
-// WrapHTTPClient takes an existing http.Client and wraps the underlying
+// WrapHTTPClient takes an existing [*http.Client] and wraps the underlying
 // transport with tracing.
 func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 	if c.Transport == nil {

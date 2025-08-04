@@ -14,10 +14,11 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace v0.67.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
 	github.com/DataDog/go-libddwaf/v4 v4.3.0
-	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a
+	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
 	github.com/Masterminds/semver/v3 v3.3.1
+	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/go-viper/mapstructure/v2 v2.3.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
@@ -29,7 +30,6 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.10.0
 	github.com/tinylib/msgp v1.2.5
-	go.opentelemetry.io/collector/pdata/pprofile v0.125.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/trace v1.35.0
@@ -45,9 +45,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-// todo: remove before merge
-replace github.com/DataDog/appsec-internal-go => github.com/e-n-0/appsec-internal-go v0.0.0-20250626131752-f76d0fa9a9b9
-
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/log v0.67.0 // indirect
@@ -58,7 +55,6 @@ require (
 	github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.27.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.8.3 // indirect

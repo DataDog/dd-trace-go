@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"go.uber.org/goleak"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -77,7 +78,24 @@ func TestMain(m *testing.M) {
 		timeMultiplicator = time.Duration(2)
 	}
 	_, integration = os.LookupEnv("INTEGRATION")
-	os.Exit(m.Run())
+
+	// Run the tests and exit on failure
+	if code := m.Run(); code != 0 {
+		os.Exit(code)
+	}
+
+	// If the tests pass, check for goroutine leaks:
+	//
+	// TODO(felixge): We should try to get rid of all the ignored functions
+	// below. And we should definitely try to not add any new ones here!
+	opts := []goleak.Option{
+		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
+	}
+	if err := goleak.Find(opts...); err != nil {
+		fmt.Fprintf(os.Stderr, "goleak: Errors on successful test run: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "See Goroutine Leak section in CONTRIBUTING.md for more information on how to fix this.\n")
+		os.Exit(1)
+	}
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
@@ -114,7 +132,7 @@ func TestTracerCleanStop(t *testing.T) {
 		t.Skip("This test causes windows CI to fail due to out-of-memory issues")
 	}
 	// avoid CI timeouts due to AppSec and telemetry slowing down this test
-	t.Setenv("DD_APPSEC_ENABLED", "")
+	t.Setenv("DD_APPSEC_ENABLED", "false")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 
@@ -166,6 +184,7 @@ func TestTracerCleanStop(t *testing.T) {
 	}()
 
 	wg.Wait()
+	Stop()
 }
 
 func TestTracerStart(t *testing.T) {
@@ -249,6 +268,7 @@ func TestTracerLogFile(t *testing.T) {
 		}
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", dir)
 		tracer, err := newTracer()
+		defer tracer.Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, dir, tracer.config.logDirectory)
 		assert.NotNil(t, tracer.logFile)
@@ -258,7 +278,7 @@ func TestTracerLogFile(t *testing.T) {
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", "some/nonexistent/path")
 		tracer, err := newTracer()
 		assert.Nil(t, err)
-		defer Stop()
+		defer tracer.Stop()
 		assert.Empty(t, tracer.config.logDirectory)
 		assert.Nil(t, tracer.logFile)
 	})
@@ -716,7 +736,7 @@ func TestSamplingDecision(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -733,7 +753,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -749,7 +769,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 
 	t.Run("otel-env", func(t *testing.T) {
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
-		c, err := newConfig()
+		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.False(t, c.runtimeMetrics)
 	})
@@ -758,12 +778,12 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		// dd env overrides otel env
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
-		c, err := newConfig()
+		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.True(t, c.runtimeMetrics)
 		// tracer option overrides dd env
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		c, err = newConfig(WithRuntimeMetrics())
+		c, err = newTestConfig(WithRuntimeMetrics())
 		assert.NoError(t, err)
 		assert.True(t, c.runtimeMetrics)
 	})
@@ -1218,7 +1238,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultHTTPClient(0))
+	return newHTTPTransport(defaultURL, defaultHTTPClient(0, true))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1333,10 +1353,11 @@ func TestTracerPrioritySampler(t *testing.T) {
 			}
 		}`))
 	}))
+	defer srv.Close()
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultHTTPClient(0))),
+		withTransport(newHTTPTransport(url, defaultHTTPClient(0, false))),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -1756,11 +1777,15 @@ func TestPushPayload(t *testing.T) {
 func TestPushTrace(t *testing.T) {
 	assert := assert.New(t)
 
+	oldLvl := log.GetLevel()
+	defer func() { log.SetLevel(oldLvl) }()
+	log.SetLevel(log.LevelDebug)
+
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
 	tracer, err := newUnstartedTracer()
 	assert.Nil(err)
-	defer tracer.statsd.Close()
+	defer tracer.Stop()
 	trace := []*Span{
 		{
 			name:     "pylons.request",
@@ -1780,7 +1805,7 @@ func TestPushTrace(t *testing.T) {
 	t0 := <-tracer.out
 	assert.Equal(&chunk{spans: trace}, t0)
 
-	many := payloadQueueSize + 2
+	many := payloadQueueSize * 2
 	for i := 0; i < many; i++ {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
@@ -2222,8 +2247,20 @@ func genBigTraces(b *testing.B) {
 				sp.Finish()
 			}
 			parent.Finish()
-			go flush(-1)         // act like a ticker
-			go transport.Reset() // pretend we sent any payloads
+			// TODO(fg): This test has historically not waited for the two
+			// goroutines below to finish. This was causing test failures when
+			// goroutine leak checks were added to TestMain. However, looking at
+			// the code, perhaps these goroutines should be required to finish
+			// before b.StopTimer() is called?
+			wg.Add(2)
+			go func() {
+				flush(-1) // act like a ticker
+				wg.Done()
+			}()
+			go func() {
+				transport.Reset() // pretend we sent any payloads
+				wg.Done()
+			}()
 		}
 	}
 	b.StopTimer()
@@ -2312,6 +2349,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	o := append([]StartOption{
 		withTransport(transport),
 		withTickChan(tick),
+		// disable keep-alives to avoid goroutine leaks between tests
+		WithHTTPClient(defaultHTTPClient(0, true)),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {
@@ -2348,6 +2387,14 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
 	}, nil
+}
+
+// newTestConfig wraps newConfig to set a default HTTP client with keep-alives
+// disabled. This is necessary to avoid goroutine leaks between tests, see
+// TestMain.
+func newTestConfig(opts ...StartOption) (*config, error) {
+	opts = append([]StartOption{WithHTTPClient(defaultHTTPClient(0, true))}, opts...)
+	return newConfig(opts...)
 }
 
 // comparePayloadSpans allows comparing two spans which might have been
@@ -2432,10 +2479,12 @@ func TestFlush(t *testing.T) {
 	tr.traceWriter = tw
 
 	ts := &statsdtest.TestStatsdClient{}
+	tr.statsd.Close()
 	tr.statsd = ts
 
 	transport := newDummyTransport()
 	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	tr.stats.Stop()
 	tr.stats = c
 	c.Start()
 	defer c.Stop()

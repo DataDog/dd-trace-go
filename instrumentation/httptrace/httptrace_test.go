@@ -420,6 +420,190 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
 }
 
+func TestBaggageSpanTagsOpentracer(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+	ctx := context.Background()
+
+	// Create an HTTP request with no additional baggage context
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(ctx)
+	req.Header.Set("x-datadog-trace-id", "1")
+	req.Header.Set("x-datadog-parent-id", "2")
+	req.Header.Set("baggage", "session.id=789")  // w3c baggage header
+	req.Header.Set("ot-baggage-user.id", "1234") // opentracer baggage header
+
+	// Start the request span, which will extract baggage and add it as span tags
+	reqSpan, _, _ := StartRequestSpan(req)
+	m := reqSpan.AsMap()
+
+	// Keys that SHOULD be present:
+	assert.Contains(t, m, "baggage.session.id", "baggage.session.id should be included in span tags")
+	assert.Equal(t, "789", m["baggage.session.id"], "should contain session.id value")
+
+	// Keys that should NOT be present (user.id is ot-baggage header)
+	// This assertion WILL FAIL until baggage revamp is complete; therefore, commented out
+	// Baggage revamp Jira card: APMAPI-1442
+	// assert.NotContains(t, m, "baggage.user.id", "baggage.user.id should not be included in span tags")
+
+	reqSpan.Finish()
+}
+
+// baggageSpanTagTest represents a test case for baggage span tag functionality
+type baggageSpanTagTest struct {
+	name           string
+	envValue       string            // DD_TRACE_BAGGAGE_TAG_KEYS value
+	baggageHeader  string            // baggage header value
+	preSetBaggage  map[string]string // baggage to set in context before request
+	expectedTags   map[string]string // tags that should be present with their values
+	unexpectedTags []string          // tag keys that should not be present
+	needsResetCfg  bool              // whether to call ResetCfg()
+}
+
+// runBaggageSpanTagTest is a helper function that runs a baggage span tag test case
+func runBaggageSpanTagTest(t *testing.T, tc baggageSpanTagTest) {
+	t.Helper()
+
+	// Set up environment variable if specified
+	if tc.envValue != "" {
+		os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", tc.envValue)
+		defer os.Unsetenv("DD_TRACE_BAGGAGE_TAG_KEYS")
+		if tc.needsResetCfg {
+			ResetCfg()
+		}
+	}
+
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create base context with pre-set baggage if specified
+	ctx := context.Background()
+	for key, value := range tc.preSetBaggage {
+		ctx = baggage.Set(ctx, key, value)
+	}
+
+	// Create HTTP request with context
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(ctx)
+
+	// Set baggage header
+	if tc.baggageHeader != "" {
+		req.Header.Set("baggage", tc.baggageHeader)
+	}
+
+	// Start request span and get span tags
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+
+	// Check expected tags
+	for key, expectedValue := range tc.expectedTags {
+		assert.Contains(t, m, key, fmt.Sprintf("%s should be included in span tags", key))
+		assert.Equal(t, expectedValue, m[key], fmt.Sprintf("should contain %s value", key))
+	}
+
+	// Check unexpected tags
+	for _, key := range tc.unexpectedTags {
+		assert.NotContains(t, m, key, fmt.Sprintf("%s should not be included in span tags", key))
+	}
+
+	span.Finish()
+}
+
+func TestBaggageSpanTags(t *testing.T) {
+	tests := []baggageSpanTagTest{
+		{
+			name:          "default",
+			baggageHeader: "header_key=header_value,account.id=456,session.id=789",
+			preSetBaggage: map[string]string{"user.id": "1234"},
+			expectedTags: map[string]string{
+				"baggage.account.id": "456",
+				"baggage.session.id": "789",
+			},
+			unexpectedTags: []string{"baggage.header_key", "baggage.user.id"},
+		},
+		{
+			name:          "wildcard",
+			envValue:      "*",
+			needsResetCfg: true,
+			baggageHeader: "user.id=abcd,account.id=456,session.id=789,color=blue,foo=bar",
+			expectedTags: map[string]string{
+				"baggage.account.id": "456",
+				"baggage.user.id":    "abcd",
+				"baggage.session.id": "789",
+				"baggage.color":      "blue",
+				"baggage.foo":        "bar",
+			},
+		},
+		{
+			name:          "disabled",
+			envValue:      " ",
+			needsResetCfg: true,
+			baggageHeader: "user.id=abcd,account.id=456,session.id=789,color=blue",
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.user.id",
+				"baggage.session.id",
+				"baggage.color",
+			},
+		},
+		{
+			name:          "specify_keys",
+			envValue:      "device,os.version,app.version",
+			needsResetCfg: true,
+			baggageHeader: "device=mobile,os.version=14.2,app.version=5.3.1,account.id=456,session.id=789,color=blue",
+			expectedTags: map[string]string{
+				"baggage.device":      "mobile",
+				"baggage.os.version":  "14.2",
+				"baggage.app.version": "5.3.1",
+			},
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.session.id",
+				"baggage.color",
+			},
+		},
+		{
+			name:          "asterisk_key",
+			envValue:      "user.id,*version",
+			needsResetCfg: true,
+			baggageHeader: "usr.id=fakeuser,*version=9.4,app.version=9.1.2",
+			expectedTags: map[string]string{
+				"baggage.*version": "9.4",
+			},
+			unexpectedTags: []string{
+				"baggage.user.id",
+				"baggage.usr.id",
+				"baggage.app.version",
+			},
+		},
+		{
+			name:          "malformed_header",
+			baggageHeader: "user.id=,account.id=456,session.id=789,foo=bar",
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.user.id",
+				"baggage.session.id",
+				"baggage.foo",
+			},
+		},
+		{
+			name:          "case_sensitive",
+			baggageHeader: "user.id=doggo,ACCOUNT.id=456,seSsIon.id=789",
+			expectedTags: map[string]string{
+				"baggage.user.id": "doggo",
+			},
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.session.id",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runBaggageSpanTagTest(t, tt)
+		})
+	}
+}
+
 // TestStartRequestSpanOnlyBaggageCreatesNewTrace verifies that when only baggage headers are present
 // (no trace/span IDs), a new trace is created with a non-zero trace ID while still preserving the baggage.
 func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
@@ -445,4 +629,5 @@ func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
 	// Verify that baggage is still propagated despite the new trace
 	baggageMap := baggage.All(ctx)
 	assert.Equal(t, "bar", baggageMap["foo"], "should propagate baggage even when it's the only header")
+
 }

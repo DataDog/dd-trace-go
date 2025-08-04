@@ -42,6 +42,47 @@ type serviceExtensionConfig struct {
 	bodyParsingSizeLimit int
 }
 
+var log = NewLogger()
+
+// initializeEnvironment sets up required environment variables with their defaults
+func initializeEnvironment() {
+	type envVar struct {
+		key   string
+		value string
+	}
+
+	defaultEnvVars := []envVar{
+		{key: "DD_VERSION", value: instrumentation.Version()}, // Version of the tracer
+		{key: "DD_APM_TRACING_ENABLED", value: "false"},       // Appsec Standalone
+		{key: "DD_APPSEC_WAF_TIMEOUT", value: "10ms"},         // Proxy specific WAF timeout
+		{key: "_DD_APPSEC_PROXY_ENVIRONMENT", value: "true"},  // Internal config: Enable API Security proxy sampler
+	}
+
+	for _, env := range defaultEnvVars {
+		if os.Getenv(env.key) == "" {
+			if err := os.Setenv(env.key, env.value); err != nil {
+				log.Error("service_extension: failed to set %s environment variable: %s\n", env.key, err.Error())
+			}
+		}
+	}
+}
+
+// configureObservabilityMode disables blocking when observability mode is enabled.
+// Note: This requires the Envoy configuration option "observability_mode: true" to be set.
+// This option is only supported when configuring Envoy directly, and is not available when using GCP Service Extension.
+func configureObservabilityMode(mode bool) error {
+	if !mode {
+		return nil
+	}
+	const internalBlockingUnavailableKey = "_DD_APPSEC_BLOCKING_UNAVAILABLE"
+	if err := os.Setenv(internalBlockingUnavailableKey, "true"); err != nil {
+		return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err.Error())
+	}
+	log.Debug("service_extension: observability mode enabled, disabling blocking\n")
+	return nil
+}
+
+// loadConfig loads the configuration from the environment variables
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := intEnv("DD_SERVICE_EXTENSION_PORT", 443)
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
@@ -61,22 +102,12 @@ func loadConfig() serviceExtensionConfig {
 	}
 }
 
-var log = NewLogger()
-
 func main() {
-	// Set the DD_VERSION to the current tracer version if not set
-	if os.Getenv("DD_VERSION") == "" {
-		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
-			log.Error("service_extension: failed to set DD_VERSION environment variable: %s\n", err.Error())
-		}
-	}
-
+	initializeEnvironment()
 	config := loadConfig()
 
-	// If the observability mode is enabled, disable blocking
-	if config.observabilityMode {
-		_ = os.Setenv("_DD_APPSEC_BLOCKING_UNAVAILABLE", "true")
-		log.Debug("service_extension: observability mode enabled, disabling blocking\n")
+	if err := configureObservabilityMode(config.observabilityMode); err != nil {
+		log.Error("service_extension: %s\n", err.Error())
 	}
 
 	if err := startService(config); err != nil {
@@ -92,7 +123,6 @@ func startService(config serviceExtensionConfig) error {
 
 	tracer.Start(tracer.WithAppSecEnabled(true))
 	defer tracer.Stop()
-	// TODO: Enable ASM standalone mode when it is developed (should be done for Q4 2024)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -158,10 +188,10 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
 		gocontrolplane.AppsecEnvoyConfig{
-			IsGCPServiceExtension: true,
-			BlockingUnavailable:   config.observabilityMode,
-			Context:               ctx,
-			BodyParsingSizeLimit:  config.bodyParsingSizeLimit,
+			Integration:          gocontrolplane.GCPServiceExtensionIntegration,
+			BlockingUnavailable:  config.observabilityMode,
+			Context:              ctx,
+			BodyParsingSizeLimit: config.bodyParsingSizeLimit,
 		})
 
 	go func() {

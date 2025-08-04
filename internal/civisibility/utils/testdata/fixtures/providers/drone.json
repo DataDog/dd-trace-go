@@ -1,0 +1,72 @@
+[
+  [
+    {
+      "CI": "true",
+      "DRONE": "true",
+      "DRONE_BRANCH": "master",
+      "DRONE_BUILD_LINK": "https://drone.company.com/octocat/hello-world/42",
+      "DRONE_BUILD_NUMBER": "build-number",
+      "DRONE_COMMIT_AUTHOR_EMAIL": "octocat@github.com",
+      "DRONE_COMMIT_AUTHOR_NAME": "The Octocat",
+      "DRONE_COMMIT_MESSAGE": "Updated README.md",
+      "DRONE_COMMIT_SHA": "bcdd4bf0245c82c060407b3b24b9b87301d15ac1",
+      "DRONE_GIT_HTTP_URL": "https://github.com/octocat/hello-world.git",
+      "DRONE_STAGE_NAME": "build",
+      "DRONE_STEP_NAME": "build_backend",
+      "DRONE_TAG": "v1.0.0",
+      "DRONE_WORKSPACE": "/foo/bar/jenkins/hello-world-job"
+    },
+    {
+      "ci.job.name": "build_backend",
+      "ci.pipeline.number": "build-number",
+      "ci.pipeline.url": "https://drone.company.com/octocat/hello-world/42",
+      "ci.provider.name": "drone",
+      "ci.stage.name": "build",
+      "ci.workspace_path": "/foo/bar/jenkins/hello-world-job",
+      "git.branch": "master",
+      "git.commit.author.email": "octocat@github.com",
+      "git.commit.author.name": "The Octocat",
+      "git.commit.message": "Updated README.md",
+      "git.commit.sha": "bcdd4bf0245c82c060407b3b24b9b87301d15ac1",
+      "git.repository_url": "https://github.com/octocat/hello-world.git",
+      "git.tag": "v1.0.0"
+    }
+  ],
+  [
+    {
+      "CI": "true",
+      "DRONE": "true",
+      "DRONE_BRANCH": "master",
+      "DRONE_BUILD_LINK": "https://drone.company.com/octocat/hello-world/42",
+      "DRONE_BUILD_NUMBER": "build-number",
+      "DRONE_COMMIT_AUTHOR_EMAIL": "octocat@github.com",
+      "DRONE_COMMIT_AUTHOR_NAME": "The Octocat",
+      "DRONE_COMMIT_MESSAGE": "Updated README.md",
+      "DRONE_COMMIT_SHA": "bcdd4bf0245c82c060407b3b24b9b87301d15ac1",
+      "DRONE_GIT_HTTP_URL": "https://github.com/octocat/hello-world.git",
+      "DRONE_PULL_REQUEST": 42,
+      "DRONE_STAGE_NAME": "build",
+      "DRONE_STEP_NAME": "build_backend",
+      "DRONE_TAG": "v1.0.0",
+      "DRONE_TARGET_BRANCH": "target-branch",
+      "DRONE_WORKSPACE": "/foo/bar/jenkins/hello-world-job"
+    },
+    {
+      "ci.job.name": "build_backend",
+      "ci.pipeline.number": "build-number",
+      "ci.pipeline.url": "https://drone.company.com/octocat/hello-world/42",
+      "ci.provider.name": "drone",
+      "ci.stage.name": "build",
+      "ci.workspace_path": "/foo/bar/jenkins/hello-world-job",
+      "git.branch": "master",
+      "git.commit.author.email": "octocat@github.com",
+      "git.commit.author.name": "The Octocat",
+      "git.commit.message": "Updated README.md",
+      "git.commit.sha": "bcdd4bf0245c82c060407b3b24b9b87301d15ac1",
+      "git.pull_request.base_branch": "target-branch",
+      "git.repository_url": "https://github.com/octocat/hello-world.git",
+      "git.tag": "v1.0.0",
+      "pr.number": "42"
+    }
+  ]
+]

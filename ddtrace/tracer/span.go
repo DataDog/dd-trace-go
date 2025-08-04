@@ -23,14 +23,17 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
+
 	"golang.org/x/xerrors"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -427,15 +430,22 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
-		if !cfg.noDebugStack {
-			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
-		}
-		switch v.(type) {
+		switch err := v.(type) {
 		case xerrors.Formatter:
 			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
 			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+		case *errortrace.TracerError:
+			// instrumentation/errortrace approach
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			if !cfg.noDebugStack {
+				s.setMeta(ext.ErrorStack, err.Format())
+			}
+			return
+		}
+		if !cfg.noDebugStack {
+			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 		}
 	case nil:
 		// no error
@@ -453,6 +463,12 @@ const defaultStackLength = 32
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
 // If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
+	now := time.Now()
+	defer func() {
+		dur := float64(time.Since(now))
+		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
+	}()
 	if n == 0 {
 		n = defaultStackLength
 	}
@@ -968,7 +984,7 @@ const (
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
 	keyBaseService = "_dd.base_service"
-	// keyProcessTags contains a list of process tags to indentify the service.
+	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
 )
 

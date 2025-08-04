@@ -63,11 +63,11 @@ func Test_Foo(gt *testing.T) {
 	}
 	buf := []byte{}
 	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
+		mT := test
+		t.Run(mT.name, func(t *testing.T) {
 			// let's run the subtest in parallel
-			t.Log(test.name)
-			buf = append(buf, test.index)
+			t.Log(mT.name)
+			buf = append(buf, mT.index)
 		})
 	}
 

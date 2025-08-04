@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -236,7 +237,6 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 }
 
 type dynamicInstrumentationRCProbeConfig struct {
-	runtimeID     string
 	configPath    string
 	configContent string
 }
@@ -244,6 +244,19 @@ type dynamicInstrumentationRCProbeConfig struct {
 type dynamicInstrumentationRCState struct {
 	sync.Mutex
 	state map[string]dynamicInstrumentationRCProbeConfig
+
+	// symdbExport is a flag that indicates that this tracer is resposible
+	// for uploading symbols to the symbol database. The tracer will learn
+	// about this fact through the callbacks like the other dynamic
+	// instrumentation RC callbacks.
+	//
+	// The system is designed such that only a single tracer at a time is
+	// responsible for uploading symbols to the symbol database. This is
+	// communicated through a single RC key with a constant value. In order to
+	// simplify the internal state of the tracer an avoid risks of excess memory
+	// usage, we use a single boolean flag to track this state as opposed to
+	// tracking the actual RC key and value.
+	symdbExport bool
 }
 
 var (
@@ -252,28 +265,82 @@ var (
 )
 
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
-	applyStatus := map[string]state.ApplyStatus{}
+	applyStatus := make(map[string]state.ApplyStatus, len(u))
 
 	diRCState.Lock()
+	defer diRCState.Unlock()
 	for k, v := range u {
 		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
-		applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-		diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
-			runtimeID:     globalconfig.RuntimeID(),
-			configPath:    k,
-			configContent: string(v),
+		if len(v) == 0 {
+			delete(diRCState.state, k)
+			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
+		} else {
+			diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
+				configPath:    k,
+				configContent: string(v),
+			}
+			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
 		}
 	}
-	diRCState.Unlock()
 	return applyStatus
 }
 
-// passProbeConfiguration is used as a stable interface to find the configuration in via bpf. Go-DI attaches
-// a bpf program to this function and extracts the raw bytes accordingly.
+func (t *tracer) dynamicInstrumentationSymDBRCUpdate(
+	u remoteconfig.ProductUpdate,
+) map[string]state.ApplyStatus {
+	applyStatus := make(map[string]state.ApplyStatus, len(u))
+	diRCState.Lock()
+	defer diRCState.Unlock()
+	symDBEnabled := false
+	for k, v := range u {
+		if len(v) == 0 {
+			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
+		} else {
+			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
+			symDBEnabled = true
+		}
+	}
+	diRCState.symdbExport = symDBEnabled
+	return applyStatus
+}
+
+// passProbeConfiguration is used as a stable interface to find the
+// configuration in via bpf. Go-DI attaches a bpf program to this function and
+// extracts the raw bytes accordingly.
 //
 //nolint:all
 //go:noinline
 func passProbeConfiguration(runtimeID, configPath, configContent string) {}
+
+// passAllProbeConfigurationsComplete is used to signal to the bpf program that
+// all probe configurations have been passed.
+//
+//nolint:all
+//go:noinline
+func passAllProbeConfigurationsComplete(runtimeID string) {}
+
+// passSymDBState is used as a stable interface to find the symbol database
+// state via bpf. Go-DI attaches a bpf program to this function and extracts
+// the arguments accordingly.
+//
+//nolint:all
+//go:noinline
+func passSymDBState(runtimeID string, enabled bool) {}
+
+// passAllProbeConfigurations is used to pass all probe configurations to the
+// bpf program.
+//
+//go:noinline
+func passAllProbeConfigurations(runtimeID string) {
+	defer passAllProbeConfigurationsComplete(runtimeID)
+	diRCState.Lock()
+	defer diRCState.Unlock()
+	for _, v := range diRCState.state {
+		accessStringsToMitigatePageFault(runtimeID, v.configPath, v.configContent)
+		passProbeConfiguration(runtimeID, v.configPath, v.configContent)
+	}
+	passSymDBState(runtimeID, diRCState.symdbExport)
+}
 
 func initalizeDynamicInstrumentationRemoteConfigState() {
 	diRCState = dynamicInstrumentationRCState{
@@ -283,12 +350,7 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 	go func() {
 		for {
 			time.Sleep(time.Second * 5)
-			diRCState.Lock()
-			for _, v := range diRCState.state {
-				accessStringsToMitigatePageFault(v.runtimeID, v.configPath, v.configContent)
-				passProbeConfiguration(v.runtimeID, v.configPath, v.configContent)
-			}
-			diRCState.Unlock()
+			passAllProbeConfigurations(globalconfig.RuntimeID())
 		}
 	}()
 }
@@ -310,9 +372,10 @@ func accessStringsToMitigatePageFault(strs ...string) {
 	}
 }
 
-// startRemoteConfig starts the remote config client.
-// It registers the APM_TRACING product with a callback,
-// and the LIVE_DEBUGGING product without a callback.
+// startRemoteConfig starts the remote config client. It registers the
+// APM_TRACING product unconditionally and it registers the LIVE_DEBUGGING and
+// LIVE_DEBUGGING_SYMBOL_DB with their respective callbacks if the tracer is
+// configured to use the dynamic instrumentation product.
 func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	err := remoteconfig.Start(rcConfig)
 	if err != nil {
@@ -322,7 +385,22 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	var dynamicInstrumentationError, apmTracingError error
 
 	if t.config.dynamicInstrumentationEnabled {
-		dynamicInstrumentationError = remoteconfig.Subscribe("LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate)
+		liveDebuggingError := remoteconfig.Subscribe(
+			"LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate,
+		)
+		liveDebuggingSymDBError := remoteconfig.Subscribe(
+			"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationSymDBRCUpdate,
+		)
+		if liveDebuggingError != nil && liveDebuggingSymDBError != nil {
+			dynamicInstrumentationError = errors.Join(
+				liveDebuggingError,
+				liveDebuggingSymDBError,
+			)
+		} else if liveDebuggingError != nil {
+			dynamicInstrumentationError = liveDebuggingError
+		} else if liveDebuggingSymDBError != nil {
+			dynamicInstrumentationError = liveDebuggingSymDBError
+		}
 	}
 
 	initalizeRC.Do(initalizeDynamicInstrumentationRemoteConfigState)
@@ -338,8 +416,11 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	)
 
 	if apmTracingError != nil || dynamicInstrumentationError != nil {
-		return fmt.Errorf("could not subscribe to at least one remote config product: %s; %s",
-			apmTracingError, dynamicInstrumentationError)
+		return fmt.Errorf(
+			"could not subscribe to at least one remote config product: %w; %w",
+			apmTracingError,
+			dynamicInstrumentationError,
+		)
 	}
 
 	return nil

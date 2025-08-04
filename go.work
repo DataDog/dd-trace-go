@@ -3,7 +3,6 @@ go 1.23.0 // Go version must match the lowest supported version, not the highest
 use (
 	.
 	./.github/workflows/apps
-	./_tools
 	./contrib/99designs/gqlgen
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
@@ -71,12 +70,6 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
-	./scripts/apiextractor
-	./scripts/autoreleasetagger
-	./scripts/autoreleasetagger/testdata/root
-	./scripts/autoreleasetagger/testdata/root/moduleA
-	./scripts/autoreleasetagger/testdata/root/moduleB
-	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage
 )

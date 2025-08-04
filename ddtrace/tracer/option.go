@@ -444,7 +444,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
-	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", false)
+	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
 	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
@@ -520,7 +520,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
 			}
 		} else {
-			c.httpClient = defaultHTTPClient(c.httpClientTimeout)
+			c.httpClient = defaultHTTPClient(c.httpClientTimeout, false)
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
@@ -681,7 +681,7 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return defaultDialer.DialContext(ctx, "unix", (&net.UnixAddr{
+				return defaultDialer(timeout).DialContext(ctx, "unix", (&net.UnixAddr{
 					Name: socketPath,
 					Net:  "unix",
 				}).String())

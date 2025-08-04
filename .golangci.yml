@@ -13,6 +13,7 @@ linters:
     # - errorlint # TODO: Enable this once we've fixed all the errorlint issues.
     # - loggercheck # TODO: Enable this once we've migrated to structured logging.
     # - perfsprint # TODO: Enable this once we've fixed all the perfsprint issues.
+    # - unused # TODO: Enable this once we've fixed all the unused issues.
   exclusions:
     generated: lax
     presets:
@@ -74,6 +75,18 @@ linters:
         - (github.com/DataDog/dd-trace-go/v2/instrumentation.Logger).Info
         - (github.com/DataDog/dd-trace-go/v2/instrumentation.Logger).Warn
         - (github.com/DataDog/dd-trace-go/v2/instrumentation.Logger).Error
+    revive:
+      rules:
+        - name: var-naming
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments:
+            - [""] # AllowList
+            - [""] # DenyList
+            # NOTICE: Allowlisting "utils" package name, doesn't work. Needs investigation.
+            - - skip-package-name-checks: true # Extra parameter
+
 formatters:
   enable:
     - gofmt

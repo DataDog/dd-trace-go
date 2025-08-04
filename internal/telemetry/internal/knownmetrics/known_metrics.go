@@ -6,7 +6,6 @@
 package knownmetrics
 
 import (
-	_ "embed"
 	"slices"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
