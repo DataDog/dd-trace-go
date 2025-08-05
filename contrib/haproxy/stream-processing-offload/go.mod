@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/contrib/haproxy/v2
+module github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2
 
 go 1.23.1
 
@@ -76,4 +76,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/v2 => ../..
+replace github.com/DataDog/dd-trace-go/v2 => ../../..
