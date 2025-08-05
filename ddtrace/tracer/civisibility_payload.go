@@ -36,17 +36,17 @@ type ciVisibilityPayload struct {
 // Returns:
 //
 //	An error if encoding the event fails.
-func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) error {
+func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) (size int, err error) {
 	p.payload.grow(event.Msgsize())
 	startTime := time.Now()
 	defer func() {
 		p.serializationTime += time.Since(startTime)
 	}()
 	if err := msgp.Encode(p.payload, event); err != nil {
-		return err
+		return 0, err
 	}
-	p.payload.recordItem() // This already calls updateHeader() internally
-	return nil
+	p.payload.recordItem() // This already calls updateHeader() internally.
+	return p.size(), nil
 }
 
 // newCiVisibilityPayload creates a new instance of civisibilitypayload.

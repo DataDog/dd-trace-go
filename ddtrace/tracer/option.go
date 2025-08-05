@@ -1516,7 +1516,7 @@ func decode(p payload) (spanLists, error) {
 func encode(traces [][]*Span) (payload, error) {
 	p := newPayload()
 	for _, t := range traces {
-		if err := p.push(t); err != nil {
+		if _, err := p.push(t); err != nil {
 			return p, err
 		}
 	}

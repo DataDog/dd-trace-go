@@ -130,7 +130,7 @@ func TestPayloadConcurrentAccess(t *testing.T) {
 
 			// Push some spans
 			for j := 0; j < 5; j++ {
-				_ = p.push(spans)
+				_, _ = p.push(spans)
 			}
 
 			// Read size and item count concurrently
@@ -169,7 +169,7 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 	// Add some initial data
 	span := newBasicSpan("test")
 	spans := spanList{span}
-	_ = p.push(spans)
+	_, _ = p.push(spans)
 
 	var wg sync.WaitGroup
 
@@ -179,7 +179,7 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 10; j++ {
-				_ = p.push(spans)
+				_, _ = p.push(spans)
 			}
 		}()
 	}
