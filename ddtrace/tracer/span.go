@@ -446,11 +446,15 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 			if !cfg.noDebugStack {
 				s.setMeta(ext.ErrorStack, err.Format())
+				s.setMeta(ext.ErrorHandlingStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
 			}
 			return
 		}
 		if !cfg.noDebugStack {
-			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
+			telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
+			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+			s.setMeta(ext.ErrorStack, stack)
+			s.setMeta(ext.ErrorHandlingStack, stack)
 		}
 	case nil:
 		// no error
@@ -468,7 +472,6 @@ const defaultStackLength = 32
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
 // If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
-	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
 	now := time.Now()
 	defer func() {
 		dur := float64(time.Since(now))

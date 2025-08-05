@@ -797,6 +797,10 @@ func TestErrorStack(t *testing.T) {
 		assert.NotEqual("", stack)
 		assert.Contains(stack, "tracer.TestErrorStack")
 		assert.Contains(stack, "tracer.createErrorTrace")
+
+		handlingStack := span.meta[ext.ErrorHandlingStack]
+		assert.NotEqual("", handlingStack)
+		assert.NotEqual(stack, handlingStack)
 		span.Finish()
 	})
 
@@ -817,6 +821,10 @@ func TestErrorStack(t *testing.T) {
 		assert.NotEqual("", stack)
 		assert.Contains(stack, "tracer.TestErrorStack")
 		assert.NotContains(stack, "tracer.createTestError") // this checks our old behavior
+
+		handlingStack := span.meta[ext.ErrorHandlingStack]
+		assert.NotEqual("", handlingStack)
+		assert.Equal(stack, handlingStack)
 		span.Finish()
 	})
 }
@@ -978,7 +986,6 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 		}
 
 		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
-		assert.Equal(0.0, telemetryClient.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Get())
 
 		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
 		if !windows {

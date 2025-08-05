@@ -87,8 +87,11 @@ const (
 	// ErrorType specifies the error type.
 	ErrorType = "error.type"
 
-	// ErrorStack specifies the stack dump.
+	// ErrorStack specifies the stack dump when the error is thrown.
 	ErrorStack = "error.stack"
+
+	// ErrorHandlingStack specifies the stack dump when the error is captured.
+	ErrorHandlingStack = "error.handling.stack"
 
 	// ErrorDetails holds details about an error which implements a formatter.
 	ErrorDetails = "error.details"
