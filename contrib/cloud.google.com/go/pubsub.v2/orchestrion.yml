@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2
+  name: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2
   description: Package pubsub provides an easy way to publish and receive Google Cloud Pub/Sub messages, hiding the details of the underlying server RPCs
 
 aspects:
@@ -19,7 +19,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/internal/tracing
           template: |-
             {{- $subscriber := .Function.Receiver -}}
             {{- $handler := .Function.Argument 1 -}}
@@ -62,7 +62,7 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/internal/tracing
+            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/internal/tracing
           template: |-
             {{- $publisher := .Function.Receiver -}}
             {{- $ctx := .Function.Argument 0 -}}

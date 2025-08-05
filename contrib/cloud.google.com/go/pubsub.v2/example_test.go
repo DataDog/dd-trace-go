@@ -11,7 +11,7 @@ import (
 
 	"cloud.google.com/go/pubsub/v2"
 
-	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2"
+	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2"
 )
 
 func ExamplePublish() {

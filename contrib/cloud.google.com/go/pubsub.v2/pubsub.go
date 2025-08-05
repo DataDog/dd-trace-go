@@ -9,7 +9,7 @@ package pubsub
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/internal/tracing"
+	"github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/internal/tracing"
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
 
 	"cloud.google.com/go/pubsub/v2"

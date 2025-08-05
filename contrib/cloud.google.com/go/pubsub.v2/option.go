@@ -5,7 +5,7 @@
 
 package pubsub
 
-import "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/internal/tracing"
+import "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/internal/tracing"
 
 // Option describes options for the Pub/Sub integration.
 type Option = tracing.Option

@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2
+module github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2
 
 go 1.23.0
 
