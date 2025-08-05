@@ -91,7 +91,7 @@ const (
 	ErrorStack = "error.stack"
 
 	// ErrorHandlingStack specifies the stack dump when the error is captured.
-	ErrorHandlingStack = "error.handling.stack"
+	ErrorHandlingStack = "error.handling_stack"
 
 	// ErrorDetails holds details about an error which implements a formatter.
 	ErrorDetails = "error.details"
