@@ -1,6 +1,8 @@
 # This CI jobs are copied from libdatadog-build one-pipeline.yml gitlab template.
+# This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
+# a change is made on the one-pipeline template.
 variables:
-  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/a0486057161f85a77e39ad2aa60ac66bb52414696d9b3dd87177df1057b11295/scripts
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/50d49f6898ce86e93326856210e8ab6526895273cb6341ac2d7d0e6c1c14e31e/scripts
 
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
