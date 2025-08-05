@@ -6,6 +6,15 @@ on:
       go-version:
         required: true
         type: string
+      ref:
+        description: 'The branch to run the workflow on'
+        required: true
+        type: string
+      build_tags:
+        description: 'Build tags to use for testing (e.g., "debug,deadlock")'
+        required: false
+        type: string
+        default: ""
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
@@ -225,6 +234,7 @@ jobs:
         if: always()
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
+          BUILD_TAGS: ${{ inputs.build_tags }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
@@ -236,7 +246,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ env.TEST_RESULT_PATH }}
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
         if: always()
@@ -307,6 +317,7 @@ jobs:
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
+          BUILD_TAGS: ${{ inputs.build_tags }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ls -al "${{ github.workspace }}/bin"
@@ -318,7 +329,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ env.TEST_RESULT_PATH }}
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
         if: always()

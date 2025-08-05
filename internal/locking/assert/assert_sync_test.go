@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build !deadlock
-// +build !deadlock
+//go:build !deadlock && !debug
+// +build !deadlock,!debug
 
 package assert
 

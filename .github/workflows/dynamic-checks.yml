@@ -1,0 +1,111 @@
+name: Dynamic Analysis Checks
+
+on:
+  workflow_dispatch: # manually
+  schedule: # nightly
+    - cron: "0 2 * * *"
+  pull_request: # on pull requests touching locking-related files
+    paths:
+      - '.github/workflows/dynamic-checks.yml'
+      - 'internal/locking/**'
+      - 'ddtrace/tracer/**'
+      - 'scripts/ci_test_*.sh'
+      - '**/go.mod'
+  merge_group:
+  push:
+    branches:
+      - main
+      - release-v*
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test-with-debug:
+    name: Dynamic Analysis with Deadlock Detection
+    uses: ./.github/workflows/unit-integration-tests.yml
+    with:
+      go-version: stable
+      ref: ${{ github.ref }}
+      build_tags: "debug"
+    secrets: inherit
+
+  test-with-deadlock:
+    name: Dynamic Analysis with Debug and Deadlock Detection
+    uses: ./.github/workflows/unit-integration-tests.yml
+    with:
+      go-version: stable
+      ref: ${{ github.ref }}
+      build_tags: "deadlock"
+    secrets: inherit
+
+  # Test internal/locking specifically with different Go versions and build tags.
+  test-locking-package:
+    name: Test internal/locking with Build Tags
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [ "1.23", "1.24" ]
+        build_tags: [ "debug", "debug,deadlock" ]
+      fail-fast: false
+    env:
+      BUILD_TAGS: ${{ matrix.build_tags }}
+      TEST_RESULT_PATH: /tmp/test-results
+    steps:
+      - name: Checkout
+        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ matrix.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Test internal/locking package
+        env:
+          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          mkdir -p $TEST_RESULTS
+          cd internal/locking
+          echo "Testing internal/locking with build tags: $BUILD_TAGS"
+          TAGS_ARG=""
+          if [[ -n "$BUILD_TAGS" ]]; then
+            TAGS_ARG="-tags=$BUILD_TAGS"
+          fi
+          gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.xml -- ./... -v -race $TAGS_ARG -timeout=10m -coverprofile=coverage-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.txt -covermode=atomic
+
+      - name: Upload test results
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ env.TEST_RESULT_PATH }}
+          tags: go:${{ matrix.go-version }},package:internal/locking,analysis:${{ matrix.build_tags }},arch:${{ runner.arch }},os:${{ runner.os }}
+
+  # Summary job to ensure all dynamic checks pass
+  dynamic-checks-summary:
+    name: Dynamic Checks Summary
+    needs:
+      - test-with-debug
+      - test-with-deadlock
+      - test-locking-package
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          if [[ "${{ needs.test-with-debug.result }}" != "success" ]] || \
+             [[ "${{ needs.test-with-deadlock.result }}" != "success" ]] || \
+             [[ "${{ needs.test-locking-package.result }}" != "success" ]]; then
+            echo "One or more dynamic analysis jobs failed"
+            exit 1
+          fi
+          echo "All dynamic analysis checks passed!"
