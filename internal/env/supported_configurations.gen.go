@@ -84,6 +84,8 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_RC_TUF_ROOT":                                                  {},
 	"DD_REMOTE_CONFIGURATION_ENABLED":                                 {},
 	"DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS":                          {},
+	"DD_REQUEST_MIRROR_HEALTHCHECK_ADDR":                              {},
+	"DD_REQUEST_MIRROR_LISTEN_ADDR":                                   {},
 	"DD_RUNTIME_METRICS_ENABLED":                                      {},
 	"DD_RUNTIME_METRICS_V2_ENABLED":                                   {},
 	"DD_SERVICE":                                                      {},
