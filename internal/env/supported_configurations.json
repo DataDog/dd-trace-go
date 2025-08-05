@@ -225,6 +225,12 @@
     "DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS": [
       "A"
     ],
+    "DD_REQUEST_MIRROR_HEALTHCHECK_ADDR": [
+      "A"
+    ],
+    "DD_REQUEST_MIRROR_LISTEN_ADDR": [
+      "A"
+    ],
     "DD_RUNTIME_METRICS_ENABLED": [
       "A"
     ],
