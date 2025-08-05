@@ -240,6 +240,18 @@
     "DD_SERVICE": [
       "A"
     ],
+    "DD_SERVICE_EXTENSION_HEALTHCHECK_PORT": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_HOST": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_OBSERVABILITY_MODE": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_PORT": [
+      "A"
+    ],
     "DD_SERVICE_MAPPING": [
       "A"
     ],
