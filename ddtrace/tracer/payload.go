@@ -71,9 +71,10 @@ func newPayload() *payload {
 }
 
 // push pushes a new item into the stream.
-func (p *payload) push(t spanList) error {
-	p.buf.Grow(t.Msgsize())
-	if err := msgp.Encode(&p.buf, t); err != nil {
+func (p *payload) push(t []*Span) error {
+	sl := spanList(t)
+	p.buf.Grow(sl.Msgsize())
+	if err := msgp.Encode(&p.buf, sl); err != nil {
 		return err
 	}
 	atomic.AddUint32(&p.count, 1)
