@@ -19,12 +19,13 @@ import (
 type payloadWriter interface {
 	io.Writer
 
-	push(t spanList) error
-	itemCount() int
-	grow(n int)
+	push(t spanList) (size int, err error)
 	size() int
+	grow(n int)
 	reset()
 	clear()
+
+	itemCount() int
 	// recordItem records that an item was added and updates the header
 	recordItem()
 }
@@ -100,7 +101,7 @@ func newUnsafePayload() *unsafePayload {
 }
 
 // push pushes a new item into the stream.
-func (p *unsafePayload) push(t []*Span) error {
+func (p *unsafePayload) push(t []*Span) (size int, err error) {
 	// if p.protocol == traceProtocolV1 {
 	//     // TODO: implement v1.0 encoding
 	// } else {
@@ -108,10 +109,10 @@ func (p *unsafePayload) push(t []*Span) error {
 	// }
 	p.buf.Grow(sl.Msgsize())
 	if err := msgp.Encode(&p.buf, sl); err != nil {
-		return err
+		return 0, err
 	}
 	p.recordItem()
-	return nil
+	return p.size(), nil
 }
 
 // itemCount returns the number of items available in the stream.
@@ -218,7 +219,7 @@ type safePayload struct {
 }
 
 // push pushes a new item into the stream in a thread-safe manner.
-func (sp *safePayload) push(t spanList) error {
+func (sp *safePayload) push(t spanList) (size int, err error) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	return sp.p.push(t)

@@ -71,14 +71,17 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 
 func (h *agentTraceWriter) add(trace []*Span) {
 	h.mu.Lock()
-	if err := h.payload.push(trace); err != nil {
+	size, err := h.payload.push(trace)
+	if err != nil {
 		h.mu.Unlock()
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
 		log.Error("Error encoding msgpack: %s", err.Error())
 		return
 	}
-	atomic.AddUint32(&h.tracesQueued, 1) // TODO: This does not differentiate between complete traces and partial chunks
-	needsFlush := h.payload.size() > payloadSizeLimit
+	// TODO: This does not differentiate between complete traces and partial chunks
+	atomic.AddUint32(&h.tracesQueued, 1)
+
+	needsFlush := size > payloadSizeLimit
 	h.mu.Unlock()
 
 	if needsFlush {

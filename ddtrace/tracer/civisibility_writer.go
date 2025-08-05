@@ -64,10 +64,11 @@ func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 	telemetry.EventsEnqueueForSerialization()
 	for _, s := range trace {
 		cvEvent := getCiVisibilityEvent(s)
-		if err := w.payload.push(cvEvent); err != nil {
+		size, err := w.payload.push(cvEvent)
+		if err != nil {
 			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error())
 		}
-		if w.payload.size() > agentlessPayloadSizeLimit {
+		if size > agentlessPayloadSizeLimit {
 			w.flush()
 		}
 	}
