@@ -12,7 +12,7 @@ import (
 	"github.com/negasus/haproxy-spoe-go/agent"
 	"github.com/negasus/haproxy-spoe-go/logger"
 
-	"github.com/DataDog/dd-trace-go/contrib/haproxy/v2"
+	"github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
 )
 
 var log = NewLogger()
