@@ -119,6 +119,12 @@ var (
 	defaultRateLimit = 100.0
 )
 
+// Supported trace protocols.
+const (
+	traceProtocolV04 = 0.4 // v0.4 (default)
+	traceProtocolV10 = 1.0 // v1.0
+)
+
 // config holds the tracer configuration.
 type config struct {
 	// debug, when true, writes details to logs.
@@ -310,6 +316,9 @@ type config struct {
 
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
+
+	// traceProtocol specifies the trace protocol to use.
+	traceProtocol float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -386,6 +395,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
+
+	// Set the trace protocol to use.
+	c.traceProtocol = internal.FloatEnv("DD_TRACE_AGENT_PROTOCOL_VERSION", traceProtocolV04)
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")

@@ -57,6 +57,9 @@ type payload struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// protocol specifies the trace protocol to use.
+	protocol float64
 }
 
 var _ io.Reader = (*payload)(nil)
@@ -70,9 +73,20 @@ func newPayload() *payload {
 	return p
 }
 
+// newPayloadV10 returns a ready to use payload for v1.0.
+func newPayloadV10() *payload {
+	p := newPayload()
+	p.protocol = traceProtocolV10
+	return p
+}
+
 // push pushes a new item into the stream.
 func (p *payload) push(t []*Span) error {
+	// if p.protocol == traceProtocolV10 {
+	//     // TODO: implement v1.0 encoding
+	// } else {
 	sl := spanList(t)
+	// }
 	p.buf.Grow(sl.Msgsize())
 	if err := msgp.Encode(&p.buf, sl); err != nil {
 		return err

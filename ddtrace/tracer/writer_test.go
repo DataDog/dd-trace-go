@@ -449,6 +449,32 @@ func minInts(a, b int) int {
 	return b
 }
 
+func TestTraceProtocol(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("v1.0", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PROTOCOL", "v1.0")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV10, h.payload.protocol)
+	})
+
+	t.Run("v0.4", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PROTOCOL", "v0.4")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV04, h.payload.protocol)
+	})
+
+	t.Run("default", func(t *testing.T) {
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV04, h.payload.protocol)
+	})
+}
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
 	s.metrics["nan"] = math.NaN()
