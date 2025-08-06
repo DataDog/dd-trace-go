@@ -219,6 +219,11 @@ jobs:
             done
           done
 
+      # Run config inversion check to detect any changes in the supported configurations
+      - name: Config inversion diff check
+        if: always()
+        uses: ./.github/actions/config-inversion-check
+
   # Same tests but on the official golang container for linux
   golang-linux-container:
     name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
@@ -330,6 +335,12 @@ jobs:
               echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
             fi
           done
+
+      # Run config inversion check to detect any changes in the supported configurations
+      - name: Config inversion diff check
+        if: always()
+        run: |
+          sudo docker exec -i test.runner bash -c "go run ./scripts/configinverter/main.go check"
 
       - name: Clean up
         if: always()
