@@ -14,7 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -41,7 +40,7 @@ func NewServeMux(opts ...internal.Option) *ServeMux {
 // Handle registers the handler for the given pattern.
 func (mux *ServeMux) Handle(pttrn string, inner http.Handler) {
 	handlerFunc := inner
-	if appsec.Enabled() {
+	if internal.Instrumentation.AppSecEnabled() {
 		// Calling TraceAndServe before `http.ServeMux.ServeHTTP` has ran does not give enough information
 		// about routing for AppSec to work properly when using the ServeMux tracing wrapper.
 		// Therefore, we need to wrap the handlerFunc with a handler that finished the job here
