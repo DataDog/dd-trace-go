@@ -60,6 +60,8 @@ type supportedConfiguration struct {
 	Aliases                 map[string][]string `json:"aliases"`
 }
 
+// generate generates the supported configurations map from the supported configurations
+// JSON file.
 func generate(input, output string) error {
 	keys, err := getSupportedConfigurationsKeys(input)
 	if err != nil {
@@ -90,30 +92,38 @@ func generate(input, output string) error {
 	return nil
 }
 
+// check verifies that there is no difference between the supported configurations
+// JSON file and generated Go code map.
 func check(input string) error {
 	keys, err := getSupportedConfigurationsKeys(input)
 	if err != nil {
 		return fmt.Errorf("error getting supported configuration keys: %w", err)
 	}
 
-	slog.Info("supported configuration keys in file", "count", len(keys))
+	slog.Info("supported configuration keys in JSON file", "count", len(keys))
+	slog.Info("supported configuration keys in generated map", "count", len(env.SupportedConfigurations))
 
 	missingKeys := []string{}
 	for _, k := range keys {
 		if _, ok := env.SupportedConfigurations[k]; !ok {
-			slog.Error("supported configuration key not found in map", "key", k)
+			slog.Error("supported configuration key not found in generated map", "key", k)
 			missingKeys = append(missingKeys, k)
 		}
 	}
 
 	if len(missingKeys) > 0 {
-		slog.Error("supported configuration keys missing in map", "count", len(missingKeys), "keys", missingKeys)
-		return fmt.Errorf("supported configuration keys missing in map")
+		slog.Error("supported configuration keys missing in generated map", "count", len(missingKeys), "keys", missingKeys)
+		slog.Info("run `go run ./scripts/configinverter/main.go generate` to re-generate the supported configurations map with the missing keys")
+		return fmt.Errorf("supported configuration keys missing in generated map")
 	}
+
+	slog.Info("supported configurations JSON file and generated map are in sync")
 
 	return nil
 }
 
+// add adds new keys to the supported configurations JSON file and re-generates the
+// supported configurations map using the `generate` command.
 func add(input, output string, newKeys []string) error {
 	cfg, err := getSupportedConfigurations(input)
 	if err != nil {
