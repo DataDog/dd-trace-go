@@ -33,10 +33,6 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 	if service == "" {
 		service = cfg.ServiceName
 	}
-	return handler(h, service, resource, cfg)
-}
-
-func handler(h http.Handler, service, resource string, cfg *internal.Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if cfg.IgnoreRequest(req) {
 			h.ServeHTTP(w, req)
@@ -45,10 +41,6 @@ func handler(h http.Handler, service, resource string, cfg *internal.Config) htt
 		resc := resource
 		if r := cfg.ResourceNamer(req); r != "" {
 			resc = r
-		}
-		route := pattern.Route(req.Pattern)
-		if resc == "" {
-			resc = req.Method + " " + route
 		}
 		so := make([]tracer.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+1)
 		copy(so, cfg.SpanOpts)
@@ -60,7 +52,7 @@ func handler(h http.Handler, service, resource string, cfg *internal.Config) htt
 			FinishOpts:    cfg.FinishOpts,
 			SpanOpts:      so,
 			IsStatusError: cfg.IsStatusError,
-			Route:         route,
+			Route:         pattern.Route(req.Pattern),
 			RouteParams:   pattern.PathParameters(req.Pattern, req),
 		})
 	})
