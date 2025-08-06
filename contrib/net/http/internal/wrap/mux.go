@@ -9,8 +9,12 @@ import (
 	"net/http"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -34,14 +38,51 @@ func NewServeMux(opts ...internal.Option) *ServeMux {
 	}
 }
 
-// Handle registers the handler for the given pattern and applies tracing
-// according to the specified config.
-func (m *ServeMux) Handle(pattern string, inner http.Handler) {
-	m.ServeMux.Handle(pattern, handler(inner, m.cfg.ServiceName, "", m.cfg))
+// Handle registers the handler for the given pattern.
+func (mux *ServeMux) Handle(pttrn string, inner http.Handler) {
+	handlerFunc := inner
+	if appsec.Enabled() {
+		// Calling TraceAndServe before `http.ServeMux.ServeHTTP` has ran does not give enough information
+		// about routing for AppSec to work properly when using the ServeMux tracing wrapper.
+		// Therefore, we need to wrap the handlerFunc with a handler that finished the job here
+		handlerFunc = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httpsec.RouteMatched(r.Context(), pattern.Route(r.Pattern), pattern.PathParameters(r.Pattern, r))
+		})
+	}
+
+	mux.ServeMux.Handle(pttrn, handlerFunc)
 }
 
-// HandleFunc registers the handler for the given pattern and applies tracing
-// according to the specified config.
-func (m *ServeMux) HandleFunc(pattern string, handlerFunc func(http.ResponseWriter, *http.Request)) {
-	m.Handle(pattern, http.HandlerFunc(handlerFunc))
+// HandleFunc registers the handler function for the given pattern.
+func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWriter, *http.Request)) {
+	mux.Handle(pttrn, http.HandlerFunc(handlerFunc))
+}
+
+// ServeHTTP dispatches the request to the handler
+// whose pattern most closely matches the request URL.
+// We only need to rewrite this function to be able to trace
+// all the incoming requests to the underlying multiplexer
+func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if mux.cfg.IgnoreRequest(r) {
+		mux.ServeMux.ServeHTTP(w, r)
+		return
+	}
+	// get the resource associated to this request
+	_, pttrn := mux.Handler(r)
+	route := pattern.Route(pttrn)
+	resource := mux.cfg.ResourceNamer(r)
+	if resource == "" {
+		resource = r.Method + " " + route
+	}
+	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
+	copy(so, mux.cfg.SpanOpts)
+	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
+	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
+		Framework:     "net/http",
+		Service:       mux.cfg.ServiceName,
+		Resource:      resource,
+		SpanOpts:      so,
+		Route:         route,
+		IsStatusError: mux.cfg.IsStatusError,
+	})
 }
