@@ -351,16 +351,25 @@
     "DD_TRACE_DEBUG_SEELOG_WORKAROUND": [
       "A"
     ],
+    "DD_TRACE_ECHO_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_ELASTIC_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_ENABLED": [
       "A"
     ],
+    "DD_TRACE_FASTHTTP_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_FEATURES": [
       "A"
     ],
     "DD_TRACE_FIBER_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_GIN_ANALYTICS_ENABLED": [
@@ -373,6 +382,9 @@
       "A"
     ],
     "DD_TRACE_GOCQL_COMPAT": [
+      "A"
+    ],
+    "DD_TRACE_GOJI_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED": [
@@ -399,6 +411,9 @@
     "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_HTTP_ANALYTICS_ENABLED": [
       "A"
     ],
@@ -421,6 +436,9 @@
       "A"
     ],
     "DD_TRACE_LEVELDB_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_LOGRUS_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_LOG_DIRECTORY": [
@@ -520,6 +538,9 @@
       "A"
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_VALKEY_ANALYTICS_ENABLED": [
       "A"
     ],
     "DD_TRACE_VALKEY_RAW_COMMAND": [
