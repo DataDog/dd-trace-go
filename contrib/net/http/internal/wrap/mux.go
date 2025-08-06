@@ -47,6 +47,7 @@ func (mux *ServeMux) Handle(pttrn string, inner http.Handler) {
 		// after pattern data and matches are available.
 		handlerFunc = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			httpsec.RouteMatched(r.Context(), pattern.Route(r.Pattern), pattern.PathParameters(r.Pattern, r))
+			inner.ServeHTTP(w, r)
 		})
 	}
 
