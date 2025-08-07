@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
-	github.com/gofiber/fiber/v2 v2.52.7
+	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/stretchr/testify v1.10.0
 )
 
