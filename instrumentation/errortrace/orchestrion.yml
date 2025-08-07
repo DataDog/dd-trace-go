@@ -11,13 +11,11 @@ meta:
 aspects:
   - id: Error Tracking
     join-point:
-      all-of:
-        - package-name: internal
-        - function-body:
-            function:
-              - signature-contains:
-                  args: [context.Context]
-                  returns: [error]
+      function-body:
+        function:
+          - signature-contains:
+              args: [context.Context]
+              returns: [error]
     advice:
       - prepend-statements:
           imports:
