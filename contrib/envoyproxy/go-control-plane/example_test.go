@@ -6,6 +6,7 @@
 package gocontrolplane
 
 import (
+	"context"
 	"log"
 	"net"
 
@@ -34,6 +35,7 @@ func Example_server() {
 	appsecSrv := AppsecEnvoyExternalProcessorServer(srv, AppsecEnvoyConfig{
 		Integration:         EnvoyIntegration,
 		BlockingUnavailable: false,
+		Context:             context.Background(),
 	})
 
 	extprocv3.RegisterExternalProcessorServer(s, appsecSrv)
