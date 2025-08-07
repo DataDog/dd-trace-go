@@ -1247,6 +1247,8 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 }
 
 func TestIncident41436(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "datadog")
+
 	extractAndStartChild := func(h http.Header) *Span {
 		ctx, err := Extract(HTTPHeadersCarrier(h))
 		assert.NoError(t, err)
@@ -1254,7 +1256,6 @@ func TestIncident41436(t *testing.T) {
 	}
 
 	t.Run("rules-to-keep", func(t *testing.T) {
-		t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "datadog")
 		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 1.0}]`)
 		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 1.0}]`)
 
