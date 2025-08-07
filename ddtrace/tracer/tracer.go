@@ -869,6 +869,11 @@ func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
 		}
 	}
 
+	if ctx.trace != nil {
+		// unlock the trace to allow re-sampling
+		ctx.trace.setLocked(false)
+	}
+
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
