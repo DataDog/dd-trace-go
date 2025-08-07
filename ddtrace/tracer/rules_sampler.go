@@ -491,6 +491,11 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 		return
 	}
 
+	// If priority was already set, we don't want to override it.
+	if _, ok := span.metrics[keySamplingPriority]; ok {
+		return
+	}
+
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.traceID, rate) {
@@ -561,7 +566,6 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			rate := rule.Rate
-			span.setMetric(keyRulesSamplerAppliedRate, rate)
 			if !sampledByRate(span.spanID, rate) {
 				return false
 			}
