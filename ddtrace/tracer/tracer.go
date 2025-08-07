@@ -915,6 +915,12 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 			ctx.trace.priority = nil
 		}
 	}
+	if ctx != nil && ctx.trace != nil {
+		if _, ok := ctx.trace.samplingPriority(); ok {
+			// ensure that the trace isn't resampled
+			ctx.trace.setLocked(true)
+		}
+	}
 	return ctx, err
 }
 
