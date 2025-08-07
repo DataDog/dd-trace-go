@@ -169,12 +169,8 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 
 	httpMethod := s.meta[ext.HTTPMethod]
-	endpoint := s.meta[ext.HTTPRoute] // can be null
-	if endpoint == "" {
-		endpoint = simplifyHTTPUrl(s.meta[ext.HTTPURL])
-	}
+	endpoint := s.meta[ext.HTTPEndpoint]
 
-	// test
 	statSpan, ok := c.spanConcentrator.NewStatSpan(s.service, resource,
 		s.name, s.spanType, s.parentID, s.start, s.duration, s.error, s.meta, s.metrics, c.cfg.agent.peerTags, httpMethod, endpoint)
 	if !ok {
