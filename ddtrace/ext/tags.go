@@ -61,6 +61,9 @@ const (
 	// See https://docs.datadoghq.com/tracing/trace_collection/tracing_naming_convention/#http-requests
 	HTTPRequestHeaders = "http.request.headers"
 
+	// HTTPEndpoint sets the HTTP endpoint tag.
+	HTTPEndpoint = "http.endpoint"
+
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
 	// and OpenCensus.
