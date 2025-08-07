@@ -491,11 +491,6 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 		return
 	}
 
-	// If priority was already set, we don't want to override it.
-	if _, ok := span.metrics[keySamplingPriority]; ok {
-		return
-	}
-
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
 	if !sampledByRate(span.traceID, rate) {
