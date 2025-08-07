@@ -60,6 +60,16 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	}
 	if cfg.Route != "" {
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
+	} else {
+		f := func(cfg *tracer.StartSpanConfig) {
+			if cfg.Tags == nil {
+				return
+			}
+
+			httpUrl := cfg.Tags[ext.HTTPURL].(string)
+			cfg.Tags[ext.HTTPEndpoint] = simplifyHTTPUrl(httpUrl)
+		}
+		opts = append(opts, f)
 	}
 	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
