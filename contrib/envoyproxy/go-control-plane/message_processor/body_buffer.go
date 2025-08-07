@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package gocontrolplane
+package message_processor
 
 // bodyBuffer manages the buffering of request/response bodies with size limits
 type bodyBuffer struct {
@@ -33,7 +33,7 @@ func (b *bodyBuffer) Append(chunk []byte) {
 	if bytesToAdd > remainingCapacity {
 		bytesToAdd = remainingCapacity
 		b.Truncated = true
-		instr.Logger().Debug("external_processing: body size limit reached, truncating body to %d bytes", bytesToAdd)
+		//instr.Logger().Debug("external_processing: body size limit reached, truncating body to %d bytes", bytesToAdd)
 	}
 
 	if b.Buffer == nil {

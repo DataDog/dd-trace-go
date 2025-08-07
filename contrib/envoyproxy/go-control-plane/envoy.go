@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"google.golang.org/grpc/codes"
@@ -48,7 +49,7 @@ type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
 	config           AppsecEnvoyConfig
 	requestCounter   atomic.Uint32
-	messageProcessor *messageProcessor
+	messageProcessor message_processor.MessageProcessor
 }
 
 // AppsecEnvoyExternalProcessorServer creates a new external processor server with AAP enabled
@@ -56,7 +57,10 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 	processor := &appsecEnvoyExternalProcessorServer{
 		ExternalProcessorServer: userImplementation,
 		config:                  config,
-		messageProcessor:        newMessageProcessor(config),
+		messageProcessor: message_processor.NewMessageProcessor(message_processor.MessageProcessorConfig{
+			BlockingUnavailable:  config.BlockingUnavailable,
+			BodyParsingSizeLimit: config.BodyParsingSizeLimit,
+		}, instr),
 	}
 
 	if config.Context != nil {
@@ -98,7 +102,7 @@ func (s *appsecEnvoyExternalProcessorServer) startMetricsReporter(ctx context.Co
 func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.ExternalProcessor_ProcessServer) error {
 	var (
 		ctx            = processServer.Context()
-		currentRequest requestState
+		currentRequest message_processor.RequestState
 	)
 
 	// Ensure cleanup on exit
@@ -124,9 +128,16 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 		}
 
 		// Process the message
-		processingResponse, err := s.processMessage(ctx, &processingRequest, &currentRequest)
+		action, err := s.processMessage(ctx, &processingRequest, &currentRequest)
 		if err != nil {
 			instr.Logger().Error("external_processing: error processing request: %s\n", err.Error())
+			return err
+		}
+
+		// Handle the action returned by the message processor
+		processingResponse, err := s.handleAction(action, &processingRequest)
+		if err != nil {
+			instr.Logger().Error("external_processing: error handling action: %s\n", err.Error())
 			return err
 		}
 
@@ -139,7 +150,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 			return err
 		}
 
-		if currentRequest.Blocked {
+		if _, ok := processingResponse.Response.(*envoyextproc.ProcessingResponse_ImmediateResponse); ok {
 			instr.Logger().Debug("external_processing: request blocked, end the stream")
 			return nil
 		}
@@ -170,21 +181,21 @@ func (s *appsecEnvoyExternalProcessorServer) handleReceiveError(err error) error
 }
 
 // processMessage processes a single message based on its type
-func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest *requestState) (*envoyextproc.ProcessingResponse, error) {
+func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest *message_processor.RequestState) (message_processor.Action, error) {
 	switch v := req.Request.(type) {
 	case *envoyextproc.ProcessingRequest_RequestHeaders:
 		var (
-			response *envoyextproc.ProcessingResponse
-			err      error
+			action message_processor.Action
+			err    error
 		)
-		response, *currentRequest, err = s.messageProcessor.ProcessRequestHeaders(ctx, v)
-		return response, err
+		*currentRequest, action, err = s.messageProcessor.OnRequestHeaders(ctx, &requestHeadersEnvoy{v, s.config.Integration})
+		return action, err
 
 	case *envoyextproc.ProcessingRequest_RequestBody:
 		if !currentRequest.Ongoing {
 			return nil, status.Errorf(codes.InvalidArgument, "Received request body without request headers")
 		}
-		return s.messageProcessor.ProcessRequestBody(v, currentRequest), nil
+		return s.messageProcessor.OnRequestBody(&requestBodyEnvoy{v}, *currentRequest)
 
 	case *envoyextproc.ProcessingRequest_ResponseHeaders:
 		if !currentRequest.Ongoing {
@@ -193,31 +204,75 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 				" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
 			return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 		}
-		return s.messageProcessor.ProcessResponseHeaders(v, currentRequest)
+		return s.messageProcessor.OnResponseHeaders(&responseHeadersEnvoy{v}, *currentRequest)
 
 	case *envoyextproc.ProcessingRequest_ResponseBody:
 		if !currentRequest.Ongoing {
 			return nil, status.Errorf(codes.InvalidArgument, "Received response body without request context")
 		}
-		return s.messageProcessor.ProcessResponseBody(v, currentRequest), nil
+		return s.messageProcessor.OnResponseBody(&responseBodyEnvoy{v}, *currentRequest)
 
 	case *envoyextproc.ProcessingRequest_RequestTrailers:
 		instr.Logger().Debug("external_processing: received unexpected message of type RequestTrailers, ignoring it. " +
 			"Please make sure your Envoy configuration does not include RequestTrailer to accelerate processing.")
-		return &envoyextproc.ProcessingResponse{
-			Response: &envoyextproc.ProcessingResponse_RequestTrailers{},
-		}, nil
+		return s.messageProcessor.OnRequestTrailers(message_processor.RequestState{})
 
 	case *envoyextproc.ProcessingRequest_ResponseTrailers:
 		instr.Logger().Debug("external_processing: received unexpected message of type ResponseTrailers, ignoring it. " +
 			"Please make sure your Envoy configuration does not include RequestTrailer to accelerate processing.")
-		return &envoyextproc.ProcessingResponse{
-			Response: &envoyextproc.ProcessingResponse_ResponseTrailers{},
-		}, nil
+		return s.messageProcessor.OnResponseTrailers(message_processor.RequestState{})
 
 	default:
 		return nil, status.Errorf(codes.Unknown, "Unknown request type: %T", v)
 	}
+}
+
+// handleAction handles the action returned by the message processor
+func (s *appsecEnvoyExternalProcessorServer) handleAction(action message_processor.Action, req *envoyextproc.ProcessingRequest) (*envoyextproc.ProcessingResponse, error) {
+	switch action.Type() {
+	case message_processor.ActionTypeContinue:
+		if action.Response() == nil {
+			return getProcessingResponse(req, nil)
+		}
+
+		if data := action.Response().(*message_processor.HeadersResponseData); data != nil {
+			return buildHeadersResponse(data), nil
+		}
+
+		// Could happen if a new response type with data is implemented, and we forget to handle it here.
+		// However, at the moment, we only have HeadersResponseData as a response type for ActionTypeContinue
+		return nil, status.Errorf(codes.Unknown, "Unknown action data type: %T for ActionTypeContinue", action.Response())
+	case message_processor.ActionTypeBlock:
+		data := action.Response().(*message_processor.BlockResponseData)
+		return buildImmediateResponse(data), nil
+	case message_processor.ActionTypeFinish:
+		return nil, nil
+	}
+	return nil, status.Errorf(codes.Unknown, "Unknown action type: %v", action.Type())
+}
+
+func getProcessingResponse(req *envoyextproc.ProcessingRequest, commonResponse *envoyextproc.CommonResponse) (*envoyextproc.ProcessingResponse, error) {
+	response := &envoyextproc.ProcessingResponse{}
+	var err error
+
+	switch v := req.Request.(type) {
+	case *envoyextproc.ProcessingRequest_RequestHeaders:
+		response.Response = &envoyextproc.ProcessingResponse_RequestHeaders{RequestHeaders: &envoyextproc.HeadersResponse{Response: commonResponse}}
+	case *envoyextproc.ProcessingRequest_RequestBody:
+		response.Response = &envoyextproc.ProcessingResponse_RequestBody{RequestBody: &envoyextproc.BodyResponse{Response: commonResponse}}
+	case *envoyextproc.ProcessingRequest_ResponseHeaders:
+		response.Response = &envoyextproc.ProcessingResponse_ResponseHeaders{ResponseHeaders: &envoyextproc.HeadersResponse{Response: commonResponse}}
+	case *envoyextproc.ProcessingRequest_ResponseBody:
+		response.Response = &envoyextproc.ProcessingResponse_ResponseBody{ResponseBody: &envoyextproc.BodyResponse{Response: commonResponse}}
+	case *envoyextproc.ProcessingRequest_RequestTrailers:
+		response.Response = &envoyextproc.ProcessingResponse_RequestTrailers{}
+	case *envoyextproc.ProcessingRequest_ResponseTrailers:
+		response.Response = &envoyextproc.ProcessingResponse_ResponseTrailers{}
+	default:
+		err = status.Errorf(codes.Unknown, "Unknown request type: %T", v)
+	}
+
+	return response, err
 }
 
 // sendResponse sends a processing response back to Envoy
