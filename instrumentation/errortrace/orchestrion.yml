@@ -12,7 +12,6 @@ aspects:
   - id: Error Tracking
     join-point:
       all-of:
-        - package-name: main
         - function-body:
             function:
               - signature-contains:
