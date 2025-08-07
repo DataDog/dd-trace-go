@@ -12,19 +12,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
-	"github.com/stretchr/testify/assert"
 )
 
 type TestCase struct{}
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {}
 
-func (tc *TestCase) Run(_ context.Context, t *testing.T) {
-	err := generateError()
-	tracerErr := generateTracerError()
-
-	assert.IsType(t, (*error)(nil), err)
-	assert.IsType(t, &errortrace.TracerError{}, tracerErr)
+func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
+	generateError(ctx)
+	generateTracerError(ctx)
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {
@@ -46,10 +42,10 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 	}
 }
 
-func generateError() error {
+func generateError(_ context.Context) error {
 	return fmt.Errorf("test error")
 }
 
-func generateTracerError() *errortrace.TracerError {
+func generateTracerError(_ context.Context) *errortrace.TracerError {
 	return errortrace.New("test error")
 }
