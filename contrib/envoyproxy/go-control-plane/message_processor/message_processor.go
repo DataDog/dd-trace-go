@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package message_processor
 
 import (
@@ -33,7 +38,7 @@ func NewMessageProcessor(config MessageProcessorConfig, instr *instrumentation.I
 func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (RequestState, Action, error) {
 	httpReq, err := req.NewRequest(ctx)
 	if err != nil {
-		return RequestState{}, nil, err
+		return RequestState{}, Action{}, err
 	}
 
 	componentName := req.Component(ctx)
@@ -41,7 +46,7 @@ func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHea
 	reqState, blocked := newRequestState(httpReq, mp.instr, mp.config.BodyParsingSizeLimit, componentName, framework)
 	if reqState.span == nil {
 		reqState.Close()
-		return RequestState{}, nil, fmt.Errorf("error getting span from context")
+		return RequestState{}, Action{}, fmt.Errorf("error getting span from context")
 	}
 
 	if !mp.config.BlockingUnavailable && blocked {
@@ -52,7 +57,7 @@ func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHea
 	headerMutation, err := reqState.PropagationHeaders()
 	if err != nil {
 		reqState.Close()
-		return RequestState{}, nil, err
+		return RequestState{}, Action{}, err
 	}
 
 	// Determine if we instruct the proxy to send the body
@@ -63,7 +68,7 @@ func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHea
 		// Todo: Set telemetry body size (using content-length)
 	}
 
-	return reqState, newContinueAndReplaceAction(headerMutation, requestBody), nil
+	return reqState, newContinueActionWithResponseData(headerMutation, requestBody), nil
 }
 
 // OnRequestBody handles incoming request body chunks
@@ -90,7 +95,7 @@ func (mp *MessageProcessor) OnResponseHeaders(res ResponseHeaders, reqState Requ
 
 	if err := res.InitResponseWriter(reqState.wrappedResponseWriter); err != nil {
 		reqState.Close()
-		return nil, fmt.Errorf("error processing response headers: %s", err)
+		return Action{}, fmt.Errorf("error processing response headers: %s", err)
 	}
 
 	// We need to know if the request has been blocked, but we don't have any other way than to look for the operation and bind a blocking data listener to it
@@ -123,7 +128,7 @@ func (mp *MessageProcessor) OnResponseHeaders(res ResponseHeaders, reqState Requ
 
 	// Todo: Set telemetry body size (using content-length)
 
-	return newContinueAndReplaceAction(nil, true), nil
+	return newContinueActionWithResponseData(nil, true), nil
 }
 
 // OnResponseBody handles incoming response body chunks
@@ -142,7 +147,7 @@ func (mp *MessageProcessor) OnResponseBody(res ResponseBody, reqState RequestSta
 		return newBlockAction(reqState.fakeResponseWriter), nil
 	}
 
-	if res.EndOfStream() || reqState.responseBuffer.Truncated {
+	if res.EndOfStream() || reqState.responseBuffer.truncated {
 		reqState.Close()
 
 		// Check for deferred blocking from response headers
@@ -169,10 +174,10 @@ func (mp *MessageProcessor) OnResponseTrailers(_ RequestState) (Action, error) {
 }
 
 func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos bool, analyzeBody func(ctx context.Context, encodable any) error) error {
-	bodyBuffer.Append(body)
+	bodyBuffer.append(body)
 
-	if eos || bodyBuffer.Truncated {
-		return analyzeBody(ctx, json.NewEncodableFromData(bodyBuffer.Buffer, bodyBuffer.Truncated))
+	if eos || bodyBuffer.truncated {
+		return analyzeBody(ctx, json.NewEncodableFromData(bodyBuffer.buffer, bodyBuffer.truncated))
 	}
 
 	return nil
