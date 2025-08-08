@@ -1524,16 +1524,6 @@ func decode(p *payload) (spanLists, error) {
 	return traces, err
 }
 
-func encode(traces [][]*Span) (*payload, error) {
-	p := newPayload()
-	for _, t := range traces {
-		if err := p.push(t); err != nil {
-			return p, err
-		}
-	}
-	return p, nil
-}
-
 func (t *dummyTransport) Reset() {
 	t.Lock()
 	t.traces = t.traces[:0]

@@ -453,7 +453,7 @@ func TestTraceProtocol(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("v1.0", func(t *testing.T) {
-		t.Setenv("DD_TRACE_PROTOCOL", "v1.0")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -461,7 +461,7 @@ func TestTraceProtocol(t *testing.T) {
 	})
 
 	t.Run("v0.4", func(t *testing.T) {
-		t.Setenv("DD_TRACE_PROTOCOL", "v0.4")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -469,6 +469,14 @@ func TestTraceProtocol(t *testing.T) {
 	})
 
 	t.Run("default", func(t *testing.T) {
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV04, h.payload.protocol)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "invalid")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)

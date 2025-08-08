@@ -73,13 +73,6 @@ func newPayload() *payload {
 	return p
 }
 
-// newPayloadV10 returns a ready to use payload for v1.0.
-func newPayloadV10() *payload {
-	p := newPayload()
-	p.protocol = traceProtocolV10
-	return p
-}
-
 // push pushes a new item into the stream.
 func (p *payload) push(t []*Span) error {
 	// if p.protocol == traceProtocolV10 {
