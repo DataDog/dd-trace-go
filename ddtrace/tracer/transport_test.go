@@ -59,6 +59,16 @@ func getTestTrace(traceN, size int) [][]*Span {
 	return traces
 }
 
+func encode(traces [][]*Span) (*payload, error) {
+	p := newPayload()
+	for _, t := range traces {
+		if err := p.push(t); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
+}
+
 func TestTracesAgentIntegration(t *testing.T) {
 	if !integration {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
