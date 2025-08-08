@@ -16,10 +16,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -197,7 +197,7 @@ func encode(bat batch, cfg *config) (contentType string, body io.Reader, err err
 	// admission controller. Otherwise, the client library doesn't care
 	// about the value and assumes it was something "truthy", or this code
 	// wouldn't run. We just track it to be consistent with other languages
-	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+	if env.Getenv("DD_PROFILING_ENABLED") == "auto" {
 		event.Info.Profiler.Activation = "auto"
 	} else {
 		event.Info.Profiler.Activation = "manual"
