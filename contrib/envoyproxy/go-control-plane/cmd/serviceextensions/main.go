@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -17,10 +18,12 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/credentials"
+
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"golang.org/x/sync/errgroup"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc"
@@ -173,7 +176,12 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 		return fmt.Errorf("gRPC server: %s", err.Error())
 	}
 
-	grpcServer := grpc.NewServer()
+	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
+	if err != nil {
+		return fmt.Errorf("failed to load key pair: %s", err.Error())
+	}
+
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
 		gocontrolplane.AppsecEnvoyConfig{
