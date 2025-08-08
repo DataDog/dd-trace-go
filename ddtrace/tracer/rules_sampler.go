@@ -561,7 +561,6 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			rate := rule.Rate
-			span.setMetric(keyRulesSamplerAppliedRate, rate)
 			if !sampledByRate(span.spanID, rate) {
 				return false
 			}

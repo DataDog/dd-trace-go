@@ -869,6 +869,11 @@ func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
 		}
 	}
 
+	if ctx.trace != nil {
+		// unlock the trace to allow re-sampling
+		ctx.trace.setLocked(false)
+	}
+
 	t.updateSampling(ctx)
 	return t.config.propagator.Inject(ctx, carrier)
 }
@@ -913,6 +918,12 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
 			ctx.trace.priority = nil
+		}
+	}
+	if ctx != nil && ctx.trace != nil {
+		if _, ok := ctx.trace.samplingPriority(); ok {
+			// ensure that the trace isn't resampled
+			ctx.trace.setLocked(true)
 		}
 	}
 	return ctx, err
@@ -987,10 +998,10 @@ func (t *tracer) sample(span *Span) {
 	if sampler.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, sampler.Rate())
 	}
-	if t.rulesSampling.SampleTraceGlobalRate(span) {
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
