@@ -90,7 +90,7 @@ func (rs *RequestState) PropagationHeaders() (http.Header, error) {
 	}
 
 	if len(newHeaders) > 0 {
-		rs.instr.Logger().Debug("external_processing: injecting propagation headers: %v\n", newHeaders)
+		rs.instr.Logger().Debug("message_processor: injecting propagation headers: %v\n", newHeaders)
 	}
 
 	return newHeaders, nil
