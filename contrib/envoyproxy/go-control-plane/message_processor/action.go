@@ -1,55 +1,58 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package message_processor
 
 import "net/http"
 
-type action struct {
-	actionType ActionType
-	response   any
+// Action represents an action to be taken by the message processor.
+type Action struct {
+	Type     ActionType
+	Response any
 }
 
-func (a *action) Type() ActionType {
-	return a.actionType
-}
-
-func (a *action) Response() any {
-	return a.response
-}
-
+// newContinueAction creates an ActionTypeContinue without response data.
 func newContinueAction() Action {
-	return &action{actionType: ActionTypeContinue}
+	return Action{Type: ActionTypeContinue}
 }
 
-func newContinueAndReplaceAction(mutations http.Header, requestBody bool) Action {
-	return &action{
-		actionType: ActionTypeContinue,
-		response:   &HeadersResponseData{HeaderMutation: mutations, RequestBody: requestBody},
+// newContinueActionWithResponseData creates an ActionTypeContinue with header mutations and requestBody flag.
+// The requestBody flag indicates whether the body should be requested from the proxy to the external processing service.
+func newContinueActionWithResponseData(mutations http.Header, requestBody bool) Action {
+	return Action{
+		Type:     ActionTypeContinue,
+		Response: &HeadersResponseData{HeaderMutation: mutations, RequestBody: requestBody},
 	}
 }
 
+// newBlockAction creates an ActionTypeBlock that is used to create a response and end the request
 func newBlockAction(writer *fakeResponseWriter) Action {
-	return &action{
-		actionType: ActionTypeBlock,
-		response: &BlockResponseData{
-			StatusCode: int(writer.status),
+	return Action{
+		Type: ActionTypeBlock,
+		Response: &BlockResponseData{
+			StatusCode: writer.status,
 			Headers:    writer.headers,
 			Body:       writer.body,
 		},
 	}
 }
 
+// newFinishAction creates an ActionTypeFinish that is used to end the request without further processing.
 func newFinishAction() Action {
-	return &action{
-		actionType: ActionTypeFinish,
+	return Action{
+		Type: ActionTypeFinish,
 	}
 }
 
-// HeadersResponseData is the data for a headers response
+// HeadersResponseData is the data for a headers response.
 type HeadersResponseData struct {
 	HeaderMutation http.Header
 	RequestBody    bool
 }
 
-// BlockResponseData is the data for an immediate response
+// BlockResponseData is the data for a blocking response.
 type BlockResponseData struct {
 	StatusCode int
 	Headers    http.Header

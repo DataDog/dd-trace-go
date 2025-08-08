@@ -36,13 +36,7 @@ type ResponseBody interface {
 	EndOfStream() bool
 }
 
-// Action represents an action to be taken by the proxy.
-type Action interface {
-	Type() ActionType
-	Response() any
-}
-
-// ActionType defines the type of action to be taken.
+// ActionType defines the type of Action to be taken.
 type ActionType int
 
 const (

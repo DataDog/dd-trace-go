@@ -193,7 +193,7 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 
 	case *envoyextproc.ProcessingRequest_RequestBody:
 		if !currentRequest.Ongoing {
-			return nil, status.Errorf(codes.InvalidArgument, "Received request body without request headers")
+			return message_processor.Action{}, status.Errorf(codes.InvalidArgument, "Received request body without request headers")
 		}
 		return s.messageProcessor.OnRequestBody(&requestBodyEnvoy{v}, *currentRequest)
 
@@ -202,13 +202,13 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 			// Handle case where request headers were never sent
 			instr.Logger().Warn("external_processing: can't process the response: envoy never sent the beginning of the request, this is a known issue" +
 				" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
-			return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
+			return message_processor.Action{}, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 		}
 		return s.messageProcessor.OnResponseHeaders(&responseHeadersEnvoy{v}, *currentRequest)
 
 	case *envoyextproc.ProcessingRequest_ResponseBody:
 		if !currentRequest.Ongoing {
-			return nil, status.Errorf(codes.InvalidArgument, "Received response body without request context")
+			return message_processor.Action{}, status.Errorf(codes.InvalidArgument, "Received response body without request context")
 		}
 		return s.messageProcessor.OnResponseBody(&responseBodyEnvoy{v}, *currentRequest)
 
@@ -223,32 +223,32 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 		return s.messageProcessor.OnResponseTrailers(message_processor.RequestState{})
 
 	default:
-		return nil, status.Errorf(codes.Unknown, "Unknown request type: %T", v)
+		return message_processor.Action{}, status.Errorf(codes.Unknown, "Unknown request type: %T", v)
 	}
 }
 
 // handleAction handles the action returned by the message processor
 func (s *appsecEnvoyExternalProcessorServer) handleAction(action message_processor.Action, req *envoyextproc.ProcessingRequest) (*envoyextproc.ProcessingResponse, error) {
-	switch action.Type() {
+	switch action.Type {
 	case message_processor.ActionTypeContinue:
-		if action.Response() == nil {
+		if action.Response == nil {
 			return getProcessingResponse(req, nil)
 		}
 
-		if data := action.Response().(*message_processor.HeadersResponseData); data != nil {
+		if data := action.Response.(*message_processor.HeadersResponseData); data != nil {
 			return buildHeadersResponse(data), nil
 		}
 
 		// Could happen if a new response type with data is implemented, and we forget to handle it here.
 		// However, at the moment, we only have HeadersResponseData as a response type for ActionTypeContinue
-		return nil, status.Errorf(codes.Unknown, "Unknown action data type: %T for ActionTypeContinue", action.Response())
+		return nil, status.Errorf(codes.Unknown, "Unknown action data type: %T for ActionTypeContinue", action.Response)
 	case message_processor.ActionTypeBlock:
-		data := action.Response().(*message_processor.BlockResponseData)
+		data := action.Response.(*message_processor.BlockResponseData)
 		return buildImmediateResponse(data), nil
 	case message_processor.ActionTypeFinish:
 		return nil, nil
 	}
-	return nil, status.Errorf(codes.Unknown, "Unknown action type: %v", action.Type())
+	return nil, status.Errorf(codes.Unknown, "Unknown action type: %v", action.Type)
 }
 
 func getProcessingResponse(req *envoyextproc.ProcessingRequest, commonResponse *envoyextproc.CommonResponse) (*envoyextproc.ProcessingResponse, error) {
