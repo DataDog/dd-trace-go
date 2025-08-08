@@ -14,56 +14,11 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-// payload is a wrapper on top of the msgpack encoder which allows constructing an
-// encoded array by pushing its entries sequentially, one at a time. It basically
-// allows us to encode as we would with a stream, except that the contents of the stream
-// can be read as a slice by the msgpack decoder at any time. It follows the guidelines
-// from the msgpack array spec:
-// https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
-//
-// payload implements io.Reader and can be used with the decoder directly. To create
-// a new payload use the newPayload method.
-//
-// payload is not safe for concurrent use.
-//
-// payload is meant to be used only once and eventually dismissed with the
-// single exception of retrying failed flush attempts.
-//
-// ⚠️  Warning!
-//
-// The payload should not be reused for multiple sets of traces.  Resetting the
-// payload for re-use requires the transport to wait for the HTTP package to
-// Close the request body before attempting to re-use it again! This requires
-// additional logic to be in place. See:
-//
-// • https://github.com/golang/go/blob/go1.16/src/net/http/client.go#L136-L138
-// • https://github.com/DataDog/dd-trace-go/pull/475
-// • https://github.com/DataDog/dd-trace-go/pull/549
-// • https://github.com/DataDog/dd-trace-go/pull/976
-type payload struct {
-	// header specifies the first few bytes in the msgpack stream
-	// indicating the type of array (fixarray, array16 or array32)
-	// and the number of items contained in the stream.
-	header []byte
-
-	// off specifies the current read position on the header.
-	off int
-
-	// count specifies the number of items in the stream.
-	count uint32
-
-	// buf holds the sequence of msgpack-encoded items.
-	buf bytes.Buffer
-
-	// reader is used for reading the contents of buf.
-	reader *bytes.Reader
-}
-
-var _ io.Reader = (*payload)(nil)
+var _ io.Reader = (*payload_V04)(nil)
 
 // newPayload returns a ready to use payload.
-func newPayload() *payload {
-	p := &payload{
+func newPayload() *payload_V04 {
+	p := &payload_V04{
 		header: make([]byte, 8),
 		off:    8,
 	}
@@ -71,7 +26,7 @@ func newPayload() *payload {
 }
 
 // push pushes a new item into the stream.
-func (p *payload) push(t []*Span) error {
+func (p *payload_V04) push(t []*Span) error {
 	sl := spanList(t)
 	p.buf.Grow(sl.Msgsize())
 	if err := msgp.Encode(&p.buf, sl); err != nil {
@@ -83,20 +38,20 @@ func (p *payload) push(t []*Span) error {
 }
 
 // itemCount returns the number of items available in the stream.
-func (p *payload) itemCount() int {
+func (p *payload_V04) itemCount() int {
 	return int(atomic.LoadUint32(&p.count))
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
 // inaccurate by up to 8 bytes.
-func (p *payload) size() int {
+func (p *payload_V04) size() int {
 	return p.buf.Len() + len(p.header) - p.off
 }
 
 // reset sets up the payload to be read a second time. It maintains the
 // underlying byte contents of the buffer. reset should not be used in order to
 // reuse the payload for another set of traces.
-func (p *payload) reset() {
+func (p *payload_V04) reset() {
 	p.updateHeader()
 	if p.reader != nil {
 		p.reader.Seek(0, 0)
@@ -104,7 +59,7 @@ func (p *payload) reset() {
 }
 
 // clear empties the payload buffers.
-func (p *payload) clear() {
+func (p *payload_V04) clear() {
 	p.buf = bytes.Buffer{}
 	p.reader = nil
 }
@@ -118,7 +73,7 @@ const (
 
 // updateHeader updates the payload header based on the number of items currently
 // present in the stream.
-func (p *payload) updateHeader() {
+func (p *payload_V04) updateHeader() {
 	n := uint64(atomic.LoadUint32(&p.count))
 	switch {
 	case n <= 15:
@@ -136,12 +91,12 @@ func (p *payload) updateHeader() {
 }
 
 // Close implements io.Closer
-func (p *payload) Close() error {
+func (p *payload_V04) Close() error {
 	return nil
 }
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
-func (p *payload) Read(b []byte) (n int, err error) {
+func (p *payload_V04) Read(b []byte) (n int, err error) {
 	if p.off < len(p.header) {
 		// reading header
 		n = copy(b, p.header[p.off:])
