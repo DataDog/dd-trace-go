@@ -457,7 +457,7 @@ func TestTraceProtocol(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV10, h.payload.protocol)
+		assert.Equal(traceProtocolV1, h.payload.protocol)
 	})
 
 	t.Run("v0.4", func(t *testing.T) {

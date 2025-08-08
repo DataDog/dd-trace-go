@@ -122,7 +122,7 @@ var (
 // Supported trace protocols.
 const (
 	traceProtocolV04 = 0.4 // v0.4 (default)
-	traceProtocolV10 = 1.0 // v1.0
+	traceProtocolV1  = 1.0 // v1.0
 )
 
 // config holds the tracer configuration.

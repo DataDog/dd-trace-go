@@ -75,7 +75,7 @@ func newPayload() *payload {
 
 // push pushes a new item into the stream.
 func (p *payload) push(t []*Span) error {
-	// if p.protocol == traceProtocolV10 {
+	// if p.protocol == traceProtocolV1 {
 	//     // TODO: implement v1.0 encoding
 	// } else {
 	sl := spanList(t)
