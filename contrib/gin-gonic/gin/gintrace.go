@@ -32,7 +32,7 @@ func init() {
 func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	cfg := newConfig(service)
 	for _, opt := range opts {
-		opt.apply(cfg)
+		opt(cfg)
 	}
 	instr.Logger().Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
