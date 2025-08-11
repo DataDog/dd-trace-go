@@ -205,3 +205,8 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_TRACES_SAMPLER":                                             {},
 	"OTEL_TRACES_SAMPLER_ARG":                                         {},
 }
+
+// keyAliases maps aliases to supported configuration keys.
+var keyAliases = map[string][]string{
+	"DD_API_KEY": {"DD-API-KEY"},
+}
