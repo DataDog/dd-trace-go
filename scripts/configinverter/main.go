@@ -63,10 +63,12 @@ type supportedConfiguration struct {
 // generate generates the supported configurations map from the supported configurations
 // JSON file.
 func generate(input, output string) error {
-	keys, err := getSupportedConfigurationsKeys(input)
+	cfg, err := getSupportedConfigurations(input)
 	if err != nil {
 		return fmt.Errorf("error getting supported configuration keys: %w", err)
 	}
+
+	keys := sortSupportedConfigurationsKeys(cfg)
 
 	slog.Info("supported configuration keys count", "count", len(keys))
 
@@ -81,6 +83,27 @@ func generate(input, output string) error {
 	f.Var().Id("SupportedConfigurations").Op("=").Map(jen.String()).Struct().ValuesFunc(func(g *jen.Group) {
 		for _, v := range keys {
 			g.Add(jen.Line(), jen.Lit(v), jen.Op(":"), jen.Values())
+		}
+		g.Line()
+	})
+	f.Line()
+
+	// Get aliases keys and sort them
+	// so we can generate the map in a deterministic way
+	aliases := []string{}
+	for k := range cfg.Aliases {
+		aliases = append(aliases, k)
+	}
+	sort.Strings(aliases)
+
+	f.Comment("keyAliases maps aliases to supported configuration keys.")
+	f.Var().Id("keyAliases").Op("=").Map(jen.String()).Index().String().ValuesFunc(func(g *jen.Group) {
+		for _, v := range aliases {
+			g.Add(jen.Line(), jen.Lit(v), jen.Op(":"), jen.ValuesFunc(func(g *jen.Group) {
+				for _, v := range cfg.Aliases[v] {
+					g.Add(jen.Lit(v))
+				}
+			}))
 		}
 		g.Line()
 	})
@@ -175,13 +198,16 @@ func getSupportedConfigurationsKeys(input string) ([]string, error) {
 		return nil, fmt.Errorf("error getting supported configuration: %w", err)
 	}
 
-	mapVar := []string{}
-	for k := range cfg.SupportedConfigurations {
-		mapVar = append(mapVar, k)
-	}
-	sort.Strings(mapVar)
+	return sortSupportedConfigurationsKeys(cfg), nil
+}
 
-	return mapVar, nil
+func sortSupportedConfigurationsKeys(cfg *supportedConfiguration) []string {
+	keys := []string{}
+	for k := range cfg.SupportedConfigurations {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // getSupportedConfigurations gets the supported configurations from the JSON file.

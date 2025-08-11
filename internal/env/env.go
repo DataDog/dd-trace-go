@@ -16,6 +16,9 @@ import (
 // Getenv is a wrapper around env.Getenv that validates the environment variable
 // against a list of supported environment variables.
 //
+// If the environment variable has aliases, the function will also check the aliases
+// and return the value of the first alias that is set.
+//
 // When a environment variable is not supported because it is not
 // listed in the list of supported environment variables, the function will log an error
 // and behave as if the environment variable was not set.
@@ -27,11 +30,24 @@ func Getenv(name string) string {
 		return ""
 	}
 
-	return os.Getenv(name)
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+
+	for _, alias := range keyAliases[name] {
+		if v := os.Getenv(alias); v != "" {
+			return v
+		}
+	}
+
+	return ""
 }
 
 // LookupEnv is a wrapper around os.LookupEnv that validates the environment variable
 // against a list of supported environment variables.
+//
+// If the environment variable has aliases, the function will also check the aliases.
+// and return the value of the first alias that is set.
 //
 // When a environment variable is not supported because it is not
 // listed in the list of supported environment variables, the function will log an error
@@ -44,7 +60,17 @@ func LookupEnv(name string) (string, bool) {
 		return "", false
 	}
 
-	return os.LookupEnv(name)
+	if v, ok := os.LookupEnv(name); ok {
+		return v, true
+	}
+
+	for _, alias := range keyAliases[name] {
+		if v, ok := os.LookupEnv(alias); ok {
+			return v, true
+		}
+	}
+
+	return "", false
 }
 
 func verifySupportedConfiguration(name string) bool {

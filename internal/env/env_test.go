@@ -12,16 +12,28 @@ import (
 )
 
 func TestVerifySupportedConfiguration(t *testing.T) {
-	// Known configuration
-	// t.Setenv("DD_TRACE_BAR", "VALUE")
-	// res, ok := LookupEnv("DD_TRACE_BAR")
-	// require.True(t, ok)
-	// require.Equal(t, "VALUE", res)
+	// Known configuration - with alias
+	t.Setenv("DD-API-KEY", "VALUE")
+	res, ok := LookupEnv("DD_API_KEY")
+	require.True(t, ok)
+	require.Equal(t, "VALUE", res)
+
+	res = Getenv("DD_API_KEY")
+	require.Equal(t, "VALUE", res)
+
+	// Known configuration - without alias
+	t.Setenv("DD_SERVICE", "TEST_SERVICE")
+	res, ok = LookupEnv("DD_SERVICE")
+	require.True(t, ok)
+	require.Equal(t, "TEST_SERVICE", res)
+
+	res = Getenv("DD_SERVICE")
+	require.Equal(t, "TEST_SERVICE", res)
 
 	// Unknown configuration with no adding to the supported configurations
 	// file.
 	t.Setenv("DD_CONFIG_INVERSION_UNKNOWN", "VALUE")
-	res, ok := LookupEnv("DD_CONFIG_INVERSION_UNKNOWN")
+	res, ok = LookupEnv("DD_CONFIG_INVERSION_UNKNOWN")
 	require.False(t, ok)
 	require.Empty(t, res)
 }
