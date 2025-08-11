@@ -119,6 +119,12 @@ var (
 	defaultRateLimit = 100.0
 )
 
+// Supported trace protocols.
+const (
+	traceProtocolV04 = 0.4 // v0.4 (default)
+	traceProtocolV1  = 1.0 // v1.0
+)
+
 // config holds the tracer configuration.
 type config struct {
 	// debug, when true, writes details to logs.
@@ -310,6 +316,9 @@ type config struct {
 
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
+
+	// traceProtocol specifies the trace protocol to use.
+	traceProtocol float64
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -386,6 +395,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
+
+	// Set the trace protocol to use.
+	c.traceProtocol = internal.FloatEnv("DD_TRACE_AGENT_PROTOCOL_VERSION", traceProtocolV04)
 
 	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -788,7 +800,8 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		ObfuscationVersion int      `json:"obfuscation_version"`
 		SpanEvents         bool     `json:"span_events"`
 		Config             struct {
-			StatsdPort int `json:"statsd_port"`
+			StatsdPort int    `json:"statsd_port"`
+			DefaultEnv string `json:"default_env"`
 		} `json:"config"`
 	}
 
@@ -800,6 +813,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 
 	features.DropP0s = info.ClientDropP0s
 	features.StatsdPort = info.Config.StatsdPort
+	features.defaultEnv = info.Config.DefaultEnv
 	features.metaStructAvailable = info.SpanMetaStruct
 	features.peerTags = info.PeerTags
 	features.obfuscationVersion = info.ObfuscationVersion
@@ -1510,16 +1524,6 @@ func decode(p *payload) (spanLists, error) {
 	var traces spanLists
 	err := msgp.Decode(p, &traces)
 	return traces, err
-}
-
-func encode(traces [][]*Span) (*payload, error) {
-	p := newPayload()
-	for _, t := range traces {
-		if err := p.push(t); err != nil {
-			return p, err
-		}
-	}
-	return p, nil
 }
 
 func (t *dummyTransport) Reset() {
