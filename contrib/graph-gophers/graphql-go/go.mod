@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.2.2-rc.1
+	github.com/DataDog/dd-trace-go/v2 v2.2.2
 	github.com/graph-gophers/graphql-go v1.5.0
 	github.com/stretchr/testify v1.10.0
 )
