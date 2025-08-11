@@ -56,13 +56,14 @@ type agentTraceWriter struct {
 }
 
 func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient) *agentTraceWriter {
-	return &agentTraceWriter{
+	tw := &agentTraceWriter{
 		config:           c,
-		payload:          newPayload(),
 		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: s,
 		statsd:           statsdClient,
 	}
+	tw.payload = tw.newPayload()
+	return tw
 }
 
 func (h *agentTraceWriter) add(trace []*Span) {
@@ -83,6 +84,13 @@ func (h *agentTraceWriter) stop() {
 	h.wg.Wait()
 }
 
+// newPayload returns a new payload based on the trace protocol.
+func (h *agentTraceWriter) newPayload() *payload {
+	p := newPayload()
+	p.protocol = h.config.traceProtocol
+	return p
+}
+
 // flush will push any currently buffered traces to the server.
 func (h *agentTraceWriter) flush() {
 	if h.payload.itemCount() == 0 {
@@ -91,7 +99,7 @@ func (h *agentTraceWriter) flush() {
 	h.wg.Add(1)
 	h.climit <- struct{}{}
 	oldp := h.payload
-	h.payload = newPayload()
+	h.payload = h.newPayload()
 	go func(p *payload) {
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
