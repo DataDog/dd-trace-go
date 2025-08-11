@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
@@ -67,15 +68,24 @@ func TestMain(m *testing.M) {
 	} else {
 		for _, v := range scenarios {
 			cmd := exec.Command(os.Args[0], os.Args[1:]...)
-			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			var b bytes.Buffer
+			if log.DebugEnabled() {
+				cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			} else {
+				cmd.Stdout = &b
+				cmd.Stderr = &b
+			}
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=true", v))
 			fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", v)
 			err := cmd.Run()
-			fmt.Printf("\n**** [SCENARIO %s IS DONE.]\n\n", v)
+			fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", v)
 			if err != nil {
 				if exiterr, ok := err.(*exec.ExitError); ok {
-					fmt.Printf("\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", v, exiterr.ExitCode())
+					fmt.Printf("\n===========================================\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", v, exiterr.ExitCode())
+					if !log.DebugEnabled() {
+						fmt.Printf("**** [SCENARIO %s OUTPUT]\n===========================================\n\n%s\n", v, b.String())
+					}
 					os.Exit(exiterr.ExitCode())
 				}
 				fmt.Printf("cmd.Run: %v\n", err)
