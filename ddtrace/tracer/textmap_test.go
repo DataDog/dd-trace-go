@@ -192,6 +192,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
 			}
 			tracer, err := newTracer()
+			defer tracer.Stop()
 			assert := assert.New(t)
 			assert.NoError(err)
 			headers := TextMapCarrier(map[string]string{
@@ -2047,7 +2048,7 @@ func TestNonePropagator(t *testing.T) {
 	t.Run("inject/none,b3", func(t *testing.T) {
 		t.Setenv(headerPropagationStyleInject, "none,b3")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithLogger(tp), WithEnv("test"))
 		assert.Nil(t, err)
 		defer tracer.Stop()
@@ -2190,7 +2191,7 @@ func TestOtelPropagator(t *testing.T) {
 		t.Setenv(otelHeaderPropagationStyle, test.env)
 		t.Run(fmt.Sprintf("inject with %v=%v", otelHeaderPropagationStyle, test.env), func(t *testing.T) {
 			assert := assert.New(t)
-			c, err := newConfig()
+			c, err := newTestConfig()
 			assert.NoError(err)
 			cp, ok := c.propagator.(*chainedPropagator)
 			assert.True(ok)

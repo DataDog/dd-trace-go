@@ -100,7 +100,7 @@ func TestLogWriter(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		assert.NoError(err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -127,7 +127,7 @@ func TestLogWriter(t *testing.T) {
 	t.Run("inf+nan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -149,7 +149,7 @@ func TestLogWriter(t *testing.T) {
 	t.Run("fullspan", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -257,7 +257,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg statsdtest.TestStatsdClient
-		cfg, err := newConfig(withStatsdClient(&tg))
+		cfg, err := newTestConfig(withStatsdClient(&tg))
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -278,7 +278,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		var tg statsdtest.TestStatsdClient
-		cfg, err := newConfig(withStatsdClient(&tg))
+		cfg, err := newTestConfig(withStatsdClient(&tg))
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -310,7 +310,7 @@ func TestLogWriterOverflow(t *testing.T) {
 	t.Run("two-large", func(t *testing.T) {
 		assert := assert.New(t)
 		var buf bytes.Buffer
-		cfg, err := newConfig()
+		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -411,7 +411,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			c, err := newConfig(func(c *config) {
+			c, err := newTestConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
 				c.retryInterval = test.retryInterval
@@ -449,6 +449,40 @@ func minInts(a, b int) int {
 	return b
 }
 
+func TestTraceProtocol(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("v1.0", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV1, h.payload.protocol)
+	})
+
+	t.Run("v0.4", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV04, h.payload.protocol)
+	})
+
+	t.Run("default", func(t *testing.T) {
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV04, h.payload.protocol)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "invalid")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV04, h.payload.protocol)
+	})
+}
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
 	s.metrics["nan"] = math.NaN()

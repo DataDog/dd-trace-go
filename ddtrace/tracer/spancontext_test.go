@@ -47,7 +47,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 	defer setupteardown(2, 2)()
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", "telemetry")
+	tp.Ignore(commonLogIgnore...)
 	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	assert.Nil(t, err)
 	defer stop()
@@ -273,7 +273,7 @@ func TestTraceFinishChunk(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newUnstartedTracer()
 	assert.Nil(err)
-	defer tracer.statsd.Close()
+	defer tracer.Stop()
 
 	root := newSpan("name", "service", "resource", 0, 0, 0)
 	trace := root.context.trace
@@ -357,7 +357,7 @@ func TestSpanTracePushNoFinish(t *testing.T) {
 	assert := assert.New(t)
 
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", "telemetry")
+	tp.Ignore(commonLogIgnore...)
 	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	assert.NoError(err)
 	defer stop()
@@ -874,7 +874,7 @@ func TestSpanContextPushFull(t *testing.T) {
 	defer func(old int) { traceMaxSize = old }(traceMaxSize)
 	traceMaxSize = 2
 	tp := new(log.RecordLogger)
-	tp.Ignore("appsec: ", "telemetry")
+	tp.Ignore(commonLogIgnore...)
 	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithLambdaMode(true), WithEnv("testEnv"))
 	assert.Nil(t, err)
 	defer stop()

@@ -59,7 +59,7 @@ func ExpandPath(path string) string {
 //	The home directory of the current user.
 func getHomeDir() (homeDir string) {
 	defer func() {
-		log.Debug("civisibility: home directory: %v", homeDir)
+		log.Debug("civisibility: home directory: %s", homeDir)
 	}()
 
 	if runtime.GOOS == "windows" {

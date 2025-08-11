@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/segmentio/kafka-go"
@@ -89,7 +89,7 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 			if !errors.Is(err, kafka.UnknownTopicOrPartition) {
 				return backoff.Permanent(err)
 			}
-			t.Logf("failed to produce messages (retrying...): %v", err)
+			t.Logf("failed to produce messages (retrying...): %s", err.Error())
 			return err
 		},
 		backoff.NewExponentialBackOff(backoff.WithMaxElapsedTime(30*time.Second)),

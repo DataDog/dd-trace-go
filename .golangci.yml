@@ -1,11 +1,19 @@
 version: "2"
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
 linters:
   default: none
   enable:
     - bodyclose
+    - depguard
+    - gocritic
     - govet
     - revive
-    - depguard
+    # - errorlint # TODO: Enable this once we've fixed all the errorlint issues.
+    # - loggercheck # TODO: Enable this once we've migrated to structured logging.
+    # - perfsprint # TODO: Enable this once we've fixed all the perfsprint issues.
+    # - unused # TODO: Enable this once we've fixed all the unused issues.
   exclusions:
     generated: lax
     presets:
@@ -41,6 +49,44 @@ linters:
               desc: "Use github.com/DataDog/dd-trace-go/v2/internal/log instead of standard log package"
           allow:
             - "log/slog"
+    gocritic:
+      disable-all: true
+      enabled-checks:
+        - dynamicFmtString
+        - ruleguard
+      settings:
+        ruleguard:
+          failOn: dsl,import
+          rules: "rules/*_rules.go"
+    # TODO: Enable this when we migrated to structed logging.
+    loggercheck:
+      require-string-key: true
+      # no-printf-like: true
+      rules:
+        - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.Debug
+        - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.Warn
+        - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.Error
+        - github.com/DataDog/dd-trace-go/v2/internal/telemetry/log.Info
+        - github.com/DataDog/dd-trace-go/v2/internal/log.Debug
+        - github.com/DataDog/dd-trace-go/v2/internal/log.Warn
+        - github.com/DataDog/dd-trace-go/v2/internal/log.Error
+        - github.com/DataDog/dd-trace-go/v2/internal/log.Info
+        - (github.com/DataDog/dd-trace-go/v2/instrumentation.Logger).Debug
+        - (github.com/DataDog/dd-trace-go/v2/instrumentation.Logger).Info
+        - (github.com/DataDog/dd-trace-go/v2/instrumentation.Logger).Warn
+        - (github.com/DataDog/dd-trace-go/v2/instrumentation.Logger).Error
+    revive:
+      rules:
+        - name: var-naming
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments:
+            - [""] # AllowList
+            - [""] # DenyList
+            # NOTICE: Allowlisting "utils" package name, doesn't work. Needs investigation.
+            - - skip-package-name-checks: true # Extra parameter
+
 formatters:
   enable:
     - gofmt

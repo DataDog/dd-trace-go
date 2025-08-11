@@ -1,4 +1,11 @@
 ---
 schema-version: v1
 kind: mergequeue
-enable: false
+enable: true
+merge_method: squash
+---
+schema-version: v1
+kind: mergegate
+rules:
+  - require: commit-signatures
+    allow_unsigned_external: true

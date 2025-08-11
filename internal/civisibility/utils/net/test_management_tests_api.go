@@ -71,14 +71,26 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 		return nil, fmt.Errorf("civisibility.GetTestManagementTests: repository URL is required")
 	}
 
+	// we use the head commit SHA if it is set, otherwise we use the commit SHA
+	commitSha := c.commitSha
+	if c.headCommitSha != "" {
+		commitSha = c.headCommitSha
+	}
+
+	// we use the head commit message if it is set, otherwise we use the commit message
+	commitMessage := c.commitMessage
+	if c.headCommitMessage != "" {
+		commitMessage = c.headCommitMessage
+	}
+
 	body := testManagementTestsRequest{
 		Data: testManagementTestsRequestHeader{
 			ID:   c.id,
 			Type: testManagementTestsRequestType,
 			Attributes: testManagementTestsRequestData{
 				RepositoryURL: c.repositoryURL,
-				CommitSha:     c.commitSha,
-				CommitMessage: c.commitMessage,
+				CommitSha:     commitSha,
+				CommitMessage: commitMessage,
 			},
 		},
 	}

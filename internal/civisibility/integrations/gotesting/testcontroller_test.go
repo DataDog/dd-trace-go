@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -24,17 +25,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var currentM *testing.M
 var mTracer mocktracer.Tracer
 var logsEntries []*mockedLogEntry
+var parallelEfd bool
 
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
-	log.SetLevel(log.LevelDebug)
-
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
@@ -67,24 +66,33 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	} else {
 		fmt.Println("Starting tests...")
+		var wg sync.WaitGroup
 		for _, v := range scenarios {
+			wg.Add(1)
 			cmd := exec.Command(os.Args[0], os.Args[1:]...)
 			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=true", v))
-			fmt.Printf("Running scenario: %s:\n", v)
-			fmt.Println(cmd.Env)
-			err := cmd.Run()
-			fmt.Printf("Done.\n\n")
-			if err != nil {
-				if exiterr, ok := err.(*exec.ExitError); ok {
-					fmt.Printf("Scenario %s failed with exit code: %d\n", v, exiterr.ExitCode())
-					os.Exit(exiterr.ExitCode())
+			go func() {
+				defer func() {
+					wg.Done()
+				}()
+
+				fmt.Printf("Running scenario: %s:\n", v)
+				fmt.Println(cmd.Env)
+				err := cmd.Run()
+				fmt.Printf("Done.\n\n")
+				if err != nil {
+					if exiterr, ok := err.(*exec.ExitError); ok {
+						fmt.Printf("Scenario %s failed with exit code: %d\n", v, exiterr.ExitCode())
+						os.Exit(exiterr.ExitCode())
+					}
+					fmt.Printf("cmd.Run: %v\n", err)
+					os.Exit(1)
 				}
-				fmt.Printf("cmd.Run: %v\n", err)
-				os.Exit(1)
-			}
+			}()
 		}
+		wg.Wait()
 	}
 
 	os.Exit(0)
@@ -155,6 +163,25 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
+
+	st01 := getSpansWithResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_1")[0]
+	st02 := getSpansWithResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_2")[0]
+	st03 := getSpansWithResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_3")[0]
+
+	st01EndTime := st01.StartTime().Add(st01.Duration())
+	st02EndTime := st02.StartTime().Add(st02.Duration())
+
+	fmt.Println(st01.StartTime(), st01EndTime)
+	fmt.Println(st02.StartTime(), st02EndTime)
+	fmt.Println(st03.StartTime())
+
+	if st01EndTime.Before(st02.StartTime()) {
+		panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_1' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' starts"))
+	}
+	if st02EndTime.Before(st03.StartTime()) {
+		panic(fmt.Sprintf("parallel testing does not work as expected, span 'testing_test.go.TestParallelSubTests/parallel_subtest_2' ends before span 'testing_test.go.TestParallelSubTests/parallel_subtest_3' starts"))
+	}
+
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
@@ -177,15 +204,20 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	}
 
 	// check the test is new tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 22)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 26)
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
-		28,
+		32,
 		1,
 		1,
 		4,
-		27,
+		31,
 		0)
 
 	// check capabilities tags
@@ -276,12 +308,17 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	}
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 176)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 160)
-	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 160)[0]
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 220)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 200)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 200)[0]
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// check spans by type
 	checkSpansByType(finishedSpans,
@@ -289,7 +326,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		1,
 		1,
 		4,
-		181,
+		225,
 		0)
 
 	// check capabilities tags
@@ -314,25 +351,6 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 					"TestCommonPrivateFields_AddLevel",
 					"TestGetBenchmarkPrivateFields",
 				},
-				"testify_test.go": []string{
-					"TestTestifyLikeTest",
-					"TestTestifyLikeTest/TestMySuite",
-					"TestTestifyLikeTest/TestMySuite/sub01",
-				},
-				"testing_test.go": []string{
-					"TestMyTest01",
-					"TestMyTest02",
-					"TestMyTest02/sub01",
-					"TestMyTest02/sub01/sub03",
-					"Test_Foo",
-					"Test_Foo/duck_should_return_animal",
-					"Test_Foo/banana_should_return_fruit",
-					"Test_Foo/yellow_should_return_color",
-					"TestSkip",
-					"TestRetryWithPanic",
-					"TestRetryWithFail",
-					"TestNormalPassingAfterRetryAlwaysFail",
-				},
 			},
 		},
 	},
@@ -343,6 +361,7 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 
 	// set a custom retry count
 	os.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, "true")
+	parallelEfd = true
 
 	// initialize the mock tracer for doing assertions on the finished spans
 	currentM = m
@@ -377,46 +396,25 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
 	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
 	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
-	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 0)
 	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
-	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
-	testifySub01 := checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite", 1)[0]
-	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 1)
-
-	// check that testify span has the correct source file
-	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
-		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
-	}
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 11)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 11)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 10)
-	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 10)[0]
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 198)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 180)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 180)[0]
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
-
-	// check spans by type
-	checkSpansByType(finishedSpans,
-		37,
-		1,
-		1,
-		4,
-		31,
-		0)
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
@@ -526,17 +524,22 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
-
 	if impactedTests {
 		// impacteds tests will trigger EFD retries (if the test is not quarantined nor disabled)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
-		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 11)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 11)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 11)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 11)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
+
 	} else {
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
+		checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
 		checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
 	}
@@ -555,27 +558,29 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	checkCapabilitiesTags(finishedSpans)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 11)
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 55)
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// Impacted tests
 	if impactedTests {
-		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 30)
+		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 96)
 
 		// check spans by type
 		checkSpansByType(finishedSpans,
-			57,
+			97,
 			1,
 			1,
 			4,
-			51,
+			121,
 			0)
 
-		impactedTestsSpans := checkSpansByTagName(finishedSpans, constants.TestIsModified, 22)
-		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithPanic", 11)
-		checkSpansByResourceName(impactedTestsSpans, "testing_test.go.TestRetryWithFail", 11)
-
+		checkSpansByTagName(finishedSpans, constants.TestIsModified, 33)
 	} else {
-		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 16)
+		checkSpansByTagName(finishedSpans, constants.TestIsRetry, 56)
 
 		// check spans by type
 		checkSpansByType(finishedSpans,
@@ -583,7 +588,7 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 			1,
 			1,
 			4,
-			37,
+			81,
 			0)
 
 		checkSpansByTagName(finishedSpans, constants.TestIsModified, 0)
@@ -704,13 +709,18 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
 	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 1)
 
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
 	// check spans by type
 	checkSpansByType(finishedSpans,
 		17,
 		1,
 		1,
 		4,
-		16,
+		20,
 		0)
 
 	// check capabilities tags
@@ -778,7 +788,7 @@ func runTestManagementTests(m *testing.M) {
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 
-	testRetryWithPanicRunNumber = -10 // this makes TestRetryWithPanic to always fail (required by this test)
+	testRetryWithPanicRunNumber.Store(-10) // this makes TestRetryWithPanic to always fail (required by this test)
 	exitCode := RunM(m)
 	if exitCode != 0 {
 		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
@@ -845,6 +855,11 @@ func runTestManagementTests(m *testing.M) {
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
+
+	// check if suite has both test code owners and source file tags
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
 
 	// check logs
 	checkLogs()

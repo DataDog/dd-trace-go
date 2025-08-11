@@ -9,6 +9,8 @@ variables:
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
+    - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+      when: always
     - when: manual
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
@@ -22,8 +24,6 @@ variables:
       - platform/artifacts/
     expire_in: 3 months
   variables:
-    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true" # Important tweak for stability of benchmarks
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
     DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
     # Used to build the SUT
@@ -197,6 +197,49 @@ go124-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+check-slo-breaches:
+  stage: gates
+  needs: [
+    "go123-baseline",
+    "go123-only-trace",
+    "go123-only-trace-with-runtime-metrics",
+    "go123-only-profile",
+    "go123-profile-trace",
+    "go123-trace-asm",
+    "go123-profile-trace-asm",
+    "go124-baseline",
+    "go124-only-trace",
+    "go124-only-trace-with-runtime-metrics",
+    "go124-only-profile",
+    "go124-profile-trace",
+    "go124-trace-asm",
+    "go124-profile-trace-asm",
+  ]
+  when: on_success
+  tags: ["arch:amd64"]
+  image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:latest
+  script:
+    - export ARTIFACTS_DIR="$(pwd)/platform/artifacts"
+    - bp-runner .gitlab/bp-runner.fail-on-breach.yml
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - platform/artifacts/
+    expire_in: 3 months
+
+include:
+  project: 'DataDog/benchmarking-platform-tools'
+  file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
+
+notify-slo-breaches:
+  extends: .notify-slo-breaches
+  stage: gates
+  needs: ["check-slo-breaches"]
+  when: on_failure
+  variables:
+    CHANNEL: "guild-dd-trace-go-notifications"
+
 #
 # Macro benchmarks for Service Extensions
 # (using Envoy External Processing)
@@ -223,9 +266,9 @@ go124-profile-trace-asm:
       - platform/artifacts-se/
     expire_in: 3 months
   variables:
-    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true" # Important tweak for stability of benchmarks
     GO_VERSION: "1.23.0"
     ARTIFACTS_DIR: "./artifacts-se"
+    SERVICE_EXTENSION: "true"
 
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
@@ -249,10 +292,26 @@ se-ext_proc-appsec:
     ENABLE_APPSEC: true
     TRACER: false
 
+se-ext_proc-body-appsec:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: true
+    EXT_PROC_BODY: true
+    ENABLE_APPSEC: true
+    TRACER: false
+
 se-ext_proc-only-tracing:
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
+    ENABLE_APPSEC: false
+    TRACER: false
+
+se-ext_proc-body-only-tracing:
+  extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: true
+    EXT_PROC_BODY: true
     ENABLE_APPSEC: false
     TRACER: false
 

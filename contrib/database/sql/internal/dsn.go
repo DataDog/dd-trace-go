@@ -262,7 +262,7 @@ func isValidHostnameStart(s string) bool {
 		return false
 	}
 	// Should contain hostname-like patterns
-	return strings.Contains(s, ".") || strings.Contains(s, ":") || 
+	return strings.Contains(s, ".") || strings.Contains(s, ":") ||
 		   strings.Contains(s, "/") || s == strings.TrimSpace(s)
 }
 

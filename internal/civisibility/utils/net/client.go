@@ -59,6 +59,8 @@ type (
 		repositoryURL      string
 		commitSha          string
 		commitMessage      string
+		headCommitSha      string
+		headCommitMessage  string
 		branchName         string
 		testConfigurations testConfigurations
 		headers            map[string]string
@@ -206,7 +208,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
-	log.Debug("ciVisibilityHttpClient: new client created [id: %v, agentless: %v, url: %v, env: %v, serviceName: %v, subdomain: %v]",
+	log.Debug("ciVisibilityHttpClient: new client created [id: %s, agentless: %t, url: %s, env: %s, serviceName: %s, subdomain: %s]",
 		id, agentlessEnabled, baseURL, environment, serviceName, subdomain)
 
 	if !telemetry.Disabled() {
@@ -230,7 +232,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			}
 			client, err := telemetry.NewClient(serviceName, environment, os.Getenv("DD_VERSION"), cfg)
 			if err != nil {
-				log.Debug("civisibility: failed to create telemetry client: %v", err)
+				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return
 			}
 			telemetry.StartApp(client)
@@ -249,16 +251,18 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	}
 
 	return &client{
-		id:               id,
-		agentless:        agentlessEnabled,
-		baseURL:          baseURL,
-		environment:      environment,
-		serviceName:      serviceName,
-		workingDirectory: ciTags[constants.CIWorkspacePath],
-		repositoryURL:    ciTags[constants.GitRepositoryURL],
-		commitSha:        ciTags[constants.GitCommitSHA],
-		commitMessage:    ciTags[constants.GitCommitMessage],
-		branchName:       bName,
+		id:                id,
+		agentless:         agentlessEnabled,
+		baseURL:           baseURL,
+		environment:       environment,
+		serviceName:       serviceName,
+		workingDirectory:  ciTags[constants.CIWorkspacePath],
+		repositoryURL:     ciTags[constants.GitRepositoryURL],
+		commitSha:         ciTags[constants.GitCommitSHA],
+		commitMessage:     ciTags[constants.GitCommitMessage],
+		headCommitSha:     ciTags[constants.GitHeadCommit],
+		headCommitMessage: ciTags[constants.GitHeadMessage],
+		branchName:        bName,
 		testConfigurations: testConfigurations{
 			OsPlatform:     ciTags[constants.OSPlatform],
 			OsVersion:      ciTags[constants.OSVersion],

@@ -100,26 +100,31 @@ type RequestHandler struct {
 // This also permits orchestrion to disable tracing on this client.
 // See https://golang.org/pkg/net/http/#DefaultTransport .
 // Except we use a higher timeout for this
-var defaultHTTPClient = http.Client{
-	Timeout: 45 * time.Second,
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
+var defaultHTTPClient = createNewHTTPClient()
+
+// createNewHTTPClient creates a new HTTP client with custom transport settings.
+func createNewHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 45 * time.Second,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 }
 
 // NewRequestHandler creates a new RequestHandler with a default HTTP client.
 func NewRequestHandler() *RequestHandler {
 	return &RequestHandler{
-		Client: &defaultHTTPClient,
+		Client: defaultHTTPClient,
 	}
 }
 
@@ -167,12 +172,12 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 
 		if log.DebugEnabled() {
-			var files []string
+			var fileNames []string
 			for _, f := range config.Files {
-				files = append(files, f.FieldName)
+				fileNames = append(fileNames, f.FieldName)
 			}
-			log.Debug("ciVisibilityHttpClient: new request with files [method: %v, url: %v, attempt: %v, maxRetries: %v] %v",
-				config.Method, config.URL, attempt, config.MaxRetries, files)
+			log.Debug("ciVisibilityHttpClient: new request with files [method: %s, url: %s, attempt: %d, maxRetries: %d] %s",
+				config.Method, config.URL, attempt, config.MaxRetries, fileNames)
 		}
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(body))
 		if err != nil {
@@ -189,6 +194,8 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			return true, nil, err
 		}
 
+		originalSerializedBody := serializedBody
+
 		// Compress body if needed
 		if config.Compressed {
 			serializedBody, err = compressData(serializedBody)
@@ -198,8 +205,15 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		}
 
 		if log.DebugEnabled() {
-			log.Debug("ciVisibilityHttpClient: new request with body [method: %v, url: %v, attempt: %v, maxRetries: %v, compressed: %v] %v bytes",
-				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(serializedBody))
+			strBody := "(binary data)"
+			if config.Format == FormatJSON {
+				strBody = string(originalSerializedBody)
+				if len(strBody) > 4096 {
+					strBody = strBody[:4096] + "..." // Truncate for logging
+				}
+			}
+			log.Debug("ciVisibilityHttpClient: new request with body [method: %s, url: %s, attempt: %d, maxRetries: %d, compressed: %t, format: %s] %d bytes: %s",
+				config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, config.Format, len(serializedBody), strBody)
 		}
 
 		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(serializedBody))
@@ -223,7 +237,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 			return true, nil, err
 		}
 
-		log.Debug("ciVisibilityHttpClient: new request [method: %v, url: %v, attempt: %v, maxRetries: %v]",
+		log.Debug("ciVisibilityHttpClient: new request [method: %s, url: %s, attempt: %d, maxRetries: %d]",
 			config.Method, config.URL, attempt, config.MaxRetries)
 	}
 
@@ -237,7 +251,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	resp, err := rh.Client.Do(req)
 	if err != nil {
-		log.Debug("ciVisibilityHttpClient: error = %v", err)
+		log.Debug("ciVisibilityHttpClient: error = %s", err.Error())
 		// Retry if there's an error
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
@@ -250,7 +264,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	// Check for rate-limiting (HTTP 429)
 	if resp.StatusCode == HTTPStatusTooManyRequests {
-		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
+		log.Debug("ciVisibilityHttpClient: response status code = %d", resp.StatusCode)
 
 		rateLimitReset := resp.Header.Get(HeaderRateLimitReset)
 		if rateLimitReset != "" {
@@ -278,7 +292,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	// Check status code for retries
 	if statusCode >= 406 {
 		// Retry if the status code is >= 406
-		log.Debug("ciVisibilityHttpClient: response status code = %v", resp.StatusCode)
+		log.Debug("ciVisibilityHttpClient: response status code = %d", resp.StatusCode)
 		exponentialBackoff(attempt, config.Backoff)
 		return false, nil, nil
 	}
@@ -308,7 +322,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 	}
 
 	if log.DebugEnabled() {
-		log.Debug("ciVisibilityHttpClient: response received [method: %v, url: %v, status_code: %v, format: %v] %v bytes",
+		log.Debug("ciVisibilityHttpClient: response received [method: %s, url: %s, status_code: %d, format: %s] %d bytes",
 			config.Method, config.URL, resp.StatusCode, responseFormat, len(responseBody))
 	}
 
@@ -365,24 +379,29 @@ func compressData(data []byte) ([]byte, error) {
 func decompressData(data []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gzip reader: %v", err)
+		return nil, fmt.Errorf("failed to create gzip reader: %s", err.Error())
 	}
 	defer reader.Close()
 	decompressedData, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decompress data: %v", err)
+		return nil, fmt.Errorf("failed to decompress data: %s", err.Error())
 	}
 	return decompressedData, nil
 }
 
 // exponentialBackoff performs an exponential backoff with retries.
 func exponentialBackoff(retryCount int, initialDelay time.Duration) {
+	time.Sleep(getExponentialBackoffDuration(retryCount, initialDelay))
+}
+
+// getExponentialBackoffDuration calculates the backoff duration based on the retry count and initial delay.
+func getExponentialBackoffDuration(retryCount int, initialDelay time.Duration) time.Duration {
 	maxDelay := 10 * time.Second
 	delay := initialDelay * (1 << uint(retryCount)) // Exponential backoff
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	time.Sleep(delay)
+	return delay
 }
 
 // prepareContent prepares the content for a FormFile by serializing it if needed.

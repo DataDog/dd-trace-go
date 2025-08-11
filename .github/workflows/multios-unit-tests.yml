@@ -39,23 +39,34 @@ jobs:
       REPORT: gotestsum-report.xml # path to where test results will be saved
       DD_APPSEC_WAF_TIMEOUT: 1h
     steps:
+      - name: Normalize github.workspace for Windows
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $normalizedPath = "${{ github.workspace }}" -replace '\\', '/'
+          "normalized_workspace=$normalizedPath" >> $env:GITHUB_ENV
+      - name: Normalize github.workspace for non-Windows OSes
+        if: ${{ runner.os != 'Windows' }}
+        shell: pwsh
+        run: |
+          "normalized_workspace=${{ github.workspace }}" >> $env:GITHUB_ENV
       - name: Checkout
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v2.7.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          check-latest: true
-          cache: true
-      - name: Install gotestsum
-        run: go -C _tools install gotest.tools/gotestsum@v1.12.0
+          tools-dir: ${{ env.normalized_workspace }}/_tools
+          tools-bin: ${{ env.normalized_workspace }}/bin
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
       - name: "Runner ${{ matrix.runner-index }}: Test Core and Contrib (No Integration Tests)"
         shell: bash
         run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
           gotestsum --junitfile ${REPORT} -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
       - name: Upload the results to Datadog CI App

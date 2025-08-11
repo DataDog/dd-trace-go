@@ -41,6 +41,10 @@ func (s *stableConfigSource) Get(key string) string {
 	return s.config.get(key)
 }
 
+func (s *stableConfigSource) GetID() string {
+	return s.config.getID()
+}
+
 // newStableConfigSource initializes a new stableConfigSource from the given file.
 func newStableConfigSource(filePath string, origin telemetry.Origin) *stableConfigSource {
 	return &stableConfigSource{
@@ -57,7 +61,7 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to stat stable config file %s, dropping: %v", filePath, err)
+			log.Warn("Failed to stat stable config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyStableConfig()
 	}
@@ -72,7 +76,7 @@ func parseFile(filePath string) *stableConfig {
 	if err != nil {
 		// It's expected that the stable config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
-			log.Warn("Failed to read stable config file %s, dropping: %v", filePath, err)
+			log.Warn("Failed to read stable config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyStableConfig()
 	}
@@ -86,14 +90,11 @@ func fileContentsToConfig(data []byte, fileName string) *stableConfig {
 	scfg := &stableConfig{}
 	err := yaml.Unmarshal(data, scfg)
 	if err != nil {
-		log.Warn("Parsing stable config file" + fileName + "failed due to error, dropping: " + err.Error())
+		log.Warn("Parsing stable config file %s failed due to error, dropping: %v", fileName, err.Error())
 		return emptyStableConfig()
 	}
 	if scfg.Config == nil {
 		scfg.Config = make(map[string]string, 0)
-	}
-	if scfg.ID == 0 {
-		scfg.ID = -1
 	}
 	return scfg
 }
