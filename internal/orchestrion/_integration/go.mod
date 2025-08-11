@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
-	github.com/DataDog/go-libddwaf/v4 v4.3.0
+	github.com/DataDog/go-libddwaf/v4 v4.3.2
 	github.com/DataDog/orchestrion v1.5.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -30,7 +30,7 @@ require (
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gocql/gocql v1.7.0
-	github.com/gofiber/fiber/v2 v2.52.7
+	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1

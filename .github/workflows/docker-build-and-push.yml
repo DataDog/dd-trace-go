@@ -72,6 +72,9 @@ jobs:
 
       - name: Login to Docker
         shell: bash
+        # It's not possible to use a `dd-octo-sts` token here because GitHub Packages
+        # only supports PATs for authentication.
+        # https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
         run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
 
       - name: Docker meta

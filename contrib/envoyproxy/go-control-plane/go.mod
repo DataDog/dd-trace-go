@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
-	github.com/DataDog/go-libddwaf/v4 v4.3.0
+	github.com/DataDog/go-libddwaf/v4 v4.3.2
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/simdjson-go v0.4.5
