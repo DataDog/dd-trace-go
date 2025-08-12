@@ -3,15 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package tracing
+package pubsubtrace
 
 import "github.com/DataDog/dd-trace-go/v2/instrumentation"
-
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(componentName)
-}
 
 type config struct {
 	serviceName     string
@@ -25,7 +19,7 @@ type Option interface {
 	apply(*config)
 }
 
-func defaultConfig() *config {
+func defaultConfig(instr *instrumentation.Instrumentation) *config {
 	return &config{
 		serviceName:     instr.ServiceName(instrumentation.ComponentConsumer, nil),
 		publishSpanName: instr.OperationName(instrumentation.ComponentProducer, nil),
