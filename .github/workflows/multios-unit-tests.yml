@@ -51,7 +51,7 @@ jobs:
         run: |
           "normalized_workspace=${{ github.workspace }}" >> $env:GITHUB_ENV
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v2.7.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
