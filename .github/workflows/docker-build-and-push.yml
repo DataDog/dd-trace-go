@@ -56,17 +56,6 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
-      - name: Install Docker (only arm64)
-        if: matrix.platform == 'linux/arm64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-          sudo systemctl start docker
-          sudo systemctl enable docker
-          sudo usermod -aG docker $USER
-          newgrp docker
-          sudo chmod 666 /var/run/docker.sock
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
