@@ -741,7 +741,6 @@ github.com/BurntSushi/toml v1.5.0 h1:W5quZX/G/csjUnuI8SUYlsHs9M38FC7znL0lIO+DvMg
 github.com/BurntSushi/toml v1.5.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 h1:1BDTz0u9nC3//pOCMdNH+CiXJVYJh5UQNCOBG7jbELc=
 github.com/DataDog/appsec-internal-go v1.9.0/go.mod h1:wW0cRfWBo4C044jHGwYiyh5moQV2x0AhnwqMuiX7O/g=
-github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.66.1/go.mod h1:u/ZS2pzrBQ1LokbEvFULjn1SfX+If31uqtz6MJ7UaFo=
 github.com/DataDog/datadog-agent/comp/trace/compression/def v0.64.2 h1:RKzJe4B8yQLZ5iC4tidfakKWQnFAeMCgoxJYXPsqQbo=
 github.com/DataDog/datadog-agent/comp/trace/compression/def v0.64.2/go.mod h1:+BnlaBR5kMqTFYwDEc1QW0f6zvLJKnwBAUbeC68HaVs=
 github.com/DataDog/datadog-agent/comp/trace/compression/def v0.66.0 h1:9thJ4Lsy7S197UV+gz0N93T3X8dUTim7PoWpv86fFlU=
@@ -766,9 +765,6 @@ github.com/DataDog/datadog-agent/comp/trace/compression/impl-zstd v0.66.1 h1:mc9
 github.com/DataDog/datadog-agent/comp/trace/compression/impl-zstd v0.66.1/go.mod h1:1fFfGLRyekAGyhx0VY3TJ7p2tRSilHm73d8BRevkrTQ=
 github.com/DataDog/datadog-agent/comp/trace/compression/impl-zstd v0.67.0 h1:MXSsPb8Iq03LyzqLlYXmQvbO6aOWRz0TZJNzer+m60I=
 github.com/DataDog/datadog-agent/comp/trace/compression/impl-zstd v0.67.0/go.mod h1:Ilx3NOvj8xiwknrCjChi3xCtDBSzQl055Hn/7o8Q7Pg=
-github.com/DataDog/datadog-agent/pkg/obfuscate v0.66.1/go.mod h1:NH6IHfS2BEWP3i8JBxr6EIuD4TXprGny8dJZZs5QdwQ=
-github.com/DataDog/datadog-agent/pkg/proto v0.66.1/go.mod h1:W81BWdx7VxgdshvJuyZhDfWWwJAHROEi4yXX25yzX5A=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.66.1/go.mod h1:/AzUUTZn8FZj3xUFJxMh/0/NPqpjsv2z+IMXG/IxRFc=
 github.com/DataDog/datadog-agent/pkg/template v0.66.0 h1:rELsNJybR6oZ9OHj54zbG7M5JYUKeW7j9uFYIGwjvfc=
 github.com/DataDog/datadog-agent/pkg/template v0.66.0/go.mod h1:uZEMDpntZpvc2SWQWgZTpwCRM8m9FMfWx471/5zjZBU=
 github.com/DataDog/datadog-agent/pkg/template v0.66.1 h1:IY5BDczv1dOSdCsiD9HU84RY7kaIauW4url4gX3/evc=
@@ -783,7 +779,6 @@ github.com/DataDog/datadog-agent/pkg/util/cgroups v0.66.1 h1:9XTsASaD0IEXCrhIU9C
 github.com/DataDog/datadog-agent/pkg/util/cgroups v0.66.1/go.mod h1:QpmGPKiB2o2hVyPcaz1aO2Ug1wcgTBNdc9pXMGXLZQA=
 github.com/DataDog/datadog-agent/pkg/util/cgroups v0.67.0 h1:4zdK63EX8IEumz1G3lWLaAoDcuyc+E26zIHED6HtVS0=
 github.com/DataDog/datadog-agent/pkg/util/cgroups v0.67.0/go.mod h1:vuQxQRg6890W8LC2lDyRASCTb5sIA3hzwdouhp2LB4E=
-github.com/DataDog/datadog-agent/pkg/util/log v0.66.1/go.mod h1:TBGT1NFg9Essf3ypyegWT74PKbIzTuHAHM9V3B+3vXY=
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.64.2 h1:riYWM572c2zVBK6yMg1i2XfmGhmDtooM9+WXBGNXtHk=
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.64.2/go.mod h1:cY4100zn21kBb748mG0hDv9BfswD+tUw3p2M4XdUzAE=
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.66.0 h1:8fVvmbjBUL1wZeNvLIaolE1eNg4EVP12w4Whkd6AkT4=
@@ -792,8 +787,6 @@ github.com/DataDog/datadog-agent/pkg/util/pointer v0.66.1 h1:POFMxM1hM1fY37LwM9T
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.66.1/go.mod h1:lsv9K9R8nZWSgbJpzduE9+l2XBxzYK13XYqErLrCrdY=
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.67.0 h1:2aze75lrcLQbRPqOJIBrbrDJ9MvWIJ3BJlAzELtbCoE=
 github.com/DataDog/datadog-agent/pkg/util/pointer v0.67.0/go.mod h1:Dt8OapdWxeGXEUx4lr+taYw60VRpaONMzikPfRc/qwk=
-github.com/DataDog/datadog-agent/pkg/util/scrubber v0.66.1/go.mod h1:1ebZZr2A/0LnD76aK+m1leTOAjKVkJUjCvaw+wTQEcI=
-github.com/DataDog/datadog-agent/pkg/version v0.66.1/go.mod h1:LXOHXAHH+vqBwmQKcZa5FgBEi4ECKIC2WsV2Jd9VVJ0=
 github.com/DataDog/datadog-go v3.2.0+incompatible h1:qSG2N4FghB1He/r2mFrWKCaL7dXCilEuNEeAn20fdD4=
 github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.1.0-dev/go.mod h1:qq7SKlItHcfcpuPzTKVX4K/RrpUL6jcb4kLImOgGQ20=
 github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2 v2.1.0-dev/go.mod h1://eoD6NGmeCnokLq0UN/lcqY3drf2DapwJg5FCj+p8o=
@@ -812,12 +805,9 @@ github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.1.0-dev/go.mod h1:uG
 github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.1.0/go.mod h1:EJJKLVEK82+z0R7Q1eZNN2yVckN8xa1gDUtRSDhy3LI=
 github.com/DataDog/go-libddwaf/v3 v3.5.3/go.mod h1:HoLUHdj0NybsPBth/UppTcg8/DKA4g+AXuk8cZ6nuoo=
 github.com/DataDog/go-libddwaf/v4 v4.1.1/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
-github.com/DataDog/go-libddwaf/v4 v4.3.0/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
-github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250603194815-7edb7c2ad56a/go.mod h1:quaQJ+wPN41xEC458FCpTwyROZm3MzmTZ8q8XOXQiPs=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250710075948-d3ee4f430e22/go.mod h1:YFoTl1xsMzdSRFIu33oCSPS/3+HZAPGpO3oOM96wXCM=
 github.com/DataDog/go-sqllexer v0.1.0/go.mod h1:KwkYhpFEVIq+BfobkTC1vfqm4gTi65skV/DpDBXtexc=
 github.com/DataDog/go-sqllexer v0.1.3/go.mod h1:KwkYhpFEVIq+BfobkTC1vfqm4gTi65skV/DpDBXtexc=
-github.com/DataDog/opentelemetry-mapping-go/pkg/otlp/attributes v0.26.0/go.mod h1:mYQmU7mbHH6DrCaS8N6GZcxwPoeNfyuopUoLQltwSzs=
 github.com/DataDog/viper v1.7.0 h1:hJvGT/zsNgVPxJLjW+ozl247LzEIRs7DdKakUgSsQzo=
 github.com/DataDog/viper v1.7.0/go.mod h1:ZiWeW+zYFKm7srdB9IoDzzZXaJaI5eL9QjNiN/DMA2s=
 github.com/DataDog/zstd v1.5.6 h1:LbEglqepa/ipmmQJUDnSsfvA8e8IStVcGaFWDuxvGOY=
@@ -1324,7 +1314,6 @@ github.com/go-sql-driver/mysql v1.7.1/go.mod h1:OXbVy3sEdcQ2Doequ6Z5BW6fXNQTmx+9
 github.com/go-stack/stack v1.8.0 h1:5SgMzNM5HxrEjV0ww2lTmX6E2Izsfxas4+YHWRs3Lsk=
 github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 h1:p104kn46Q8WdvHunIJ9dAyjPVtrBPhSr3KT2yUst43I=
 github.com/go-test/deep v1.0.2/go.mod h1:wGDj63lr65AM2AQyKZd/NYHGb0R+1RLqB8NKt3aSFNA=
-github.com/go-viper/mapstructure/v2 v2.2.1/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/gobuffalo/flect v1.0.2 h1:eqjPGSo2WmjgY2XlpGwo2NXgL3RucAKo4k4qQMNA5sA=
 github.com/gobuffalo/flect v1.0.2/go.mod h1:A5msMlrHtLqh9umBSnvabjsMrCcCpAyzglnDvkbYKHs=
 github.com/gobuffalo/flect v1.0.3/go.mod h1:A5msMlrHtLqh9umBSnvabjsMrCcCpAyzglnDvkbYKHs=
@@ -1538,6 +1527,9 @@ github.com/jackc/puddle v1.1.3/go.mod h1:m4B5Dj62Y0fbyuIc15OsIqK0+JU8nkqQjsgx7dv
 github.com/jackc/puddle v1.3.0 h1:eHK/5clGOatcjX3oWGBO/MpxpbHzSwud5EWTSCI+MX0=
 github.com/jackc/puddle v1.3.0/go.mod h1:m4B5Dj62Y0fbyuIc15OsIqK0+JU8nkqQjsgx7dvjSWk=
 github.com/jackc/puddle/v2 v2.1.2/go.mod h1:2lpufsF5mRHO6SuZkm0fNYxM6SWHfvyFj62KwNzgels=
+github.com/jellydator/ttlcache/v3 v3.2.0/go.mod h1:hi7MGFdMAwZna5n2tuvh63DvFLzVKySzCVW6+0gA2n4=
+github.com/jellydator/ttlcache/v3 v3.4.0 h1:YS4P125qQS0tNhtL6aeYkheEaB/m8HCqdMMP4mnWdTY=
+github.com/jellydator/ttlcache/v3 v3.4.0/go.mod h1:Hw9EgjymziQD3yGsQdf1FqFdpp7YjFMd4Srg5EJlgD4=
 github.com/jessevdk/go-flags v1.4.0 h1:4IU2WS7AumrZ/40jfhf4QVDMsQwqA7VEHozFRrGARJA=
 github.com/jessevdk/go-flags v1.4.0/go.mod h1:4FA24M0QyGHXBuZZK/XkWh8h0e1EYbRYJSGM75WSRxI=
 github.com/jessevdk/go-flags v1.6.1/go.mod h1:Mk8T1hIAWpOiJiHa9rJASDK2UGWji0EuPGBnNLMooyc=
@@ -2003,7 +1995,6 @@ go.etcd.io/gofail v0.1.0 h1:XItAMIhOojXFQMgrxjnd2EIIHun/d5qL0Pf7FzVTkFg=
 go.etcd.io/gofail v0.1.0/go.mod h1:VZBCXYGZhHAinaBiiqYvuDynvahNsAyLFwB3kEHKz1M=
 go.mozilla.org/pkcs7 v0.0.0-20200128120323-432b2356ecb1 h1:A/5uWzF44DlIgdm/PQFwfMkW0JX+cIcQi/SwLAmZP5M=
 go.mozilla.org/pkcs7 v0.0.0-20200128120323-432b2356ecb1/go.mod h1:SNgMg+EgDFwmvSmLRTNKC5fegJjB7v23qTQ0XLGUNHk=
-go.opentelemetry.io/collector/component v1.28.1/go.mod h1:jwZRDML3tXo1whueZdRf+y6z3DeEYTLPBmb/O1ujB40=
 go.opentelemetry.io/collector/component v1.29.0/go.mod h1:qHoiz0iyBgyAYsT0F8FgtcJv8pTEQDvo1Ox3eO3qVlY=
 go.opentelemetry.io/collector/component v1.32.0/go.mod h1:r2gxdx07gNVbsdH1ypt43W/hWAEgP2ti1eAYnrT6j7s=
 go.opentelemetry.io/collector/component v1.35.0/go.mod h1:hU/ieWPxWbMAacODCSqem5ZaN6QH9W5GWiZ3MtXVuwc=
@@ -2142,11 +2133,9 @@ go.opentelemetry.io/collector/otelcol/otelcoltest v0.122.0 h1:JyP1laPqALttixC90a
 go.opentelemetry.io/collector/otelcol/otelcoltest v0.122.0/go.mod h1:rfMPxfLH73Of/mvc8TZEuNZv+l4VD4pALZz1Z0r+jd0=
 go.opentelemetry.io/collector/otelcol/otelcoltest v0.125.0 h1:GYgwOoLKhBl64ndua+5RFeW8zEC1GB0mR94cXGBdMFk=
 go.opentelemetry.io/collector/otelcol/otelcoltest v0.125.0/go.mod h1:xadhCU4sDwga7XSOQVMyCOA5Yi7aeZ0/DSb+m+eWK+0=
-go.opentelemetry.io/collector/pdata v1.28.1/go.mod h1:asKE8MD/4SOKz1mCrGdAz4VO2U2HUNg8A6094uK7pq0=
 go.opentelemetry.io/collector/pdata v1.29.0/go.mod h1:9kb3zMtLFXBPA6WGWkBHbkFwlwwYL/OHk1m0ASWZpeY=
 go.opentelemetry.io/collector/pdata v1.32.0/go.mod h1:m41io9nWpy7aCm/uD1L9QcKiZwOP0ldj83JEA34dmlk=
 go.opentelemetry.io/collector/pdata v1.35.0/go.mod h1:pttpb089864qG1k0DMeXLgwwTFLk+o3fAW9I6MF9tzw=
-go.opentelemetry.io/collector/pdata/pprofile v0.122.1/go.mod h1:+jSjgb4zRnNmr1R/zgVLVyTVSm9irfGrvGTrk3lDxSE=
 go.opentelemetry.io/collector/pipeline v0.123.0/go.mod h1:TO02zju/K6E+oFIOdi372Wk0MXd+Szy72zcTsFQwXl4=
 go.opentelemetry.io/collector/pipeline/xpipeline v0.120.0 h1:klY22BaRMO1+JmjUu0Af961hpHA5qnOTAVR7tN+UTW8=
 go.opentelemetry.io/collector/pipeline/xpipeline v0.120.0/go.mod h1:K/7Ki7toZQpNV0GF7TbrOEoo8dP3dDXKKSRNnTyEsBE=
@@ -2370,7 +2359,6 @@ golang.org/x/crypto v0.36.0/go.mod h1:Y4J0ReaxCR1IMaabaSMugxJES1EpwhBHhv2bDHklZv
 golang.org/x/crypto v0.38.0/go.mod h1:MvrbAqul58NNYPKnOra203SB9vpuZW0e+RRZV+Ggqjw=
 golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2/go.mod h1:CxIveKay+FTh1D0yPZemJVgC/95VzuuOLq5Qi4xnoYc=
 golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f/go.mod h1:D5SMRVC3C2/4+F/DB1wZsLRnSNimn2Sp/NPsCrsv8ak=
-golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac/go.mod h1:hH+7mtFmImwwcMvScyxUhjuVHR3HGaDPMn9rMSUUbxo=
 golang.org/x/image v0.0.0-20220302094943-723b81ca9867 h1:TcHcE0vrmgzNH1v3ppjcMGbhG5+9fMuvOmUYwNEF4q4=
 golang.org/x/image v0.28.0 h1:gdem5JW1OLS4FbkWgLO+7ZeFzYtL3xClb97GaUzYMFE=
 golang.org/x/image v0.28.0/go.mod h1:GUJYXtnGKEUgggyzh+Vxt+AviiCcyiwpsl8iQ8MvwGY=

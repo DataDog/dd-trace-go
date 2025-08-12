@@ -1,18 +1,60 @@
-package main
+package streamprocessingoffload
 
 import (
+	"context"
+	"fmt"
 	"log"
-	"strings"
 
-	"github.com/negasus/haproxy-spoe-go/action"
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+
 	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
 )
 
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageHAProxyStreamProcessingOffload)
+}
+
+type HAProxySPOA struct {
+	mp message_processor.MessageProcessor
+}
+
+type AppsecHAProxyConfig struct {
+	Context              context.Context
+	BlockingUnavailable  bool
+	BodyParsingSizeLimit int
+}
+
+func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
+	mp := message_processor.NewMessageProcessor(message_processor.MessageProcessorConfig{
+		BlockingUnavailable:  config.BlockingUnavailable,
+		BodyParsingSizeLimit: config.BodyParsingSizeLimit,
+	}, instr)
+
+	handler := &HAProxySPOA{
+		mp: mp,
+	}
+
+	initRequestStateCache()
+
+	return handler
+}
+
 // Handler processes SPOE requests from HAProxy
-func Handler(req *request.Request) {
+func (s *HAProxySPOA) Handler(req *request.Request) {
 	log.Printf("handle request EngineID: '%s', StreamID: '%d', FrameID: '%d' with %d messages",
 		req.EngineID, req.StreamID, req.FrameID, req.Messages.Len())
+
+	mp := message_processor.NewMessageProcessor(
+		message_processor.MessageProcessorConfig{
+			BlockingUnavailable:  false,
+			BodyParsingSizeLimit: 1024,
+		},
+		instr,
+	)
 
 	// Process each message
 	for i := 0; i < req.Messages.Len(); i++ {
@@ -22,123 +64,90 @@ func Handler(req *request.Request) {
 			continue
 		}
 
-		//log.Printf("Processing message: '%s'", msg.Name)
+		ctx := context.Background()
+		mpAction, reqState, err := processMessage(mp, ctx, req, msg)
+		if err != nil {
+			log.Printf("Error processing message %s: %v", msg.Name, err)
+			return
+		}
 
-		switch msg.Name {
-		case "http-request-headers-msg":
-			handleRequestHeadersMessage(req, msg)
-		case "http-request-body-msg":
-			handleRequestBodyMessage(req, msg)
-		case "http-response-headers-msg":
-			handleResponseHeadersMessage(req, msg)
-		case "http-response-body-msg":
-			handleResponseBodyMessage(req, msg)
-		default:
-			log.Printf("Unknown message type: %s", msg.Name)
+		err = s.handleAction(mpAction, req, &reqState)
+		if err != nil {
+			log.Printf("Error handling action for message %s: %v", msg.Name, err)
+			return
 		}
 	}
 }
 
-func handleRequestHeadersMessage(req *request.Request, msg *message.Message) {
-	// Extract headers and analyze them
-	method := getStringValue(msg, "method")
-	path := getStringValue(msg, "path")
-	headers := getStringValue(msg, "headers")
+func processMessage(mp message_processor.MessageProcessor, ctx context.Context, req *request.Request, msg *message.Message) (message_processor.Action, message_processor.RequestState, error) {
+	log.Printf("Handling message: %s", msg.Name)
 
-	log.Printf("Headers - Method: %s, Path: %s", method, path)
-
-	isJSON := isJSONContentType(headers)
-
-	log.Printf("Content-Type analysis - Is JSON: %t", isJSON)
-
-	// Always mark headers as processed
-	setVariable(req, "headers_processed", "true")
-
-	req.Actions.SetVar(action.ScopeTransaction, "span_id", 1234)
-}
-
-func handleRequestBodyMessage(req *request.Request, msg *message.Message) {
-	// This should only be called for JSON content
-	body := getBytesArrayValue(msg, "body")
-
-	log.Printf("Processing JSON Request body - Size: %d bytes", len(body))
-}
-
-func handleResponseHeadersMessage(req *request.Request, msg *message.Message) {
-	status := getIntValue(msg, "status")
-	headers := getStringValue(msg, "headers")
-
-	log.Printf("Response Headers - Status: %d", status)
-	log.Printf("Response Headers content: %s", headers)
-
-	isJSON := isJSONContentType(headers)
-	log.Printf("Response Content-Type analysis - Is JSON: %t", isJSON)
-}
-
-func handleResponseBodyMessage(req *request.Request, msg *message.Message) {
-	body := getBytesArrayValue(msg, "body")
-
-	log.Printf("Processing JSON Response body - Size: %d bytes", len(body))
-}
-
-// Helper function to set SPOE variables
-func setVariable(req *request.Request, name, value string) {
-	//log.Printf("Setting variable %s = %s", name, value)
-
-	// Use the Actions interface to set variables
-	if req.Actions != nil {
-		// Create a set-var action using the library's action interface
-		// The exact API may vary, but this is the typical pattern
-		req.Actions.SetVar(action.ScopeTransaction, name, value)
-	} else {
-		log.Printf("WARNING: req.Actions is nil, cannot set variable %s", name)
-	}
-}
-
-// Helper function to check if Content-Type indicates JSON
-func isJSONContentType(headers string) bool {
-	// Parse headers and look for Content-Type
-	lines := strings.Split(headers, "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(strings.ToLower(line), "content-type:") {
-			contentType := strings.ToLower(strings.TrimSpace(line[13:]))
-			return strings.Contains(contentType, "application/json") ||
-				strings.Contains(contentType, "text/json") ||
-				strings.HasSuffix(contentType, "+json")
+	switch msg.Name {
+	case "http-request-headers-msg":
+		var (
+			mpAction       message_processor.Action
+			err            error
+			currentRequest message_processor.RequestState
+		)
+		currentRequest, mpAction, err = mp.OnRequestHeaders(ctx, &requestHeadersHAProxy{req: req, msg: msg})
+		return mpAction, currentRequest, err
+	case "http-request-body-msg":
+		currentRequest, err := getCurrentRequest(msg)
+		if err != nil {
+			return message_processor.Action{}, message_processor.RequestState{}, err
 		}
+
+		var action message_processor.Action
+		action, err = mp.OnRequestBody(&requestBodyHAProxy{msg: msg}, currentRequest)
+		return action, currentRequest, err
+	case "http-response-headers-msg":
+		currentRequest, err := getCurrentRequest(msg)
+		if err != nil {
+			return message_processor.Action{}, message_processor.RequestState{}, err
+		}
+
+		var action message_processor.Action
+		action, err = mp.OnResponseHeaders(&responseHeadersHAProxy{msg: msg}, currentRequest)
+		return action, currentRequest, err
+	case "http-response-body-msg":
+		currentRequest, err := getCurrentRequest(msg)
+		if err != nil {
+			return message_processor.Action{}, message_processor.RequestState{}, err
+		}
+
+		var action message_processor.Action
+		action, err = mp.OnResponseBody(&responseBodyHAProxy{msg: msg}, currentRequest)
+		return action, currentRequest, err
+	default:
+		return message_processor.Action{}, message_processor.RequestState{}, fmt.Errorf("unknown message type: %s", msg.Name)
 	}
-	return false
 }
 
-// Helper functions to extract values from SPOE messages
-func getStringValue(msg *message.Message, key string) string {
-	if val, exists := msg.KV.Get(key); exists {
-		if str, ok := val.(string); ok {
-			return str
+func (s *HAProxySPOA) handleAction(action message_processor.Action, req *request.Request, reqState *message_processor.RequestState) error {
+	switch action.Type {
+	case message_processor.ActionTypeContinue:
+		if action.Response == nil {
+			return nil
 		}
-	}
-	return ""
-}
 
-func getBytesArrayValue(msg *message.Message, key string) []byte {
-	if val, exists := msg.KV.Get(key); exists {
-		if bytes, ok := val.([]byte); ok {
-			return bytes
+		if data := action.Response.(*message_processor.HeadersResponseData); data != nil {
+			// Set the headers in the request
+			// setHeadersResponseData(data)
+			return nil
 		}
-	}
-	return nil
-}
 
-func getIntValue(msg *message.Message, key string) int {
-	if val, exists := msg.KV.Get(key); exists {
-		switch v := val.(type) {
-		case int:
-			return v
-		case int64:
-			return int(v)
-		case uint64:
-			return int(v)
-		}
+		// Could happen if a new response type with data is implemented, and we forget to handle it here.
+		// However, at the moment, we only have HeadersResponseData as a response type for ActionTypeContinue
+		return fmt.Errorf("unknown action data type: %T for ActionTypeContinue", action.Response)
+	case message_processor.ActionTypeBlock:
+		data := action.Response.(*message_processor.BlockResponseData)
+		setBlockResponseData(data, req)
+		_ = deleteCurrentRequest(reqState.Span.Context().SpanID())
+		return nil
+	case message_processor.ActionTypeFinish:
+		// Remove the current request from the cache
+		_ = deleteCurrentRequest(reqState.Span.Context().SpanID())
 	}
-	return 0
+
+	return fmt.Errorf("unknown action type: %T", action.Type)
 }

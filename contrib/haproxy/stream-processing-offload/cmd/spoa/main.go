@@ -6,6 +6,8 @@
 package main
 
 import (
+	"context"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"net"
 	"os"
 
@@ -27,7 +29,16 @@ func main() {
 	}
 	defer listener.Close()
 
-	a := agent.New(haproxy.Handler, logger.NewDefaultLog())
+	_ = tracer.Start(tracer.WithAppSecEnabled(true))
+	defer tracer.Stop()
+
+	appsecHAProxy := streamprocessingoffload.NewHAProxySPOA(streamprocessingoffload.AppsecHAProxyConfig{
+		BlockingUnavailable:  false,
+		BodyParsingSizeLimit: 1000000, // 1MB
+		Context:              context.Background(),
+	})
+
+	a := agent.New(appsecHAProxy.Handler, logger.NewDefaultLog())
 
 	if err := a.Serve(listener); err != nil {
 		log.Printf("error agent serve: %+v\n", err)
