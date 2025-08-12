@@ -1,6 +1,5 @@
 stages:
   - docker-images-reliability-env
-  - config-inversion
   - generate
   - benchmarks
   - macrobenchmarks
