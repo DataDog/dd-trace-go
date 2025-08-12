@@ -16,12 +16,17 @@ type TestCaseGlobalFunctions struct {
 	base
 }
 
-func (b *TestCaseGlobalFunctions) Run(_ context.Context, t *testing.T) {
-	cl := newHttpClient(b.srv.Addr)
+func (tc *TestCaseGlobalFunctions) Setup(ctx context.Context, t *testing.T) {
+	tc.handler = tc.serveMuxHandler()
+	tc.base.Setup(ctx, t)
+}
+
+func (tc *TestCaseGlobalFunctions) Run(_ context.Context, t *testing.T) {
+	cl := newHttpClient(tc.srv.Addr)
 
 	resp, err := cl.Get("/")
 	require.NoError(t, err)
-	require.Equal(t, http.StatusTeapot, resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 type httpClient struct {
