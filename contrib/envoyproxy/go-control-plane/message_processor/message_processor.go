@@ -44,7 +44,7 @@ func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHea
 	componentName := req.Component(ctx)
 	framework := req.Framework()
 	reqState, blocked := newRequestState(httpReq, mp.instr, mp.config.BodyParsingSizeLimit, componentName, framework)
-	if reqState.span == nil {
+	if reqState.Span == nil {
 		reqState.Close()
 		return RequestState{}, Action{}, fmt.Errorf("error getting span from context")
 	}

@@ -5,6 +5,7 @@ go 1.23.1
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
 	github.com/negasus/haproxy-spoe-go v1.0.6
+	github.com/jellydator/ttlcache/v3 v3.4.0
 )
 
 require (
