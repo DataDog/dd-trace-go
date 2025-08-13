@@ -157,7 +157,7 @@ jobs:
         # `go` directive is correctly managed.
         run: |-
           go work use -r "${{ github.workspace }}/orchestrion"
-          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
+          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}${{ runner.os == 'Windows' && '\\' || '/' }}orchestrion"
           go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
