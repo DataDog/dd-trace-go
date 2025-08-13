@@ -23,7 +23,7 @@ secondary server where Datadog's request mirror deployment processes the request
   found [here](https://gateway-api.sigs.k8s.io/guides/#installing-gateway-api)).
 - A controller compatible with the Gateway API (list of supported controllers can be
   found [here](https://gateway-api.sigs.k8s.io/implementations)).
-- [Go](https://go.dev/doc/install) 1.23+ installed on your local machine.
+- [Go](https://go.dev/doc/install) 1.24+ installed on your local machine.
 
 ## Installation
 

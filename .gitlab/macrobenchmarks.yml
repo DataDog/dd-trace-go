@@ -56,21 +56,21 @@ variables:
 # 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
 #
 
+.go125-benchmarks:
+  extends: .benchmarks-default
+  variables:
+    GO_VERSION: "1.25.0"
+
 .go124-benchmarks:
   extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.24.0"
-
-.go123-benchmarks:
-  extends: .benchmarks-default
-  variables:
-    GO_VERSION: "1.23.6"
+    GO_VERSION: "1.24.6"
 
 #
 # Specific macrobenchmark configurations are below
 
 go123-baseline:
-  extends: .go123-benchmarks
+  extends: .go124-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -79,7 +79,7 @@ go123-baseline:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go123-only-trace:
-  extends: .go123-benchmarks
+  extends: .go124-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -88,7 +88,7 @@ go123-only-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go123-only-trace-with-runtime-metrics:
-  extends: .go123-benchmarks
+  extends: .go124-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -98,7 +98,7 @@ go123-only-trace-with-runtime-metrics:
     DD_RUNTIME_METRICS_ENABLED: "true"
 
 go123-only-profile:
-  extends: .go123-benchmarks
+  extends: .go124-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -107,7 +107,7 @@ go123-only-profile:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go123-profile-trace:
-  extends: .go123-benchmarks
+  extends: .go124-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -116,7 +116,7 @@ go123-profile-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go123-trace-asm:
-  extends: .go123-benchmarks
+  extends: .go124-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -125,7 +125,7 @@ go123-trace-asm:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go123-profile-trace-asm:
-  extends: .go123-benchmarks
+  extends: .go124-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -134,7 +134,7 @@ go123-profile-trace-asm:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go124-baseline:
-  extends: .go124-benchmarks
+  extends: .go125-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -143,7 +143,7 @@ go124-baseline:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go124-only-trace:
-  extends: .go124-benchmarks
+  extends: .go125-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -152,7 +152,7 @@ go124-only-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go124-only-trace-with-runtime-metrics:
-  extends: .go124-benchmarks
+  extends: .go125-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -162,7 +162,7 @@ go124-only-trace-with-runtime-metrics:
     DD_RUNTIME_METRICS_ENABLED: "true"
 
 go124-only-profile:
-  extends: .go124-benchmarks
+  extends: .go125-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -171,7 +171,7 @@ go124-only-profile:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go124-profile-trace:
-  extends: .go124-benchmarks
+  extends: .go125-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -180,7 +180,7 @@ go124-profile-trace:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go124-trace-asm:
-  extends: .go124-benchmarks
+  extends: .go125-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -189,7 +189,7 @@ go124-trace-asm:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go124-profile-trace-asm:
-  extends: .go124-benchmarks
+  extends: .go125-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -266,7 +266,7 @@ notify-slo-breaches:
       - platform/artifacts-se/
     expire_in: 3 months
   variables:
-    GO_VERSION: "1.23.0"
+    GO_VERSION: "1.24.0"
     ARTIFACTS_DIR: "./artifacts-se"
     SERVICE_EXTENSION: "true"
 

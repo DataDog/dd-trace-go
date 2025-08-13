@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0-dev.1
