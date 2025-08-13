@@ -414,6 +414,41 @@ func TestProfileTypeSoundness(t *testing.T) {
 	})
 }
 
+func TestUnmarshalText(t *testing.T) {
+	tests := []struct {
+		Text            []byte
+		WantProfileType ProfileType
+	}{
+		{
+			Text:            []byte("cpu"),
+			WantProfileType: CPUProfile,
+		},
+		{
+			Text:            []byte("heap"),
+			WantProfileType: HeapProfile,
+		},
+		{
+			Text:            []byte("mutex"),
+			WantProfileType: MutexProfile,
+		},
+		{
+			Text:            []byte("goroutine"),
+			WantProfileType: GoroutineProfile,
+		},
+		{
+			Text:            []byte("block"),
+			WantProfileType: BlockProfile,
+		},
+	}
+
+	for _, test := range tests {
+		var p ProfileType
+		err := p.UnmarshalText(test.Text)
+		require.NoError(t, err)
+		assert.Equal(t, test.WantProfileType, p)
+	}
+}
+
 func requirePprofEqual(t *testing.T, a, b []byte) {
 	t.Helper()
 	pprofA, err := pprofile.ParseData(a)
