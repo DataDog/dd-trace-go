@@ -2,7 +2,7 @@
 bin/
 go.work*
 !/go.work
-!/go.work.sum
+/go.work.sum
 
 # profiling
 *.test
