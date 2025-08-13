@@ -99,12 +99,12 @@ type payload_V1 struct {
 	attributes map[uint32]any // TODO: this should be compatible with AnyValue
 
 	// a list of trace `chunks`
-	chunks []TraceChunk
+	chunks []traceChunk
 }
 
-// TraceChunk represents a list of spans with the same trace ID,
+// traceChunk represents a list of spans with the same trace ID,
 // i.e. a chunk of a trace
-type TraceChunk struct {
+type traceChunk struct {
 	// the sampling priority of the trace
 	priority int32
 
