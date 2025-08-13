@@ -46,10 +46,19 @@ func newFinishAction() Action {
 	}
 }
 
+// Direction indicates the direction of the message being processed.
+type Direction int
+
+const (
+	DirectionRequest  Direction = iota // DirectionRequest indicates a request message.
+	DirectionResponse                  // DirectionResponse indicates a response message.
+)
+
 // HeadersResponseData is the data for a headers response.
 type HeadersResponseData struct {
 	HeaderMutation http.Header
 	RequestBody    bool
+	Direction      Direction
 }
 
 // BlockResponseData is the data for a blocking response.
