@@ -155,9 +155,11 @@ jobs:
         # release without requiring coordination with the other. It also adds
         # the local checkout of orchestrion to the `go.work` so that its own
         # `go` directive is correctly managed.
+        shell: bash
         run: |-
-          go work use -r "${{ github.workspace }}/orchestrion"
-          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}${{ runner.os == 'Windows' && '\\' || '/' }}orchestrion"
+          orchestrion_path=$(readlink -e "${{ github.workspace }}/orchestrion")
+          go work use -r "${orchestrion_path}"
+          go mod edit -replace="github.com/DataDog/orchestrion=${orchestrion_path}"
           go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
