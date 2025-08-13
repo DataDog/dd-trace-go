@@ -17,8 +17,25 @@ Prepare context, which was wrong.
 Fixes #113
 ```
 
-Please apply the same logic for Pull Requests and Issues: start with the package name, followed by a colon and a description of the change, just like
-the official [Go language](https://github.com/golang/go/pulls).
+## Pull Request Naming
+
+Pull requests should follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) naming format with the following structure:
+
+```text
+<type>(scope): <description>
+```
+
+Where:
+
+- **type**: The type of change (feat, fix, docs, style, refactor, test, chore)
+- **scope**: The package or area affected (e.g., contrib/database/sql, ddtrace/tracer)
+- **description**: A brief description of the change
+
+Examples:
+
+- `feat(contrib/http): add support for custom headers`
+- `fix(ddtrace/tracer): resolve memory leak in span processor`
+
 
 All new code is expected to be covered by tests.
 
