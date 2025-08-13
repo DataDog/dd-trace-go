@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -170,6 +171,8 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 
 	httpMethod := s.meta[ext.HTTPMethod]
 	endpoint := s.meta[ext.HTTPEndpoint]
+
+	fmt.Println("Creating tracerStatSpan with resource:", resource, "httpMethod:", httpMethod, "endpoint:", endpoint)
 
 	statSpan, ok := c.spanConcentrator.NewStatSpan(s.service, resource,
 		s.name, s.spanType, s.parentID, s.start, s.duration, s.error, s.meta, s.metrics, c.cfg.agent.peerTags, httpMethod, endpoint)
