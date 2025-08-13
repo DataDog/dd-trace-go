@@ -82,7 +82,11 @@ type responseHeadersHAProxy struct {
 }
 
 func (a *responseHeadersHAProxy) InitResponseWriter(w http.ResponseWriter) error {
-	headers := make(http.Header) // todo
+	headers, err := parseHAProxyReqHdrsBin(getBytesArrayValue(a.msg, "headers"))
+	if err != nil {
+		return err
+	}
+
 	status := getIntValue(a.msg, "status_code")
 
 	for k, v := range headers {
