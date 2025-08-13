@@ -11,9 +11,7 @@ jobs:
       - name: Fail if PR title is not a Conventional Commit
         if: github.event.pull_request.base.ref == 'main'
         run: |
-          echo "PR Title: ${{ github.event.pull_request.title }}"
-
-          TITLE="${{ github.event.pull_request.title }}"
+          echo "PR Title: ${TITLE}"
 
           # Regex: type(scope?): subject
           # Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
@@ -28,3 +26,5 @@ jobs:
           else
             echo "✅ PR title is valid."
           fi
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
