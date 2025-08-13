@@ -94,7 +94,12 @@ jobs:
   integration-test:
     services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
     env:
-      REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
+      # Path to where test results will be saved
+      REPORT: orchestrion-gotestsum-report.xml
+      # Disable go workspace as they complicate everything when orchestrion
+      # updates its `go` directive in `go.mod` before `dd-trace-go` does;
+      # ESPECIALLY on Windows.
+      GOWORK: 'off'
     needs:
       - go-versions-matrix
       - service-containers
@@ -156,8 +161,7 @@ jobs:
         # the local checkout of orchestrion to the `go.work` so that its own
         # `go` directive is correctly managed.
         run: |-
-          go work use -r "${{ github.workspace }}/orchestrion"
-          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}${{ runner.os == 'Windows' && '\\' || '/' }}orchestrion"
+          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
           go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
