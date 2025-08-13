@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2
 
-go 1.23.0
+go 1.24.0
 
 require (
 	cloud.google.com/go/pubsub v1.37.0

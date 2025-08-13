@@ -137,7 +137,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.23"
+          go-version: "1.24"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff
@@ -163,7 +163,7 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.23", "1.24" ]
+        go: [ "1.25", "1.24" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratchy ]

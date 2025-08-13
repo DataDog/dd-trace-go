@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/orchestrion/all/v2
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.3.0-dev.1
@@ -51,7 +51,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/iam v1.1.7 // indirect
 	cloud.google.com/go/pubsub v1.37.0 // indirect
-	github.com/99designs/gqlgen v0.17.36 // indirect
+	github.com/99designs/gqlgen v0.17.72 // indirect
 	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.68.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.68.0 // indirect
@@ -230,6 +230,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.42 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sosodev/duration v1.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
@@ -244,7 +245,7 @@ require (
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.16 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.25 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
