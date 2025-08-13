@@ -149,9 +149,13 @@ jobs:
 
       - name: Set up orchestrion
         if: inputs.orchestrion-version != ''
+        # This does not pass `-go` so that it transparently uses the correct go
+        # version, which is the highest one between that of dd-trace-go and
+        # orchestrion. This way each can change their own minimum supported go
+        # release without requiring coordination with the other.
         run: |-
-          go mod edit -go="$(go mod edit -json | jq -r '.Go')" -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
-          go mod tidy -go="$(go mod edit -json | jq -r '.Go')"
+          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
+          go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           VERSION: ${{ inputs.orchestrion-version }}
