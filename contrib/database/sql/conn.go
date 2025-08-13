@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
@@ -285,6 +286,11 @@ func (tc *TracedConn) providedPeerService(ctx context.Context) string {
 // with a span ID injected into SQL comments. The returned span ID should be used when the SQL span is created
 // following the traced database call.
 func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tracer.DBMPropagationMode) (cquery string, spanID uint64) {
+	if tc.cfg.copyNotSupported && strings.EqualFold(query[:4], "COPY") {
+		// COPY is not supported for lib/pq, so we need to disable the comment injection
+		mode = tracer.DBMPropagationModeDisabled
+	}
+
 	// The sql span only gets created after the call to the database because we need to be able to skip spans
 	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
 	// used during SQL comment injection and returned for the sql span to be used later when/if the span
