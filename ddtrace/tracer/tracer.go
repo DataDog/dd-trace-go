@@ -960,10 +960,12 @@ func (t *tracer) TracerConf() TracerConf {
 
 func (t *tracer) submit(s *Span) {
 	if !t.config.enabled.current {
+		fmt.Println("submit: disabled tracer")
 		return
 	}
 	// we have an active tracer
 	if !t.config.canDropP0s() {
+		fmt.Println("submit: no canDropP0s")
 		return
 	}
 	statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
