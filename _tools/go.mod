@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/_tools
 
 go 1.24.0
 
-toolchain go1.24.6
-
 require (
 	github.com/campoy/embedmd v1.0.0
 	github.com/golangci/golangci-lint/v2 v2.3.0
