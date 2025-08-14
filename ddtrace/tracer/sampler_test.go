@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -1243,6 +1244,102 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 		}
 	})
 
+}
+
+func TestIncident41436(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "datadog")
+
+	extractAndStartChild := func(h http.Header) *Span {
+		ctx, err := Extract(HTTPHeadersCarrier(h))
+		assert.NoError(t, err)
+		return StartSpan("web.request", ChildOf(ctx))
+	}
+
+	t.Run("rules-to-keep", func(t *testing.T) {
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 1.0}]`)
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 1.0}]`)
+
+		_, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
+		defer stop()
+
+		s1 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678901"},
+			"x-datadog-parent-id":         {"98765432101"},
+			"x-datadog-sampling-priority": {"1"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s1.Finish()
+
+		s2 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678902"},
+			"x-datadog-parent-id":         {"98765432102"},
+			"x-datadog-sampling-priority": {"0"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s2.Finish()
+
+		stop()
+
+		assert.Equal(t, "rum", s1.meta[keyOrigin])
+		assert.Equal(t, float64(1), s1.metrics[keySamplingPriority])
+		assert.Empty(t, s1.metrics[keyDecisionMaker])
+		assert.Empty(t, s1.metrics[keyRulesSamplerAppliedRate])
+		assert.Empty(t, s1.metrics[keySpanSamplingMechanism])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingRuleRate])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingMPS])
+
+		assert.Equal(t, "rum", s2.meta[keyOrigin])
+		assert.Equal(t, float64(0), s2.metrics[keySamplingPriority])
+		assert.Empty(t, s2.metrics[keyDecisionMaker])
+		assert.Empty(t, s2.metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(t, float64(8), s2.metrics[keySpanSamplingMechanism])
+		assert.Equal(t, float64(1), s2.metrics[keySingleSpanSamplingRuleRate])
+	})
+
+	t.Run("rules-to-drop", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "datadog")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 0.0}]`)
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 0.0}]`)
+
+		_, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
+		defer stop()
+
+		s1 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678901"},
+			"x-datadog-parent-id":         {"98765432101"},
+			"x-datadog-sampling-priority": {"1"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s1.Finish()
+
+		s2 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678902"},
+			"x-datadog-parent-id":         {"98765432102"},
+			"x-datadog-sampling-priority": {"0"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s2.Finish()
+
+		stop()
+
+		assert.Equal(t, "rum", s1.meta[keyOrigin])
+		assert.Equal(t, float64(1), s1.metrics[keySamplingPriority])
+		assert.Empty(t, s1.metrics[keyDecisionMaker])
+		assert.Empty(t, s1.metrics[keyRulesSamplerAppliedRate])
+		assert.Empty(t, s1.metrics[keySpanSamplingMechanism])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingRuleRate])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingMPS])
+
+		assert.Equal(t, "rum", s2.meta[keyOrigin])
+		assert.Equal(t, float64(0), s2.metrics[keySamplingPriority])
+		assert.Empty(t, s2.metrics[keyDecisionMaker])
+		assert.Empty(t, s2.metrics[keyRulesSamplerAppliedRate])
+		assert.Empty(t, s2.metrics[keySpanSamplingMechanism])
+		assert.Empty(t, s2.metrics[keySingleSpanSamplingRuleRate])
+		assert.Empty(t, s2.metrics[keySingleSpanSamplingMPS])
+	})
 }
 
 func TestRulesSamplerConcurrency(t *testing.T) {
