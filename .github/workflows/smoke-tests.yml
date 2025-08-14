@@ -164,7 +164,7 @@ jobs:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
         go: [ "1.25", "1.24" ]
-        build-env: [ alpine, bookworm, bullseye ]
+        build-env: [ alpine, trixie, bookworm ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratchy ]
         include:
