@@ -50,7 +50,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	// is not initialized yet
 	reportTelemetryConfigOnce.Do(func() {
 		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
-		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %v", cfg)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
 	})
 
 	var ipTags map[string]string
@@ -120,11 +120,17 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
+			parentCtx.ForeachBaggageItem(func(k, v string) bool {
+				if cfg.tagBaggageKey(k) {
+					ssCfg.Tags["baggage."+k] = v
+				}
+				return true
+			})
+
 			for k, v := range ipTags {
 				ssCfg.Tags[k] = v
 			}
 		})
-
 	nopts = append(nopts, opts...)
 
 	requestContext := r.Context()

@@ -36,7 +36,7 @@ func TestReportRuntimeMetrics(t *testing.T) {
 	}()
 	assert := assert.New(t)
 	err = tg.Wait(assert, 35, 1*time.Second)
-	close(trc.stop)
+	trc.Stop()
 	assert.NoError(err)
 	calls := tg.CallNames()
 	assert.True(len(calls) > 30)

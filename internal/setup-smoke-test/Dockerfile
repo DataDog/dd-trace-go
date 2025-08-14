@@ -69,7 +69,7 @@ RUN ldd smoke-test || true
 # out of the box in it without any further installation.
 FROM debian:11 AS debian11
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # debian12 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -77,7 +77,7 @@ CMD /usr/local/bin/smoke-test
 # out of the box in it without any further installation.
 FROM debian:12 AS debian12
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # alpine deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -89,7 +89,7 @@ RUN set -ex; if [ "$build_with_cgo" = "1" ]; then \
       apk update && apk add libc6-compat; \
     fi
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # amazonlinux:2 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -97,7 +97,7 @@ CMD /usr/local/bin/smoke-test
 # out of the box in it without any further installation.
 FROM amazonlinux:2 AS al2
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # amazonlinux:2023 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -105,7 +105,7 @@ CMD /usr/local/bin/smoke-test
 # out of the box in it without any further installation.
 FROM amazonlinux:2023 AS al2023
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # busybox deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -114,15 +114,15 @@ CMD /usr/local/bin/smoke-test
 FROM busybox AS busybox
 RUN mkdir -p /usr/local/bin
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # scratch deployment environment - meant to be used with CGO_ENABLED=0
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM scratch AS scratch
+FROM scratch AS scratchy
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /
-ENTRYPOINT [ "/smoke-test" ]
+CMD ["/smoke-test"]
 
 # Final deployment environment - helper target to end up a single one
 FROM $deployment_env AS deployment-env

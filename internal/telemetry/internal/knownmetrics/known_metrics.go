@@ -6,19 +6,10 @@
 package knownmetrics
 
 import (
-	_ "embed"
-	"encoding/json"
 	"slices"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
-
-//go:embed common_metrics.json
-var commonMetricsJSON []byte
-
-//go:embed golang_metrics.json
-var golangMetricsJSON []byte
 
 type Declaration struct {
 	Namespace transport.Namespace  `json:"namespace"`
@@ -26,24 +17,10 @@ type Declaration struct {
 	Name      string               `json:"name"`
 }
 
-var (
-	commonMetrics = parseMetricNames(commonMetricsJSON)
-	golangMetrics = parseMetricNames(golangMetricsJSON)
-)
-
-func parseMetricNames(bytes []byte) []Declaration {
-	var names []Declaration
-	if err := json.Unmarshal(bytes, &names); err != nil {
-		log.Error("telemetry: failed to parse metric names: %v", err)
-	}
-	return names
-}
-
 // IsKnownMetric returns true if the given metric name is a known metric by the backend
 // This is linked to generated common_metrics.json file and golang_metrics.json file. If you added new metrics to the backend, you should rerun the generator.
 func IsKnownMetric(namespace transport.Namespace, typ transport.MetricType, name string) bool {
-	decl := Declaration{Namespace: namespace, Type: typ, Name: name}
-	return slices.Contains(commonMetrics, decl) || slices.Contains(golangMetrics, decl)
+	return IsCommonMetric(namespace, typ, name) || IsLanguageMetric(typ, name)
 }
 
 // IsCommonMetric returns true if the given metric name is a known common (cross-language) metric by the backend

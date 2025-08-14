@@ -94,18 +94,21 @@ aspects:
       # Wire the context that is found to the handlers...
       - wrap-expression:
           imports:
-            client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+            # Temporarily add a namespaced alias to ensure we don't have symbol name collisions.
+            # The root issue is solved at https://github.com/DataDog/orchestrion/pull/678 but this should
+            # ensure dd-trace-go users using older Orchestrion versions don't have build errors.
+            __ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
             {{- $req := .Function.ArgumentOfType "*net/http.Request" }}
             {{- if $ctx -}}
-              client.{{ .AST.Fun.Name }}(
+              __ddtrace_client.{{ .AST.Fun.Name }}(
                 {{ $ctx }},
                 {{ range .AST.Args }}{{ . }},
                 {{ end }}
               )
             {{- else if $req -}}
-              client.{{ .AST.Fun.Name }}(
+              __ddtrace_client.{{ .AST.Fun.Name }}(
                 {{ $req }}.Context(),
                 {{ range .AST.Args }}{{ . }},
                 {{ end }}

@@ -6,14 +6,14 @@
 package gqlgen
 
 import (
-	"testing"
-
+	"context"
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler/testserver"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"testing"
 
 	internaltestserver "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2/internal/testserver"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -365,4 +365,32 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 		}
 		assert.Emptyf(t, s.Events(), "span %s should not have span events", s.OperationName())
 	}
+}
+
+// Test the extension does not panic when something returns a nil response
+func TestNilResponse(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	h, c := internaltestserver.New(t, nil)
+	h.Use(&nilResponseExtension{})
+	h.Use(NewTracer())
+
+	resp, err := c.RawPost(`{ withError }`)
+	require.NoError(t, err)
+	require.Nil(t, resp)
+}
+
+type nilResponseExtension struct{}
+
+func (n *nilResponseExtension) ExtensionName() string {
+	return "NilResponse"
+}
+
+func (n *nilResponseExtension) Validate(_ graphql.ExecutableSchema) error {
+	return nil
+}
+
+func (n *nilResponseExtension) InterceptResponse(_ context.Context, _ graphql.ResponseHandler) *graphql.Response {
+	return nil
 }

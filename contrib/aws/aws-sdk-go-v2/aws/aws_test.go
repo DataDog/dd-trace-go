@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
@@ -853,6 +854,79 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, componentName, s.Integration())
 		})
 	}
+}
+
+func TestAppendMiddleware_ChainTerminated(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	awsCfg := aws.Config{}
+
+	AppendMiddleware(&awsCfg)
+
+	s3Client := s3.NewFromConfig(awsCfg)
+	stackFn := func(stack *middleware.Stack) error {
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("stop", func(
+			ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+		) (
+			out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+		) {
+			// Terminate the middleware chain by not calling the next handler
+			out.Result = &s3.ListObjectsOutput{}
+			return
+		}), middleware.After)
+	}
+	s3Client.ListObjects(context.Background(), &s3.ListObjectsInput{
+		Bucket: aws.String("MyBucketName"),
+	}, s3.WithAPIOptions(stackFn))
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+}
+
+func TestAppendMiddleware_InnerSpan(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	server := mockAWS(200)
+	defer server.Close()
+
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           server.URL,
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	awsCfg := aws.Config{
+		Region:           "eu-west-1",
+		Credentials:      aws.AnonymousCredentials{},
+		EndpointResolver: resolver,
+	}
+
+	AppendMiddleware(&awsCfg)
+
+	s3Client := s3.NewFromConfig(awsCfg)
+	stackFn := func(stack *middleware.Stack) error {
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("stop", func(
+			ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+		) (
+			out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+		) {
+			// Start a new child span
+			span, ctx := tracer.StartSpanFromContext(ctx, "inner span")
+			defer span.Finish()
+			out, metadata, err = next.HandleInitialize(ctx, in)
+			return
+		}), middleware.After)
+	}
+	s3Client.ListObjects(context.Background(), &s3.ListObjectsInput{
+		Bucket: aws.String("MyBucketName"),
+	}, s3.WithAPIOptions(stackFn))
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 2)
 }
 
 func TestAppendMiddleware_WithNoTracer(t *testing.T) {

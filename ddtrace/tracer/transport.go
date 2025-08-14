@@ -30,24 +30,27 @@ const (
 	headerComputedTopLevel = "Datadog-Client-Computed-Top-Level"
 )
 
-var defaultDialer = &net.Dialer{
-	Timeout:   30 * time.Second,
-	KeepAlive: 30 * time.Second,
-	DualStack: true,
+func defaultDialer(timeout time.Duration) *net.Dialer {
+	return &net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: 30 * time.Second,
+		DualStack: true,
+	}
 }
 
-func defaultHTTPClient(timeout time.Duration) *http.Client {
+func defaultHTTPClient(timeout time.Duration, disableKeepAlives bool) *http.Client {
 	if timeout == 0 {
 		timeout = defaultHTTPTimeout
 	}
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           defaultDialer.DialContext,
+			DialContext:           defaultDialer(timeout).DialContext,
 			MaxIdleConns:          100,
 			IdleConnTimeout:       90 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
+			DisableKeepAlives:     disableKeepAlives,
 		},
 		Timeout: timeout,
 	}
@@ -134,6 +137,7 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	if code := resp.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.
@@ -152,7 +156,7 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 func (t *httpTransport) send(p *payload) (body io.ReadCloser, err error) {
 	req, err := http.NewRequest("POST", t.traceURL, p)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+		return nil, fmt.Errorf("cannot create http request: %s", err.Error())
 	}
 	req.ContentLength = int64(p.size())
 	for header, value := range t.headers {

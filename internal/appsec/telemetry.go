@@ -50,7 +50,6 @@ func registerAppsecStartTelemetry(mode config.EnablementMode, origin telemetry.O
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceAppSec)
-	telemetry.RegisterAppConfig("DD_APPSEC_ENABLED", mode == config.ForcedOn, origin)
 	// TODO: add appsec.enabled metric once this metric is enabled backend-side
 
 	detectLibDLOnce.Do(detectLibDL)
@@ -68,7 +67,7 @@ func detectLibDL() {
 			telemetry.RegisterAppConfig("libdl_present", true, telemetry.OriginCode)
 			return
 		} else if err != nil {
-			log.Debug("failed to detect libdl with method %s: %v", method.name, err)
+			log.Debug("failed to detect libdl with method %s: %v", method.name, err.Error())
 		}
 	}
 

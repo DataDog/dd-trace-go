@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,7 +57,7 @@ b:
 	})
 	t.Run("simple success", func(t *testing.T) {
 		scfg := fileContentsToConfig([]byte(validYaml), "test.yml")
-		assert.Equal(t, scfg.ID, 67890)
+		assert.Equal(t, scfg.ID, "67890")
 		assert.Equal(t, len(scfg.Config), 2)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "value_1")
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "value_2")
@@ -67,7 +68,7 @@ config_id: 67890
 `
 		scfg := fileContentsToConfig([]byte(data), "test.yml")
 		assert.Equal(t, len(scfg.Config), 0)
-		assert.Equal(t, scfg.ID, 67890)
+		assert.Equal(t, scfg.ID, "67890")
 	})
 	t.Run("success without config_id", func(t *testing.T) {
 		data := `
@@ -79,7 +80,7 @@ apm_configuration_default:
 		assert.Equal(t, len(scfg.Config), 2)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "value_1")
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "value_2")
-		assert.Equal(t, scfg.ID, -1)
+		assert.Equal(t, scfg.ID, telemetry.EmptyID)
 	})
 	t.Run("success with empty contents", func(t *testing.T) {
 		scfg := fileContentsToConfig([]byte(``), "test.yml")
@@ -95,7 +96,7 @@ apm_configuration_default:
     DD_KEY_3: -42
 `
 		scfg := fileContentsToConfig([]byte(data), "test.yml")
-		assert.Equal(t, scfg.ID, 67890)
+		assert.Equal(t, scfg.ID, "67890")
 		assert.Equal(t, len(scfg.Config), 3)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "123")
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "3.14")
@@ -112,7 +113,7 @@ apm_configuration_default:
     DD_KEY_4: no
 `
 		scfg := fileContentsToConfig([]byte(data), "test.yml")
-		assert.Equal(t, scfg.ID, 67890)
+		assert.Equal(t, scfg.ID, "67890")
 		assert.Equal(t, len(scfg.Config), 4)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "true")
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "false")
@@ -187,7 +188,7 @@ apm_configuration_default:
     DD_KEY_5: "value with \\ backslash"
 `
 		scfg := fileContentsToConfig([]byte(data), "test.yml")
-		assert.Equal(t, scfg.ID, 67890)
+		assert.Equal(t, scfg.ID, "67890")
 		assert.Equal(t, len(scfg.Config), 5)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "value with spaces")
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "value with \n newline")
@@ -207,7 +208,7 @@ func TestParseFile(t *testing.T) {
 		assert.NoError(t, err)
 		defer os.Remove("test.yml")
 		scfg := parseFile("test.yml")
-		assert.Equal(t, scfg.ID, 67890)
+		assert.Equal(t, scfg.ID, "67890")
 		assert.Equal(t, len(scfg.Config), 2)
 		assert.Equal(t, scfg.Config["DD_KEY_1"], "value_1")
 		assert.Equal(t, scfg.Config["DD_KEY_2"], "value_2")

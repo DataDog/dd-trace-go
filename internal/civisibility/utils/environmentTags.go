@@ -227,9 +227,9 @@ func createCITagsMap() map[string]string {
 	localTags[constants.OSArchitecture] = runtime.GOARCH
 	localTags[constants.RuntimeName] = runtime.Compiler
 	localTags[constants.RuntimeVersion] = runtime.Version()
-	log.Debug("civisibility: os platform: %v", runtime.GOOS)
-	log.Debug("civisibility: os architecture: %v", runtime.GOARCH)
-	log.Debug("civisibility: runtime version: %v", runtime.Version())
+	log.Debug("civisibility: os platform: %s", runtime.GOOS)
+	log.Debug("civisibility: os architecture: %s", runtime.GOARCH)
+	log.Debug("civisibility: runtime version: %s", runtime.Version())
 
 	// Get command line test command
 	var cmd string
@@ -245,7 +245,7 @@ func createCITagsMap() map[string]string {
 	cmd = regexp.MustCompile(`(?si)-test.testlogfile=(.*)\s`).ReplaceAllString(cmd, "")
 	cmd = strings.TrimSpace(cmd)
 	localTags[constants.TestCommand] = cmd
-	log.Debug("civisibility: test command: %v", cmd)
+	log.Debug("civisibility: test command: %s", cmd)
 
 	// Populate the test session name
 	if testSessionName, ok := os.LookupEnv(constants.CIVisibilityTestSessionNameEnvironmentVariable); ok {
@@ -255,7 +255,7 @@ func createCITagsMap() map[string]string {
 	} else {
 		localTags[constants.TestSessionName] = cmd
 	}
-	log.Debug("civisibility: test session name: %v", localTags[constants.TestSessionName])
+	log.Debug("civisibility: test session name: %s", localTags[constants.TestSessionName])
 
 	// Check if the user provided the test service
 	if ddService := os.Getenv("DD_SERVICE"); ddService != "" {
@@ -306,11 +306,28 @@ func createCITagsMap() map[string]string {
 		}
 	}
 
+	// If the head commit SHA is available, populate additional Git head metadata
+	if headCommitSha, ok := localTags[constants.GitHeadCommit]; ok {
+		if headCommitData, err := fetchCommitData(headCommitSha); err != nil {
+			log.Warn("civisibility: failed to fetch head commit data: %s", err.Error())
+		} else if headCommitSha == headCommitData.CommitSha {
+			localTags[constants.GitHeadAuthorDate] = headCommitData.AuthorDate.String()
+			localTags[constants.GitHeadAuthorName] = headCommitData.AuthorName
+			localTags[constants.GitHeadAuthorEmail] = headCommitData.AuthorEmail
+			localTags[constants.GitHeadCommitterDate] = headCommitData.CommitterDate.String()
+			localTags[constants.GitHeadCommitterName] = headCommitData.CommitterName
+			localTags[constants.GitHeadCommitterEmail] = headCommitData.CommitterEmail
+			localTags[constants.GitHeadMessage] = headCommitData.CommitMessage
+		} else {
+			log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha)
+		}
+	}
+
 	// Apply environmental data if is available
 	applyEnvironmentalDataIfRequired(localTags)
 
-	log.Debug("civisibility: workspace directory: %v", localTags[constants.CIWorkspacePath])
-	log.Debug("civisibility: common tags created with %v items", len(localTags))
+	log.Debug("civisibility: workspace directory: %s", localTags[constants.CIWorkspacePath])
+	log.Debug("civisibility: common tags created with %d items", len(localTags))
 	return localTags
 }
 
@@ -323,6 +340,6 @@ func createCIMetricsMap() map[string]float64 {
 	localMetrics := make(map[string]float64)
 	localMetrics[constants.LogicalCPUCores] = float64(runtime.NumCPU())
 
-	log.Debug("civisibility: common metrics created with %v items", len(localMetrics))
+	log.Debug("civisibility: common metrics created with %d items", len(localMetrics))
 	return localMetrics
 }

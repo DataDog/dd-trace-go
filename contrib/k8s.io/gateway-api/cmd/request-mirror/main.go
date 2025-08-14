@@ -47,7 +47,7 @@ func main() {
 	config := getConfig()
 
 	if err := tracer.Start(tracer.WithServiceVersion(instrumentation.Version())); err != nil {
-		logger.Error("Failed to start tracer: %v", err)
+		logger.Error("Failed to start tracer: %s", err.Error())
 		os.Exit(1)
 	}
 
@@ -61,7 +61,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", gatewayapi.HTTPRequestMirrorHandler(gatewayapi.Config{
 		ServeConfig: httptrace.ServeConfig{
-			Framework: "sigs.k8s.io/gateway-api",
+			Framework: "k8s.io/gateway-api",
 			FinishOpts: []tracer.FinishOption{
 				tracer.NoDebugStack(),
 			},

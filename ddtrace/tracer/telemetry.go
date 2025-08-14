@@ -28,15 +28,14 @@ func reportTelemetryOnAppStarted(c telemetry.Configuration) {
 // event is sent with tracer config data.
 // Note that the tracer is not considered as a standalone product by telemetry so we cannot send
 // an app-product-change event for the tracer.
-func startTelemetry(c *config) {
+func startTelemetry(c *config) telemetry.Client {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
-		return
+		return nil
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
@@ -50,7 +49,6 @@ func startTelemetry(c *config) {
 		{Name: "version", Value: c.version},
 		{Name: "trace_agent_url", Value: c.agentURL.String()},
 		{Name: "agent_hostname", Value: c.hostname},
-		{Name: "runtime_metrics_enabled", Value: c.runtimeMetrics},
 		{Name: "runtime_metrics_v2_enabled", Value: c.runtimeMetricsV2},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
 		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
@@ -117,8 +115,8 @@ func startTelemetry(c *config) {
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
 	if err != nil {
-		log.Debug("tracer: failed to create telemetry client: %v", err)
-		return
+		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
+		return nil
 	}
 
 	if c.orchestrionCfg.Enabled {
@@ -128,4 +126,5 @@ func startTelemetry(c *config) {
 	}
 
 	telemetry.StartApp(client)
+	return client
 }

@@ -126,7 +126,7 @@ func hijackConnection(w http.ResponseWriter) net.Conn {
 
 	conn, _, err := wr.Hijack()
 	if err != nil {
-		panic(fmt.Errorf("failed to hijack connection: %v", err))
+		panic(fmt.Errorf("failed to hijack connection: %s", err.Error()))
 	}
 
 	return conn
@@ -142,7 +142,7 @@ func parseBody(contentType string, reader io.Reader) (any, error) {
 
 		mimeType, _, err := mime.ParseMediaType(typ)
 		if err != nil {
-			logger.Debug("Failed to parse content type: %v", err)
+			logger.Debug("Failed to parse content type: %s", err.Error())
 			continue
 		}
 
@@ -158,7 +158,7 @@ func parseBody(contentType string, reader io.Reader) (any, error) {
 		}
 
 		if err != nil {
-			logger.Debug("Failed to decode body using content-type %q: %v", mimeType, err)
+			logger.Debug("Failed to decode body using content-type %q: %s", mimeType, err.Error())
 			continue
 		}
 
@@ -184,7 +184,7 @@ func analyzeRequestBody(r *http.Request) bool {
 	}
 
 	if err != nil {
-		logger.Debug("Failed to parse request body: %v", err)
+		logger.Debug("Failed to parse request body: %s", err.Error())
 		return false
 	}
 

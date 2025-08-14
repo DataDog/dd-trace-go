@@ -96,43 +96,50 @@ func getDDorOtelConfig(configName string) string {
 		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
 	}
 
-	// TODO: APMAPI-1358
-	// Check for stable configuration keys
+	// 1. Check managed stable config if handsOff
 	if config.handsOff {
 		if v := stableconfig.ManagedConfig.Get(config.dd); v != "" {
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: telemetry.EnvToTelemetryName(config.dd), Value: v, Origin: telemetry.OriginManagedStableConfig, ID: stableconfig.ManagedConfig.GetID()})
 			return v
 		}
 	}
 
-	// Resolve from Datadog and Opentelemetry env vars
+	// 2. Check environment variables (DD or OT)
 	val := os.Getenv(config.dd)
+	key := config.dd // Store the environment variable that will be used to set the config
 	if otVal := os.Getenv(config.ot); otVal != "" {
 		ddPrefix := "config_datadog:"
 		otelPrefix := "config_opentelemetry:"
 		if val != "" {
-			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
+			log.Warn("Both %q and %q are set, using %s=%s", config.ot, config.dd, config.dd, val)
 			telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 			telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
-				log.Warn("%v", err)
+				log.Warn("%s", err.Error())
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
 				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
+			key = config.ot
 			val = v
 		}
 	}
+	if val != "" {
+		telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(key), val, telemetry.OriginEnvVar)
+		return val
+	}
 
-	// TODO: APMAPI-1358
-	// If val was not already resolved, and it's compatible with hands-off config, check local config source
-	if val == "" && config.handsOff {
+	// 3. If handsOff, check local stable config
+	if config.handsOff {
 		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: telemetry.EnvToTelemetryName(config.dd), Value: v, Origin: telemetry.OriginLocalStableConfig, ID: stableconfig.LocalConfig.GetID()})
 			return v
 		}
 	}
 
-	return val
+	// 4. Not found, return empty string
+	return ""
 }
 
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
@@ -149,7 +156,7 @@ func mapDDTags(ot string) (string, error) {
 	})
 
 	if len(ddTags) > 10 {
-		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %v", ddTags[10:], ddTags[:10])
+		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10]) //nolint:gocritic // Slice logging for debugging
 		ddTags = ddTags[:10]
 	}
 
@@ -198,7 +205,7 @@ func otelTraceIDRatio() string {
 func mapSampleRate(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if v, ok := unsupportedSamplerMapping[ot]; ok {
-		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%v. %v will be used", ot, v)
+		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%s. %s will be used", ot, v)
 		ot = v
 	}
 
@@ -222,7 +229,7 @@ func mapPropagationStyle(ot string) (string, error) {
 		if _, ok := propagationMapping[otStyle]; ok {
 			supportedStyles = append(supportedStyles, propagationMapping[otStyle])
 		} else {
-			log.Warn("Invalid configuration: %v is not supported. This propagation style will be ignored.", otStyle)
+			log.Warn("Invalid configuration: %q is not supported. This propagation style will be ignored.", otStyle)
 		}
 	}
 	return strings.Join(supportedStyles, ","), nil

@@ -57,7 +57,7 @@ func main() {
 	if *namespace == "" {
 		cfg, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
 		if err != nil {
-			log.Fatalf("Failed to load kubeconfig: %v", err)
+			log.Fatalf("Failed to load kubeconfig: %s", err.Error())
 		}
 
 		namespace = &cfg.Contexts[cfg.CurrentContext].Namespace
@@ -65,12 +65,12 @@ func main() {
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		log.Fatalf("Failed to load kubeconfig: %v (Please set KUBECONFIG manually)", err)
+		log.Fatalf("Failed to load kubeconfig: %s (Please set KUBECONFIG manually)", err.Error())
 	}
 
 	dynClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		log.Fatalf("Failed to create dynamic client: %v", err)
+		log.Fatalf("Failed to create dynamic client: %s", err.Error())
 	}
 
 	log.Printf("Adding access to namespace %s to gateway.networking.k8s.io/v1/Gateway...\n", *namespace)
@@ -78,7 +78,7 @@ func main() {
 	// List all Gateways across all namespaces
 	gatewayList, err := dynClient.Resource(gvr).List(ctx, metav1.ListOptions{LabelSelector: *selector})
 	if err != nil {
-		log.Fatalf("Failed to list Gateways: %v", err)
+		log.Fatalf("Failed to list Gateways: %s", err.Error())
 	}
 
 	for _, gw := range gatewayList.Items {
@@ -138,7 +138,7 @@ func main() {
 			fmt.Printf("Patch Gateway %s/%s? (y/n): ", gw.GetNamespace(), gw.GetName())
 			var response string
 			if _, err := fmt.Scanln(&response); err != nil {
-				log.Fatalf("Failed to read response: %v", err)
+				log.Fatalf("Failed to read response: %s", err.Error())
 			}
 			if resp, err := strconv.ParseBool(response); err != nil || !resp {
 				fmt.Printf("Skipping Gateway %s/%s\n", gw.GetNamespace(), gw.GetName())

@@ -30,7 +30,7 @@ func startTelemetry(c *config) {
 			AgentURL:   c.agentURL,
 		})
 		if err != nil {
-			log.Debug("profiler: failed to create telemetry client: %v", err)
+			log.Debug("profiler: failed to create telemetry client: %s", err.Error())
 			return
 		}
 		telemetry.StartApp(client)
@@ -63,7 +63,6 @@ func telemetryConfiguration(c *config) []telemetry.Configuration {
 		{Name: "execution_trace_size_limit", Value: c.traceConfig.Limit},
 		{Name: "endpoint_count_enabled", Value: c.endpointCountEnabled},
 		{Name: "num_custom_profiler_label_keys", Value: len(c.customProfilerLabels)},
-		{Name: "enabled", Value: c.enabled},
 		{Name: "flush_on_exit", Value: c.flushOnExit},
 		{Name: "debug_compression_settings", Value: c.compressionConfig},
 	}

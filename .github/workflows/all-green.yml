@@ -17,10 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Ensure CI Success
-        uses: DataDog/ensure-ci-success@a874030af0d650da8864aff94b8b42f83e88a0b5
+        uses: DataDog/ensure-ci-success@4a4b720e881d965254a9de2a4f14d1ec0c3d0d7c
         with:
-          initial-delay-seconds: "1000"  # smoke tests takes approx 20 mn to finish
+          initial-delay-seconds: "600"
           max-retries: "60"
+          # polling-interval-seconds: "60" # Default
           ignored-name-patterns: |
             devflow/merge
 

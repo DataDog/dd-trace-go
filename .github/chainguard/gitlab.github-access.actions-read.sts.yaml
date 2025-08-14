@@ -1,0 +1,8 @@
+issuer: https://gitlab.ddbuild.io
+
+# https://regex101.com/r/NdI6sn/1
+subject_pattern: "project_path:DataDog/apm-reliability/dd-trace-go:ref_type:tag:ref:contrib/(envoyproxy/go-control-plane|k8s.io/gateway-api)/v[0-9]+\\.[0-9]+\\.[0-9]+(-docker\\.[0-9]+)?"
+
+permissions:
+  actions: read
+  contents: read

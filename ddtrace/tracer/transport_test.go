@@ -59,6 +59,16 @@ func getTestTrace(traceN, size int) [][]*Span {
 	return traces
 }
 
+func encode(traces [][]*Span) (*payload, error) {
+	p := newPayload()
+	for _, t := range traces {
+		if err := p.push(t); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
+}
+
 func TestTracesAgentIntegration(t *testing.T) {
 	if !integration {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
@@ -75,11 +85,12 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL, defaultHTTPClient(0))
+		transport := newHTTPTransport(defaultURL, defaultHTTPClient(0, false))
 		p, err := encode(tc.payload)
 		assert.NoError(err)
-		_, err = transport.send(p)
+		body, err := transport.send(p)
 		assert.NoError(err)
+		defer body.Close()
 	}
 }
 
@@ -143,15 +154,12 @@ func TestTransportResponse(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
-			ln, err := net.Listen("tcp4", "localhost:0")
-			assert.Nil(err)
-			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				w.Write([]byte(tt.body))
 			}))
-			defer ln.Close()
-			url := "http://" + ln.Addr().String()
-			transport := newHTTPTransport(url, defaultHTTPClient(0))
+			defer srv.Close()
+			transport := newHTTPTransport(srv.URL, defaultHTTPClient(0, false))
 			rc, err := transport.send(newPayload())
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -191,7 +199,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(srv.URL, defaultHTTPClient(0))
+		transport := newHTTPTransport(srv.URL, defaultHTTPClient(0, false))
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -394,8 +402,9 @@ func TestWithUDS(t *testing.T) {
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
-	_, err = trc.config.transport.send(p)
+	body, err := trc.config.transport.send(p)
 	assert.NoError(err)
+	defer body.Close()
 	// There are 2 requests, but one happens on tracer startup before we wrap the round tripper.
 	// This is OK for this test, since we just want to check that WithUDS allows communication
 	// between a server and client over UDS. hits tells us that there were 2 requests received.

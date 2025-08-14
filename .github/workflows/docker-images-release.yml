@@ -1,0 +1,85 @@
+name: Release Docker images
+
+on:
+  push:
+    tags:
+      - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
+      - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Docker image tag to use for the package (default to selected branch name)'
+        required: false
+      commit_sha:
+        description: 'Commit SHA to checkout (default to latest commit on selected branch)'
+        required: false
+      set_as_latest:
+        description: 'Set the tag as latest'
+        required: false
+        default: false
+        type: boolean
+      build_service_extensions:
+        description: 'Build service-extensions-callout image'
+        required: false
+        default: false
+        type: boolean
+      build_request_mirror:
+        description: 'Build request-mirror image'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prepare-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      service_extension_image_tag: ${{ steps.extract.outputs.service_extension_image_tag }}
+      request_mirroring_image_tag: ${{ steps.extract.outputs.request_mirroring_image_tag }}
+    steps:
+      - name: Extract raw/tag inputs
+        id: extract
+        env:
+          RAW_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
+          PREFIX_SERVICE_EXTENSION: contrib/envoyproxy/go-control-plane/
+          PREFIX_REQUEST_MIRRORING: contrib/k8s.io/gateway-api/
+        run: |
+          echo "service_extension_image_tag=${RAW_TAG#PREFIX_SERVICE_EXTENSION}" >> $GITHUB_OUTPUT
+          echo "request_mirroring_image_tag=${RAW_TAG#PREFIX_REQUEST_MIRRORING}" >> $GITHUB_OUTPUT
+
+  build-service-extensions-callout:
+    needs: prepare-tag
+    if: >
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/envoyproxy/go-control-plane')
+      || github.event.inputs.build_service_extensions == 'true'
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/service-extensions-callout
+      dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
+      artifact_prefix: service-extensions
+      commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
+      tags: >-
+        ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
+        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
+
+  build-request-mirror:
+    needs: prepare-tag
+    if: >
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/k8s.io/gateway-api')
+      || github.event.inputs.build_request_mirror == 'true'
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/request-mirror
+      dockerfile: ./contrib/k8s.io/gateway-api/cmd/request-mirror/Dockerfile
+      artifact_prefix: request-mirror
+      commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
+      tags: >-
+        ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
+        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
