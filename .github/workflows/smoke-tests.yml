@@ -214,7 +214,7 @@ jobs:
           - build-env: bookworm
             deployment-env: al2
           - build-env: trixie
-            deployment-env: debian12
+            deployment-env: al2
           # 3. Build with CGO enabled and deploying to a scratch/busybox docker
           #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
