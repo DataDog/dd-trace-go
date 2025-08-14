@@ -9,7 +9,7 @@ experiments:
         run: fail_on_breach
         warning_range: 10
         scenarios:
-          # Go 1.24
+          # Go oldstable
           - name: normal_operation_cgo-cpu-bound/go124-profile-trace-asm
             thresholds:
               - agg_http_req_duration_p99 < 125.0 ms
@@ -22,7 +22,7 @@ experiments:
           - name: high_load_cgo-cpu-bound/go124-only-trace
             thresholds:
               - throughput < 40 op/s
-          # Go 1.25
+          # Go stable
           - name: normal_operation_cgo-cpu-bound/go125-profile-trace-asm
             thresholds:
               - agg_http_req_duration_p99 < 125.0 ms
