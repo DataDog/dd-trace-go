@@ -166,7 +166,7 @@ jobs:
         go: [ "1.25", "1.24" ]
         build-env: [ alpine, trixie, bookworm ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratchy ]
+        deployment-env: [ alpine, debian12, debian13, al2, al2023, busybox, scratchy ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -194,10 +194,10 @@ jobs:
           #    environment: the C library isn't located at the same place.
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian11
+            deployment-env: debian12
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian12
+            deployment-env: debian13
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: al2
@@ -213,8 +213,8 @@ jobs:
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
-          - build-env: bookworm
-            deployment-env: debian11
+          - build-env: trixie
+            deployment-env: debian12
           # 3. Build with CGO enabled and deploying to a scratch/busybox docker
           #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
