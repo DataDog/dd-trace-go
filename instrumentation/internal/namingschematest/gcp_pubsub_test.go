@@ -26,7 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var testCase = harness.TestCase{
+var gcpPubsub = harness.TestCase{
 	Name: instrumentation.PackageGCPPubsub,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
 		mt := mocktracer.Start()
@@ -107,8 +107,4 @@ func newTestGCPPubsub(t *testing.T) (*pubsub.Topic, *pubsub.Subscription, *pstes
 		assert.NoError(t, conn.Close())
 		assert.NoError(t, srv.Close())
 	}
-}
-
-func TestNamingSchema(t *testing.T) {
-	harness.RunTest(t, testCase)
 }
