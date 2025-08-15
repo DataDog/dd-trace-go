@@ -10,6 +10,7 @@ use (
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
+	./contrib/cloud.google.com/go/pubsub.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
