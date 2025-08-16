@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
-	github.com/go-pg/pg/v10 v10.14.0
+	github.com/go-pg/pg/v10 v10.15.0
 	github.com/stretchr/testify v1.10.0
 )
 
