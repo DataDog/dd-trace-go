@@ -72,4 +72,5 @@ use (
 	./orchestrion/all
 	./tools/v2fix
 	./tools/v2fix/_stage
+	contrib/aws/aws-lambda-go
 )

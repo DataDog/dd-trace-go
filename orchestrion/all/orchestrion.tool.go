@@ -25,6 +25,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2"                         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2"                               // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2"                           // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-lambda-go/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws"                    // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"                       // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"            // integration
