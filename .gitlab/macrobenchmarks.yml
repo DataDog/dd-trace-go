@@ -56,21 +56,21 @@ variables:
 # 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
 #
 
-.go124-benchmarks:
+.go-stable-benchmarks:
   extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.24.0"
+    GO_VERSION: "1.25.0"
 
-.go123-benchmarks:
+.go-oldstable-benchmarks:
   extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.23.6"
+    GO_VERSION: "1.24.6"
 
 #
 # Specific macrobenchmark configurations are below
 
-go123-baseline:
-  extends: .go123-benchmarks
+go-oldstable-baseline:
+  extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -78,8 +78,8 @@ go123-baseline:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go123-only-trace:
-  extends: .go123-benchmarks
+go-oldstable-only-trace:
+  extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -87,8 +87,8 @@ go123-only-trace:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go123-only-trace-with-runtime-metrics:
-  extends: .go123-benchmarks
+go-oldstable-only-trace-with-runtime-metrics:
+  extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -97,8 +97,8 @@ go123-only-trace-with-runtime-metrics:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     DD_RUNTIME_METRICS_ENABLED: "true"
 
-go123-only-profile:
-  extends: .go123-benchmarks
+go-oldstable-only-profile:
+  extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -106,8 +106,8 @@ go123-only-profile:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go123-profile-trace:
-  extends: .go123-benchmarks
+go-oldstable-profile-trace:
+  extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -115,8 +115,8 @@ go123-profile-trace:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go123-trace-asm:
-  extends: .go123-benchmarks
+go-oldstable-trace-asm:
+  extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -124,8 +124,8 @@ go123-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go123-profile-trace-asm:
-  extends: .go123-benchmarks
+go-oldstable-profile-trace-asm:
+  extends: .go-oldstable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -133,8 +133,8 @@ go123-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go124-baseline:
-  extends: .go124-benchmarks
+go-stable-baseline:
+  extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -142,8 +142,8 @@ go124-baseline:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go124-only-trace:
-  extends: .go124-benchmarks
+go-stable-only-trace:
+  extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -151,8 +151,8 @@ go124-only-trace:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go124-only-trace-with-runtime-metrics:
-  extends: .go124-benchmarks
+go-stable-only-trace-with-runtime-metrics:
+  extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -161,8 +161,8 @@ go124-only-trace-with-runtime-metrics:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
     DD_RUNTIME_METRICS_ENABLED: "true"
 
-go124-only-profile:
-  extends: .go124-benchmarks
+go-stable-only-profile:
+  extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "false"
@@ -170,8 +170,8 @@ go124-only-profile:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go124-profile-trace:
-  extends: .go124-benchmarks
+go-stable-profile-trace:
+  extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -179,8 +179,8 @@ go124-profile-trace:
     ENABLE_APPSEC: "false"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go124-trace-asm:
-  extends: .go124-benchmarks
+go-stable-trace-asm:
+  extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -188,8 +188,8 @@ go124-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-go124-profile-trace-asm:
-  extends: .go124-benchmarks
+go-stable-profile-trace-asm:
+  extends: .go-stable-benchmarks
   variables:
     ENABLE_DDPROF: "false"
     ENABLE_TRACING: "true"
@@ -200,20 +200,20 @@ go124-profile-trace-asm:
 check-slo-breaches:
   stage: gates
   needs: [
-    "go123-baseline",
-    "go123-only-trace",
-    "go123-only-trace-with-runtime-metrics",
-    "go123-only-profile",
-    "go123-profile-trace",
-    "go123-trace-asm",
-    "go123-profile-trace-asm",
-    "go124-baseline",
-    "go124-only-trace",
-    "go124-only-trace-with-runtime-metrics",
-    "go124-only-profile",
-    "go124-profile-trace",
-    "go124-trace-asm",
-    "go124-profile-trace-asm",
+    "go-oldstable-baseline",
+    "go-oldstable-only-trace",
+    "go-oldstable-only-trace-with-runtime-metrics",
+    "go-oldstable-only-profile",
+    "go-oldstable-profile-trace",
+    "go-oldstable-trace-asm",
+    "go-oldstable-profile-trace-asm",
+    "go-stable-baseline",
+    "go-stable-only-trace",
+    "go-stable-only-trace-with-runtime-metrics",
+    "go-stable-only-profile",
+    "go-stable-profile-trace",
+    "go-stable-trace-asm",
+    "go-stable-profile-trace-asm",
   ]
   when: on_success
   tags: ["arch:amd64"]
@@ -266,7 +266,7 @@ notify-slo-breaches:
       - platform/artifacts-se/
     expire_in: 3 months
   variables:
-    GO_VERSION: "1.23.0"
+    GO_VERSION: "1.25.0" # It needs to be at the latest stable release
     ARTIFACTS_DIR: "./artifacts-se"
     SERVICE_EXTENSION: "true"
 

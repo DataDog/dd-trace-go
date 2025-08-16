@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/internal/exectracetest/v2
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.3.0-dev.1
