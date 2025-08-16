@@ -9,3 +9,6 @@ type contextKey struct{}
 
 // ActiveSpanKey is used to set tracer context on a context.Context objects with a unique key
 var ActiveSpanKey = contextKey{}
+
+// ActiveSpanContextKey is used to set span context on a context.Context objects with a unique key
+var ActiveSpanContextKey = contextKey{}

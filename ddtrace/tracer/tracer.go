@@ -312,6 +312,19 @@ func Extract(carrier interface{}) (*SpanContext, error) {
 	return getGlobalTracer().Extract(carrier)
 }
 
+// ExtractCtx extracts a span context from the carrier and returns a copy of
+// the given context which includes the span context.
+func ExtractCtx(ctx gocontext.Context, carrier interface{}) (gocontext.Context, error) {
+	sctx, err := Extract(carrier)
+	if err != nil {
+		return nil, err
+	}
+	if sctx == nil {
+		return ctx, nil
+	}
+	return contextWithSpanContext(ctx, sctx), nil
+}
+
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
