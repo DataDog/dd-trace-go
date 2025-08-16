@@ -297,6 +297,46 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
+### Working with environment variables
+
+When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Getenv` and `env.LookupEnv` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
+
+Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal [configuration registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) for tracking and documentation purposes.
+
+Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-inversion.yml) to track when they were introduced.
+
+#### Adding new environment variables using configinverter
+
+The `configinverter` tool provides a command to add new environment variable keys to the `supported_configurations.json` file and regenerate the corresponding Go code.
+
+```sh
+go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
+```
+
+#### Auto-detection via tests
+
+All environment variables should be read at least once by a test. When this happens, a helper automatically detects the usage and adds the variable to the [JSON configuration file](./internal/env/supported_configurations.json). Since the variable isn't yet present in the generated code, it won't read any actual environment values initially, but it will be recorded for code generation.
+
+Note that CI jobs will fail if new keys are detected but not properly generated into the code.
+
+You can check for keys that have been added to the JSON file but not yet generated into code:
+
+```sh
+go run ./scripts/configinverter/main.go check
+```
+
+After the first test run that detects your new environment variable, regenerate the code:
+
+```sh
+go run ./scripts/configinverter/main.go generate
+```
+
+#### Handling related CI failures
+
+The GitLab `check_config_inversion_local_file` job validates the JSON file content against Datadog's internal configuration registry to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass.
+
+Additionally, multiple CI jobs include a [step](./.github/actions/config-inversion-check/action.yml) that checks for newly discovered environment variables during test execution and will fail if keys are missing from the generated list. To resolve this failure, use one of the two methods described above to add the key to the generated list.
+
 ### Adding Go Modules
 
 When adding a new dependency, especially for `contrib/` packages, prefer the minimum secure versions of any modules rather than the latest versions. This is to avoid forcing upgrades on downstream users for modules such as `google.golang.org/grpc` which often introduce breaking changes within minor versions.
