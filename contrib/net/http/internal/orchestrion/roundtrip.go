@@ -18,32 +18,44 @@ import (
 )
 
 func ObserveRoundTrip(req *http.Request) (*http.Request, wrap.AfterRoundTrip, error) {
-	return wrap.ObserveRoundTrip(&roundTripperConfig, req)
+	return wrap.ObserveRoundTrip(defaultRoundTripperConfig(), req)
 }
 
-var roundTripperConfig = config.RoundTripperConfig{
-	CommonConfig: config.CommonConfig{
-		AnalyticsRate: func() float64 {
-			if options.GetBoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
-				return 1.0
-			} else {
-				return config.Instrumentation.AnalyticsRate(true)
+func defaultRoundTripperConfig() *config.RoundTripperConfig {
+	return &config.RoundTripperConfig{
+		CommonConfig: config.CommonConfig{
+			AnalyticsRate: func() float64 {
+				if options.GetBoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
+					return 1.0
+				} else {
+					return config.Instrumentation.AnalyticsRate(true)
+				}
+			}(),
+			IgnoreRequest: func(*http.Request) bool { return false },
+			ResourceNamer: func() func(req *http.Request) string {
+				fmt.Println("AWDAWDAWDAWD")
+				fmt.Println(options.GetBoolEnv("DD_TRACE_HTTP_CLIENT_RESOURCE_QUANTIZE", false))
+				if options.GetBoolEnv("DD_TRACE_HTTP_CLIENT_RESOURCE_QUANTIZE", false) {
+					return func(req *http.Request) string {
+						return fmt.Sprintf("%s %s", req.Method, httptrace.QuantizeURL(req.URL.Path))
+					}
+				}
+
+				return func(req *http.Request) string { return fmt.Sprintf("%s %s", req.Method, req.URL.Path) }
+			}(),
+			ServiceName: config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
+		},
+		IsStatusError: func() func(int) bool {
+			envVal := os.Getenv(config.EnvClientErrorStatuses)
+			if fn := httptrace.GetErrorCodesFromInput(envVal); fn != nil {
+				return fn
 			}
+			return func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 }
 		}(),
-		IgnoreRequest: func(*http.Request) bool { return false },
-		ResourceNamer: func(req *http.Request) string { return fmt.Sprintf("%s %s", req.Method, req.URL.Path) },
-		ServiceName:   config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
-	},
-	IsStatusError: func() func(int) bool {
-		envVal := os.Getenv(config.EnvClientErrorStatuses)
-		if fn := httptrace.GetErrorCodesFromInput(envVal); fn != nil {
-			return fn
-		}
-		return func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 }
-	}(),
-	Propagation: true,
-	QueryString: options.GetBoolEnv(config.EnvClientQueryStringEnabled, true),
-	SpanNamer: func(*http.Request) string {
-		return config.Instrumentation.OperationName(instrumentation.ComponentClient, nil)
-	},
+		Propagation: true,
+		QueryString: options.GetBoolEnv(config.EnvClientQueryStringEnabled, true),
+		SpanNamer: func(*http.Request) string {
+			return config.Instrumentation.OperationName(instrumentation.ComponentClient, nil)
+		},
+	}
 }

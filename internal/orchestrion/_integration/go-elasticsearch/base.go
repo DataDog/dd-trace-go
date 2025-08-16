@@ -107,7 +107,7 @@ func (*base) ExpectedTraces() trace.Traces {
 							Tags: map[string]any{
 								"name":     "http.request",
 								"service":  "elastic.client",
-								"resource": "PUT /test/_doc/1",
+								"resource": "PUT /test/_doc/*",
 								"type":     "http",
 							},
 							Meta: map[string]string{
