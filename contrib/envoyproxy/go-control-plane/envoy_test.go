@@ -738,7 +738,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 		_, _ = stream.Recv()
 
 		// No span created, the request is invalid.
-		// Span couldn't be created without request data
+		// span couldn't be created without request data
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 0)
 	})
