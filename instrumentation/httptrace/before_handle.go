@@ -62,6 +62,9 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
 	}
 	span, ctx, finishSpans := StartRequestSpan(r, opts...)
+
+	span.SetTag(ext.HTTPURL, URLFromRequest(r, cfg.QueryParams))
+
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
