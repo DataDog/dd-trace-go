@@ -129,6 +129,8 @@ func TestDomain(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
 	assert.Equal("localhost", spans[0].Tag("mux.host"))
+
+	assert.Fail("TESTING PURPOSES")
 }
 
 func TestWithHeaderTags(t *testing.T) {
