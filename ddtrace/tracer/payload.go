@@ -14,11 +14,11 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-var _ io.Reader = (*payload_V04)(nil)
+var _ io.Reader = (*payloadV04)(nil)
 
 // newPayload returns a ready to use payload.
-func newPayload() *payload_V04 {
-	p := &payload_V04{
+func newPayload() *payloadV04 {
+	p := &payloadV04{
 		header: make([]byte, 8),
 		off:    8,
 	}
@@ -26,7 +26,7 @@ func newPayload() *payload_V04 {
 }
 
 // push pushes a new item into the stream.
-func (p *payload_V04) push(t []*Span) error {
+func (p *payloadV04) push(t []*Span) error {
 	sl := spanList(t)
 	p.buf.Grow(sl.Msgsize())
 	if err := msgp.Encode(&p.buf, sl); err != nil {
@@ -38,20 +38,20 @@ func (p *payload_V04) push(t []*Span) error {
 }
 
 // itemCount returns the number of items available in the stream.
-func (p *payload_V04) itemCount() int {
+func (p *payloadV04) itemCount() int {
 	return int(atomic.LoadUint32(&p.count))
 }
 
 // size returns the payload size in bytes. After the first read the value becomes
 // inaccurate by up to 8 bytes.
-func (p *payload_V04) size() int {
+func (p *payloadV04) size() int {
 	return p.buf.Len() + len(p.header) - p.off
 }
 
 // reset sets up the payload to be read a second time. It maintains the
 // underlying byte contents of the buffer. reset should not be used in order to
 // reuse the payload for another set of traces.
-func (p *payload_V04) reset() {
+func (p *payloadV04) reset() {
 	p.updateHeader()
 	if p.reader != nil {
 		p.reader.Seek(0, 0)
@@ -59,7 +59,7 @@ func (p *payload_V04) reset() {
 }
 
 // clear empties the payload buffers.
-func (p *payload_V04) clear() {
+func (p *payloadV04) clear() {
 	p.buf = bytes.Buffer{}
 	p.reader = nil
 }
@@ -73,7 +73,7 @@ const (
 
 // updateHeader updates the payload header based on the number of items currently
 // present in the stream.
-func (p *payload_V04) updateHeader() {
+func (p *payloadV04) updateHeader() {
 	n := uint64(atomic.LoadUint32(&p.count))
 	switch {
 	case n <= 15:
@@ -91,12 +91,12 @@ func (p *payload_V04) updateHeader() {
 }
 
 // Close implements io.Closer
-func (p *payload_V04) Close() error {
+func (p *payloadV04) Close() error {
 	return nil
 }
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
-func (p *payload_V04) Read(b []byte) (n int, err error) {
+func (p *payloadV04) Read(b []byte) (n int, err error) {
 	if p.off < len(p.header) {
 		// reading header
 		n = copy(b, p.header[p.off:])

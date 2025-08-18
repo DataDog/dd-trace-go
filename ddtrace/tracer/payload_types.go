@@ -9,25 +9,25 @@ import (
 	"bytes"
 )
 
-// payload_V04 is a wrapper on top of the msgpack encoder which allows constructing an
+// payloadV04 is a wrapper on top of the msgpack encoder which allows constructing an
 // encoded array by pushing its entries sequentially, one at a time. It basically
 // allows us to encode as we would with a stream, except that the contents of the stream
 // can be read as a slice by the msgpack decoder at any time. It follows the guidelines
 // from the msgpack array spec:
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
 //
-// payload_V04 implements io.Reader and can be used with the decoder directly. To create
+// payloadV04 implements io.Reader and can be used with the decoder directly. To create
 // a new payload use the newPayload method.
 //
-// payload_V04 is not safe for concurrent use.
+// payloadV04 is not safe for concurrent use.
 //
-// payload_V04 is meant to be used only once and eventually dismissed with the
+// payloadV04 is meant to be used only once and eventually dismissed with the
 // single exception of retrying failed flush attempts.
 //
 // ⚠️  Warning!
 //
-// The payload_V04 should not be reused for multiple sets of traces.  Resetting the
-// payload_V04 for re-use requires the transport to wait for the HTTP package to
+// The payloadV04 should not be reused for multiple sets of traces.  Resetting the
+// payloadV04 for re-use requires the transport to wait for the HTTP package to
 // Close the request body before attempting to re-use it again! This requires
 // additional logic to be in place. See:
 //
@@ -35,7 +35,7 @@ import (
 // • https://github.com/DataDog/dd-trace-go/pull/475
 // • https://github.com/DataDog/dd-trace-go/pull/549
 // • https://github.com/DataDog/dd-trace-go/pull/976
-type payload_V04 struct {
+type payloadV04 struct {
 	// header specifies the first few bytes in the msgpack stream
 	// indicating the type of array (fixarray, array16 or array32)
 	// and the number of items contained in the stream.
@@ -54,20 +54,20 @@ type payload_V04 struct {
 	reader *bytes.Reader
 }
 
-// payload_V1 is a new version of a msgp payload that can be sent to the agent.
-// Be aware that payload_V1 follows the same rules and constraints as payload_V04. That is:
+// payloadV1 is a new version of a msgp payload that can be sent to the agent.
+// Be aware that payloadV1 follows the same rules and constraints as payloadV04. That is:
 //
-// payload_V1 is not safe for concurrent use
+// payloadV1 is not safe for concurrent use
 //
-// payload_V1 is meant to be used only once and eventually dismissed with the
+// payloadV1 is meant to be used only once and eventually dismissed with the
 // single exception of retrying failed flush attempts.
 //
 // ⚠️  Warning!
 //
-// The payload_V1 should not be reused for multiple sets of traces.  Resetting the
-// payload_V1 for re-use requires the transport to wait for the HTTP package
+// The payloadV1 should not be reused for multiple sets of traces.  Resetting the
+// payloadV1 for re-use requires the transport to wait for the HTTP package
 // Close the request body before attempting to re-use it again!
-type payload_V1 struct {
+type payloadV1 struct {
 	// array of strings referenced in this tracer payload, its chunks and spans
 	strings []string
 
