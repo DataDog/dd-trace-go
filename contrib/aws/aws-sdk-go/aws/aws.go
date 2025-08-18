@@ -221,6 +221,7 @@ func sqsTags(params interface{}) (map[string]interface{}, error) {
 
 	return map[string]interface{}{
 		ext.SQSQueueName: queueName,
+		ext.SQSQueueURL:  queueURL,
 	}, nil
 }
 

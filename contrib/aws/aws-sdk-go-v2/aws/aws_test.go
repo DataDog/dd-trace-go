@@ -91,6 +91,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName", s.Tag("queue_url"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -167,6 +168,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName", s.Tag("queue_url"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -242,6 +244,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName", s.Tag("queue_url"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))

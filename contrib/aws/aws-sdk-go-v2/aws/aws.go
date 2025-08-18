@@ -93,10 +93,8 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
-		k, v, ok := resourceNameFromParams(in, serviceID)
-		if !ok {
-			instr.Logger().Debug("attemped to extract resourceNameFromParams of an unsupported AWS service: %s", serviceID)
-		} else {
+		resourceTags := resourceTagsFromParams(in, serviceID)
+		for k, v := range resourceTags {
 			if v != "" {
 				opts = append(opts, tracer.Tag(k, v))
 			}
@@ -131,47 +129,48 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	}), middleware.After)
 }
 
-func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, bool) {
-	var k, v string
+func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService string) map[string]string {
+	tags := make(map[string]string)
 
 	switch awsService {
 	case "SQS":
-		k, v = ext.SQSQueueName, queueName(requestInput)
+		if url := queueURL(requestInput); url != "" {
+			tags[ext.SQSQueueURL] = url
+			parts := strings.Split(url, "/")
+			tags[ext.SQSQueueName] = parts[len(parts)-1]
+		}
 	case "S3":
-		k, v = ext.S3BucketName, bucketName(requestInput)
+		tags[ext.S3BucketName] = bucketName(requestInput)
 	case "SNS":
-		k, v = destinationTagValue(requestInput)
+		k, v := destinationTagValue(requestInput)
+		tags[k] = v
 	case "DynamoDB":
-		k, v = ext.DynamoDBTableName, tableName(requestInput)
+		tags[ext.DynamoDBTableName] = tableName(requestInput)
 	case "Kinesis":
-		k, v = ext.KinesisStreamName, streamName(requestInput)
+		tags[ext.KinesisStreamName] = streamName(requestInput)
 	case "EventBridge":
-		k, v = ext.EventBridgeRuleName, ruleName(requestInput)
+		tags[ext.EventBridgeRuleName] = ruleName(requestInput)
 	case "SFN":
-		k, v = ext.SFNStateMachineName, stateMachineName(requestInput)
-	default:
-		return "", "", false
+		tags[ext.SFNStateMachineName] = stateMachineName(requestInput)
 	}
 
-	return k, v, true
+	return tags
 }
 
-func queueName(requestInput middleware.InitializeInput) string {
-	var queueURL string
+func queueURL(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.DeleteMessageInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.DeleteMessageBatchInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.ReceiveMessageInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.SendMessageBatchInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	}
-	parts := strings.Split(queueURL, "/")
-	return parts[len(parts)-1]
+	return ""
 }
 
 func bucketName(requestInput middleware.InitializeInput) string {

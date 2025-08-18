@@ -18,6 +18,7 @@ const (
 	AWSRetryCount = "aws.retry_count"
 
 	SQSQueueName = "queuename"
+	SQSQueueURL  = "queue_url"
 
 	SNSTargetName = "targetname"
 	SNSTopicName  = "topicname"
