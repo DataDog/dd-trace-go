@@ -1492,7 +1492,7 @@ func (t *dummyTransport) ObfuscationVersion() int {
 	return t.obfVersion
 }
 
-func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
+func (t *dummyTransport) send(p *payloadV04) (io.ReadCloser, error) {
 	traces, err := decode(p)
 	if err != nil {
 		return nil, err
@@ -1508,13 +1508,13 @@ func (t *dummyTransport) endpoint() string {
 	return "http://localhost:9/v0.4/traces"
 }
 
-func decode(p *payload) (spanLists, error) {
+func decode(p *payloadV04) (spanLists, error) {
 	var traces spanLists
 	err := msgp.Decode(p, &traces)
 	return traces, err
 }
 
-func encode(traces [][]*Span) (*payload, error) {
+func encode(traces [][]*Span) (*payloadV04, error) {
 	p := newPayload()
 	for _, t := range traces {
 		if err := p.push(t); err != nil {

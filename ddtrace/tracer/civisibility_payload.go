@@ -22,7 +22,7 @@ import (
 // ciVisibilityPayload represents a payload specifically designed for CI Visibility events.
 // It embeds the generic payload structure and adds methods to handle CI Visibility specific data.
 type ciVisibilityPayload struct {
-	*payload
+	*payloadV04
 	serializationTime time.Duration
 }
 
@@ -77,7 +77,7 @@ func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 
 	// Create a buffer to read the current payload
 	payloadBuf := new(bytes.Buffer)
-	if _, err := payloadBuf.ReadFrom(p.payload); err != nil {
+	if _, err := payloadBuf.ReadFrom(p.payloadV04); err != nil {
 		return nil, err
 	}
 

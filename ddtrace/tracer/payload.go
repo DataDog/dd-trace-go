@@ -5,65 +5,6 @@
 
 package tracer
 
-import (
-	"bytes"
-	"encoding/binary"
-	"io"
-	"sync/atomic"
-
-	"github.com/tinylib/msgp/msgp"
-)
-
-var _ io.Reader = (*payloadV04)(nil)
-
-// newPayload returns a ready to use payload.
-func newPayload() *payloadV04 {
-	p := &payloadV04{
-		header: make([]byte, 8),
-		off:    8,
-	}
-	return p
-}
-
-// push pushes a new item into the stream.
-func (p *payloadV04) push(t []*Span) error {
-	sl := spanList(t)
-	p.buf.Grow(sl.Msgsize())
-	if err := msgp.Encode(&p.buf, sl); err != nil {
-		return err
-	}
-	atomic.AddUint32(&p.count, 1)
-	p.updateHeader()
-	return nil
-}
-
-// itemCount returns the number of items available in the stream.
-func (p *payloadV04) itemCount() int {
-	return int(atomic.LoadUint32(&p.count))
-}
-
-// size returns the payload size in bytes. After the first read the value becomes
-// inaccurate by up to 8 bytes.
-func (p *payloadV04) size() int {
-	return p.buf.Len() + len(p.header) - p.off
-}
-
-// reset sets up the payload to be read a second time. It maintains the
-// underlying byte contents of the buffer. reset should not be used in order to
-// reuse the payload for another set of traces.
-func (p *payloadV04) reset() {
-	p.updateHeader()
-	if p.reader != nil {
-		p.reader.Seek(0, 0)
-	}
-}
-
-// clear empties the payload buffers.
-func (p *payloadV04) clear() {
-	p.buf = bytes.Buffer{}
-	p.reader = nil
-}
-
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
 const (
 	msgpackArrayFix byte = 144  // up to 15 items
@@ -71,40 +12,28 @@ const (
 	msgpackArray32  byte = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
 )
 
-// updateHeader updates the payload header based on the number of items currently
-// present in the stream.
-func (p *payloadV04) updateHeader() {
-	n := uint64(atomic.LoadUint32(&p.count))
-	switch {
-	case n <= 15:
-		p.header[7] = msgpackArrayFix + byte(n)
-		p.off = 7
-	case n <= 1<<16-1:
-		binary.BigEndian.PutUint64(p.header, n) // writes 2 bytes
-		p.header[5] = msgpackArray16
-		p.off = 5
-	default: // n <= 1<<32-1
-		binary.BigEndian.PutUint64(p.header, n) // writes 4 bytes
-		p.header[3] = msgpackArray32
-		p.off = 3
-	}
-}
+// traceChunk represents a list of spans with the same trace ID,
+// i.e. a chunk of a trace
+type traceChunk struct {
+	// the sampling priority of the trace
+	priority int32
 
-// Close implements io.Closer
-func (p *payloadV04) Close() error {
-	return nil
-}
+	// the optional string origin ("lambda", "rum", etc.) of the trace chunk
+	origin uint32
 
-// Read implements io.Reader. It reads from the msgpack-encoded stream.
-func (p *payloadV04) Read(b []byte) (n int, err error) {
-	if p.off < len(p.header) {
-		// reading header
-		n = copy(b, p.header[p.off:])
-		p.off += n
-		return n, nil
-	}
-	if p.reader == nil {
-		p.reader = bytes.NewReader(p.buf.Bytes())
-	}
-	return p.reader.Read(b)
+	// a collection of key to value pairs common in all `spans`
+	attributes map[uint32]any // TODO: this should be compatible with AnyValue
+
+	// a list of spans in this chunk
+	spans []Span
+
+	// whether the trace only contains analyzed spans
+	// (not required by tracers and set by the agent)
+	droppedTrace bool
+
+	// the ID of the trace to which all spans in this chunk belong
+	traceID uint8
+
+	// the optional string decision maker (previously span tag _dd.p.dm)
+	decisionMaker uint32
 }

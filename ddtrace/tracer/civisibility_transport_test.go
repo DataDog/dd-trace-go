@@ -107,7 +107,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 			}
 		}
 
-		_, err := transport.send(p.payload)
+		_, err := transport.send(p.payloadV04)
 		assert.NoError(err)
 	}
 	assert.Equal(hits, len(testCases))
