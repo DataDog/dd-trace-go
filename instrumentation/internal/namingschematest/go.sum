@@ -349,8 +349,8 @@ github.com/go-openapi/jsonreference v0.20.0 h1:MYlu0sBgChmCfJxxUKZ8g1cPWFOB37YSZ
 github.com/go-openapi/jsonreference v0.20.0/go.mod h1:Ag74Ico3lPc+zR+qjn4XBUmXymS4zJbYVCZmcgkasdo=
 github.com/go-openapi/swag v0.19.14 h1:gm3vOOXfiuw5i9p5N9xJvfjvuofpyvLA9Wr6QfK5Fng=
 github.com/go-openapi/swag v0.19.14/go.mod h1:QYRuS/SOXUCsnplDa677K7+DxSOj6IPNl/eQntq43wQ=
-github.com/go-pg/pg/v10 v10.14.0 h1:giXuPsJaWjzwzFJTxy39eBgGE44jpqH1jwv0uI3kBUU=
-github.com/go-pg/pg/v10 v10.14.0/go.mod h1:6kizZh54FveJxw9XZdNg07x7DDBWNsQrSiJS04MLwO8=
+github.com/go-pg/pg/v10 v10.15.0 h1:6DQwbaxJz/e4wvgzbxBkBLiL/Uuk87MGgHhkURtzx24=
+github.com/go-pg/pg/v10 v10.15.0/go.mod h1:FIn/x04hahOf9ywQ1p68rXqaDVbTRLYlu4MQR0lhoB8=
 github.com/go-pg/zerochecker v0.2.0 h1:pp7f72c3DobMWOb2ErtZsnrPaSvHd2W4o9//8HtF4mU=
 github.com/go-pg/zerochecker v0.2.0/go.mod h1:NJZ4wKL0NmTtz0GKCoJ8kym6Xn/EQzXRl2OnAe7MmDo=
 github.com/go-playground/assert/v2 v2.2.0 h1:JvknZsQTYeFEAhQwI4qEt9cyV5ONwRHC+lYKSsYSR8s=
