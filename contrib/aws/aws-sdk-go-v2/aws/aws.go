@@ -94,11 +94,16 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
 		resourceTags := resourceTagsFromParams(in, serviceID)
-		for k, v := range resourceTags {
-			if v != "" {
-				opts = append(opts, tracer.Tag(k, v))
+		if len(resourceTags) == 0 {
+			instr.Logger().Debug("attempted to extract resourceTagsFromParams of an unsupported AWS service: %s", serviceID)
+		} else {
+			for k, v := range resourceTags {
+				if v != "" {
+					opts = append(opts, tracer.Tag(k, v))
+				}
 			}
 		}
+
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
