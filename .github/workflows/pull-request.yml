@@ -2,15 +2,10 @@ name: Pull Request Tests
 
 on:
   pull_request:
-    branches:
-      - "**"
-  merge_group:
-  push:
-    branches:
-      - 'mq-working-branch-**'
-    tags-ignore:
-      - 'contrib/**'
-      - 'instrumentation/**'
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 concurrency:
   group: ${{ github.ref }}
@@ -25,6 +20,6 @@ jobs:
       id-token: write
       pull-requests: write
     with:
-      go-version: "1.23"
+      go-version: "1.24" # Should be the highest supported version of Go
       ref: ${{ github.ref }}
     secrets: inherit

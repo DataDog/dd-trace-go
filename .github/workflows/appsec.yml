@@ -10,19 +10,25 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
   pull_request: # on pull requests touching appsec files
+    types:
+      - opened
+      - synchronize
+      - reopened
     paths:
       - '.github/workflows/appsec.yml'
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
       - '**/go.mod'
-  merge_group:
   push:
-    branches: release-v*
+    branches:
+      - release-v*
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
-
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
   PACKAGES: >-
