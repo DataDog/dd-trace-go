@@ -2,6 +2,10 @@ name: API Stability Check
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
     paths:
       - 'ddtrace/tracer/**'
       - 'scripts/apiextractor/**'

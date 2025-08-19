@@ -13,17 +13,22 @@ on:
         type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   schedule: # nightly
     - cron: "0 0 * * *"
   workflow_dispatch: { } # manually
   pull_request:
-    branches:
-      - '**'
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
