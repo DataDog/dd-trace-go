@@ -1,0 +1,30 @@
+name: Validate PR Title
+
+on:
+  pull_request:
+    types: [opened, edited,reopened,synchronize]
+
+jobs:
+  check-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if PR title is not a Conventional Commit
+        if: github.event.pull_request.base.ref == 'main'
+        run: |
+          echo "PR Title: ${TITLE}"
+
+          # Regex: type(scope?): subject
+          # Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+          REGEX="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9/\-\.]+\))?: .+"
+
+          if [[ ! "$TITLE" =~ $REGEX ]]; then
+            echo "::error ::❌ Pull request title does not follow Conventional Commits format."
+            echo "Expected format: <type>(<optional scope>): <subject>"
+            echo "Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+            echo "See https://github.com/DataDog/dd-trace-go/blob/main/CONTRIBUTING.md#pull-request-naming for more details."
+            exit 1
+          else
+            echo "✅ PR title is valid."
+          fi
+        env:
+          TITLE: ${{ github.event.pull_request.title }}

@@ -338,6 +338,26 @@ func (t ProfileType) Tag() string {
 	return fmt.Sprintf("profile_type:%s", t)
 }
 
+// UnmarshalText parses a profile type from text.
+func (t *ProfileType) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "cpu":
+		*t = CPUProfile
+	case "heap":
+		*t = HeapProfile
+	case "block":
+		*t = BlockProfile
+	case "mutex":
+		*t = MutexProfile
+	case "goroutine":
+		*t = GoroutineProfile
+	default:
+		return fmt.Errorf("unknown profile type: %s", text)
+	}
+
+	return nil
+}
+
 // profile specifies a profiles data (gzipped protobuf, json), and the types contained within it.
 type profile struct {
 	// name indicates profile type and format (e.g. cpu.pprof, metrics.json)
