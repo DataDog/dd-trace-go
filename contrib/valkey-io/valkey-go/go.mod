@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2
 go 1.23.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.2.2
+	github.com/DataDog/dd-trace-go/v2 v2.2.3-rc.1
 	github.com/stretchr/testify v1.10.0
 	github.com/valkey-io/valkey-go v1.0.55
 )
