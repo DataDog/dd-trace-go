@@ -81,6 +81,7 @@ jobs:
     name: 'go get -u smoke test'
     needs: setup-env
     strategy:
+      fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
