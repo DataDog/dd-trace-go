@@ -9,22 +9,26 @@ on:
         type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   pull_request:
-    branches:
-      - "**"
-  merge_group:
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
-      inputs:
-          ref:
-              description: 'System Tests ref/tag/branch'
-              required: true
-              default: main
-              type: string
+    inputs:
+        ref:
+            description: 'System Tests ref/tag/branch'
+            required: true
+            default: main
+            type: string
   schedule:
     - cron:  '00 04 * * 2-6'
 
