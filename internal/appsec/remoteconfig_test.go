@@ -9,11 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -219,7 +220,7 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 		},
 		{
 			name:      "appsec-enabled/RulesManager-from-env",
-			env:       map[string]string{config.EnvEnabled: "1", internal.EnvRules: "testdata/blocking.json"},
+			env:       map[string]string{config.EnvEnabled: "1", config.EnvRules: "testdata/blocking.json"},
 			expectedC: []remoteconfig.Capability{},
 			expectedP: []string{},
 		},
@@ -343,8 +344,12 @@ type testRulesOverrideEntry struct {
 }
 
 func TestOnRCUpdate(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	bytes, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "testdata", "custom_rules.json"))
+	require.NoError(t, err)
+
 	var defaultRules RulesFragment
-	require.NoError(t, json.Unmarshal([]byte(internal.StaticRecommendedRules), &defaultRules))
+	require.NoError(t, json.Unmarshal(bytes, &defaultRules))
 
 	rules := RulesFragment{
 		Version:  defaultRules.Version,
@@ -424,7 +429,7 @@ func TestOnRCUpdate(t *testing.T) {
 				require.Equal(t, tc.statuses, statuses)
 
 				// Make sure edits are added to the active ruleset
-				expected := []string{"ASM_DD/default"}
+				expected := []string{"::/go-libddwaf/default/recommended.json"}
 				for path := range tc.statuses {
 					expected = append(expected, path)
 				}
@@ -468,7 +473,7 @@ func TestOnRCUpdate(t *testing.T) {
 			},
 			statuses: map[string]state.ApplyStatus{
 				"datadog/2/ASM_DD/rules-1/config": {State: state.ApplyStateAcknowledged},
-				"datadog/2/ASM_DD/rules-2/config": {State: state.ApplyStateError, Error: `{"rules":{"errors":{"duplicate rule":["blk-001-001"]}}}`},
+				"datadog/2/ASM_DD/rules-2/config": {State: state.ApplyStateError, Error: `{"rules":{"errors":{"duplicate rule":["custom-001"]}}}`},
 			},
 		},
 		{
@@ -500,7 +505,7 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			require.Equal(t, []string{"ASM_DD/default"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
@@ -511,7 +516,7 @@ func TestOnRCUpdate(t *testing.T) {
 			// Compare rulesets base paths to make sure the updates were processed correctly
 			expected := tc.expectedConfigPaths
 			if expected == nil {
-				expected = []string{"ASM_DD/default"}
+				expected = []string{"::/go-libddwaf/default/recommended.json"}
 			}
 			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 		})
