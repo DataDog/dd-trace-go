@@ -63,7 +63,7 @@ jobs:
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
-      - name: "Runner ${{ matrix.runner-index }}: Test Core and Contrib (No Integration Tests)"
+      - name: "Runner: Test Core and Contrib (No Integration Tests)"
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
