@@ -35,3 +35,18 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       ref: ${{ inputs.ref || github.ref }}
     secrets: inherit
+  # This is a simple join point to make it easy to set up branch protection rules in GitHub.
+  pull-request-tests-done:
+    name: PR Unit and Integration Tests
+    needs:
+      - unit-integration-tests
+      - multios-unit-tests
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.unit-integration-tests.result == 'success' && needs.multios-unit-tests.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.unit-integration-tests.result != 'success' || needs.multios-unit-tests.result != 'success'
+        run: echo "Failure!" && exit 1
