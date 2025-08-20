@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/assert"
 )
@@ -71,7 +72,7 @@ func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.counts[name] += value
 }
 
-func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rate float64) error {
+func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rate float64, _ ...statsd.Parameter) error {
 	return tg.addMetric(callTypeGauge, tags, TestStatsdCall{
 		name:     name,
 		floatVal: value,
@@ -80,7 +81,7 @@ func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rat
 	})
 }
 
-func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags []string, rate float64, _ time.Time) error {
+func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags []string, rate float64, _ time.Time, _ ...statsd.Parameter) error {
 	// TODO: handle timestamp argument
 	return tg.addMetric(callTypeGaugeWithTimestamp, tags, TestStatsdCall{
 		name:     name,
@@ -90,7 +91,7 @@ func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags 
 	})
 }
 
-func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64) error {
+func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64, _ ...statsd.Parameter) error {
 	tg.addCount(name, 1)
 	return tg.addMetric(callTypeIncr, tags, TestStatsdCall{
 		name: name,
@@ -99,7 +100,7 @@ func (tg *TestStatsdClient) Incr(name string, tags []string, rate float64) error
 	})
 }
 
-func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate float64) error {
+func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate float64, _ ...statsd.Parameter) error {
 	tg.addCount(name, value)
 	return tg.addMetric(callTypeCount, tags, TestStatsdCall{
 		name:   name,
@@ -109,7 +110,7 @@ func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate 
 	})
 }
 
-func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []string, rate float64, _ time.Time) error {
+func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []string, rate float64, _ time.Time, _ ...statsd.Parameter) error {
 	// TODO: handle timestamp argument
 	tg.addCount(name, value)
 	return tg.addMetric(callTypeCountWithTimestamp, tags, TestStatsdCall{
@@ -124,7 +125,7 @@ func (tg *TestStatsdClient) DistributionSamples(_ string, _ []float64, _ []strin
 	panic("not implemented")
 }
 
-func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
+func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64, _ ...statsd.Parameter) error {
 	return tg.addMetric(callTypeTiming, tags, TestStatsdCall{
 		name:    name,
 		timeVal: value,

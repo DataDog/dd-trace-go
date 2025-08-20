@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -558,7 +559,7 @@ func (p *profiler) stop() {
 // in the profiler.
 type StatsdClient interface {
 	// Count counts how many times an event happened, at the given rate using the given tags.
-	Count(event string, times int64, tags []string, rate float64) error
+	Count(event string, times int64, tags []string, rate float64, parameters ...statsd.Parameter) error
 	// Timing creates a histogram metric of the values registered as the duration of a certain event.
-	Timing(event string, duration time.Duration, tags []string, rate float64) error
+	Timing(event string, duration time.Duration, tags []string, rate float64, parameters ...statsd.Parameter) error
 }

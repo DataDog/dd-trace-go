@@ -14,13 +14,13 @@ import (
 const DefaultDogstatsdAddr = "localhost:8125"
 
 type StatsdClient interface {
-	Incr(name string, tags []string, rate float64) error
-	Count(name string, value int64, tags []string, rate float64) error
-	CountWithTimestamp(name string, value int64, tags []string, rate float64, timestamp time.Time) error
-	Gauge(name string, value float64, tags []string, rate float64) error
-	GaugeWithTimestamp(name string, value float64, tags []string, rate float64, timestamp time.Time) error
+	Incr(name string, tags []string, rate float64, parameters ...statsd.Parameter) error
+	Count(name string, value int64, tags []string, rate float64, parameters ...statsd.Parameter) error
+	CountWithTimestamp(name string, value int64, tags []string, rate float64, timestamp time.Time, parameters ...statsd.Parameter) error
+	Gauge(name string, value float64, tags []string, rate float64, parameters ...statsd.Parameter) error
+	GaugeWithTimestamp(name string, value float64, tags []string, rate float64, timestamp time.Time, parameters ...statsd.Parameter) error
 	DistributionSamples(name string, values []float64, tags []string, rate float64) error
-	Timing(name string, value time.Duration, tags []string, rate float64) error
+	Timing(name string, value time.Duration, tags []string, rate float64, parameters ...statsd.Parameter) error
 	Flush() error
 	Close() error
 }
