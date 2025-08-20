@@ -26,10 +26,9 @@ var (
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
 		"github.com/DataDog/dd-trace-go/v2",
-		"github.com/DataDog/dd-trace-go",
+		"gopkg.in/DataDog/dd-trace-go.v1",
 		"github.com/DataDog/go-libddwaf",
 		"github.com/DataDog/datadog-agent",
-		"github.com/DataDog/appsec-internal-go",
 		"github.com/datadog/orchestrion",
 		"github.com/DataDog/orchestrion",
 	}

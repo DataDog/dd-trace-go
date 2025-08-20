@@ -10,7 +10,6 @@ import (
 	"hash/fnv"
 	"time"
 
-	"github.com/DataDog/appsec-internal-go/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec/internal/timed"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
 )
@@ -28,8 +27,14 @@ type (
 
 	nullSampler struct{}
 
-	// SamplingKey TODO: replace by our own sampling key after moving the appsec-internal-go config package
-	SamplingKey = apisec.SamplingKey
+	SamplingKey struct {
+		// Method is the value of the http.method span tag
+		Method string
+		// Route is the value of the http.route span tag
+		Route string
+		// StatusCode is the value of the http.status_code span tag
+		StatusCode int
+	}
 
 	clockFunc = func() int64
 )
@@ -59,7 +64,7 @@ func NewSampler(interval time.Duration) Sampler {
 // dropped, and the caller should short-circuit without extending further
 // effort.
 func (s *timedSetSampler) DecisionFor(key SamplingKey) bool {
-	keyHash := hash(key)
+	keyHash := key.hash()
 	return (*timed.LRU)(s).Hit(keyHash)
 }
 
@@ -73,7 +78,7 @@ func (s *nullSampler) DecisionFor(_ SamplingKey) bool {
 
 // hash returns a hash of the key. Given the same seed, it always produces the
 // same output. If the seed changes, the output is likely to change as well.
-func hash(k apisec.SamplingKey) uint64 {
+func (k SamplingKey) hash() uint64 {
 	fnv := fnv.New64()
 
 	_, _ = fnv.Write([]byte(k.Method))

@@ -784,8 +784,6 @@ github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOEl
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
-github.com/DataDog/appsec-internal-go v1.13.0 h1:aO6DmHYsAU8BNFuvYJByhMKGgcQT3WAbj9J/sgAJxtA=
-github.com/DataDog/appsec-internal-go v1.13.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.68.0 h1:H2SUhQXXfVaGnuOLuYq64AM3J7nDvIaye9t6z5v/72Q=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.68.0/go.mod h1:+xS7bm3AFVCAQC14j1HMW5XhYYriBJpjpnsLeh+vLGo=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.68.0 h1:SvPHgVt93GQYfTJgmCSwEo1awuIsTlYzc9Ych6Fg4cc=
