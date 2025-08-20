@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -23,7 +24,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
-	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
