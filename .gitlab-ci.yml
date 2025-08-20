@@ -4,7 +4,7 @@ stages:
   - benchmarks
   - macrobenchmarks
   - gates
-  - config-inversion
+  - config-validation
   - test-apps
 
 variables:
@@ -66,21 +66,21 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
-check_config_inversion_local_file:
-  stage: config-inversion
+validate_supported_configurations_local_file:
+  stage: config-validation
   image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
   tags: ["runner:apm-k8s-tweaked-metal"]
   rules:
     - when: on_success
-  extends: .check_config_inversion_local_file
+  extends: .validate_supported_configurations_local_file
   variables:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
 
-config-inversion-update-supported-range:
-  stage: config-inversion
+update_central_configurations_version_range:
+  stage: config-validation
   image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
   tags: ["runner:apm-k8s-tweaked-metal"]
-  extends: .config_inversion_update_central
+  extends: .update_central_configurations_version_range
   variables:
     LOCAL_REPO_NAME: "dd-trace-go"
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
@@ -90,4 +90,4 @@ include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
-  - local: ".gitlab/config-inversion.yml"
+  - local: ".gitlab/config-central-validation.yml"
