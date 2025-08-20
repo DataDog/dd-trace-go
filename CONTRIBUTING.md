@@ -301,9 +301,9 @@ Please view our contrib [README.md](contrib/README.md) for information on integr
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Getenv` and `env.LookupEnv` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
 
-Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal [configuration registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) for tracking and documentation purposes.
+Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal configuration registry for tracking and documentation purposes.
 
-Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-inversion.yml) to track when they were introduced.
+Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
 
 #### Adding new environment variables using configinverter
 
@@ -333,9 +333,9 @@ go run ./scripts/configinverter/main.go generate
 
 #### Handling related CI failures
 
-The GitLab `check_config_inversion_local_file` job validates the JSON file content against Datadog's internal configuration registry to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass.
+The GitLab `validate_supported_configurations_local_file` job validates the JSON file content against Datadog's internal configuration registry to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass.
 
-Additionally, multiple CI jobs include a [step](./.github/actions/config-inversion-check/action.yml) that checks for newly discovered environment variables during test execution and will fail if keys are missing from the generated list. To resolve this failure, use one of the two methods described above to add the key to the generated list.
+Additionally, multiple CI jobs include a [step](./.github/actions/supported_configurations_validation/action.yml) that checks for newly discovered environment variables during test execution and will fail if keys are missing from the generated list. To resolve this failure, use one of the two methods described above to add the key to the generated list.
 
 ### Adding Go Modules
 

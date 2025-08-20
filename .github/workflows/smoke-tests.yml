@@ -120,10 +120,10 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
       - run: go test $PACKAGES
-      # Run config inversion check to detect any changes in the supported configurations
-      - name: Config inversion diff check
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
         if: always()
-        uses: ./.github/actions/config-inversion-check
+        uses: ./.github/actions/supported_configurations_validation
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.

@@ -297,10 +297,10 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-      # Run config inversion check to detect any changes in the supported configurations
-      - name: Config inversion diff check
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
         if: always()
-        uses: ./.github/actions/config-inversion-check
+        uses: ./.github/actions/supported_configurations_validation
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests

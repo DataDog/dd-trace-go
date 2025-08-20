@@ -16,7 +16,7 @@ variables:
       fi
     done
 
-.check_config_inversion_local_file:
+.validate_supported_configurations_local_file:
   allow_failure: false
   rules:
     - when: on_success
@@ -27,7 +27,7 @@ variables:
   script:
     - scripts/config-inversion-local-validation.sh "$LOCAL_JSON_PATH"
 
-.config_inversion_update_central:
+.update_central_configurations_version_range:
   allow_failure: false
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/'

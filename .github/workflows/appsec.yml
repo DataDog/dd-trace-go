@@ -219,10 +219,10 @@ jobs:
             done
           done
 
-      # Run config inversion check to detect any changes in the supported configurations
-      - name: Config inversion diff check
+      # Check for changes in the supported configurations
+      - name: Supported Configurations Diff Check
         if: always()
-        uses: ./.github/actions/config-inversion-check
+        uses: ./.github/actions/supported_configurations_validation
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -336,8 +336,8 @@ jobs:
             fi
           done
 
-      # Run config inversion check to detect any changes in the supported configurations
-      - name: Config inversion diff check
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
         if: always()
         run: |
           sudo docker exec -i test.runner bash -c "go run ./scripts/configinverter/main.go check"
