@@ -21,7 +21,7 @@ runs:
 
     - name: Cache tools
       id: cache-tools
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ${{ inputs.tools-bin }}
         key: ${{ runner.os }}-go-${{ inputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin}}-${{ hashFiles('**/go.mod', '**/go.sum') }}

@@ -125,13 +125,13 @@ jobs:
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Checkout system tests
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
@@ -196,7 +196,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: docker load -i service-extensions-image-linux-amd64.tar
       - name: Checkout system tests
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
@@ -205,7 +205,7 @@ jobs:
         run: echo "ghcr.io/datadog/dd-trace-go/service-extensions-callout:dev" > binaries/golang-service-extensions-callout-image
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
