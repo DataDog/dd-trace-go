@@ -83,7 +83,7 @@ below.
 			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/span_msgp.go:596 +0x80
 	github.com/tinylib/msgp/msgp.Encode({0x1031ebd00?, 0x14000294d48?}, {0x1031ec060?, 0x1400000e090?})
 			/Users/felix.geisendoerfer/go/pkg/mod/github.com/tinylib/msgp@v1.2.5/msgp/write.go:156 +0x60
-	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.(*payloadV04).push(0x14000294d20, {0x140003e0320, 0x1, 0xa})
+	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.(*payload).push(0x14000294d20, {0x140003e0320, 0x1, 0xa})
 			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/payload.go:76 +0x98
 	gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer.(*agentTraceWriter).add(0x140003e0000, {0x140003e0320?, 0x0?, 0x0?})
 			/Users/felix.geisendoerfer/go/src/github.com/DataDog/dd-trace-go/ddtrace/tracer/writer.go:69 +0x28
