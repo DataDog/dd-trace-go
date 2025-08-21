@@ -1,12 +1,6 @@
 name: Main Branch and Release Tests
 
 on:
-  workflow_call: # allows to reuse this workflow
-    inputs:
-      ref:
-        description: 'The branch to run the workflow on'
-        required: true
-        type: string
   push:
     branches:
       - release-v*
@@ -31,4 +25,3 @@ jobs:
       pull-requests: write
     with:
       go-version: "1.25" # Should be the highest supported version of Go
-      ref: ${{ github.sha }}
