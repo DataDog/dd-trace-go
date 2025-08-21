@@ -52,3 +52,33 @@ type payloadV1 struct {
 	// a list of trace `chunks`
 	chunks []traceChunk
 }
+
+// AnyValue is a representation of the `any` value. It can take the following types:
+// - uint32
+// - bool
+// - float64
+// - uint64
+// - uint8
+// intValue(5) - 0x405 (4 indicates this is an int AnyType, then 5 is encoded using positive fixed int format)
+// stringValue(“a”) - 0x1a161 (1 indicates this is a string, then “a” is encoded using fixstr 0xa161)
+// stringValue(2) - 0x102 (1 indicates this is a string, then a positive fixed int of 2 refers the 2nd index of the string table)
+type AnyValue struct {
+	valueType int
+	value     interface{}
+}
+
+const (
+	StringValueType  = iota + 1 // string or uint
+	BoolValueType               // boolean
+	FloatValueType              // float64
+	IntValueType                // uint64
+	BytesValueType              // []uint8
+	ArrayValueType              // []AnyValue
+	KeyValueListType            // []KeyValue
+)
+
+// KeyValue is made up of the key and an AnyValue (the type of the value and the value itself)
+type KeyValue struct {
+	key   uint32
+	value AnyValue
+}
