@@ -23,7 +23,7 @@ type payloadV1 struct {
 	strings []string
 
 	// the string ID of the container where the tracer is running
-	containerId uint32
+	containerID uint32
 
 	// the string language name of the tracer
 	languageName uint32
@@ -35,7 +35,7 @@ type payloadV1 struct {
 	tracerVersion uint32
 
 	// the V4 string UUID representation of a tracer session
-	runtimeId uint32
+	runtimeID uint32
 
 	// the optional `env` string tag that set with the tracer
 	env uint32
