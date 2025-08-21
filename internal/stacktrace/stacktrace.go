@@ -16,8 +16,6 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-
-	"github.com/eapache/queue/v2"
 )
 
 var (
@@ -76,25 +74,47 @@ func Enabled() bool {
 	return enabled
 }
 
-// StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the current frame
-type StackTrace []StackFrame
+type (
+	// StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the current frame
+	StackTrace []StackFrame
 
-// StackFrame represents a single frame in the stack trace
-type StackFrame struct {
-	Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
-	Text      string `msg:"text,omitempty"`       // Text version of the stackframe as a string
-	File      string `msg:"file,omitempty"`       // File name where the code line is
-	Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
-	Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
-	Namespace string `msg:"namespace,omitempty"`  // Namespace is the fully qualified name of the package where the code is
-	ClassName string `msg:"class_name,omitempty"` // ClassName is the fully qualified name of the class where the line of code is
-	Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
+	// StackFrame represents a single frame in the stack trace
+	StackFrame struct {
+		Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
+		Text      string `msg:"text,omitempty"`       // Text version of the stackframe as a string
+		File      string `msg:"file,omitempty"`       // File name where the code line is
+		Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
+		Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
+		Namespace string `msg:"namespace,omitempty"`  // Namespace is the fully qualified name of the package where the code is
+		ClassName string `msg:"class_name,omitempty"` // ClassName is the fully qualified name of the class where the line of code is
+		Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
+	}
+
+	symbol struct {
+		Package  string
+		Receiver string
+		Function string
+	}
+
+	queue[T any] []T
+)
+
+func (q *queue[T]) Length() int {
+	return len(*q)
 }
 
-type symbol struct {
-	Package  string
-	Receiver string
-	Function string
+func (q *queue[T]) Add(item T) {
+	*q = append(*q, item)
+}
+
+func (q *queue[T]) Remove() T {
+	if len(*q) == 0 {
+		var zero T
+		return zero
+	}
+	item := (*q)[0]
+	*q = (*q)[1:]
+	return item
 }
 
 var symbolRegex = regexp.MustCompile(`^(([^(]+/)?([^(/.]+)?)(\.\(([^/)]+)\))?\.([^/()]+)$`)
@@ -136,7 +156,7 @@ func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
 	iter := iterator(skip, maxDepth, symbolSkip)
 	stack := make([]StackFrame, defaultMaxDepth)
 	nbStoredFrames := 0
-	topFramesQueue := queue.New[StackFrame]()
+	topFramesQueue := new(queue[StackFrame])
 
 	// We have to make sure we don't store more than maxDepth frames
 	// if there is more than maxDepth frames, we get X frames from the bottom of the stack and Y from the top
@@ -172,7 +192,7 @@ func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
 type framesIterator struct {
 	skipPrefixes []string
 	cache        []uintptr
-	frames       *queue.Queue[runtime.Frame]
+	frames       *queue[runtime.Frame]
 	cacheDepth   int
 	cacheSize    int
 	currDepth    int
@@ -182,7 +202,7 @@ func iterator(skip, cacheSize int, internalPrefixSkip []string) framesIterator {
 	return framesIterator{
 		skipPrefixes: internalPrefixSkip,
 		cache:        make([]uintptr, cacheSize),
-		frames:       queue.New[runtime.Frame](),
+		frames:       new(queue[runtime.Frame]),
 		cacheDepth:   skip,
 		cacheSize:    cacheSize,
 		currDepth:    0,
