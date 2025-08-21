@@ -27,6 +27,7 @@ on:
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -99,6 +100,30 @@ func TestNewClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAutoFlush(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		config := defaultConfig(ClientConfig{
+			AgentURL: "http://localhost:8126",
+		})
+		c, err := newClient(internal.TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		}, config)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			c.Close()
+		})
+
+		recordWriter := &internal.RecordWriter{}
+		c.writer = recordWriter
+
+		time.Sleep(config.FlushInterval.Max + time.Second)
+
+		require.Len(t, recordWriter.Payloads(), 1)
+	})
 }
 
 func TestClientFlush(t *testing.T) {

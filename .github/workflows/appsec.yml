@@ -25,8 +25,10 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   PACKAGES: >-
     ./appsec/...
+    ./instrumentation/appsec/...
     ./internal/appsec/...
   SUBMODULES: >-
     ./contrib/database/sql
@@ -135,24 +137,24 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
-          cgocheck="GOEXPERIMENT=cgocheck2"
+          cgocheck="$GOEXPERIMENT,cgocheck2"
           report_error=0
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES"
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES"
                   fi
 
                   for submodule in $SUBMODULES; do
-                    if [[ $cgocheck_env == "GOEXPERIMENT=cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
-                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
+                    if [[ $cgocheck_env ~= "cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
+                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
                       continue
                     fi
 
                     cd $submodule
                     if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
-                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule)"
+                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule)"
                       report_error=1
                     fi
                     cd -
