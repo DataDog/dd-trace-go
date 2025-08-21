@@ -95,26 +95,46 @@ type (
 		Receiver string
 		Function string
 	}
-
-	queue[T any] []T
 )
 
+type queue[T any] struct {
+	data       []T
+	head, tail int
+	size, cap  int
+}
+
+func newQueue[T any](capacity int) *queue[T] {
+	return &queue[T]{
+		data: make([]T, capacity),
+		cap:  capacity,
+	}
+}
+
 func (q *queue[T]) Length() int {
-	return len(*q)
+	return q.size
 }
 
 func (q *queue[T]) Add(item T) {
-	*q = append(*q, item)
+	if q.size == q.cap {
+		// Overwrite oldest
+		q.data[q.tail] = item
+		q.tail = (q.tail + 1) % q.cap
+		q.head = q.tail
+	} else {
+		q.data[q.head] = item
+		q.head = (q.head + 1) % q.cap
+		q.size++
+	}
 }
 
 func (q *queue[T]) Remove() T {
-	if len(*q) == 0 {
+	if q.size == 0 {
 		var zero T
 		return zero
 	}
-	item := (*q)[0]
-	copy((*q)[0:], (*q)[1:])
-	*q = (*q)[:len(*q)-1]
+	item := q.data[q.tail]
+	q.tail = (q.tail + 1) % q.cap
+	q.size--
 	return item
 }
 
@@ -157,7 +177,7 @@ func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
 	iter := iterator(skip, maxDepth, symbolSkip)
 	stack := make([]StackFrame, defaultMaxDepth)
 	nbStoredFrames := 0
-	topFramesQueue := new(queue[StackFrame])
+	topFramesQueue := newQueue[StackFrame](defaultTopFrameDepth)
 
 	// We have to make sure we don't store more than maxDepth frames
 	// if there is more than maxDepth frames, we get X frames from the bottom of the stack and Y from the top
@@ -203,7 +223,7 @@ func iterator(skip, cacheSize int, internalPrefixSkip []string) framesIterator {
 	return framesIterator{
 		skipPrefixes: internalPrefixSkip,
 		cache:        make([]uintptr, cacheSize),
-		frames:       new(queue[runtime.Frame]),
+		frames:       newQueue[runtime.Frame](cacheSize + 4),
 		cacheDepth:   skip,
 		cacheSize:    cacheSize,
 		currDepth:    0,
