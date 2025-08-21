@@ -12,8 +12,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  warm-repo-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
   unit-integration-tests:
     name: PR Unit and Integration Tests
+    needs:
+      - warm-repo-cache
     strategy:
       matrix:
         go-version: [ "1.24", "1.25" ]
@@ -21,9 +35,10 @@ jobs:
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
       go-version: ${{ matrix.go-version }}
-      ref: ${{ github.sha }}
     secrets: inherit
   multios-unit-tests:
+    needs:
+      - warm-repo-cache
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
@@ -33,7 +48,6 @@ jobs:
     with:
       go-version: ${{ matrix.go-version }}
       runs-on: ${{ matrix.runs-on }}
-      ref: ${{ github.sha }}
     secrets: inherit
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   pull-request-tests-done:
