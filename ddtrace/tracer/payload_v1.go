@@ -77,8 +77,12 @@ const (
 	KeyValueListType            // []KeyValue
 )
 
+type ArrayValue = []AnyValue
+
 // KeyValue is made up of the key and an AnyValue (the type of the value and the value itself)
 type KeyValue struct {
 	key   uint32
 	value AnyValue
 }
+
+type KeyValueList = []KeyValue
