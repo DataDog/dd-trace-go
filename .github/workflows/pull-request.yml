@@ -37,7 +37,10 @@ jobs:
     secrets: inherit
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   pull-request-tests-done:
-    name: PR Unit and Integration Tests
+    name: PR Unit and Integration Tests / ${{ matrix.name }}
+    strategy:
+      matrix:
+        name: [ "test-contrib", "test-core" ]
     needs:
       - unit-integration-tests
       - multios-unit-tests
