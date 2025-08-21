@@ -88,7 +88,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/log v0.68.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.68.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.68.0 // indirect
-	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
+	github.com/DataDog/datadog-go/v5 v5.7.0 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.3.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.3.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.3.0-dev.1 // indirect
