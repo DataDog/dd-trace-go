@@ -28,7 +28,7 @@ jobs:
       - warm-repo-cache
     strategy:
       matrix:
-        go-version: [ "1.23", "1.24" ]
+        go-version: [ "1.24", "1.25" ]
       fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
@@ -40,7 +40,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.23", "1.24" ]
+        go-version: [ "1.24", "1.25" ]
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     with:
@@ -49,7 +49,10 @@ jobs:
     secrets: inherit
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   pull-request-tests-done:
-    name: PR Unit and Integration Tests
+    name: PR Unit and Integration Tests / ${{ matrix.name }}
+    strategy:
+      matrix:
+        name: [ "test-contrib", "test-core" ]
     needs:
       - unit-integration-tests
       - multios-unit-tests
