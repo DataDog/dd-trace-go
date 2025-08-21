@@ -113,7 +113,8 @@ func (q *queue[T]) Remove() T {
 		return zero
 	}
 	item := (*q)[0]
-	*q = (*q)[1:]
+	copy((*q)[0:], (*q)[1:])
+	*q = (*q)[:len(*q)-1]
 	return item
 }
 
