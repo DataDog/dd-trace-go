@@ -272,6 +272,7 @@ jobs:
             -v "$PWD:$PWD"                                                      \
             -w "$PWD"                                                           \
             -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            -e "GOEXPERIMENT=${{ env.GOEXPERIMENT }}"                           \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'
