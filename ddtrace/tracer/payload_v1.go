@@ -47,7 +47,7 @@ type payloadV1 struct {
 	appVersion uint32
 
 	// a collection of key to value pairs common in all `chunks`
-	attributes map[uint32]any // TODO: this should be compatible with AnyValue
+	attributes map[uint32]AnyValue
 
 	// a list of trace `chunks`
 	chunks []traceChunk
