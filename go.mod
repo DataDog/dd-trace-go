@@ -6,7 +6,7 @@ godebug x509negativeserial=1
 
 replace github.com/DataDog/datadog-agent/pkg/trace => github.com/DataDog/datadog-agent/pkg/trace v0.67.0
 
-replace github.com/DataDog/datadog-go/v5 v5.7.0 => github.com/DataDog/datadog-go/v5 v5.6.0
+replace github.com/DataDog/datadog-go/v5 => github.com/DataDog/datadog-go/v5 v5.6.0
 
 require (
 	github.com/DataDog/appsec-internal-go v1.13.0
