@@ -85,7 +85,7 @@ func (h *agentTraceWriter) stop() {
 }
 
 // newPayload returns a new payload based on the trace protocol.
-func (h *agentTraceWriter) newPayload() *payload {
+func (h *agentTraceWriter) newPayload() *payloadV04 {
 	p := newPayload()
 	p.protocol = h.config.traceProtocol
 	return p
