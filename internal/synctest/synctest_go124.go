@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-//go:build goexperiment.synctest
+//go:build goexperiment.synctest && !go1.25
 
 package synctest
 
