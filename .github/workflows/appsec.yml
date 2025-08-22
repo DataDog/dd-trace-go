@@ -153,7 +153,7 @@ jobs:
                     fi
 
                     cd $submodule
-                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
+                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v .; then
                       echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule)"
                       report_error=1
                     fi
