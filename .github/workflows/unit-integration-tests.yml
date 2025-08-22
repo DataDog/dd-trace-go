@@ -54,7 +54,7 @@ jobs:
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
     services:
-      datadog-agent:
+      datadog-agent: &datadog-agent
         image: datadog/agent:latest
         env:
           DD_HOSTNAME: "github-actions-worker"
@@ -264,21 +264,7 @@ jobs:
     env:
        INTEGRATION: true
     services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
+      datadog-agent: *datadog-agent
     steps:
       - name: Restore repo cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -327,20 +313,7 @@ jobs:
     runs-on:
       group: "APM Larger Runners"
     services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
+      datadog-agent: *datadog-agent
       testagent:
         image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
         ports:
