@@ -113,9 +113,7 @@ func TestAutoFlush(t *testing.T) {
 			Version: "1.0.0",
 		}, config)
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			c.Close()
-		})
+		defer c.Close()
 
 		recordWriter := &internal.RecordWriter{}
 		c.writer = recordWriter
