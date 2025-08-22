@@ -37,7 +37,6 @@ jobs:
         with:
           ref: ${{ github.sha }}
           clean: false
-
       - name: Compute Matrix
         id: matrix
         run: |-
@@ -45,7 +44,8 @@ jobs:
           go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
 
   test-contrib-matrix:
-    needs: set-up
+    needs:
+      - set-up
     runs-on:
       group: "APM Larger Runners"
     env:
@@ -263,8 +263,6 @@ jobs:
       group: "APM Larger Runners"
     env:
        INTEGRATION: true
-    services:
-      datadog-agent: *datadog-agent
     steps:
       - name: Restore repo cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -282,6 +280,15 @@ jobs:
           go-version: ${{ inputs.go-version }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
+      - name: Start datadog/agent
+        uses: ./.github/actions/run-service
+        with:
+          repository: datadog/agent
+          tag: 7.69.2
+          # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
+          # we don't fully configure it with a valid API key (and possibly other reasons)
+          # This command just checks for our ability to connect to port 8126
+          flags: --name datadog-agent -e DD_HOSTNAME=github-actions-worker -e DD_APM_ENABLED=true -e DD_BIND_HOST=0.0.0.0 -e DD_API_KEY=invalid_key_but_this_is_fine -e DD_TEST_AGENT_HOST=localhost -e DD_TEST_AGENT_PORT=9126 --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'" -p 8125:8125/udp -p 8126:8126
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h

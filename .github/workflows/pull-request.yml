@@ -24,10 +24,21 @@ jobs:
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+  warm-services-cache:
+    strategy:
+      matrix:
+        image:
+        - repository: datadog/agent
+          tag: 7.69.2
+    uses: ./.github/workflows/warm-up-service.yml
+    with:
+      repository: ${{ matrix.image.repository }}
+      tag: ${{ matrix.image.tag }}
   unit-integration-tests:
     name: PR Unit and Integration Tests
     needs:
       - warm-repo-cache
+      - warm-services-cache
     strategy:
       matrix:
         go-version: [ "1.24", "1.25" ]
@@ -39,6 +50,7 @@ jobs:
   multios-unit-tests:
     needs:
       - warm-repo-cache
+      - warm-services-cache
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
