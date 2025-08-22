@@ -26,6 +26,7 @@ variables:
   variables:
     DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
+    GOEXPERIMENT: "synctest"
     # Used to build the SUT
     GO_PROF_APP_BUILD_VARIANT: "candidate"
     DD_TRACE_GO_VERSION: "latest"

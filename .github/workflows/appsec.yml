@@ -147,7 +147,7 @@ jobs:
                   fi
 
                   for submodule in $SUBMODULES; do
-                    if [[ $cgocheck_env ~= "cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
+                    if [[ $cgocheck_env =~ "cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
                       echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
                       continue
                     fi
