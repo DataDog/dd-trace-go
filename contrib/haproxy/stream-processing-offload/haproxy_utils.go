@@ -2,14 +2,13 @@ package streamprocessingoffload
 
 import (
 	"fmt"
-	"net/http"
-	"strconv"
-	"strings"
-
 	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
 	"github.com/negasus/haproxy-spoe-go/action"
 	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
+	"net/http"
+	"strconv"
+	"strings"
 )
 
 // Helper functions to extract values from SPOE messages
@@ -68,7 +67,7 @@ func spanIDFromMessage(msg *message.Message) (uint64, error) {
 }
 
 // setHeadersResponseData sets HeadersResponseData data into the request variables answering a Request Headers message
-func setHeadersResponseData(data *message_processor.HeadersResponseData, req *request.Request, reqState *message_processor.RequestState) error {
+func setHeadersResponseData(data *message_processor.HeadersResponseData, req *request.Request, msg *message.Message, reqState *message_processor.RequestState) error {
 	if req.Actions == nil {
 		return fmt.Errorf("req.Actions is nil, cannot set headers response data")
 	}
@@ -76,8 +75,9 @@ func setHeadersResponseData(data *message_processor.HeadersResponseData, req *re
 	// Only set the span id from a request headers message
 	if data.Direction == message_processor.DirectionRequest {
 		spanId := reqState.Span.Context().SpanID()
+		timeout := getStringValue(msg, "timeout")
 
-		err := storeCurrentRequest(spanId, *reqState)
+		err := storeCurrentRequest(spanId, *reqState, timeout)
 		if err != nil {
 			return err
 		}
@@ -88,6 +88,10 @@ func setHeadersResponseData(data *message_processor.HeadersResponseData, req *re
 
 	if data.RequestBody {
 		req.Actions.SetVar(action.ScopeTransaction, "request_body", true)
+	}
+
+	if len(data.HeaderMutation) > 0 {
+		// TODO: List all possible headers that can be mutated (trace injection)
 	}
 
 	return nil

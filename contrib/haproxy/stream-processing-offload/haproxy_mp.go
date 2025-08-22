@@ -11,14 +11,16 @@ import (
 	"fmt"
 	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
 	"net/http"
+	"strconv"
 
 	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
 )
 
 type requestHeadersHAProxy struct {
-	req *request.Request
-	msg *message.Message
+	req     *request.Request
+	msg     *message.Message
+	hasBody bool
 }
 
 func (a *requestHeadersHAProxy) NewRequest(ctx context.Context) (*http.Request, error) {
@@ -43,18 +45,28 @@ func (a *requestHeadersHAProxy) NewRequest(ctx context.Context) (*http.Request, 
 		return nil, fmt.Errorf("no Host header")
 	}
 
+	// Define if a body is present based on Content-Length header
+	contentLength := headers.Get("Content-Length")
+	if contentLength != "" {
+		length, err := strconv.Atoi(contentLength)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Content-Length header: %v", err)
+		}
+		a.hasBody = length > 0
+	}
+
 	return message_processor.NewRequest(ctx,
 		scheme,
 		authority,
 		path,
 		method,
 		headers,
-		"18.8.8.8",
+		"123.123.456.111",
 		tlsState)
 }
 
 func (a *requestHeadersHAProxy) EndOfStream() bool {
-	return true
+	return !a.hasBody
 }
 
 func (a *requestHeadersHAProxy) Component(_ context.Context) string {
@@ -78,7 +90,8 @@ func (a *requestBodyHAProxy) EndOfStream() bool {
 }
 
 type responseHeadersHAProxy struct {
-	msg *message.Message
+	msg     *message.Message
+	hasBody bool
 }
 
 func (a *responseHeadersHAProxy) InitResponseWriter(w http.ResponseWriter) error {
@@ -93,12 +106,22 @@ func (a *responseHeadersHAProxy) InitResponseWriter(w http.ResponseWriter) error
 		w.Header()[k] = v
 	}
 
+	// Set has body based on Content-Length header
+	contentLength := headers.Get("Content-Length")
+	if contentLength != "" {
+		length, err := strconv.Atoi(contentLength)
+		if err != nil {
+			return fmt.Errorf("invalid Content-Length header: %v", err)
+		}
+		a.hasBody = length > 0
+	}
+
 	w.WriteHeader(status)
 	return nil
 }
 
 func (a *responseHeadersHAProxy) EndOfStream() bool {
-	return true
+	return !a.hasBody
 }
 
 type responseBodyHAProxy struct {

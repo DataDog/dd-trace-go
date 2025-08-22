@@ -45,14 +45,6 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 func (s *HAProxySPOA) Handler(req *request.Request) {
 	instr.Logger().Debug("haproxy_spoa: handle request EngineID: '%s', StreamID: '%d', FrameID: '%d' with %d messages", req.EngineID, req.StreamID, req.FrameID, req.Messages.Len())
 
-	mp := message_processor.NewMessageProcessor(
-		message_processor.MessageProcessorConfig{
-			BlockingUnavailable:  false,
-			BodyParsingSizeLimit: 1024,
-		},
-		instr,
-	)
-
 	// Process each message
 	for i := 0; i < req.Messages.Len(); i++ {
 		msg, err := req.Messages.GetByIndex(i)
@@ -61,14 +53,17 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 			continue
 		}
 
+		// Get current request state from cache or if nil it will be created by the request headers message
+		reqState, _ := getCurrentRequest(msg)
+
 		ctx := context.Background()
-		mpAction, reqState, err := processMessage(mp, ctx, req, msg)
+		reqState, mpAction, err := processMessage(s.mp, ctx, req, msg, reqState)
 		if err != nil {
 			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
 			return
 		}
 
-		err = s.handleAction(mpAction, req, &reqState)
+		err = s.handleAction(mpAction, req, msg, reqState)
 		if err != nil {
 			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
 			return
@@ -76,51 +71,39 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 	}
 }
 
-func processMessage(mp message_processor.MessageProcessor, ctx context.Context, req *request.Request, msg *message.Message) (message_processor.Action, message_processor.RequestState, error) {
-	instr.Logger().Debug("haproxy_spoa: handling message: %s", msg.Name)
+func processMessage(mp message_processor.MessageProcessor, ctx context.Context, req *request.Request, msg *message.Message, currentRequest *message_processor.RequestState) (*message_processor.RequestState, message_processor.Action, error) {
+	instr.Logger().Debug("f: handling message: %s", msg.Name)
 
 	switch msg.Name {
 	case "http-request-headers-msg":
-		var (
-			mpAction       message_processor.Action
-			err            error
-			currentRequest message_processor.RequestState
-		)
-		currentRequest, mpAction, err = mp.OnRequestHeaders(ctx, &requestHeadersHAProxy{req: req, msg: msg})
-		return mpAction, currentRequest, err
+		return mp.OnRequestHeaders(ctx, &requestHeadersHAProxy{req: req, msg: msg})
 	case "http-request-body-msg":
-		currentRequest, err := getCurrentRequest(msg)
-		if err != nil {
-			return message_processor.Action{}, message_processor.RequestState{}, err
+		if currentRequest == nil || !currentRequest.Ongoing {
+			return nil, message_processor.Action{}, fmt.Errorf("received request body without request headers")
 		}
 
-		var action message_processor.Action
-		action, err = mp.OnRequestBody(&requestBodyHAProxy{msg: msg}, currentRequest)
-		return action, currentRequest, err
+		action, err := mp.OnRequestBody(&requestBodyHAProxy{msg: msg}, currentRequest)
+		return currentRequest, action, err
 	case "http-response-headers-msg":
-		currentRequest, err := getCurrentRequest(msg)
-		if err != nil {
-			return message_processor.Action{}, message_processor.RequestState{}, err
+		if currentRequest == nil || !currentRequest.Ongoing {
+			return nil, message_processor.Action{}, fmt.Errorf("received response headers without request context")
 		}
 
-		var action message_processor.Action
-		action, err = mp.OnResponseHeaders(&responseHeadersHAProxy{msg: msg}, currentRequest)
-		return action, currentRequest, err
+		action, err := mp.OnResponseHeaders(&responseHeadersHAProxy{msg: msg}, currentRequest)
+		return currentRequest, action, err
 	case "http-response-body-msg":
-		currentRequest, err := getCurrentRequest(msg)
-		if err != nil {
-			return message_processor.Action{}, message_processor.RequestState{}, err
+		if currentRequest == nil || !currentRequest.Ongoing {
+			return nil, message_processor.Action{}, fmt.Errorf("received response body without request context")
 		}
 
-		var action message_processor.Action
-		action, err = mp.OnResponseBody(&responseBodyHAProxy{msg: msg}, currentRequest)
-		return action, currentRequest, err
+		action, err := mp.OnResponseBody(&responseBodyHAProxy{msg: msg}, currentRequest)
+		return currentRequest, action, err
 	default:
-		return message_processor.Action{}, message_processor.RequestState{}, fmt.Errorf("unknown message type: %s", msg.Name)
+		return nil, message_processor.Action{}, fmt.Errorf("unknown message type: %s", msg.Name)
 	}
 }
 
-func (s *HAProxySPOA) handleAction(action message_processor.Action, req *request.Request, reqState *message_processor.RequestState) error {
+func (s *HAProxySPOA) handleAction(action message_processor.Action, req *request.Request, msg *message.Message, reqState *message_processor.RequestState) error {
 	switch action.Type {
 	case message_processor.ActionTypeContinue:
 		if action.Response == nil {
@@ -128,7 +111,7 @@ func (s *HAProxySPOA) handleAction(action message_processor.Action, req *request
 		}
 
 		if data := action.Response.(*message_processor.HeadersResponseData); data != nil {
-			return setHeadersResponseData(data, req, reqState)
+			return setHeadersResponseData(data, req, msg, reqState)
 		}
 
 		// Could happen if a new response type with data is implemented, and we forget to handle it here.
