@@ -11,10 +11,8 @@ import (
 	"net"
 	"os"
 
-	"github.com/negasus/haproxy-spoe-go/agent"
-	"github.com/negasus/haproxy-spoe-go/logger"
-
 	"github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
+	"github.com/negasus/haproxy-spoe-go/agent"
 )
 
 var log = NewLogger()
@@ -36,10 +34,10 @@ func main() {
 		Context:              context.Background(),
 	})
 
-	a := agent.New(appsecHAProxy.Handler, logger.NewDefaultLog())
+	a := agent.New(appsecHAProxy.Handler, log)
 
 	log.Info("haproxy_spoa: started\n")
 	if err := a.Serve(listener); err != nil {
-		log.Printf("haproxy_spoa: error agent serve: %+v\n", err)
+		log.Error("haproxy_spoa: error agent serve: %+v\n", err)
 	}
 }

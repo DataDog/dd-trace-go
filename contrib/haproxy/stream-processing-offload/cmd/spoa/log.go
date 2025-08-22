@@ -25,6 +25,7 @@ func NewLogger() *Logger {
 // Info logs an informational message
 func (l *Logger) Info(format string, v ...interface{}) {
 	l.SetPrefix("INFO: ")
+	//l.Printf(format, v...)
 	l.Printf(format, v...)
 }
 
@@ -38,6 +39,10 @@ func (l *Logger) Warn(format string, v ...interface{}) {
 func (l *Logger) Error(format string, v ...interface{}) {
 	l.SetPrefix("ERROR: ")
 	l.Printf(format, v...)
+}
+
+func (l *Logger) Errorf(format string, v ...interface{}) {
+	l.Error("haproxy_spoa: "+format, v...)
 }
 
 // Debug logs a debug message
