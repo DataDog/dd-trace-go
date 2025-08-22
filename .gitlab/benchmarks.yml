@@ -8,7 +8,7 @@
   interruptible: true
   tags: ["runner:apm-k8s-tweaked-metal"]
   variables:
-    GOEXPERIMENT: "synctest"
+    GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version
   script: |
     export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
     git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
