@@ -1796,6 +1796,10 @@ func TestEnvVars(t *testing.T) {
 					}
 					s := tracer.StartSpan("op", ChildOf(pCtx), WithSpanID(1))
 					sctx := s.Context()
+
+					// unlock the trace to allow setting the priority
+					sctx.trace.setLocked(false)
+
 					// changing priority must set ctx.updated = true
 					if tc.priority != 0 {
 						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
@@ -1808,6 +1812,7 @@ func TestEnvVars(t *testing.T) {
 					}
 
 					assert.Equal(true, sctx.updated)
+					sctx.trace.setLocked(true)
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(s.Context(), headers)

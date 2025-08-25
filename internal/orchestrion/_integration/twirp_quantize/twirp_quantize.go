@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023-present Datadog, Inc.
 
-package twirp
+package twirp_quantize
 
 import (
 	"context"
@@ -13,29 +13,34 @@ import (
 	"github.com/twitchtv/twirp/example"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/twirp"
 )
 
-type TestCase struct {
+type TestCaseQuantize struct {
 	client example.Haberdasher
 	addr   string
 }
 
-func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
-	tc.addr, tc.client = Setup(t)
+func (tc *TestCaseQuantize) Setup(_ context.Context, t *testing.T) {
+	// Enable URL quantize
+	t.Setenv("DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE", "true")
+	t.Setenv("DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE", "true")
+
+	tc.addr, tc.client = twirp.Setup(t)
 }
 
-func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
+func (tc *TestCaseQuantize) Run(ctx context.Context, t *testing.T) {
 	_, err := tc.client.MakeHat(ctx, &example.Size{Inches: 6})
 	require.NoError(t, err)
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (*TestCaseQuantize) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
 				"name":     "http.request",
-				"service":  "twirp.test",
-				"resource": "POST /twirp/twitch.twirp.example.Haberdasher/MakeHat",
+				"service":  "twirp_quantize.test",
+				"resource": "POST /twirp/*/MakeHat",
 				"type":     "http",
 			},
 			Meta: map[string]string{
@@ -47,7 +52,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 					Tags: map[string]any{
 						"name":     "http.request",
 						"service":  "http.router",
-						"resource": "POST /twirp/twitch.twirp.example.Haberdasher/MakeHat",
+						"resource": "POST /twirp/*/MakeHat",
 						"type":     "web",
 					},
 					Meta: map[string]string{
