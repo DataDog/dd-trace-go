@@ -91,7 +91,7 @@ var (
 func parseForwardedHeader(value string) []string {
 	result, err := httpforwarded.ParseParameter("for", []string{value})
 	if err != nil {
-		log.Debug("invalid Forwarded header value: %v", err)
+		log.Debug("invalid Forwarded header value: %v", err.Error())
 		return nil
 	}
 
