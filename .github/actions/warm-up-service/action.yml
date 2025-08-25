@@ -1,0 +1,35 @@
+name: Warm up service
+inputs:
+  repository:
+    required: true
+    description: The repository of the image to warm up
+  tag:
+    required: true
+    description: The tag of the image to warm up (latest tag not supported)
+runs:
+  using: "composite"
+  steps:
+    - name: Restore repo cache
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: .git
+        key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+    - name: Checkout
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        ref: ${{ github.sha }}
+        clean: false
+    - name: Pull Docker image
+      id: pull_image
+      shell: bash
+      run: |
+        image=${{ inputs.repository }}:${{ inputs.tag }}
+        docker pull $image
+        cache_filename=$(printf '%s_%s' "${{ inputs.repository }}" "${{ inputs.tag }}" | tr -cs '[:alnum:]_' '_')
+        echo "cache_filename=$cache_filename" >> $GITHUB_OUTPUT
+        docker save $image > $cache_filename.tar
+    - name: Cache Docker image
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      with:
+        path: "${{ steps.pull_image.outputs.cache_filename }}.tar"
+        key: "${{ inputs.repository }}:${{ inputs.tag }}"

@@ -1,26 +1,17 @@
 name: Unit and Integration Tests
-
-on:
+"on":
   workflow_call:
     inputs:
       go-version:
         required: true
         type: string
-
 env:
-  DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
-  # Users may build our library with GOTOOLCHAIN=local. If they do, and our
-  # go.mod file specifies a newer Go version than their local toolchain, their
-  # build will break. Run our tests with GOTOOLCHAIN=local to ensure that
-  # our library builds with all of the Go versions we claim to support,
-  # without having to download a newer one.
+  DD_APPSEC_WAF_TIMEOUT: 1m
   GOTOOLCHAIN: local
-  GODEBUG: "x509negativeserial=1"
+  GODEBUG: x509negativeserial=1
   TEST_RESULT_PATH: /tmp/test-results
-
 permissions:
   contents: read
-
 jobs:
   set-up:
     runs-on: ubuntu-latest
@@ -28,53 +19,46 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
           clean: false
       - name: Compute Matrix
         id: matrix
-        run: |-
-          echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
-
+        run: |2-
+              echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
+              go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
   test-contrib-matrix:
     needs:
       - set-up
     runs-on:
-      group: "APM Larger Runners"
+      group: APM Larger Runners
     env:
       INTEGRATION: true
     strategy:
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
     services:
-      datadog-agent: &datadog-agent
-        image: datadog/agent:latest
+      datadog-agent:
+        image: datadog/agent:7.69.2
         env:
-          DD_HOSTNAME: "github-actions-worker"
+          DD_HOSTNAME: github-actions-worker
           DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
+          DD_BIND_HOST: 0.0.0.0
+          DD_API_KEY: invalid_key_but_this_is_fine
+          DD_TEST_AGENT_HOST: localhost
           DD_TEST_AGENT_PORT: 9126
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
+        options: --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'
         ports:
           - 8125:8125/udp
-          - 8126:8126
+          - "8126:8126"
       testagent:
         image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
-        ports:
-          - 9126:9126
         env:
           LOG_LEVEL: DEBUG
           TRACE_LANGUAGE: golang
@@ -83,15 +67,17 @@ jobs:
           DD_SUPPRESS_TRACE_PARSE_ERRORS: true
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
+        ports:
+          - "9126:9126"
       cassandra:
         image: cassandra:3.11
         env:
-          JVM_OPTS: "-Xms750m -Xmx750m"
-          CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
-          CASSANDRA_DC: "dd-trace-go-test-datacenter"
-          CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+          JVM_OPTS: -Xms750m -Xmx750m
+          CASSANDRA_CLUSTER_NAME: dd-trace-go-test-cluster
+          CASSANDRA_DC: dd-trace-go-test-datacenter
+          CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
         ports:
-          - 9042:9042
+          - "9042:9042"
       mysql:
         image: cimg/mysql:8.0
         env:
@@ -100,7 +86,7 @@ jobs:
           MYSQL_USER: test
           MYSQL_DATABASE: test
         ports:
-          - 3306:3306
+          - "3306:3306"
       postgres:
         image: cimg/postgres:16.4
         env:
@@ -108,82 +94,82 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
         ports:
-          - 5432:5432
+          - "5432:5432"
       mssql:
         image: mcr.microsoft.com/mssql/server:2019-latest
         env:
           SA_PASSWORD: myPassw0rd
-          ACCEPT_EULA: Y
+          ACCEPT_EULA: "Y"
         ports:
-          - 1433:1433
+          - "1433:1433"
       consul:
         image: consul:1.6.0
         ports:
-          - 8500:8500
+          - "8500:8500"
       redis:
         image: redis:3.2
         ports:
-          - 6379:6379
+          - "6379:6379"
       valkey:
         image: valkey/valkey:8
         env:
-          VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
+          VALKEY_EXTRA_FLAGS: --port 6380 --requirepass password-for-default
         ports:
-          - 6380:6380
+          - "6380:6380"
       elasticsearch2:
         image: elasticsearch:2
         env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          ES_JAVA_OPTS: -Xms750m -Xmx750m
         ports:
-          - 9200:9200
+          - "9200:9200"
       elasticsearch5:
         image: elasticsearch:5
         env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          ES_JAVA_OPTS: -Xms750m -Xmx750m
         ports:
-          - 9201:9200
+          - "9201:9200"
       elasticsearch6:
         image: elasticsearch:6.8.13
         env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          ES_JAVA_OPTS: -Xms750m -Xmx750m
         ports:
-          - 9202:9200
+          - "9202:9200"
       elasticsearch7:
         image: elasticsearch:7.14.1
         env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          ES_JAVA_OPTS: -Xms750m -Xmx750m
           discovery.type: single-node
         ports:
-          - 9203:9200
+          - "9203:9200"
       elasticsearch8:
         image: elasticsearch:8.6.2
         env:
-          ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+          ES_JAVA_OPTS: -Xms750m -Xmx750m
           discovery.type: single-node
           xpack.security.enabled: false
         ports:
-          - 9204:9200
+          - "9204:9200"
       mongo3:
         image: mongo:3
         ports:
-          - 27018:27017
+          - "27018:27017"
       mongo:
         image: mongo:8
         ports:
-          - 27017:27017
+          - "27017:27017"
       memcached:
         image: memcached:1.5.9
         ports:
-          - 11211:11211
+          - "11211:11211"
       kafka:
         image: confluentinc/confluent-local:7.5.0
         env:
-          KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
-          KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
-          KAFKA_REST_BOOTSTRAP_SERVERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092"
-          KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9094"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-          KAFKA_INTER_BROKER_LISTENER_NAME: "BROKER"
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093,BROKER://localhost:9092
+          KAFKA_REST_BOOTSTRAP_SERVERS: PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9094
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+          KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
           KAFKA_BROKER_ID: "1"
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
           KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
@@ -191,29 +177,27 @@ jobs:
           KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
           KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
           KAFKA_NODE_ID: "1"
-          KAFKA_PROCESS_ROLES: "broker,controller"
-          KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+        options: --name "kafka"
         ports:
-          - 9092:9092
-          - 9093:9093
-        options: >-
-          --name "kafka"
+          - "9092:9092"
+          - "9093:9093"
       localstack:
         image: localstack/localstack:latest
         ports:
-          - 4566:4566
+          - "4566:4566"
     steps:
       - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
           clean: false
-
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
@@ -224,10 +208,9 @@ jobs:
         if: always()
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
-        run: |
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
-
+        run: |2-
+              export PATH="${{ github.workspace }}/bin:${PATH}"
+              ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -236,67 +219,54 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-
       - name: Upload Coverage
         if: always()
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
-
   test-contrib:
     needs:
       - test-contrib-matrix
     runs-on:
-      group: "APM Larger Runners"
+      group: APM Larger Runners
     if: success() || failure()
     continue-on-error: true
     steps:
       - name: Success
         if: needs.test-contrib-matrix.result == 'success'
-        run: echo "Success!"
+        run: echo 'Success!'
       - name: Failure
         if: needs.test-contrib-matrix.result != 'success'
-        run: echo "Failure!" && exit 1
-
+        run: echo 'Failure!' && exit 1
   test-core:
     runs-on:
-      group: "APM Larger Runners"
+      group: APM Larger Runners
     env:
-       INTEGRATION: true
+      INTEGRATION: true
     steps:
       - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
           clean: false
-      - name: Setup Go and development tools
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
       - name: Start datadog/agent
         uses: ./.github/actions/run-service
         with:
           repository: datadog/agent
           tag: 7.69.2
-          # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-          # we don't fully configure it with a valid API key (and possibly other reasons)
-          # This command just checks for our ability to connect to port 8126
-          flags: --name datadog-agent -e DD_HOSTNAME=github-actions-worker -e DD_APM_ENABLED=true -e DD_BIND_HOST=0.0.0.0 -e DD_API_KEY=invalid_key_but_this_is_fine -e DD_TEST_AGENT_HOST=localhost -e DD_TEST_AGENT_PORT=9126 --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'" -p 8125:8125/udp -p 8126:8126
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
-        run: |
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ls -al "${{ github.workspace }}/bin"
-          ./scripts/ci_test_core.sh
+        run: |2-
+              export PATH="${{ github.workspace }}/bin:${PATH}"
+              ls -al "${{ github.workspace }}/bin"
+              ./scripts/ci_test_core.sh
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -305,26 +275,34 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-
       - name: Upload Coverage
         if: always()
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
-
   upload-test-results:
     needs:
       - test-contrib
       - test-core
-    if: always() # Make sure this always runs, even if test-contrib or test-core fails
+    if: always()
     runs-on:
-      group: "APM Larger Runners"
+      group: APM Larger Runners
     services:
-      datadog-agent: *datadog-agent
+      datadog-agent:
+        image: datadog/agent:7.69.2
+        env:
+          DD_HOSTNAME: github-actions-worker
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: 0.0.0.0
+          DD_API_KEY: invalid_key_but_this_is_fine
+          DD_TEST_AGENT_HOST: localhost
+          DD_TEST_AGENT_PORT: 9126
+        options: --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'
+        ports:
+          - 8125:8125/udp
+          - "8126:8126"
       testagent:
         image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
-        ports:
-          - 9126:9126
         env:
           LOG_LEVEL: DEBUG
           TRACE_LANGUAGE: golang
@@ -333,16 +311,17 @@ jobs:
           DD_SUPPRESS_TRACE_PARSE_ERRORS: true
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
+        ports:
+          - "9126:9126"
     steps:
       - name: Get Datadog APM Test Agent Logs
         if: always()
         shell: bash
         run: docker logs ${{ job.services.testagent.id }}
-
       - name: Get Datadog APM Test Agent Trace Check Summary Results
         if: always()
         shell: bash
-        run: |
+        run: |2-
               RESPONSE=$(curl -s -w "\n%{http_code}" -o response.txt "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
               RESPONSE_CODE=$(echo "$RESPONSE" | awk 'END {print $NF}')
               SUMMARY_RESPONSE=$(curl -s -w "\n%{http_code}" -o summary_response.txt "http://127.0.0.1:9126/test/trace_check/summary?return_all=true")
