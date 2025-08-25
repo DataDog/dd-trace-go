@@ -11,6 +11,8 @@ PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
 # the first one fails
 set +e
 
+export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
+
 gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
 [[ $? -ne 0 ]] && report_error=1
 cd ./internal/exectracetest

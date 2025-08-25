@@ -6,8 +6,6 @@ godebug x509negativeserial=1
 
 replace github.com/DataDog/datadog-agent/pkg/trace => github.com/DataDog/datadog-agent/pkg/trace v0.67.0
 
-replace github.com/DataDog/datadog-go/v5 => github.com/DataDog/datadog-go/v5 v5.6.0
-
 require (
 	github.com/DataDog/appsec-internal-go v1.13.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.67.0
@@ -21,7 +19,6 @@ require (
 	github.com/DataDog/sketches-go v1.4.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
-	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/go-viper/mapstructure/v2 v2.3.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0

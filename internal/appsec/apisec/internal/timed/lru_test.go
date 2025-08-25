@@ -10,11 +10,12 @@ import (
 	"runtime"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec/internal/config"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 )
 
 func TestLRU(t *testing.T) {

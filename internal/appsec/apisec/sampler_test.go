@@ -14,11 +14,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec/internal/config"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 )
 
 func TestSampler(t *testing.T) {
