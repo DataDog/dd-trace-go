@@ -22,6 +22,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // HandlerOperation type representing an HTTP operation. It must be created with
@@ -159,6 +162,28 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 		cookies[c.Name] = append(cookies[c.Name], c.Value)
 	}
 	return cookies
+}
+
+// RouteMatched can be called if BeforeHandle is started too early in the http request lifecycle like
+// before the router has matched the request to a route. This can happen when the HTTP handler is wrapped
+// using http.NewServeMux instead of http.WrapHandler. In this case the route is empty and so are the path parameters.
+// In this case the route and path parameters will be filled in later by calling RouteMatched with the actual route.
+func RouteMatched(ctx context.Context, route string, routeParams map[string]string) {
+	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
+	if !ok {
+		log.Debug("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
+		telemetrylog.Warn("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring", telemetry.WithTags([]string{"product:appsec"}))
+		return
+	}
+
+	// Overwrite the previous route that was created using a quantization algorithm
+	op.route = route
+
+	// Call the WAF with this new data
+	op.Run(op, addresses.NewAddressesBuilder().
+		WithPathParams(routeParams).
+		Build(),
+	)
 }
 
 // BeforeHandle contains the appsec functionality that should be executed before a http.Handler runs.

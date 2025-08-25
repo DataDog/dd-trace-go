@@ -25,8 +25,10 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   PACKAGES: >-
     ./appsec/...
+    ./instrumentation/appsec/...
     ./internal/appsec/...
   SUBMODULES: >-
     ./contrib/database/sql
@@ -69,7 +71,7 @@ jobs:
       key: ${{ steps.cfg.outputs.key }}
       path: ${{ steps.cfg.outputs.path }}
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -79,13 +81,13 @@ jobs:
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
           echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           cache: false
 
       - name: Cache Go modules
         id: cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ steps.cfg.outputs.path }}
           key: ${{ steps.cfg.outputs.key }}
@@ -105,15 +107,15 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-13, macos-15 ] # oldest and newest macos runners available - macos-15 is an ARM runner
-        go-version: [ "1.24", "1.23" ]
+        go-version: [ "1.25", "1.24" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -121,7 +123,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
@@ -135,24 +137,24 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
-          cgocheck="GOEXPERIMENT=cgocheck2"
+          cgocheck="$GOEXPERIMENT,cgocheck2"
           report_error=0
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES"
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES"
                   fi
 
                   for submodule in $SUBMODULES; do
-                    if [[ $cgocheck_env == "GOEXPERIMENT=cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
-                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
+                    if [[ $cgocheck_env =~ "cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
+                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
                       continue
                     fi
 
                     cd $submodule
-                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
-                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule)"
+                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v .; then
+                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule)"
                       report_error=1
                     fi
                     cd -
@@ -172,12 +174,12 @@ jobs:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -185,7 +187,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v5.3.0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: stable
           cache: false # we manage the caching ourselves
@@ -223,18 +225,18 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.24", "1.23" ]
-        distribution: [ bookworm, bullseye, alpine ]
+        go-version: [ "1.25", "1.24" ]
+        distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 
       fail-fast: false
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -270,6 +272,7 @@ jobs:
             -v "$PWD:$PWD"                                                      \
             -w "$PWD"                                                           \
             -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            -e "GOEXPERIMENT=${{ env.GOEXPERIMENT }}"                           \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'

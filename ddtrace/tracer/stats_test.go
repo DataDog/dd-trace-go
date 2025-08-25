@@ -244,3 +244,35 @@ func TestStatsByKind(t *testing.T) {
 	_, ok = c.newTracerStatSpan(&s2, nil)
 	assert.False(t, ok)
 }
+
+func TestConcentratorDefaultEnv(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("uses-agent-default-env-when-no-tracer-env", func(t *testing.T) {
+		cfg := &config{
+			transport: newDummyTransport(),
+			agent:     agentFeatures{defaultEnv: "agent-prod"},
+		}
+		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
+		assert.Equal("agent-prod", c.aggregationKey.Env)
+	})
+
+	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
+		cfg := &config{
+			transport: newDummyTransport(),
+			env:       "tracer-staging",
+			agent:     agentFeatures{defaultEnv: "agent-prod"},
+		}
+		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
+		assert.Equal("tracer-staging", c.aggregationKey.Env)
+	})
+
+	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
+		cfg := &config{
+			transport: newDummyTransport(),
+			agent:     agentFeatures{},
+		}
+		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
+		assert.Equal("unknown-env", c.aggregationKey.Env)
+	})
+}

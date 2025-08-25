@@ -1,15 +1,15 @@
 module github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
 
-go 1.23.0
+go 1.24.0
 
 require (
 	cloud.google.com/go/pubsub v1.37.0
-	github.com/99designs/gqlgen v0.17.62
+	github.com/99designs/gqlgen v0.17.72
 	github.com/DataDog/datadog-agent/pkg/proto v0.68.0
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
-	github.com/DataDog/go-libddwaf/v4 v4.3.0
+	github.com/DataDog/go-libddwaf/v4 v4.3.2
 	github.com/DataDog/orchestrion v1.5.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -30,7 +30,7 @@ require (
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gocql/gocql v1.7.0
-	github.com/gofiber/fiber/v2 v2.52.7
+	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
@@ -58,7 +58,7 @@ require (
 	github.com/tinylib/msgp v1.3.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/valkey-io/valkey-go v1.0.56
-	github.com/vektah/gqlparser/v2 v2.5.21
+	github.com/vektah/gqlparser/v2 v2.5.25
 	github.com/xlab/treeprint v1.2.0
 	go.mongodb.org/mongo-driver v1.17.1
 	go.mongodb.org/mongo-driver/v2 v2.2.2
@@ -83,7 +83,7 @@ require (
 	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.68.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.68.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.68.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.69.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/log v0.68.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.68.0 // indirect
@@ -137,7 +137,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Microsoft/hcsshim v0.11.7 // indirect
-	github.com/agnivade/levenshtein v1.2.0 // indirect
+	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.1 // indirect
@@ -190,7 +190,6 @@ require (
 	github.com/eapache/go-resiliency v1.7.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
 	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.4.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect

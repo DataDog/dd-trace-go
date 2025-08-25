@@ -28,6 +28,7 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read
@@ -39,16 +40,27 @@ jobs:
       REPORT: gotestsum-report.xml # path to where test results will be saved
       DD_APPSEC_WAF_TIMEOUT: 1h
     steps:
+      - name: Normalize github.workspace for Windows
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $normalizedPath = "${{ github.workspace }}" -replace '\\', '/'
+          "normalized_workspace=$normalizedPath" >> $env:GITHUB_ENV
+      - name: Normalize github.workspace for non-Windows OSes
+        if: ${{ runner.os != 'Windows' }}
+        shell: pwsh
+        run: |
+          "normalized_workspace=${{ github.workspace }}" >> $env:GITHUB_ENV
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v2.7.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v2.7.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
+          tools-dir: ${{ env.normalized_workspace }}/_tools
+          tools-bin: ${{ env.normalized_workspace }}/bin
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils

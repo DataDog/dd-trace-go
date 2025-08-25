@@ -27,6 +27,7 @@ on:
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read
@@ -37,10 +38,10 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     env:
-      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -81,12 +82,13 @@ jobs:
     name: 'go get -u smoke test'
     needs: setup-env
     strategy:
+      fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -110,9 +112,9 @@ jobs:
     name: Test dd-trace-go
     runs-on: ubuntu-latest
     env:
-      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -130,13 +132,13 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.23"
+          go-version: "1.24"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff
@@ -162,10 +164,10 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.23", "1.24" ]
-        build-env: [ alpine, bookworm, bullseye ]
+        go: [ "1.25", "1.24" ]
+        build-env: [ alpine, trixie, bookworm ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratchy ]
+        deployment-env: [ alpine, debian12, debian13, al2, al2023, busybox, scratchy ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -193,10 +195,10 @@ jobs:
           #    environment: the C library isn't located at the same place.
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian11
+            deployment-env: debian12
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian12
+            deployment-env: debian13
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: al2
@@ -212,8 +214,8 @@ jobs:
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
-          - build-env: bookworm
-            deployment-env: debian11
+          - build-env: trixie
+            deployment-env: al2
           # 3. Build with CGO enabled and deploying to a scratch/busybox docker
           #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
@@ -221,7 +223,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
