@@ -55,81 +55,78 @@ func genIPTestCases() []ipTestCase {
 		},
 	}
 
-	testHeaders := []string{
-		"x-forwarded-for",
-		"x-real-ip",
-		"true-client-ip",
-		"x-client-ip",
-		"x-forwarded",
-		"forwarded-for",
-		"x-cluster-client-ip",
-		"fastly-client-ip",
-		"cf-connecting-ip",
-		"cf-connecting-ip6",
-	}
-
 	// Simple ipv4 test cases over all headers
-	for _, header := range testHeaders {
+	for _, header := range defaultIPHeaders {
+		if header == "forwarded" {
+			// The `forwarded` header has a different format.
+			continue
+		}
+
 		tcs = append(tcs,
 			ipTestCase{
 				name:            "ipv4-global." + header,
 				remoteAddr:      ipv4Private,
 				headers:         map[string]string{header: ipv4Global},
 				expectedIP:      netip.MustParseAddr(ipv4Global),
-				clientIPHeaders: testHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv4-private." + header,
 				headers:         map[string]string{header: ipv4Private},
 				remoteAddr:      ipv6Private,
 				expectedIP:      netip.MustParseAddr(ipv4Private),
-				clientIPHeaders: testHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv4-global-remoteaddr-local-ip-header." + header,
 				remoteAddr:      ipv4Global,
 				headers:         map[string]string{header: ipv4Private},
 				expectedIP:      netip.MustParseAddr(ipv4Global),
-				clientIPHeaders: testHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv4-global-remoteaddr-global-ip-header." + header,
 				remoteAddr:      ipv6Global,
 				headers:         map[string]string{header: ipv4Global},
 				expectedIP:      netip.MustParseAddr(ipv4Global),
-				clientIPHeaders: testHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			})
 	}
 
 	// Simple ipv6 test cases over all headers
-	for _, header := range testHeaders {
+	for _, header := range defaultIPHeaders {
+		if header == "forwarded" {
+			// The `forwarded` header has a different format.
+			continue
+		}
+
 		tcs = append(tcs, ipTestCase{
 			name:            "ipv6-global." + header,
 			remoteAddr:      ipv4Private,
 			headers:         map[string]string{header: ipv6Global},
 			expectedIP:      netip.MustParseAddr(ipv6Global),
-			clientIPHeaders: testHeaders,
+			clientIPHeaders: defaultIPHeaders,
 		},
 			ipTestCase{
 				name:            "ipv6-private." + header,
 				headers:         map[string]string{header: ipv6Private},
 				remoteAddr:      ipv4Private,
 				expectedIP:      netip.MustParseAddr(ipv6Private),
-				clientIPHeaders: testHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv6-global-remoteaddr-local-ip-header." + header,
 				remoteAddr:      ipv6Global,
 				headers:         map[string]string{header: ipv6Private},
 				expectedIP:      netip.MustParseAddr(ipv6Global),
-				clientIPHeaders: testHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			},
 			ipTestCase{
 				name:            "ipv6-global-remoteaddr-global-ip-header." + header,
 				remoteAddr:      ipv4Global,
 				headers:         map[string]string{header: ipv6Global},
 				expectedIP:      netip.MustParseAddr(ipv6Global),
-				clientIPHeaders: testHeaders,
+				clientIPHeaders: defaultIPHeaders,
 			})
 	}
 
@@ -288,6 +285,72 @@ func genIPTestCases() []ipTestCase {
 		},
 	}, tcs...)
 
+	// Special case for the "Forwarded" header here
+	tcs = append(tcs,
+		ipTestCase{
+			name:            "ipv4-global.forwarded",
+			remoteAddr:      ipv4Private,
+			headers:         map[string]string{"forwarded": fmt.Sprintf("proto=https;by=127.0.0.1;for=%s", ipv4Global)},
+			expectedIP:      netip.MustParseAddr(ipv4Global),
+			clientIPHeaders: defaultIPHeaders,
+		},
+		ipTestCase{
+			name:            "ipv4-private.forwarded",
+			remoteAddr:      ipv6Private,
+			headers:         map[string]string{"forwarded": fmt.Sprintf("proto=https;by=127.0.0.1;for=%s", ipv4Private)},
+			expectedIP:      netip.MustParseAddr(ipv4Private),
+			clientIPHeaders: defaultIPHeaders,
+		},
+		ipTestCase{
+			name:            "ipv4-global-remoteaddr-local-ip-header.forwarded",
+			remoteAddr:      ipv4Global,
+			headers:         map[string]string{"forwarded": fmt.Sprintf("proto=https;by=127.0.0.1;for=%s:443", ipv4Private)},
+			expectedIP:      netip.MustParseAddr(ipv4Global),
+			clientIPHeaders: defaultIPHeaders,
+		},
+		ipTestCase{
+			name:            "ipv4-global-remoteaddr-global-ip-header.forwarded",
+			remoteAddr:      ipv6Global,
+			headers:         map[string]string{"forwarded": fmt.Sprintf("proto=https;by=127.0.0.1;for=%q", ipv4Global)},
+			expectedIP:      netip.MustParseAddr(ipv4Global),
+			clientIPHeaders: defaultIPHeaders,
+		},
+		ipTestCase{
+			name:       "multiply.forwarded",
+			remoteAddr: ipv6Private,
+			// Note -- Liberally quoting the IPv4 address here to make sure parsing works okay.
+			headers:         map[string]string{"forwarded": fmt.Sprintf("for=fe80::2897:fcb4:830e:9e44%%utun2;FOR=%q", ipv4Global)},
+			expectedIP:      netip.MustParseAddr(ipv4Global),
+			clientIPHeaders: defaultIPHeaders,
+		},
+
+		ipTestCase{
+			name:       "ipv6.forwarded",
+			remoteAddr: ipv4Private,
+			// Note -- odd case for `fOr` is intentional (these are case insensitive). Also, IPv6 addresses are quoted + braced.
+			headers:         map[string]string{"forwarded": fmt.Sprintf("fOr=\"[%s]:4862\"", ipv6Global)},
+			expectedIP:      netip.MustParseAddr(ipv6Global),
+			clientIPHeaders: defaultIPHeaders,
+		},
+
+		ipTestCase{
+			name:       "no-for-directive.forwarded",
+			remoteAddr: ipv4Private,
+			// Note -- odd case for `fOr` is intentional (these are case insensitive).
+			headers:         map[string]string{"forwarded": "proto=https;by=127.0.0.1"},
+			expectedIP:      netip.MustParseAddr(ipv4Private),
+			clientIPHeaders: defaultIPHeaders,
+		},
+		ipTestCase{
+			name:       "not-an-ip.forwarded",
+			remoteAddr: ipv4Private,
+			// Note -- odd case for `fOr` is intentional (these are case insensitive).
+			headers:         map[string]string{"forwarded": "proto=https;by=127.0.0.1;FOR=unknown"},
+			expectedIP:      netip.MustParseAddr(ipv4Private),
+			clientIPHeaders: defaultIPHeaders,
+		},
+	)
+
 	return tcs
 }
 
@@ -331,6 +394,33 @@ func TestClientIPExtraction(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseForwardedHeader(t *testing.T) {
+	require.Equal(t,
+		[]string{"127.0.0.1", "127.0.0.2", "fe80::2897:fcb4:830e:9e44", "quoted\"escaped"},
+		parseForwardedHeader(`by=unknown;FOR="127.0.0.1:443";proto="https;TLS";for=127.0.0.2;for="[fe80::2897:fcb4:830e:9e44]:443";for="quoted\"escaped"`),
+	)
+	require.Equal(t,
+		[]string(nil),
+		// Valid, but use of a comma makes the FOR directive part of the by value
+		parseForwardedHeader(`by=unknown,FOR="127.0.0.1:443"`),
+	)
+	require.Equal(t,
+		[]string(nil),
+		// Invalid: the quote is not properly closed
+		parseForwardedHeader(`for="127.0.0.1`),
+	)
+	require.Equal(t,
+		[]string(nil),
+		// Invalid: trailing semicolon
+		parseForwardedHeader(`for="127.0.0.1";`),
+	)
+	require.Equal(t,
+		[]string(nil),
+		// Valid, but there is no `for` directive in there...
+		parseForwardedHeader(`by=127.0.0.1;proto=https`),
+	)
 }
 
 func randIPv4() netip.Addr {
