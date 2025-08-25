@@ -25,6 +25,10 @@ func readUvarintAt(buf []byte, p int) (val uint64, next int, err error) {
 // The list is terminated by a pair of empty strings (length 0 for both name and value).
 // https://www.haproxy.com/documentation/haproxy-configuration-manual/latest/#7.3.6-req.hdrs_bin
 func parseHAProxyReqHdrsBin(buf []byte) (http.Header, error) {
+	if buf == nil || len(buf) == 0 {
+		return nil, fmt.Errorf("empty headers buffer")
+	}
+
 	headers := make(http.Header)
 
 	p := 0
