@@ -66,11 +66,7 @@
 				"chunk": "${{ fromJson(needs.set-up.outputs.matrix) }}"
 			}
 		}
-		"services": {
-			for key, svc in _services {
-				"\(key)": svc
-			}
-		}
+		"services": _services
 		"steps": [
 			{
 				"name": "Restore repo cache"
