@@ -185,17 +185,21 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 	switch v := req.Request.(type) {
 	case *envoyextproc.ProcessingRequest_RequestHeaders:
 		var (
-			action message_processor.Action
-			err    error
+			action   message_processor.Action
+			err      error
+			reqState *message_processor.RequestState
 		)
-		*currentRequest, action, err = s.messageProcessor.OnRequestHeaders(ctx, &requestHeadersEnvoy{v, s.config.Integration})
+		reqState, action, err = s.messageProcessor.OnRequestHeaders(ctx, &requestHeadersEnvoy{v, s.config.Integration})
+		if err == nil {
+			*currentRequest = *reqState
+		}
 		return action, err
 
 	case *envoyextproc.ProcessingRequest_RequestBody:
 		if !currentRequest.Ongoing {
 			return message_processor.Action{}, status.Errorf(codes.InvalidArgument, "Received request body without request headers")
 		}
-		return s.messageProcessor.OnRequestBody(&requestBodyEnvoy{v}, *currentRequest)
+		return s.messageProcessor.OnRequestBody(&requestBodyEnvoy{v}, currentRequest)
 
 	case *envoyextproc.ProcessingRequest_ResponseHeaders:
 		if !currentRequest.Ongoing {
@@ -204,13 +208,13 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 				" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
 			return message_processor.Action{}, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 		}
-		return s.messageProcessor.OnResponseHeaders(&responseHeadersEnvoy{v}, *currentRequest)
+		return s.messageProcessor.OnResponseHeaders(&responseHeadersEnvoy{v}, currentRequest)
 
 	case *envoyextproc.ProcessingRequest_ResponseBody:
 		if !currentRequest.Ongoing {
 			return message_processor.Action{}, status.Errorf(codes.InvalidArgument, "Received response body without request context")
 		}
-		return s.messageProcessor.OnResponseBody(&responseBodyEnvoy{v}, *currentRequest)
+		return s.messageProcessor.OnResponseBody(&responseBodyEnvoy{v}, currentRequest)
 
 	case *envoyextproc.ProcessingRequest_RequestTrailers:
 		instr.Logger().Debug("external_processing: received unexpected message of type RequestTrailers, ignoring it. " +

@@ -49,26 +49,34 @@ func buildImmediateResponse(data *message_processor.BlockResponseData) *envoyext
 	}
 }
 
-// buildHeadersResponse creates an Envoy HeadersResponse from provided data answering a RequestHeaders message
+// buildHeadersResponse creates an Envoy HeadersResponse from provided data answering a RequestHeaders or ResponseHeaders message
 func buildHeadersResponse(data *message_processor.HeadersResponseData) *envoyextproc.ProcessingResponse {
 	var modeOverride *envoyextprocfilter.ProcessingMode
 	if data.RequestBody {
 		modeOverride = &envoyextprocfilter.ProcessingMode{RequestBodyMode: envoyextprocfilter.ProcessingMode_STREAMED}
 	}
 
-	return &envoyextproc.ProcessingResponse{
-		Response: &envoyextproc.ProcessingResponse_RequestHeaders{
-			RequestHeaders: &envoyextproc.HeadersResponse{
-				Response: &envoyextproc.CommonResponse{
-					Status: envoyextproc.CommonResponse_CONTINUE,
-					HeaderMutation: &envoyextproc.HeaderMutation{
-						SetHeaders: convertHeadersToEnvoy(data.HeaderMutation),
-					},
-				},
+	processingResponse := &envoyextproc.ProcessingResponse{ModeOverride: modeOverride}
+	headersResponse := &envoyextproc.HeadersResponse{
+		Response: &envoyextproc.CommonResponse{
+			Status: envoyextproc.CommonResponse_CONTINUE,
+			HeaderMutation: &envoyextproc.HeaderMutation{
+				SetHeaders: convertHeadersToEnvoy(data.HeaderMutation),
 			},
 		},
-		ModeOverride: modeOverride,
 	}
+
+	if data.Direction == message_processor.DirectionRequest {
+		processingResponse.Response = &envoyextproc.ProcessingResponse_RequestHeaders{
+			RequestHeaders: headersResponse,
+		}
+	} else {
+		processingResponse.Response = &envoyextproc.ProcessingResponse_ResponseHeaders{
+			ResponseHeaders: headersResponse,
+		}
+	}
+
+	return processingResponse
 }
 
 // convertHeadersToEnvoy converts standard HTTP headers to Envoy HeaderValueOption format

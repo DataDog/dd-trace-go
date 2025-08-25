@@ -35,18 +35,17 @@ func NewMessageProcessor(config MessageProcessorConfig, instr *instrumentation.I
 }
 
 // OnRequestHeaders handles incoming request headers
-func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (RequestState, Action, error) {
+func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (*RequestState, Action, error) {
 	httpReq, err := req.NewRequest(ctx)
 	if err != nil {
-		return RequestState{}, Action{}, err
+		return nil, Action{}, err
 	}
 
 	componentName := req.Component(ctx)
 	framework := req.Framework()
 	reqState, blocked := newRequestState(httpReq, mp.instr, mp.config.BodyParsingSizeLimit, componentName, framework)
-	if reqState.span == nil {
-		reqState.Close()
-		return RequestState{}, Action{}, fmt.Errorf("error getting span from context")
+	if reqState == nil {
+		return nil, Action{}, fmt.Errorf("error getting span from context")
 	}
 
 	if !mp.config.BlockingUnavailable && blocked {
@@ -57,7 +56,7 @@ func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHea
 	headerMutation, err := reqState.PropagationHeaders()
 	if err != nil {
 		reqState.Close()
-		return RequestState{}, Action{}, err
+		return nil, Action{}, err
 	}
 
 	// Determine if we instruct the proxy to send the body
@@ -68,11 +67,11 @@ func (mp *MessageProcessor) OnRequestHeaders(ctx context.Context, req RequestHea
 		// Todo: Set telemetry body size (using content-length)
 	}
 
-	return reqState, newContinueActionWithResponseData(headerMutation, requestBody), nil
+	return reqState, newContinueActionWithResponseData(headerMutation, requestBody, DirectionRequest), nil
 }
 
 // OnRequestBody handles incoming request body chunks
-func (mp *MessageProcessor) OnRequestBody(req RequestBody, reqState RequestState) (Action, error) {
+func (mp *MessageProcessor) OnRequestBody(req RequestBody, reqState *RequestState) (Action, error) {
 	if mp.config.BodyParsingSizeLimit <= 0 || !reqState.AwaitingRequestBody {
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
@@ -89,7 +88,7 @@ func (mp *MessageProcessor) OnRequestBody(req RequestBody, reqState RequestState
 }
 
 // OnResponseHeaders handles incoming response headers
-func (mp *MessageProcessor) OnResponseHeaders(res ResponseHeaders, reqState RequestState) (Action, error) {
+func (mp *MessageProcessor) OnResponseHeaders(res ResponseHeaders, reqState *RequestState) (Action, error) {
 	mp.instr.Logger().Debug("message_processor: received response headers")
 	reqState.AwaitingRequestBody = false
 
@@ -128,11 +127,11 @@ func (mp *MessageProcessor) OnResponseHeaders(res ResponseHeaders, reqState Requ
 
 	// Todo: Set telemetry body size (using content-length)
 
-	return newContinueActionWithResponseData(nil, true), nil
+	return newContinueActionWithResponseData(nil, true, DirectionResponse), nil
 }
 
 // OnResponseBody handles incoming response body chunks
-func (mp *MessageProcessor) OnResponseBody(res ResponseBody, reqState RequestState) (Action, error) {
+func (mp *MessageProcessor) OnResponseBody(res ResponseBody, reqState *RequestState) (Action, error) {
 	mp.instr.Logger().Debug("message_processor: received response body: %v - EOS: %v\n", len(res.Body()), res.EndOfStream())
 
 	if mp.config.BodyParsingSizeLimit <= 0 || !reqState.AwaitingResponseBody {

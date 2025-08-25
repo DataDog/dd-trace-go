@@ -20,10 +20,14 @@ func newContinueAction() Action {
 
 // newContinueActionWithResponseData creates an ActionTypeContinue with header mutations and requestBody flag.
 // The requestBody flag indicates whether the body should be requested from the proxy to the external processing service.
-func newContinueActionWithResponseData(mutations http.Header, requestBody bool) Action {
+func newContinueActionWithResponseData(mutations http.Header, requestBody bool, direction Direction) Action {
 	return Action{
-		Type:     ActionTypeContinue,
-		Response: &HeadersResponseData{HeaderMutation: mutations, RequestBody: requestBody},
+		Type: ActionTypeContinue,
+		Response: &HeadersResponseData{
+			HeaderMutation: mutations,
+			RequestBody:    requestBody,
+			Direction:      direction,
+		},
 	}
 }
 
@@ -46,10 +50,19 @@ func newFinishAction() Action {
 	}
 }
 
+// Direction indicates the direction of the message being processed.
+type Direction int
+
+const (
+	DirectionRequest  Direction = iota // DirectionRequest indicates a request message.
+	DirectionResponse                  // DirectionResponse indicates a response message.
+)
+
 // HeadersResponseData is the data for a headers response.
 type HeadersResponseData struct {
 	HeaderMutation http.Header
 	RequestBody    bool
+	Direction      Direction
 }
 
 // BlockResponseData is the data for a blocking response.
