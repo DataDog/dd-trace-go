@@ -1,3 +1,4 @@
+# Code generated via `make unit-integration-tests.yml`; DO NOT EDIT.
 name: Unit and Integration Tests
 "on":
   workflow_call:

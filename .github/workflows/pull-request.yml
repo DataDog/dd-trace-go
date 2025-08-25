@@ -1,3 +1,4 @@
+# Code generated via `make pull-request.yml`; DO NOT EDIT.
 name: Pull Request Tests
 "on":
   pull_request:
