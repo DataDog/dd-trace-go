@@ -32,6 +32,8 @@ func (a *requestHeadersHAProxy) NewRequest(ctx context.Context) (*http.Request, 
 	method := getStringValue(a.msg, "method")
 	path := getStringValue(a.msg, "path")
 	https := getBoolValue(a.msg, "https")
+	remoteIp := getIPValue(a.msg, "ip")
+	remotePort := strconv.Itoa(getIntValue(a.msg, "ip_port"))
 
 	var tlsState *tls.ConnectionState
 	scheme := "http"
@@ -61,7 +63,7 @@ func (a *requestHeadersHAProxy) NewRequest(ctx context.Context) (*http.Request, 
 		path,
 		method,
 		headers,
-		"123.123.456.111",
+		remoteIp.String()+":"+remotePort,
 		tlsState)
 }
 

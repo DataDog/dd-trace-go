@@ -3,9 +3,11 @@ package streamprocessingoffload
 import (
 	"fmt"
 	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/negasus/haproxy-spoe-go/action"
 	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,6 +26,9 @@ func getIntValue(msg *message.Message, key string) int {
 	if val, exists := msg.KV.Get(key); exists {
 		if i, ok := val.(int); ok {
 			return i
+		}
+		if i64, ok := val.(int64); ok {
+			return int(i64)
 		}
 	}
 	return 0
@@ -47,6 +52,15 @@ func getBoolValue(msg *message.Message, key string) bool {
 	return false
 }
 
+func getIPValue(msg *message.Message, key string) net.IP {
+	if val, exists := msg.KV.Get(key); exists {
+		if ip, ok := val.(net.IP); ok {
+			return ip
+		}
+	}
+	return nil
+}
+
 // spanIDFromMessage extracts the span_id from the agent message to use as the key for the request state cache.
 func spanIDFromMessage(msg *message.Message) (uint64, error) {
 	spanIdStr := getStringValue(msg, "span_id")
@@ -67,7 +81,7 @@ func spanIDFromMessage(msg *message.Message) (uint64, error) {
 }
 
 // setHeadersResponseData sets HeadersResponseData data into the request variables answering a Request Headers message
-func setHeadersResponseData(data *message_processor.HeadersResponseData, req *request.Request, msg *message.Message, reqState *message_processor.RequestState) error {
+func setHeadersResponseData(data *message_processor.HeadersResponseData, req *request.Request, msg *message.Message, reqState *message_processor.RequestState, cache *ttlcache.Cache[uint64, *message_processor.RequestState]) error {
 	if req.Actions == nil {
 		return fmt.Errorf("req.Actions is nil, cannot set headers response data")
 	}
@@ -77,10 +91,7 @@ func setHeadersResponseData(data *message_processor.HeadersResponseData, req *re
 		spanId := reqState.Span.Context().SpanID()
 		timeout := getStringValue(msg, "timeout")
 
-		err := storeCurrentRequest(spanId, *reqState, timeout)
-		if err != nil {
-			return err
-		}
+		storeCurrentRequest(cache, spanId, *reqState, timeout)
 
 		spanIdStr := strconv.FormatUint(spanId, 10)
 		req.Actions.SetVar(action.ScopeTransaction, "span_id", spanIdStr)
