@@ -150,6 +150,11 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			},
 			want: http.Header{"A": {"B"}},
 		},
+		{
+			name:    "Malformed_Empty",
+			build:   func() []byte { return nil },
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
