@@ -79,13 +79,14 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	) {
 		operation := awsmiddleware.GetOperationName(ctx)
 		serviceID := awsmiddleware.GetServiceID(ctx)
+		region := awsmiddleware.GetRegion(ctx)
 
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
 			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
-			tracer.Tag(ext.AWSRegionLegacy, awsmiddleware.GetRegion(ctx)),
-			tracer.Tag(ext.AWSRegion, awsmiddleware.GetRegion(ctx)),
+			tracer.Tag(ext.AWSRegionLegacy, region),
+			tracer.Tag(ext.AWSRegion, region),
 			tracer.Tag(ext.AWSOperation, operation),
 			tracer.Tag(ext.AWSServiceLegacy, serviceID),
 			tracer.Tag(ext.AWSService, serviceID),
@@ -93,14 +94,17 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
-		k, v, ok := resourceNameFromParams(in, serviceID)
+		resourceTags, ok := resourceTagsFromParams(in, serviceID, region)
 		if !ok {
-			instr.Logger().Debug("attemped to extract resourceNameFromParams of an unsupported AWS service: %s", serviceID)
+			instr.Logger().Debug("attempted to extract resourceTagsFromParams of an unsupported AWS service: %s", serviceID)
 		} else {
-			if v != "" {
-				opts = append(opts, tracer.Tag(k, v))
+			for k, v := range resourceTags {
+				if v != "" {
+					opts = append(opts, tracer.Tag(k, v))
+				}
 			}
 		}
+
 		if !math.IsNaN(mw.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, mw.cfg.analyticsRate))
 		}
@@ -131,47 +135,75 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	}), middleware.After)
 }
 
-func resourceNameFromParams(requestInput middleware.InitializeInput, awsService string) (string, string, bool) {
-	var k, v string
+func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService string, region string) (map[string]string, bool) {
+	tags := make(map[string]string)
 
 	switch awsService {
 	case "SQS":
-		k, v = ext.SQSQueueName, queueName(requestInput)
+		if url := queueURL(requestInput); url != "" {
+			queueName, arn := extractSQSMetadata(url, region)
+			tags[ext.SQSQueueName] = queueName
+			tags[ext.CloudResourceID] = arn
+		}
 	case "S3":
-		k, v = ext.S3BucketName, bucketName(requestInput)
+		tags[ext.S3BucketName] = bucketName(requestInput)
 	case "SNS":
-		k, v = destinationTagValue(requestInput)
+		k, v := destinationTagValue(requestInput)
+		tags[k] = v
 	case "DynamoDB":
-		k, v = ext.DynamoDBTableName, tableName(requestInput)
+		tags[ext.DynamoDBTableName] = tableName(requestInput)
 	case "Kinesis":
-		k, v = ext.KinesisStreamName, streamName(requestInput)
+		tags[ext.KinesisStreamName] = streamName(requestInput)
 	case "EventBridge":
-		k, v = ext.EventBridgeRuleName, ruleName(requestInput)
+		tags[ext.EventBridgeRuleName] = ruleName(requestInput)
 	case "SFN":
-		k, v = ext.SFNStateMachineName, stateMachineName(requestInput)
+		tags[ext.SFNStateMachineName] = stateMachineName(requestInput)
 	default:
-		return "", "", false
+		return nil, false
 	}
 
-	return k, v, true
+	return tags, true
 }
 
-func queueName(requestInput middleware.InitializeInput) string {
-	var queueURL string
+func queueURL(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.DeleteMessageInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.DeleteMessageBatchInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.ReceiveMessageInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	case *sqs.SendMessageBatchInput:
-		queueURL = *params.QueueUrl
+		return *params.QueueUrl
 	}
+	return ""
+}
+
+func extractSQSMetadata(queueURL string, region string) (queueName string, arn string) {
+	// https://sqs.{region}.amazonaws.com/{account-id}/{queue-name}
 	parts := strings.Split(queueURL, "/")
-	return parts[len(parts)-1]
+	if len(parts) < 2 {
+		return "", ""
+	}
+
+	// Determine partition based on region
+	var partition string
+	switch {
+	case strings.HasPrefix(region, "cn-"):
+		partition = "aws-cn"
+	case strings.HasPrefix(region, "us-gov-"):
+		partition = "aws-us-gov"
+	default:
+		partition = "aws"
+	}
+
+	queueName = parts[len(parts)-1]
+	accountID := parts[len(parts)-2]
+
+	arn = fmt.Sprintf("arn:%s:sqs:%s:%s:%s", partition, region, accountID, queueName)
+	return queueName, arn
 }
 
 func bucketName(requestInput middleware.InitializeInput) string {
