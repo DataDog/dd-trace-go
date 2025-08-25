@@ -54,7 +54,7 @@ func TestFeature_headerCollection(t *testing.T) {
 			RequestURI: "https://datadoghq.com/",
 			Host:       "datadoghq.com",
 			RemoteAddr: "1.2.3.4",
-			Headers:    map[string][]string{"X-Forwarded": {"127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}},
+			Headers:    map[string][]string{"Forwarded": {"for=127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}},
 		}
 		response = emitter.HandlerOperationRes{
 			Headers: map[string][]string{"Content-Type": {"application/json"}, "Content-Length": {"1337"}},
@@ -73,7 +73,7 @@ func TestFeature_headerCollection(t *testing.T) {
 				"http.client_ip":                       "4.5.6.7",
 				"http.request.headers.host":            "datadoghq.com",
 				"http.request.headers.x-forwarded-for": "4.5.6.7,9.8.7.6",
-				"http.request.headers.x-forwarded":     "127.0.0.1",
+				"http.request.headers.forwarded":       "for=127.0.0.1",
 				"http.response.headers.content-type":   "application/json",
 				"http.response.headers.content-length": "1337",
 				"network.client.ip":                    "1.2.3.4",
@@ -88,7 +88,7 @@ func TestFeature_headerCollection(t *testing.T) {
 				"http.client_ip":                       "4.5.6.7",
 				"http.request.headers.host":            "datadoghq.com",
 				"http.request.headers.x-forwarded-for": "4.5.6.7,9.8.7.6",
-				"http.request.headers.x-forwarded":     "127.0.0.1",
+				"http.request.headers.forwarded":       "for=127.0.0.1",
 				"http.response.headers.content-type":   "application/json",
 				"http.response.headers.content-length": "1337",
 				"network.client.ip":                    "1.2.3.4",
