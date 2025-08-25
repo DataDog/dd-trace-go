@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -499,8 +498,8 @@ func TestAPISecurity(t *testing.T) {
 		}
 		sampler.On("DecisionFor", samplingKey).Return(true).Once()
 
-		t.Setenv(internal.EnvAPISecEnabled, "true")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
+		t.Setenv(config.EnvAPISecEnabled, "true")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -544,8 +543,8 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		var sampler mockSampler
 
-		t.Setenv(internal.EnvAPISecEnabled, "false")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
+		t.Setenv(config.EnvAPISecEnabled, "false")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -586,10 +585,10 @@ func TestAPISecurityProxy(t *testing.T) {
 
 	t.Run("rate-limits", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "true")
-		t.Setenv(internal.EnvAPISecEnabled, "true")
+		t.Setenv(config.EnvAPISecEnabled, "true")
 		// Set the rate to 1 schema per minute
-		t.Setenv(internal.EnvAPISecProxySampleRate, "1")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithProxy()))
+		t.Setenv(config.EnvAPISecProxySampleRate, "1")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -615,9 +614,9 @@ func TestAPISecurityProxy(t *testing.T) {
 
 	t.Run("disabled-with-rate-0", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "true")
-		t.Setenv(internal.EnvAPISecEnabled, "true")
-		t.Setenv(internal.EnvAPISecProxySampleRate, "0")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithProxy()))
+		t.Setenv(config.EnvAPISecEnabled, "true")
+		t.Setenv(config.EnvAPISecProxySampleRate, "0")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -938,14 +937,11 @@ func TestWafEventsInMetaStruct(t *testing.T) {
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
-	rules, err := internal.DefaultRulesetMap()
-	require.NoError(b, err)
-
-	builder, err := libddwaf.NewBuilder(internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	builder, err := libddwaf.NewBuilder(config.DefaultObfuscatorKeyRegex, config.DefaultObfuscatorValueRegex)
 	require.NoError(b, err)
 	defer builder.Close()
 
-	_, err = builder.AddOrUpdateConfig("default", rules)
+	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(b, err)
 
 	handle := builder.Build()
@@ -1097,7 +1093,7 @@ func (m *mockSampler) DecisionFor(key apisec.SamplingKey) bool {
 func init() {
 	// This permits running the tests locally without defining the env var manually
 	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
-	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
-		os.Setenv(internal.EnvWAFTimeout, "1s")
+	if _, ok := os.LookupEnv(config.EnvWAFTimeout); !ok {
+		os.Setenv(config.EnvWAFTimeout, "1s")
 	}
 }
