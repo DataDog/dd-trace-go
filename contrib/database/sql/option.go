@@ -29,6 +29,7 @@ type config struct {
 	dbmPropagationMode tracer.DBMPropagationMode
 	dbStats            bool
 	statsdClient       instrumentation.StatsdClient
+	copyNotSupported   bool
 }
 
 // checkStatsdRequired adds a statsdclient onto the config if dbstats is enabled
@@ -48,18 +49,43 @@ func (c *config) checkStatsdRequired() {
 }
 
 func (c *config) checkDBMPropagation(driverName string, driver driver.Driver, dsn string) {
-	if c.dbmPropagationMode == tracer.DBMPropagationModeFull {
-		if dsn == "" {
-			dsn = c.dsn
-		}
-		if dbSystem, ok := dbmFullModeUnsupported(driverName, driver, dsn); ok {
-			instr.Logger().Warn("Using DBM_PROPAGATION_MODE in 'full' mode is not supported for %s, downgrading to 'service' mode. "+
-				"See https://docs.datadoghq.com/database_monitoring/connect_dbm_and_apm/ for more info.",
-				dbSystem,
-			)
-			c.dbmPropagationMode = tracer.DBMPropagationModeService
-		}
+	if c.dbmPropagationMode == tracer.DBMPropagationModeDisabled {
+		return
 	}
+	if c.dbmPropagationMode == tracer.DBMPropagationModeUndefined {
+		return
+	}
+	if dsn == "" {
+		dsn = c.dsn
+	}
+	// this case applies to full and service modes
+	if dbSystem, reason, ok := dbmPartiallySupported(driver, c); ok {
+		instr.Logger().Warn("Using DBM_PROPAGATION_MODE in '%s' mode is partially supported for %s: %s. "+
+			"See https://docs.datadoghq.com/database_monitoring/connect_dbm_and_apm/ for more info.",
+			c.dbmPropagationMode,
+			dbSystem,
+			reason,
+		)
+	}
+	if c.dbmPropagationMode != tracer.DBMPropagationModeFull {
+		return
+	}
+	// full mode is not supported for some drivers, so we need to check for that
+	if dbSystem, ok := dbmFullModeUnsupported(driverName, driver, dsn); ok {
+		instr.Logger().Warn("Using DBM_PROPAGATION_MODE in 'full' mode is not supported for %s, downgrading to 'service' mode. "+
+			"See https://docs.datadoghq.com/database_monitoring/connect_dbm_and_apm/ for more info.",
+			dbSystem,
+		)
+		c.dbmPropagationMode = tracer.DBMPropagationModeService
+	}
+}
+
+type unsupportedDriverModule struct {
+	prefix       string
+	pkgName      string
+	dbSystem     string
+	reason       string
+	updateConfig func(*config)
 }
 
 func dbmFullModeUnsupported(driverName string, driver driver.Driver, dsn string) (string, bool) {
@@ -67,30 +93,13 @@ func dbmFullModeUnsupported(driverName string, driver driver.Driver, dsn string)
 		sqlServer = "SQL Server"
 		oracle    = "Oracle"
 	)
-	// check if the driver package path is one of the unsupported ones.
-	if tp := reflect.TypeOf(driver); tp != nil && (tp.Kind() == reflect.Pointer || tp.Kind() == reflect.Struct) {
-		pkgPath := ""
-		switch tp.Kind() {
-		case reflect.Pointer:
-			pkgPath = tp.Elem().PkgPath()
-		case reflect.Struct:
-			pkgPath = tp.PkgPath()
-		}
-		driverPkgs := [][3]string{
-			{"github.com", "denisenkom/go-mssqldb", sqlServer},
-			{"github.com", "microsoft/go-mssqldb", sqlServer},
-			{"github.com", "sijms/go-ora", oracle},
-		}
-		for _, dp := range driverPkgs {
-			prefix, pkgName, dbSystem := dp[0], dp[1], dp[2]
-
-			// compare without the prefix to make it work for vendoring.
-			// also, compare only the prefix to make the comparison work when using major versions
-			// of the libraries or subpackages.
-			if strings.HasPrefix(strings.TrimPrefix(pkgPath, prefix+"/"), pkgName) {
-				return dbSystem, true
-			}
-		}
+	driverPkgs := []unsupportedDriverModule{
+		{"github.com", "denisenkom/go-mssqldb", sqlServer, "", nil},
+		{"github.com", "microsoft/go-mssqldb", sqlServer, "", nil},
+		{"github.com", "sijms/go-ora", oracle, "", nil},
+	}
+	if ix := unsupportedDriver(driver, driverPkgs); ix != -1 {
+		return driverPkgs[ix].dbSystem, true
 	}
 
 	// check the DSN if provided.
@@ -121,6 +130,45 @@ func dbmFullModeUnsupported(driverName string, driver driver.Driver, dsn string)
 		}
 	}
 	return "", false
+}
+
+func dbmPartiallySupported(driver driver.Driver, c *config) (string, string, bool) {
+	driverPkgs := []unsupportedDriverModule{
+		{"github.com", "lib/pq", "PostgreSQL", "COPY doesn't support comments", func(cfg *config) {
+			cfg.copyNotSupported = true
+		}},
+	}
+	if ix := unsupportedDriver(driver, driverPkgs); ix != -1 {
+		if driverPkgs[ix].updateConfig != nil {
+			driverPkgs[ix].updateConfig(c)
+		}
+		return driverPkgs[ix].dbSystem, driverPkgs[ix].reason, true
+	}
+	return "", "", false
+}
+
+func unsupportedDriver(driver driver.Driver, driverPkgs []unsupportedDriverModule) int {
+	// check if the driver package path is one of the unsupported ones.
+	if tp := reflect.TypeOf(driver); tp != nil && (tp.Kind() == reflect.Pointer || tp.Kind() == reflect.Struct) {
+		pkgPath := ""
+		switch tp.Kind() {
+		case reflect.Pointer:
+			pkgPath = tp.Elem().PkgPath()
+		case reflect.Struct:
+			pkgPath = tp.PkgPath()
+		}
+		for ix, dp := range driverPkgs {
+			prefix, pkgName := dp.prefix, dp.pkgName
+
+			// compare without the prefix to make it work for vendoring.
+			// also, compare only the prefix to make the comparison work when using major versions
+			// of the libraries or subpackages.
+			if strings.HasPrefix(strings.TrimPrefix(pkgPath, prefix+"/"), pkgName) {
+				return ix
+			}
+		}
+	}
+	return -1
 }
 
 // Option describes options for the database/sql integration.
