@@ -16,6 +16,7 @@
 /contrib/**/*appsec*.go         @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
 /contrib/envoyproxy             @DataDog/asm-go
+/contrib/haproxy                @DataDog/asm-go
 /contrib/k8s.io/gateway-api     @DataDog/asm-go
 
 # datastreams
