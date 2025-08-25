@@ -19,11 +19,11 @@ type Option interface {
 	apply(*config)
 }
 
-func defaultConfig(instr *instrumentation.Instrumentation) *config {
+func (tr *Tracer) defaultConfig() *config {
 	return &config{
-		serviceName:     instr.ServiceName(instrumentation.ComponentConsumer, nil),
-		publishSpanName: instr.OperationName(instrumentation.ComponentProducer, nil),
-		receiveSpanName: instr.OperationName(instrumentation.ComponentConsumer, nil),
+		serviceName:     tr.instr.ServiceName(instrumentation.ComponentConsumer, nil),
+		publishSpanName: tr.instr.OperationName(instrumentation.ComponentProducer, nil),
+		receiveSpanName: tr.instr.OperationName(instrumentation.ComponentConsumer, nil),
 		measured:        false,
 	}
 }

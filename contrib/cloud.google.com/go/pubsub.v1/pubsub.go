@@ -17,10 +17,14 @@ import (
 
 const componentName = instrumentation.PackageGCPPubsub
 
-var instr *instrumentation.Instrumentation
+var (
+	instr   *instrumentation.Instrumentation
+	pstrace *pubsubtrace.Tracer
+)
 
 func init() {
 	instr = instrumentation.Load(componentName)
+	pstrace = pubsubtrace.NewTracer(instr, componentName)
 }
 
 // Publish publishes a message on the specified topic and returns a PublishResult.
@@ -31,7 +35,7 @@ func init() {
 // the span.
 func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...Option) *PublishResult {
 	traceMsg := newTraceMessage(msg)
-	ctx, closeSpan := pubsubtrace.TracePublish(ctx, t, traceMsg, instr, componentName, opts...)
+	ctx, closeSpan := pstrace.TracePublish(ctx, t, traceMsg, opts...)
 	msg.Attributes = traceMsg.Attributes
 
 	return &PublishResult{
@@ -58,7 +62,7 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 // extracts any tracing metadata attached to the received message, and starts a
 // receive span.
 func WrapReceiveHandler(s *pubsub.Subscription, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
-	traceFn := pubsubtrace.TraceReceiveFunc(s, instr, componentName, opts...)
+	traceFn := pstrace.TraceReceiveFunc(s, opts...)
 	return func(ctx context.Context, msg *pubsub.Message) {
 		ctx, closeSpan := traceFn(ctx, newTraceMessage(msg))
 		defer closeSpan()

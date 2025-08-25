@@ -9,6 +9,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.3.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.3.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.3.0-dev.1
@@ -47,10 +48,13 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.112.1 // indirect
-	cloud.google.com/go/compute/metadata v0.6.0 // indirect
-	cloud.google.com/go/iam v1.1.7 // indirect
-	cloud.google.com/go/pubsub v1.37.0 // indirect
+	cloud.google.com/go v0.121.4 // indirect
+	cloud.google.com/go/auth v0.16.3 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
+	cloud.google.com/go/compute/metadata v0.7.0 // indirect
+	cloud.google.com/go/iam v1.5.2 // indirect
+	cloud.google.com/go/pubsub v1.49.0 // indirect
+	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
 	github.com/99designs/gqlgen v0.17.72 // indirect
 	github.com/DataDog/appsec-internal-go v1.13.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.68.0 // indirect
@@ -144,16 +148,15 @@ require (
 	github.com/gocql/gocql v1.6.0 // indirect
 	github.com/gofiber/fiber/v2 v2.52.9 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/go-tpm v0.9.5 // indirect
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
-	github.com/google/s2a-go v0.1.7 // indirect
+	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
-	github.com/googleapis/gax-go/v2 v2.12.2 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
+	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/graph-gophers/graphql-go v1.5.0 // indirect
 	github.com/graphql-go/graphql v0.8.1 // indirect
@@ -261,8 +264,8 @@ require (
 	go.opentelemetry.io/collector/pdata v1.36.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.125.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelzap v0.12.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.62.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0 // indirect
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/log v0.13.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
@@ -276,7 +279,7 @@ require (
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc // indirect
 	golang.org/x/mod v0.26.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
-	golang.org/x/oauth2 v0.27.0 // indirect
+	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/term v0.33.0 // indirect
@@ -284,11 +287,11 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.35.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/api v0.169.0 // indirect
-	google.golang.org/genproto v0.0.0-20240325203815-454cdb8f5daa // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250519155744-55703ea1f237 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
-	google.golang.org/grpc v1.73.0 // indirect
+	google.golang.org/api v0.239.0 // indirect
+	google.golang.org/genproto v0.0.0-20250728155136-f173205681a0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250728155136-f173205681a0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250728155136-f173205681a0 // indirect
+	google.golang.org/grpc v1.74.2 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
@@ -307,6 +310,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../contrib/aws/aws-sdk-go-v2
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../contrib/aws/aws-sdk-go
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 => ../../contrib/cloud.google.com/go/pubsub.v1
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 => ../../contrib/cloud.google.com/go/pubsub.v2
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka.v2
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../contrib/database/sql
