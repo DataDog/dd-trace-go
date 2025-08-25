@@ -22,7 +22,7 @@ var _ io.Closer = (*RequestState)(nil)
 // RequestState manages the state of a single request through its lifecycle
 type RequestState struct {
 	ctx         context.Context
-	span        *tracer.Span
+	Span        *tracer.Span
 	afterHandle func()
 
 	instr *instrumentation.Instrumentation
@@ -43,7 +43,7 @@ type RequestState struct {
 }
 
 // newRequestState creates a new request state
-func newRequestState(request *http.Request, instr *instrumentation.Instrumentation, bodyLimit int, componentName string, framework string) (RequestState, bool) {
+func newRequestState(request *http.Request, instr *instrumentation.Instrumentation, bodyLimit int, componentName string, framework string) (*RequestState, bool) {
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
@@ -56,7 +56,7 @@ func newRequestState(request *http.Request, instr *instrumentation.Instrumentati
 
 	span, ok := tracer.SpanFromContext(spanRequest.Context())
 	if !ok {
-		return RequestState{}, false
+		return nil, false
 	}
 
 	var requestBuffer *bodyBuffer
@@ -69,9 +69,9 @@ func newRequestState(request *http.Request, instr *instrumentation.Instrumentati
 		responseBuffer = newBodyBuffer(bodyLimit)
 	}
 
-	return RequestState{
+	return &RequestState{
 		ctx:                   spanRequest.Context(),
-		span:                  span,
+		Span:                  span,
 		afterHandle:           afterHandle,
 		instr:                 instr,
 		fakeResponseWriter:    fakeResponseWriter,
@@ -85,7 +85,7 @@ func newRequestState(request *http.Request, instr *instrumentation.Instrumentati
 // PropagationHeaders creates header mutations for trace propagation
 func (rs *RequestState) PropagationHeaders() (http.Header, error) {
 	newHeaders := make(http.Header)
-	if err := tracer.Inject(rs.span.Context(), tracer.HTTPHeadersCarrier(newHeaders)); err != nil {
+	if err := tracer.Inject(rs.Span.Context(), tracer.HTTPHeadersCarrier(newHeaders)); err != nil {
 		return nil, err
 	}
 
