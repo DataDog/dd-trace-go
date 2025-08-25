@@ -23,15 +23,18 @@ jobs:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
   warm-services-cache:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         image:
           - repository: datadog/agent
             tag: 7.69.2
-    uses: ./.github/actions/warm-up-service
-    with:
-      repository: ${{ matrix.image.repository }}
-      tag: ${{ matrix.image.tag }}
+    steps:
+      - name: Warm up service
+        uses: ./.github/actions/warm-up-service
+        with:
+          repository: ${{ matrix.image.repository }}
+          tag: ${{ matrix.image.tag }}
   unit-integration-tests:
     name: PR Unit and Integration Tests
     needs:

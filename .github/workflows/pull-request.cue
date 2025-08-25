@@ -35,6 +35,7 @@ package workflows
 		]
 	}
 	"warm-services-cache": {
+		"runs-on": "ubuntu-latest"
 		"strategy": {
 			"matrix": {
 				"image": [
@@ -42,11 +43,16 @@ package workflows
 				]
 			}
 		}
-		"uses": "./.github/actions/warm-up-service"
-		"with": {
-			"repository": "${{ matrix.image.repository }}"
-			"tag":        "${{ matrix.image.tag }}"
-		}
+		"steps": [
+			{
+				"name": "Warm up service"
+				"uses": "./.github/actions/warm-up-service"
+				"with": {
+					"repository": "${{ matrix.image.repository }}"
+					"tag":        "${{ matrix.image.tag }}"
+				}
+			}
+		]
 	}
 	"unit-integration-tests": {
 		"name": "PR Unit and Integration Tests"
