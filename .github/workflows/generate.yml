@@ -3,12 +3,13 @@ name: Generate
 on:
   push:
     branches:
-      - main
       - release-*
+      - mq-working-branch-**
   pull_request:
-    branches:
-      - main
-      - release-*
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_call:
     inputs:
       go-version:
