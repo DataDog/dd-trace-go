@@ -106,7 +106,7 @@ func parseForwardedHeader(rest string) []string {
 			log.Debug("invalid Forwarded header value: expected directive, but no '=' was found")
 			return nil
 		}
-		tail = strings.TrimFunc(tail, unicode.IsSpace)
+		tail = strings.TrimLeftFunc(tail, unicode.IsSpace)
 
 		var (
 			value  string
@@ -176,7 +176,7 @@ func parseForwardedHeader(rest string) []string {
 			}
 		}
 
-		rest = strings.TrimFunc(rest, unicode.IsSpace)
+		rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
 		if rest != "" {
 			if rest[0] != ';' {
 				// Expected a semicolon, this appears to be invalid...
@@ -184,12 +184,7 @@ func parseForwardedHeader(rest string) []string {
 				return nil
 			}
 			rest = rest[1:]
-			rest = strings.TrimFunc(rest, unicode.IsSpace)
-			if rest == "" {
-				// Trailing semicolon is not allowed
-				log.Debug("invalid Forwarded header value: trailing semicolon is not allowed")
-				return nil
-			}
+			rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
 		}
 	}
 	return result
