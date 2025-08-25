@@ -324,7 +324,11 @@ func TestExtraTagsForService(t *testing.T) {
 		assert.Equal(t, "sqs", s0.Tag("aws_service"))
 		assert.Equal(t, "SendMessage", s0.Tag("aws.operation"))
 		assert.Equal(t, sqsQueueName, s0.Tag("queuename"))
-		assert.Equal(t, sqsQueueURL, s0.Tag("queue_url"))
+		// Extract account ID from the queue URL
+		urlParts := strings.Split(sqsQueueURL, "/")
+		accountID := urlParts[len(urlParts)-2]
+		expectedARN := "arn:aws:sqs:us-east-1:" + accountID + ":test-queue-name"
+		assert.Equal(t, expectedARN, s0.Tag("cloud.resource_id"))
 	})
 	t.Run("S3", func(t *testing.T) {
 		mt := mocktracer.Start()
