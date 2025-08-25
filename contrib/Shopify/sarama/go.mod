@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
@@ -34,7 +34,6 @@ require (
 	github.com/eapache/go-resiliency v1.4.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
 	github.com/ebitengine/purego v0.8.3 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
