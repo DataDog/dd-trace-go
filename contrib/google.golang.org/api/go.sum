@@ -2,8 +2,6 @@ cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMT
 cloud.google.com/go/compute/metadata v0.6.0 h1:A6hENjEsCDtC1k8byVsgwvVcioamEHvZ4j01OwKxG9I=
 cloud.google.com/go/compute/metadata v0.6.0/go.mod h1:FjyFAW1MW0C203CEOMDTu3Dk1FlqW3Rga40jzHL4hfg=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/DataDog/appsec-internal-go v1.13.0 h1:aO6DmHYsAU8BNFuvYJByhMKGgcQT3WAbj9J/sgAJxtA=
-github.com/DataDog/appsec-internal-go v1.13.0/go.mod h1:9YppRCpElfGX+emXOKruShFYsdPq7WEPq/Fen4tYYpk=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.67.0 h1:2mEwRWvhIPHMPK4CMD8iKbsrYBxeMBSuuCXumQAwShU=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.67.0/go.mod h1:ejJHsyJTG7NU6c6TDbF7dmckD3g+AUGSdiSXy+ZyaCE=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.67.0 h1:NcvyDVIUA0NbBDbp7QJnsYhoBv548g8bXq886795mCQ=

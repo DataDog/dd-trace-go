@@ -9,12 +9,10 @@ import (
 	"fmt"
 	"sync"
 
-	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
-
-	appsecLog "github.com/DataDog/appsec-internal-go/log"
 	"github.com/DataDog/go-libddwaf/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -214,17 +212,4 @@ func (a *appsec) stop() {
 	}
 
 	a.features = nil
-}
-
-func init() {
-	appsecLog.SetBackend(appsecLog.Backend{
-		Debug: log.Debug,
-		Info:  log.Info,
-		Warn:  log.Warn,
-		Errorf: func(s string, a ...any) error {
-			err := fmt.Errorf(s, a...)
-			log.Error("%s", err.Error())
-			return err
-		},
-	})
 }
