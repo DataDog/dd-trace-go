@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/slashid/httpforwarded"
+	"github.com/theckman/httpforwarded"
 )
 
 // ClientIP returns the first public IP address found in the given headers. If

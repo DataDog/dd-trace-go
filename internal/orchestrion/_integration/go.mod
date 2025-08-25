@@ -310,6 +310,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.37.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0 // indirect
+	github.com/theckman/httpforwarded v0.4.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
