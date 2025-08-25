@@ -29,22 +29,22 @@ func (a *requestHeadersHAProxy) NewRequest(ctx context.Context) (*http.Request, 
 		return nil, err
 	}
 
+	authority := headers.Get("Host")
 	method := getStringValue(a.msg, "method")
 	path := getStringValue(a.msg, "path")
 	https := getBoolValue(a.msg, "https")
 	remoteIp := getIPValue(a.msg, "ip")
 	remotePort := strconv.Itoa(getIntValue(a.msg, "ip_port"))
 
+	if authority == "" || method == "" || path == "" || remoteIp == nil {
+		return nil, fmt.Errorf("missing required values in the http request SPOE message")
+	}
+
 	var tlsState *tls.ConnectionState
 	scheme := "http"
 	if https {
 		tlsState = &tls.ConnectionState{}
 		scheme = "https"
-	}
-
-	authority := headers.Get("Host")
-	if authority == "" {
-		return nil, fmt.Errorf("no Host header")
 	}
 
 	// Define if a body is present based on Content-Length header

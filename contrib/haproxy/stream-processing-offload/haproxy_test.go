@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"strconv"
@@ -567,6 +568,14 @@ func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), 
 	mKv.Add("https", true)
 	mKv.Add("timeout", "1s")
 
+	if ip, ok := headers["X-Forwarded-For"]; ok {
+		mKv.Add("ip", net.ParseIP(ip))
+	} else {
+		mKv.Add("ip", net.ParseIP("123.123.123.123"))
+	}
+
+	mKv.Add("ip_port", 12345)
+
 	messages := message.Messages{
 		&message.Message{Name: "http-request-headers-msg", KV: mKv},
 	}
@@ -608,7 +617,6 @@ func sendProcessingRequestBody(t *testing.T, handler func(*request.Request), bod
 	t.Helper()
 
 	mKv := kv.NewKV()
-	mKv.Add("body_size", len(body))
 	mKv.Add("body", body)
 	mKv.Add("span_id", spanId)
 
