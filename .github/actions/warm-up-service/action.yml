@@ -9,16 +9,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Restore repo cache
-      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-      with:
-        path: .git
-        key: gitdb-${{ github.repository_id }}-${{ github.sha }}
-    - name: Checkout
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        ref: ${{ github.sha }}
-        clean: false
     - name: Pull Docker image
       id: pull_image
       shell: bash

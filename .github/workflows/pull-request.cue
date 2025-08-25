@@ -44,6 +44,22 @@ package workflows
 			}
 		}
 		"steps": [
+						{
+				"name": "Restore repo cache"
+				"uses": "actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809"
+				"with": {
+					"path": ".git"
+					"key":  "gitdb-${{ github.repository_id }}-${{ github.sha }}"
+				}
+			},
+			{
+				"name": "Checkout"
+				"uses": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
+				"with": {
+					"ref":   "${{ github.sha }}"
+					"clean": false
+				}
+			},
 			{
 				"name": "Warm up service"
 				"uses": "./.github/actions/warm-up-service"
