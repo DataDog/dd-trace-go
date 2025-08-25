@@ -335,27 +335,26 @@ func TestClientIPExtraction(t *testing.T) {
 
 func TestParseForwardedHeader(t *testing.T) {
 	require.Equal(t,
-		[]string{"127.0.0.1", "127.0.0.2", "fe80::2897:fcb4:830e:9e44", "quoted\"escaped"},
-		parseForwardedHeader(`by=unknown;FOR="127.0.0.1:443";proto="https;TLS";for=127.0.0.2;for="[fe80::2897:fcb4:830e:9e44]:443";for="quoted\"escaped"`),
+		[]string{"127.0.0.1", "127.0.0.2", "fe80::2897:fcb4:830e:9e44", "quoted\"escaped", "fe80::2897:fcb4:830e:9e45"},
+		parseForwardedHeader(`by=unknown;FOR="127.0.0.1:443";proto="https;TLS";for=127.0.0.2;for="[fe80::2897:fcb4:830e:9e44]:443";for="quoted\"escaped";for="[fe80::2897:fcb4:830e:9e45]"`),
 	)
 	require.Equal(t,
-		[]string(nil),
-		// Valid, but use of a comma makes the FOR directive part of the by value
+		[]string{"127.0.0.1"},
 		parseForwardedHeader(`by=unknown,FOR="127.0.0.1:443"`),
-	)
-	require.Equal(t,
-		[]string(nil),
-		// Invalid: the quote is not properly closed
-		parseForwardedHeader(`for="127.0.0.1`),
 	)
 	require.Equal(t,
 		[]string{"127.0.0.1"},
 		parseForwardedHeader(`for="127.0.0.1";`),
 	)
 	require.Equal(t,
-		[]string(nil),
+		[]string{},
 		// Valid, but there is no `for` directive in there...
 		parseForwardedHeader(`by=127.0.0.1;proto=https`),
+	)
+	require.Equal(t,
+		[]string(nil),
+		// Invalid: the quote is not properly closed
+		parseForwardedHeader(`for="127.0.0.1`),
 	)
 }
 

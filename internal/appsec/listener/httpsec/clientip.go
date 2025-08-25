@@ -10,11 +10,10 @@ import (
 	"net/netip"
 	"net/textproto"
 	"regexp"
-	"strconv"
 	"strings"
-	"unicode"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/slashid/httpforwarded"
 )
 
 // ClientIP returns the first public IP address found in the given headers. If
@@ -78,8 +77,7 @@ headersLoop:
 }
 
 var (
-	forwardedPortV64Re = regexp.MustCompile(`^(\[[^]]+\]|\d+\.\d+\.\d+\.\d+):\d+$`)
-	forwardedPortV4Re  = regexp.MustCompile(`^(\d+\.\d+\.\d+\.\d+):\d+$`)
+	forwardedPortRe = regexp.MustCompile(`^(?:\[([a-f0-9:]+)\]|(\d+\.\d+\.\d+\.\d+))(?::\d+)?$`)
 )
 
 // parseForwardedHeader parses the value of the `Forwarded` header, returning
@@ -90,103 +88,26 @@ var (
 // If the value is found to be syntactically incorrect, a null slice is returned.
 //
 // See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Forwarded
-func parseForwardedHeader(rest string) []string {
-	var result []string
+func parseForwardedHeader(value string) []string {
+	result, err := httpforwarded.ParseParameter("for", []string{value})
+	if err != nil {
+		log.Debug("invalid Forwarded header value: %v", err)
+		return nil
+	}
 
-	// The Forwarded header is a semicolon-separated list of directives such as:
-	// Forwarded: for=192.0.2.60;proto=http;by=203.0.113.43
-	// The values MAY be quoted (using double quoted `'"'`), but IPv6 addresses
-	// MUST be quoted and enclosed in square brackers. IP addresses may include
-	// port information as well, but are not required to.
-
-	for rest != "" {
-		directive, tail, ok := strings.Cut(rest, "=")
-		if !ok {
-			// Expected a directive, this appears to be invalid...
-			log.Debug("invalid Forwarded header value: expected directive, but no '=' was found")
-			return nil
+	for idx, val := range result {
+		matches := forwardedPortRe.FindStringSubmatch(val)
+		if matches == nil {
+			continue
 		}
-		tail = strings.TrimLeftFunc(tail, unicode.IsSpace)
-
-		var (
-			value  string
-			quoted bool
-		)
-		if len(tail) != 0 && tail[0] == '"' {
-			var closed bool
-			for i := 1; i < len(tail); i++ {
-				if tail[i] == '"' {
-					value = tail[:i+1]
-					rest = tail[i+1:]
-					quoted = true
-					closed = true
-					break
-				}
-				if tail[i] == '\\' {
-					i++ // The next character is escaped
-				}
-			}
-			if !closed {
-				// Unclosed quoted value, this is invalid!
-				log.Debug("invalid Forwarded header value: a quoted value was not closed")
-				return nil
-			}
+		// Remove the port information from the value, and un-brace IPv6 addresses.
+		if matches[1] != "" {
+			result[idx] = matches[1]
 		} else {
-			var foundSemi bool
-			for i, c := range tail {
-				if c == ';' {
-					value = tail[:i]
-					rest = tail[i:]
-					foundSemi = true
-					break
-				}
-			}
-			if !foundSemi {
-				value = tail
-				rest = ""
-			}
-		}
-
-		if strings.ToLower(directive) == "for" {
-			// This is the directive we're interested in...
-			if quoted {
-				// There may be an IPv6 address enclosed in square brackets here.
-				value, err := strconv.Unquote(value)
-				if err != nil {
-					log.Debug("invalid Forwarded header value: invalid quoted value: %v", err)
-					return nil
-				}
-				// Remove any port information from the value.
-				if m := forwardedPortV64Re.FindStringSubmatch(value); m != nil {
-					value = m[1]
-				}
-				// Remove IPv6 brackets if present.
-				if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") {
-					value = value[1 : len(value)-1]
-				}
-				// We have our IP address (or identifier) here.
-				result = append(result, value)
-			} else {
-				// Remove any port information from the value.
-				if m := forwardedPortV4Re.FindStringSubmatch(value); m != nil {
-					value = m[1]
-				}
-				// We have our IP address (or identifier) here.
-				result = append(result, value)
-			}
-		}
-
-		rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
-		if rest != "" {
-			if rest[0] != ';' {
-				// Expected a semicolon, this appears to be invalid...
-				log.Debug("invalid Forwarded header value: a semicolon was expected between directives")
-				return nil
-			}
-			rest = rest[1:]
-			rest = strings.TrimLeftFunc(rest, unicode.IsSpace)
+			result[idx] = matches[2]
 		}
 	}
+
 	return result
 }
 
