@@ -873,6 +873,8 @@ github.com/testcontainers/testcontainers-go/modules/redis v0.37.0 h1:9HIY28I9ME/
 github.com/testcontainers/testcontainers-go/modules/redis v0.37.0/go.mod h1:Abu9g/25Qv+FkYVx3U4Voaynou1c+7D0HIhaQJXvk6E=
 github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0 h1:eIf5TWPO7Oq/h2Hb6UVn5r/x0ucGRxcKkbNtqCRzH9k=
 github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0/go.mod h1:bOuF2ueLQxiK44g7y90UT2lf3qitxUHV8ax2OHrPGT4=
+github.com/theckman/httpforwarded v0.4.0 h1:N55vGJT+6ojTnLY3LQCNliJC4TW0P0Pkeys1G1WpX2w=
+github.com/theckman/httpforwarded v0.4.0/go.mod h1:GVkFynv6FJreNbgH/bpOU9ITDZ7a5WuzdNCtIMI1pVI=
 github.com/theupdateframework/notary v0.7.0 h1:QyagRZ7wlSpjT5N2qQAh/pN+DVqgekv4DzbAiAiEL3c=
 github.com/theupdateframework/notary v0.7.0/go.mod h1:c9DRxcmhHmVLDay4/2fUYdISnHqbFDGRSlXPO0AhYWw=
 github.com/tidwall/assert v0.1.0 h1:aWcKyRBUAdLoVebxo95N7+YZVTFF/ASTr7BN4sLP6XI=

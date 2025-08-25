@@ -376,6 +376,8 @@ github.com/testcontainers/testcontainers-go v0.29.1 h1:z8kxdFlovA2y97RWx98v/TQ+t
 github.com/testcontainers/testcontainers-go v0.29.1/go.mod h1:SnKnKQav8UcgtKqjp/AD8bE1MqZm+3TDb/B8crE3XnI=
 github.com/testcontainers/testcontainers-go/modules/compose v0.29.1 h1:47ipPM+s+ltCDOP3Sa1j95AkNb+z+WGiHLDbLU8ixuc=
 github.com/testcontainers/testcontainers-go/modules/compose v0.29.1/go.mod h1:Sqh+Ef2ESdbJQjTJl57UOkEHkOc7gXvQLg1b5xh6f1Y=
+github.com/theckman/httpforwarded v0.4.0 h1:N55vGJT+6ojTnLY3LQCNliJC4TW0P0Pkeys1G1WpX2w=
+github.com/theckman/httpforwarded v0.4.0/go.mod h1:GVkFynv6FJreNbgH/bpOU9ITDZ7a5WuzdNCtIMI1pVI=
 github.com/theupdateframework/notary v0.7.0 h1:QyagRZ7wlSpjT5N2qQAh/pN+DVqgekv4DzbAiAiEL3c=
 github.com/theupdateframework/notary v0.7.0/go.mod h1:c9DRxcmhHmVLDay4/2fUYdISnHqbFDGRSlXPO0AhYWw=
 github.com/tilt-dev/fsnotify v1.4.8-0.20220602155310-fff9c274a375 h1:QB54BJwA6x8QU9nHY3xJSZR2kX9bgpZekRKGkLTmEXA=
