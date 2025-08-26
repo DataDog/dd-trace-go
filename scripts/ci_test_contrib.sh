@@ -16,6 +16,8 @@ else
 	INSTRUMENTATION_SUBMODULES=$(find ./instrumentation -mindepth 2 -type f -name go.mod -exec dirname {} \;)
 fi
 
+export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
+
 report_error=0
 
 for contrib in $CONTRIBS; do
