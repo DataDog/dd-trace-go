@@ -36,13 +36,7 @@ package workflows
 	}
 	"warm-services-cache": {
 		"runs-on": "ubuntu-latest"
-		"strategy": {
-			"matrix": {
-				"image": [
-					#ToImage & {_svc: _datadog_agent_svc},
-				]
-			}
-		}
+		"strategy": "matrix": "image": [#ToImage & {_svc: _datadog_agent_svc}]
 		"steps": [
 			{
 				"name": "Restore repo cache"

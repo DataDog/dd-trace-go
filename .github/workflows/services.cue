@@ -1,6 +1,9 @@
 package workflows
 
-import "strings"
+import (
+	"list"
+	"strings"
+)
 
 #Service: {
 	image: string
@@ -8,6 +11,22 @@ import "strings"
 	options?: string
 	ports?: [...string]
 	volumes?: [...string]
+}
+
+#Services: {[string]: #Service}
+
+#Services: {
+	_names: [...string]
+
+	if len(_names) == 0 {
+		_services
+	}
+	if len(_names) > 0 {
+		for name in _names
+		if list.Contains(_names, name) {
+			"\(name)": _services[name]
+		}
+	}
 }
 
 #Image: {

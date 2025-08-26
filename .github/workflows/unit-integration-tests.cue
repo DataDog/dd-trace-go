@@ -67,7 +67,7 @@
 				"chunk": "${{ fromJson(needs.set-up.outputs.matrix) }}"
 			}
 		}
-		"services": _services
+		"services": #Services
 		"steps": [
 			{
 				"name": "Restore repo cache"
@@ -220,12 +220,9 @@
 			"test-contrib",
 			"test-core",
 		]
-		"if": "always()"
+		"if": "always()" // Make sure this always runs, even if test-contrib or test-core fails
 		"runs-on": "group": "APM Larger Runners"
-		"services": {
-			"datadog-agent": _datadog_agent_svc
-			"testagent":     _testagent_svc
-		}
+		"services": #Services & {_names: ["datadog-agent", "testagent"]}
 		"steps": [
 			{
 				"name":  "Get Datadog APM Test Agent Logs"
