@@ -54,8 +54,9 @@ func TestCiVisibilityPayloadIntegrity(t *testing.T) {
 			want.Reset()
 			err := msgp.Encode(want, allEvents)
 			assert.NoError(err)
-			assert.Equal(want.Len(), p.size())
-			assert.Equal(p.itemCount(), len(allEvents))
+			stats := p.stats()
+			assert.Equal(want.Len(), stats.size)
+			assert.Equal(len(allEvents), stats.itemCount)
 
 			got, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -156,7 +157,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 		for i := 0; i < b.N; i++ {
 			reset()
 			for _, event := range events {
-				for p.size() < payloadMaxLimit {
+				for p.stats().size < payloadMaxLimit {
 					p.push(event)
 				}
 			}

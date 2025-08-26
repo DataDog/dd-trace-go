@@ -83,7 +83,7 @@ func (w *ciVisibilityTraceWriter) stop() {
 // flush sends the current payload to the transport. It ensures that the payload is reset
 // and the resources are freed after the flush operation is completed.
 func (w *ciVisibilityTraceWriter) flush() {
-	if w.payload.itemCount() == 0 {
+	if w.payload.stats().itemCount == 0 {
 		return
 	}
 
@@ -114,7 +114,8 @@ func (w *ciVisibilityTraceWriter) flush() {
 		telemetry.EndpointPayloadRequests(telemetry.TestCycleEndpointType, requestCompressedType)
 
 		for attempt := 0; attempt <= w.config.sendRetries; attempt++ {
-			size, count = p.size(), p.itemCount()
+			stats := p.stats()
+			size, count = stats.size, stats.itemCount
 			log.Debug("ciVisibilityTraceWriter: sending payload: size: %d events: %d\n", size, count)
 			_, err = w.config.transport.send(p.payload)
 			if err == nil {

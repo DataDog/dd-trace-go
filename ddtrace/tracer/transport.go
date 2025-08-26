@@ -159,11 +159,12 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %s", err.Error())
 	}
-	req.ContentLength = int64(p.size())
+	stats := p.stats()
+	req.ContentLength = int64(stats.size)
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set(traceCountHeader, strconv.Itoa(p.itemCount()))
+	req.Header.Set(traceCountHeader, strconv.Itoa(stats.itemCount))
 	req.Header.Set(headerComputedTopLevel, "yes")
 	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()

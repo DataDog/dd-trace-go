@@ -38,18 +38,19 @@ func TestPayloadIntegrity(t *testing.T) {
 	for _, n := range []int{10, 1 << 10, 1 << 17} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
-			p := newPayload()
+			p := newPayload(traceProtocolV04)
 			lists := make(spanLists, n)
 			for i := 0; i < n; i++ {
 				list := newSpanList(i%5 + 1)
 				lists[i] = list
-				p.push(list)
+				_, _ = p.push(list)
 			}
 			want.Reset()
 			err := msgp.Encode(want, lists)
 			assert.NoError(err)
-			assert.Equal(want.Len(), p.size())
-			assert.Equal(p.itemCount(), n)
+			stats := p.stats()
+			assert.Equal(want.Len(), stats.size)
+			assert.Equal(n, stats.itemCount)
 
 			got, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -64,9 +65,9 @@ func TestPayloadDecode(t *testing.T) {
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
-			p := newPayload()
+			p := newPayload(traceProtocolV04)
 			for i := 0; i < n; i++ {
-				p.push(newSpanList(i%5 + 1))
+				_, _ = p.push(newSpanList(i%5 + 1))
 			}
 			var got spanLists
 			err := msgp.Decode(p, &got)
@@ -86,7 +87,7 @@ func BenchmarkPayloadThroughput(b *testing.B) {
 // payload is filled.
 func benchmarkPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
-		p := newUnsafePayload()
+		p := newUnsafePayload(traceProtocolV04)
 		s := newBasicSpan("X")
 		s.meta["key"] = strings.Repeat("X", 10*1024)
 		trace := make(spanList, count)
@@ -103,8 +104,8 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		}
 		for i := 0; i < b.N; i++ {
 			reset()
-			for p.size() < payloadMaxLimit {
-				p.push(trace)
+			for p.stats().size < payloadMaxLimit {
+				_, _ = p.push(trace)
 			}
 		}
 	}
@@ -112,7 +113,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 
 // TestPayloadConcurrentAccess tests that payload operations are safe for concurrent use
 func TestPayloadConcurrentAccess(t *testing.T) {
-	p := newPayload()
+	p := newPayload(traceProtocolV04)
 
 	// Create some test spans
 	spans := make(spanList, 10)
@@ -135,8 +136,9 @@ func TestPayloadConcurrentAccess(t *testing.T) {
 
 			// Read size and item count concurrently
 			for j := 0; j < 10; j++ {
-				_ = p.size()
-				_ = p.itemCount()
+				stats := p.stats()
+				_ = stats.size
+				_ = stats.itemCount
 			}
 		}()
 	}
@@ -146,25 +148,25 @@ func TestPayloadConcurrentAccess(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 20; i++ {
-			_ = p.size()
+			_ = p.stats().size
 		}
 	}()
 
 	wg.Wait()
 
 	// Verify the payload is in a consistent state
-	if p.itemCount() == 0 {
+	if p.stats().itemCount == 0 {
 		t.Error("Expected payload to have items after concurrent operations")
 	}
 
-	if p.size() <= 0 {
+	if p.stats().size <= 0 {
 		t.Error("Expected payload size to be positive after concurrent operations")
 	}
 }
 
 // TestPayloadConcurrentReadWrite tests concurrent read and write operations
 func TestPayloadConcurrentReadWrite(t *testing.T) {
-	p := newPayload()
+	p := newPayload(traceProtocolV04)
 
 	// Add some initial data
 	span := newBasicSpan("test")
@@ -203,8 +205,9 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 20; j++ {
-				_ = p.size()
-				_ = p.itemCount()
+				stats := p.stats()
+				_ = stats.size
+				_ = stats.itemCount
 			}
 		}()
 	}
@@ -212,7 +215,7 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 	wg.Wait()
 
 	// Verify final state
-	if p.itemCount() == 0 {
+	if p.stats().itemCount == 0 {
 		t.Error("Expected payload to have items")
 	}
 }

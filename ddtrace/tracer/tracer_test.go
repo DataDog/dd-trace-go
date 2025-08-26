@@ -106,7 +106,7 @@ loop:
 		case <-timeout:
 			tst.Fatalf("timed out waiting for payload to contain %d", n)
 		default:
-			if t.traceWriter.(*agentTraceWriter).payload.itemCount() == n {
+			if t.traceWriter.(*agentTraceWriter).payload.stats().itemCount == n {
 				break loop
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -1447,7 +1447,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
+	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
 	tracer1.awaitPayload(t, count)
 }
 

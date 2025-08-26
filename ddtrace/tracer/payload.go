@@ -15,17 +15,21 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
+// payloadStats contains the statistics of a payload.
+type payloadStats struct {
+	size      int // size in bytes
+	itemCount int // number of items (traces)
+}
+
 // payloadWriter defines the interface for writing data to a payload.
 type payloadWriter interface {
 	io.Writer
 
-	push(t spanList) (size int, err error)
-	size() int
+	push(t spanList) (stats payloadStats, err error)
 	grow(n int)
 	reset()
 	clear()
 
-	itemCount() int
 	// recordItem records that an item was added and updates the header
 	recordItem()
 }
@@ -34,6 +38,11 @@ type payloadWriter interface {
 type payloadReader interface {
 	io.Reader
 	io.Closer
+
+	stats() payloadStats
+	size() int
+	itemCount() int
+	protocol() float64
 }
 
 // payload combines both reading and writing operations for a payload.
@@ -85,34 +94,31 @@ type unsafePayload struct {
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
 
-	// protocol specifies the trace protocol to use.
-	protocol float64
+	// protocolVersion specifies the trace protocolVersion to use.
+	protocolVersion float64
 }
 
 var _ io.Reader = (*unsafePayload)(nil)
 
 // newUnsafePayload returns a ready to use unsafe payload.
-func newUnsafePayload() *unsafePayload {
+func newUnsafePayload(protocol float64) *unsafePayload {
 	p := &unsafePayload{
-		header: make([]byte, 8),
-		off:    8,
+		header:          make([]byte, 8),
+		off:             8,
+		protocolVersion: protocol,
 	}
 	return p
 }
 
 // push pushes a new item into the stream.
-func (p *unsafePayload) push(t []*Span) (size int, err error) {
-	// if p.protocol == traceProtocolV1 {
-	//     // TODO: implement v1.0 encoding
-	// } else {
+func (p *unsafePayload) push(t []*Span) (stats payloadStats, err error) {
 	sl := spanList(t)
-	// }
 	p.buf.Grow(sl.Msgsize())
 	if err := msgp.Encode(&p.buf, sl); err != nil {
-		return 0, err
+		return payloadStats{}, err
 	}
 	p.recordItem()
-	return p.size(), nil
+	return p.stats(), nil
 }
 
 // itemCount returns the number of items available in the stream.
@@ -203,12 +209,25 @@ func (p *unsafePayload) recordItem() {
 	p.updateHeader()
 }
 
+// stats returns the current stats of the payload.
+func (p *unsafePayload) stats() payloadStats {
+	return payloadStats{
+		size:      p.size(),
+		itemCount: int(atomic.LoadUint32(&p.count)),
+	}
+}
+
+// protocol returns the protocol version of the payload.
+func (p *unsafePayload) protocol() float64 {
+	return p.protocolVersion
+}
+
 var _ io.Reader = (*safePayload)(nil)
 
 // newPayload returns a ready to use thread-safe payload.
-func newPayload() payload {
+func newPayload(protocol float64) payload {
 	return &safePayload{
-		p: newUnsafePayload(),
+		p: newUnsafePayload(protocol),
 	}
 }
 
@@ -219,7 +238,7 @@ type safePayload struct {
 }
 
 // push pushes a new item into the stream in a thread-safe manner.
-func (sp *safePayload) push(t spanList) (size int, err error) {
+func (sp *safePayload) push(t spanList) (stats payloadStats, err error) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	return sp.p.push(t)
@@ -286,4 +305,18 @@ func (sp *safePayload) recordItem() {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.p.recordItem()
+}
+
+// stats returns the current stats of the payload in a thread-safe manner.
+func (sp *safePayload) stats() payloadStats {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+	return sp.p.stats()
+}
+
+// protocol returns the protocol version of the payload in a thread-safe manner.
+func (sp *safePayload) protocol() float64 {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+	return sp.p.protocol()
 }

@@ -56,7 +56,7 @@ func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) (size int, err erro
 //	A pointer to a newly initialized civisibilitypayload instance.
 func newCiVisibilityPayload() *ciVisibilityPayload {
 	log.Debug("ciVisibilityPayload: creating payload instance")
-	return &ciVisibilityPayload{payload: newPayload(), serializationTime: 0}
+	return &ciVisibilityPayload{payload: newPayload(traceProtocolV04), serializationTime: 0}
 }
 
 // getBuffer retrieves the complete body of the CI Visibility payload, including metadata.
@@ -72,7 +72,7 @@ func newCiVisibilityPayload() *ciVisibilityPayload {
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 	startTime := time.Now()
-	log.Debug("ciVisibilityPayload: .getBuffer (count: %d)", p.payload.itemCount())
+	log.Debug("ciVisibilityPayload: .getBuffer (count: %d)", p.payload.stats().itemCount)
 
 	// Create a buffer to read the current payload
 	payloadBuf := new(bytes.Buffer)
@@ -89,7 +89,7 @@ func (p *ciVisibilityPayload) getBuffer(config *config) (*bytes.Buffer, error) {
 		return nil, err
 	}
 
-	telemetry.EndpointPayloadEventsCount(telemetry.TestCycleEndpointType, float64(p.payload.itemCount()))
+	telemetry.EndpointPayloadEventsCount(telemetry.TestCycleEndpointType, float64(p.payload.stats().itemCount))
 	telemetry.EndpointPayloadBytes(telemetry.TestCycleEndpointType, float64(encodedBuf.Len()))
 	telemetry.EndpointEventsSerializationMs(telemetry.TestCycleEndpointType, float64((p.serializationTime + time.Since(startTime)).Milliseconds()))
 	return encodedBuf, nil
@@ -150,14 +150,24 @@ func (p *ciVisibilityPayload) writeEnvelope(env string, events []byte) *ciTestCy
 	return visibilityPayload
 }
 
-// size returns the payload size in bytes.
-func (p *ciVisibilityPayload) size() int {
-	return p.payload.size()
+// stats returns the current stats of the payload.
+func (p *ciVisibilityPayload) stats() payloadStats {
+	return p.payload.stats()
 }
 
-// itemCount returns the number of items available in the stream.
+// size returns the payload size in bytes (for backward compatibility).
+func (p *ciVisibilityPayload) size() int {
+	return p.stats().size
+}
+
+// itemCount returns the number of items available in the stream (for backward compatibility).
 func (p *ciVisibilityPayload) itemCount() int {
-	return p.payload.itemCount()
+	return p.stats().itemCount
+}
+
+// protocol returns the protocol version of the payload.
+func (p *ciVisibilityPayload) protocol() float64 {
+	return p.payload.protocol()
 }
 
 // clear empties the payload buffers.

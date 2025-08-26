@@ -1522,20 +1522,10 @@ func (t *dummyTransport) endpoint() string {
 	return "http://localhost:9/v0.4/traces"
 }
 
-func decode(p payload) (spanLists, error) {
+func decode(p payloadReader) (spanLists, error) {
 	var traces spanLists
 	err := msgp.Decode(p, &traces)
 	return traces, err
-}
-
-func encode(traces [][]*Span) (payload, error) {
-	p := newPayload()
-	for _, t := range traces {
-		if _, err := p.push(t); err != nil {
-			return p, err
-		}
-	}
-	return p, nil
 }
 
 func (t *dummyTransport) Reset() {

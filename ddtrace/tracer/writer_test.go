@@ -459,7 +459,7 @@ func TestTraceProtocol(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV1, h.payload.protocol)
+		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 
 	t.Run("v0.4", func(t *testing.T) {
@@ -467,14 +467,14 @@ func TestTraceProtocol(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol)
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("default", func(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol)
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -482,7 +482,7 @@ func TestTraceProtocol(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol)
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 }
 func BenchmarkJsonEncodeSpan(b *testing.B) {
