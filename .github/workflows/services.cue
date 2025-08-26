@@ -34,7 +34,7 @@ _datadog_agent_svc: #Service & {
 		"DD_TEST_AGENT_PORT": 9126
 	}
 	"options": """
-		--health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'
+		--health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
 		"""
 	"ports": [
 		"8125:8125/udp",

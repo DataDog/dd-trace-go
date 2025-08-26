@@ -54,7 +54,7 @@ jobs:
           DD_API_KEY: invalid_key_but_this_is_fine
           DD_TEST_AGENT_HOST: localhost
           DD_TEST_AGENT_PORT: 9126
-        options: --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'
+        options: --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
         ports:
           - 8125:8125/udp
           - "8126:8126"
@@ -298,7 +298,7 @@ jobs:
           DD_API_KEY: invalid_key_but_this_is_fine
           DD_TEST_AGENT_HOST: localhost
           DD_TEST_AGENT_PORT: 9126
-        options: --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'
+        options: --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
         ports:
           - 8125:8125/udp
           - "8126:8126"
