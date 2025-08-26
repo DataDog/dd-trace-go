@@ -20,7 +20,7 @@ type (
 	// WAFManager holds a [libddwaf.Builder] and allows managing its configuration.
 	WAFManager struct {
 		builder      *libddwaf.Builder
-		staticRules  []byte
+		staticRules  []byte // nullable
 		rulesVersion string
 		closed       bool
 		mu           sync.RWMutex
@@ -133,8 +133,8 @@ func (m *WAFManager) AddOrUpdateConfig(path string, fragment any) (libddwaf.Diag
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	diag, err := m.builder.AddOrUpdateConfig(path, fragment)
-	if err == nil && diag.Version != "" {
-		m.rulesVersion = diag.Version
+	if err != nil {
+		return diag, err
 	}
 
 	// Submit the telemetry metrics for error counts obtained from the [libddwaf.Diagnostics] object.
@@ -144,24 +144,34 @@ func (m *WAFManager) AddOrUpdateConfig(path string, fragment any) (libddwaf.Diag
 		eventRulesVersion = m.rulesVersion
 	}
 	diag.EachFeature(updateTelemetryMetrics(eventRulesVersion))
-
 	return diag, err
 }
 
 // RestoreDefaultConfig restores the initial configurations to the receiving [WAFManager].
 func (m *WAFManager) RestoreDefaultConfig() error {
+	var diags libddwaf.Diagnostics
+	var err error
 	if m.staticRules == nil {
-		_, err := m.builder.AddDefaultRecommendedRuleset()
+		diags, err = m.builder.AddDefaultRecommendedRuleset()
+	} else {
+		var rules map[string]any
+		dec := json.NewDecoder(bytes.NewReader(m.staticRules))
+		dec.UseNumber()
+		if err := dec.Decode(&rules); err != nil {
+			return err
+		}
+		diags, err = m.AddOrUpdateConfig(defaultRulesPath, rules)
+	}
+	if err != nil {
 		return err
 	}
-	var rules map[string]any
-	dec := json.NewDecoder(bytes.NewReader(m.staticRules))
-	dec.UseNumber()
-	if err := dec.Decode(&rules); err != nil {
-		return err
+
+	if diags.Version != "" {
+		m.rulesVersion = diags.Version
 	}
-	diag, err := m.AddOrUpdateConfig(defaultRulesPath, rules)
-	diag.EachFeature(logLocalDiagnosticMessages)
+
+	diags.EachFeature(updateTelemetryMetrics(m.rulesVersion))
+	diags.EachFeature(logLocalDiagnosticMessages)
 	return err
 }
 
