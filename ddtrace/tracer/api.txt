@@ -126,11 +126,6 @@ type UserMonitoringConfig struct {
 
 type UserMonitoringOption func(*UserMonitoringConfig)()
 
-// File: payload_v1.go
-
-// Types
-type ArrayValue []anyValue
-
 // File: propagator.go
 
 // Types
