@@ -9,3 +9,12 @@ clean:
 
 test-apps.yml: test-apps.cue
 	cat <(echo "# Code generated via \`make test-apps.yml\`; DO NOT EDIT.") <(cue export --out=yaml $<) > $@
+
+unit-integration-tests.yml: unit-integration-tests.cue services.cue go-versions.cue
+	cat <(echo "# Code generated via \`make unit-integration-tests.yml\`; DO NOT EDIT.") <(cue export services.cue go-versions.cue --out=yaml $<) > $@
+
+pull-request.yml: pull-request.cue services.cue go-versions.cue
+	cat <(echo "# Code generated via \`make pull-request.yml\`; DO NOT EDIT.") <(cue export services.cue go-versions.cue --out=yaml $<) > $@
+
+.PHONY: cue
+cue: test-apps.yml unit-integration-tests.yml pull-request.yml
