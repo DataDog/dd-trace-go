@@ -269,6 +269,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.37.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/redis v0.37.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0 // indirect
+	github.com/theckman/httpforwarded v0.4.0 // indirect
 	github.com/tidwall/btree v1.6.0 // indirect
 	github.com/tidwall/buntdb v1.3.0 // indirect
 	github.com/tidwall/gjson v1.16.0 // indirect
