@@ -78,12 +78,12 @@ func TestPropagation(t *testing.T) {
 		ext.SpanType:        ext.SpanTypeMessageProducer,
 		"server_id":         srvID,
 		ext.ServiceName:     "",
-		ext.Component:       "cloud.google.com/go/pubsub.v1",
+		ext.Component:       "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "googlepubsub",
 		ext.SpanName:        "pubsub.publish",
 	}, spans[0].Tags())
-	assert.Equal("cloud.google.com/go/pubsub.v1", spans[0].Integration())
+	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
 
 	assert.Equal(spans[0].SpanID(), spans[2].ParentID())
 	assert.Equal(uint64(42), spans[2].TraceID())
@@ -96,13 +96,13 @@ func TestPropagation(t *testing.T) {
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
 		"message_id":        msgID,
 		"publish_time":      pubTime,
-		ext.Component:       "cloud.google.com/go/pubsub.v1",
+		ext.Component:       "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.receive",
 	}, spans[2].Tags())
-	assert.Equal("cloud.google.com/go/pubsub.v1", spans[2].Integration())
+	assert.Equal("cloud.google.com/go/pubsub.v2", spans[2].Integration())
 }
 
 func TestPropagationWithServiceName(t *testing.T) {
@@ -174,13 +174,13 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.ResourceName:    "projects/project/topics/topic",
 		ext.SpanType:        ext.SpanTypeMessageProducer,
 		"server_id":         srvID,
-		ext.Component:       "cloud.google.com/go/pubsub.v1",
+		ext.Component:       "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.publish",
 	}, spans[0].Tags())
-	assert.Equal("cloud.google.com/go/pubsub.v1", spans[0].Integration())
+	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
 
 	assert.Equal(spans[0].SpanID(), spans[1].ParentID())
 	assert.Equal(traceID, spans[1].Context().TraceID())
@@ -193,13 +193,13 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
 		"message_id":        msgID,
 		"publish_time":      pubTime,
-		ext.Component:       "cloud.google.com/go/pubsub.v1",
+		ext.Component:       "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.receive",
 	}, spans[1].Tags())
-	assert.Equal("cloud.google.com/go/pubsub.v1", spans[1].Integration())
+	assert.Equal("cloud.google.com/go/pubsub.v2", spans[1].Integration())
 }
 
 func TestPropagationNoPublisherSpan(t *testing.T) {
@@ -249,13 +249,13 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
 		"message_id":        msgID,
 		"publish_time":      pubTime,
-		ext.Component:       "cloud.google.com/go/pubsub.v1",
+		ext.Component:       "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
 		ext.ServiceName:     "",
 		ext.SpanName:        "pubsub.receive",
 	}, spans[0].Tags())
-	assert.Equal("cloud.google.com/go/pubsub.v1", spans[0].Integration())
+	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
 }
 
 func filterTags(m map[string]any) map[string]any {
