@@ -44,7 +44,7 @@ package workflows
 			}
 		}
 		"steps": [
-						{
+			{
 				"name": "Restore repo cache"
 				"uses": "actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809"
 				"with": {
@@ -67,7 +67,7 @@ package workflows
 					"repository": "${{ matrix.image.repository }}"
 					"tag":        "${{ matrix.image.tag }}"
 				}
-			}
+			},
 		]
 	}
 	"unit-integration-tests": {
