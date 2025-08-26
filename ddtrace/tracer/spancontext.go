@@ -126,6 +126,10 @@ type spanContextV1Adapter interface {
 	Tags() map[string]string
 }
 
+type otelContextAdapter interface {
+	IsSampled() bool
+}
+
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
@@ -138,16 +142,21 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		sc.baggage[k] = v
 		return true
 	})
-	ctx, ok := c.(spanContextV1Adapter)
-	if !ok {
-		return &sc
+	switch ctx := c.(type) {
+	case spanContextV1Adapter:
+		sc.origin = ctx.Origin()
+		sc.trace = newTrace()
+		sc.trace.priority = ctx.Priority()
+		sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
+		sc.trace.tags = ctx.Tags()
+		sc.trace.propagatingTags = ctx.PropagatingTags()
+	case otelContextAdapter:
+		sc.trace = newTrace()
+		if ctx.IsSampled() {
+			sc.setSamplingPriority(1, samplernames.Default)
+			sc.trace.keep()
+		}
 	}
-	sc.origin = ctx.Origin()
-	sc.trace = newTrace()
-	sc.trace.priority = ctx.Priority()
-	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
-	sc.trace.tags = ctx.Tags()
-	sc.trace.propagatingTags = ctx.PropagatingTags()
 	return &sc
 }
 

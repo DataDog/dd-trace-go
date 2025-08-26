@@ -398,3 +398,28 @@ func TestMergeOtelDDBaggage(t *testing.T) {
 		assert.Equal("otelValue", value)
 	})
 }
+
+func TestSamplingDecision(t *testing.T) {
+	assert := assert.New(t)
+	tp := NewTracerProvider(
+		tracer.WithSamplingRules([]tracer.SamplingRule{
+			{Rate: 0}, // This should be applied only when a brand new root span is started and should be ignored for a non-root span
+		}),
+	)
+	defer tp.Shutdown()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	parentSpanContext := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID:    oteltrace.TraceID{0xAA},
+		SpanID:     oteltrace.SpanID{0x01},
+		TraceFlags: oteltrace.FlagsSampled, // the parent span is sampled, so its child spans should be sampled too
+	})
+	ctx := oteltrace.ContextWithSpanContext(context.Background(), parentSpanContext)
+	_, span := tr.Start(ctx, "test")
+	span.End()
+
+	childSpanContext := span.SpanContext()
+	assert.Equal(parentSpanContext.TraceID(), childSpanContext.TraceID())
+	assert.True(childSpanContext.IsSampled(), "parent span is sampled, but child span is not sampled")
+}
