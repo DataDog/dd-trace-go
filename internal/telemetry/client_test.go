@@ -26,6 +26,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -99,6 +100,28 @@ func TestNewClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAutoFlush(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		config := defaultConfig(ClientConfig{
+			AgentURL: "http://localhost:8126",
+		})
+		c, err := newClient(internal.TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		}, config)
+		require.NoError(t, err)
+		defer c.Close()
+
+		recordWriter := &internal.RecordWriter{}
+		c.writer = recordWriter
+
+		time.Sleep(config.FlushInterval.Max + time.Second)
+
+		require.Len(t, recordWriter.Payloads(), 1)
+	})
 }
 
 func TestClientFlush(t *testing.T) {

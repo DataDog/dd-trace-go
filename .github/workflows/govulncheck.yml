@@ -39,7 +39,7 @@ jobs:
       - name: Run govulncheck
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/...
+          govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
       - name: Run govulncheck-contribs
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
