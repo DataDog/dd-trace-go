@@ -22,13 +22,15 @@ const (
 
 var (
 	// defaultIPHeaders is the default list of IP-related headers leveraged to
-	// retrieve the public client IP address in RemoteAddr.
+	// retrieve the public client IP address in RemoteAddr. The headers are
+	// checked in the order they are listed; do not re-order unless you know what
+	// you are doing.
 	defaultIPHeaders = []string{
 		"x-forwarded-for",
 		"x-real-ip",
 		"true-client-ip",
 		"x-client-ip",
-		"x-forwarded",
+		"forwarded",
 		"forwarded-for",
 		"x-cluster-client-ip",
 		"fastly-client-ip",
@@ -39,23 +41,23 @@ var (
 	// defaultCollectedHeaders is the default list of HTTP headers collected as
 	// request span tags when appsec is enabled.
 	defaultCollectedHeaders = append([]string{
-		"host",
-		"content-length",
-		"content-type",
-		"content-encoding",
-		"content-language",
-		"forwarded",
-		"via",
-		"user-agent",
-		"accept",
 		"accept-encoding",
 		"accept-language",
-		"x-amzn-trace-id",
-		"cloudfront-viewer-ja3-fingerprint",
-		"cf-ray",
-		"x-cloud-trace-context",
-		"x-appgw-trace-id",
+		"accept",
 		"akamai-user-risk",
+		"cf-ray",
+		"cloudfront-viewer-ja3-fingerprint",
+		"content-encoding",
+		"content-language",
+		"content-length",
+		"content-type",
+		"host",
+		"user-agent",
+		"via",
+		"x-amzn-trace-id",
+		"x-appgw-trace-id",
+		"x-cloud-trace-context",
+		"x-forwarded",
 		"x-sigsci-requestid",
 		"x-sigsci-tags",
 	}, defaultIPHeaders...)
