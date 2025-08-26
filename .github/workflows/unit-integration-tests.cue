@@ -15,6 +15,7 @@
 	"DD_APPSEC_WAF_TIMEOUT": "1m"
 	"GOTOOLCHAIN":           "local"
 	"GODEBUG":               "x509negativeserial=1"
+	"GOEXPERIMENT":          "synctest" // TODO: remove once go1.25 is the minimum supported version
 	"TEST_RESULT_PATH":      "/tmp/test-results"
 }
 
@@ -164,6 +165,15 @@
 				"with": {
 					"ref":   "${{ github.sha }}"
 					"clean": false
+				}
+			},
+			{
+				"name": "Setup Go and development tools"
+				"uses": "./.github/actions/setup-go"
+				"with": {
+					"go-version": "${{ inputs.go-version }}"
+					"tools-dir":  "${{ github.workspace }}/_tools"
+					"tools-bin":  "${{ github.workspace }}/bin"
 				}
 			},
 			{
