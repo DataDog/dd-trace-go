@@ -5,13 +5,14 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2
+  name: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2
   description: Package pubsub provides an easy way to publish and receive Google Cloud Pub/Sub messages, hiding the details of the underlying server RPCs
 
+# Note: this depends on some aspects applied on the pubsub v1 orchestrion
 aspects:
   - id: Initialize pubsubtrace
     join-point:
-      struct-definition: cloud.google.com/go/pubsub.Subscription
+      struct-definition: cloud.google.com/go/pubsub/v2.Subscriber
     advice:
       - inject-declarations:
           imports:
@@ -25,7 +26,7 @@ aspects:
             )
             
             func init() {
-              component := instrumentation.PackageGCPPubsub
+              component := instrumentation.PackageGCPPubsubV2
               __dd_instr = instrumentation.Load(component)
               __dd_pstrace = pubsubtrace.NewTracer(__dd_instr, component)
             }
@@ -35,7 +36,7 @@ aspects:
     join-point:
       function-body:
         function:
-          - receiver: '*cloud.google.com/go/pubsub.Subscription'
+          - receiver: '*cloud.google.com/go/pubsub/v2.Subscriber'
           - name: Receive
     advice:
       - prepend-statements:
@@ -67,7 +68,7 @@ aspects:
     join-point:
       function-body:
         function:
-          - receiver: '*cloud.google.com/go/pubsub.Topic'
+          - receiver: '*cloud.google.com/go/pubsub/v2.Publisher'
           - name: Publish
     advice:
       - prepend-statements:
@@ -92,4 +93,36 @@ aspects:
 
             defer func() {
               {{ $publishResult }}.DDCloseSpan = __dd_closeSpan
+            }()
+  
+
+  # Note: These aspects are also necessary for v1, they should be present in only one of the orchestrion.yml files,
+  # otherwise they will be applied twice and will cause the build to fail.
+  - id: Add fields to PublishResult
+    join-point:
+      struct-definition: cloud.google.com/go/internal/pubsub.PublishResult
+    advice:
+      - inject-declarations:
+          template: |-
+            type DDCloseSpanFunc = func(serverID string, err error)
+      - add-struct-field:
+          name: DDCloseSpan
+          type: DDCloseSpanFunc
+
+  - id: Update PublishResult.Get
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/internal/pubsub.PublishResult'
+          - name: Get
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $publishResult := .Function.Receiver -}}
+            {{- $serverID := .Function.Result 0 -}}
+            {{- $err := .Function.Result 1 -}}
+            defer func() {
+              if {{ $publishResult }}.DDCloseSpan != nil {
+                {{ $publishResult }}.DDCloseSpan({{ $serverID }}, {{ $err }})
+              }
             }()

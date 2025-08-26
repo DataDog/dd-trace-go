@@ -117,7 +117,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"name":     "pubsub.publish",
 				"type":     "queue",
 				"resource": "projects/pstest-orchestrion/topics/pstest-orchestrion-topic",
-				"service":  "gcp_pubsub.test",
+				"service":  "gcp_pubsub.v1.test",
 			},
 			Meta: map[string]string{
 				"span.kind":    "producer",
@@ -130,7 +130,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"name":     "pubsub.receive",
 						"type":     "queue",
 						"resource": "projects/pstest-orchestrion/subscriptions/pstest-orchestrion-subscription",
-						"service":  "gcp_pubsub.test",
+						"service":  "gcp_pubsub.v1.test",
 					},
 					Meta: map[string]string{
 						"span.kind":        "consumer",
