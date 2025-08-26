@@ -47,7 +47,7 @@ type payloadV1 struct {
 	appVersion uint32
 
 	// a collection of key to value pairs common in all `chunks`
-	attributes map[uint32]AnyValue
+	attributes map[uint32]anyValue
 
 	// a list of trace `chunks`
 	chunks []traceChunk
@@ -62,7 +62,7 @@ type payloadV1 struct {
 // intValue(5) - 0x405 (4 indicates this is an int AnyType, then 5 is encoded using positive fixed int format)
 // stringValue(“a”) - 0x1a161 (1 indicates this is a string, then “a” is encoded using fixstr 0xa161)
 // stringValue(2) - 0x102 (1 indicates this is a string, then a positive fixed int of 2 refers the 2nd index of the string table)
-type AnyValue struct {
+type anyValue struct {
 	valueType int
 	value     interface{}
 }
@@ -74,15 +74,15 @@ const (
 	IntValueType                // uint64
 	BytesValueType              // []uint8
 	ArrayValueType              // []AnyValue
-	KeyValueListType            // []KeyValue
+	keyValueListType            // []keyValue
 )
 
-type ArrayValue = []AnyValue
+type ArrayValue = []anyValue
 
-// KeyValue is made up of the key and an AnyValue (the type of the value and the value itself)
-type KeyValue struct {
+// keyValue is made up of the key and an AnyValue (the type of the value and the value itself)
+type keyValue struct {
 	key   uint32
-	value AnyValue
+	value anyValue
 }
 
-type KeyValueList = []KeyValue
+type keyValueList = []keyValue

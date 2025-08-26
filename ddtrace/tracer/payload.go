@@ -22,7 +22,7 @@ type traceChunk struct {
 	origin uint32
 
 	// a collection of key to value pairs common in all `spans`
-	attributes map[uint32]AnyValue
+	attributes map[uint32]anyValue
 
 	// a list of spans in this chunk
 	spans []Span
