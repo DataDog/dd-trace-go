@@ -59,7 +59,7 @@ func getTestTrace(traceN, size int) [][]*Span {
 	return traces
 }
 
-func encode(traces [][]*Span) (*payload, error) {
+func encode(traces [][]*Span) (*payloadV04, error) {
 	p := newPayload()
 	for _, t := range traces {
 		if err := p.push(t); err != nil {

@@ -37,7 +37,7 @@ type agentTraceWriter struct {
 	config *config
 
 	// payload encodes and buffers traces in msgpack format
-	payload *payload
+	payload *payloadV04
 
 	// climit limits the number of concurrent outgoing connections
 	climit chan struct{}
@@ -85,7 +85,7 @@ func (h *agentTraceWriter) stop() {
 }
 
 // newPayload returns a new payload based on the trace protocol.
-func (h *agentTraceWriter) newPayload() *payload {
+func (h *agentTraceWriter) newPayload() *payloadV04 {
 	p := newPayload()
 	p.protocol = h.config.traceProtocol
 	return p
@@ -100,7 +100,7 @@ func (h *agentTraceWriter) flush() {
 	h.climit <- struct{}{}
 	oldp := h.payload
 	h.payload = h.newPayload()
-	go func(p *payload) {
+	go func(p *payloadV04) {
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object

@@ -345,7 +345,7 @@ type failingTransport struct {
 	assert       *assert.Assertions
 }
 
-func (t *failingTransport) send(p *payload) (io.ReadCloser, error) {
+func (t *failingTransport) send(p *payloadV04) (io.ReadCloser, error) {
 	t.sendAttempts++
 
 	traces, err := decode(p)

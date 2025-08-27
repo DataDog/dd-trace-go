@@ -30,7 +30,7 @@ type failingCiVisibilityTransport struct {
 	assert       *assert.Assertions
 }
 
-func (t *failingCiVisibilityTransport) send(p *payload) (io.ReadCloser, error) {
+func (t *failingCiVisibilityTransport) send(p *payloadV04) (io.ReadCloser, error) {
 	t.sendAttempts++
 
 	ciVisibilityPayload := &ciVisibilityPayload{p, 0}

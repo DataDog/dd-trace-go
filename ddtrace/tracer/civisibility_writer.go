@@ -115,7 +115,7 @@ func (w *ciVisibilityTraceWriter) flush() {
 		for attempt := 0; attempt <= w.config.sendRetries; attempt++ {
 			size, count = p.size(), p.itemCount()
 			log.Debug("ciVisibilityTraceWriter: sending payload: size: %d events: %d\n", size, count)
-			_, err = w.config.transport.send(p.payload)
+			_, err = w.config.transport.send(p.payloadV04)
 			if err == nil {
 				log.Debug("ciVisibilityTraceWriter: sent events after %d attempts", attempt+1)
 				return
