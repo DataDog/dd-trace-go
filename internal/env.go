@@ -60,6 +60,21 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 	return v
 }
 
+// DurationEnvWithUnit returns the parsed duration value of an environment
+// variable with the specified unit, or def otherwise.
+func DurationEnvWithUnit(key string, unit string, def time.Duration) time.Duration {
+	vv, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	v, err := time.ParseDuration(vv + unit)
+	if err != nil {
+		log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err.Error())
+		return def
+	}
+	return v
+}
+
 // IPEnv returns the valid IP value of an environment variable, or def otherwise.
 func IPEnv(key string, def net.IP) net.IP {
 	vv, ok := os.LookupEnv(key)
