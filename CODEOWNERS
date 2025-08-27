@@ -1,36 +1,44 @@
 # Note: Later matches take precedence
 
 # default owner
-*                               @DataDog/dd-trace-go-guild @DataDog/apm-go
-
-# no owner: changes to these files will not automatically ping any particular
-# team and can be reviewed by anybody with the appropriate permissions. This is
-# meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
-# changes one of these files.
-go.mod
-go.sum
-
+*                               @DataDog/dd-trace-go-guild
 # tracing
 /contrib                        @DataDog/apm-go @Datadog/apm-idm-go
 /ddtrace                        @DataDog/apm-go
 
 # profiling
-/profiler                       @DataDog/profiling-go @DataDog/apm-go
-/internal/traceprof             @DataDog/profiling-go @DataDog/apm-go
+/profiler                       @DataDog/profiling-go
+/internal/traceprof             @DataDog/profiling-go
 
 # appsec
-/appsec                         @DataDog/asm-go @DataDog/apm-go
-/internal/appsec                @DataDog/asm-go @DataDog/apm-go
-/contrib/**/*appsec*.go         @DataDog/asm-go @DataDog/apm-go
-/.github/workflows/appsec.yml   @DataDog/asm-go @DataDog/apm-go
+/appsec                         @DataDog/asm-go
+/internal/appsec                @DataDog/asm-go
+/contrib/**/*appsec*.go         @DataDog/asm-go
+/.github/workflows/appsec.yml   @DataDog/asm-go
+/contrib/envoyproxy             @DataDog/asm-go
+/contrib/k8s.io/gateway-api     @DataDog/asm-go
 
 # datastreams
-/datastreams                    @Datadog/data-streams-monitoring @DataDog/apm-go
-/internal/datastreams           @Datadog/data-streams-monitoring @DataDog/apm-go
+/datastreams                    @Datadog/data-streams-monitoring
+/internal/datastreams           @Datadog/data-streams-monitoring
 
 # civisibility
-/internal/civisibility          @DataDog/ci-app-libraries @DataDog/apm-go
+/civisibility                   @DataDog/ci-app-libraries
+/internal/civisibility          @DataDog/ci-app-libraries
 
 # Gitlab configuration
-.gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance @DataDog/apm-go
-/.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-core-reliability-and-performance @DataDog/apm-go
+.gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
+/.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
+
+# Orchestrion
+/internal/orchestrion           @DataDog/apm-orchestrion
+/**/orchestrion.yml             @DataDog/apm-orchestrion
+
+# no owner: changes to these files will not automatically ping any particular
+# team and can be reviewed by anybody with the appropriate permissions. This is
+# meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
+# changes one of these files.
+**/go.mod
+**/go.sum
+go.work
+go.work.sum

@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Please see our [Support Policy](README.md#support-policy)
+Please see our [Support Policy](README.md#go-support-policy)
 
 ## Reporting a Vulnerability
 
@@ -22,7 +22,7 @@ If you have found a security issue in our code directly, please contact the secu
 If you are using a vulnerability checker other than `golang.org/x/vuln/vulncheck` you may detect vulnerabilities in our contrib dependencies.
 In general we like to specify non-vulnerable minimum versions of dependencies when we can do so in a non-breaking way. To avoid breaking users of this library
 there may be contrib libraries that are deprecated/vulnerable but still appear in our go.mod file. If you are not using these contrib packages you are not vulnerable (i.e. if they do not appear in your go.sum file).
-At the next major version we will drop support for these packages. (e.g. as of dd-trace-go@v1 labstack/echo v3 is considered deprecated and users should migrate to labstack/echo.v4)
+At the next major version we will drop support for these packages.
 
 Note that since library go.mod files only specify minimum version requirements you are welcome to specify a newer version of any dependencies to satisfy your tooling.
 For example, if you would like to require a library like `github.com/labstack/echo/v4` use version v4.10.0 you can do so by running `go get github.com/labstack/echo/v4@v4.10.0`.

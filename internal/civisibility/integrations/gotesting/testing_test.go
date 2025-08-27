@@ -7,13 +7,16 @@ package gotesting
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -47,6 +50,7 @@ func TestMyTest02(gt *testing.T) {
 func Test_Foo(gt *testing.T) {
 	assertTest(gt)
 	t := (*T)(gt)
+
 	var tests = []struct {
 		index byte
 		name  string
@@ -59,10 +63,11 @@ func Test_Foo(gt *testing.T) {
 	}
 	buf := []byte{}
 	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Log(test.name)
-			buf = append(buf, test.index)
+		mT := test
+		t.Run(mT.name, func(t *testing.T) {
+			// let's run the subtest in parallel
+			t.Log(mT.name)
+			buf = append(buf, mT.index)
 		})
 	}
 
@@ -76,6 +81,7 @@ func Test_Foo(gt *testing.T) {
 func TestSkip(gt *testing.T) {
 	assertTest(gt)
 
+	// To instrument skip tests we just need to cast
 	t := (*T)(gt)
 
 	// because we use the instrumented Skip
@@ -83,50 +89,78 @@ func TestSkip(gt *testing.T) {
 	t.Skip("Nothing to do here, skipping!")
 }
 
+func TestParallelSubTests(gt *testing.T) {
+	assertTest(gt)
+
+	// To instrument parallel sub-tests we just need to cast
+	t := (*T)(gt)
+
+	t.Run("parallel_subtest_1", func(t *testing.T) {
+		t.Parallel()
+		<-time.After(300 * time.Millisecond) // Simulate some work
+		fmt.Println("Running parallel subtest 1")
+	})
+
+	t.Run("parallel_subtest_2", func(t *testing.T) {
+		t.Parallel()
+		<-time.After(200 * time.Millisecond) // Simulate some work
+		fmt.Println("Running parallel subtest 2")
+	})
+
+	t.Run("parallel_subtest_3", func(t *testing.T) {
+		t.Parallel()
+		<-time.After(100 * time.Millisecond) // Simulate some work
+		fmt.Println("Running parallel subtest 3")
+	})
+}
+
 // Tests for test retries feature
 
-var testRetryWithPanicRunNumber = 0
+var testRetryWithPanicRunNumber atomic.Int32
 
 func TestRetryWithPanic(t *testing.T) {
 	t.Cleanup(func() {
-		if testRetryWithPanicRunNumber == 1 {
+		if testRetryWithPanicRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")
 		} else {
 			fmt.Println("CleanUp from the retry")
 		}
 	})
-	testRetryWithPanicRunNumber++
-	if testRetryWithPanicRunNumber < 4 {
+
+	if testRetryWithPanicRunNumber.Add(1) < 4 {
 		panic("Test Panic")
 	}
 }
 
-var testRetryWithFailRunNumber = 0
+var testRetryWithFailRunNumber atomic.Int32
 
 func TestRetryWithFail(t *testing.T) {
 	t.Cleanup(func() {
-		if testRetryWithFailRunNumber == 1 {
+		if testRetryWithFailRunNumber.Load() == 1 {
 			fmt.Println("CleanUp from the initial execution")
 		} else {
 			fmt.Println("CleanUp from the retry")
 		}
 	})
-	testRetryWithFailRunNumber++
-	if testRetryWithFailRunNumber < 4 {
+
+	if testRetryWithFailRunNumber.Add(1) < 4 {
 		t.Fatal("Failed due the wrong execution number")
 	}
 }
 
 //dd:test.unskippable
-func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {}
+func TestNormalPassingAfterRetryAlwaysFail(_ *testing.T) {}
 
-var run int
+var run atomic.Int32
 
 //dd:test.unskippable
 func TestEarlyFlakeDetection(t *testing.T) {
-	run++
-	fmt.Printf(" Run: %d", run)
-	if run%2 == 0 {
+	runValue := run.Add(1)
+	if os.Getenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled) == "true" {
+		<-time.After(4 * time.Second)
+	}
+	fmt.Printf(" Run: %d", runValue)
+	if runValue%2 == 0 {
 		fmt.Println(" Failed")
 		t.FailNow()
 	}
@@ -163,43 +197,81 @@ func BenchmarkFirst(gb *testing.B) {
 	_ = gb.Elapsed()
 }
 
+var assertMutex sync.Mutex
+
 func assertTest(t *testing.T) {
+	// we don't assert on parallel efd tests
+	if parallelEfd {
+		return
+	}
+	assertMutex.Lock()
+	defer assertMutex.Unlock()
 	assert := assert.New(t)
 	spans := mTracer.OpenSpans()
 	hasSession := false
 	hasModule := false
 	hasSuite := false
 	hasTest := false
+
+	assertCommon := func(spanTags map[string]interface{}) {
+		assert.Subset(spanTags, map[string]interface{}{
+			constants.Origin:          constants.CIAppTestOrigin,
+			constants.TestType:        constants.TestTypeTest,
+			constants.LogicalCPUCores: float64(runtime.NumCPU()),
+		})
+
+		assert.Contains(spanTags, ext.ResourceName)
+		assert.Contains(spanTags, constants.TestCommand)
+		assert.Contains(spanTags, constants.TestCommandWorkingDirectory)
+		assert.Contains(spanTags, constants.OSPlatform)
+		assert.Contains(spanTags, constants.OSArchitecture)
+		assert.Contains(spanTags, constants.OSVersion)
+		assert.Contains(spanTags, constants.RuntimeVersion)
+		assert.Contains(spanTags, constants.RuntimeName)
+		assert.Contains(spanTags, constants.GitRepositoryURL)
+		assert.Contains(spanTags, constants.GitCommitSHA)
+		// GitHub CI does not provide commit details
+		if spanTags[constants.CIProviderName] != "github" {
+			assert.Contains(spanTags, constants.GitCommitMessage)
+			assert.Contains(spanTags, constants.GitCommitAuthorEmail)
+			assert.Contains(spanTags, constants.GitCommitAuthorDate)
+			assert.Contains(spanTags, constants.GitCommitCommitterEmail)
+			assert.Contains(spanTags, constants.GitCommitCommitterDate)
+			assert.Contains(spanTags, constants.GitCommitCommitterName)
+		}
+		assert.Contains(spanTags, constants.CIWorkspacePath)
+	}
+
 	for _, span := range spans {
 		spanTags := span.Tags()
 
 		// Assert Session
-		if span.Tag(ext.SpanType) == constants.SpanTypeTestSession {
+		if spanTags[ext.SpanType] == constants.SpanTypeTestSession {
 			assert.Subset(spanTags, map[string]interface{}{
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
-			assertCommon(assert, span)
+			assertCommon(spanTags)
 			hasSession = true
 		}
 
 		// Assert Module
-		if span.Tag(ext.SpanType) == constants.SpanTypeTestModule {
+		if spanTags[ext.SpanType] == constants.SpanTypeTestModule {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
 			assert.Contains(spanTags, constants.TestModuleIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
-			assertCommon(assert, span)
+			assertCommon(spanTags)
 			hasModule = true
 		}
 
 		// Assert Suite
-		if span.Tag(ext.SpanType) == constants.SpanTypeTestSuite {
+		if spanTags[ext.SpanType] == constants.SpanTypeTestSuite {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
@@ -207,14 +279,14 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestSuiteIDTag)
 			assert.Contains(spanTags, constants.TestFrameworkVersion)
 			assert.Contains(spanTags, constants.TestSuite)
-			assertCommon(assert, span)
+			assertCommon(spanTags)
 			hasSuite = true
 		}
 
 		// Assert Test
-		if span.Tag(ext.SpanType) == constants.SpanTypeTest {
+		if spanTags[ext.SpanType] == constants.SpanTypeTest {
 			assert.Subset(spanTags, map[string]interface{}{
-				constants.TestModule:    "gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting",
+				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 				constants.TestSuite:     "testing_test.go",
 				constants.TestName:      t.Name(),
@@ -227,7 +299,7 @@ func assertTest(t *testing.T) {
 			assert.Contains(spanTags, constants.TestCodeOwners)
 			assert.Contains(spanTags, constants.TestSourceFile)
 			assert.Contains(spanTags, constants.TestSourceStartLine)
-			assertCommon(assert, span)
+			assertCommon(spanTags)
 			hasTest = true
 		}
 	}
@@ -236,35 +308,4 @@ func assertTest(t *testing.T) {
 	assert.True(hasModule)
 	assert.True(hasSuite)
 	assert.True(hasTest)
-}
-
-func assertCommon(assert *assert.Assertions, span mocktracer.Span) {
-	spanTags := span.Tags()
-
-	assert.Subset(spanTags, map[string]interface{}{
-		constants.Origin:          constants.CIAppTestOrigin,
-		constants.TestType:        constants.TestTypeTest,
-		constants.LogicalCPUCores: float64(runtime.NumCPU()),
-	})
-
-	assert.Contains(spanTags, ext.ResourceName)
-	assert.Contains(spanTags, constants.TestCommand)
-	assert.Contains(spanTags, constants.TestCommandWorkingDirectory)
-	assert.Contains(spanTags, constants.OSPlatform)
-	assert.Contains(spanTags, constants.OSArchitecture)
-	assert.Contains(spanTags, constants.OSVersion)
-	assert.Contains(spanTags, constants.RuntimeVersion)
-	assert.Contains(spanTags, constants.RuntimeName)
-	assert.Contains(spanTags, constants.GitRepositoryURL)
-	assert.Contains(spanTags, constants.GitCommitSHA)
-	// GitHub CI does not provide commit details
-	if spanTags[constants.CIProviderName] != "github" {
-		assert.Contains(spanTags, constants.GitCommitMessage)
-		assert.Contains(spanTags, constants.GitCommitAuthorEmail)
-		assert.Contains(spanTags, constants.GitCommitAuthorDate)
-		assert.Contains(spanTags, constants.GitCommitCommitterEmail)
-		assert.Contains(spanTags, constants.GitCommitCommitterDate)
-		assert.Contains(spanTags, constants.GitCommitCommitterName)
-	}
-	assert.Contains(spanTags, constants.CIWorkspacePath)
 }

@@ -1,17 +1,71 @@
 stages:
+  - docker-images-reliability-env
+  - generate
   - benchmarks
   - macrobenchmarks
+  - gates
   - test-apps
 
 variables:
-  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/38806487
-  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-38806487
+  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/73663692
+  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-73663692
   INDEX_FILE: index.txt
-  KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
-  FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
-  BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer"
+  BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics"
+
+# In order to run benchmarks in parallel, we generate a matrix of test names based on the BENCHMARK_TARGETS variable.
+# This will be used in tandem with bp-runner in benchmarks.yml.
+# This will allow us to spin up a child job in GitLab CI that handles running all of the benchmarks in parallel.
+generate_matrix:
+  stage: generate
+  image: $BASE_CI_IMAGE
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  script: |
+    cd .gitlab
+    go run generate_config.go
+    mv generated_benchmark_matrix.yml ../generated_benchmark_matrix.yml
+  artifacts:
+    paths:
+      - generated_benchmark_matrix.yml
+    expire_in: 1 hour # Artifact is temporary, needed only for the current pipeline
+
+trigger_child_pipeline:
+  stage: benchmarks
+  trigger:
+    include:
+      - artifact: generated_benchmark_matrix.yml
+        job: generate_matrix
+    strategy: depend
+  needs:
+    - generate_matrix
+  variables:
+      PARENT_PIPELINE_ID: $CI_PIPELINE_ID
+
+check-big-regressions:
+  stage: benchmarks
+  needs:
+    - job: trigger_child_pipeline
+  when: on_success
+  tags: 
+    - "arch:amd64"
+  image: $BASE_CI_IMAGE
+  script:
+    - |
+      pwd
+      export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
+      git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+      git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform platform && cd platform
+      ./steps/download-child-pipeline-artifacts.sh
+      pushd "${ARTIFACTS_DIR}/"
+      pwd
+      bp-runner ../platform/bp-runner.fail-on-regression.yml --debug
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - reports/
+    expire_in: "30 days"
 
 include:
-  - ".gitlab/benchmarks.yml"
-  - ".gitlab/macrobenchmarks.yml"
-  - ".gitlab/test-apps.yml"
+  - local: ".gitlab/macrobenchmarks.yml"
+  - local: ".gitlab/test-apps.yml"
+  - local: ".gitlab/docker-images-reliability-env.yml"

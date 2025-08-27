@@ -13,6 +13,29 @@ const (
 	UnknownFramework   TestingFramework = "test_framework:unknown"
 )
 
+// TestSessionEventType is a type for test session event types
+type TestSessionType []string
+
+var (
+	AppVeyorTestSessionType       TestSessionType = []string{"provider:appveyor"}
+	AzurePipelinesTestSessionType TestSessionType = []string{"provider:azp"}
+	BitbucketTestSessionType      TestSessionType = []string{"provider:bitbucket"}
+	BitRiseTestSessionType        TestSessionType = []string{"provider:bitrise"}
+	BuildKiteTestSessionType      TestSessionType = []string{"provider:buildkite"}
+	CircleCiTestSessionType       TestSessionType = []string{"provider:circleci"}
+	CodeFreshTestSessionType      TestSessionType = []string{"provider:codefresh"}
+	GithubActionsTestSessionType  TestSessionType = []string{"provider:githubactions"}
+	GitlabTestSessionType         TestSessionType = []string{"provider:gitlab"}
+	JenkinsTestSessionType        TestSessionType = []string{"provider:jenkins"}
+	TeamcityTestSessionType       TestSessionType = []string{"provider:teamcity"}
+	TravisCiTestSessionType       TestSessionType = []string{"provider:travisci"}
+	BuddyCiTestSessionType        TestSessionType = []string{"provider:buddyci"}
+	AwsCodePipelineSessionType    TestSessionType = []string{"provider:aws"}
+	UnsupportedTestSessionType    TestSessionType = []string{"provider:unsupported"}
+
+	IsAutoInstrumentationTestSessionType TestSessionType = []string{"auto_injected:true"}
+)
+
 // TestingEventType is a type for testing event types
 type TestingEventType []string
 
@@ -22,12 +45,16 @@ var (
 	ModuleEventType  TestingEventType = []string{"event_type:module"}
 	SessionEventType TestingEventType = []string{"event_type:session"}
 
-	UnsupportedCiEventType TestingEventType = []string{"is_unsupported_ci"}
-	HasCodeOwnerEventType  TestingEventType = []string{"has_codeowner"}
-	IsNewEventType         TestingEventType = []string{"is_new:true"}
-	IsRetryEventType       TestingEventType = []string{"is_retry:true"}
-	EfdAbortSlowEventType  TestingEventType = []string{"early_flake_detection_abort_reason:slow"}
-	IsBenchmarkEventType   TestingEventType = []string{"is_benchmark"}
+	UnsupportedCiEventType       TestingEventType = []string{"is_unsupported_ci"}
+	HasCodeOwnerEventType        TestingEventType = []string{"has_codeowner"}
+	IsNewEventType               TestingEventType = []string{"is_new:true"}
+	IsRetryEventType             TestingEventType = []string{"is_retry:true"}
+	EfdAbortSlowEventType        TestingEventType = []string{"early_flake_detection_abort_reason:slow"}
+	IsBenchmarkEventType         TestingEventType = []string{"is_benchmark"}
+	IsAttemptToFixEventType      TestingEventType = []string{"is_attempt_to_fix:true"}
+	IsQuarantinedEventType       TestingEventType = []string{"is_quarantined:true"}
+	IsDisabledEventType          TestingEventType = []string{"is_disabled:true"}
+	HasFailedAllRetriesEventType TestingEventType = []string{"has_failed_all_retries:true"}
 )
 
 // CoverageLibraryType is a type for coverage library types
@@ -67,16 +94,28 @@ var (
 type CommandType string
 
 const (
-	NotSpecifiedCommandsType    CommandType = ""
-	GetRepositoryCommandsType   CommandType = "command:get_repository"
-	GetBranchCommandsType       CommandType = "command:get_branch"
-	GetRemoteCommandsType       CommandType = "command:get_remote"
-	GetHeadCommandsType         CommandType = "command:get_head"
-	CheckShallowCommandsType    CommandType = "command:check_shallow"
-	UnshallowCommandsType       CommandType = "command:unshallow"
-	GetLocalCommitsCommandsType CommandType = "command:get_local_commits"
-	GetObjectsCommandsType      CommandType = "command:get_objects"
-	PackObjectsCommandsType     CommandType = "command:pack_objects"
+	NotSpecifiedCommandsType              CommandType = ""
+	GetRepositoryCommandsType             CommandType = "command:get_repository"
+	GetBranchCommandsType                 CommandType = "command:get_branch"
+	GetRemoteCommandsType                 CommandType = "command:get_remote"
+	GetRemoteUpstreamTrackingCommandsType CommandType = "command:get_remote_upstream_tracking"
+	GetHeadCommandsType                   CommandType = "command:get_head"
+	CheckShallowCommandsType              CommandType = "command:check_shallow"
+	UnshallowCommandsType                 CommandType = "command:unshallow"
+	GetLocalCommitsCommandsType           CommandType = "command:get_local_commits"
+	GetObjectsCommandsType                CommandType = "command:get_objects"
+	PackObjectsCommandsType               CommandType = "command:pack_objects"
+	DiffCommandType                       CommandType = "command:diff"
+	ShowRefCommandType                    CommandType = "command:show_ref"
+	LsRemoteHeadsCommandType              CommandType = "command:ls_remote_heads"
+	FetchCommandType                      CommandType = "command:fetch"
+	ForEachRefCommandType                 CommandType = "command:for_each_ref"
+	MergeBaseCommandType                  CommandType = "command:merge_base"
+	RevListCommandType                    CommandType = "command:rev_list"
+	SymbolicRefCommandType                CommandType = "command:symbolic_ref"
+	GetWorkingDirectoryCommandType        CommandType = "command:get_working_directory"
+	GetGitCommitInfoCommandType           CommandType = "command:get_git_info"
+	GitAddPermissionCommandType           CommandType = "command:git_add_permission"
 )
 
 // CommandExitCodeType is a type for command exit codes
@@ -113,31 +152,22 @@ const (
 type SettingsResponseType []string
 
 var (
-	CoverageEnabledSettingsResponseType SettingsResponseType = []string{"coverage_enabled"}
-	ItrSkipEnabledSettingsResponseType  SettingsResponseType = []string{"itrskip_enabled"}
-	EfdEnabledSettingsResponseType      SettingsResponseType = []string{"early_flake_detection_enabled:true"}
+	CoverageEnabledSettingsResponseType         SettingsResponseType = []string{"coverage_enabled"}
+	ItrSkipEnabledSettingsResponseType          SettingsResponseType = []string{"itrskip_enabled"}
+	EfdEnabledSettingsResponseType              SettingsResponseType = []string{"early_flake_detection_enabled:true"}
+	FlakyTestRetriesEnabledSettingsResponseType SettingsResponseType = []string{"flaky_test_retries_enabled:true"}
+	TestManagementEnabledSettingsResponseType   SettingsResponseType = []string{"test_management_enabled:true"}
 )
 
-// removeEmptyStrings removes empty string values inside an array or use the same if not empty string is found.
+// removeEmptyStrings removes empty string values from a slice.
 func removeEmptyStrings(s []string) []string {
-	var r []string
-	hasSpace := false
-	for i, str := range s {
-		if str == "" && r == nil {
-			if i > 0 {
-				r = s[:i]
-			}
-			hasSpace = true
-			continue
-		}
-		if hasSpace {
-			r = append(r, str)
+	result := make([]string, len(s))
+	n := 0
+	for _, str := range s {
+		if str != "" {
+			result[n] = str
+			n++
 		}
 	}
-
-	if r == nil {
-		r = s
-	}
-
-	return r
+	return result[:n]
 }

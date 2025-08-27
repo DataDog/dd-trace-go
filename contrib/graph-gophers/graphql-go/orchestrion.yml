@@ -1,0 +1,25 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2
+  description: |-
+    The goal of this project is to provide full support of the [October 2021 GraphQL specification](https://spec.graphql.org/October2021/) with a set of idiomatic, easy to use Go packages.
+
+aspects:
+  - id: ParseSchema
+    join-point:
+      one-of:
+        - function-call: github.com/graph-gophers/graphql-go.MustParseSchema
+        - function-call: github.com/graph-gophers/graphql-go.ParseSchema
+    advice:
+      - append-args:
+          type: any
+          values:
+            - imports:
+                graphql: github.com/graph-gophers/graphql-go
+                graphqltrace: github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2
+              template: graphql.Tracer(graphqltrace.NewTracer())

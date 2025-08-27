@@ -1,0 +1,44 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+  description: The official AWS SDK for Go
+
+aspects:
+  - id: Config
+    join-point:
+      struct-literal:
+        type: github.com/aws/aws-sdk-go-v2/aws.Config
+        match: value-only
+    advice:
+      - wrap-expression:
+          imports:
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+            aws: github.com/aws/aws-sdk-go-v2/aws
+          template: |-
+            func(cfg aws.Config) (aws.Config) {
+              awstrace.AppendMiddleware(&cfg)
+              return cfg
+            }({{ . }})
+
+  - id: '*Config'
+    join-point:
+      one-of:
+        - struct-literal:
+            type: github.com/aws/aws-sdk-go-v2/aws.Config
+            match: pointer-only
+        - function-call: github.com/aws/aws-sdk-go-v2/aws.NewConfig
+    advice:
+      - wrap-expression:
+          imports:
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+            aws: github.com/aws/aws-sdk-go-v2/aws
+          template: |-
+            func(cfg *aws.Config) (*aws.Config) {
+              awstrace.AppendMiddleware(cfg)
+              return cfg
+            }({{ . }})

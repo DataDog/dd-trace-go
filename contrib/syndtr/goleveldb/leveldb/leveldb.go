@@ -4,17 +4,15 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package leveldb provides functions to trace the syndtr/goleveldb package (https://github.com/syndtr/goleveldb).
-package leveldb // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleveldb/leveldb"
+package leveldb // import "github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2/leveldb"
 
 import (
 	"context"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -25,9 +23,10 @@ import (
 
 const componentName = "syndtr/goleveldb/leveldb"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/syndtr/goleveldb")
+	instr = instrumentation.Load(instrumentation.PackageSyndtrGoLevelDB)
 }
 
 // A DB wraps a leveldb.DB and traces all queries.
@@ -57,7 +56,7 @@ func OpenFile(path string, o *opt.Options, opts ...Option) (*DB, error) {
 // WrapDB wraps a leveldb.DB so that queries are traced.
 func WrapDB(db *leveldb.DB, opts ...Option) *DB {
 	cfg := newConfig(opts...)
-	log.Debug("contrib/syndtr/goleveldb/leveldb: Wrapping DB: %#v", cfg)
+	instr.Logger().Debug("contrib/syndtr/goleveldb/leveldb: Wrapping DB: %#v", cfg)
 	return &DB{
 		DB:  db,
 		cfg: cfg,
@@ -104,9 +103,7 @@ func (db *DB) GetSnapshot() (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapSnapshot(snap, func(cfg *config) {
-		*cfg = *db.cfg
-	}), nil
+	return WrapSnapshot(snap, withConfig(db.cfg)), nil
 }
 
 // Has calls DB.Has and traces the result.
@@ -119,9 +116,7 @@ func (db *DB) Has(key []byte, ro *opt.ReadOptions) (ret bool, err error) {
 
 // NewIterator calls DB.NewIterator and returns a wrapped Iterator.
 func (db *DB) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
-	return WrapIterator(db.DB.NewIterator(slice, ro), func(cfg *config) {
-		*cfg = *db.cfg
-	})
+	return WrapIterator(db.DB.NewIterator(slice, ro), withConfig(db.cfg))
 }
 
 // OpenTransaction calls DB.OpenTransaction and returns a wrapped Transaction.
@@ -130,9 +125,7 @@ func (db *DB) OpenTransaction() (*Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	return WrapTransaction(tr, func(cfg *config) {
-		*cfg = *db.cfg
-	}), nil
+	return WrapTransaction(tr, withConfig(db.cfg)), nil
 }
 
 // Put calls DB.Put and traces the result.
@@ -193,9 +186,7 @@ func (snap *Snapshot) Has(key []byte, ro *opt.ReadOptions) (ret bool, err error)
 
 // NewIterator calls Snapshot.NewIterator and returns a wrapped Iterator.
 func (snap *Snapshot) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
-	return WrapIterator(snap.Snapshot.NewIterator(slice, ro), func(cfg *config) {
-		*cfg = *snap.cfg
-	})
+	return WrapIterator(snap.Snapshot.NewIterator(slice, ro), withConfig(snap.cfg))
 }
 
 // A Transaction wraps a leveldb.Transaction and traces all queries.
@@ -248,15 +239,13 @@ func (tr *Transaction) Has(key []byte, ro *opt.ReadOptions) (bool, error) {
 
 // NewIterator calls Transaction.NewIterator and returns a wrapped Iterator.
 func (tr *Transaction) NewIterator(slice *util.Range, ro *opt.ReadOptions) iterator.Iterator {
-	return WrapIterator(tr.Transaction.NewIterator(slice, ro), func(cfg *config) {
-		*cfg = *tr.cfg
-	})
+	return WrapIterator(tr.Transaction.NewIterator(slice, ro), withConfig(tr.cfg))
 }
 
 // An Iterator wraps a leveldb.Iterator and traces until Release is called.
 type Iterator struct {
 	iterator.Iterator
-	span ddtrace.Span
+	span *tracer.Span
 }
 
 // WrapIterator wraps a leveldb.Iterator so that queries are traced.
@@ -274,8 +263,8 @@ func (it *Iterator) Release() {
 	it.span.Finish(tracer.WithError(err))
 }
 
-func startSpan(cfg *config, name string) ddtrace.Span {
-	opts := []ddtrace.StartSpanOption{
+func startSpan(cfg *config, name string) *tracer.Span {
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeLevelDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(name),

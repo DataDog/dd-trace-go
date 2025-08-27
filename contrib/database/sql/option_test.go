@@ -8,18 +8,16 @@ package sql
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestAnalyticsSettings(t *testing.T) {
 	t.Run("global", func(t *testing.T) {
 		t.Skip("global flag disabled")
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		cfg := new(registerConfig)
 		defaults(cfg, "", nil)
@@ -34,9 +32,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	})
 
 	t.Run("override", func(t *testing.T) {
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		cfg := new(registerConfig)
 		defaults(cfg, "", nil)
@@ -69,11 +65,11 @@ func TestCheckStatsdRequired(t *testing.T) {
 		cfg := new(config)
 		cfg.dbStats = true
 		cfg.checkStatsdRequired()
-		_, ok := cfg.statsdClient.(*statsd.Client)
+		_, ok := cfg.statsdClient.(*statsd.ClientDirect)
 		assert.True(t, ok)
 	})
 	t.Run("invalid address", func(t *testing.T) {
-		globalconfig.SetDogstatsdAddr("unreachable/socket/path/dsd.socket")
+		testutils.SetGlobalDogstatsdAddr(t, "unreachable/socket/path/dsd.socket")
 		cfg := new(config)
 		cfg.dbStats = true
 		cfg.checkStatsdRequired()

@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -62,10 +62,20 @@ type (
 		ItrEnabled              bool `json:"itr_enabled"`
 		RequireGit              bool `json:"require_git"`
 		TestsSkipping           bool `json:"tests_skipping"`
+		KnownTestsEnabled       bool `json:"known_tests_enabled"`
+		ImpactedTestsEnabled    bool `json:"impacted_tests_enabled"`
+		TestManagement          struct {
+			Enabled             bool `json:"enabled"`
+			AttemptToFixRetries int  `json:"attempt_to_fix_retries"`
+		} `json:"test_management"`
 	}
 )
 
 func (c *client) GetSettings() (*SettingsResponseData, error) {
+	if c.repositoryURL == "" || c.commitSha == "" {
+		return nil, fmt.Errorf("civisibility.GetSettings: repository URL and commit SHA are required")
+	}
+
 	body := settingsRequest{
 		Data: settingsRequestHeader{
 			ID:   c.id,
@@ -100,14 +110,14 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 		telemetry.GitRequestsSettingsErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
 	}
 
+	if log.DebugEnabled() {
+		log.Debug("civisibility.settings: %s", string(response.Body))
+	}
+
 	var responseObject settingsResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshalling settings response: %s", err.Error())
-	}
-
-	if log.DebugEnabled() {
-		log.Debug("civisibility.settings: %s", string(response.Body))
 	}
 
 	var settingsResponseType telemetry.SettingsResponseType
@@ -119,6 +129,12 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 	}
 	if responseObject.Data.Attributes.EarlyFlakeDetection.Enabled {
 		settingsResponseType = append(settingsResponseType, telemetry.EfdEnabledSettingsResponseType...)
+	}
+	if responseObject.Data.Attributes.FlakyTestRetriesEnabled {
+		settingsResponseType = append(settingsResponseType, telemetry.FlakyTestRetriesEnabledSettingsResponseType...)
+	}
+	if responseObject.Data.Attributes.TestManagement.Enabled {
+		settingsResponseType = append(settingsResponseType, telemetry.TestManagementEnabledSettingsResponseType...)
 	}
 	telemetry.GitRequestsSettingsResponse(settingsResponseType)
 	return &responseObject.Data.Attributes, nil

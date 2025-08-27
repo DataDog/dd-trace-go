@@ -9,29 +9,44 @@ import (
 	"context"
 	"sync"
 	"time"
+	_ "unsafe" // for go:linkname
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
+
+// Go linknames
+
+//go:linkname getMeta github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.getMeta
+func getMeta(s *tracer.Span, key string) (string, bool)
+
+//go:linkname getMetric github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.getMetric
+func getMetric(s *tracer.Span, key string) (float64, bool)
 
 // common
 var _ ddTslvEvent = (*ciVisibilityCommon)(nil)
 
 // ciVisibilityCommon is a struct that implements the ddTslvEvent interface and provides common functionality for CI visibility.
 type ciVisibilityCommon struct {
+	mutex     sync.Mutex
 	startTime time.Time
 
 	tags   []tracer.StartSpanOption
-	span   tracer.Span
-	ctx    context.Context
-	mutex  sync.Mutex
+	span   *tracer.Span
 	closed bool
+
+	ctxMutex sync.Mutex
+	ctx      context.Context
 }
 
 // Context returns the context of the event.
-func (c *ciVisibilityCommon) Context() context.Context { return c.ctx }
+func (c *ciVisibilityCommon) Context() context.Context {
+	c.ctxMutex.Lock()
+	defer c.ctxMutex.Unlock()
+	return c.ctx
+}
 
 // StartTime returns the start time of the event.
 func (c *ciVisibilityCommon) StartTime() time.Time { return c.startTime }
@@ -73,6 +88,24 @@ func (c *ciVisibilityCommon) SetError(options ...ErrorOption) {
 // SetTag sets a tag on the event.
 func (c *ciVisibilityCommon) SetTag(key string, value interface{}) { c.span.SetTag(key, value) }
 
+// GetTag retrieves a tag from the event.
+func (c *ciVisibilityCommon) GetTag(key string) (interface{}, bool) {
+	// Check if the span is nil
+	if c.span == nil {
+		return nil, false
+	}
+
+	// Check if the key is a meta key
+	metaVal, ok := getMeta(c.span, key)
+	if ok {
+		return metaVal, true
+	}
+
+	// Check if the key is a metric key
+	metricVal, ok := getMetric(c.span, key)
+	return metricVal, ok
+}
+
 // fillCommonTags adds common tags to the span options for CI visibility.
 func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 	opts = append(opts, []tracer.StartSpanOption{
@@ -95,4 +128,16 @@ func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 	}
 
 	return opts
+}
+
+func (c *ciVisibilityCommon) getContextValue(key any) any {
+	c.ctxMutex.Lock()
+	defer c.ctxMutex.Unlock()
+	return c.ctx.Value(key)
+}
+
+func (c *ciVisibilityCommon) setContextValue(key, value any) {
+	c.ctxMutex.Lock()
+	defer c.ctxMutex.Unlock()
+	c.ctx = context.WithValue(c.ctx, key, value)
 }

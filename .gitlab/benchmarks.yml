@@ -1,5 +1,4 @@
-benchmark:
-  stage: benchmarks
+.benchmark:
   image: $BASE_CI_IMAGE
   when: on_success
   timeout: 1h
@@ -8,15 +7,17 @@ benchmark:
       - branches
   interruptible: true
   tags: ["runner:apm-k8s-tweaked-metal"]
-  script:
-    - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-    - git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform /platform && cd /platform
-    - ./steps/capture-hardware-software-info.sh
-    - ./steps/run-benchmarks.sh
-    - ./steps/analyze-results.sh
-    - "./steps/upload-results-to-s3.sh || :"
-    - "./steps/post-pr-comment.sh || :"
+  variables:
+    GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version
+  script: |
+    export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
+    git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+    git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform /platform && cd /platform
+    ./steps/capture-hardware-software-info.sh
+    TEST_NAME=$BENCHMARK_NAME bp-runner "${CI_PROJECT_DIR:-.}/.gitlab/bp-runner.yml" --debug -t
+    ./steps/analyze-results.sh
+    ./steps/upload-results-to-s3.sh || :
+    ./steps/post-pr-comment.sh || :
   artifacts:
     when: always
     name: "reports"

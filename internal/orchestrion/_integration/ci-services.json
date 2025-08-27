@@ -1,0 +1,79 @@
+{
+  "redis": {
+    "image": "redis:7-alpine",
+    "ports": ["6379:6379"],
+    "options": "--name \"redis\""
+  },
+  "valkey": {
+    "image": "valkey/valkey:8-alpine",
+    "ports": ["6380:6379"],
+    "options": "--name \"valkey\""
+  },
+  "kafka": {
+    "image": "confluentinc/confluent-local:7.5.0",
+    "env": {
+      "KAFKA_LISTENERS": "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094",
+      "KAFKA_ADVERTISED_LISTENERS": "PLAINTEXT://localhost:9093,BROKER://localhost:9092",
+      "KAFKA_REST_BOOTSTRAP_SERVERS": "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092",
+      "KAFKA_CONTROLLER_QUORUM_VOTERS": "1@localhost:9094",
+      "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "BROKER:PLAINTEXT,PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
+      "KAFKA_INTER_BROKER_LISTENER_NAME": "BROKER",
+      "KAFKA_BROKER_ID": "1",
+      "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
+      "KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS": "1",
+      "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+      "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR": "1",
+      "KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS": "0",
+      "KAFKA_NODE_ID": "1",
+      "KAFKA_PROCESS_ROLES": "broker,controller",
+      "KAFKA_CONTROLLER_LISTENER_NAMES": "CONTROLLER"
+    },
+    "ports": [
+      "9092:9092",
+      "9093:9093"
+    ],
+    "options": "--name \"kafka\""
+  },
+  "elasticsearch6": {
+    "image": "elasticsearch:6.8.23",
+    "env": {
+      "ES_JAVA_OPTS": "-Xms750m -Xmx750m",
+      "discovery.type": "single-node",
+      "cluster.routing.allocation.disk.threshold_enabled": "false"
+    },
+    "ports": [
+      "9206:9200"
+    ],
+    "options": "--name \"elasticsearch6\""
+  },
+  "elasticsearch7": {
+    "image": "elasticsearch:7.17.24",
+    "env": {
+      "ES_JAVA_OPTS": "-Xms750m -Xmx750m",
+      "discovery.type": "single-node",
+      "cluster.routing.allocation.disk.threshold_enabled": "false"
+    },
+    "ports": [
+      "9207:9200"
+    ],
+    "options": "--name \"elasticsearch7\""
+  },
+  "elasticsearch8": {
+    "image": "elasticsearch:8.15.3",
+    "env": {
+      "ES_JAVA_OPTS": "-Xms750m -Xmx750m",
+      "discovery.type": "single-node",
+      "cluster.routing.allocation.disk.threshold_enabled": "false",
+      "xpack.security.enabled": "false"
+    },
+    "ports": [
+      "9208:9200"
+    ],
+    "options": "--name \"elasticsearch8\""
+  },
+  "mongodb": {
+    "image": "mongo:8",
+    "ports": ["27017:27017"],
+    "options": "--name \"mongodb\""
+  }
+}

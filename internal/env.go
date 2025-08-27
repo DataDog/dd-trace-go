@@ -6,12 +6,13 @@
 package internal
 
 import (
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // BoolEnv returns the parsed boolean value of an environment variable, or
@@ -23,7 +24,7 @@ func BoolEnv(key string, def bool) bool {
 	}
 	v, err := strconv.ParseBool(vv)
 	if err != nil {
-		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v
@@ -38,7 +39,7 @@ func IntEnv(key string, def int) int {
 	}
 	v, err := strconv.Atoi(vv)
 	if err != nil {
-		log.Warn("Non-integer value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-integer value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v
@@ -53,10 +54,26 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 	}
 	v, err := time.ParseDuration(vv)
 	if err != nil {
-		log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-duration value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v
+}
+
+// IPEnv returns the valid IP value of an environment variable, or def otherwise.
+func IPEnv(key string, def net.IP) net.IP {
+	vv, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+
+	ip := net.ParseIP(vv)
+	if ip == nil {
+		log.Warn("Non-IP value for env var %s, defaulting to %s", key, def.String())
+		return def
+	}
+
+	return ip
 }
 
 // ForEachStringTag runs fn on every key val pair encountered in str.
@@ -102,7 +119,7 @@ func FloatEnv(key string, def float64) float64 {
 	}
 	v, err := strconv.ParseFloat(env, 64)
 	if err != nil {
-		log.Warn("Non-float value for env var %s, defaulting to %f. Parse failed with error: %v", key, def, err)
+		log.Warn("Non-float value for env var %s, defaulting to %f. Parse failed with error: %v", key, def, err.Error())
 		return def
 	}
 	return v
@@ -115,4 +132,9 @@ func BoolVal(val string, def bool) bool {
 		return def
 	}
 	return v
+}
+
+// ExternalEnvironment returns the value of the DD_EXTERNAL_ENV environment variable.
+func ExternalEnvironment() string {
+	return os.Getenv("DD_EXTERNAL_ENV")
 }

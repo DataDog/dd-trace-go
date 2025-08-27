@@ -9,46 +9,47 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
-
 	"github.com/gin-gonic/gin"
-)
 
-const defaultServiceName = "gin.router"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+)
 
 type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
 }
 
 func newConfig(serviceName string) *config {
 	if serviceName == "" {
-		serviceName = namingschema.ServiceName(defaultServiceName)
+		serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	}
-	rate := globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
+	rate := instr.AnalyticsRate(true)
 	return &config{
 		analyticsRate: rate,
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
-		headerTags:    globalconfig.HeaderTagMap(),
+		headerTags:    instr.HTTPHeadersAsTags(),
 	}
 }
 
-// Option specifies instrumentation configuration options.
-type Option func(*config)
+// Option describes options for the Gin integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to Middleware.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -60,7 +61,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -72,7 +73,7 @@ func WithAnalyticsRate(rate float64) Option {
 
 // WithResourceNamer specifies a function which will be used to obtain a resource name for a given
 // gin request, using the request's context.
-func WithResourceNamer(namer func(c *gin.Context) string) Option {
+func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
 	}
@@ -82,16 +83,15 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
+func WithHeaderTags(headers []string) OptionFn {
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 
 // WithIgnoreRequest specifies a function to use for determining if the
 // incoming HTTP request tracing should be skipped.
-func WithIgnoreRequest(f func(c *gin.Context) bool) Option {
+func WithIgnoreRequest(f func(c *gin.Context) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
 	}

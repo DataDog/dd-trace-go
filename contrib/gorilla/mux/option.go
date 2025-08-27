@@ -9,36 +9,40 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
-
-const defaultServiceName = "mux.router"
 
 type routerConfig struct {
 	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption // additional span options to be applied
-	finishOpts    []ddtrace.FinishOption    // span finish options to be applied
+	spanOpts      []tracer.StartSpanOption // additional span options to be applied
+	finishOpts    []tracer.FinishOption    // span finish options to be applied
 	analyticsRate float64
 	resourceNamer func(*Router, *http.Request) string
 	ignoreRequest func(*http.Request) bool
 	queryParams   bool
-	headerTags    *internal.LockMap
+	headerTags    instrumentation.HeaderTags
+	isStatusError func(statusCode int) bool
 }
 
-// RouterOption represents an option that can be passed to NewRouter.
-type RouterOption func(*routerConfig)
+// RouterOption describes options for the Gorilla mux integration.
+type RouterOption interface {
+	apply(config *routerConfig)
+}
+
+// RouterOptionFn represents options applicable to NewRouter and WrapRouter.
+type RouterOptionFn func(*routerConfig)
+
+func (fn RouterOptionFn) apply(cfg *routerConfig) {
+	fn(cfg)
+}
 
 func newConfig(opts []RouterOption) *routerConfig {
 	cfg := new(routerConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -47,27 +51,23 @@ func newConfig(opts []RouterOption) *routerConfig {
 }
 
 func defaults(cfg *routerConfig) {
-	if internal.BoolEnv("DD_TRACE_MUX_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
+	cfg.analyticsRate = instr.AnalyticsRate(true)
+	cfg.headerTags = instr.HTTPHeadersAsTags()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }
 
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request tracing should be skipped.
-func WithIgnoreRequest(f func(*http.Request) bool) RouterOption {
+func WithIgnoreRequest(f func(*http.Request) bool) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.ignoreRequest = f
 	}
 }
 
-// WithServiceName sets the given service name for the router.
-func WithServiceName(name string) RouterOption {
+// WithService sets the given service name for the router.
+func WithService(name string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.serviceName = name
 	}
@@ -75,7 +75,7 @@ func WithServiceName(name string) RouterOption {
 
 // WithSpanOptions applies the given set of options to the spans started
 // by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
+func WithSpanOptions(opts ...tracer.StartSpanOption) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.spanOpts = opts
 	}
@@ -84,14 +84,14 @@ func WithSpanOptions(opts ...ddtrace.StartSpanOption) RouterOption {
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
-func NoDebugStack() RouterOption {
+func NoDebugStack() RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) RouterOption {
+func WithAnalytics(on bool) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -103,7 +103,7 @@ func WithAnalytics(on bool) RouterOption {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) RouterOption {
+func WithAnalyticsRate(rate float64) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -115,7 +115,7 @@ func WithAnalyticsRate(rate float64) RouterOption {
 
 // WithResourceNamer specifies a quantizing function which will be used to
 // obtain the resource name for a given request.
-func WithResourceNamer(namer func(router *Router, req *http.Request) string) RouterOption {
+func WithResourceNamer(namer func(router *Router, req *http.Request) string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.resourceNamer = namer
 	}
@@ -125,18 +125,25 @@ func WithResourceNamer(namer func(router *Router, req *http.Request) string) Rou
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) RouterOption {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
+func WithHeaderTags(headers []string) RouterOptionFn {
 	return func(cfg *routerConfig) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 
 // WithQueryParams specifies that the integration should attach request query parameters as APM tags.
 // Warning: using this feature can risk exposing sensitive data such as authorization tokens
 // to Datadog.
-func WithQueryParams() RouterOption {
+func WithQueryParams() RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.queryParams = true
+	}
+}
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) RouterOptionFn {
+	return func(cfg *routerConfig) {
+		cfg.isStatusError = fn
 	}
 }

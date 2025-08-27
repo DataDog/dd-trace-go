@@ -3,19 +3,26 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package httprouter provides functions to trace the julienschmidt/httprouter package (https://github.com/julienschmidt/httprouter).
-package httprouter // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
+// Package httprouter provides functions to trace the [github.com/julienschmidt/httprouter] package.
+package httprouter // import "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"
 
 import (
 	"net/http"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+
 	"github.com/julienschmidt/httprouter"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter/internal/tracing"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
 )
 
-// Router is a traced version of httprouter.Router.
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageJulienschmidtHTTPRouter)
+}
+
+// Router is a traced version of [httprouter.Router].
 type Router struct {
 	*httprouter.Router
 	config *tracing.Config
@@ -24,11 +31,11 @@ type Router struct {
 // New returns a new router augmented with tracing.
 func New(opts ...RouterOption) *Router {
 	cfg := tracing.NewConfig(opts...)
-	log.Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
+	instr.Logger().Debug("contrib/julienschmidt/httprouter: Configuring Router: %#v", cfg)
 	return &Router{httprouter.New(), cfg}
 }
 
-// ServeHTTP implements http.Handler.
+// ServeHTTP implements [http.Handler].
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	tw, treq, afterHandle, handled := tracing.BeforeHandle(r.config, r.Router, wrapRouter, w, req)
 	defer afterHandle()

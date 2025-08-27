@@ -7,24 +7,58 @@ package appsec
 
 import (
 	"encoding/json"
+	"runtime"
 	"testing"
+	"time"
 
 	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v3"
-
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/require"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/waf/addresses"
 )
 
+func TestDetectLibDL(t *testing.T) {
+	client := new(telemetrytest.RecordClient)
+	restore := telemetry.MockClient(client)
+	defer restore()
+
+	prevLevel := log.GetLevel()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(prevLevel)
+
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF is not usable, skipping test")
+	}
+
+	if runtime.GOOS != "linux" {
+		t.Skip("This test is only relevant for Linux")
+	}
+
+	detectLibDL()
+
+	telemetrytest.CheckConfig(t, client.Configuration, "libdl_present", true)
+}
+
 func TestAPISecuritySchemaCollection(t *testing.T) {
-	if wafOk, err := waf.Health(); !wafOk {
+	if wafOk, err := libddwaf.Usable(); !wafOk {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
 	rules, err := internal.DefaultRulesetMap()
 	require.NoError(t, err)
-	handle, err := waf.NewHandle(rules, "", "")
+
+	builder, err := libddwaf.NewBuilder("", "")
 	require.NoError(t, err)
+	defer builder.Close()
+
+	_, err = builder.AddOrUpdateConfig("default", rules)
+	require.NoError(t, err)
+
+	handle := builder.Build()
+	require.NotNil(t, handle)
 	defer handle.Close()
 
 	for _, tc := range []struct {
@@ -83,10 +117,10 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext()
+			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
 			require.NoError(t, err)
 			defer wafCtx.Close()
-			runData := waf.RunAddressData{
+			runData := libddwaf.RunAddressData{
 				Persistent: map[string]any{
 					"waf.context.processor":      map[string]any{"extract-schema": true},
 					"server.request.path_params": tc.pathParams,
@@ -160,11 +194,11 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run("tags/"+tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext()
+			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
 			require.NoError(t, err)
 			defer wafCtx.Close()
 
-			runData := waf.RunAddressData{
+			runData := libddwaf.RunAddressData{
 				Ephemeral: map[string]any{
 					"waf.context.processor": map[string]any{"extract-schema": true},
 				},
@@ -177,9 +211,13 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
 			for k, v := range wafRes.Derivatives {
+				expected, checked := tc.tags[k]
+				if !checked {
+					continue
+				}
 				res, err := json.Marshal(v)
 				require.NoError(t, err)
-				require.Equal(t, tc.tags[k], string(res))
+				require.Equal(t, expected, string(res))
 			}
 		})
 	}

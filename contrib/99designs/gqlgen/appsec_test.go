@@ -12,17 +12,18 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestAppSec(t *testing.T) {
@@ -106,7 +107,7 @@ func TestAppSec(t *testing.T) {
 
 				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
 				span := spans[len(spans)-1]
-				require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+				require.Equal(t, float64(1), span.Tag("_dd.appsec.enabled"))
 
 				type ddAppsecJSON struct {
 					Triggers []struct {
@@ -131,6 +132,44 @@ func TestAppSec(t *testing.T) {
 				require.ElementsMatch(t, ids, []string{"test-rule-001", "test-rule-002"})
 			})
 		}
+	})
+
+	t.Run("subscription", func(t *testing.T) {
+		schema := gqlparser.MustLoadSchema(&ast.Source{Input: `type Time {
+			unixTime: Int!
+		}
+		type Subscription {
+			currentTime: Time!
+		}`})
+
+		server := handler.New(&graphql.ExecutableSchemaMock{
+			ExecFunc:   execSubscriptionFunc,
+			SchemaFunc: func() *ast.Schema { return schema },
+		})
+		server.Use(NewTracer())
+		server.AddTransport(transport.Websocket{})
+
+		client := client.New(server)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		now := time.Now().Unix()
+		sub := client.Websocket(`subscription { currentTime { unixTime } }`)
+		var resp struct {
+			CurrentTime struct {
+				UnixTime int64 `json:"unixTime"`
+			} `json:"currentTime"`
+		}
+		require.NoError(t, sub.Next(&resp))
+		require.LessOrEqual(t, now, resp.CurrentTime.UnixTime)
+		require.NoError(t, sub.Close())
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+		require.Equal(t, "graphql.read", spans[0].OperationName())
+		require.Equal(t, "graphql.parse", spans[1].OperationName())
+		require.Equal(t, "graphql.validate", spans[2].OperationName())
 	})
 }
 
@@ -232,12 +271,11 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	t.Setenv("DD_APPSEC_ENABLED", "1")
 	t.Setenv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	testutils.StartAppSec(t)
 	cleanup := func() {
-		appsec.Stop()
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		cleanup()
 		t.Skip("could not enable appsec: this platform is likely not supported")
 	}
@@ -263,7 +301,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 					Field:  field,
 					Args:   field.ArgumentMap(op.Variables),
 				})
-				fieldVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+				fieldVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 					switch field.Name {
 					case "topLevel":
 						arg := field.Arguments.ForName("id")
@@ -298,7 +336,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 							Field:  nested,
 							Args:   nested.ArgumentMap(op.Variables),
 						})
-						nestedVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+						nestedVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 							switch nested.Name {
 							case "nested":
 								arg := nested.Arguments.ForName("id")
@@ -328,5 +366,34 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 		}
 	default:
 		return graphql.OneShot(graphql.ErrorResponse(ctx, "not implemented"))
+	}
+}
+
+func execSubscriptionFunc(ctx context.Context) graphql.ResponseHandler {
+	op := graphql.GetOperationContext(ctx)
+
+	if op.Operation.Operation != ast.Subscription {
+		return graphql.OneShot(graphql.ErrorResponse(ctx, "not implemented"))
+	}
+
+	return func(ctx context.Context) *graphql.Response {
+		fields := graphql.CollectFields(op, op.Operation.SelectionSet, []string{"Subscription"})
+		resp := make(map[string]any)
+		for _, field := range fields {
+			switch field.Name {
+			case "currentTime":
+				resp["currentTime"] = map[string]int64{
+					"unixTime": time.Now().Unix(),
+				}
+			default:
+				return graphql.ErrorResponse(ctx, "unknown field: %s", field.Name)
+			}
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return graphql.ErrorResponse(ctx, "failed to marshal response: %v", err)
+		}
+		return &graphql.Response{Data: data}
 	}
 }

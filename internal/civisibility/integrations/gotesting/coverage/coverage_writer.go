@@ -8,9 +8,9 @@ package coverage
 import (
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/net"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -48,7 +48,7 @@ func (w *coverageWriter) add(coverage *testCoverage) {
 	telemetry.EventsEnqueueForSerialization()
 	ciTestCoverage := newCiTestCoverageData(coverage)
 	if err := w.payload.push(ciTestCoverage); err != nil {
-		log.Error("coverageWriter: Error encoding msgpack: %v", err)
+		log.Error("coverageWriter: Error encoding msgpack: %s", err.Error())
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {
 		w.flush()
@@ -88,14 +88,14 @@ func (w *coverageWriter) flush() {
 
 		buf, err := p.getBuffer()
 		if err != nil {
-			log.Error("coverageWriter: failure getting coverage data: %v", err)
+			log.Error("coverageWriter: failure getting coverage data: %s", err.Error())
 			return
 		}
 
 		telemetry.CodeCoverageFiles(float64(p.itemCount()))
 		err = w.client.SendCoveragePayload(buf)
 		if err != nil {
-			log.Error("coverageWriter: failure sending coverage data: %v", err)
+			log.Error("coverageWriter: failure sending coverage data: %s", err.Error())
 		}
 	}(oldp)
 }

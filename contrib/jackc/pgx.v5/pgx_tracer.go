@@ -8,9 +8,9 @@ package pgx
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,7 +36,7 @@ const (
 )
 
 type tracedBatchQuery struct {
-	span tracer.Span
+	span *tracer.Span
 	data pgx.TraceBatchQueryData
 }
 
@@ -124,7 +124,7 @@ func (t *pgxTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 	if ok {
 		span.SetTag(tagRowsAffected, data.CommandTag.RowsAffected())
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchStartData) context.Context {
@@ -175,7 +175,7 @@ func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 		t.prevBatchQuery.finish()
 		t.prevBatchQuery = nil
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceCopyFromStartData) context.Context {
@@ -200,7 +200,7 @@ func (t *pgxTracer) TraceCopyFromEnd(ctx context.Context, conn *pgx.Conn, data p
 	if t.wrapped.copyFrom != nil {
 		t.wrapped.copyFrom.TraceCopyFromEnd(ctx, conn, data)
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
@@ -222,7 +222,7 @@ func (t *pgxTracer) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pg
 	if t.wrapped.prepare != nil {
 		t.wrapped.prepare.TracePrepareEnd(ctx, conn, data)
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
@@ -244,7 +244,7 @@ func (t *pgxTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEn
 	if t.wrapped.connect != nil {
 		t.wrapped.connect.TraceConnectEnd(ctx, data)
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireStartData) context.Context {
@@ -266,15 +266,15 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 	if t.wrapped.poolAcquire != nil {
 		t.wrapped.poolAcquire.TraceAcquireEnd(ctx, pool, data)
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
-func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
-	opts := []ddtrace.StartSpanOption{
+func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageJackcPGXV5),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(tagOperation, string(op)),
 	}
@@ -300,10 +300,13 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 	return opts
 }
 
-func finishSpan(ctx context.Context, err error) {
+func (t *pgxTracer) finishSpan(ctx context.Context, err error) {
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		return
 	}
-	span.Finish(tracer.WithError(err))
+	if err != nil && (t.cfg.errCheck == nil || t.cfg.errCheck(err)) {
+		span.SetTag(ext.Error, err)
+	}
+	span.Finish()
 }

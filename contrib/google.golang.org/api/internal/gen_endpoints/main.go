@@ -196,6 +196,7 @@ func downloadGoogleAPISrc() (string, error) {
 	log.Printf("Downloading %s into %s...\n", zipURL, dst)
 
 	out, err := os.Create(zipFile)
+	assertNoError(err)
 	defer out.Close()
 	resp, err := http.Get(zipURL)
 	assertNoError(err)

@@ -1,0 +1,66 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/v2/profiler
+  description: The entry point of a Go program.
+
+aspects:
+  - id: func main()
+    join-point:
+      all-of:
+        - package-name: main
+        - test-main: false
+        - function-body:
+            function:
+              - name: main
+              - signature: {}
+    advice:
+      - inject-declarations:
+          imports:
+            profiler: github.com/DataDog/dd-trace-go/v2/profiler
+            log: log
+            os: os
+          # Note: it is valid to have multiple func init() in a single compile unit (e.g, `.go` file), in which case
+          # they get executed in declaration order. This means it's okay for us to add a new init function if there is
+          # already one in the file, but as it currently is appended AFTER all other declarations in the file, it means
+          # that it will be executed last (tracing contents of previous init functions will not be possible).
+          template: |-
+            func init() {
+              switch os.Getenv("DD_PROFILING_ENABLED") {
+              case "1", "true", "auto":
+                // The "auto" value can be set if profiling is enabled via the
+                // Datadog Admission Controller. We always turn on the profiler in
+                // the "auto" case since we only send profiles after at least a
+                // minute, and we assume anything running that long is worth
+                // profiling.
+                err := profiler.Start(
+                  profiler.WithProfileTypes(
+                    profiler.CPUProfile,
+                    profiler.HeapProfile,
+                    // Non-default profiles which are highly likely to be useful:
+                    profiler.GoroutineProfile,
+                    profiler.MutexProfile,
+                  ),
+                  profiler.WithTags("orchestrion:true"),
+                )
+                if err != nil {
+                  // TODO: is there a better reporting mechanism?
+                  // The tracer and profiler already use the stdlib logger, so
+                  // we're not adding anything new. But users might be using a
+                  // different logger.
+                  log.Printf("failed to start profiling: %s", err.Error())
+                }
+              }
+            }
+
+      # We need to stop the profiler at the end of `main` to ensure profiles are complete.
+      - prepend-statements:
+          imports:
+            profiler: github.com/DataDog/dd-trace-go/v2/profiler
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          template: |-
+            defer profiler.Stop()

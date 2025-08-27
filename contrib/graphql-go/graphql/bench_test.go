@@ -13,8 +13,9 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func BenchmarkGraphQL(b *testing.B) {
@@ -125,9 +126,9 @@ func BenchmarkGraphQL(b *testing.B) {
 		},
 	}
 
-	b.Run("version=baseline", func(b *testing.B) {
+	b.Run("version_baseline", func(b *testing.B) {
 		for name, tc := range testCases {
-			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
+			b.Run(fmt.Sprintf("scenario_%s", name), func(b *testing.B) {
 				b.StopTimer()
 				b.ReportAllocs()
 				schema, err := graphql.NewSchema(graphql.SchemaConfig{Query: rootQuery})
@@ -147,12 +148,12 @@ func BenchmarkGraphQL(b *testing.B) {
 		}
 	})
 
-	b.Run("version=dyngo", func(b *testing.B) {
+	b.Run("version_dyngo", func(b *testing.B) {
 		for name, tc := range testCases {
-			b.Run(fmt.Sprintf("scenario=%s", name), func(b *testing.B) {
+			b.Run(fmt.Sprintf("scenario_%s", name), func(b *testing.B) {
 				b.StopTimer()
 				b.ReportAllocs()
-				opts := []Option{WithServiceName("test-graphql-service")}
+				opts := []Option{WithService("test-graphql-service")}
 				schema, err := NewSchema(
 					graphql.SchemaConfig{
 						Query: rootQuery,
@@ -249,12 +250,11 @@ func enableAppSecBench(b *testing.B) func() {
 	require.NoError(b, err)
 	b.Setenv("DD_APPSEC_ENABLED", "1")
 	b.Setenv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	testutils.StartAppSecBench(b)
 	restore := func() {
-		appsec.Stop()
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		restore()
 		b.Skip("could not enable appsec: this platform is likely not supported")
 	}

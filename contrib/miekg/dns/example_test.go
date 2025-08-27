@@ -8,7 +8,7 @@ package dns_test
 import (
 	"fmt"
 
-	dnstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/miekg/dns"
+	dnstrace "github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2"
 
 	"github.com/miekg/dns"
 )

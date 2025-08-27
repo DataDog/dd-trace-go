@@ -9,20 +9,19 @@ import (
 	"context"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
 	"github.com/go-pg/pg/v10"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "go-pg/pg.v10"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/go-pg/pg/v10")
+	instr = instrumentation.Load(instrumentation.PackageGoPGV10)
 }
 
 // Wrap augments the given DB with tracing.
@@ -30,9 +29,9 @@ func Wrap(db *pg.DB, opts ...Option) {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	log.Debug("contrib/go-pg/pg.v10: Wrapping Database")
+	instr.Logger().Debug("contrib/go-pg/pg.v10: Wrapping Database")
 	db.AddQueryHook(&queryHook{cfg: cfg})
 }
 
@@ -47,7 +46,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 		query = []byte("unknown")
 	}
 
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
 		tracer.ServiceName(h.cfg.serviceName),
@@ -57,7 +56,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 	if !math.IsNaN(h.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, h.cfg.analyticsRate))
 	}
-	_, ctx = tracer.StartSpanFromContext(ctx, "go-pg", opts...)
+	_, ctx = tracer.StartSpanFromContext(ctx, h.cfg.operationName, opts...)
 	return ctx, qe.Err
 }
 

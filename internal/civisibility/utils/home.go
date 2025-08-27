@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // This code is based on: https://github.com/mitchellh/go-homedir/blob/v1.1.0/homedir.go (MIT License)
@@ -59,7 +59,7 @@ func ExpandPath(path string) string {
 //	The home directory of the current user.
 func getHomeDir() (homeDir string) {
 	defer func() {
-		log.Debug("civisibility: home directory: %v", homeDir)
+		log.Debug("civisibility: home directory: %s", homeDir)
 	}()
 
 	if runtime.GOOS == "windows" {

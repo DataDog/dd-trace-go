@@ -20,8 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
@@ -47,7 +48,7 @@ func (p *profiler) upload(bat batch) error {
 		if rerr, ok := err.(*retriableError); ok {
 			statsd.Count("datadog.profiling.go.upload_retry", 1, nil, 1)
 			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds())) * time.Nanosecond
-			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
+			log.Error("Uploading profile failed: %s. Trying again in %s...", rerr.Error(), wait)
 			p.interruptibleSleep(wait)
 			continue
 		}
@@ -75,21 +76,7 @@ func (e retriableError) Error() string { return e.err.Error() }
 // doRequest makes an HTTP POST request to the Datadog Profiling API with the
 // given profile.
 func (p *profiler) doRequest(bat batch) error {
-	tags := append(p.cfg.tags.Slice(),
-		fmt.Sprintf("service:%s", p.cfg.service),
-		// The profile_seq tag can be used to identify the first profile
-		// uploaded by a given runtime-id, identify missing profiles, etc.. See
-		// PROF-5612 (internal) for more details.
-		fmt.Sprintf("profile_seq:%d", bat.seq),
-	)
-	tags = append(tags, bat.extraTags...)
-	// If the user did not configure an "env" in the client, we should omit
-	// the tag so that the agent has a chance to supply a default tag.
-	// Otherwise, the tag supplied by the client will have priority.
-	if p.cfg.env != "" {
-		tags = append(tags, fmt.Sprintf("env:%s", p.cfg.env))
-	}
-	contentType, body, err := encode(bat, tags)
+	contentType, body, err := encode(bat, p.cfg)
 	if err != nil {
 		return err
 	}
@@ -154,6 +141,7 @@ type uploadEvent struct {
 	Info             struct {
 		Profiler profilerInfo `json:"profiler"`
 	} `json:"info"`
+	ProcessTags string `json:"process_tags,omitempty"`
 }
 
 // profilerInfo holds profiler-specific information which should be attached to
@@ -164,19 +152,34 @@ type profilerInfo struct {
 	} `json:"ssi"`
 	// Activation distinguishes how the profiler was enabled, either "auto"
 	// (env var set via admission controller) or "manual"
-	Activation string `json:"activation"`
+	Activation string         `json:"activation"`
+	Settings   map[string]any `json:"settings"`
 }
 
 // encode encodes the profile as a multipart mime request.
-func encode(bat batch, tags []string) (contentType string, body io.Reader, err error) {
-	var buf bytes.Buffer
-
-	mw := multipart.NewWriter(&buf)
-
+func encode(bat batch, cfg *config) (contentType string, body io.Reader, err error) {
+	tags := append(cfg.tags.Slice(),
+		fmt.Sprintf("service:%s", cfg.service),
+		// The profile_seq tag can be used to identify the first profile
+		// uploaded by a given runtime-id, identify missing profiles, etc.. See
+		// PROF-5612 (internal) for more details.
+		fmt.Sprintf("profile_seq:%d", bat.seq),
+		"runtime:go",
+	)
+	tags = append(tags, bat.extraTags...)
+	// If the user did not configure an "env" in the client, we should omit
+	// the tag so that the agent has a chance to supply a default tag.
+	// Otherwise, the tag supplied by the client will have priority.
+	if cfg.env != "" {
+		tags = append(tags, fmt.Sprintf("env:%s", cfg.env))
+	}
 	if bat.host != "" {
 		tags = append(tags, fmt.Sprintf("host:%s", bat.host))
 	}
-	tags = append(tags, "runtime:go")
+
+	var buf bytes.Buffer
+
+	mw := multipart.NewWriter(&buf)
 
 	event := &uploadEvent{
 		Version:          "4",
@@ -186,6 +189,7 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		Tags:             strings.Join(tags, ","),
 		EndpointCounts:   bat.endpointCounts,
 		CustomAttributes: bat.customAttributes,
+		ProcessTags:      processtags.GlobalTags().String(),
 	}
 
 	// DD_PROFILING_ENABLED is only used to enable profiling when added with
@@ -202,6 +206,10 @@ func encode(bat batch, tags []string) (contentType string, body io.Reader, err e
 		event.Info.Profiler.SSI.Mechanism = "orchestrion"
 	} else {
 		event.Info.Profiler.SSI.Mechanism = "none"
+	}
+	event.Info.Profiler.Settings = map[string]any{}
+	for _, tc := range telemetryConfiguration(cfg) {
+		event.Info.Profiler.Settings[tc.Name] = tc.Value
 	}
 
 	for _, p := range bat.profiles {

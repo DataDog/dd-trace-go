@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package slog provides functions to correlate logs and traces using log/slog package (https://pkg.go.dev/log/slog).
-package slog // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog"
+package slog // import "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
 
 import (
 	"context"
@@ -12,16 +12,16 @@ import (
 	"log/slog"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
-const componentName = "log/slog"
+var cfg = newConfig()
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("log/slog")
+	_ = instrumentation.Load(instrumentation.PackageLogSlog)
 }
 
 var _ slog.Handler = (*handler)(nil)
@@ -29,6 +29,16 @@ var _ slog.Handler = (*handler)(nil)
 type group struct {
 	name  string
 	attrs []slog.Attr
+}
+
+type config struct {
+	log128bits bool
+}
+
+func newConfig() *config {
+	return &config{
+		log128bits: options.GetBoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true),
+	}
 }
 
 // NewJSONHandler is a convenience function that returns a *slog.JSONHandler logger enhanced with
@@ -61,8 +71,14 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// In case the user has created group loggers, we ignore those and
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
-	if ok {
-		traceID := strconv.FormatUint(span.Context().TraceID(), 10)
+	if ok && span.Context().TraceID() != tracer.TraceIDZero {
+		var traceID string
+		if cfg.log128bits {
+			traceID = span.Context().TraceID()
+		} else {
+			traceID = strconv.FormatUint(span.Context().TraceIDLower(), 10)
+		}
+
 		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
 		attrs := []slog.Attr{

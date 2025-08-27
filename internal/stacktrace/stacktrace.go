@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate msgp -o=stacktrace_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -o=stacktrace_msgp.go -tests=false
 
 package stacktrace
 
@@ -12,12 +12,10 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"github.com/eapache/queue/v2"
-	"github.com/hashicorp/go-secure-stdlib/parseutil"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var (
@@ -27,7 +25,7 @@ var (
 
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
-		"gopkg.in/DataDog/dd-trace-go.v1",
+		"github.com/DataDog/dd-trace-go/v2",
 		"github.com/DataDog/dd-trace-go",
 		"github.com/DataDog/go-libddwaf",
 		"github.com/DataDog/datadog-agent",
@@ -45,10 +43,10 @@ const (
 
 func init() {
 	if env := os.Getenv(envStackTraceEnabled); env != "" {
-		if e, err := parseutil.ParseBool(env); err == nil {
+		if e, err := strconv.ParseBool(env); err == nil {
 			enabled = e
 		} else {
-			log.Error("Failed to parse %s env var as boolean: %v (using default value: %v)", envStackTraceEnabled, err, enabled)
+			log.Error("Failed to parse %s env var as boolean: (using default value: %t) %v", envStackTraceEnabled, enabled, err.Error())
 		}
 	}
 
@@ -58,13 +56,13 @@ func init() {
 			return
 		}
 
-		if depth, err := parseutil.SafeParseInt(env); err == nil {
+		if depth, err := strconv.Atoi(env); err == nil {
 			defaultMaxDepth = depth
 		} else {
-			if depth <= 0 && err == nil {
+			if depth <= 0 {
 				err = errors.New("value is not a strictly positive integer")
 			}
-			log.Error("Failed to parse %s env var as a positive integer: %v (using default value: %v)", envStackTraceDepth, err, defaultMaxDepth)
+			log.Error("Failed to parse %s env var as a positive integer: (using default value: %d) %v", envStackTraceDepth, defaultMaxDepth, err.Error())
 		}
 	}
 
@@ -76,32 +74,75 @@ func Enabled() bool {
 	return enabled
 }
 
-// StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the current frame
-type StackTrace []StackFrame
+type (
+	// StackTrace is intended to be sent over the span tag `_dd.stack`, the first frame is the current frame
+	StackTrace []StackFrame
 
-// StackFrame represents a single frame in the stack trace
-type StackFrame struct {
-	Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
-	Text      string `msg:"text,omitempty"`       // Text version of the stackframe as a string
-	File      string `msg:"file,omitempty"`       // File name where the code line is
-	Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
-	Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
-	Namespace string `msg:"namespace,omitempty"`  // Namespace is the fully qualified name of the package where the code is
-	ClassName string `msg:"class_name,omitempty"` // ClassName is the fully qualified name of the class where the line of code is
-	Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
+	// StackFrame represents a single frame in the stack trace
+	StackFrame struct {
+		Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
+		Text      string `msg:"text,omitempty"`       // Text version of the stackframe as a string
+		File      string `msg:"file,omitempty"`       // File name where the code line is
+		Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
+		Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
+		Namespace string `msg:"namespace,omitempty"`  // Namespace is the fully qualified name of the package where the code is
+		ClassName string `msg:"class_name,omitempty"` // ClassName is the fully qualified name of the class where the line of code is
+		Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
+	}
+
+	symbol struct {
+		Package  string
+		Receiver string
+		Function string
+	}
+)
+
+type queue[T any] struct {
+	data       []T
+	head, tail int
+	size, cap  int
 }
 
-type symbol struct {
-	Package  string
-	Receiver string
-	Function string
+func newQueue[T any](capacity int) *queue[T] {
+	return &queue[T]{
+		data: make([]T, capacity),
+		cap:  capacity,
+	}
+}
+
+func (q *queue[T]) Length() int {
+	return q.size
+}
+
+func (q *queue[T]) Add(item T) {
+	if q.size == q.cap {
+		// Overwrite oldest
+		q.data[q.tail] = item
+		q.tail = (q.tail + 1) % q.cap
+		q.head = q.tail
+	} else {
+		q.data[q.head] = item
+		q.head = (q.head + 1) % q.cap
+		q.size++
+	}
+}
+
+func (q *queue[T]) Remove() T {
+	if q.size == 0 {
+		var zero T
+		return zero
+	}
+	item := q.data[q.tail]
+	q.tail = (q.tail + 1) % q.cap
+	q.size--
+	return item
 }
 
 var symbolRegex = regexp.MustCompile(`^(([^(]+/)?([^(/.]+)?)(\.\(([^/)]+)\))?\.([^/()]+)$`)
 
 // parseSymbol parses a symbol name into its package, receiver and function
-// ex: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace.(*Event).NewException
-// -> package: gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace
+// ex: github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Event).NewException
+// -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
 // -> receiver: *Event
 // -> function: NewException
 func parseSymbol(name string) symbol {
@@ -136,7 +177,7 @@ func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
 	iter := iterator(skip, maxDepth, symbolSkip)
 	stack := make([]StackFrame, defaultMaxDepth)
 	nbStoredFrames := 0
-	topFramesQueue := queue.New[StackFrame]()
+	topFramesQueue := newQueue[StackFrame](defaultTopFrameDepth)
 
 	// We have to make sure we don't store more than maxDepth frames
 	// if there is more than maxDepth frames, we get X frames from the bottom of the stack and Y from the top
@@ -172,7 +213,7 @@ func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
 type framesIterator struct {
 	skipPrefixes []string
 	cache        []uintptr
-	frames       *queue.Queue[runtime.Frame]
+	frames       *queue[runtime.Frame]
 	cacheDepth   int
 	cacheSize    int
 	currDepth    int
@@ -182,7 +223,7 @@ func iterator(skip, cacheSize int, internalPrefixSkip []string) framesIterator {
 	return framesIterator{
 		skipPrefixes: internalPrefixSkip,
 		cache:        make([]uintptr, cacheSize),
-		frames:       queue.New[runtime.Frame](),
+		frames:       newQueue[runtime.Frame](cacheSize + 4),
 		cacheDepth:   skip,
 		cacheSize:    cacheSize,
 		currDepth:    0,

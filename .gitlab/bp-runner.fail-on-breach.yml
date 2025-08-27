@@ -1,0 +1,37 @@
+# Measurements from https://benchmarking.us1.prod.dog/benchmarks?benchmarkGroupPipelineId=66629462&benchmarkGroupSha=16054515e292a66c5eaf79b9ea62df6f348cd67e&page=1&ciJobDateStart=1746309551994&ciJobDateEnd=1748901551994&benchmarkId=14167634:
+
+# Thresholds set based on guidance in https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5070193198/How+to+set+up+pre-release+performance+quality+gates#How-to-choose-thresholds-for-pre-release-gates%3F
+
+experiments:
+  - name: Run SLO breach check
+    steps:
+      - name: SLO breach check
+        run: fail_on_breach
+        warning_range: 10
+        scenarios:
+          # Go oldstable
+          - name: normal_operation_cgo-cpu-bound/go124-profile-trace-asm
+            thresholds:
+              - agg_http_req_duration_p99 < 125.0 ms
+          - name: high_load_cgo-cpu-bound/go124-profile-trace-asm
+            thresholds:
+              - throughput < 40 op/s
+          - name: normal_operation_cgo-cpu-bound/go124-only-trace
+            thresholds:
+              - agg_http_req_duration_p99 < 125.0 ms
+          - name: high_load_cgo-cpu-bound/go124-only-trace
+            thresholds:
+              - throughput < 40 op/s
+          # Go stable
+          - name: normal_operation_cgo-cpu-bound/go125-profile-trace-asm
+            thresholds:
+              - agg_http_req_duration_p99 < 125.0 ms
+          - name: high_load_cgo-cpu-bound/go125-profile-trace-asm
+            thresholds:
+              - throughput < 40 op/s
+          - name: normal_operation_cgo-cpu-bound/go125-only-trace
+            thresholds:
+              - agg_http_req_duration_p99 < 125.0 ms
+          - name: high_load_cgo-cpu-bound/go125-only-trace
+            thresholds:
+              - throughput < 40 op/s

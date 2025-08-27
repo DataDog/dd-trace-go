@@ -1,0 +1,473 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2
+  description: confluent-kafka-go is a Go library for Apache Kafka
+
+aspects:
+  - id: Consumer
+    join-point:
+      struct-definition: github.com/confluentinc/confluent-kafka-go/kafka.Consumer
+    advice:
+      - add-struct-field:
+          name: __dd_tracer
+          type: "*__dd_kafkaTracer"
+      - add-struct-field:
+          name: __dd_events
+          type: "__dd_eventChan"
+      - add-struct-field:
+          name: __dd_confmap
+          type: "*ConfigMap"
+      - inject-declarations:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+          lang: go1.18
+          template: |-
+            const __dd_ckgoVersion = kafkatrace.CKGoVersion1
+            var __dd_instr *instrumentation.Instrumentation
+
+            type __dd_wMessage struct {
+              *Message
+            }
+
+            func __dd_wrapMessage(msg *Message) kafkatrace.Message {
+              if msg == nil {
+                return nil
+              }
+              return &__dd_wMessage{msg}
+            }
+
+            func (w *__dd_wMessage) Unwrap() any {
+              return w.Message
+            }
+
+            func (w *__dd_wMessage) GetValue() []byte {
+              return w.Message.Value
+            }
+
+            func (w *__dd_wMessage) GetKey() []byte {
+              return w.Message.Key
+            }
+
+            func (w *__dd_wMessage) GetHeaders() []kafkatrace.Header {
+              hs := make([]kafkatrace.Header, 0, len(w.Headers))
+              for _, h := range w.Headers {
+                hs = append(hs, __dd_wrapHeader(h))
+              }
+              return hs
+            }
+
+            func (w *__dd_wMessage) SetHeaders(headers []kafkatrace.Header) {
+              hs := make([]Header, 0, len(headers))
+              for _, h := range headers {
+                hs = append(hs, Header{
+                  Key:   h.GetKey(),
+                  Value: h.GetValue(),
+                })
+              }
+              w.Message.Headers = hs
+            }
+
+            func (w *__dd_wMessage) GetTopicPartition() kafkatrace.TopicPartition {
+              return __dd_wrapTopicPartition(w.Message.TopicPartition)
+            }
+
+            type __dd_wHeader struct {
+              Header
+            }
+
+            func __dd_wrapHeader(h Header) kafkatrace.Header {
+              return &__dd_wHeader{h}
+            }
+
+            func (w __dd_wHeader) GetKey() string {
+              return w.Header.Key
+            }
+
+            func (w __dd_wHeader) GetValue() []byte {
+              return w.Header.Value
+            }
+
+            type __dd_wTopicPartition struct {
+              TopicPartition
+            }
+
+            func __dd_wrapTopicPartition(tp TopicPartition) kafkatrace.TopicPartition {
+              return __dd_wTopicPartition{tp}
+            }
+
+            func __dd_wrapTopicPartitions(tps []TopicPartition) []kafkatrace.TopicPartition {
+              wtps := make([]kafkatrace.TopicPartition, 0, len(tps))
+              for _, tp := range tps {
+                wtps = append(wtps, __dd_wTopicPartition{tp})
+              }
+              return wtps
+            }
+
+            func (w __dd_wTopicPartition) GetTopic() string {
+              if w.Topic == nil {
+                return ""
+              }
+              return *w.Topic
+            }
+
+            func (w __dd_wTopicPartition) GetPartition() int32 {
+              return w.Partition
+            }
+
+            func (w __dd_wTopicPartition) GetOffset() int64 {
+              return int64(w.Offset)
+            }
+
+            func (w __dd_wTopicPartition) GetError() error {
+              return w.Error
+            }
+
+            type __dd_wEvent struct {
+              Event
+            }
+
+            func __dd_wrapEvent(event Event) kafkatrace.Event {
+              return __dd_wEvent{event}
+            }
+
+            func (w __dd_wEvent) KafkaMessage() (kafkatrace.Message, bool) {
+              if m, ok := w.Event.(*Message); ok {
+                return __dd_wrapMessage(m), true
+              }
+              return nil, false
+            }
+
+            func (w __dd_wEvent) KafkaOffsetsCommitted() (kafkatrace.OffsetsCommitted, bool) {
+              if oc, ok := w.Event.(OffsetsCommitted); ok {
+                return __dd_wrapOffsetsCommitted(oc), true
+              }
+              return nil, false
+            }
+
+            type __dd_wOffsetsCommitted struct {
+              OffsetsCommitted
+            }
+
+            func __dd_wrapOffsetsCommitted(oc OffsetsCommitted) kafkatrace.OffsetsCommitted {
+              return __dd_wOffsetsCommitted{oc}
+            }
+
+            func (w __dd_wOffsetsCommitted) GetError() error {
+              return w.Error
+            }
+
+            func (w __dd_wOffsetsCommitted) GetOffsets() []kafkatrace.TopicPartition {
+              ttps := make([]kafkatrace.TopicPartition, 0, len(w.Offsets))
+              for _, tp := range w.Offsets {
+                ttps = append(ttps, __dd_wrapTopicPartition(tp))
+              }
+              return ttps
+            }
+
+            type __dd_wConfigMap struct {
+              cfg *ConfigMap
+            }
+
+            func __dd_wrapConfigMap(cm *ConfigMap) kafkatrace.ConfigMap {
+              return &__dd_wConfigMap{cm}
+            }
+
+            func (w *__dd_wConfigMap) Get(key string, defVal any) (any, error) {
+              return w.cfg.Get(key, defVal)
+            }
+
+            func init() {
+              __dd_instr = kafkatrace.Package(__dd_ckgoVersion)
+            }
+
+            func __dd_newKafkaTracer(opts ...kafkatrace.Option) *kafkatrace.Tracer {
+              v, _ := LibraryVersion()
+              return kafkatrace.NewKafkaTracer(__dd_instr, __dd_ckgoVersion, v, opts...)
+            }
+
+            func __dd_initConsumer(c *Consumer) {
+              if c.__dd_tracer != nil {
+                return
+              }
+              var opts []kafkatrace.Option
+              if c.__dd_confmap != nil {
+                opts = append(opts, kafkatrace.WithConfig(__dd_wrapConfigMap(c.__dd_confmap)))
+              }
+              c.__dd_tracer = __dd_newKafkaTracer(opts...)
+              // TODO: accessing c.events here might break if the library renames this variable...
+              c.__dd_events = kafkatrace.WrapConsumeEventsChannel(c.__dd_tracer, c.events, c, __dd_wrapEvent)
+            }
+
+            func __dd_initProducer(p *Producer) {
+              if p.__dd_tracer != nil {
+                return
+              }
+              p.__dd_tracer = __dd_newKafkaTracer()
+              // TODO: accessing p.events and p.produceChannel here might break if the library renames this variable...
+              p.__dd_events = p.events
+              p.__dd_produceChannel = kafkatrace.WrapProduceChannel(p.__dd_tracer, p.produceChannel, __dd_wrapMessage)
+              if p.__dd_tracer.DSMEnabled() {
+                p.__dd_events = kafkatrace.WrapProduceEventsChannel(p.__dd_tracer, p.events, __dd_wrapEvent)
+              }
+            }
+
+            type __dd_eventChan = chan Event
+            type __dd_messageChan = chan *Message
+            type __dd_kafkaTracer = kafkatrace.Tracer
+
+  ## Trace Consumer ##
+
+  - id: NewConsumer
+    join-point:
+      all-of:
+        - import-path: github.com/confluentinc/confluent-kafka-go/kafka
+        - function-body:
+            function:
+                - name: NewConsumer
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $conf := .Function.Argument 0 -}}
+            {{- $c := .Function.Result 0 -}}
+            defer func() {
+              if {{ $c }} == nil {
+                return
+              }
+              {{ $c }}.__dd_confmap = {{ $conf }}
+              __dd_initConsumer({{ $c }})
+            }()
+
+  - id: Consumer.Close
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Consumer'
+          - name: Close
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            __dd_initConsumer({{ $c }})
+            defer func() {
+              if {{ $c }}.__dd_events == nil && {{ $c }}.__dd_tracer.PrevSpan != nil {
+                {{ $c }}.__dd_tracer.PrevSpan.Finish()
+                {{ $c }}.__dd_tracer.PrevSpan = nil
+              }
+            }()
+
+  - id: Consumer.Events
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Consumer'
+          - name: Events
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $events := .Function.Result 0 -}}
+            __dd_initConsumer({{ $c }})
+            defer func() {
+              {{ $events }} = {{ $c }}.__dd_events
+            }()
+
+  # kafka.Consumer#ReadMessage calls kafka.Consumer#Poll internally, so there's no need to trace it.
+  - id: Consumer.Poll
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Consumer'
+          - name: Poll
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $event := .Function.Result 0 -}}
+            __dd_initConsumer({{ $c }})
+            if {{ $c }}.__dd_tracer.PrevSpan != nil {
+              {{ $c }}.__dd_tracer.PrevSpan.Finish()
+              {{ $c }}.__dd_tracer.PrevSpan = nil
+            }
+            defer func() {
+                if msg, ok := {{ $event }}.(*Message); ok {
+                  tMsg := __dd_wrapMessage(msg)
+                  {{ $c }}.__dd_tracer.SetConsumeCheckpoint(tMsg)
+                  {{ $c }}.__dd_tracer.PrevSpan = {{ $c }}.__dd_tracer.StartConsumeSpan(tMsg)
+                } else if offset, ok := {{ $event }}.(OffsetsCommitted); ok {
+                  tOffsets := __dd_wrapTopicPartitions(offset.Offsets)
+                  {{ $c }}.__dd_tracer.TrackCommitOffsets(tOffsets, offset.Error)
+                  {{ $c }}.__dd_tracer.TrackHighWatermarkOffset(tOffsets, {{ $c }})
+                }
+            }()
+
+  - id: Consumer.Commit
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Consumer'
+          - name: Commit
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $tps := .Function.Result 0 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_initConsumer({{ $c }})
+            defer func() {
+              tOffsets := __dd_wrapTopicPartitions({{ $tps }})
+              {{ $c }}.__dd_tracer.TrackCommitOffsets(tOffsets, {{ $err }})
+              {{ $c }}.__dd_tracer.TrackHighWatermarkOffset(tOffsets, {{ $c }})
+            }()
+
+  - id: Consumer.CommitMessage
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Consumer'
+          - name: CommitMessage
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $tps := .Function.Result 0 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_initConsumer({{ $c }})
+            defer func() {
+              tOffsets := __dd_wrapTopicPartitions({{ $tps }})
+              {{ $c }}.__dd_tracer.TrackCommitOffsets(tOffsets, {{ $err }})
+              {{ $c }}.__dd_tracer.TrackHighWatermarkOffset(tOffsets, {{ $c }})
+            }()
+
+  - id: Consumer.CommitOffsets
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Consumer'
+          - name: CommitOffsets
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $tps := .Function.Result 0 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_initConsumer({{ $c }})
+            defer func() {
+              tOffsets := __dd_wrapTopicPartitions({{ $tps }})
+              {{ $c }}.__dd_tracer.TrackCommitOffsets(tOffsets, {{ $err }})
+              {{ $c }}.__dd_tracer.TrackHighWatermarkOffset(tOffsets, {{ $c }})
+            }()
+
+  ## Trace Producer ##
+
+  - id: Producer
+    join-point:
+      struct-definition: github.com/confluentinc/confluent-kafka-go/kafka.Producer
+    advice:
+      - add-struct-field:
+          name: __dd_tracer
+          type: "*__dd_kafkaTracer"
+      - add-struct-field:
+          name: __dd_events
+          type: "__dd_eventChan"
+      - add-struct-field:
+          name: __dd_produceChannel
+          type: "__dd_messageChan"
+
+  - id: Producer.Events
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Producer'
+          - name: Events
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $p := .Function.Receiver -}}
+            {{- $events := .Function.Result 0 -}}
+            __dd_initProducer({{ $p }})
+            defer func() {
+              {{ $events }} = {{ $p }}.__dd_events
+            }()
+
+  - id: Producer.ProduceChannel
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Producer'
+          - name: ProduceChannel
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $p := .Function.Receiver -}}
+            {{- $produceChannel := .Function.Result 0 -}}
+            __dd_initProducer({{ $p }})
+            defer func() {
+              {{ $produceChannel }} = {{ $p }}.__dd_produceChannel
+            }()
+
+  - id: Producer.Close
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Producer'
+          - name: Close
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $p := .Function.Receiver -}}
+            __dd_initProducer({{ $p }})
+            close({{ $p }}.__dd_produceChannel)
+
+  - id: Producer.Produce
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/confluentinc/confluent-kafka-go/kafka.Producer'
+          - name: Produce
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          template: |-
+            {{- $p := .Function.Receiver -}}
+            {{- $msg := .Function.Argument 0 -}}
+            {{- $deliveryChan := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 0 -}}
+            __dd_initProducer({{ $p }})
+            tMsg := __dd_wrapMessage({{ $msg }})
+            span := p.__dd_tracer.StartProduceSpan(tMsg)
+
+            var errChan chan error
+            {{ $deliveryChan }}, errChan = kafkatrace.WrapDeliveryChannel({{ $p }}.__dd_tracer, {{ $deliveryChan }}, span, __dd_wrapEvent)
+
+            {{ $p }}.__dd_tracer.SetProduceCheckpoint(tMsg)
+            defer func() {
+              if {{ $err }} != nil {
+                if errChan != nil {
+                  errChan <- {{ $err }}
+                } else {
+                  span.Finish(tracer.WithError({{ $err }}))
+                }
+              }
+            }()

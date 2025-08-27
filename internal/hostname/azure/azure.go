@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/cachedfetch"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/httputils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/validate"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/cachedfetch"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/validate"
 )
 
 // declare these as vars not const to ease testing
@@ -40,7 +40,7 @@ func GetHostname(ctx context.Context) (string, error) {
 		VMID string
 	}
 	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
-		return "", fmt.Errorf("failed to parse Azure instance metadata: %s", err)
+		return "", fmt.Errorf("failed to parse Azure instance metadata: %s", err.Error())
 	}
 
 	if err := validate.ValidHostname(metadata.VMID); err != nil {
@@ -56,7 +56,7 @@ var instanceMetaFetcher = cachedfetch.Fetcher{
 		metadataJSON, err := getResponse(ctx,
 			metadataURL+"/metadata/instance/compute?api-version=2017-08-01")
 		if err != nil {
-			return "", fmt.Errorf("failed to get Azure instance metadata: %s", err)
+			return "", fmt.Errorf("failed to get Azure instance metadata: %s", err.Error())
 		}
 		return metadataJSON, nil
 	},

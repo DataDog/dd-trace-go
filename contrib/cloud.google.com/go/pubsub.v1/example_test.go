@@ -9,9 +9,9 @@ import (
 	"context"
 	"log"
 
-	pubsubtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/cloud.google.com/go/pubsub.v1"
-
 	"cloud.google.com/go/pubsub"
+
+	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"
 )
 
 func ExamplePublish() {
@@ -34,7 +34,7 @@ func ExampleSubscription_Receive() {
 	}
 
 	sub := client.Subscription("subscription")
-	err = sub.Receive(context.Background(), pubsubtrace.WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(context.Background(), pubsubtrace.WrapReceiveHandler(sub, func(_ context.Context, _ *pubsub.Message) {
 		// TODO: Handle message.
 	}))
 	if err != nil {

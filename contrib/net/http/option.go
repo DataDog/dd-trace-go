@@ -10,68 +10,35 @@ import (
 	"net/http"
 	"os"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
-const (
-	defaultServiceName = "http.router"
-	// envClientQueryStringEnabled is the name of the env var used to specify whether query string collection is enabled for http client spans.
-	envClientQueryStringEnabled = "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING"
-	// envClientErrorStatuses is the name of the env var that specifies error status codes on http client spans
-	envClientErrorStatuses = "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES"
-)
+// Option describes options for http.ServeMux.
+type Option = internal.Option
 
-type config struct {
-	serviceName   string
-	analyticsRate float64
-	spanOpts      []ddtrace.StartSpanOption
-	finishOpts    []ddtrace.FinishOption
-	ignoreRequest func(*http.Request) bool
-	resourceNamer func(*http.Request) string
-	headerTags    *internal.LockMap
-}
+// OptionFn represents options applicable to NewServeMux and WrapHandler.
+type OptionFn = internal.OptionFn
 
-// MuxOption has been deprecated in favor of Option.
-type MuxOption = Option
-
-// Option represents an option that can be passed to NewServeMux or WrapHandler.
-type Option func(*config)
-
-func defaults(cfg *config) {
-	if internal.BoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
-		cfg.analyticsRate = 1.0
-	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
-	}
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.headerTags = globalconfig.HeaderTagMap()
-	cfg.spanOpts = []ddtrace.StartSpanOption{tracer.Measured()}
-	if !math.IsNaN(cfg.analyticsRate) {
-		cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-	}
-	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
-	cfg.resourceNamer = func(_ *http.Request) string { return "" }
-}
+// HandlerOptionFn represents options applicable to NewServeMux and WrapHandler.
+type HandlerOptionFn = internal.HandlerOptionFn
 
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request should not be traced.
-func WithIgnoreRequest(f func(*http.Request) bool) MuxOption {
-	return func(cfg *config) {
-		cfg.ignoreRequest = f
+func WithIgnoreRequest(f func(*http.Request) bool) OptionFn {
+	return func(cfg *internal.CommonConfig) {
+		cfg.IgnoreRequest = f
 	}
 }
 
-// WithServiceName sets the given service name for the returned ServeMux.
-func WithServiceName(name string) MuxOption {
-	return func(cfg *config) {
-		cfg.serviceName = name
+// WithService sets the given service name for the returned ServeMux.
+func WithService(name string) OptionFn {
+	return func(cfg *internal.CommonConfig) {
+		cfg.ServiceName = name
 	}
 }
 
@@ -79,207 +46,148 @@ func WithServiceName(name string) MuxOption {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
-	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+func WithHeaderTags(headers []string) HandlerOptionFn {
+	return func(cfg *internal.Config) {
+		cfg.HeaderTags = instrumentation.NewHeaderTags(headers)
+	}
+}
+
+// WithStatusCheck sets a span to be an error if the passed function
+// returns true for a given status code.
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
+	return func(cfg *internal.CommonConfig) {
+		cfg.IsStatusError = fn
 	}
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) MuxOption {
-	return func(cfg *config) {
+func WithAnalytics(on bool) OptionFn {
+	return func(cfg *internal.CommonConfig) {
 		if on {
-			cfg.analyticsRate = 1.0
-			cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			cfg.AnalyticsRate = 1.0
+			cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
 		} else {
-			cfg.analyticsRate = math.NaN()
+			cfg.AnalyticsRate = math.NaN()
 		}
 	}
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) MuxOption {
-	return func(cfg *config) {
+func WithAnalyticsRate(rate float64) OptionFn {
+	return func(cfg *internal.CommonConfig) {
 		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-			cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+			cfg.AnalyticsRate = rate
+			cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
 		} else {
-			cfg.analyticsRate = math.NaN()
+			cfg.AnalyticsRate = math.NaN()
 		}
 	}
 }
 
-// WithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
+// WithSpanOptions defines a set of additional tracer.StartSpanOption to be added
 // to spans started by the integration.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
-	return func(cfg *config) {
-		cfg.spanOpts = append(cfg.spanOpts, opts...)
+func WithSpanOptions(opts ...tracer.StartSpanOption) OptionFn {
+	return func(cfg *internal.CommonConfig) {
+		cfg.SpanOpts = append(cfg.SpanOpts, opts...)
 	}
 }
 
 // WithResourceNamer populates the name of a resource based on a custom function.
-func WithResourceNamer(namer func(req *http.Request) string) Option {
-	return func(cfg *config) {
-		cfg.resourceNamer = namer
-	}
+func WithResourceNamer(namer func(req *http.Request) string) OptionFn {
+	return internal.WithResourceNamer(namer)
 }
 
 // NoDebugStack prevents stack traces from being attached to spans finishing
 // with an error. This is useful in situations where errors are frequent and
 // performance is critical.
-func NoDebugStack() Option {
-	return func(cfg *config) {
-		cfg.finishOpts = append(cfg.finishOpts, tracer.NoDebugStack())
+func NoDebugStack() HandlerOptionFn {
+	return func(cfg *internal.Config) {
+		cfg.FinishOpts = append(cfg.FinishOpts, tracer.NoDebugStack())
 	}
+}
+
+// RoundTripperOption describes options for http.RoundTripper.
+type RoundTripperOption = internal.RoundTripperOption
+
+// RoundTripperOptionFn represents options applicable to WrapClient and WrapRoundTripper.
+type RoundTripperOptionFn = internal.RoundTripperOptionFn
+
+func newRoundTripperConfig() *internal.RoundTripperConfig {
+	defaultResourceNamer := func(_ *http.Request) string {
+		return "http.request"
+	}
+	instr := internal.Instrumentation
+	spanName := instr.OperationName(instrumentation.ComponentClient, nil)
+	defaultSpanNamer := func(_ *http.Request) string {
+		return spanName
+	}
+	sharedCfg := internal.CommonConfig{
+		ServiceName:   instr.ServiceName(instrumentation.ComponentClient, nil),
+		AnalyticsRate: instr.GlobalAnalyticsRate(),
+		ResourceNamer: defaultResourceNamer,
+		IgnoreRequest: func(_ *http.Request) bool { return false },
+	}
+	rtConfig := internal.RoundTripperConfig{
+		CommonConfig:  sharedCfg,
+		Propagation:   true,
+		SpanNamer:     defaultSpanNamer,
+		QueryString:   options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
+		IsStatusError: isClientError,
+	}
+	v := os.Getenv(internal.EnvClientErrorStatuses)
+	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
+		rtConfig.IsStatusError = fn
+	}
+	return &rtConfig
 }
 
 // A RoundTripperBeforeFunc can be used to modify a span before an http
 // RoundTrip is made.
-type RoundTripperBeforeFunc func(*http.Request, ddtrace.Span)
+type RoundTripperBeforeFunc = internal.RoundTripperBeforeFunc
 
 // A RoundTripperAfterFunc can be used to modify a span after an http
 // RoundTrip is made. It is possible for the http Response to be nil.
-type RoundTripperAfterFunc func(*http.Response, ddtrace.Span)
-
-type roundTripperConfig struct {
-	before        RoundTripperBeforeFunc
-	after         RoundTripperAfterFunc
-	analyticsRate float64
-	serviceName   string
-	resourceNamer func(req *http.Request) string
-	spanNamer     func(req *http.Request) string
-	ignoreRequest func(*http.Request) bool
-	spanOpts      []ddtrace.StartSpanOption
-	propagation   bool
-	errCheck      func(err error) bool
-	queryString   bool // reports whether the query string is included in the URL tag for http client spans
-	isStatusError func(statusCode int) bool
-}
-
-func newRoundTripperConfig() *roundTripperConfig {
-	defaultResourceNamer := func(_ *http.Request) string {
-		return "http.request"
-	}
-	spanName := namingschema.OpName(namingschema.HTTPClient)
-	defaultSpanNamer := func(_ *http.Request) string {
-		return spanName
-	}
-
-	c := &roundTripperConfig{
-		serviceName:   namingschema.ServiceNameOverrideV0("", ""),
-		analyticsRate: globalconfig.AnalyticsRate(),
-		resourceNamer: defaultResourceNamer,
-		propagation:   true,
-		spanNamer:     defaultSpanNamer,
-		ignoreRequest: func(_ *http.Request) bool { return false },
-		queryString:   internal.BoolEnv(envClientQueryStringEnabled, true),
-		isStatusError: isClientError,
-	}
-	v := os.Getenv(envClientErrorStatuses)
-	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
-		c.isStatusError = fn
-	}
-	return c
-}
-
-// A RoundTripperOption represents an option that can be passed to
-// WrapRoundTripper.
-type RoundTripperOption func(*roundTripperConfig)
+type RoundTripperAfterFunc = internal.RoundTripperAfterFunc
 
 // WithBefore adds a RoundTripperBeforeFunc to the RoundTripper
 // config.
-func WithBefore(f RoundTripperBeforeFunc) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.before = f
+func WithBefore(f RoundTripperBeforeFunc) RoundTripperOptionFn {
+	return func(cfg *internal.RoundTripperConfig) {
+		cfg.Before = f
 	}
 }
 
 // WithAfter adds a RoundTripperAfterFunc to the RoundTripper
 // config.
-func WithAfter(f RoundTripperAfterFunc) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.after = f
+func WithAfter(f RoundTripperAfterFunc) RoundTripperOptionFn {
+	return func(cfg *internal.RoundTripperConfig) {
+		cfg.After = f
 	}
 }
 
-// RTWithResourceNamer specifies a function which will be used to
-// obtain the resource name for a given request.
-func RTWithResourceNamer(namer func(req *http.Request) string) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.resourceNamer = namer
-	}
-}
-
-// RTWithSpanNamer specifies a function which will be used to
+// WithSpanNamer specifies a function which will be used to
 // obtain the span operation name for a given request.
-func RTWithSpanNamer(namer func(req *http.Request) string) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.spanNamer = namer
+func WithSpanNamer(namer func(req *http.Request) string) RoundTripperOptionFn {
+	return func(cfg *internal.RoundTripperConfig) {
+		cfg.SpanNamer = namer
 	}
 }
 
-// RTWithSpanOptions defines a set of additional ddtrace.StartSpanOption to be added
-// to spans started by the integration.
-func RTWithSpanOptions(opts ...ddtrace.StartSpanOption) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.spanOpts = append(cfg.spanOpts, opts...)
-	}
-}
-
-// RTWithServiceName sets the given service name for the RoundTripper.
-func RTWithServiceName(name string) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.serviceName = name
-	}
-}
-
-// RTWithAnalytics enables Trace Analytics for all started spans.
-func RTWithAnalytics(on bool) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
-
-// RTWithAnalyticsRate sets the sampling rate for Trace Analytics events
-// correlated to started spans.
-func RTWithAnalyticsRate(rate float64) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
-
-// RTWithPropagation enables/disables propagation for tracing headers.
+// WithPropagation enables/disables propagation for tracing headers.
 // Disabling propagation will disconnect this trace from any downstream traces.
-func RTWithPropagation(propagation bool) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.propagation = propagation
+func WithPropagation(propagation bool) RoundTripperOptionFn {
+	return func(cfg *internal.RoundTripperConfig) {
+		cfg.Propagation = propagation
 	}
 }
 
-// RTWithIgnoreRequest holds the function to use for determining if the
-// outgoing HTTP request should not be traced.
-func RTWithIgnoreRequest(f func(*http.Request) bool) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.ignoreRequest = f
-	}
-}
-
-// RTWithErrorCheck specifies a function fn which determines whether the passed
+// WithErrorCheck specifies a function fn which determines whether the passed
 // error should be marked as an error. The fn is called whenever an http operation
 // finishes with an error
-func RTWithErrorCheck(fn func(err error) bool) RoundTripperOption {
-	return func(cfg *roundTripperConfig) {
-		cfg.errCheck = fn
+func WithErrorCheck(fn func(err error) bool) RoundTripperOptionFn {
+	return func(cfg *internal.RoundTripperConfig) {
+		cfg.ErrCheck = fn
 	}
 }
 

@@ -4,26 +4,26 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package httptreemux provides functions to trace the dimfeld/httptreemux/v5 package (https://github.com/dimfeld/httptreemux).
-package httptreemux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/dimfeld/httptreemux.v5"
+package httptreemux // import "github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2"
 
 import (
 	"net/http"
 	"strings"
 
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
 	"github.com/dimfeld/httptreemux/v5"
+
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "dimfeld/httptreemux.v5"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/dimfeld/httptreemux/v5")
+	instr = instrumentation.Load(instrumentation.PackageDimfeldHTTPTreeMuxV5)
 }
 
 // Router is a traced version of httptreemux.TreeMux.
@@ -37,12 +37,12 @@ func New(opts ...RouterOption) *Router {
 	cfg := new(routerConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	log.Debug("contrib/dimfeld/httptreemux.v5: Configuring Router: %#v", cfg)
+	instr.Logger().Debug("contrib/dimfeld/httptreemux.v5: Configuring Router: %#v", cfg)
 	return &Router{httptreemux.New(), cfg}
 }
 
@@ -52,10 +52,11 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
-		Service:  r.config.serviceName,
-		Resource: resource,
-		SpanOpts: r.config.spanOpts,
-		Route:    route,
+		Framework: "github.com/dimfeld/httptreemux/v5",
+		Service:   r.config.serviceName,
+		Resource:  resource,
+		SpanOpts:  r.config.spanOpts,
+		Route:     route,
 	})
 }
 
@@ -72,12 +73,12 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 	cfg := new(routerConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	log.Debug("contrib/dimfeld/httptreemux.v5: Configuring ContextRouter: %#v", cfg)
+	instr.Logger().Debug("contrib/dimfeld/httptreemux.v5: Configuring ContextRouter: %#v", cfg)
 	return &ContextRouter{httptreemux.NewContextMux(), cfg}
 }
 
@@ -87,10 +88,11 @@ func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
-		Service:  r.config.serviceName,
-		Resource: resource,
-		SpanOpts: r.config.spanOpts,
-		Route:    route,
+		Framework: "github.com/dimfeld/httptreemux/v5",
+		Service:   r.config.serviceName,
+		Resource:  resource,
+		SpanOpts:  r.config.spanOpts,
+		Route:     route,
 	})
 }
 

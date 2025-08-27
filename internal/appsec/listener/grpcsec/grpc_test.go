@@ -6,13 +6,13 @@
 package grpcsec
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/waf"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,18 +94,20 @@ func TestTags(t *testing.T) {
 			metadataCase := metadataCase
 			t.Run(fmt.Sprintf("%s-%s", eventCase.name, metadataCase.name), func(t *testing.T) {
 				var span MockSpan
-				err := waf.SetEventSpanTags(&span, eventCase.events)
+				waf.SetEventSpanTags(&span)
+				value, err := json.Marshal(map[string][]any{"triggers": eventCase.events})
 				if eventCase.expectedError {
 					require.Error(t, err)
 					return
 				}
+
+				span.SetTag("_dd.appsec.json", string(value))
 				require.NoError(t, err)
 				SetRequestMetadataTags(&span, metadataCase.md)
 
 				if eventCase.events != nil {
 					require.Subset(t, span.Tags, map[string]interface{}{
 						"_dd.appsec.json": eventCase.expectedTag,
-						"manual.keep":     true,
 						"appsec.event":    true,
 						"_dd.origin":      "appsec",
 					})

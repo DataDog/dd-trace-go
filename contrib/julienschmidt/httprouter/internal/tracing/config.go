@@ -8,33 +8,28 @@ package tracing
 import (
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
-const defaultServiceName = "http.router"
-
 type Config struct {
-	headerTags    *internal.LockMap
-	spanOpts      []ddtrace.StartSpanOption
+	headerTags    instrumentation.HeaderTags
+	spanOpts      []tracer.StartSpanOption
 	serviceName   string
 	analyticsRate float64
 }
 
 func NewConfig(opts ...Option) *Config {
 	cfg := new(Config)
-	if internal.BoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
+	if options.GetBoolEnv("DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED", false) {
 		cfg.analyticsRate = 1.0
 	} else {
-		cfg.analyticsRate = globalconfig.AnalyticsRate()
+		cfg.analyticsRate = instr.AnalyticsRate(true)
 	}
-	cfg.serviceName = namingschema.ServiceName(defaultServiceName)
-	cfg.headerTags = globalconfig.HeaderTagMap()
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.headerTags = instr.HTTPHeadersAsTags()
 	for _, fn := range opts {
 		fn(cfg)
 	}
@@ -49,15 +44,15 @@ func NewConfig(opts ...Option) *Config {
 
 type Option func(*Config)
 
-// WithServiceName sets the given service name for the returned router.
-func WithServiceName(name string) Option {
+// WithService sets the given service name for the returned router.
+func WithService(name string) Option {
 	return func(cfg *Config) {
 		cfg.serviceName = name
 	}
 }
 
 // WithSpanOptions applies the given set of options to the span started by the router.
-func WithSpanOptions(opts ...ddtrace.StartSpanOption) Option {
+func WithSpanOptions(opts ...tracer.StartSpanOption) Option {
 	return func(cfg *Config) {
 		cfg.spanOpts = opts
 	}
@@ -91,8 +86,7 @@ func WithAnalyticsRate(rate float64) Option {
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
 	return func(cfg *Config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }

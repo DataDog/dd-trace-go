@@ -14,19 +14,19 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
 )
 
 func newCiVisibilityEventsList(n int) []*ciVisibilityEvent {
 	list := make([]*ciVisibilityEvent, n)
 	for i := 0; i < n; i++ {
 		s := newBasicSpan("span.list." + strconv.Itoa(i%5+1))
-		s.Start = fixedTime
+		s.start = fixedTime
 		list[i] = getCiVisibilityEvent(s)
 	}
 
@@ -68,9 +68,9 @@ func TestCiVisibilityPayloadIntegrity(t *testing.T) {
 // TestCiVisibilityPayloadDecode ensures that whatever we push into the payload can
 // be decoded by the codec.
 func TestCiVisibilityPayloadDecode(t *testing.T) {
-	assert := assert.New(t)
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newCiVisibilityPayload()
 			for i := 0; i < n; i++ {
 				list := newCiVisibilityEventsList(i%5 + 1)
@@ -142,7 +142,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newCiVisibilityPayload()
 		s := newBasicSpan("X")
-		s.Meta["key"] = strings.Repeat("X", 10*1024)
+		s.meta["key"] = strings.Repeat("X", 10*1024)
 		e := getCiVisibilityEvent(s)
 		events := make(ciVisibilityEvents, count)
 		for i := 0; i < count; i++ {

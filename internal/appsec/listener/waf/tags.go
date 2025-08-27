@@ -6,96 +6,91 @@
 package waf
 
 import (
-	"encoding/json"
-	"fmt"
+	"slices"
+	"time"
 
-	waf "github.com/DataDog/go-libddwaf/v3"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 )
 
 const (
 	wafSpanTagPrefix     = "_dd.appsec."
 	eventRulesVersionTag = wafSpanTagPrefix + "event_rules.version"
-	eventRulesErrorsTag  = wafSpanTagPrefix + "event_rules.errors"
-	eventRulesLoadedTag  = wafSpanTagPrefix + "event_rules.loaded"
-	eventRulesFailedTag  = wafSpanTagPrefix + "event_rules.error_count"
 	wafVersionTag        = wafSpanTagPrefix + "waf.version"
+	wafErrorTag          = wafSpanTagPrefix + "waf.error"
+	wafTimeoutTag        = wafSpanTagPrefix + "waf.timeouts"
+	raspRuleEvalTag      = wafSpanTagPrefix + "rasp.rule.eval"
+	raspErrorTag         = wafSpanTagPrefix + "rasp.error"
+	raspTimeoutTag       = wafSpanTagPrefix + "rasp.timeout"
+	truncationTagPrefix  = wafSpanTagPrefix + "truncated."
 
-	// BlockedRequestTag used to convey whether a request is blocked
-	BlockedRequestTag = "appsec.blocked"
+	durationExtSuffix = ".duration_ext"
+
+	blockedRequestTag = "appsec.blocked"
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
-func AddRulesMonitoringTags(th trace.TagSetter, wafDiags waf.Diagnostics) {
-	rInfo := wafDiags.Rules
-	if rInfo == nil {
-		return
-	}
-
-	var rulesetErrors []byte
-	var err error
-	rulesetErrors, err = json.Marshal(wafDiags.Rules.Errors)
-	if err != nil {
-		log.Error("appsec: could not marshal the waf ruleset info errors to json")
-	}
-	th.SetTag(eventRulesErrorsTag, string(rulesetErrors))
-	th.SetTag(eventRulesLoadedTag, len(rInfo.Loaded))
-	th.SetTag(eventRulesFailedTag, len(rInfo.Failed))
-	th.SetTag(wafVersionTag, waf.Version())
+func AddRulesMonitoringTags(th trace.TagSetter) {
+	th.SetTag(wafVersionTag, libddwaf.Version())
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
 }
 
-// AddWAFMonitoringTags adds the tags related to the monitoring of the Feature
-func AddWAFMonitoringTags(th trace.TagSetter, rulesVersion string, stats map[string]any) {
+// AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, truncations map[libddwaf.TruncationReason][]int, timerStats map[timer.Key]time.Duration) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
-	// Report the stats sent by the Feature
-	for k, v := range stats {
-		th.SetTag(wafSpanTagPrefix+k, v)
+	if raspCallsCount := metrics.SumRASPCalls.Load(); raspCallsCount > 0 {
+		th.SetTag(raspRuleEvalTag, raspCallsCount)
+	}
+
+	if raspErrorsCount := metrics.SumRASPErrors.Load(); raspErrorsCount > 0 {
+		th.SetTag(raspErrorTag, raspErrorsCount)
+	}
+
+	if wafErrorsCount := metrics.SumWAFErrors.Load(); wafErrorsCount > 0 {
+		th.SetTag(wafErrorTag, wafErrorsCount)
+	}
+
+	// Add metrics like `waf.duration` and `rasp.duration_ext`
+	for scope, value := range timerStats {
+		th.SetTag(wafSpanTagPrefix+string(scope)+durationExtSuffix, float64(value.Nanoseconds())/float64(time.Microsecond.Nanoseconds()))
+		for component, atomicValue := range metrics.SumDurations[scope] {
+			if value := atomicValue.Load(); value > 0 {
+				th.SetTag(wafSpanTagPrefix+string(scope)+"."+string(component), float64(value)/float64(time.Microsecond.Nanoseconds()))
+			}
+		}
+	}
+
+	if value := metrics.SumWAFTimeouts.Load(); value > 0 {
+		th.SetTag(wafTimeoutTag, value)
+	}
+
+	var sumRASPTimeouts uint32
+	for ruleType := range metrics.SumRASPTimeouts {
+		sumRASPTimeouts += metrics.SumRASPTimeouts[ruleType].Load()
+	}
+
+	if sumRASPTimeouts > 0 {
+		th.SetTag(raspTimeoutTag, sumRASPTimeouts)
+	}
+
+	for reason, count := range truncations {
+		if len(count) > 0 {
+			th.SetTag(truncationTagPrefix+reason.String(), slices.Max(count))
+		}
 	}
 }
 
-// SetEventSpanTags sets the security event span tags into the service entry span.
-func SetEventSpanTags(span trace.TagSetter, events []any) error {
-	if len(events) == 0 {
-		return nil
-	}
-
-	// Set the appsec event span tag
-	val, err := makeEventTagValue(events)
-	if err != nil {
-		return err
-	}
-	span.SetTag("_dd.appsec.json", string(val))
-	// Keep this span due to the security event
-	//
-	// This is a workaround to tell the tracer that the trace was kept by AppSec.
-	// Passing any other value than `appsec.SamplerAppSec` has no effect.
-	// Customers should use `span.SetTag(ext.ManualKeep, true)` pattern
-	// to keep the trace, manually.
-	span.SetTag(ext.ManualKeep, samplernames.AppSec)
+// SetEventSpanTags sets the security event span tags related to an appsec event
+func SetEventSpanTags(span trace.TagSetter) {
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
 	span.SetTag("appsec.event", true)
-	return nil
-}
-
-// Create the value of the security event tag.
-func makeEventTagValue(events []any) (json.RawMessage, error) {
-	type eventTagValue struct {
-		Triggers []any `json:"triggers"`
-	}
-
-	tag, err := json.Marshal(eventTagValue{events})
-	if err != nil {
-		return nil, fmt.Errorf("unexpected error while serializing the appsec event span tag: %v", err)
-	}
-
-	return tag, nil
+	span.SetTag("_dd.p.ts", internal.TraceSourceTagValue{Value: internal.ASMTraceSource})
 }

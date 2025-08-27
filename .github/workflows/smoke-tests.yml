@@ -8,40 +8,87 @@ on:
         required: true
         type: string
       go-libddwaf-ref:
-        description: A git ref to update github.com/DataDog/go-libddwaf/v3 to. No-op if empty.
+        description: A git ref to update github.com/DataDog/go-libddwaf/v4 to. No-op if empty.
         required: false
         type: string
   push:
     branches:
       - main
       - release-v*
-    tags:
-      - '**'
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
   schedule: # nightly
     - cron: "0 0 * * *"
-  workflow_dispatch: {} # manually
+  workflow_dispatch: { } # manually
   pull_request:
     branches:
       - '**'
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read
 
 jobs:
+  setup-env:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    env:
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          repository: DataDog/dd-trace-go
+
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: go get -u
+        run: |-
+          mkdir -p $TEST_RESULTS
+          go get -u -t $PACKAGES
+          go mod tidy
+          for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
+
+      - name: Install requested go-libddwaf version
+        if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
+        run: |-
+          go get -u -t github.com/DataDog/go-libddwaf/v4@${{ inputs.go-libddwaf-ref }}
+          go mod tidy
+
+      - name: Compile dd-trace-go
+        run: go build $PACKAGES
+
+      - name: Compute Matrix
+        id: matrix
+        run: |-
+          echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
+
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
     #  latest minor version and see if dd-trace-go still compiles.
     #  Related to issue https://github.com/DataDog/dd-trace-go/issues/1607
     name: 'go get -u smoke test'
+    needs: setup-env
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
-    env:
-      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -49,30 +96,34 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: actions/setup-go@v3
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version: "stable"
-          cache: true
-      - name: go get -u
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Test contribs
+        # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
         run: |-
-          go get -u -t $PACKAGES
-          go mod tidy
-      - name: Install requested go-libddwaf version
-        if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
-        run: |-
-          go get -u -t github.com/DataDog/go-libddwaf/v3@${{ inputs.go-libddwaf-ref }}
-          go mod tidy
-      - name: Compile dd-trace-go
-        run: go build $PACKAGES
-      - name: Test dd-trace-go
-        env:
-          DD_APPSEC_WAF_TIMEOUT: 1h
-        run: go test $PACKAGES
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
 
-  go-mod-tidy:
-    # Run go mod tidy to ensure that all go.mod and go.sum files are up-to-date.
-    name: 'go mod tidy smoke test'
+  smoke-test-tracer:
+    name: Test dd-trace-go
     runs-on: ubuntu-latest
+    env:
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          repository: DataDog/dd-trace-go
+      - run: go test $PACKAGES
+
+  check-gen-files:
+    name: Check generated files and go mod files are up-to-date.
+    runs-on: ubuntu-latest
+    if: inputs.go-libddwaf-ref == ''
     env:
       # Users may build our library with GOTOOLCHAIN=local. If they do, and our
       # go.mod file specifies a newer Go version than their local toolchain, their
@@ -81,16 +132,20 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@v3
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version: "1.22"
-          cache: true
-      - name: go mod tidy
+          go-version: "1.24"
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Run generate scripts and check diff
         run: |-
-          find -name go.mod -execdir go mod tidy \;
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/generate.sh
+          ./scripts/fix_modules.sh
           git diff --exit-code
 
   # TODO: macos setup requirements (xcode tools installation, etc.)
@@ -109,10 +164,10 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.22", "1.23" ]
-        build-env: [ alpine, bookworm, bullseye ]
+        go: [ "1.25", "1.24" ]
+        build-env: [ alpine, trixie, bookworm ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
+        deployment-env: [ alpine, debian12, debian13, al2, al2023, busybox, scratchy ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -140,10 +195,10 @@ jobs:
           #    environment: the C library isn't located at the same place.
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian11
+            deployment-env: debian12
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian12
+            deployment-env: debian13
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: al2
@@ -155,20 +210,20 @@ jobs:
             deployment-env: busybox
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: scratch
+            deployment-env: scratchy
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
-          - build-env: bookworm
-            deployment-env: debian11
+          - build-env: trixie
+            deployment-env: al2
           # 3. Build with CGO enabled and deploying to a scratch/busybox docker
           #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
           - build-with-cgo: 1
-            deployment-env: scratch
+            deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -176,9 +231,9 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           file: ./internal/setup-smoke-test/Dockerfile
@@ -195,3 +250,16 @@ jobs:
             go_libddwaf_ref=${{ inputs.go-libddwaf-ref }}
       - name: Test
         run: docker run -p7777:7777 --rm smoke-test
+
+  smoke-tests-done:
+    name: Smoke Tests
+    needs: setup-requirements-linux
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.setup-requirements-linux.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.setup-requirements-linux.result != 'success'
+        run: echo "Failure!" && exit 1

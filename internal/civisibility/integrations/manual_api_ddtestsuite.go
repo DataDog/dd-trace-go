@@ -8,13 +8,14 @@ package integrations
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 // Test Suite
@@ -44,7 +45,7 @@ func createTestSuite(module *tslvTestModule, name string, startTime time.Time) T
 	resourceName := name
 
 	// Suite tags should include module and session tags so the backend can calculate the module and session fingerprint from the suite.
-	suiteTags := append(module.tags, tracer.Tag(constants.TestSuite, name))
+	suiteTags := append(slices.Clone(module.tags), tracer.Tag(constants.TestSuite, name))
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTestSuite),

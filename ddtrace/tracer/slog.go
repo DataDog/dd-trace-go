@@ -10,17 +10,22 @@ import (
 	"log/slog"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+// groupOrAttrs holds either a group name or a list of slog.Attrs.
+type groupOrAttrs struct {
+	group string      // group name if non-empty
+	attrs []slog.Attr // attrs if non-empty
+}
 
 // slogHandler implements the slog.Handler interface to dispatch messages to our
 // internal logger.
 type slogHandler struct {
-	attrs  []string
-	groups []string
+	goas []groupOrAttrs
 }
 
-func (h slogHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
+func (h slogHandler) Enabled(_ context.Context, lvl slog.Level) bool {
 	if lvl <= slog.LevelDebug {
 		return log.DebugEnabled()
 	}
@@ -29,41 +34,67 @@ func (h slogHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
 	return true
 }
 
-func (h slogHandler) Handle(ctx context.Context, r slog.Record) error {
-	parts := make([]string, 0, 1+len(h.attrs)+r.NumAttrs())
-	parts = append(parts, r.Message)
-	parts = append(parts, h.attrs...)
+func (h slogHandler) Handle(_ context.Context, r slog.Record) error {
+	goas := h.goas
+
+	if r.NumAttrs() == 0 {
+		// If the record has no Attrs, remove groups at the end of the list; they are empty.
+		for len(goas) > 0 && goas[len(goas)-1].group != "" {
+			goas = goas[:len(goas)-1]
+		}
+	}
+
+	parts := make([]string, 0, len(goas)+r.NumAttrs())
+	formatGroup := ""
+
+	for _, goa := range goas {
+		if goa.group != "" {
+			formatGroup += goa.group + "."
+		} else {
+			for _, a := range goa.attrs {
+				parts = append(parts, formatGroup+a.String())
+			}
+		}
+	}
+
 	r.Attrs(func(a slog.Attr) bool {
-		parts = append(parts, formatAttr(a, h.groups))
+		parts = append(parts, formatGroup+a.String())
 		return true
 	})
 
-	msg := strings.Join(parts, " ")
+	extra := strings.Join(parts, " ")
 	switch r.Level {
 	case slog.LevelDebug:
-		log.Debug(msg)
+		log.Debug("%s %s", r.Message, extra)
 	case slog.LevelInfo:
-		log.Info(msg)
+		log.Info("%s %s", r.Message, extra)
 	case slog.LevelWarn:
-		log.Warn(msg)
+		log.Warn("%s %s", r.Message, extra)
 	case slog.LevelError:
-		log.Error(msg)
+		log.Error("%s %s", r.Message, extra)
 	}
 	return nil
 }
 
-func (h slogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	for _, a := range attrs {
-		h.attrs = append(h.attrs, formatAttr(a, h.groups))
-	}
+func (h slogHandler) withGroupOrAttrs(goa groupOrAttrs) slogHandler {
+	h.goas = append(h.goas, goa)
 	return h
 }
 
+// WithGroup returns a new Handler whose group consist of
+// both the receiver's groups and the arguments.
 func (h slogHandler) WithGroup(name string) slog.Handler {
-	h.groups = append(h.groups, name)
-	return h
+	if name == "" {
+		return h
+	}
+	return h.withGroupOrAttrs(groupOrAttrs{group: name})
 }
 
-func formatAttr(a slog.Attr, groups []string) string {
-	return strings.Join(append(groups, a.String()), ".")
+// WithAttrs returns a new Handler whose attributes consist of
+// both the receiver's attributes and the arguments.
+func (h slogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	if len(attrs) == 0 {
+		return h
+	}
+	return h.withGroupOrAttrs(groupOrAttrs{attrs: attrs})
 }

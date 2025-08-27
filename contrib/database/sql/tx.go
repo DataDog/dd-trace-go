@@ -10,8 +10,6 @@ import (
 	"database/sql/driver"
 	"runtime/trace"
 	"time"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
 )
 
 var _ driver.Tx = (*tracedTx)(nil)
@@ -38,7 +36,7 @@ func startTraceTask(ctx context.Context, name string) (context.Context, func()) 
 		return ctx, noopTaskEnd
 	}
 	ctx, task := trace.NewTask(ctx, name)
-	return internal.WithExecutionTraced(ctx), task.End
+	return instr.WithExecutionTraced(ctx), task.End
 }
 
 // Commit sends a span at the end of the transaction

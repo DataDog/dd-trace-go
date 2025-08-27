@@ -15,17 +15,19 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	ginternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	sharedinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-var _ ddtrace.SpanContext = (*spanContext)(nil)
+const TraceIDZero string = "00000000000000000000000000000000"
+
+var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
 type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
 
@@ -65,7 +67,6 @@ func (t *traceID) Empty() bool {
 }
 
 func (t *traceID) HasUpper() bool {
-	//TODO: in go 1.20 we can simplify this
 	for _, b := range t[:8] {
 		if b != 0 {
 			return true
@@ -82,14 +83,14 @@ func (t *traceID) UpperHex() string {
 // and across process boundaries. It contains all the information needed to
 // spawn a direct descendant of the span that it belongs to. It can be used
 // to create distributed tracing by propagating it using the provided interfaces.
-type spanContext struct {
+type SpanContext struct {
 	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
 
 	// the below group should propagate only locally
 
-	trace  *trace // reference to the trace that this span belongs too
-	span   *span  // reference to the span that hosts this context
-	errors int32  // number of spans with errors in this trace
+	trace  *trace       // reference to the trace that this span belongs too
+	span   *Span        // reference to the span that hosts this context
+	errors atomic.Int32 // number of spans with errors in this trace
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -112,7 +113,42 @@ type spanContext struct {
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
 
-	spanLinks []ddtrace.SpanLink // links to related spans in separate|external|disconnected traces
+	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
+	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+}
+
+// Private interface for converting v1 span contexts to v2 ones.
+type spanContextV1Adapter interface {
+	SamplingDecision() uint32
+	Origin() string
+	Priority() *float64
+	PropagatingTags() map[string]string
+	Tags() map[string]string
+}
+
+// FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
+// to start child spans.
+func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
+	var sc SpanContext
+	sc.traceID = c.TraceIDBytes()
+	sc.spanID = c.SpanID()
+	sc.baggage = make(map[string]string)
+	c.ForeachBaggageItem(func(k, v string) bool {
+		sc.hasBaggage = 1
+		sc.baggage[k] = v
+		return true
+	})
+	ctx, ok := c.(spanContextV1Adapter)
+	if !ok {
+		return &sc
+	}
+	sc.origin = ctx.Origin()
+	sc.trace = newTrace()
+	sc.trace.priority = ctx.Priority()
+	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
+	sc.trace.tags = ctx.Tags()
+	sc.trace.propagatingTags = ctx.PropagatingTags()
+	return &sc
 }
 
 // newSpanContext creates a new SpanContext to serve as context for the given
@@ -120,18 +156,20 @@ type spanContext struct {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
-func newSpanContext(span *span, parent *spanContext) *spanContext {
-	context := &spanContext{
-		spanID: span.SpanID,
+func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
+	context := &SpanContext{
+		spanID: span.spanID,
 		span:   span,
 	}
 
-	context.traceID.SetLower(span.TraceID)
+	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		context.traceID.SetUpper(parent.traceID.Upper())
-		context.trace = parent.trace
-		context.origin = parent.origin
-		context.errors = parent.errors
+		if !parent.baggageOnly {
+			context.traceID.SetUpper(parent.traceID.Upper())
+			context.trace = parent.trace
+			context.origin = parent.origin
+			context.errors.Store(parent.errors.Load())
+		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
 			return true
@@ -139,7 +177,7 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-		id128 := time.Duration(span.Start) / time.Second
+		id128 := time.Duration(span.start) / time.Second
 		// casting from int64 -> uint32 should be safe since the start time won't be
 		// negative, and the seconds should fit within 32-bits for the foreseeable future.
 		// (We only want 32 bits of time, then the rest is zero)
@@ -163,35 +201,57 @@ func newSpanContext(span *span, parent *spanContext) *spanContext {
 }
 
 // SpanID implements ddtrace.SpanContext.
-func (c *spanContext) SpanID() uint64 { return c.spanID }
+func (c *SpanContext) SpanID() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.spanID
+}
 
 // TraceID implements ddtrace.SpanContext.
-func (c *spanContext) TraceID() uint64 { return c.traceID.Lower() }
-
-func (c *spanContext) TraceIDUpper() uint64 { return c.traceID.Upper() }
-
-// TraceID128 implements ddtrace.SpanContextW3C.
-func (c *spanContext) TraceID128() string {
+func (c *SpanContext) TraceID() string {
 	if c == nil {
-		return ""
+		return TraceIDZero
 	}
 	return c.traceID.HexEncoded()
 }
 
-// TraceID128Bytes implements ddtrace.SpanContextW3C.
-func (c *spanContext) TraceID128Bytes() [16]byte {
+// TraceIDBytes implements ddtrace.SpanContext.
+func (c *SpanContext) TraceIDBytes() [16]byte {
+	if c == nil {
+		return emptyTraceID
+	}
 	return c.traceID
 }
 
-// SpanLinks implements ddtrace.SpanContextWithLinks
-func (c *spanContext) SpanLinks() []ddtrace.SpanLink {
-	cp := make([]ddtrace.SpanLink, len(c.spanLinks))
+// TraceIDLower implements ddtrace.SpanContext.
+func (c *SpanContext) TraceIDLower() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.traceID.Lower()
+}
+
+// TraceIDUpper implements ddtrace.SpanContext.
+func (c *SpanContext) TraceIDUpper() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.traceID.Upper()
+}
+
+// SpanLinks implements ddtrace.SpanContext
+func (c *SpanContext) SpanLinks() []SpanLink {
+	cp := make([]SpanLink, len(c.spanLinks))
 	copy(cp, c.spanLinks)
 	return cp
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
-func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
+	if c == nil {
+		return
+	}
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return
 	}
@@ -205,7 +265,7 @@ func (c *spanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 }
 
 // sets the sampling priority and decision maker (based on `sampler`).
-func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
+func (c *SpanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
@@ -215,14 +275,14 @@ func (c *spanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	}
 }
 
-func (c *spanContext) SamplingPriority() (p int, ok bool) {
-	if c.trace == nil {
+func (c *SpanContext) SamplingPriority() (p int, ok bool) {
+	if c == nil || c.trace == nil {
 		return 0, false
 	}
 	return c.trace.samplingPriority()
 }
 
-func (c *spanContext) setBaggageItem(key, val string) {
+func (c *SpanContext) setBaggageItem(key, val string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.baggage == nil {
@@ -232,7 +292,7 @@ func (c *spanContext) setBaggageItem(key, val string) {
 	c.baggage[key] = val
 }
 
-func (c *spanContext) baggageItem(key string) string {
+func (c *SpanContext) baggageItem(key string) string {
 	if atomic.LoadUint32(&c.hasBaggage) == 0 {
 		return ""
 	}
@@ -241,15 +301,27 @@ func (c *spanContext) baggageItem(key string) string {
 	return c.baggage[key]
 }
 
-func (c *spanContext) meta(key string) (val string, ok bool) {
-	c.span.RLock()
-	defer c.span.RUnlock()
-	val, ok = c.span.Meta[key]
-	return val, ok
-}
-
 // finish marks this span as finished in the trace.
-func (c *spanContext) finish() { c.trace.finishedOne(c.span) }
+func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
+
+// safeDebugString returns a safe string representation of the SpanContext for debug logging.
+// It excludes potentially sensitive data like baggage contents while preserving useful debugging information.
+func (c *SpanContext) safeDebugString() string {
+	if c == nil {
+		return "<nil>"
+	}
+
+	hasBaggage := atomic.LoadUint32(&c.hasBaggage) != 0
+	var baggageCount int
+	if hasBaggage {
+		c.mu.RLock()
+		baggageCount = len(c.baggage)
+		c.mu.RUnlock()
+	}
+
+	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
+		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, c.origin, c.updated, c.isRemote, c.baggageOnly)
+}
 
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision uint32
@@ -269,7 +341,7 @@ const (
 // trace, if these exist.
 type trace struct {
 	mu               sync.RWMutex      // guards below fields
-	spans            []*span           // all the spans that are part of this trace
+	spans            []*Span           // all the spans that are part of this trace
 	tags             map[string]string // trace level tags
 	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
 	finished         int               // the number of finished spans
@@ -281,7 +353,7 @@ type trace struct {
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
 	// the trace yet.
-	root *span
+	root *Span
 }
 
 var (
@@ -301,7 +373,7 @@ var (
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
 func newTrace() *trace {
-	return &trace{spans: make([]*span, 0, traceStartSize)}
+	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
 func (t *trace) samplingPriorityLocked() (p int, ok bool) {
@@ -398,49 +470,49 @@ func (t *trace) setLocked(locked bool) {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
-func (t *trace) push(sp *span) {
+func (t *trace) push(sp *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.full {
 		return
 	}
-	tr, haveTracer := internal.GetGlobalTracer().(*tracer)
+	tr := getGlobalTracer()
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
-		t.spans = nil // GC
-		log.Error("trace buffer full (%d), dropping trace", traceMaxSize)
-		if haveTracer {
-			atomic.AddUint32(&tr.tracesDropped, 1)
+		t.spans = nil // allow our spans to be collected by GC.
+		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize)
+		if tr != nil {
+			tracerstats.Signal(tracerstats.TracesDropped, 1)
 		}
 		return
 	}
-	if v, ok := sp.Metrics[keySamplingPriority]; ok {
+	if v, ok := sp.metrics[keySamplingPriority]; ok {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)
-	if haveTracer {
-		atomic.AddUint32(&tr.spansStarted, 1)
+	if tr != nil {
+		tracerstats.Signal(tracerstats.SpanStarted, 1)
 	}
 }
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *span, tr *tracer) {
+func (t *trace) setTraceTags(s *Span) {
 	for k, v := range t.tags {
 		s.setMeta(k, v)
 	}
 	for k, v := range t.propagatingTags {
 		s.setMeta(k, v)
 	}
-	for k, v := range ginternal.GetTracerGitMetadataTags() {
+	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
 		s.setMeta(k, v)
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
 	}
-	if hn := tr.hostname(); hn != "" {
-		s.setMeta(keyTracerHostname, hn)
+	if pTags := processtags.GlobalTags().String(); pTags != "" {
+		s.setMeta(keyProcessTags, pTags)
 	}
 }
 
@@ -449,7 +521,7 @@ func (t *trace) setTraceTags(s *span, tr *tracer) {
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 // The provided span must be locked.
-func (t *trace) finishedOne(s *span) {
+func (t *trace) finishedOne(s *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s.finished = true
@@ -463,16 +535,17 @@ func (t *trace) finishedOne(s *span) {
 		return
 	}
 	t.finished++
-	tr, ok := internal.GetGlobalTracer().(*tracer)
-	if !ok {
+	tr := getGlobalTracer()
+	if tr == nil {
 		return
 	}
-	setPeerService(s, tr.config)
+	tc := tr.TracerConf()
+	setPeerService(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
-	if s.Service != "" && !strings.EqualFold(s.Service, tr.config.serviceName) {
-		s.Meta[keyBaseService] = tr.config.serviceName
+	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
+		s.meta[keyBaseService] = tc.ServiceTag
 	}
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
@@ -487,26 +560,34 @@ func (t *trace) finishedOne(s *span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s, tr)
+		t.setTraceTags(s)
+	}
+
+	// This is here to support the mocktracer. It would be nice to be able to not do this.
+	// We need to track when any single span is finished.
+	if mtr, ok := tr.(interface{ FinishSpan(*Span) }); ok {
+		mtr.FinishSpan(s)
 	}
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans
-		t.finishChunk(tr, &chunk{
-			spans:    t.spans,
-			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-		})
+		if tr, ok := tr.(*tracer); ok {
+			t.finishChunk(tr, &chunk{
+				spans:    t.spans,
+				willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+			})
+		}
 		t.spans = nil
 		return
 	}
 
-	doPartialFlush := tr.config.partialFlushEnabled && t.finished >= tr.config.partialFlushMinSpans
+	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
 	}
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
-	telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", 1, []string{"reason:large_trace"}, true)
-	finishedSpans := make([]*span, 0, t.finished)
-	leftoverSpans := make([]*span, 0, len(t.spans)-t.finished)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", []string{"reason:large_trace"}).Submit(1)
+	finishedSpans := make([]*Span, 0, t.finished)
+	leftoverSpans := make([]*Span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
 		if s2.finished {
 			finishedSpans = append(finishedSpans, s2)
@@ -514,49 +595,49 @@ func (t *trace) finishedOne(s *span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
-	// TODO: (Support MetricKindDist) Re-enable these when we actually support `MetricKindDist`
-	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_closed", float64(len(finishedSpans)), nil, true)
-	//telemetry.GlobalClient.Record(telemetry.NamespaceTracers, telemetry.MetricKindDist, "trace_partial_flush.spans_remaining", float64(len(leftoverSpans)), nil, true)
+	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
+	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(finishedSpans[0], tr)
+		t.setTraceTags(finishedSpans[0])
 	}
-	t.finishChunk(tr, &chunk{
-		spans:    finishedSpans,
-		willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-	})
+	if tr, ok := tr.(*tracer); ok {
+		t.finishChunk(tr, &chunk{
+			spans:    finishedSpans,
+			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
+		})
+	}
 	t.spans = leftoverSpans
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	atomic.AddUint32(&tr.spansFinished, uint32(len(ch.spans)))
-	tr.pushChunk(ch)
+	tr.submitChunk(ch)
 	t.finished = 0 // important, because a buffer can be used for several flushes
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func setPeerService(s *span, cfg *config) {
-	if _, ok := s.Meta[ext.PeerService]; ok { // peer.service already set on the span
+func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
+	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
-		spanKind := s.Meta[ext.SpanKind]
+		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
-		shouldSetDefaultPeerService := isOutboundRequest && cfg.peerServiceDefaultsEnabled
+		shouldSetDefaultPeerService := isOutboundRequest && peerServiceDefaults
 		if !shouldSetDefaultPeerService {
 			return
 		}
 		source := setPeerServiceFromSource(s)
 		if source == "" {
-			log.Debug("No source tag value could be found for span %q, peer.service not set", s.Name)
+			log.Debug("No source tag value could be found for span %q, peer.service not set", s.name)
 			return
 		}
 		s.setMeta(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
-	ps := s.Meta[ext.PeerService]
-	if to, ok := cfg.peerServiceMappings[ps]; ok {
+	ps := s.meta[ext.PeerService]
+	if to, ok := peerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
@@ -565,9 +646,9 @@ func setPeerService(s *span, cfg *config) {
 // setPeerServiceFromSource sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
-func setPeerServiceFromSource(s *span) string {
+func setPeerServiceFromSource(s *Span) string {
 	has := func(tag string) bool {
-		_, ok := s.Meta[tag]
+		_, ok := s.meta[tag]
 		return ok
 	}
 	var sources []string
@@ -582,7 +663,7 @@ func setPeerServiceFromSource(s *span) string {
 			"tablename",
 			"bucketname",
 		}
-	case s.Meta[ext.DBSystem] == ext.DBSystemCassandra:
+	case s.meta[ext.DBSystem] == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
 		}
@@ -610,7 +691,7 @@ func setPeerServiceFromSource(s *span) string {
 		}...)
 	}
 	for _, source := range sources {
-		if val, ok := s.Meta[source]; ok {
+		if val, ok := s.meta[source]; ok {
 			s.setMeta(ext.PeerService, val)
 			return source
 		}

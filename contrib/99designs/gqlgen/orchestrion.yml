@@ -1,0 +1,26 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
+  description: gqlgen is a Go library for building GraphQL servers without any fuss.
+
+aspects:
+  - id: New
+    join-point:
+      one-of:
+        - function-call: github.com/99designs/gqlgen/graphql/handler.New
+        - function-call: github.com/99designs/gqlgen/graphql/handler.NewDefaultServer
+    advice:
+      - wrap-expression:
+          imports:
+            handler: github.com/99designs/gqlgen/graphql/handler
+            gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
+          template: |-
+            func(s *handler.Server) *handler.Server {
+              s.Use(gqlgentrace.NewTracer())
+              return s
+            }({{ . }})

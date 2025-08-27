@@ -9,18 +9,17 @@ import (
 	"context"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
-	waf "github.com/DataDog/go-libddwaf/v3"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/stacktrace"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 type (
@@ -30,7 +29,7 @@ type (
 
 		// context is an atomic pointer to the current WAF context.
 		// Makes sure the calls to context.Run are safe.
-		context atomic.Pointer[waf.Context]
+		context atomic.Pointer[libddwaf.Context]
 		// limiter comes from the WAF feature and is used to limit the number of events as a whole.
 		limiter limiter.Limiter
 		// events is where we store WAF events received from the WAF over the course of the request.
@@ -41,7 +40,11 @@ type (
 		derivatives map[string]any
 		// supportedAddresses is the set of addresses supported by the WAF.
 		supportedAddresses config.AddressSet
-		// mu protects the events, stacks, and derivatives, supportedAddresses slices.
+		// metrics the place that manages reporting for the current execution
+		metrics *ContextMetrics
+		// requestBlocked is used to track if the request has been requestBlocked by the WAF or not.
+		requestBlocked bool
+		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices, and requestBlocked.
 		mu sync.Mutex
 		// logOnce is used to log a warning once when a request has too many WAF events via the built-in limiter or the max value.
 		logOnce sync.Once
@@ -53,16 +56,19 @@ type (
 
 	// RunEvent is the type of event that should be emitted to child operations to run the WAF
 	RunEvent struct {
-		waf.RunAddressData
+		libddwaf.RunAddressData
 		dyngo.Operation
 	}
+
+	// SecurityEvent is a dyngo data event sent when a security event is detected by the WAF
+	SecurityEvent struct{}
 )
 
 func (ContextArgs) IsArgOf(*ContextOperation)   {}
 func (ContextRes) IsResultOf(*ContextOperation) {}
 
-func StartContextOperation(ctx context.Context) (*ContextOperation, context.Context) {
-	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx)
+func StartContextOperation(ctx context.Context, span trace.TagSetter) (*ContextOperation, context.Context) {
+	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx, span)
 	op := &ContextOperation{
 		Operation:                 dyngo.NewOperation(entrySpanOp),
 		ServiceEntrySpanOperation: entrySpanOp,
@@ -70,12 +76,12 @@ func StartContextOperation(ctx context.Context) (*ContextOperation, context.Cont
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
 
-func (op *ContextOperation) Finish(span trace.TagSetter) {
+func (op *ContextOperation) Finish() {
 	dyngo.FinishOperation(op, ContextRes{})
-	op.ServiceEntrySpanOperation.Finish(span)
+	op.ServiceEntrySpanOperation.Finish()
 }
 
-func (op *ContextOperation) SwapContext(ctx *waf.Context) *waf.Context {
+func (op *ContextOperation) SwapContext(ctx *libddwaf.Context) *libddwaf.Context {
 	return op.context.Swap(ctx)
 }
 
@@ -83,14 +89,29 @@ func (op *ContextOperation) SetLimiter(limiter limiter.Limiter) {
 	op.limiter = limiter
 }
 
-func (op *ContextOperation) AddEvents(events ...any) {
+func (op *ContextOperation) SetMetricsInstance(metrics *ContextMetrics) {
+	op.metrics = metrics
+}
+
+func (op *ContextOperation) GetMetricsInstance() *ContextMetrics {
+	return op.metrics
+}
+
+func (op *ContextOperation) SetRequestBlocked() {
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	op.requestBlocked = true
+}
+
+// AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.
+func (op *ContextOperation) AddEvents(events ...any) bool {
 	if len(events) == 0 {
-		return
+		return false
 	}
 
 	if !op.limiter.Allow() {
-		log.Warn("appsec: too many WAF events, stopping further reporting")
-		return
+		log.Error("appsec: too many WAF events, stopping further reporting")
+		return true
 	}
 
 	op.mu.Lock()
@@ -101,10 +122,11 @@ func (op *ContextOperation) AddEvents(events ...any) {
 		op.logOnce.Do(func() {
 			log.Warn("appsec: ignoring new WAF event due to the maximum number of security events per request was reached")
 		})
-		return
+		return true
 	}
 
 	op.events = append(op.events, events...)
+	return false
 }
 
 func (op *ContextOperation) AddStackTraces(stacks ...*stacktrace.Event) {
@@ -125,10 +147,15 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	if op.derivatives == nil {
-		op.derivatives = make(map[string]any)
+		op.derivatives = make(map[string]any, len(derivatives))
 	}
 
 	for k, v := range derivatives {
+		// If the request has been blocked, we don't want to report any derivatives representing the response schema.
+		if op.requestBlocked && strings.HasPrefix(k, "_dd.appsec.s.res.") {
+			continue
+		}
+
 		op.derivatives[k] = v
 	}
 }

@@ -21,7 +21,7 @@ func Test_pollIntervalFromEnv(t *testing.T) {
 	}{
 		{
 			name:  "default",
-			setup: func(t *testing.T) {},
+			setup: func(_ *testing.T) {},
 			want:  defaultInterval,
 		},
 		{

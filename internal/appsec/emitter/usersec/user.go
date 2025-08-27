@@ -9,15 +9,14 @@ import (
 	"context"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const errorLog = `
 appsec: user login monitoring ignored: could not find the http handler instrumentation metadata in the request context:
-	the request handler is not being monitored by a middleware function or the provided context is not the expected request context.
-	If the user has been blocked using remote rules, blocking will still be enforced but it will not be reported.
+	the request handler is not being monitored by a middleware function or the provided context is not the expected request context
 `
 
 var errorLogOnce sync.Once
@@ -33,12 +32,13 @@ type (
 		EventType UserEventType
 	}
 	// UserLoginOperationArgs is the user ID operation arguments.
-	UserLoginOperationArgs struct {
-	}
+	UserLoginOperationArgs struct{}
 
 	// UserLoginOperationRes is the user ID operation results.
 	UserLoginOperationRes struct {
 		UserID    string
+		UserLogin string
+		UserOrg   string
 		SessionID string
 	}
 )

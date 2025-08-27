@@ -18,13 +18,12 @@ import (
 	"testing"
 	"time"
 
-	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	pb "gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof/testapp"
+	grpctrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	pb "github.com/DataDog/dd-trace-go/v2/internal/traceprof/testapp"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/require"
@@ -118,8 +117,8 @@ func (a *App) start(t testing.TB) {
 	case GRPC:
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
-		si := grpctrace.StreamServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
-		ui := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+		si := grpctrace.StreamServerInterceptor(grpctrace.WithService("my-grpc-client"))
+		ui := grpctrace.UnaryServerInterceptor(grpctrace.WithService("my-grpc-client"))
 		a.grpcServer = grpc.NewServer(grpc.StreamInterceptor(si), grpc.UnaryInterceptor(ui))
 		pb.RegisterTestAppServer(a.grpcServer, a)
 		go a.grpcServer.Serve(l)
@@ -233,7 +232,7 @@ func (a *App) Work(ctx context.Context, req *pb.WorkReq) (*pb.WorkRes, error) {
 	// running. decoySpan is a child span that finishes before the cpuHog work
 	// begins to test that span's restore their parent span labels when
 	// finishing.
-	var cpuSpan, decoySpan ddtrace.Span
+	var cpuSpan, decoySpan *tracer.Span
 	if a.config.ChildOf {
 		cpuSpan = tracer.StartSpan("cpuHog", tracer.ChildOf(reqSpan.Context()))
 		decoySpan = tracer.StartSpan("decoy", tracer.ChildOf(cpuSpan.Context()))

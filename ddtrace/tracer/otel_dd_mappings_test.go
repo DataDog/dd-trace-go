@@ -9,8 +9,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestAssessSource(t *testing.T) {
@@ -29,21 +30,21 @@ func TestAssessSource(t *testing.T) {
 		assert.Equal(t, "abc", v)
 	})
 	t.Run("both", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
 		// DD_SERVICE prevails
 		t.Setenv("DD_SERVICE", "abc")
 		t.Setenv("OTEL_SERVICE_NAME", "123")
 		v := getDDorOtelConfig("service")
 		assert.Equal(t, "abc", v)
-		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.env.hiding", 1.0, []string{"config_datadog:dd_service", "config_opentelemetry:otel_service_name"}, true)
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", []string{"config_datadog:dd_service", "config_opentelemetry:otel_service_name"}).Get())
 	})
 	t.Run("invalid-ot", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
 		t.Setenv("OTEL_LOG_LEVEL", "nonesense")
 		v := getDDorOtelConfig("debugMode")
 		assert.Equal(t, "", v)
-		telemetryClient.AssertCalled(t, "Count", telemetry.NamespaceTracers, "otel.env.invalid", 1.0, []string{"config_datadog:dd_trace_debug", "config_opentelemetry:otel_log_level"}, true)
+		assert.NotZero(t, telemetryClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", []string{"config_datadog:dd_trace_debug", "config_opentelemetry:otel_log_level"}).Get())
 	})
 }

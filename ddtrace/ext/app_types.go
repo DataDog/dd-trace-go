@@ -3,16 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package ext // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+package ext // import "github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 
 // App types determine how to categorize a trace in the Datadog application.
 // For more fine-grained behaviour, use the SpanType* constants.
 const (
-	// DEPRECATED: Use SpanTypeWeb
-	// AppTypeWeb specifies the Web span type and can be used as a tag value
-	// for a span's SpanType tag.
-	AppTypeWeb = "web"
-
 	// AppTypeDB specifies the DB span type and can be used as a tag value
 	// for a span's SpanType tag. If possible, use one of the SpanType*
 	// constants for a more accurate indication.
@@ -50,6 +45,9 @@ const (
 	// SpanTypeRedis marks a span as a Redis operation. These spans may
 	// also have a "redis.raw_command" tag.
 	SpanTypeRedis = "redis"
+
+	// SpanTypeRedis marks a span as a Valkey operation.
+	SpanTypeValkey = "valkey"
 
 	// SpanTypeMemcached marks a span as a memcached operation.
 	SpanTypeMemcached = "memcached"

@@ -15,18 +15,37 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // Level specifies the logging level that the log package prints at.
 type Level int
 
+func (l Level) String() string {
+	switch l {
+	case LevelDebug:
+		return "DEBUG"
+	case LevelInfo:
+		return "INFO"
+	case LevelWarn:
+		return "WARN"
+	case LevelError:
+		return "ERROR"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 const (
 	// LevelDebug represents debug level messages.
 	LevelDebug Level = iota
-	// LevelWarn represents warning and errors.
+	// LevelInfo represents informational messages.
+	LevelInfo
+	// LevelWarn represents warning messages.
 	LevelWarn
+	// LevelError represents error messages.
+	LevelError
 )
 
 var prefixMsg = fmt.Sprintf("Datadog Tracer %s", version.Tag)
@@ -74,9 +93,9 @@ func (m *ManagedFile) Name() string {
 }
 
 var (
-	mu     sync.RWMutex // guards below fields
-	level               = LevelWarn
-	logger Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
+	mu             sync.RWMutex // guards below fields
+	levelThreshold              = LevelWarn
+	logger         Logger       = &defaultLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
 )
 
 // UseLogger sets l as the active logger and returns a function to restore the
@@ -88,6 +107,8 @@ func UseLogger(l Logger) (undo func()) {
 	old := logger
 	logger = l
 	return func() {
+		mu.Lock()
+		defer mu.Unlock()
 		logger = old
 	}
 }
@@ -103,7 +124,7 @@ func OpenFileAtPath(dirPath string) (*ManagedFile, error) {
 	filepath := dirPath + "/" + LoggerFile
 	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		return nil, fmt.Errorf("using default logger to stderr due to error creating or opening log file: %v", err)
+		return nil, fmt.Errorf("using default logger to stderr due to error creating or opening log file: %s", err.Error())
 	}
 	UseLogger(&defaultLogger{l: log.New(f, "", log.LstdFlags)})
 	return &ManagedFile{
@@ -111,25 +132,31 @@ func OpenFileAtPath(dirPath string) (*ManagedFile, error) {
 	}, nil
 }
 
-// SetLevel sets the given lvl for logging.
+// SetLevel sets the given lvl as log threshold for logging.
 func SetLevel(lvl Level) {
 	mu.Lock()
 	defer mu.Unlock()
-	level = lvl
+	levelThreshold = lvl
+}
+
+func DefaultLevel() Level {
+	mu.RLock()
+	defer mu.RUnlock()
+	return levelThreshold
 }
 
 // GetLevel returns the currrent log level.
 func GetLevel() Level {
 	mu.Lock()
 	defer mu.Unlock()
-	return level
+	return levelThreshold
 }
 
 // DebugEnabled returns true if debug log messages are enabled. This can be used in extremely
 // hot code paths to avoid allocating the ...interface{} argument.
 func DebugEnabled() bool {
 	mu.RLock()
-	lvl := level
+	lvl := levelThreshold
 	mu.RUnlock()
 	return lvl == LevelDebug
 }
@@ -139,17 +166,17 @@ func Debug(fmt string, a ...interface{}) {
 	if !DebugEnabled() {
 		return
 	}
-	printMsg("DEBUG", fmt, a...)
+	printMsg(LevelDebug, fmt, a...)
 }
 
 // Warn prints a warning message.
 func Warn(fmt string, a ...interface{}) {
-	printMsg("WARN", fmt, a...)
+	printMsg(LevelWarn, fmt, a...)
 }
 
 // Info prints an informational message.
 func Info(fmt string, a ...interface{}) {
-	printMsg("INFO", fmt, a...)
+	printMsg(LevelInfo, fmt, a...)
 }
 
 var (
@@ -172,7 +199,7 @@ func init() {
 
 func setLoggingRate(v string) {
 	if sec, err := strconv.ParseInt(v, 10, 64); err != nil {
-		Warn("Invalid value for DD_LOGGING_RATE: %v", err)
+		Warn("Invalid value for DD_LOGGING_RATE: %s", err.Error())
 	} else {
 		if sec < 0 {
 			Warn("Invalid value for DD_LOGGING_RATE: negative value")
@@ -239,15 +266,15 @@ func Flush() {
 
 func flushLocked() {
 	for _, report := range erragg {
-		msg := fmt.Sprintf("%v", report.err)
+		var extra string
 		if report.count > defaultErrorLimit {
-			msg += fmt.Sprintf(", %d+ additional messages skipped (first occurrence: %s)", defaultErrorLimit, report.first.Format(time.RFC822))
+			extra = fmt.Sprintf(", %d+ additional messages skipped (first occurrence: %s)", defaultErrorLimit, report.first.Format(time.RFC822))
 		} else if report.count > 1 {
-			msg += fmt.Sprintf(", %d additional messages skipped (first occurrence: %s)", report.count-1, report.first.Format(time.RFC822))
+			extra = fmt.Sprintf(", %d additional messages skipped (first occurrence: %s)", report.count-1, report.first.Format(time.RFC822))
 		} else {
-			msg += fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
+			extra = fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
 		}
-		printMsg("ERROR", msg)
+		printMsg(LevelError, "%v%s", report.err, extra)
 	}
 	for k := range erragg {
 		// compiler-optimized map-clearing post go1.11 (golang/go#20138)
@@ -256,19 +283,35 @@ func flushLocked() {
 	erron = false
 }
 
-func printMsg(lvl, format string, a ...interface{}) {
-	msg := fmt.Sprintf("%s %s: %s", prefixMsg, lvl, fmt.Sprintf(format, a...))
+func printMsg(lvl Level, format string, a ...interface{}) {
+	var b strings.Builder
+	b.Grow(len(prefixMsg) + 1 + len(lvl.String()) + 2 + len(format))
+	b.WriteString(prefixMsg)
+	b.WriteString(" ")
+	b.WriteString(lvl.String())
+	b.WriteString(": ")
+	b.WriteString(fmt.Sprintf(format, a...))
 	mu.RLock()
-	logger.Log(msg)
+	if ll, ok := logger.(interface {
+		LogL(lvl Level, msg string)
+	}); !ok {
+		logger.Log(b.String())
+	} else {
+		ll.LogL(lvl, b.String())
+	}
 	mu.RUnlock()
 }
 
 type defaultLogger struct{ l *log.Logger }
 
+var _ Logger = &defaultLogger{}
+
 func (p *defaultLogger) Log(msg string) { p.l.Print(msg) }
 
 // DiscardLogger discards every call to Log().
 type DiscardLogger struct{}
+
+var _ Logger = &DiscardLogger{}
 
 // Log implements Logger.
 func (d DiscardLogger) Log(_ string) {}
@@ -279,6 +322,8 @@ type RecordLogger struct {
 	logs   []string
 	ignore []string // a log is ignored if it contains a string in ignored
 }
+
+var _ Logger = &RecordLogger{}
 
 // Ignore adds substrings to the ignore field of RecordLogger, allowing
 // the RecordLogger to ignore attempts to log strings with certain substrings.

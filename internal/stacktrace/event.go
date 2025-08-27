@@ -3,13 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate msgp -o event_msgp.go -tests=false
+//go:generate go run github.com/tinylib/msgp -o event_msgp.go -tests=false
 
 package stacktrace
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -103,10 +103,10 @@ func GetSpanValue(events ...*Event) any {
 }
 
 // AddToSpan adds the event to the given span's root span as a tag if stacktrace collection is enabled
-func AddToSpan(span ddtrace.Span, events ...*Event) {
+func AddToSpan(span trace.TagSetter, events ...*Event) {
 	value := GetSpanValue(events...)
 	type rooter interface {
-		Root() ddtrace.Span
+		Root() trace.TagSetter
 	}
 	if lrs, ok := span.(rooter); ok {
 		span = lrs.Root()

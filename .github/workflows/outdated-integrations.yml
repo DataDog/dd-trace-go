@@ -17,25 +17,26 @@ jobs:
       actions: read
       contents: write
       pull-requests: write
-    env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      
-      - run: go get github.com/Masterminds/semver/v3
-
-      - run: go run .github/workflows/apps/latest_major_version.go > latests.txt
-
-      - run: git diff
-
-      - name: Create Pull Request
-        id: pr
-        uses: peter-evans/create-pull-request@v6
+      # Retrieve temporary github token
+      - name: Get Github token
+        uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80 # v1.0.3
+        id: octo-sts
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: "upgrade-latest-major-version"
-          commit-message: "Update latests file"
-          base: main
-          title: "chore: update latest majors"
-          labels: changelog/no-changelog
-          body: "Auto-generated PR from Outdated Integrations workflow to update latests major versions"
+          policy: self.outdated-integrations
+          scope: DataDog/dd-trace-go
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      
+      - run: go clean -modcache
+      
+      - name: Add dependencies
+        run: |
+          go get github.com/go-git/go-billy/v5/memfs
+          go get github.com/go-git/go-git/v5
+          go get github.com/go-git/go-git/v5/plumbing
+          go get github.com/go-git/go-git/v5/storage/memory
+
+      - run: go run .github/workflows/apps/latest_major_versions.go
+        env:
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}

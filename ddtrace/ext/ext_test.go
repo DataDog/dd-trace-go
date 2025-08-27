@@ -15,7 +15,6 @@ func TestSpec(t *testing.T) {
 	// changing any of these should be considered a breaking change and
 	// should require a major version release.
 	tests := []string{
-		AppTypeWeb, "web",
 		AppTypeDB, "db",
 		AppTypeCache, "cache",
 		AppTypeRPC, "rpc",

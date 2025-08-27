@@ -1,0 +1,143 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2
+  description: Package gorilla/mux implements a request router and dispatcher for matching incoming requests to their respective handler.
+
+aspects:
+  # TODO(romain.marcadier): This is a temporary solution to instrument
+  # mux.Router without doing any refactor work in dd-trace-go at the moment. It
+  # contains a lot of code copied from the contrib that should be refactored so
+  # it can be re-used instead.
+  - id: Router.__dd_config
+    join-point:
+      struct-definition: github.com/gorilla/mux.Router
+    advice:
+      - inject-declarations:
+          imports:
+            http: net/http
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
+          template: |-
+            var __dd_instr *instrumentation.Instrumentation
+
+            func init() {
+              __dd_instr = instrumentation.Load(instrumentation.PackageGorillaMux)
+            }
+
+            type ddRouterConfig struct {
+              ignoreRequest func(*http.Request) bool
+              headerTags    instrumentation.HeaderTags
+              resourceNamer func(*Router, *http.Request) string
+              serviceName   string
+              spanOpts      []tracer.StartSpanOption
+            }
+
+            func ddDefaultResourceNamer(router *Router, req *http.Request) string {
+              var (
+                match RouteMatch
+                route = "unknown"
+              )
+              if router.Match(req, &match) && match.Route != nil {
+                if r, err := match.Route.GetPathTemplate(); err == nil {
+                  route = r
+                }
+              }
+              return fmt.Sprintf("%s %s", req.Method, route)
+            }
+      - add-struct-field:
+          name: __dd_config
+          type: ddRouterConfig
+
+  - id: NewRouter
+    join-point:
+      all-of:
+        - import-path: github.com/gorilla/mux
+        - function-body:
+            function:
+              - name: NewRouter
+    advice:
+      - prepend-statements:
+          imports:
+            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
+            http: net/http
+            math: math
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
+          template: |-
+            {{- $res := .Function.Result 0 -}}
+            defer func() {
+              analyticsRate := __dd_instr.AnalyticsRate(true)
+              {{ $res }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
+              {{ $res }}.__dd_config.serviceName = __dd_instr.ServiceName(instrumentation.ComponentServer, nil)
+              {{ $res }}.__dd_config.resourceNamer = ddDefaultResourceNamer
+              {{ $res }}.__dd_config.ignoreRequest = func(_ *http.Request) bool { return false }
+
+              {{ $res }}.__dd_config.spanOpts = []tracer.StartSpanOption{
+                tracer.Tag(ext.Component, instrumentation.PackageGorillaMux),
+                tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+              }
+              if !math.IsNaN(analyticsRate) {
+                {{ $res }}.__dd_config.spanOpts = append(
+                  {{ $res }}.__dd_config.spanOpts,
+                  tracer.Tag(ext.EventSampleRate, analyticsRate),
+                )
+              }
+            }()
+
+  - id: Router.ServeHTTP
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/gorilla/mux.Router'
+          - name: ServeHTTP
+    advice:
+      - prepend-statements:
+          imports:
+            http: net/http
+            httptrace: github.com/DataDog/dd-trace-go/contrib/net/http/v2
+            instrhttptrace: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
+            options: github.com/DataDog/dd-trace-go/v2/instrumentation/options
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
+          template: |-
+            {{- $r := .Function.Receiver -}}
+            {{- $w := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            if !{{ $r }}.__dd_config.ignoreRequest({{ $req }}) {
+              var (
+                match    RouteMatch
+                route    string
+                spanOpts = options.Copy({{ $r }}.__dd_config.spanOpts)
+              )
+              if {{ $r }}.Match({{ $req }}, &match) && match.Route != nil {
+                if h, err := match.Route.GetHostTemplate(); err == nil {
+                  spanOpts = append(spanOpts, tracer.Tag("mux.host", h))
+                }
+                route, _ = match.Route.GetPathTemplate()
+              }
+              spanOpts = append(spanOpts, instrhttptrace.HeaderTagsFromRequest({{ $req }}, {{ $r }}.__dd_config.headerTags))
+              resource := {{ $r }}.__dd_config.resourceNamer({{ $r }}, {{ $req }})
+
+              // This is a temporary workaround/hack to prevent endless recursion via httptrace.TraceAndServe, which
+              // basically implies passing a shallow copy of this router that ignores all requests down to
+              // httptrace.TraceAndServe.
+              var rCopy Router
+              rCopy = *{{ $r }}
+              rCopy.__dd_config.ignoreRequest = func(*http.Request) bool { return true }
+
+              httptrace.TraceAndServe(&rCopy, {{ $w }}, {{ $req }}, &httptrace.ServeConfig{
+                Service: {{ $r }}.__dd_config.serviceName,
+                Resource: resource,
+                SpanOpts: spanOpts,
+                RouteParams: match.Vars,
+                Route: route,
+              })
+              return
+            }

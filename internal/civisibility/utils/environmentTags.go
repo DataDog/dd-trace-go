@@ -7,6 +7,7 @@ package utils
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,20 +15,23 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 )
 
 var (
 	// ciTags holds the CI/CD environment variable information.
-	ciTags      map[string]string
-	addedTags   map[string]string
-	ciTagsMutex sync.Mutex
+	currentCiTags  map[string]string // currentCiTags holds the CI/CD tags after originalCiTags + addedTags
+	originalCiTags map[string]string // originalCiTags holds the original CI/CD tags after all the CMDs
+	addedTags      map[string]string // addedTags holds the tags added by the user
+	ciTagsMutex    sync.Mutex
 
 	// ciMetrics holds the CI/CD environment numeric variable information
-	ciMetrics      map[string]float64
-	ciMetricsMutex sync.Mutex
+	currentCiMetrics  map[string]float64 // currentCiMetrics holds the CI/CD metrics after originalCiMetrics + addedMetrics
+	originalCiMetrics map[string]float64 // originalCiMetrics holds the original CI/CD metrics after all the CMDs
+	addedMetrics      map[string]float64 // addedMetrics holds the metrics added by the user
+	ciMetricsMutex    sync.Mutex
 )
 
 // GetCITags retrieves and caches the CI/CD tags from environment variables.
@@ -41,29 +45,25 @@ func GetCITags() map[string]string {
 	ciTagsMutex.Lock()
 	defer ciTagsMutex.Unlock()
 
-	if ciTags == nil {
-		ciTags = createCITagsMap()
+	// Return the current tags if they are already initialized
+	if currentCiTags != nil {
+		return currentCiTags
 	}
 
-	return ciTags
-}
-
-// GetCIMetrics retrieves and caches the CI/CD metrics from environment variables.
-// It initializes the ciMetrics map if it is not already initialized.
-// This function is thread-safe due to the use of a mutex.
-//
-// Returns:
-//
-//	A map[string]float64 containing the CI/CD metrics.
-func GetCIMetrics() map[string]float64 {
-	ciMetricsMutex.Lock()
-	defer ciMetricsMutex.Unlock()
-
-	if ciMetrics == nil {
-		ciMetrics = createCIMetricsMap()
+	if originalCiTags == nil {
+		// If the original tags are not initialized, create them
+		originalCiTags = createCITagsMap()
 	}
 
-	return ciMetrics
+	// Create a new map with the added tags
+	newTags := maps.Clone(originalCiTags)
+	for k, v := range addedTags {
+		newTags[k] = v
+	}
+
+	// Update the current tags
+	currentCiTags = newTags
+	return currentCiTags
 }
 
 // AddCITags adds a new tag to the CI/CD tags map.
@@ -77,12 +77,117 @@ func AddCITags(tagName, tagValue string) {
 	}
 	addedTags[tagName] = tagValue
 
-	// Create a new map with the added tags
-	newTags := createCITagsMap()
-	for k, v := range addedTags {
-		newTags[k] = v
+	// Reset the current tags
+	currentCiTags = nil
+}
+
+// AddCITagsMap adds a new map of tags to the CI/CD tags map.
+func AddCITagsMap(tags map[string]string) {
+	if tags == nil {
+		return
 	}
-	ciTags = newTags
+
+	ciTagsMutex.Lock()
+	defer ciTagsMutex.Unlock()
+
+	// Add the tag to the added tags dictionary
+	if addedTags == nil {
+		addedTags = make(map[string]string)
+	}
+	for k, v := range tags {
+		addedTags[k] = v
+	}
+
+	// Reset the current tags
+	currentCiTags = nil
+}
+
+// ResetCITags resets the CI/CD tags to their original values.
+func ResetCITags() {
+	ciTagsMutex.Lock()
+	defer ciTagsMutex.Unlock()
+
+	originalCiTags = nil
+	currentCiTags = nil
+	addedTags = nil
+}
+
+// GetCIMetrics retrieves and caches the CI/CD metrics from environment variables.
+// It initializes the ciMetrics map if it is not already initialized.
+// This function is thread-safe due to the use of a mutex.
+//
+// Returns:
+//
+//	A map[string]float64 containing the CI/CD metrics.
+func GetCIMetrics() map[string]float64 {
+	ciMetricsMutex.Lock()
+	defer ciMetricsMutex.Unlock()
+
+	// Return the current metrics if they are already initialized
+	if currentCiMetrics != nil {
+		return currentCiMetrics
+	}
+
+	if originalCiMetrics == nil {
+		// If the original metrics are not initialized, create them
+		originalCiMetrics = createCIMetricsMap()
+	}
+
+	// Create a new map with the added metrics
+	newMetrics := maps.Clone(originalCiMetrics)
+	for k, v := range addedMetrics {
+		newMetrics[k] = v
+	}
+
+	// Update the current metrics
+	currentCiMetrics = newMetrics
+	return currentCiMetrics
+}
+
+// AddCIMetrics adds a new metric to the CI/CD metrics map.
+func AddCIMetrics(metricName string, metricValue float64) {
+	ciMetricsMutex.Lock()
+	defer ciMetricsMutex.Unlock()
+
+	// Add the metric to the added metrics dictionary
+	if addedMetrics == nil {
+		addedMetrics = make(map[string]float64)
+	}
+	addedMetrics[metricName] = metricValue
+
+	// Reset the current metrics
+	currentCiMetrics = nil
+}
+
+// AddCIMetricsMap adds a new map of metrics to the CI/CD metrics map.
+func AddCIMetricsMap(metrics map[string]float64) {
+	if metrics == nil {
+		return
+	}
+
+	ciMetricsMutex.Lock()
+	defer ciMetricsMutex.Unlock()
+
+	// Add the metric to the added metrics dictionary
+	if addedMetrics == nil {
+		addedMetrics = make(map[string]float64)
+	}
+	for k, v := range metrics {
+		addedMetrics[k] = v
+	}
+
+	// Reset the current metrics
+	currentCiMetrics = nil
+}
+
+// ResetCIMetrics resets the CI/CD metrics to their original values.
+func ResetCIMetrics() {
+	ciMetricsMutex.Lock()
+	defer ciMetricsMutex.Unlock()
+
+	originalCiMetrics = nil
+	currentCiMetrics = nil
+	addedMetrics = nil
 }
 
 // GetRelativePathFromCITagsSourceRoot calculates the relative path from the CI workspace root to the specified path.
@@ -122,9 +227,9 @@ func createCITagsMap() map[string]string {
 	localTags[constants.OSArchitecture] = runtime.GOARCH
 	localTags[constants.RuntimeName] = runtime.Compiler
 	localTags[constants.RuntimeVersion] = runtime.Version()
-	log.Debug("civisibility: os platform: %v", runtime.GOOS)
-	log.Debug("civisibility: os architecture: %v", runtime.GOARCH)
-	log.Debug("civisibility: runtime version: %v", runtime.Version())
+	log.Debug("civisibility: os platform: %s", runtime.GOOS)
+	log.Debug("civisibility: os architecture: %s", runtime.GOARCH)
+	log.Debug("civisibility: runtime version: %s", runtime.Version())
 
 	// Get command line test command
 	var cmd string
@@ -140,7 +245,7 @@ func createCITagsMap() map[string]string {
 	cmd = regexp.MustCompile(`(?si)-test.testlogfile=(.*)\s`).ReplaceAllString(cmd, "")
 	cmd = strings.TrimSpace(cmd)
 	localTags[constants.TestCommand] = cmd
-	log.Debug("civisibility: test command: %v", cmd)
+	log.Debug("civisibility: test command: %s", cmd)
 
 	// Populate the test session name
 	if testSessionName, ok := os.LookupEnv(constants.CIVisibilityTestSessionNameEnvironmentVariable); ok {
@@ -150,7 +255,7 @@ func createCITagsMap() map[string]string {
 	} else {
 		localTags[constants.TestSessionName] = cmd
 	}
-	log.Debug("civisibility: test session name: %v", localTags[constants.TestSessionName])
+	log.Debug("civisibility: test session name: %s", localTags[constants.TestSessionName])
 
 	// Check if the user provided the test service
 	if ddService := os.Getenv("DD_SERVICE"); ddService != "" {
@@ -201,8 +306,28 @@ func createCITagsMap() map[string]string {
 		}
 	}
 
-	log.Debug("civisibility: workspace directory: %v", localTags[constants.CIWorkspacePath])
-	log.Debug("civisibility: common tags created with %v items", len(localTags))
+	// If the head commit SHA is available, populate additional Git head metadata
+	if headCommitSha, ok := localTags[constants.GitHeadCommit]; ok {
+		if headCommitData, err := fetchCommitData(headCommitSha); err != nil {
+			log.Warn("civisibility: failed to fetch head commit data: %s", err.Error())
+		} else if headCommitSha == headCommitData.CommitSha {
+			localTags[constants.GitHeadAuthorDate] = headCommitData.AuthorDate.String()
+			localTags[constants.GitHeadAuthorName] = headCommitData.AuthorName
+			localTags[constants.GitHeadAuthorEmail] = headCommitData.AuthorEmail
+			localTags[constants.GitHeadCommitterDate] = headCommitData.CommitterDate.String()
+			localTags[constants.GitHeadCommitterName] = headCommitData.CommitterName
+			localTags[constants.GitHeadCommitterEmail] = headCommitData.CommitterEmail
+			localTags[constants.GitHeadMessage] = headCommitData.CommitMessage
+		} else {
+			log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha)
+		}
+	}
+
+	// Apply environmental data if is available
+	applyEnvironmentalDataIfRequired(localTags)
+
+	log.Debug("civisibility: workspace directory: %s", localTags[constants.CIWorkspacePath])
+	log.Debug("civisibility: common tags created with %d items", len(localTags))
 	return localTags
 }
 
@@ -215,6 +340,6 @@ func createCIMetricsMap() map[string]float64 {
 	localMetrics := make(map[string]float64)
 	localMetrics[constants.LogicalCPUCores] = float64(runtime.NumCPU())
 
-	log.Debug("civisibility: common metrics created with %v items", len(localMetrics))
+	log.Debug("civisibility: common metrics created with %d items", len(localMetrics))
 	return localMetrics
 }

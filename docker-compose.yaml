@@ -1,7 +1,6 @@
-version: "3.3"  # optional since v1.27.0
 services:
   cassandra:
-    image: cassandra:3.11
+    image: cassandra:5
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -10,7 +9,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: circleci/mysql:5.7
+    image: mysql:8
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -19,7 +18,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: circleci/postgres:9.5
+    image: postgres:16
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -34,13 +33,19 @@ services:
     ports:
       - "1433:1433"
   consul:
-    image: consul:1.6.0
+    image: consul:1.15
     ports:
       - "8500:8500"
   redis:
-    image: redis:3.2
+    image: redis:7-alpine
     ports:
       - "6379:6379"
+  valkey:
+    image: valkey/valkey:8
+    environment:
+      VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
+    ports:
+      - "6380:6380"
   elasticsearch2:
     image: elasticsearch:2
     environment:
@@ -62,7 +67,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:6.8.13
+    image: elasticsearch:6.8.23
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -74,7 +79,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:7.14.1
+    image: elasticsearch:7.17.28
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -85,8 +90,21 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+  elasticsearch8:
+    image: elasticsearch:8.18.1
+    environment:
+      http.port: 9204-9300
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    ports:
+      - "9204:9204"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   datadog-agent:
-    image: datadog/docker-dd-agent
+    image: gcr.io/datadoghq/agent:latest
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -94,7 +112,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.23.1
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
@@ -105,16 +123,21 @@ services:
       DD_DISABLE_ERROR_RESPONSES: "true"
     ports:
       - "127.0.0.1:9126:9126"
+  mongodb3:
+    image: mongo:3
+    ports:
+      - "27018:27017"
   mongodb:
-    image: circleci/mongo:latest-ram
+    image: mongo:8
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.5.9
+    image: memcached:1.6-alpine
     ports:
       - "11211:11211"
   kafka:
     image: confluentinc/confluent-local:7.5.0
+    container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
@@ -133,6 +156,7 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
     ports:
       - "9092:9092"
+      - "9093:9093"
   localstack:
     image: localstack/localstack:latest
     ports:

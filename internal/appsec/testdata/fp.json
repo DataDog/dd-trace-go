@@ -15,6 +15,7 @@
             },
             "conditions": [
                 {
+                    "operator": "phrase_match",
                     "parameters": {
                         "inputs": [
                             {
@@ -24,12 +25,61 @@
                         "list": [
                             "$globals"
                         ]
-                    },
-                    "operator": "phrase_match"
+                    }
                 }
             ],
             "transformers": [
                 "lowercase"
+            ]
+        },
+        {
+            "id": "9d50832c-200d-4b21-a050-61379f1a9af8",
+            "name": "Track users.login.failure on id-auth - /id/auth/v1/login",
+            "tags": {
+                "category": "business_logic",
+                "custom": "1",
+                "type": "users.login.failure"
+            },
+            "conditions": [
+                {
+                    "operator": "phrase_match",
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.uri.raw"
+                            }
+                        ],
+                        "list": [
+                            "/id/auth/v1/login"
+                        ]
+                    }
+                },
+                {
+                    "operator": "phrase_match",
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.method"
+                            }
+                        ],
+                        "list": [
+                            "POST"
+                        ]
+                    }
+                },
+                {
+                    "operator": "phrase_match",
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.response.status"
+                            }
+                        ],
+                        "list": [
+                            "401"
+                        ]
+                    }
+                }
             ]
         }
     ],

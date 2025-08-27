@@ -1,0 +1,27 @@
+{
+  "resource": "GET /",
+  "type": "web",
+  "name": "http.request",
+  "service": "gorm",
+  "_children": [
+    {
+      "resource": "SELECT * FROM `notes` WHERE user_id = ? AND `notes`.`deleted_at` IS NULL ORDER BY `notes`.`id` LIMIT 1",
+      "type": "sql",
+      "name": "gorm.query",
+      "service": "gorm.db",
+      "meta": {
+        "component": "gorm.io/gorm.v1"
+      }
+    },
+    {
+      "resource": "SELECT * FROM `notes` WHERE user_id = ? AND `notes`.`deleted_at` IS NULL ORDER BY `notes`.`id` LIMIT 1",
+      "type": "sql",
+      "name": "sqlite3.query",
+      "service": "sqlite3.db",
+      "meta": {
+        "component": "database/sql",
+        "span.kind": "client"
+      }
+    }
+  ]
+}

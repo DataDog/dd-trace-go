@@ -8,6 +8,9 @@ on:
   push:
     branches:
       - 'mq-working-branch-**'
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 concurrency:
   group: ${{ github.ref }}
@@ -17,7 +20,11 @@ jobs:
   unit-integration-tests:
     name: PR Unit and Integration Tests
     uses: ./.github/workflows/unit-integration-tests.yml
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
     with:
-      go-version: "1.22"
+      go-version: "1.24"
       ref: ${{ github.ref }}
     secrets: inherit

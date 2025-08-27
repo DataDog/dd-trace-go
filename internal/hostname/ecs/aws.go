@@ -12,8 +12,8 @@ import (
 	"os"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/cachedfetch"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/httputils"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/cachedfetch"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils"
 )
 
 // declare these as vars not const to ease testing
@@ -27,7 +27,7 @@ var taskFetcher = cachedfetch.Fetcher{
 	Attempt: func(ctx context.Context) (string, error) {
 		taskJSON, err := getResponse(ctx, metadataURL+"/task")
 		if err != nil {
-			return "", fmt.Errorf("failed to get ECS task metadata: %s", err)
+			return "", fmt.Errorf("failed to get ECS task metadata: %s", err.Error())
 		}
 		return taskJSON, nil
 	},
@@ -48,7 +48,7 @@ func GetLaunchType(ctx context.Context) (string, error) {
 		LaunchType string
 	}
 	if err := json.Unmarshal([]byte(taskJSON), &metadata); err != nil {
-		return "", fmt.Errorf("failed to parse ecs task metadata: %s", err)
+		return "", fmt.Errorf("failed to parse ecs task metadata: %s", err.Error())
 	}
 	return metadata.LaunchType, nil
 }

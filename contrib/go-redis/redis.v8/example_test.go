@@ -9,9 +9,9 @@ import (
 	"context"
 	"time"
 
-	redistrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go-redis/redis.v8"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	redistrace "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -19,6 +19,9 @@ import (
 // To start tracing Redis, simply create a new client using the library and continue
 // using as you normally would.
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	ctx := context.Background()
 	// create a new Client
 	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}
@@ -42,10 +45,13 @@ func Example() {
 // You can also trace Redis Pipelines. Simply use as usual and the traces will be
 // automatically picked up by the underlying implementation.
 func Example_pipeliner() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	ctx := context.Background()
 	// create a client
 	opts := &redis.Options{Addr: "127.0.0.1", Password: "", DB: 0}
-	c := redistrace.NewClient(opts, redistrace.WithServiceName("my-redis-service"))
+	c := redistrace.NewClient(opts, redistrace.WithService("my-redis-service"))
 
 	// open the pipeline
 	pipe := c.Pipeline()
@@ -60,6 +66,9 @@ func Example_pipeliner() {
 
 // You can create a traced ClusterClient using WrapClient
 func Example_wrapClient() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	c := redis.NewClusterClient(&redis.ClusterOptions{})
 	redistrace.WrapClient(c)
 

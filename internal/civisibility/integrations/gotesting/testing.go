@@ -6,19 +6,25 @@
 package gotesting
 
 import (
+	"bufio"
 	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations/gotesting/coverage"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -36,14 +42,26 @@ var (
 	// benchmarkInfos holds information about the instrumented benchmarks.
 	benchmarkInfos []*testingBInfo
 
+	// modulesCountersMutex is a mutex to protect access to the modulesCounters map.
+	modulesCountersMutex sync.Mutex
+
 	// modulesCounters keeps track of the number of tests per module.
-	modulesCounters = map[string]*int32{}
+	modulesCounters = map[string]int{}
+
+	// suitesCountersMutex is a mutex to protect access to the suitesCounters map.
+	suitesCountersMutex sync.Mutex
 
 	// suitesCounters keeps track of the number of tests per suite.
-	suitesCounters = map[string]*int32{}
+	suitesCounters = map[string]int{}
 
 	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
 	numOfTestsSkipped atomic.Uint64
+
+	// chattyPrinterOnce ensures that the chatty printer is initialized only once.
+	chattyPrinterOnce sync.Once
+
+	// chatty is the global chatty printer used for debugging and verbose output.
+	chatty *chattyPrinter
 )
 
 type (
@@ -131,20 +149,11 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		addSuitesCounters(suiteName, 1)
 
 		testInfos[idx] = testInfo
 	}
@@ -168,6 +177,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	settings := integrations.GetSettings()
 	coverageEnabled := settings.CodeCoverage
 	testSkippedByITR := false
+	testIsNew := true
 
 	// Check if the test is going to be skipped by ITR
 	if settings.ItrEnabled && settings.TestsSkipping {
@@ -182,6 +192,15 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		}
 	}
 
+	// Check if the test is known
+	if settings.KnownTestsEnabled {
+		testIsKnown, testKnownDataOk := isKnownTest(&testInfo.commonInfo)
+		testIsNew = testKnownDataOk && !testIsKnown
+	} else {
+		// We don't mark any test as new if the feature is disabled
+		testIsNew = false
+	}
+
 	// Instrument the test function
 	instrumentedFunc := func(t *testing.T) {
 		// Set this func as a helper func of t
@@ -191,7 +210,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
 			// in case there's no additional features then we create the metadata for this execution and defer the disposal
-			execMeta = createTestMetadata(t)
+			execMeta = createTestMetadata(t, nil)
 			defer deleteTestMetadata(t)
 		}
 
@@ -201,23 +220,17 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		test := suite.CreateTest(testInfo.testName)
 		test.SetTestFunc(originalFunc)
 
-		// Set the CI Visibility test to the execution metadata
-		execMeta.test = test
+		// If the execution is for a new test we tag the test event as new
+		execMeta.isANewTest = execMeta.isANewTest || testIsNew
 
-		// If the execution is for a new test we tag the test event from early flake detection
-		if execMeta.isANewTest {
-			// Set the is new test tag
-			test.SetTag(constants.TestIsNew, "true")
+		// Set some required tags from the execution metadata
+		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
+		if cancelExecution {
+			return
 		}
 
-		// If the execution is a retry we tag the test event
-		if execMeta.isARetry {
-			// Set the retry tag
-			test.SetTag(constants.TestIsRetry, "true")
-		}
-
-		// Check if the test needs to be skipped by ITR
-		if testSkippedByITR {
+		// Check if the test needs to be skipped by ITR (attempt to fix is excluded)
+		if testSkippedByITR && !execMeta.isAttemptToFix && !execMeta.isAModifiedTest {
 			// check if the test was marked as unskippable
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
@@ -228,10 +241,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				checkModuleAndSuite(module, suite)
 				t.Skip(constants.SkippedByITRReason)
 				return
-			} else {
-				test.SetTag(constants.TestForcedToRun, "true")
-				telemetry.ITRForcedRun(telemetry.TestEventType)
 			}
+			test.SetTag(constants.TestForcedToRun, "true")
+			telemetry.ITRForcedRun(telemetry.TestEventType)
 		}
 
 		// Check if the coverage is enabled
@@ -255,6 +267,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			}
 		}
 
+		// Initialize the chatty printer if not already done.
+		instrumentChattyPrinter(t)
+
 		startTime := time.Now()
 		defer func() {
 			duration := time.Since(startTime)
@@ -276,10 +291,21 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				test.SetTag(constants.TestEarlyFlakeDetectionRetryAborted, "slow")
 			}
 
+			// Collect and write logs
+			collectAndWriteLogs(t, test)
+
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
 				execMeta.panicData = r
 				execMeta.panicStacktrace = utils.GetStacktrace(1)
+				if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.allRetriesFailed {
+						test.SetTag(constants.TestHasFailedAllRetries, "true")
+					}
+					if execMeta.isAttemptToFix {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
+				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
 				module.SetTag(ext.Error, true)
@@ -294,13 +320,31 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			} else {
 				// Normal finalization: determine the test result based on its state.
 				if t.Failed() {
+					if execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allRetriesFailed {
+							test.SetTag(constants.TestHasFailedAllRetries, "true")
+						}
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
 				} else if t.Skipped() {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 					test.Close(integrations.ResultStatusSkip)
 				} else {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allAttemptsPassed {
+							test.SetTag(constants.TestAttemptToFixPassed, "true")
+						} else {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
 					test.Close(integrations.ResultStatusPass)
 				}
 
@@ -352,20 +396,11 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		addSuitesCounters(suiteName, 1)
 
 		benchmarkInfos[idx] = benchmarkInfo
 	}
@@ -385,6 +420,19 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 // executeInternalBenchmark wraps the original benchmark function to include CI visibility instrumentation.
 func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testing.B) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(benchmarkInfo.originalFunc)).Pointer())
+
+	settings := integrations.GetSettings()
+	testIsNew := true
+
+	// Check if the test is known
+	if settings.KnownTestsEnabled {
+		testIsKnown, testKnownDataOk := isKnownTest(&benchmarkInfo.commonInfo)
+		testIsNew = testKnownDataOk && !testIsKnown
+	} else {
+		// We don't mark any test as new if the feature is disabled
+		testIsNew = false
+	}
+
 	instrumentedInternalFunc := func(b *testing.B) {
 
 		// decrement level
@@ -398,6 +446,12 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 		suite := module.GetOrCreateSuite(benchmarkInfo.suiteName, integrations.WithTestSuiteStartTime(startTime))
 		test := suite.CreateTest(benchmarkInfo.testName, integrations.WithTestStartTime(startTime))
 		test.SetTestFunc(originalFunc)
+
+		// If the execution is for a new test we tag the test event as new
+		if testIsNew {
+			// Set the is new test tag
+			test.SetTag(constants.TestIsNew, "true")
+		}
 
 		// Run the original benchmark function.
 		var iPfOfB *benchmarkPrivateFields
@@ -436,7 +490,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
 				// in case there's no additional features then we create the metadata for this execution and defer the disposal
-				execMeta = createTestMetadata(b)
+				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
 
@@ -519,12 +573,175 @@ func RunM(m *testing.M) int {
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
 func checkModuleAndSuite(module integrations.TestModule, suite integrations.TestSuite) {
 	// If all tests in a suite has been executed we can close the suite
-	if atomic.AddInt32(suitesCounters[suite.Name()], -1) <= 0 {
+	if addSuitesCounters(suite.Name(), -1) <= 0 {
 		suite.Close()
 	}
 
 	// If all tests in a module has been executed we can close the module
-	if atomic.AddInt32(modulesCounters[module.Name()], -1) <= 0 {
+	if addModulesCounters(module.Name(), -1) <= 0 {
 		module.Close()
+	}
+}
+
+// addSuitesCounters increments the suite counters for a given suite name.
+func addSuitesCounters(suiteName string, delta int) int {
+	suitesCountersMutex.Lock()
+	defer suitesCountersMutex.Unlock()
+	nValue := suitesCounters[suiteName] + delta
+	suitesCounters[suiteName] = nValue
+	return nValue
+}
+
+// addModulesCounters increments the module counters for a given module name.
+func addModulesCounters(moduleName string, delta int) int {
+	modulesCountersMutex.Lock()
+	defer modulesCountersMutex.Unlock()
+	nValue := modulesCounters[moduleName] + delta
+	modulesCounters[moduleName] = nValue
+	return nValue
+}
+
+// isKnownTest checks if a test is a known test or a new one
+func isKnownTest(testInfo *commonInfo) (isKnown bool, hasKnownData bool) {
+	knownTestsData := integrations.GetKnownTests()
+	if knownTestsData != nil && len(knownTestsData.Tests) > 0 {
+		// Check if the test is a known test or a new one
+		if knownSuites, ok := knownTestsData.Tests[testInfo.moduleName]; ok {
+			if knownTests, ok := knownSuites[testInfo.suiteName]; ok {
+				return slices.Contains(knownTests, testInfo.testName), true
+			}
+		}
+
+		return false, true
+	}
+
+	return false, false
+}
+
+// getTestManagementData retrieves the test management data for a test
+func getTestManagementData(testInfo *commonInfo) (data *net.TestManagementTestsResponseDataTestPropertiesAttributes, hasTestManagementData bool) {
+	testManagementData := integrations.GetTestManagementTestsData()
+	if testManagementData != nil && len(testManagementData.Modules) > 0 {
+		// Check if the test is quarantined
+		if module, ok := testManagementData.Modules[testInfo.moduleName]; ok {
+			if suite, ok := module.Suites[testInfo.suiteName]; ok {
+				if test, ok := suite.Tests[testInfo.testName]; ok {
+					return &test.Properties, true
+				}
+			}
+		}
+
+		return nil, true
+	}
+
+	return nil, false
+}
+
+// setTestTagsFromExecutionMetadata sets the test tags from the execution metadata.
+func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExecutionMetadata) (cancelExecution bool) {
+	settings := integrations.GetSettings()
+
+	// Set the Test Optimization test to the execution metadata
+	execMeta.test = test
+
+	// If the execution is for a new test we tag the test event as new
+	if execMeta.isANewTest {
+		// Set the is new test tag
+		test.SetTag(constants.TestIsNew, "true")
+	}
+
+	// If the execution is for a modified test
+	execMeta.isAModifiedTest = execMeta.isAModifiedTest || (settings.ImpactedTestsEnabled && test.Context().Value(constants.TestIsModified) == true)
+
+	// If the execution is a retry we tag the test event
+	if execMeta.isARetry {
+		// Set the retry tag
+		test.SetTag(constants.TestIsRetry, "true")
+
+		// let's set the retry reason
+		if execMeta.isAttemptToFix {
+			// Set attempt_to_fix as the retry reason
+			test.SetTag(constants.TestRetryReason, constants.AttemptToFixRetryReason)
+		} else if execMeta.isEarlyFlakeDetectionEnabled && (execMeta.isANewTest || execMeta.isAModifiedTest) {
+			// Set early_flake_detection as the retry reason
+			test.SetTag(constants.TestRetryReason, constants.EarlyFlakeDetectionRetryReason)
+		} else if execMeta.isFlakyTestRetriesEnabled {
+			// Set auto_test_retry as the retry reason
+			test.SetTag(constants.TestRetryReason, constants.AutoTestRetriesRetryReason)
+		} else {
+			// Set the unknown reason
+			test.SetTag(constants.TestRetryReason, constants.ExternalRetryReason)
+		}
+	}
+
+	// If the test is an attempt to fix we tag the test event
+	if execMeta.isAttemptToFix {
+		test.SetTag(constants.TestIsAttempToFix, "true")
+	}
+
+	// If the test is quarantined we tag the test event
+	if execMeta.isQuarantined {
+		test.SetTag(constants.TestIsQuarantined, "true")
+	}
+
+	// If the test is disabled we tag the test event
+	if execMeta.isDisabled {
+		test.SetTag(constants.TestIsDisabled, "true")
+		if !execMeta.isAttemptToFix {
+			test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.TestDisabledSkipReason))
+			return true
+		}
+	}
+
+	return false
+}
+
+// instrumentChattyPrinter initializes the chatty printer for verbose output if logging is enabled.
+func instrumentChattyPrinter(t *testing.T) {
+	if !logs.IsEnabled() {
+		// If the logs integration is not enabled, we don't need to instrument the chatty printer.
+		return
+	}
+
+	// Initialize the chatty printer if not already done.
+	chattyPrinterOnce.Do(func() {
+		chatty = getTestChattyPrinter(t)
+		// If the chatty printer is enabled, we wrap the writer to capture output.
+		if chatty != nil && chatty.w != nil && *chatty.w != nil {
+			*chatty.w = &customWriter{chatty: chatty, writer: *chatty.w}
+		}
+	})
+}
+
+// collectAndWriteLogs collects logs from the chatty printer and the test output, and writes them to the test.
+func collectAndWriteLogs(t *testing.T, test integrations.Test) {
+	if !logs.IsEnabled() {
+		// If the logs integration is not enabled, we don't need to collect or write logs.
+		return
+	}
+
+	if chatty != nil && chatty.w != nil && *chatty.w != nil {
+		if writer, ok := (*chatty.w).(*customWriter); ok {
+			strOutput := writer.GetOutput(test.Name())
+			if len(strOutput) > 0 {
+				sc := bufio.NewScanner(strings.NewReader(strOutput))
+				for sc.Scan() {
+					test.Log(sc.Text(), "")
+				}
+
+				// if the chatty printer has output, we skip the test output extraction
+				return
+			}
+		}
+	}
+
+	if tCommon := getTestPrivateFields(t); tCommon != nil && tCommon.output != nil {
+		strOutput := string(tCommon.GetOutput())
+		if len(strOutput) > 0 {
+			sc := bufio.NewScanner(strings.NewReader(strOutput))
+			for sc.Scan() {
+				test.Log(sc.Text(), "")
+			}
+		}
 	}
 }

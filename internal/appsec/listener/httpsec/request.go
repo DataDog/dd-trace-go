@@ -11,9 +11,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/DataDog/appsec-internal-go/httpsec"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 )
 
 const (
@@ -23,13 +22,15 @@ const (
 
 var (
 	// defaultIPHeaders is the default list of IP-related headers leveraged to
-	// retrieve the public client IP address in RemoteAddr.
+	// retrieve the public client IP address in RemoteAddr. The headers are
+	// checked in the order they are listed; do not re-order unless you know what
+	// you are doing.
 	defaultIPHeaders = []string{
 		"x-forwarded-for",
 		"x-real-ip",
 		"true-client-ip",
 		"x-client-ip",
-		"x-forwarded",
+		"forwarded",
 		"forwarded-for",
 		"x-cluster-client-ip",
 		"fastly-client-ip",
@@ -40,23 +41,23 @@ var (
 	// defaultCollectedHeaders is the default list of HTTP headers collected as
 	// request span tags when appsec is enabled.
 	defaultCollectedHeaders = append([]string{
-		"host",
-		"content-length",
-		"content-type",
-		"content-encoding",
-		"content-language",
-		"forwarded",
-		"via",
-		"user-agent",
-		"accept",
 		"accept-encoding",
 		"accept-language",
-		"x-amzn-trace-id",
-		"cloudfront-viewer-ja3-fingerprint",
-		"cf-ray",
-		"x-cloud-trace-context",
-		"x-appgw-trace-id",
+		"accept",
 		"akamai-user-risk",
+		"cf-ray",
+		"cloudfront-viewer-ja3-fingerprint",
+		"content-encoding",
+		"content-language",
+		"content-length",
+		"content-type",
+		"host",
+		"user-agent",
+		"via",
+		"x-amzn-trace-id",
+		"x-appgw-trace-id",
+		"x-cloud-trace-context",
+		"x-forwarded",
 		"x-sigsci-requestid",
 		"x-sigsci-tags",
 	}, defaultIPHeaders...)
@@ -77,9 +78,27 @@ var (
 // The tags are present only if a valid ip address has been returned by
 // RemoteAddr().
 func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteAddr string) (tags map[string]string, clientIP netip.Addr) {
-	remoteIP, clientIP := httpsec.ClientIP(headers, hasCanonicalHeaders, remoteAddr, monitoredClientIPHeadersCfg)
-	tags = httpsec.ClientIPTags(remoteIP, clientIP)
-	return tags, clientIP
+	remoteIP, clientIP := ClientIP(headers, hasCanonicalHeaders, remoteAddr, monitoredClientIPHeadersCfg)
+	return ClientIPTagsFor(remoteIP, clientIP), clientIP
+}
+
+func ClientIPTagsFor(remoteIP netip.Addr, clientIP netip.Addr) map[string]string {
+	remoteIPValid := remoteIP.IsValid()
+	clientIPValid := clientIP.IsValid()
+
+	if !remoteIPValid && !clientIPValid {
+		return nil
+	}
+
+	tags := make(map[string]string, 2)
+	if remoteIPValid {
+		tags[ext.NetworkClientIP] = remoteIP.String()
+	}
+	if clientIPValid {
+		tags[ext.HTTPClientIP] = clientIP.String()
+	}
+
+	return tags
 }
 
 // NormalizeHTTPHeaders returns the HTTP headers following Datadog's

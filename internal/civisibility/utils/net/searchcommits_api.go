@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -32,6 +32,10 @@ type (
 )
 
 func (c *client) GetCommits(localCommits []string) ([]string, error) {
+	if c.repositoryURL == "" {
+		return nil, fmt.Errorf("civisibility.GetCommits: repository URL is required")
+	}
+
 	body := searchCommits{
 		Data: []searchCommitsData{},
 		Meta: searchCommitsMeta{

@@ -8,12 +8,13 @@ package integrations
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 // Test Module
@@ -46,7 +47,7 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 
 	var sessionTags []tracer.StartSpanOption
 	if session != nil {
-		sessionTags = session.tags
+		sessionTags = slices.Clone(session.tags)
 	}
 
 	// Module tags should include session tags so the backend can calculate the session fingerprint from the module.

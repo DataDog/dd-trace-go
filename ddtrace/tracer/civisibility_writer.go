@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -60,12 +60,12 @@ func newCiVisibilityTraceWriter(c *config) *ciVisibilityTraceWriter {
 // Parameters:
 //
 //	trace - A slice of spans representing the trace to be added.
-func (w *ciVisibilityTraceWriter) add(trace []*span) {
+func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 	telemetry.EventsEnqueueForSerialization()
 	for _, s := range trace {
 		cvEvent := getCiVisibilityEvent(s)
 		if err := w.payload.push(cvEvent); err != nil {
-			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %v", err)
+			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error())
 		}
 		if w.payload.size() > agentlessPayloadSizeLimit {
 			w.flush()
@@ -92,7 +92,7 @@ func (w *ciVisibilityTraceWriter) flush() {
 	w.payload = newCiVisibilityPayload()
 
 	go func(p *ciVisibilityPayload) {
-		defer func(start time.Time) {
+		defer func(_ time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object
 			// may still be kept by faulty transport implementations or the
@@ -120,11 +120,11 @@ func (w *ciVisibilityTraceWriter) flush() {
 				log.Debug("ciVisibilityTraceWriter: sent events after %d attempts", attempt+1)
 				return
 			}
-			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d), will retry: %v", attempt+1, err)
+			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, w.config.sendRetries+1, err.Error())
 			p.reset()
-			time.Sleep(time.Millisecond)
+			time.Sleep(w.config.retryInterval)
 		}
-		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err)
+		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error())
 		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
 	}(oldp)
 }

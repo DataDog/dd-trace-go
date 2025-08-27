@@ -11,8 +11,9 @@ on:
     branches:
       - main
       - release-v*
-    tags:
-      - "**"
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 concurrency:
   group: ${{ github.ref }}
@@ -22,7 +23,7 @@ jobs:
   unit-integration-tests:
     strategy:
       matrix:
-        go-version: [ "1.22", "1.23" ]
+        go-version: [ "1.25", "1.24" ]
       fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
@@ -33,7 +34,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.22", "1.23" ]
+        go-version: [ "1.25", "1.24" ]
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     with:

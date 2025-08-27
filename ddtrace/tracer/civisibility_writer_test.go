@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
@@ -57,24 +58,28 @@ func (t *failingCiVisibilityTransport) send(p *payload) (io.ReadCloser, error) {
 func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 	testcases := []struct {
 		configRetries int
+		retryInterval time.Duration
 		failCount     int
 		tracesSent    bool
 		expAttempts   int
 	}{
-		{configRetries: 0, failCount: 0, tracesSent: true, expAttempts: 1},
-		{configRetries: 0, failCount: 1, tracesSent: false, expAttempts: 1},
+		{configRetries: 0, retryInterval: time.Millisecond, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 0, retryInterval: time.Millisecond, failCount: 1, tracesSent: false, expAttempts: 1},
 
-		{configRetries: 1, failCount: 0, tracesSent: true, expAttempts: 1},
-		{configRetries: 1, failCount: 1, tracesSent: true, expAttempts: 2},
-		{configRetries: 1, failCount: 2, tracesSent: false, expAttempts: 2},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 2, tracesSent: false, expAttempts: 2},
 
-		{configRetries: 2, failCount: 0, tracesSent: true, expAttempts: 1},
-		{configRetries: 2, failCount: 1, tracesSent: true, expAttempts: 2},
-		{configRetries: 2, failCount: 2, tracesSent: true, expAttempts: 3},
-		{configRetries: 2, failCount: 3, tracesSent: false, expAttempts: 3},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 0, tracesSent: true, expAttempts: 1},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 2, tracesSent: true, expAttempts: 3},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 3, tracesSent: false, expAttempts: 3},
+
+		{configRetries: 1, retryInterval: 2 * time.Millisecond, failCount: 1, tracesSent: true, expAttempts: 2},
+		{configRetries: 2, retryInterval: 2 * time.Millisecond, failCount: 2, tracesSent: true, expAttempts: 3},
 	}
 
-	ss := []*span{makeSpan(0)}
+	ss := []*Span{makeSpan(0)}
 	for _, test := range testcases {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
 		t.Run(name, func(t *testing.T) {
@@ -83,19 +88,27 @@ func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			c := newConfig(func(c *config) {
+			c, err := newTestConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
+				c.retryInterval = test.retryInterval
 			})
+			assert.NoError(err)
 
 			h := newCiVisibilityTraceWriter(c)
 			h.add(ss)
 
+			start := time.Now()
 			h.flush()
 			h.wg.Wait()
+			elapsed := time.Since(start)
 
 			assert.Equal(test.expAttempts, p.sendAttempts)
 			assert.Equal(test.tracesSent, p.tracesSent)
+
+			if test.configRetries > 0 && test.failCount > 1 {
+				assert.GreaterOrEqual(elapsed, test.retryInterval*time.Duration(minInts(test.configRetries+1, test.failCount)))
+			}
 		})
 	}
 }

@@ -19,22 +19,29 @@ on:
   merge_group:
   push:
     branches: release-v*
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
-  TESTS: >-
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
+  PACKAGES: >-
     ./appsec/...
+    ./instrumentation/appsec/...
     ./internal/appsec/...
-    ./contrib/gin-gonic/gin/...
-    ./contrib/google.golang.org/grpc/...
-    ./contrib/net/http/...
-    ./contrib/gorilla/mux/...
-    ./contrib/go-chi/chi/...
-    ./contrib/go-chi/chi.v5/...
-    ./contrib/labstack/echo.v4/...
-    ./contrib/99designs/gqlgen/...
-    ./contrib/graphql-go/graphql/...
-    ./contrib/graph-gophers/graphql-go/...
+  SUBMODULES: >-
+    ./contrib/database/sql
+    ./contrib/gin-gonic/gin
+    ./contrib/google.golang.org/grpc
+    ./contrib/net/http
+    ./contrib/gorilla/mux
+    ./contrib/go-chi/chi
+    ./contrib/go-chi/chi.v5
+    ./contrib/labstack/echo.v4
+    ./contrib/99designs/gqlgen
+    ./contrib/graphql-go/graphql
+    ./contrib/graph-gophers/graphql-go
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
@@ -64,7 +71,9 @@ jobs:
       key: ${{ steps.cfg.outputs.key }}
       path: ${{ steps.cfg.outputs.path }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Compute cache configuration
         id: cfg
@@ -72,13 +81,13 @@ jobs:
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
           echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           cache: false
 
       - name: Cache Go modules
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ steps.cfg.outputs.path }}
           key: ${{ steps.cfg.outputs.key }}
@@ -98,13 +107,15 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-13, macos-15 ] # oldest and newest macos runners available - macos-15 is an ARM runner
-        go-version: [ "1.23", "1.22" ]
+        go-version: [ "1.25", "1.24" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -112,7 +123,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
@@ -126,17 +137,32 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
-          cgocheck="GOEXPERIMENT=cgocheck2"
+          cgocheck="$GOEXPERIMENT,cgocheck2"
+          report_error=0
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS"
-                    exit 1
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES"
                   fi
+
+                  for submodule in $SUBMODULES; do
+                    if [[ $cgocheck_env =~ "cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
+                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
+                      continue
+                    fi
+
+                    cd $submodule
+                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v .; then
+                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule)"
+                      report_error=1
+                    fi
+                    cd -
+                  done
                 done
             done
           done
+          exit $report_error
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
@@ -148,10 +174,12 @@ jobs:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -159,7 +187,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: stable
           cache: false # we manage the caching ourselves
@@ -175,10 +203,17 @@ jobs:
           set -euxo pipefail
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
-              if ! env $appsec_enabled_env go test -v $go_tags $TESTS; then
-                echo "Failed: env $appsec_enabled_env go test -v $go_tags $TESTS"
-                exit 1
+              if ! env $appsec_enabled_env go test -v $go_tags $PACKAGES; then
+                echo "Failed: env $appsec_enabled_env go test -v $go_tags $PACKAGES"
               fi
+
+              for submodule in $SUBMODULES; do
+                cd $submodule
+                if ! env $appsec_enabled_env go test -v $go_tags .; then
+                  echo "Failed: env $appsec_enabled_env go test -v $go_tags . (submodule: $submodule)"
+                fi
+                cd -
+              done
             done
           done
 
@@ -186,20 +221,22 @@ jobs:
   golang-linux-container:
     name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     # We use ARM runners when needed to avoid the performance hit of QEMU
-    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'arm-4core-linux' }}
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'ubuntu-24.04-arm' }}
     needs: go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.23", "1.22" ]
-        distribution: [ bookworm, bullseye, alpine ]
+        go-version: [ "1.25", "1.24" ]
+        distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -235,25 +272,62 @@ jobs:
             -v "$PWD:$PWD"                                                      \
             -w "$PWD"                                                           \
             -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            -e "GOEXPERIMENT=${{ env.GOEXPERIMENT }}"                           \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'
-        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat
+        run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat bash
       - name: Output go env
         run: sudo docker exec -i test.runner go env
 
       - name: NOCGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 go test -v $TESTS
+        run: |
+          sudo docker exec -i -e CGO_ENABLED=0 test.runner go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            if ! sudo docker exec -i -e CGO_ENABLED=0 test.runner bash -c "cd $submodule && go test -v ."; then
+              echo "Failed: env CGO_ENABLED=0 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            fi
+          done
       - name: NOCGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=false go test -v $TESTS
+        run: |
+          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            fi
+          done
       - name: NOCGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=0 DD_APPSEC_ENABLED=true go test -v $TESTS
+        run: |
+          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            fi
+          done
       - name: CGO, undefined appsec state
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 go test -v $TESTS
+        run: |
+          sudo docker exec -i -e CGO_ENABLED=1 test.runner go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            if ! sudo docker exec -i -e CGO_ENABLED=1 test.runner bash -c "cd $submodule && go test -v ."; then
+              echo "Failed: env CGO_ENABLED=1 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            fi
+          done
       - name: CGO, appsec disabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=false go test -v $TESTS
+        run: |
+          sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            fi
+          done
       - name: CGO, appsec enabled
-        run: sudo docker exec -i test.runner env CGO_ENABLED=1 DD_APPSEC_ENABLED=true go test -v $TESTS
+        run: |
+          sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
+          for submodule in $SUBMODULES; do
+            if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            fi
+          done
 
       - name: Clean up
         if: always()
@@ -264,4 +338,4 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
-      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}

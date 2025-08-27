@@ -8,7 +8,7 @@ package tracer
 import (
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // dynamicConfig is a thread-safe generic data structure to represent configuration fields.
@@ -26,11 +26,12 @@ type dynamicConfig[T any] struct {
 
 func newDynamicConfig[T any](name string, val T, apply func(T) bool, equal func(x, y T) bool) dynamicConfig[T] {
 	return dynamicConfig[T]{
-		cfgName: name,
-		current: val,
-		startup: val,
-		apply:   apply,
-		equal:   equal,
+		cfgName:   name,
+		current:   val,
+		startup:   val,
+		cfgOrigin: telemetry.OriginDefault,
+		apply:     apply,
+		equal:     equal,
 	}
 }
 
@@ -79,11 +80,11 @@ func (dc *dynamicConfig[T]) handleRC(val *T) bool {
 func (dc *dynamicConfig[T]) toTelemetry() telemetry.Configuration {
 	dc.RLock()
 	defer dc.RUnlock()
-	return telemetry.Sanitize(telemetry.Configuration{
+	return telemetry.Configuration{
 		Name:   dc.cfgName,
 		Value:  dc.current,
 		Origin: dc.cfgOrigin,
-	})
+	}
 }
 
 func equal[T comparable](x, y T) bool {

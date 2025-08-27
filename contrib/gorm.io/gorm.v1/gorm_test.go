@@ -12,12 +12,13 @@ import (
 	"os"
 	"testing"
 
-	sqltrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/sqltest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
+	sqltest "github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/sql"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -66,7 +67,7 @@ func TestOpenDoesNotPanic(t *testing.T) {
 }
 
 func TestMySQL(t *testing.T) {
-	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithServiceName("mysql-test"))
+	sqltrace.Register("mysql", &mysql.MySQLDriver{}, sqltrace.WithService("mysql-test"))
 	sqlDb, err := sqltrace.Open("mysql", mysqlConnString)
 	if err != nil {
 		log.Fatal(err)
@@ -216,6 +217,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -253,6 +255,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -311,6 +314,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -349,6 +353,7 @@ func TestCallbacks(t *testing.T) {
 		a.Equal(ext.SpanTypeSQL, span.Tag(ext.SpanType))
 		a.Equal(queryText, span.Tag(ext.ResourceName))
 		a.Equal("gorm.io/gorm.v1", span.Tag(ext.Component))
+		a.Equal(string(instrumentation.PackageGormIOGormV1), span.Integration())
 		a.Equal(parentSpan.Context().SpanID(), span.ParentID())
 
 		for _, s := range spans {
@@ -433,51 +438,42 @@ func TestAnalyticsSettings(t *testing.T) {
 		parentSpan.Finish()
 
 		spans := mt.FinishedSpans()
-		assert.True(t, len(spans) > 2)
+		require.Greater(t, len(spans), 2)
 		s := spans[len(spans)-2]
 		assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 	}
 
 	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		assertRate(t, mt, nil)
 	})
 
 	t.Run("global", func(t *testing.T) {
 		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
 
 	t.Run("enabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		assertRate(t, mt, 1.0, WithAnalytics(true))
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
 		assertRate(t, mt, nil, WithAnalytics(false))
 	})
 
 	t.Run("override", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -526,18 +522,17 @@ func TestError(t *testing.T) {
 		// Get last span (gorm.db)
 		s := spans[len(spans)-1]
 
-		assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+		assert.Equal(t, errExist, s.Tag(ext.ErrorMsg) != nil)
 	}
 
 	t.Run("defaults", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
+
 		assertErrCheck(t, mt, true)
 	})
 
 	t.Run("errcheck", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		defer mt.Reset()
 		errFn := func(err error) bool {
 			return err != gorm.ErrRecordNotFound
 		}

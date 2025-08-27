@@ -1,0 +1,56 @@
+// API Stability Report
+// Package: github.com/DataDog/dd-trace-go/v2/scripts/apiextractor/_testdata/dummy
+// Module: github.com/DataDog/dd-trace-go/v2/scripts/apiextractor
+
+// File: dummy.go
+
+// Package Functions
+func DummyFunc()
+func DummyFuncWithParams(int, string)
+
+// Types
+type ArrayTestType struct {
+	FixedArray [16]byte
+	MultiDimArray [2][3]int
+}
+
+type DummyInterface interface {
+	func ExportedMethod()
+}
+
+type DummyStruct struct {
+	ExportedField string
+}
+
+func (*DummyStruct) AnotherExportedMethod()
+func (DummyStruct) ExportedMethod()
+
+type EmptyStruct struct {}
+
+func (EmptyStruct) DoSomething() (string)
+func (*EmptyStruct) DoSomethingElse() (int)
+
+type MyInt int
+
+type MyString string
+
+// File: package1/package1.go
+
+// Package Functions
+func PublicFunc()
+
+// Types
+type PublicType struct {
+	PublicField string
+}
+
+// File: package2/package2.go
+
+// Package Functions
+func PublicFunc2()
+
+// Types
+type PublicType2 struct {
+	PublicField2 string
+}
+

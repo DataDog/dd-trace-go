@@ -12,18 +12,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	eventBridgeTypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
@@ -31,36 +27,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/smithy-go/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func newIntegrationTestConfig(t *testing.T, opts ...Option) aws.Config {
-	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
-		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
-	}
-	awsEndpoint := "http://localhost:4566" // use localstack
-	awsRegion := "us-east-1"
-
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, opts ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			PartitionID:   "aws",
-			URL:           awsEndpoint,
-			SigningRegion: awsRegion,
-		}, nil
-	})
-	cfg, err := awsconfig.LoadDefaultConfig(
-		context.Background(),
-		awsconfig.WithRegion(awsRegion),
-		awsconfig.WithEndpointResolverWithOptions(customResolver),
-		awsconfig.WithCredentialsProvider(aws.AnonymousCredentials{}),
-	)
-	require.NoError(t, err, "failed to load AWS config")
-	AppendMiddleware(&cfg, opts...)
-	return cfg
-}
 
 func TestAppendMiddleware(t *testing.T) {
 	tests := []struct {
@@ -88,7 +58,7 @@ func TestAppendMiddleware(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -105,12 +75,14 @@ func TestAppendMiddleware(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			sqsClient := sqs.NewFromConfig(awsCfg)
+			// TODO(darccio): assert.NoError
 			sqsClient.SendMessage(context.Background(), &sqs.SendMessageInput{
 				MessageBody: aws.String("foobar"),
 				QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
 			})
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "SQS.request", s.OperationName())
@@ -124,7 +96,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
@@ -132,6 +104,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -162,7 +135,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -185,6 +158,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			})
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "SQS.request", s.OperationName())
@@ -198,7 +172,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
@@ -206,9 +180,11 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
+
 func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -235,7 +211,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -257,6 +233,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			})
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "SQS.request", s.OperationName())
@@ -271,7 +248,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS.ReceiveMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			if tt.expectedStatusCode == 200 {
 				assert.Equal(t, "test_req", s.Tag("aws.request_id"))
 			}
@@ -279,6 +256,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -291,7 +269,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	server := mockAWS(expectedStatusCode)
 	defer server.Close()
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           server.URL,
@@ -369,7 +347,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -391,6 +369,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			})
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "S3.request", s.OperationName())
@@ -404,11 +383,12 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "S3.ListObjects", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "GET", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/MyBucketName", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -465,7 +445,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -485,6 +465,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			snsClient.Publish(context.Background(), tt.publishInput)
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "SNS.request", s.OperationName())
@@ -498,11 +479,12 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SNS.Publish", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 
 			// Check for trace context injection
 			assert.NotNil(t, tt.publishInput.MessageAttributes)
@@ -549,7 +531,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -566,11 +548,17 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			dynamoClient := dynamodb.NewFromConfig(awsCfg)
-			dynamoClient.Query(context.Background(), &dynamodb.QueryInput{
+			_, err := dynamoClient.Query(context.Background(), &dynamodb.QueryInput{
 				TableName: aws.String("MyTableName"),
 			})
+			if tt.expectedStatusCode == 200 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "DynamoDB.request", s.OperationName())
@@ -584,11 +572,12 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "DynamoDB.Query", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -619,7 +608,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -643,6 +632,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			})
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "Kinesis.request", s.OperationName())
@@ -656,11 +646,12 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "Kinesis.PutRecord", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -691,7 +682,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -713,6 +704,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			})
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "EventBridge.request", s.OperationName())
@@ -726,11 +718,12 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "EventBridge.PutRule", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
 }
@@ -743,7 +736,7 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 	server := mockAWS(expectedStatusCode)
 	defer server.Close()
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           server.URL,
@@ -817,7 +810,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			server := mockAWS(tt.expectedStatusCode)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -839,6 +832,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			})
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
 
 			s := spans[0]
 			assert.Equal(t, "SFN.request", s.OperationName())
@@ -852,20 +846,94 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
-			assert.Equal(t, tt.expectedStatusCode, s.Tag(ext.HTTPCode))
+			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
 			assert.Equal(t, "POST", s.Tag(ext.HTTPMethod))
 			assert.Equal(t, server.URL+"/", s.Tag(ext.HTTPURL))
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+			assert.Equal(t, componentName, s.Integration())
 		})
 	}
+}
+
+func TestAppendMiddleware_ChainTerminated(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	awsCfg := aws.Config{}
+
+	AppendMiddleware(&awsCfg)
+
+	s3Client := s3.NewFromConfig(awsCfg)
+	stackFn := func(stack *middleware.Stack) error {
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("stop", func(
+			ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+		) (
+			out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+		) {
+			// Terminate the middleware chain by not calling the next handler
+			out.Result = &s3.ListObjectsOutput{}
+			return
+		}), middleware.After)
+	}
+	s3Client.ListObjects(context.Background(), &s3.ListObjectsInput{
+		Bucket: aws.String("MyBucketName"),
+	}, s3.WithAPIOptions(stackFn))
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+}
+
+func TestAppendMiddleware_InnerSpan(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	server := mockAWS(200)
+	defer server.Close()
+
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
+		return aws.Endpoint{
+			PartitionID:   "aws",
+			URL:           server.URL,
+			SigningRegion: "eu-west-1",
+		}, nil
+	})
+
+	awsCfg := aws.Config{
+		Region:           "eu-west-1",
+		Credentials:      aws.AnonymousCredentials{},
+		EndpointResolver: resolver,
+	}
+
+	AppendMiddleware(&awsCfg)
+
+	s3Client := s3.NewFromConfig(awsCfg)
+	stackFn := func(stack *middleware.Stack) error {
+		return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("stop", func(
+			ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
+		) (
+			out middleware.InitializeOutput, metadata middleware.Metadata, err error,
+		) {
+			// Start a new child span
+			span, ctx := tracer.StartSpanFromContext(ctx, "inner span")
+			defer span.Finish()
+			out, metadata, err = next.HandleInitialize(ctx, in)
+			return
+		}), middleware.After)
+	}
+	s3Client.ListObjects(context.Background(), &s3.ListObjectsInput{
+		Bucket: aws.String("MyBucketName"),
+	}, s3.WithAPIOptions(stackFn))
+
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 2)
 }
 
 func TestAppendMiddleware_WithNoTracer(t *testing.T) {
 	server := mockAWS(200)
 	defer server.Close()
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           server.URL,
@@ -889,7 +957,7 @@ func TestAppendMiddleware_WithNoTracer(t *testing.T) {
 
 func mockAWS(statusCode int) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("X-Amz-RequestId", "test_req")
 			w.WriteHeader(statusCode)
 			w.Write([]byte(`{}`))
@@ -923,7 +991,7 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 		},
 		{
 			name:                "with service name",
-			opts:                []Option{WithServiceName("TestName")},
+			opts:                []Option{WithService("TestName")},
 			expectedServiceName: "TestName",
 			expectedRate:        nil,
 		},
@@ -948,7 +1016,7 @@ func TestAppendMiddleware_WithOpts(t *testing.T) {
 			server := mockAWS(200)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -1001,7 +1069,7 @@ func TestHTTPCredentials(t *testing.T) {
 	require.NoError(t, err)
 	u.User = url.UserPassword("myuser", "mypassword")
 
-	resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
 			URL:           u.String(),
@@ -1031,128 +1099,6 @@ func TestHTTPCredentials(t *testing.T) {
 	assert.Equal(t, auth, "myuser:mypassword")
 }
 
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		awsCfg := newIntegrationTestConfig(t, opts...)
-		ctx := context.Background()
-		ec2Client := ec2.NewFromConfig(awsCfg)
-		s3Client := s3.NewFromConfig(awsCfg)
-		sqsClient := sqs.NewFromConfig(awsCfg)
-		snsClient := sns.NewFromConfig(awsCfg)
-
-		_, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
-		require.NoError(t, err)
-		_, err = s3Client.ListBuckets(ctx, &s3.ListBucketsInput{})
-		require.NoError(t, err)
-		_, err = sqsClient.ListQueues(ctx, &sqs.ListQueuesInput{})
-		require.NoError(t, err)
-		_, err = snsClient.ListTopics(ctx, &sns.ListTopicsInput{})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "EC2.request", spans[0].OperationName())
-		assert.Equal(t, "S3.request", spans[1].OperationName())
-		assert.Equal(t, "SQS.request", spans[2].OperationName())
-		assert.Equal(t, "SNS.request", spans[3].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
-		assert.Equal(t, "aws.s3.request", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.request", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
-		WithDDService:            []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func TestMessagingNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		awsCfg := newIntegrationTestConfig(t, opts...)
-		resourceName := "test-naming-schema-aws-v2"
-		ctx := context.Background()
-		sqsClient := sqs.NewFromConfig(awsCfg)
-		snsClient := sns.NewFromConfig(awsCfg)
-
-		// create a SQS queue
-		sqsResp, err := sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{QueueName: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		msg := &sqs.SendMessageInput{QueueUrl: sqsResp.QueueUrl, MessageBody: aws.String("body")}
-		_, err = sqsClient.SendMessage(ctx, msg)
-		require.NoError(t, err)
-
-		entry := sqsTypes.SendMessageBatchRequestEntry{Id: aws.String("1"), MessageBody: aws.String("body")}
-		batchMsg := &sqs.SendMessageBatchInput{QueueUrl: sqsResp.QueueUrl, Entries: []sqsTypes.SendMessageBatchRequestEntry{entry}}
-		_, err = sqsClient.SendMessageBatch(ctx, batchMsg)
-		require.NoError(t, err)
-
-		// create an SNS topic
-		snsResp, err := snsClient.CreateTopic(ctx, &sns.CreateTopicInput{Name: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		_, err = snsClient.Publish(ctx, &sns.PublishInput{TopicArn: snsResp.TopicArn, Message: aws.String("message")})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "SQS.request", spans[0].OperationName())
-		assert.Equal(t, "SQS.request", spans[1].OperationName())
-		assert.Equal(t, "SQS.request", spans[2].OperationName())
-		assert.Equal(t, "SNS.request", spans[3].OperationName())
-		assert.Equal(t, "SNS.request", spans[4].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "aws.sqs.request", spans[0].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
-		assert.Equal(t, "aws.sns.send", spans[4].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.SQS", "aws.SQS", "aws.SQS", "aws.SNS", "aws.SNS"},
-		WithDDService:            []string{"aws.SQS", "aws.SQS", "aws.SQS", "aws.SNS", "aws.SNS"},
-		WithDDServiceAndOverride: repeat(serviceOverride, 5),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
-
-func repeat(s string, n int) []string {
-	r := make([]string, n)
-	for i := 0; i < n; i++ {
-		r[i] = s
-	}
-	return r
-}
-
 func TestWithErrorCheck(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1166,13 +1112,13 @@ func TestWithErrorCheck(t *testing.T) {
 		},
 		{
 			name: "with errCheck true",
-			opts: []Option{WithErrorCheck(func(err error) bool {
+			opts: []Option{WithErrorCheck(func(_ error) bool {
 				return true
 			})},
 			errExist: true,
 		}, {
 			name: "with errCheck false",
-			opts: []Option{WithErrorCheck(func(err error) bool {
+			opts: []Option{WithErrorCheck(func(_ error) bool {
 				return false
 			})},
 			errExist: false,
@@ -1186,7 +1132,7 @@ func TestWithErrorCheck(t *testing.T) {
 			server := mockAWS(400)
 			defer server.Close()
 
-			resolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
 				return aws.Endpoint{
 					PartitionID:   "aws",
 					URL:           server.URL,
@@ -1208,7 +1154,7 @@ func TestWithErrorCheck(t *testing.T) {
 			spans := mt.FinishedSpans()
 			assert.Len(t, spans, 1)
 			s := spans[0]
-			assert.Equal(t, tt.errExist, s.Tag(ext.Error) != nil)
+			assert.Equal(t, tt.errExist, s.Tag(ext.ErrorMsg) != nil)
 		})
 	}
 }

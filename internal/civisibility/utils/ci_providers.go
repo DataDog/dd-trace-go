@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // providerType defines a function type that returns a map of string key-value pairs.
@@ -36,6 +36,7 @@ var providers = map[string]providerType{
 	"BITRISE_BUILD_SLUG":  extractBitrise,
 	"CF_BUILD_ID":         extractCodefresh,
 	"CODEBUILD_INITIATOR": extractAwsCodePipeline,
+	"DRONE":               extractDrone,
 }
 
 // getEnvVarsJSON returns a JSON representation of the specified environment variables.
@@ -80,7 +81,7 @@ func getProviderTags() map[string]string {
 
 	if log.DebugEnabled() {
 		if providerName, ok := tags[constants.CIProviderName]; ok {
-			log.Debug("civisibility: detected ci provider: %v", providerName)
+			log.Debug("civisibility: detected ci provider: %s", providerName)
 		} else {
 			log.Debug("civisibility: no ci provider was detected.")
 		}
@@ -99,6 +100,9 @@ func normalizeTags(tags map[string]string) {
 	}
 	if tag, ok := tags[constants.GitTag]; ok && tag != "" {
 		tags[constants.GitTag] = normalizeRef(tag)
+	}
+	if tag, ok := tags[constants.GitPrBaseBranch]; ok && tag != "" {
+		tags[constants.GitPrBaseBranch] = normalizeRef(tag)
 	}
 	if tag, ok := tags[constants.GitRepositoryURL]; ok && tag != "" {
 		tags[constants.GitRepositoryURL] = filterSensitiveInfo(tag)
@@ -131,6 +135,8 @@ func replaceWithUserSpecificTags(tags map[string]string) {
 	replace(constants.GitCommitCommitterName, "DD_GIT_COMMIT_COMMITTER_NAME")
 	replace(constants.GitCommitCommitterEmail, "DD_GIT_COMMIT_COMMITTER_EMAIL")
 	replace(constants.GitCommitCommitterDate, "DD_GIT_COMMIT_COMMITTER_DATE")
+	replace(constants.GitPrBaseBranch, "DD_GIT_PULL_REQUEST_BASE_BRANCH")
+	replace(constants.GitPrBaseCommit, "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA")
 }
 
 // getEnvironmentVariableIfIsNotEmpty returns the environment variable value if it is not empty, otherwise returns the default value.
@@ -191,6 +197,11 @@ func extractAppveyor() map[string]string {
 	tags[constants.GitCommitMessage] = fmt.Sprintf("%s\n%s", os.Getenv("APPVEYOR_REPO_COMMIT_MESSAGE"), os.Getenv("APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED"))
 	tags[constants.GitCommitAuthorName] = os.Getenv("APPVEYOR_REPO_COMMIT_AUTHOR")
 	tags[constants.GitCommitAuthorEmail] = os.Getenv("APPVEYOR_REPO_COMMIT_AUTHOR_EMAIL")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("APPVEYOR_REPO_BRANCH")
+	tags[constants.GitHeadCommit] = os.Getenv("APPVEYOR_PULL_REQUEST_HEAD_COMMIT")
+	tags[constants.PrNumber] = os.Getenv("APPVEYOR_PULL_REQUEST_NUMBER")
+
 	return tags
 }
 
@@ -218,6 +229,7 @@ func extractAzurePipelines() map[string]string {
 
 	tags[constants.CIStageName] = os.Getenv("SYSTEM_STAGEDISPLAYNAME")
 
+	tags[constants.CIJobID] = os.Getenv("SYSTEM_JOBID")
 	tags[constants.CIJobName] = os.Getenv("SYSTEM_JOBDISPLAYNAME")
 	tags[constants.CIJobURL] = jobURL
 
@@ -234,6 +246,9 @@ func extractAzurePipelines() map[string]string {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}
 
+	tags[constants.GitPrBaseBranch] = os.Getenv("SYSTEM_PULLREQUEST_TARGETBRANCH")
+	tags[constants.PrNumber] = os.Getenv("SYSTEM_PULLREQUEST_PULLREQUESTNUMBER")
+
 	return tags
 }
 
@@ -243,7 +258,7 @@ func extractBitrise() map[string]string {
 	tags[constants.CIProviderName] = "bitrise"
 	tags[constants.GitRepositoryURL] = os.Getenv("GIT_REPOSITORY_URL")
 	tags[constants.GitCommitSHA] = firstEnv("BITRISE_GIT_COMMIT", "GIT_CLONE_COMMIT_HASH")
-	tags[constants.GitBranch] = firstEnv("BITRISEIO_GIT_BRANCH_DEST", "BITRISE_GIT_BRANCH")
+	tags[constants.GitBranch] = firstEnv("BITRISEIO_PULL_REQUEST_HEAD_BRANCH", "BITRISE_GIT_BRANCH")
 	tags[constants.GitTag] = os.Getenv("BITRISE_GIT_TAG")
 	tags[constants.CIWorkspacePath] = os.Getenv("BITRISE_SOURCE_DIR")
 	tags[constants.CIPipelineID] = os.Getenv("BITRISE_BUILD_SLUG")
@@ -251,6 +266,10 @@ func extractBitrise() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("BITRISE_BUILD_NUMBER")
 	tags[constants.CIPipelineURL] = os.Getenv("BITRISE_BUILD_URL")
 	tags[constants.GitCommitMessage] = os.Getenv("BITRISE_GIT_MESSAGE")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("BITRISEIO_GIT_BRANCH_DEST")
+	tags[constants.PrNumber] = os.Getenv("BITRISE_PULL_REQUEST")
+
 	return tags
 }
 
@@ -269,6 +288,10 @@ func extractBitbucket() map[string]string {
 	tags[constants.CIPipelineName] = os.Getenv("BITBUCKET_REPO_FULL_NAME")
 	tags[constants.CIPipelineURL] = url
 	tags[constants.CIJobURL] = url
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("BITBUCKET_PR_DESTINATION_BRANCH")
+	tags[constants.PrNumber] = os.Getenv("BITBUCKET_PR_ID")
+
 	return tags
 }
 
@@ -287,6 +310,10 @@ func extractBuddy() map[string]string {
 	tags[constants.GitCommitMessage] = os.Getenv("BUDDY_EXECUTION_REVISION_MESSAGE")
 	tags[constants.GitCommitCommitterName] = os.Getenv("BUDDY_EXECUTION_REVISION_COMMITTER_NAME")
 	tags[constants.GitCommitCommitterEmail] = os.Getenv("BUDDY_EXECUTION_REVISION_COMMITTER_EMAIL")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("BUDDY_RUN_PR_BASE_BRANCH")
+	tags[constants.PrNumber] = os.Getenv("BUDDY_RUN_PR_NO")
+
 	return tags
 }
 
@@ -301,6 +328,7 @@ func extractBuildkite() map[string]string {
 	tags[constants.CIPipelineName] = os.Getenv("BUILDKITE_PIPELINE_SLUG")
 	tags[constants.CIPipelineNumber] = os.Getenv("BUILDKITE_BUILD_NUMBER")
 	tags[constants.CIPipelineURL] = os.Getenv("BUILDKITE_BUILD_URL")
+	tags[constants.CIJobID] = os.Getenv("BUILDKITE_JOB_ID")
 	tags[constants.CIJobURL] = fmt.Sprintf("%s#%s", os.Getenv("BUILDKITE_BUILD_URL"), os.Getenv("BUILDKITE_JOB_ID"))
 	tags[constants.CIProviderName] = "buildkite"
 	tags[constants.CIWorkspacePath] = os.Getenv("BUILDKITE_BUILD_CHECKOUT_PATH")
@@ -335,6 +363,9 @@ func extractBuildkite() map[string]string {
 		}
 	}
 
+	tags[constants.GitPrBaseBranch] = os.Getenv("BUILDKITE_PULL_REQUEST_BASE_BRANCH")
+	tags[constants.PrNumber] = os.Getenv("BUILDKITE_PULL_REQUEST")
+
 	return tags
 }
 
@@ -352,7 +383,9 @@ func extractCircleCI() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("CIRCLE_BUILD_NUM")
 	tags[constants.CIPipelineURL] = fmt.Sprintf("https://app.circleci.com/pipelines/workflows/%s", os.Getenv("CIRCLE_WORKFLOW_ID"))
 	tags[constants.CIJobName] = os.Getenv("CIRCLE_JOB")
+	tags[constants.CIJobID] = os.Getenv("CIRCLE_BUILD_NUM")
 	tags[constants.CIJobURL] = os.Getenv("CIRCLE_BUILD_URL")
+	tags[constants.PrNumber] = os.Getenv("CIRCLE_PR_NUMBER")
 
 	jsonString, err := getEnvVarsJSON("CIRCLE_BUILD_NUM", "CIRCLE_WORKFLOW_ID")
 	if err == nil {
@@ -394,6 +427,7 @@ func extractGithubActions() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("GITHUB_RUN_NUMBER")
 	tags[constants.CIPipelineName] = os.Getenv("GITHUB_WORKFLOW")
 	tags[constants.CIJobURL] = fmt.Sprintf("%s/commit/%s/checks", rawRepository, commitSha)
+	tags[constants.CIJobID] = os.Getenv("GITHUB_JOB")
 	tags[constants.CIJobName] = os.Getenv("GITHUB_JOB")
 
 	attempts := os.Getenv("GITHUB_RUN_ATTEMPT")
@@ -415,6 +449,7 @@ func extractGithubActions() map[string]string {
 			defer eventFile.Close()
 
 			var eventJSON struct {
+				Number      int `json:"number"`
 				PullRequest struct {
 					Base struct {
 						Sha string `json:"sha"`
@@ -429,8 +464,9 @@ func extractGithubActions() map[string]string {
 			eventDecoder := json.NewDecoder(eventFile)
 			if eventDecoder.Decode(&eventJSON) == nil {
 				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
-				tags[constants.GitPrBaseCommit] = eventJSON.PullRequest.Base.Sha
+				tags[constants.GitPrBaseHeadCommit] = eventJSON.PullRequest.Base.Sha
 				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
+				tags[constants.PrNumber] = fmt.Sprintf("%d", eventJSON.Number)
 			}
 		}
 	}
@@ -459,6 +495,7 @@ func extractGitlab() map[string]string {
 	tags[constants.CIPipelineNumber] = os.Getenv("CI_PIPELINE_IID")
 	tags[constants.CIPipelineURL] = url
 	tags[constants.CIJobURL] = os.Getenv("CI_JOB_URL")
+	tags[constants.CIJobID] = os.Getenv("CI_JOB_ID")
 	tags[constants.CIJobName] = os.Getenv("CI_JOB_NAME")
 	tags[constants.CIStageName] = os.Getenv("CI_JOB_STAGE")
 	tags[constants.GitCommitMessage] = os.Getenv("CI_COMMIT_MESSAGE")
@@ -477,6 +514,12 @@ func extractGitlab() map[string]string {
 	if err == nil {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}
+
+	tags[constants.GitHeadCommit] = os.Getenv("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA")
+	tags[constants.GitPrBaseHeadCommit] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_SHA")
+	tags[constants.GitPrBaseCommit] = os.Getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA")
+	tags[constants.GitPrBaseBranch] = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
+	tags[constants.PrNumber] = os.Getenv("CI_MERGE_REQUEST_IID")
 
 	return tags
 }
@@ -512,6 +555,8 @@ func extractJenkins() map[string]string {
 	tags[constants.CIPipelineName] = name
 	tags[constants.CIPipelineURL] = os.Getenv("BUILD_URL")
 	tags[constants.CINodeName] = os.Getenv("NODE_NAME")
+	tags[constants.PrNumber] = os.Getenv("CHANGE_ID")
+	tags[constants.GitPrBaseBranch] = os.Getenv("CHANGE_TARGET")
 
 	jsonString, err := getEnvVarsJSON("DD_CUSTOM_TRACE_ID")
 	if err == nil {
@@ -536,6 +581,9 @@ func extractTeamcity() map[string]string {
 	tags[constants.CIProviderName] = "teamcity"
 	tags[constants.CIJobURL] = os.Getenv("BUILD_URL")
 	tags[constants.CIJobName] = os.Getenv("TEAMCITY_BUILDCONF_NAME")
+
+	tags[constants.PrNumber] = os.Getenv("TEAMCITY_PULLREQUEST_NUMBER")
+	tags[constants.GitPrBaseBranch] = os.Getenv("TEAMCITY_PULLREQUEST_TARGET_BRANCH")
 	return tags
 }
 
@@ -563,6 +611,9 @@ func extractCodefresh() map[string]string {
 	}
 	tags[refKey] = normalizeRef(cfBranch)
 
+	tags[constants.GitPrBaseBranch] = os.Getenv("CF_PULL_REQUEST_TARGET")
+	tags[constants.PrNumber] = os.Getenv("CF_PULL_REQUEST_NUMBER")
+
 	return tags
 }
 
@@ -586,6 +637,11 @@ func extractTravis() map[string]string {
 	tags[constants.CIPipelineURL] = os.Getenv("TRAVIS_BUILD_WEB_URL")
 	tags[constants.CIJobURL] = os.Getenv("TRAVIS_JOB_WEB_URL")
 	tags[constants.GitCommitMessage] = os.Getenv("TRAVIS_COMMIT_MESSAGE")
+
+	tags[constants.GitPrBaseBranch] = os.Getenv("TRAVIS_BRANCH")
+	tags[constants.GitHeadCommit] = os.Getenv("TRAVIS_PULL_REQUEST_SHA")
+	tags[constants.PrNumber] = os.Getenv("TRAVIS_PULL_REQUEST")
+
 	return tags
 }
 
@@ -600,11 +656,34 @@ func extractAwsCodePipeline() map[string]string {
 
 	tags[constants.CIProviderName] = "awscodepipeline"
 	tags[constants.CIPipelineID] = os.Getenv("DD_PIPELINE_EXECUTION_ID")
+	tags[constants.CIJobID] = os.Getenv("DD_ACTION_EXECUTION_ID")
 
 	jsonString, err := getEnvVarsJSON("CODEBUILD_BUILD_ARN", "DD_ACTION_EXECUTION_ID", "DD_PIPELINE_EXECUTION_ID")
 	if err == nil {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}
+
+	return tags
+}
+
+// extractDrone extracts CI information specific to Drone CI.
+func extractDrone() map[string]string {
+	tags := map[string]string{}
+	tags[constants.CIProviderName] = "drone"
+	tags[constants.GitBranch] = os.Getenv("DRONE_BRANCH")
+	tags[constants.GitCommitSHA] = os.Getenv("DRONE_COMMIT_SHA")
+	tags[constants.GitRepositoryURL] = os.Getenv("DRONE_GIT_HTTP_URL")
+	tags[constants.GitTag] = os.Getenv("DRONE_TAG")
+	tags[constants.CIPipelineNumber] = os.Getenv("DRONE_BUILD_NUMBER")
+	tags[constants.CIPipelineURL] = os.Getenv("DRONE_BUILD_LINK")
+	tags[constants.GitCommitMessage] = os.Getenv("DRONE_COMMIT_MESSAGE")
+	tags[constants.GitCommitAuthorName] = os.Getenv("DRONE_COMMIT_AUTHOR_NAME")
+	tags[constants.GitCommitAuthorEmail] = os.Getenv("DRONE_COMMIT_AUTHOR_EMAIL")
+	tags[constants.CIWorkspacePath] = os.Getenv("DRONE_WORKSPACE")
+	tags[constants.CIJobName] = os.Getenv("DRONE_STEP_NAME")
+	tags[constants.CIStageName] = os.Getenv("DRONE_STAGE_NAME")
+	tags[constants.PrNumber] = os.Getenv("DRONE_PULL_REQUEST")
+	tags[constants.GitPrBaseBranch] = os.Getenv("DRONE_TARGET_BRANCH")
 
 	return tags
 }

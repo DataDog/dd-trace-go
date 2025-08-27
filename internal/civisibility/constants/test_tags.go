@@ -78,6 +78,9 @@ const (
 	// This constant is used to tag test events that are part of a retry execution
 	TestIsRetry = "test.is_retry"
 
+	// TestRetryReason indicates the reason for retrying the test
+	TestRetryReason = "test.retry_reason"
+
 	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
 	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
 
@@ -107,6 +110,27 @@ const (
 
 	// TestForcedToRun indicates that the test is forced to run because is unskippable
 	TestForcedToRun = "test.itr.forced_run"
+
+	// TestIsQuarantined indicates that the test is quarantined
+	TestIsQuarantined = "test.test_management.is_quarantined"
+
+	// TestIsDisabled indicates that the test is disabled
+	TestIsDisabled = "test.test_management.is_test_disabled"
+
+	// TestIsAttempToFix indicates that the test is an attempt to fix
+	TestIsAttempToFix = "test.test_management.is_attempt_to_fix"
+
+	// TestHasFailedAllRetries indicates that the test has failed all retries
+	TestHasFailedAllRetries = "test.has_failed_all_retries"
+
+	// TestAttemptToFixPassed indicates that the attempt to fix has passed
+	TestAttemptToFixPassed = "test.test_management.attempt_to_fix_passed"
+
+	// TestManagementEnabled indicates that the test management feature is enabled
+	TestManagementEnabled = "test.test_management.enabled"
+
+	// TestIsModified indicates that the test is modified
+	TestIsModified = "test.is_modified"
 )
 
 // Define valid test status types.
@@ -133,4 +157,24 @@ const (
 	// TestTypeBenchmark defines test type as benchmark.
 	// This constant is used to tag traces indicating that the type of test is a benchmark.
 	TestTypeBenchmark = "benchmark"
+)
+
+// Retry reasons
+const (
+	// AttemptToFixRetryReason indicates that the test is retried due to an attempt to fix.
+	AttemptToFixRetryReason = "attempt_to_fix"
+
+	// EarlyFlakeDetectionRetryReason indicates that the test is retried due to early flake detection.
+	EarlyFlakeDetectionRetryReason = "early_flake_detection"
+
+	// AutoTestRetriesRetryReason indicates that the test is retried due to auto test retries.
+	AutoTestRetriesRetryReason = "auto_test_retry"
+
+	// ExternalRetryReason indicates that the test is retried due to an external reason.
+	ExternalRetryReason = "external"
+)
+
+const (
+	// TestDisabledSkipReason indicates the skip reason for a test that is disabled.
+	TestDisabledSkipReason = "Flaky test is disabled by Datadog"
 )

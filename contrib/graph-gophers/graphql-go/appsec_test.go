@@ -13,10 +13,10 @@ import (
 	"path"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/graph-gophers/graphql-go"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestAppSec(t *testing.T) {
@@ -94,7 +94,7 @@ func TestAppSec(t *testing.T) {
 
 				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
 				span := spans[len(spans)-1]
-				require.Equal(t, 1, span.Tag("_dd.appsec.enabled"))
+				require.Equal(t, float64(1), span.Tag("_dd.appsec.enabled"))
 				type ddAppsecJSON struct {
 					Triggers []struct {
 						Rule struct {
@@ -218,14 +218,13 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	restoreDdAppsecEnabled := setEnv("DD_APPSEC_ENABLED", "1")
 	restoreDdAppsecRules := setEnv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	testutils.StartAppSec(t)
 	restore := func() {
-		appsec.Stop()
 		restoreDdAppsecEnabled()
 		restoreDdAppsecRules()
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		restore()
 		t.Skip("could not enable appsec: this platform is likely not supported")
 	}

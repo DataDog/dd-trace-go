@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -76,21 +78,21 @@ func TestConnect(t *testing.T) {
 	}{
 		{
 			name: "pool",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newPoolCreator(nil, opts...)
 			},
 		},
 		{
 			name: "conn",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, nil, opts...)
 			},
 		},
 		{
 			name: "conn_with_options",
-			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
 				opts := append(tracingAllDisabled(), WithTraceConnect(true))
 				return newConnCreator(nil, &pgx.ParseConfigOptions{}, opts...)
 			},
@@ -153,6 +155,38 @@ func TestQuery(t *testing.T) {
 	assert.Equal(t, "CREATE TABLE IF NOT EXISTS numbers (number INT NOT NULL)", s.Tag(ext.DBStatement))
 	assert.EqualValues(t, 0, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
+}
+
+func TestIgnoreError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceQuery(true), WithErrCheck(func(err error) bool {
+		// Filter out errors that are not SQL error - undefined column or parameter name detected
+		return strings.Contains(err.Error(), "SQLSTATE 42703")
+	}))
+
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
+	// Connect
+	conn := newPoolCreator(nil, opts...)(t, ctx)
+
+	// Query
+	var x int
+	err := conn.QueryRow(ctx, `SELECT 1`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
+
+	err = conn.QueryRow(ctx, `SELECT unexisting_column`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+
+	require.Equal(t, nil, spans[0].Tag(ext.ErrorMsg))
+	require.Equal(t, "ERROR: column \"unexisting_column\" does not exist (SQLSTATE 42703)", spans[1].Tag(ext.ErrorMsg))
 }
 
 func TestPrepare(t *testing.T) {
@@ -257,8 +291,8 @@ func TestCopyFrom(t *testing.T) {
 	assert.Equal(t, "Copy From", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Copy From", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
-	assert.EqualValues(t, []string{"numbers"}, s.Tag("db.copy_from.tables"))
-	assert.EqualValues(t, []string{"number"}, s.Tag("db.copy_from.columns"))
+	assert.EqualValues(t, "numbers", s.Tag("db.copy_from.tables.0"))
+	assert.EqualValues(t, "number", s.Tag("db.copy_from.columns.0"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -341,6 +375,7 @@ func tracingAllDisabled() []Option {
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
 		WithTraceAcquire(false),
+		WithErrCheck(nil),
 	}
 }
 
@@ -442,14 +477,15 @@ func runAllOperations(t *testing.T, createConn createConnFn) {
 	require.NoError(t, err)
 }
 
-func assertCommonTags(t *testing.T, s mocktracer.Span) {
+func assertCommonTags(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, defaultServiceName, s.Tag(ext.ServiceName))
 	assert.Equal(t, ext.SpanTypeSQL, s.Tag(ext.SpanType))
 	assert.Equal(t, ext.DBSystemPostgreSQL, s.Tag(ext.DBSystem))
-	assert.Equal(t, componentName, s.Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	assert.Equal(t, "127.0.0.1", s.Tag(ext.NetworkDestinationName))
-	assert.Equal(t, 5432, s.Tag(ext.NetworkDestinationPort))
+	assert.Equal(t, float64(5432), s.Tag(ext.NetworkDestinationPort))
 	assert.Equal(t, "postgres", s.Tag(ext.DBName))
 	assert.Equal(t, "postgres", s.Tag(ext.DBUser))
 }

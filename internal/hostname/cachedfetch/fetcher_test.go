@@ -19,7 +19,7 @@ import (
 // If Attempt never succeeds, f.Fetch returns an error
 func TestFetcherNeverSucceeds(t *testing.T) {
 	f := Fetcher{
-		Attempt: func(ctx context.Context) (string, error) { return "", fmt.Errorf("uhoh") },
+		Attempt: func(_ context.Context) (string, error) { return "", fmt.Errorf("uhoh") },
 	}
 
 	v, err := f.Fetch(context.TODO())
@@ -35,7 +35,7 @@ func TestFetcherNeverSucceeds(t *testing.T) {
 func TestFetcherCalledEachFetch(t *testing.T) {
 	count := 0
 	f := Fetcher{
-		Attempt: func(ctx context.Context) (string, error) {
+		Attempt: func(_ context.Context) (string, error) {
 			count++
 			return strconv.Itoa(count), nil
 		},
@@ -55,7 +55,7 @@ func TestFetcherUsesCachedValue(t *testing.T) {
 	count := 0
 	f := Fetcher{
 		Name: "test",
-		Attempt: func(ctx context.Context) (string, error) {
+		Attempt: func(_ context.Context) (string, error) {
 			count++
 			if count%2 == 0 {
 				return "", fmt.Errorf("uhoh")
@@ -76,7 +76,7 @@ func TestFetcherLogsWhenUsingCached(t *testing.T) {
 	count := 0
 	errs := []string{}
 	f := Fetcher{
-		Attempt: func(ctx context.Context) (string, error) {
+		Attempt: func(_ context.Context) (string, error) {
 			count++
 			if count%2 == 0 {
 				return "", fmt.Errorf("uhoh")
@@ -98,8 +98,8 @@ func TestFetcherLogsWhenUsingCached(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
-	succeed := func(ctx context.Context) (string, error) { return "yay", nil }
-	fail := func(ctx context.Context) (string, error) { return "", fmt.Errorf("uhoh") }
+	succeed := func(_ context.Context) (string, error) { return "yay", nil }
+	fail := func(_ context.Context) (string, error) { return "", fmt.Errorf("uhoh") }
 	f := Fetcher{}
 
 	f.Attempt = succeed

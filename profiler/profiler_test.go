@@ -26,14 +26,14 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,8 +61,8 @@ func TestStart(t *testing.T) {
 		// that we log some default configuration, e.g. enabled profiles
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
 		startupLog := strings.Join(rl.Logs(), " ")
-		assert.Contains(t, startupLog, "\"cpu\"")
-		assert.Contains(t, startupLog, "\"heap\"")
+		assert.Contains(t, startupLog, "cpu_profile_enabled")
+		assert.Contains(t, startupLog, "heap_profile_enabled")
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
@@ -110,44 +110,58 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
-	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
+	t.Run("Agent/GoodAPIKey", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
-		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		err := Start()
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
 		// The package should log a warning that using an API has no
 		// effect unless uploading directly to Datadog (i.e. agentless)
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAPIKey")
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "DD_API_KEY")
 	})
 
-	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
+	t.Run("Agentless/GoodAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
-		err := Start(
-			WithAPIKey("12345678901234567890123456789012"),
-			WithAgentlessUpload(),
-		)
+		err := Start()
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
 		// The package should log a warning that agentless upload is not
 		// officially supported, so prefer not to use it
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAgentlessUpload")
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "Agentless")
 	})
 
-	t.Run("options/BadAPIKey", func(t *testing.T) {
-		err := Start(WithAPIKey("aaaa"), WithAgentlessUpload())
+	t.Run("Agentless/NoAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "") // In case one is present in the environment...
+		err := Start()
 		defer Stop()
-		assert.NotNil(t, err)
+		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
-		mu.Lock()
+		require.True(t, mu.TryLock())
+		mu.Unlock()
+	})
+
+	t.Run("Agentless/BadAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "aaaa")
+		err := Start()
+		defer Stop()
+		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
+
+		// Check that mu gets unlocked, even if newProfiler() returns an error.
+		require.True(t, mu.TryLock())
 		mu.Unlock()
 	})
 
@@ -155,7 +169,7 @@ func TestStart(t *testing.T) {
 		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
 		err := Start()
 		defer Stop()
-		assert.NotNil(t, err)
+		assert.ErrorIs(t, err, errProfilingNotSupportedInAWSLambda)
 	})
 }
 
@@ -198,7 +212,7 @@ func TestStartWithoutStopReconfigures(t *testing.T) {
 func TestStopLatency(t *testing.T) {
 	received := make(chan struct{})
 	stop := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		select {
 		case received <- struct{}{}:
 		default:
@@ -259,7 +273,7 @@ func TestFlushAndStop(t *testing.T) {
 func TestFlushAndStopTimeout(t *testing.T) {
 	uploadTimeout := 1 * time.Second
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
 			return
 		}

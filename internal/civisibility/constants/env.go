@@ -37,4 +37,22 @@ const (
 
 	// CIVisibilityTotalFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for the entire session.
 	CIVisibilityTotalFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT"
+
+	// CIVisibilityTestManagementEnabledEnvironmentVariable indicates if the test management feature is enabled.
+	CIVisibilityTestManagementEnabledEnvironmentVariable = "DD_TEST_MANAGEMENT_ENABLED"
+
+	// CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable indicates the maximum number of retries for the attempt to fix a test.
+	CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable = "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES"
+
+	// CIVisibilityAutoInstrumentationProviderEnvironmentVariable indicates that the auto-instrumentation script was used.
+	CIVisibilityAutoInstrumentationProviderEnvironmentVariable = "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER"
+
+	// CIVisibilityEnvironmentDataFilePath is the environment variable that holds the path to the file containing the environmental data.
+	CIVisibilityEnvironmentDataFilePath = "DD_TEST_OPTIMIZATION_ENV_DATA_FILE"
+
+	// CIVisibilityImpactedTestsDetectionEnabled indicates if the impacted tests detection feature is enabled.
+	CIVisibilityImpactedTestsDetectionEnabled = "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED"
+
+	// CIVisibilityInternalParallelEarlyFlakeDetectionEnabled indicates if the internal parallel early flake detection feature is enabled.
+	CIVisibilityInternalParallelEarlyFlakeDetectionEnabled = "DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED"
 )

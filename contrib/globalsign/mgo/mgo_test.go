@@ -11,17 +11,19 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// this integration only supports up to mongodb:3
+const mongodb3URL = "localhost:27018"
 
 func TestMain(m *testing.M) {
 	_, ok := os.LookupEnv("INTEGRATION")
@@ -32,7 +34,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mocktracer.Span {
+func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []*mocktracer.Span {
 	assert := assert.New(t)
 
 	mt := mocktracer.Start()
@@ -45,7 +47,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mockt
 		tracer.ResourceName("insert-test"),
 	)
 
-	session, err := Dial("localhost:27017", WithServiceName("unit-tests"), WithContext(ctx))
+	session, err := Dial(mongodb3URL, WithService("unit-tests"), WithContext(ctx))
 	require.NoError(t, err)
 
 	defer session.Close()
@@ -62,6 +64,7 @@ func testMongoCollectionCommand(t *testing.T, command func(*Collection)) []mockt
 	for _, val := range spans {
 		if val.OperationName() == "mongodb.query" {
 			assert.Equal("globalsign/mgo", val.Tag(ext.Component))
+			assert.Equal(componentName, val.Integration())
 			assert.Equal("MyCollection", val.Tag(ext.MongoDBCollection))
 			assert.Equal("localhost", val.Tag(ext.NetworkDestinationName))
 		}
@@ -496,7 +499,7 @@ func TestAnalyticsSettings(t *testing.T) {
 	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...DialOption) {
 		assert := assert.New(t)
 
-		session, err := Dial("localhost:27017", opts...)
+		session, err := Dial(mongodb3URL, opts...)
 		assert.NoError(err)
 		defer session.Close()
 
@@ -532,9 +535,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -557,34 +558,10 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []DialOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		session, err := Dial("localhost:27017", opts...)
-		require.NoError(t, err)
-		err = session.
-			DB("my_db").
-			C("MyCollection").
-			Insert(bson.D{bson.DocElem{Name: "entity", Value: bson.DocElem{Name: "index", Value: 0}}})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewMongoDBTest(genSpans, "mongodb")(t)
 }
 
 func TestIssue2165(t *testing.T) {
@@ -601,7 +578,7 @@ func TestIssue2165(t *testing.T) {
 	for _, val := range spans {
 		if val.OperationName() != "mgo-unittest" {
 			assert.Equal("mongodb", val.Tag(ext.DBSystem))
-			if err, ok := val.Tags()[ext.Error]; ok {
+			if err, ok := val.Tags()[ext.ErrorMsg]; ok {
 				assert.NotNil(err)
 			}
 		}

@@ -27,7 +27,6 @@ func TestHTTPTransport(t *testing.T) {
 		Start:    2,
 		Duration: 10,
 		Stats: []StatsPoint{{
-			Service:        "service-1",
 			EdgeTags:       []string{"edge-1"},
 			Hash:           1,
 			ParentHash:     2,

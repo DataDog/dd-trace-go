@@ -12,15 +12,14 @@ import (
 	"sync"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestWithHeaderTags(t *testing.T) {
@@ -34,78 +33,92 @@ func TestWithHeaderTags(t *testing.T) {
 		router(opts...).ServeHTTP(w, r)
 		return r
 	}
+
 	t.Run("default-off", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+
+		headerTags := instrumentation.NewHeaderTags([]string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"})
 		setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-		for _, arg := range htArgs {
-			_, tag := normalizer.HeaderTag(arg)
+
+		headerTags.Iter(func(_ string, tag string) {
 			assert.NotContains(s.Tags(), tag)
-		}
+		})
 	})
 	t.Run("integration", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		})
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("global", func(t *testing.T) {
+		htArgs := []string{"3header"}
+		testutils.SetGlobalHeaderTags(t, htArgs...)
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		header, tag := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(header, tag)
 
 		r := setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 
-		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		headerTags.Iter(func(header string, tag string) {
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		})
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 
 	t.Run("override", func(t *testing.T) {
+		htArgsGlobal := []string{"3header"}
+		testutils.SetGlobalHeaderTags(t, htArgsGlobal...)
+		headerTagsGlobal := instrumentation.NewHeaderTags(htArgsGlobal)
+
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(globalH, globalT)
-
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+
 		r := setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
-		assert.NotContains(s.Tags(), globalT)
+		})
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+		headerTagsGlobal.Iter(func(_ string, tag string) {
+			assert.NotContains(s.Tags(), tag)
+		})
 	})
 
 	t.Run("wrap-handler", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
 
 		handler := WrapHandler(http.HandlerFunc(handler200), "my-service", "my-resource",
 			WithHeaderTags(htArgs),
@@ -130,10 +143,9 @@ func TestWithHeaderTags(t *testing.T) {
 		s := spans[0]
 		assert.Equal("http.request", s.OperationName())
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
+		headerTags.Iter(func(header string, tag string) {
 			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		})
 	})
 }
 
@@ -160,10 +172,11 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
+	assert.Equal("net/http", s.Integration())
 }
 
 func TestHttpTracer500(t *testing.T) {
@@ -190,10 +203,11 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("500", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("500: Internal Server Error", s.Tag(ext.ErrorMsg))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
+	assert.Equal("net/http", s.Integration())
 }
 
 func TestWrapHandler200(t *testing.T) {
@@ -222,10 +236,11 @@ func TestWrapHandler200(t *testing.T) {
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
+	assert.Equal("net/http", s.Integration())
 }
 
 func TestNoStack(t *testing.T) {
@@ -245,10 +260,11 @@ func TestNoStack(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Equal(1, len(spans))
 	s := spans[0]
-	assert.EqualError(spans[0].Tags()[ext.Error].(error), "500: Internal Server Error")
-	assert.Equal("<debug stack disabled>", s.Tags()[ext.ErrorStack])
+	assert.Equal(spans[0].Tags()[ext.ErrorMsg], "500: Internal Server Error")
+	assert.Empty(s.Tags()[ext.ErrorStack])
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
+	assert.Equal("net/http", s.Integration())
 }
 
 func TestServeMuxUsesResourceNamer(t *testing.T) {
@@ -279,10 +295,11 @@ func TestServeMuxUsesResourceNamer(t *testing.T) {
 	assert.Equal("200", s.Tag(ext.HTTPCode))
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("bar", s.Tag("foo"))
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 	assert.Equal("net/http", s.Tag(ext.Component))
+	assert.Equal("net/http", s.Integration())
 }
 
 func TestServeMuxGo122Patterns(t *testing.T) {
@@ -344,7 +361,6 @@ func TestWrapHandlerWithResourceNameNoRace(_ *testing.T) {
 func TestServeMuxNoRace(_ *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	r := httptest.NewRequest("GET", "/", nil)
 	mux := NewServeMux()
 	mux.Handle("/", http.NotFoundHandler())
 
@@ -352,6 +368,7 @@ func TestServeMuxNoRace(_ *testing.T) {
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
+			r := httptest.NewRequest("GET", "/", nil)
 			w := httptest.NewRecorder()
 			defer wg.Done()
 			mux.ServeHTTP(w, r)
@@ -375,7 +392,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			assert.Equal(t, rate, s.Tag(ext.EventSampleRate))
 		},
 		"WrapHandler": func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
-			f := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			f := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				message := "Hello \n"
 				w.Write([]byte(message))
 			})
@@ -403,9 +420,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			rate := globalconfig.AnalyticsRate()
-			defer globalconfig.SetAnalyticsRate(rate)
-			globalconfig.SetAnalyticsRate(0.4)
+			testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 			test(t, mt, 0.4)
 		})
@@ -428,9 +443,7 @@ func TestAnalyticsSettings(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			rate := globalconfig.AnalyticsRate()
-			defer globalconfig.SetAnalyticsRate(rate)
-			globalconfig.SetAnalyticsRate(0.4)
+			testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 			test(t, mt, 0.23, WithAnalyticsRate(0.23))
 		})
@@ -485,29 +498,68 @@ func TestIgnoreRequestOption(t *testing.T) {
 	}
 }
 
-func TestServerNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
+func TestStatusCheck(t *testing.T) {
+	tests := []struct {
+		url           string
+		expectedError bool
+		handler       http.Handler
+	}{
+		{
+			url:           "/200",
+			expectedError: false,
+			handler:       http.HandlerFunc(handler200),
+		},
+		{
+			url:           "/400",
+			expectedError: true,
+			handler:       http.HandlerFunc(handler400),
+		},
+		{
+			url:           "/404",
+			expectedError: false,
+			handler:       http.HandlerFunc(handler404),
+		},
+	}
+	statusCheck := func(statusCode int) bool {
+		return statusCode >= 400 && statusCode != http.StatusNotFound
+	}
+	for _, test := range tests {
+		t.Run("servemux"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-		mux := NewServeMux(opts...)
-		mux.HandleFunc("/200", handler200)
-		r := httptest.NewRequest("GET", "http://localhost/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
+			mux := NewServeMux(WithStatusCheck(statusCheck))
+			mux.HandleFunc("/200", handler200)
+			mux.HandleFunc("/400", handler400)
+			mux.HandleFunc("/404", handler404)
 
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.expectedError, spans[0].Tag(ext.ErrorMsg) != nil)
+		})
+		t.Run("wraphandler"+test.url, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			r := httptest.NewRequest("GET", "http://localhost"+test.url, nil)
+			w := httptest.NewRecorder()
+			f := test.handler
+
+			handler := WrapHandler(f, "my-service", "my-resource", WithStatusCheck(statusCheck))
+			handler.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+			assert.Equal(t, test.expectedError, spans[0].Tag(ext.ErrorMsg) != nil)
+		})
+	}
 }
 
 func router(muxOpts ...Option) http.Handler {
 	defaultOpts := []Option{
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("foo", "bar")),
 	}
 	mux := NewServeMux(append(defaultOpts, muxOpts...)...)
@@ -520,19 +572,22 @@ func handler200(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("OK\n"))
 }
 
-func handler500(w http.ResponseWriter, r *http.Request) {
+func handler500(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "500!", http.StatusInternalServerError)
 }
 
-func handler400(w http.ResponseWriter, r *http.Request) {
+func handler400(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "400!", http.StatusBadRequest)
 }
 
+func handler404(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "404!", http.StatusNotFound)
+}
+
 func BenchmarkHttpServeTrace(b *testing.B) {
-	tracer.Start(tracer.WithLogger(log.DiscardLogger{}))
+	err := tracer.Start(tracer.WithLogger(testutils.DiscardLogger()), tracer.WithHeaderTags([]string{"3header"}))
+	assert.NoError(b, err)
 	defer tracer.Stop()
-	header, tag := normalizer.HeaderTag("3header")
-	globalconfig.SetHeaderTag(header, tag)
 
 	r := httptest.NewRequest("GET", "/200", nil)
 	r.Header.Set("h!e@a-d.e*r", "val")

@@ -6,9 +6,9 @@
 package profiler
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"runtime"
 	"time"
@@ -33,7 +33,7 @@ type collectionTooFrequent struct {
 }
 
 func (e collectionTooFrequent) Error() string {
-	return fmt.Sprintf("period between metrics collection is too small min=%v observed=%v", e.min, e.observed)
+	return fmt.Sprintf("period between metrics collection is too small min=%d observed=%d", e.min, e.observed)
 }
 
 type metrics struct {
@@ -59,7 +59,7 @@ func (m *metrics) reset(now time.Time) {
 	m.snapshot.NumGoroutine = runtime.NumGoroutine()
 }
 
-func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
+func (m *metrics) report(now time.Time, w io.Writer) error {
 	period := now.Sub(m.collectedAt)
 	if period <= 0 {
 		// It is technically possible, though very unlikely, for period
@@ -85,7 +85,7 @@ func (m *metrics) report(now time.Time, buf *bytes.Buffer) error {
 		return err
 	}
 
-	_, err = buf.Write(data)
+	_, err = w.Write(data)
 	return err
 }
 
@@ -108,7 +108,7 @@ func rate(curr, prev uint64, period float64) float64 {
 }
 
 // maxPauseNs returns maximum pause time within the recent period, assumes stats populated at period end
-func maxPauseNs(stats *runtime.MemStats, periodStart time.Time) (max uint64) {
+func maxPauseNs(stats *runtime.MemStats, periodStart time.Time) (maxPause uint64) {
 	// NB
 	// stats.PauseEnd is a circular buffer of recent GC pause end times as nanoseconds since the epoch.
 	// stats.PauseNs is a circular buffer of recent GC pause times in nanoseconds.
@@ -120,11 +120,11 @@ func maxPauseNs(stats *runtime.MemStats, periodStart time.Time) (max uint64) {
 		if time.Unix(0, int64(stats.PauseEnd[offset])).Before(periodStart) {
 			break
 		}
-		if stats.PauseNs[offset] > max {
-			max = stats.PauseNs[offset]
+		if stats.PauseNs[offset] > maxPause {
+			maxPause = stats.PauseNs[offset]
 		}
 	}
-	return max
+	return maxPause
 }
 
 // removeInvalid removes NaN and +/-Inf values as they can't be json-serialized

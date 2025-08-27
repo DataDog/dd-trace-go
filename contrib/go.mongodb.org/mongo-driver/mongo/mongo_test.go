@@ -12,17 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestMain(m *testing.M) {
@@ -79,6 +77,7 @@ func Test(t *testing.T) {
 	assert.Equal(t, "test-database", s.Tag(ext.DBInstance))
 	assert.Equal(t, "mongo", s.Tag(ext.DBType))
 	assert.Equal(t, "go.mongodb.org/mongo-driver/mongo", s.Tag(ext.Component))
+	assert.Equal(t, componentName, s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	assert.Equal(t, "mongodb", s.Tag(ext.DBSystem))
 }
@@ -132,36 +131,8 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		addr := fmt.Sprintf("mongodb://localhost:27017/?connect=direct")
-		mongopts := options.Client()
-		mongopts.Monitor = NewMonitor(opts...)
-		mongopts.ApplyURI(addr)
-		client, err := mongo.Connect(context.Background(), mongopts)
-		require.NoError(t, err)
-		_, err = client.
-			Database("test-database").
-			Collection("test-collection").
-			InsertOne(context.Background(), bson.D{{Key: "test-item", Value: "test-value"}})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewMongoDBTest(genSpans, "mongo")(t)
 }

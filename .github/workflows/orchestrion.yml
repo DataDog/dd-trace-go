@@ -1,23 +1,313 @@
 name: Orchestrion
 on:
-  workflow_dispatch: # manually
+  workflow_call: # From github.com/DataDog/orchestrion
+    inputs:
+      orchestrion-version:
+        description: Orchestrion version to use for integration testing
+        type: string
+        required: true
+      collect-coverage:
+        description: Whether to collect orchestrion coverage data or not
+        type: boolean
+        default: false
+        required: false
+    secrets:
+      DD_API_KEY:
+        required: false
   pull_request:
   merge_group:
   push:
     branches:
       - release-v*
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
 
 permissions: read-all
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ inputs.orchestrion-version && format('-{0}', inputs.orchestrion-version) }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: 'Run Tests'
-    uses: DataDog/orchestrion/.github/workflows/workflow_call.yml@main # we don't want to pin our own action
-    with:
-      dd-trace-go-ref: ${{ github.sha }}
-      runs-on: ubuntu-latest-16-cores
+  generate:
+    name: Verify generated files are up-to-date
+    # Don't run in workflow_call or workflow_dispatch
+    if: github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Run generator
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/generate.sh
+      - name: Check for changes
+        run: git diff --exit-code
+
+  go-versions-matrix:
+    name: Go Versions Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.matrix.outputs.json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: '**/go.mod'
+      - name: Compute Matrix
+        id: matrix
+        run: |-
+          echo -n "json="                      >> "${GITHUB_OUTPUT}"
+          go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
+
+  service-containers:
+    name: Service containers
+    runs-on: ubuntu-latest
+    outputs:
+      services_json: ${{ steps.set-services.outputs.services_json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      - name: Define Services JSON
+        id: set-services
+        run: |
+          echo "SERVICES_JSON=$(jq -c . ./internal/orchestrion/_integration/ci-services.json)" >> "${GITHUB_OUTPUT}"
+
+  integration-test:
+    services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
+    env:
+      # Path to where test results will be saved
+      REPORT: orchestrion-gotestsum-report.xml
+      # Disable go workspace as they complicate everything when orchestrion
+      # updates its `go` directive in `go.mod` before `dd-trace-go` does;
+      # ESPECIALLY on Windows.
+      GOWORK: 'off'
+    needs:
+      - go-versions-matrix
+      - service-containers
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on:
+          - ubuntu
+          - macos
+          - windows
+        go-version: ${{ fromJSON(needs.go-versions-matrix.outputs.json) }}
+        mode: [DRIVER]
+        include:
+          # Alternate build modes (only on ubuntu with oldstable, so we save up CI time)
+          - runs-on: ubuntu
+            go-version: oldstable
+            mode: TOOLEXEC
+          - runs-on: ubuntu
+            go-version: oldstable
+            mode: GOFLAGS
+    name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }} | ${{ matrix.mode }})
+    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ github.workspace }}/dd-trace-go
+          repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+      # If we're in workflow_dispatch/call, maybe we need to up/downgrade orchestrion
+      - name: Check out orchestrion
+        if: inputs.orchestrion-version != ''
+        id: checkout-orchestrion
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: ${{ github.workspace }}/orchestrion
+          repository: DataDog/orchestrion
+          ref: ${{ inputs.orchestrion-version }}
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+          cache-dependency-path: |-
+            ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
+            ${{ github.workspace }}/orchestrion/all/go.mod
+
+      - name: Install development tools
+        run: make -C ${{ github.workspace }}/dd-trace-go tools-install
+
+      - name: Set up orchestrion
+        if: inputs.orchestrion-version != ''
+        # This does not pass `-go` so that it transparently uses the correct go
+        # version, which is the highest one between that of dd-trace-go and
+        # orchestrion. This way each can change their own minimum supported go
+        # release without requiring coordination with the other. It also adds
+        # the local checkout of orchestrion to the `go.work` so that its own
+        # `go` directive is correctly managed.
+        run: |-
+          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
+          go mod tidy
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+        env:
+          VERSION: ${{ inputs.orchestrion-version }}
+      # We install the binary to the GOBIN, so it's easy to use
+      - name: Install orchestrion binary
+        if: '!inputs.collect-coverage'
+        run: go install "github.com/DataDog/orchestrion"
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+      - name: Build orchestrion binary
+        if: inputs.collect-coverage
+        shell: bash
+        run: |-
+          bin=$(go env GOPATH)/bin/orchestrion
+          if [[ '${{ matrix.runs-on }}' == 'windows' ]]; then
+            bin="${bin}.exe"
+          fi
+          mkdir -p "$(dirname "${bin}")"
+          go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
+          echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+
+      # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
+      # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
+      # integration test suite may no longer be up-to-date.
+      - name: Run 'go mod tidy'
+        run: go mod tidy
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+
+      # Pull docker images ahead of time so the pulls of large images don't have to fit within the
+      # test timeout.
+      - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        run: |-
+          # AWS DynamoDB Local is used to have a pretend AWS API endpoint
+          docker pull amazon/dynamodb-local:latest
+
+          # PostgreSQL service
+          docker pull docker.io/postgres:16-alpine
+
+          # Vault service
+          docker pull vault:1.7.3
+
+      # Enable VM overcommit memory, which is essential to ensure smooth operations of the Redis
+      # servers. This VM setting is not namespaced, so changing it on the host also affects all
+      # containerized workloads (which our Redis service is).
+      - name: Enable memory overcommit
+        if: runner.os == 'Linux'
+        run: sudo sysctl vm.overcommit_memory=1
+
+      # Finally, we run the test suite!
+      # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
+      # failure tests as real failures in the backend.
+      - name: Run Tests
+        shell: bash
+        run: |-
+          export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
+          echo "PATH: ${PATH}"
+          echo "Working directory: ${PWD}"
+          orchestrion version
+          PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
+
+          case "${MODE}" in
+          "DRIVER")
+            echo "Starting test suite in DRIVER mode"
+            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
+            orchestrion go test -json -shuffle=on ./civisibility
+            ;;
+          "TOOLEXEC")
+            echo "Starting test suite in TOOLEXEC mode"
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
+            go test -shuffle=on -toolexec='orchestrion toolexec' ./civisibility
+            ;;
+          "GOFLAGS")
+            echo "Starting test suite in GOFLAGS mode"
+            export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
+            gotestsum --junitfile ${XML_PATH} -- -shuffle=on $PACKAGE_NAMES
+            go test -shuffle=on ./civisibility
+            ;;
+          *)
+            echo "Unknown mode: ${MODE}"
+            ;;
+          esac
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+        env:
+          MODE: ${{ matrix.mode }}
+          # The "buildtag" tag is used in //dd:span integration tests
+          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
+          # Prevent auto-respawn, which is problematic with installs from commit SHA
+          DD_ORCHESTRION_IS_GOMOD_VERSION: true
+          # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
+          TESTCONTAINERS_RYUK_DISABLED: true
+          # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
+          XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
+
+      # If in workflow_call, we collected coverage data we need to upload
+      - name: Consolidate coverage report
+        if: inputs.collect-coverage
+        shell: bash
+        run: |-
+          mkdir -p "${{ github.workspace }}/orchestrion/coverage"
+          go tool covdata textfmt -i "${GOCOVERDIR}" -o "${WORKSPACE}/orchestrion/coverage/integration.out"
+        env:
+          WORKSPACE: ${{ github.workspace }}
+      - name: Determine go minor version
+        if: inputs.collect-coverage
+        id: go
+        shell: bash
+        run: |-
+          set -euo pipefail
+          echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
+      - name: Upload coverage report
+        if: inputs.collect-coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
+          path: ${{ github.workspace }}/orchestrion/coverage/integration.out
+
+      # Checkout and prepare for uploading to Datadog CI
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: 'DataDog/dd-trace-go'
+          ref:  ${{ inputs.orchestrion-version != '' && 'main' || github.ref }}
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
+          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+  # This is a simple join point to make it easy to set up branch protection rules in GitHub.
+  integration-test-done:
+    name: Orchestrion Integration Tests
+    needs:
+      - generate
+      - integration-test
+    runs-on: ubuntu-latest
+    if: success() || failure()
+    steps:
+      - name: Success
+        if: needs.integration-test.result == 'success' && needs.generate.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.integration-test.result != 'success' || needs.generate.result != 'success'
+        run: echo "Failure!" && exit 1

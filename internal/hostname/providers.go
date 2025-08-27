@@ -13,12 +13,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/azure"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ec2"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ecs"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/gce"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/validate"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/azure"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/ec2"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/ecs"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/gce"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/validate"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // For testing purposes
@@ -150,7 +150,7 @@ func updateHostname(now time.Time) {
 	for _, p := range providerCatalog {
 		detectedHostname, err := p.pf(ctx, hostname)
 		if err != nil {
-			log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
+			log.Debug("Unable to get hostname from provider %q: %v", p.name, err.Error())
 			continue
 		}
 		hostname = detectedHostname
@@ -210,7 +210,7 @@ func fromFQDN(_ context.Context, _ string) (string, error) {
 	//TODO: test this on windows
 	fqdn, err := getSystemFQDN()
 	if err != nil {
-		return "", fmt.Errorf("unable to get FQDN from system: %s", err)
+		return "", fmt.Errorf("unable to get FQDN from system: %s", err.Error())
 	}
 	return fqdn, nil
 }
@@ -233,11 +233,11 @@ func fromEC2(ctx context.Context, currentHostname string) (string, error) {
 		// If the current hostname is a default one we try to get the instance id
 		instanceID, err := ec2.GetInstanceID(ctx)
 		if err != nil {
-			return "", fmt.Errorf("unable to determine hostname from EC2: %s", err)
+			return "", fmt.Errorf("unable to determine hostname from EC2: %s", err.Error())
 		}
 		err = validate.ValidHostname(instanceID)
 		if err != nil {
-			return "", fmt.Errorf("EC2 instance id is not a valid hostname: %s", err)
+			return "", fmt.Errorf("EC2 instance id is not a valid hostname: %s", err.Error())
 		}
 		return instanceID, nil
 	}

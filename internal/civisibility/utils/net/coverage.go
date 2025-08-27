@@ -8,9 +8,10 @@ package net
 import (
 	"errors"
 	"fmt"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
 	"io"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 const (
@@ -27,16 +28,39 @@ func NewClientForCodeCoverage() Client {
 
 // SendCoveragePayload sends a code coverage payload to the backend.
 func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
+	return c.SendCoveragePayloadWithFormat(ciTestCovPayload, FormatMessagePack)
+}
+
+// SendCoveragePayload sends a code coverage payload to the backend.
+func (c *client) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error {
 	if ciTestCovPayload == nil {
 		return errors.New("coverage payload is nil")
 	}
-
 	// Create a dummy event to send with the coverage payload.
 	dummyEvent := FormFile{
 		FieldName:   "event",
 		ContentType: ContentTypeJSON,
 		FileName:    "fileevent.json",
 		Content:     []byte("{\"dummy\": true}"),
+	}
+
+	var coverageEvent FormFile
+	if format == FormatMessagePack {
+		coverageEvent = FormFile{
+			FieldName:   "coveragex",
+			Content:     ciTestCovPayload,
+			FileName:    "filecoveragex.msgpack",
+			ContentType: ContentTypeMessagePack,
+		}
+	} else if format == FormatJSON {
+		coverageEvent = FormFile{
+			FieldName:   "coveragex",
+			Content:     ciTestCovPayload,
+			FileName:    "filecoveragex.json",
+			ContentType: ContentTypeJSON,
+		}
+	} else {
+		return fmt.Errorf("unsupported format: %s", format)
 	}
 
 	// Send the coverage payload.
@@ -46,12 +70,7 @@ func (c *client) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 		Headers: c.headers,
 		Files: []FormFile{
 			dummyEvent,
-			{
-				FieldName:   "coveragex",
-				Content:     ciTestCovPayload,
-				FileName:    "filecoveragex.msgpack",
-				ContentType: ContentTypeMessagePack,
-			},
+			coverageEvent,
 		},
 	}
 

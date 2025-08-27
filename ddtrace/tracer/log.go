@@ -14,11 +14,12 @@ import (
 	"runtime"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/osinfo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // startupInfo contains various information about the status of the tracer on startup.
@@ -59,6 +60,9 @@ type startupInfo struct {
 	FeatureFlags                []string                     `json:"feature_flags"`
 	PropagationStyleInject      string                       `json:"propagation_style_inject"`  // Propagation style for inject
 	PropagationStyleExtract     string                       `json:"propagation_style_extract"` // Propagation style for extract
+	TracingAsTransport          bool                         `json:"tracing_as_transport"`      // Whether the tracer is disabled and other products are using it as a transport
+	DogstatsdAddr               string                       `json:"dogstatsd_address"`         // Destination of statsd payloads
+	DataStreamsEnabled          bool                         `json:"data_streams_enabled"`      // Whether Data Streams is enabled
 }
 
 // checkEndpoint tries to connect to the URL specified by endpoint.
@@ -67,7 +71,7 @@ type startupInfo struct {
 func checkEndpoint(c *http.Client, endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
+		return fmt.Errorf("cannot create http request: %s", err.Error())
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
@@ -111,7 +115,6 @@ func logStartup(t *tracer) {
 	} else {
 		agentURL = t.config.transport.endpoint()
 	}
-
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
 		OSName:                      osinfo.OSName(),
@@ -147,23 +150,28 @@ func logStartup(t *tracer) {
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
+		TracingAsTransport:          t.config.tracingAsTransport,
+		DogstatsdAddr:               t.config.dogstatsdAddr,
+		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err)
+		info.SamplingRulesError = fmt.Sprintf("%s", err.Error())
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
-			info.AgentError = fmt.Sprintf("%s", err)
-			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err)
+			info.AgentError = fmt.Sprintf("%s", err.Error())
+			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
+		//nolint:gocritic // Diagnostic logging needs full struct representation
 		log.Warn("DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
 		return
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	telemetrylog.Debug("DATADOG TRACER CONFIGURATION %s\n", string(bs))
 }

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pproflite"
 
 	"github.com/google/pprof/profile"
 	"github.com/stretchr/testify/require"

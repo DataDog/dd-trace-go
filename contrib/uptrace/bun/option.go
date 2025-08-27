@@ -5,9 +5,7 @@
 
 package bun
 
-import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-)
+import "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 type config struct {
 	serviceName string
@@ -17,11 +15,7 @@ type config struct {
 type Option func(*config)
 
 func defaults(cfg *config) {
-	service := defaultServiceName
-	if svc := globalconfig.ServiceName(); svc != "" {
-		service = svc
-	}
-	cfg.serviceName = service
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 }
 
 // WithService sets the given service name for the client.

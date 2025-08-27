@@ -10,9 +10,9 @@ import (
 	"log"
 	"net/http"
 
-	vaulttrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/hashicorp/vault"
-
 	"github.com/hashicorp/vault/api"
+
+	vaulttrace "github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2"
 )
 
 // This is the most basic way to enable tracing with Vault.
@@ -32,7 +32,7 @@ func ExampleNewHTTPClient() {
 func ExampleNewHTTPClient_withOptions() {
 	c, err := api.NewClient(&api.Config{
 		HttpClient: vaulttrace.NewHTTPClient(
-			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithService("my.vault"),
 			vaulttrace.WithAnalytics(true),
 		),
 		Address: "http://vault.mydomain.com:8200",
@@ -49,9 +49,9 @@ func ExampleNewHTTPClient_withOptions() {
 func ExampleWrapHTTPClient() {
 	// We use a custom *http.Client to talk to Vault.
 	c := &http.Client{
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
-				return fmt.Errorf("won't perform more that 5 redirects")
+				return fmt.Errorf("won't perform more than 5 redirects")
 			}
 			return nil
 		},
@@ -72,9 +72,9 @@ func ExampleWrapHTTPClient() {
 func ExampleWrapHTTPClient_withOptions() {
 	// We use a custom *http.Client to talk to Vault.
 	c := &http.Client{
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) > 5 {
-				return fmt.Errorf("won't perform more that 5 redirects")
+				return fmt.Errorf("won't perform more than 5 redirects")
 			}
 			return nil
 		},
@@ -82,7 +82,7 @@ func ExampleWrapHTTPClient_withOptions() {
 	client, err := api.NewClient(&api.Config{
 		HttpClient: vaulttrace.WrapHTTPClient(
 			c,
-			vaulttrace.WithServiceName("my.vault"),
+			vaulttrace.WithService("my.vault"),
 			vaulttrace.WithAnalytics(true),
 		),
 		Address: "http://vault.mydomain.com:8200",

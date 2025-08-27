@@ -7,21 +7,24 @@ package pubsub
 
 import (
 	"context"
+	"encoding/binary"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/pubsub/pstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 )
+
+func lowerEqual(t *testing.T, id uint64, tid [16]byte) {
+	assert.Equal(t, id, binary.BigEndian.Uint64(tid[8:]))
+}
 
 func TestPropagation(t *testing.T) {
 	assert := assert.New(t)
@@ -45,7 +48,7 @@ func TestPropagation(t *testing.T) {
 		assert.Equal(msg.Data, []byte("hello"), "wrong payload")
 		span, ok := tracer.SpanFromContext(ctx)
 		assert.True(ok, "no span")
-		assert.Equal(uint64(42), span.Context().TraceID(), "wrong trace id") // gist of the test: the trace ID must be the same as the root trace ID set above
+		lowerEqual(t, 42, span.Context().TraceIDBytes())
 		msgID = msg.ID
 		spanID = span.Context().SpanID()
 		pubTime = msg.PublishTime.String()
@@ -64,25 +67,27 @@ func TestPropagation(t *testing.T) {
 
 	assert.Equal(spans[1].SpanID(), spans[0].ParentID())
 	assert.Equal(uint64(42), spans[0].TraceID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    2, // 2 tracing attributes
+	assert.Subset(filterTags(spans[0].Tags()), map[string]interface{}{
+		"message_size":      float64(5),
+		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/topics/topic",
 		ext.SpanType:        ext.SpanTypeMessageProducer,
 		"server_id":         srvID,
-		ext.ServiceName:     nil,
+		ext.ServiceName:     "",
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "googlepubsub",
+		ext.SpanName:        "pubsub.publish",
 	}, spans[0].Tags())
+	assert.Equal("cloud.google.com/go/pubsub.v1", spans[0].Integration())
 
 	assert.Equal(spans[0].SpanID(), spans[2].ParentID())
 	assert.Equal(uint64(42), spans[2].TraceID())
 	assert.Equal(spanID, spans[2].SpanID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    2,
+	assert.Subset(filterTags(spans[2].Tags()), map[string]interface{}{
+		"message_size":      float64(5),
+		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/subscriptions/subscription",
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
@@ -91,7 +96,10 @@ func TestPropagation(t *testing.T) {
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
+		ext.ServiceName:     "",
+		ext.SpanName:        "pubsub.receive",
 	}, spans[2].Tags())
+	assert.Equal("cloud.google.com/go/pubsub.v1", spans[2].Integration())
 }
 
 func TestPropagationWithServiceName(t *testing.T) {
@@ -105,10 +113,10 @@ func TestPropagationWithServiceName(t *testing.T) {
 	span.Finish()
 
 	// Subscriber
-	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(_ context.Context, msg *pubsub.Message) {
 		msg.Ack()
 		cancel()
-	}, WithServiceName("example.service")))
+	}, WithService("example.service")))
 	assert.NoError(err)
 
 	spans := mt.FinishedSpans()
@@ -129,7 +137,7 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	var (
 		msgID   string
 		spanID  uint64
-		traceID uint64
+		traceID string
 		pubTime string
 		called  bool
 	)
@@ -155,10 +163,10 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal("pubsub.receive", spans[1].OperationName())
 
 	assert.Equal(spans[0].TraceID(), spans[0].SpanID())
-	assert.Equal(traceID, spans[0].TraceID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    2,
+	assert.Equal(traceID, spans[0].Context().TraceID())
+	assert.Subset(filterTags(spans[0].Tags()), map[string]interface{}{
+		"message_size":      float64(5),
+		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/topics/topic",
 		ext.SpanType:        ext.SpanTypeMessageProducer,
@@ -166,14 +174,17 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindProducer,
 		ext.MessagingSystem: "googlepubsub",
+		ext.ServiceName:     "",
+		ext.SpanName:        "pubsub.publish",
 	}, spans[0].Tags())
+	assert.Equal("cloud.google.com/go/pubsub.v1", spans[0].Integration())
 
 	assert.Equal(spans[0].SpanID(), spans[1].ParentID())
-	assert.Equal(traceID, spans[1].TraceID())
+	assert.Equal(traceID, spans[1].Context().TraceID())
 	assert.Equal(spanID, spans[1].SpanID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    2,
+	assert.Subset(filterTags(spans[1].Tags()), map[string]interface{}{
+		"message_size":      float64(5),
+		"num_attributes":    float64(5),
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/subscriptions/subscription",
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
@@ -182,7 +193,10 @@ func TestPropagationNoParentSpan(t *testing.T) {
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
+		ext.ServiceName:     "",
+		ext.SpanName:        "pubsub.receive",
 	}, spans[1].Tags())
+	assert.Equal("cloud.google.com/go/pubsub.v1", spans[1].Integration())
 }
 
 func TestPropagationNoPublisherSpan(t *testing.T) {
@@ -198,7 +212,7 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 	var (
 		msgID   string
 		spanID  uint64
-		traceID uint64
+		traceID string
 		pubTime string
 		called  bool
 	)
@@ -222,11 +236,11 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 	assert.Len(spans, 1, "wrong number of spans")
 	assert.Equal("pubsub.receive", spans[0].OperationName())
 
-	assert.Equal(traceID, spans[0].TraceID())
+	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Equal(spanID, spans[0].SpanID())
-	assert.Equal(map[string]interface{}{
-		"message_size":      5,
-		"num_attributes":    0, // no attributes, since no publish middleware sent them
+	assert.Subset(filterTags(spans[0].Tags()), map[string]interface{}{
+		"message_size":      float64(5),
+		"num_attributes":    float64(0), // no attributes, since no publish middleware sent them
 		"ordering_key":      "xxx",
 		ext.ResourceName:    "projects/project/subscriptions/subscription",
 		ext.SpanType:        ext.SpanTypeMessageConsumer,
@@ -235,46 +249,20 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 		ext.Component:       "cloud.google.com/go/pubsub.v1",
 		ext.SpanKind:        ext.SpanKindConsumer,
 		ext.MessagingSystem: "googlepubsub",
+		ext.ServiceName:     "",
+		ext.SpanName:        "pubsub.receive",
 	}, spans[0].Tags())
+	assert.Equal("cloud.google.com/go/pubsub.v1", spans[0].Integration())
 }
 
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		ctx, cancel, mt, topic, sub := setup(t)
-
-		_, err := Publish(ctx, topic, &pubsub.Message{Data: []byte("hello"), OrderingKey: "xxx"}, opts...).Get(ctx)
-		require.NoError(t, err)
-
-		err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
-			msg.Ack()
-			cancel()
-		}, opts...))
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "pubsub.publish", spans[0].OperationName())
-		assert.Equal(t, "pubsub.receive", spans[1].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "gcp.pubsub.send", spans[0].OperationName())
-		assert.Equal(t, "gcp.pubsub.process", spans[1].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"", ""},
-		WithDDService:            []string{"", ""},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
+func filterTags(m map[string]interface{}) map[string]interface{} {
+	delete(m, "_dd.p.tid")
+	delete(m, "_dd.profiling.enabled")
+	delete(m, "_dd.top_level")
+	delete(m, "_sampling_priority_v1")
+	delete(m, "language")
+	delete(m, "tracestate")
+	return m
 }
 
 func setup(t *testing.T) (context.Context, context.CancelFunc, mocktracer.Tracer, *pubsub.Topic, *pubsub.Subscription) {

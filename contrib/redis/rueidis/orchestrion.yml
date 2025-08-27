@@ -1,0 +1,19 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2025-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2
+  description: A fast Golang Redis client that does auto pipelining and supports server-assisted client-side caching.
+
+aspects:
+  - id: NewClient
+    join-point:
+      function-call: github.com/redis/rueidis.NewClient
+    advice:
+      - wrap-expression:
+          imports:
+            rueidistrace: github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2
+          template: rueidistrace.NewClient({{ index .AST.Args 0 }})

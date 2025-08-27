@@ -11,21 +11,21 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/urfave/negroni"
 )
 
-const componentName = "urfave/negroni"
+const component = instrumentation.PackageUrfaveNegroni
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/urfave/negroni")
+	instr = instrumentation.Load(instrumentation.PackageUrfaveNegroni)
 }
 
 // DatadogMiddleware returns middleware that will trace incoming requests.
@@ -34,7 +34,7 @@ type DatadogMiddleware struct {
 }
 
 func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	opts := options.Copy(m.cfg.spanOpts...) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
+	opts := options.Expand(m.cfg.spanOpts, 0, 4) // opts must be a copy of m.cfg.spanOpts, locally scoped, to avoid races.
 	opts = append(opts,
 		tracer.ServiceName(m.cfg.serviceName),
 		tracer.ResourceName(m.cfg.resourceNamer(r)),
@@ -42,7 +42,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 	if !math.IsNaN(m.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, m.cfg.analyticsRate))
 	}
-	span, ctx := httptrace.StartRequestSpan(r, opts...)
+	_, ctx, finishSpans := httptrace.StartRequestSpan(r, opts...)
 	defer func() {
 		// check if the responseWriter is of type negroni.ResponseWriter
 		var (
@@ -56,7 +56,7 @@ func (m *DatadogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, ne
 				opts = []tracer.FinishOption{tracer.WithError(fmt.Errorf("%d: %s", status, http.StatusText(status)))}
 			}
 		}
-		httptrace.FinishRequestSpan(span, status, m.cfg.isStatusError, opts...)
+		finishSpans(status, m.cfg.isStatusError, opts...)
 	}()
 
 	next(w, r.WithContext(ctx))
@@ -67,11 +67,11 @@ func Middleware(opts ...Option) *DatadogMiddleware {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, component))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	log.Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
+	instr.Logger().Debug("contrib/urgave/negroni: Configuring Middleware: %#v", cfg)
 
 	m := DatadogMiddleware{
 		cfg: cfg,

@@ -1,0 +1,39 @@
+[
+  {
+    "duration": 288000,
+    "error": 0,
+    "meta": {
+      "_dd.git.commit.sha": "b5dcde5cf0fc321057d75b253f162bedaa99f8d8",
+      "_dd.go_path": "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/gorm",
+      "_dd.p.dm": "-1",
+      "_dd.p.tid": "66695f4400000000",
+      "component": "net/http",
+      "http.host": "localhost:8088",
+      "http.method": "GET",
+      "http.status_code": "200",
+      "http.url": "http://localhost:8088/",
+      "http.useragent": "Mozilla/5.0 (Macintosh; Darwin 23.5.0 Darwin Kernel Version 23.5.0: Wed May  1 20:12:58 PDT 2024; root:xnu-10063.121.3~5/RELEASE_ARM64_T6000; fr-FR) PowerShell/7.4.2",
+      "language": "go",
+      "runtime-id": "f182948b-b24c-47a9-a0e4-4462fd65d0ba",
+      "span.kind": "server"
+    },
+    "meta_struct": {},
+    "metrics": {
+      "_dd.agent_psr": 1.0,
+      "_dd.profiling.enabled": 0.0,
+      "_dd.top_level": 1.0,
+      "_dd.trace_span_attribute_schema": 0.0,
+      "_sampling_priority_v1": 1.0,
+      "process_id": 97959.0
+    },
+    "name": "http.request",
+    "parent_id": 0,
+    "resource": "GET /",
+    "service": "gorm",
+    "span_id": 1356288911239140451,
+    "span_links": [],
+    "start": 1718181700163254000,
+    "trace_id": 1356288911239140451,
+    "type": "web"
+  }
+]

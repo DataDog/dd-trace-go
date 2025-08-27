@@ -23,6 +23,8 @@ type testLogger struct {
 	lines []string
 }
 
+var _ Logger = &testLogger{}
+
 // Print implements Logger.
 func (tp *testLogger) Log(msg string) {
 	tp.mu.Lock()
@@ -64,7 +66,7 @@ func TestLogDirectory(t *testing.T) {
 		assert.False(t, f.closed)
 
 		// ensure this setting plays nicely with other log features
-		oldLvl := level
+		oldLvl := levelThreshold
 		SetLevel(LevelDebug)
 		defer func() {
 			SetLevel(oldLvl)
@@ -128,7 +130,7 @@ func TestLog(t *testing.T) {
 	t.Run("Debug", func(t *testing.T) {
 		t.Run("on", func(t *testing.T) {
 			tp.Reset()
-			defer func(old Level) { level = old }(level)
+			defer func(old Level) { levelThreshold = old }(levelThreshold)
 			SetLevel(LevelDebug)
 			assert.True(t, DebugEnabled())
 
@@ -275,4 +277,12 @@ func containsMessage(lvl, m string, lines []string) bool {
 		}
 	}
 	return false
+}
+
+func BenchmarkLog(b *testing.B) {
+	UseLogger(DiscardLogger{})
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		Warn("test")
+	}
 }

@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
 // Test Session
@@ -108,9 +108,14 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 	if utils.GetCodeOwners() != nil {
 		testingEventType = append(testingEventType, telemetry.HasCodeOwnerEventType...)
 	}
-	if _, hasCiProvider := utils.GetCITags()[constants.CIProviderName]; !hasCiProvider {
+
+	ciProviderName, hasCiProvider := utils.GetCITags()[constants.CIProviderName]
+	if !hasCiProvider {
 		testingEventType = append(testingEventType, telemetry.UnsupportedCiEventType...)
 	}
+
+	// Write test session telemetry
+	telemetry.TestSession(ciProviderName)
 	telemetry.EventCreated(s.framework, testingEventType)
 	return s
 }

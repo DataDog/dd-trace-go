@@ -1,0 +1,118 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/net/http/v2.Client
+  description: HTTP client implementation.
+
+aspects:
+  # Add tracing to the default http.RoundTripper implementation.
+  - id: Transport.DD__tracer_internal
+    join-point:
+      struct-definition: net/http.Transport
+    advice:
+      - add-struct-field:
+          name: DD__tracer_internal
+          type: bool
+  # In tracer internals, set the DD__tracer_internal field to true so that we do not end up
+  # instrumenting the tracer's internal HTTP clients (this would be a span bomb!)
+  - id: Transport.DD__tracer_internal=true
+    tracer-internal: true
+    join-point:
+      all-of:
+        - one-of:
+            - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal/remoteconfig
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net
+            - import-path: github.com/DataDog/dd-trace-go/v2/profiler
+        - struct-literal:
+            type: net/http.Transport
+    advice:
+      - wrap-expression:
+          template: |-
+            {{- .AST.Type -}}{
+              DD__tracer_internal: true,
+              {{ range .AST.Elts }}{{ . }},
+              {{ end }}
+            }
+  - id: Transport.RoundTrip
+    join-point:
+      function-body:
+        function:
+          - name: RoundTrip
+          - receiver: '*net/http.Transport'
+    advice:
+      - inject-declarations:
+          # We need to use go:linkname to refer to a these declarations in order to avoid creating
+          # circular dependencies, as these features have transitive dependencies on `net/http`...
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/orchestrion
+          template: |-
+            type ddAfterRoundTrip = func(*Response, error) (*Response, error)
+
+            //go:linkname __dd_httptrace_ObserveRoundTrip github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/orchestrion.ObserveRoundTrip
+            func __dd_httptrace_ObserveRoundTrip(*Request) (*Request, ddAfterRoundTrip, error)
+      - prepend-statements:
+          template: |-
+            {{- $t := .Function.Receiver -}}
+            {{- $req := .Function.Argument 0 -}}
+            {{- $res := .Function.Result 0 -}}
+            {{- $err := .Function.Result 1 -}}
+            if !{{ $t }}.DD__tracer_internal {
+              var (
+                __after__ ddAfterRoundTrip
+                __err__   error
+              )
+              {{ $req }}, __after__, __err__ = __dd_httptrace_ObserveRoundTrip({{ $req }})
+              if __err__ != nil {
+                return nil, __err__
+              }
+              defer func(){
+                {{ $res }}, {{ $err }} = __after__({{ $res }}, {{ $err }})
+              }()
+            }
+
+  # Replace the http.Get, http.Head, http.Post, and http.PostForm short-hands with the longer forms if
+  # there is a context available from the surroundings.
+  - id: Get|Head|Post|PostForm
+    join-point:
+      all-of:
+        - not:
+            # We don't want to instrument in net/http, it'd create a circular dependency!
+            import-path: net/http
+        - one-of:
+            - function-call: net/http.Get
+            - function-call: net/http.Head
+            - function-call: net/http.Post
+            - function-call: net/http.PostForm
+    advice:
+      # Wire the context that is found to the handlers...
+      - wrap-expression:
+          imports:
+            # Temporarily add a namespaced alias to ensure we don't have symbol name collisions.
+            # The root issue is solved at https://github.com/DataDog/orchestrion/pull/678 but this should
+            # ensure dd-trace-go users using older Orchestrion versions don't have build errors.
+            __ddtrace_client: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
+          template: |-
+            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- $req := .Function.ArgumentOfType "*net/http.Request" }}
+            {{- if $ctx -}}
+              __ddtrace_client.{{ .AST.Fun.Name }}(
+                {{ $ctx }},
+                {{ range .AST.Args }}{{ . }},
+                {{ end }}
+              )
+            {{- else if $req -}}
+              __ddtrace_client.{{ .AST.Fun.Name }}(
+                {{ $req }}.Context(),
+                {{ range .AST.Args }}{{ . }},
+                {{ end }}
+              )
+            {{- else -}}
+              {{ . }}
+            {{- end -}}

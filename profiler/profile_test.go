@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pprofutils"
 
 	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
@@ -171,12 +171,14 @@ main;bar 0 0 8 16
 }
 
 func TestRunProfile(t *testing.T) {
+	// TODO(felixge): These tests are directly calling the internal runProfile()
+	// function which is brittle. We should refactor them to use the public API.
 	t.Run("delta", func(t *testing.T) {
 		testRunDeltaProfile(t)
 	})
 
 	t.Run("cpu", func(t *testing.T) {
-		p, err := unstartedProfiler(CPUDuration(10*time.Millisecond), WithPeriod(10*time.Millisecond))
+		p, err := unstartedProfiler(CPUDuration(10*time.Millisecond), WithPeriod(10*time.Millisecond), WithProfileTypes(CPUProfile))
 		p.testHooks.startCPUProfile = func(w io.Writer) error {
 			_, err := w.Write([]byte("my-cpu-profile"))
 			return err
@@ -193,7 +195,7 @@ func TestRunProfile(t *testing.T) {
 	})
 
 	t.Run("goroutine", func(t *testing.T) {
-		p, err := unstartedProfiler(WithPeriod(time.Millisecond))
+		p, err := unstartedProfiler(WithPeriod(time.Millisecond), WithProfileTypes(GoroutineProfile))
 		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(name))
 			return err
@@ -228,7 +230,7 @@ main.main()
 ...additional frames elided...
 `
 
-		p, err := unstartedProfiler(WithPeriod(10 * time.Millisecond))
+		p, err := unstartedProfiler(WithPeriod(10*time.Millisecond), WithProfileTypes(expGoroutineWaitProfile))
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(sample))
 			return err
@@ -309,7 +311,7 @@ main.main()
 		defer stop()
 		t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
 
-		p, err := unstartedProfiler()
+		p, err := unstartedProfiler(WithProfileTypes(expGoroutineWaitProfile))
 		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
 			_, err := w.Write([]byte(""))
 			return err
@@ -410,6 +412,41 @@ func TestProfileTypeSoundness(t *testing.T) {
 		_, err := unstartedProfiler(WithProfileTypes(ProfileType(-1)))
 		require.EqualError(t, err, "unknown profile type: -1")
 	})
+}
+
+func TestUnmarshalText(t *testing.T) {
+	tests := []struct {
+		Text            []byte
+		WantProfileType ProfileType
+	}{
+		{
+			Text:            []byte("cpu"),
+			WantProfileType: CPUProfile,
+		},
+		{
+			Text:            []byte("heap"),
+			WantProfileType: HeapProfile,
+		},
+		{
+			Text:            []byte("mutex"),
+			WantProfileType: MutexProfile,
+		},
+		{
+			Text:            []byte("goroutine"),
+			WantProfileType: GoroutineProfile,
+		},
+		{
+			Text:            []byte("block"),
+			WantProfileType: BlockProfile,
+		},
+	}
+
+	for _, test := range tests {
+		var p ProfileType
+		err := p.UnmarshalText(test.Text)
+		require.NoError(t, err)
+		assert.Equal(t, test.WantProfileType, p)
+	}
 }
 
 func requirePprofEqual(t *testing.T, a, b []byte) {

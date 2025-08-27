@@ -15,8 +15,8 @@ import (
 	"os/signal"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/profiler"
 )
 
 // Config is the configuration for a test app used by RunHTTP.
@@ -66,14 +66,14 @@ func (c *Config) RunHTTP(handler func() http.Handler) {
 			profiler.GoroutineProfile,
 		),
 	); err != nil {
-		log.Fatalf("failed to start profiler: %s", err)
+		log.Fatalf("failed to start profiler: %s", err.Error())
 	}
 	defer profiler.Stop()
 
 	// Start http server
 	l, err := net.Listen("tcp", *httpF)
 	if err != nil {
-		log.Fatalf("failed to listen: %s", err)
+		log.Fatalf("failed to listen: %s", err.Error())
 	}
 	defer l.Close()
 	c.httpAddr = l.Addr()

@@ -90,9 +90,8 @@ func (d *Decoder) FieldEach(fn func(Field) error, filter ...FieldDecoder) error 
 			return false, err
 		} else if err := fn(decoder); err != nil {
 			return false, err
-		} else {
-			return true, nil
 		}
+		return true, nil
 	})
 }
 
@@ -167,28 +166,30 @@ func decodeFields(val molecule.Value, fields []interface{}) error {
 		var err error
 		if int(field) >= len(fields) {
 			return true, nil
-		} else if field := fields[field]; field == nil {
-			return true, nil
-		} else {
-			switch t := field.(type) {
-			case *int64:
-				*t = int64(val.Number)
-			case *uint64:
-				*t = val.Number
-			case *[]int64:
-				// note: might be worth optimizing this and the function below
-				err = decodePackedInt64(val, t)
-			case *[]uint64:
-				err = decodePackedUint64(val, t)
-			case *bool:
-				*t = val.Number == 1
-			// NOTE: *[]Label and *[]Line used to be handled here before hand-rolling
-			// the decoding of their parent messages.
-			default:
-				return false, fmt.Errorf("decodeFields: unknown type: %T", t)
-			}
-			return true, err
 		}
+		f := fields[field]
+		if f == nil {
+			return true, nil
+		}
+		switch t := f.(type) {
+		case *int64:
+			*t = int64(val.Number)
+		case *uint64:
+			*t = val.Number
+		case *[]int64:
+			// note: might be worth optimizing this and the function below
+			err = decodePackedInt64(val, t)
+		case *[]uint64:
+			err = decodePackedUint64(val, t)
+		case *bool:
+			*t = val.Number == 1
+		// NOTE: *[]Label and *[]Line used to be handled here before hand-rolling
+		// the decoding of their parent messages.
+		default:
+			return false, fmt.Errorf("decodeFields: unknown type: %T", t)
+		}
+		return true, err
+
 	})
 }
 

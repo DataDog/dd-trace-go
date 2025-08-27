@@ -11,26 +11,23 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	traceinternal "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestContextWithSpan(t *testing.T) {
-	want := &span{SpanID: 123}
+	want := &Span{spanID: 123}
 	ctx := ContextWithSpan(context.Background(), want)
-	got, ok := ctx.Value(internal.ActiveSpanKey).(*span)
+	got := ctx.Value(internal.ActiveSpanKey)
 	assert := assert.New(t)
-	assert.True(ok)
 	assert.Equal(got, want)
 }
 
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		assert := assert.New(t)
-		want := &span{SpanID: 123}
+		want := &Span{spanID: 123}
 		ctx := ContextWithSpan(context.Background(), want)
 		got, ok := SpanFromContext(ctx)
 		assert.True(ok)
@@ -40,21 +37,21 @@ func TestSpanFromContext(t *testing.T) {
 		assert := assert.New(t)
 		span, ok := SpanFromContext(context.Background())
 		assert.False(ok)
-		_, ok = span.(*traceinternal.NoopSpan)
-		assert.True(ok)
+		assert.Nil(span)
 		span, ok = SpanFromContext(context.TODO())
 		assert.False(ok)
-		_, ok = span.(*traceinternal.NoopSpan)
-		assert.True(ok)
+		assert.Nil(span)
 	})
 }
 
 func TestStartSpanFromContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
+
 	defer stop()
 
-	parent := &span{context: &spanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
-	parent2 := &span{context: &spanContext{spanID: 789, traceID: traceIDFrom64Bits(456)}}
+	parent := &Span{context: &SpanContext{spanID: 123, traceID: traceIDFrom64Bits(456)}}
+	parent2 := &Span{context: &SpanContext{spanID: 789, traceID: traceIDFrom64Bits(456)}}
 	pctx := ContextWithSpan(context.Background(), parent)
 	child, ctx := StartSpanFromContext(
 		pctx,
@@ -65,64 +62,68 @@ func TestStartSpanFromContext(t *testing.T) {
 	)
 	assert := assert.New(t)
 
-	got, ok := child.(*span)
-	assert.True(ok)
+	got := child
+	assert.NotNil(child)
 	gotctx, ok := SpanFromContext(ctx)
 	assert.True(ok)
 	assert.Equal(gotctx, got)
-	_, ok = gotctx.(*traceinternal.NoopSpan)
-	assert.False(ok)
+	assert.Equal(uint64(456), got.traceID)
+	assert.Equal(uint64(123), got.parentID)
+	assert.Equal("http.request", got.name)
+	assert.Equal("gin", got.service)
+	assert.Equal("/", got.resource)
+}
 
-	assert.Equal(uint64(456), got.TraceID)
-	assert.Equal(uint64(123), got.ParentID)
-	assert.Equal("http.request", got.Name)
-	assert.Equal("gin", got.Service)
-	assert.Equal("/", got.Resource)
+func TestStartSpanFromContextDefault(t *testing.T) {
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	assert := assert.New(t)
+	root, ctx := StartSpanFromContext(context.TODO(), "http.request")
+	assert.NotNil(root)
+	assert.Equal("http.request", root.name)
+	span, _ := StartSpanFromContext(ctx, "db.query")
+	assert.NotNil(span)
+	assert.Equal("db.query", span.name)
+	assert.Equal(span.traceID, root.traceID)
+	assert.NotEqual(span.spanID, root.spanID)
 }
 
 func TestStartSpanWithSpanLinks(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
 	defer stop()
-	spanLink := ddtrace.SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
-	ctx := &spanContext{spanID: 789, traceID: traceIDFrom64Bits(789), spanLinks: []ddtrace.SpanLink{spanLink}}
-
-	t.Run("spanContext with spanLinks satisfies SpanContextWithLinks interface", func(t *testing.T) {
-		var _ ddtrace.SpanContextWithLinks = ctx
-		assert.Equal(t, len(ctx.SpanLinks()), 1)
-		assert.Equal(t, ctx.SpanLinks()[0], spanLink)
-	})
+	spanLink := SpanLink{TraceID: 789, TraceIDHigh: 0, SpanID: 789, Attributes: map[string]string{"reason": "terminated_context", "context_headers": "datadog"}, Flags: 0}
+	ctx := &SpanContext{spanLinks: []SpanLink{spanLink}, spanID: 789, traceID: traceIDFrom64Bits(789)}
 
 	t.Run("create span from spancontext with links", func(t *testing.T) {
-		var s ddtrace.Span
+		var s *Span
 		s, _ = StartSpanFromContext(
 			context.Background(),
 			"http.request",
-			WithSpanLinks([]ddtrace.SpanLink{spanLink}),
+			WithSpanLinks([]SpanLink{spanLink}),
 			ChildOf(ctx),
 		)
-		//checking that a span links are added to a child span that is created where span links are passed as an StartSpanOption
-		sp, ok := s.(*span)
-		if !ok {
-			assert.Fail(t, "couldn't cast to span")
-		}
 
-		assert.Equal(t, 1, len(sp.SpanLinks))
-		assert.Equal(t, spanLink, sp.SpanLinks[0])
+		assert.Equal(t, 1, len(s.spanLinks))
+		assert.Equal(t, spanLink, s.spanLinks[0])
 
-		assert.Equal(t, 0, len(sp.context.spanLinks)) // ensure that the span links are not added to the parent context
+		assert.Equal(t, 0, len(s.context.spanLinks)) // ensure that the span links are not added to the parent context
 	})
 }
 
 func TestStartSpanFromContextRace(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	// Start 100 goroutines that create child spans with StartSpanFromContext in parallel,
 	// with a shared options slice. The child spans should get parented to the correct spans
 	const numContexts = 100
 	options := make([]StartSpanOption, 0, 3)
-	outputValues := make(chan uint64, numContexts)
-	var expectedTraceIDs []uint64
+	outputValues := make(chan string, numContexts)
+	var expectedTraceIDs []string
 	for i := 0; i < numContexts; i++ {
 		parent, childCtx := StartSpanFromContext(context.Background(), "parent")
 		expectedTraceIDs = append(expectedTraceIDs, parent.Context().TraceID())
@@ -135,7 +136,7 @@ func TestStartSpanFromContextRace(t *testing.T) {
 	}
 
 	// collect the outputs
-	var outputs []uint64
+	var outputs []string
 	for i := 0; i < numContexts; i++ {
 		outputs = append(outputs, <-outputValues)
 	}
@@ -144,45 +145,42 @@ func TestStartSpanFromContextRace(t *testing.T) {
 }
 
 func Test128(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	t.Run("disable 128 bit trace ids", func(t *testing.T) {
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		span, _ := StartSpanFromContext(context.Background(), "http.request")
 		assert.NotZero(t, span.Context().TraceID())
-		w3cCtx, ok := span.Context().(ddtrace.SpanContextW3C)
-		if !ok {
-			assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-		}
-		id128 := w3cCtx.TraceID128()
+		w3cCtx := span.Context()
+		id128 := w3cCtx.TraceID()
 		assert.Len(t, id128, 32) // ensure there are enough leading zeros
 		idBytes, err := hex.DecodeString(id128)
 		assert.NoError(t, err)
 		assert.Equal(t, uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
-		assert.Equal(t, span.Context().TraceID(), binary.BigEndian.Uint64(idBytes[8:]))
+		tid := span.Context().TraceIDBytes()
+		assert.Equal(t, tid[:], idBytes)
 	})
 
 	t.Run("enable 128 bit trace ids", func(t *testing.T) {
 		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is true by default
 		span128, _ := StartSpanFromContext(context.Background(), "http.request")
 		assert.NotZero(t, span128.Context().TraceID())
-		w3cCtx, ok := span128.Context().(ddtrace.SpanContextW3C)
-		if !ok {
-			assert.Fail(t, "couldn't cast to ddtrace.SpanContextW3C")
-		}
-		id128bit := w3cCtx.TraceID128()
+		w3cCtx := span128.Context()
+		id128bit := w3cCtx.TraceID()
 		assert.NotEmpty(t, id128bit)
 		assert.Len(t, id128bit, 32)
 		// Ensure that the lower order bits match the span's 64-bit trace id
 		b, err := hex.DecodeString(id128bit)
 		assert.NoError(t, err)
-		assert.Equal(t, span128.Context().TraceID(), binary.BigEndian.Uint64(b[8:]))
+		assert.Equal(t, span128.Context().TraceIDLower(), binary.BigEndian.Uint64(b[8:]))
 	})
 }
 
 func TestStartSpanFromNilContext(t *testing.T) {
-	_, _, _, stop := startTestTracer(t)
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
 	defer stop()
 
 	child, ctx := StartSpanFromContext(context.TODO(), "http.request")
@@ -190,9 +188,8 @@ func TestStartSpanFromNilContext(t *testing.T) {
 	// ensure the returned context works
 	assert.Nil(ctx.Value("not_found_key"))
 
-	internalSpan, ok := child.(*span)
-	assert.True(ok)
-	assert.Equal("http.request", internalSpan.Name)
+	internalSpan := child
+	assert.Equal("http.request", internalSpan.name)
 
 	// the returned context includes the span
 	ctxSpan, ok := SpanFromContext(ctx)

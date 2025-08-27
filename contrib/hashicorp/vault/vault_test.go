@@ -15,13 +15,12 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const secretMountPath = "/ns1/ns2/secret"
@@ -136,15 +135,17 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 
 		// Mount operation
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal("/v1/sys/mounts/ns1/ns2/secret", span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodPost, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPost+" /v1/sys/mounts/ns1/ns2/secret", span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Nil(span.Tag(ext.Error))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -165,15 +166,17 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		span := spans[1]
 
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodPut, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Nil(span.Tag(ext.Error))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -201,15 +204,17 @@ func testMountReadWrite(c *api.Client, t *testing.T) {
 		assert.Equal(secret.Data["Key1"], data["Key1"])
 		assert.Equal(secret.Data["Key2"], data["Key2"])
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Nil(span.Tag(ext.Error))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -246,15 +251,17 @@ func TestReadError(t *testing.T) {
 
 	// Read key error
 	assert.Equal("vault", span.Tag(ext.ServiceName))
+	assert.Equal("http.request", span.OperationName())
 	assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 	assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 	assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 	assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-	assert.Equal(404, span.Tag(ext.HTTPCode))
-	assert.Equal(true, span.Tag(ext.Error))
+	assert.Equal(float64(404), span.Tag(ext.HTTPCode))
+	assert.Equal("404: Not Found", span.Tag(ext.ErrorMsg))
 	assert.NotNil(span.Tag(ext.ErrorMsg))
 	assert.Nil(span.Tag("vault.namespace"))
 	assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+	assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 }
@@ -295,15 +302,18 @@ func TestNamespace(t *testing.T) {
 		span := spans[0]
 
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodPut, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodPut+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Nil(span.Tag(ext.Error))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -329,15 +339,17 @@ func TestNamespace(t *testing.T) {
 		span := spans[1]
 
 		assert.Equal("vault", span.Tag(ext.ServiceName))
+		assert.Equal("http.request", span.OperationName())
 		assert.Equal(fullPath, span.Tag(ext.HTTPURL))
 		assert.Equal(http.MethodGet, span.Tag(ext.HTTPMethod))
 		assert.Equal(http.MethodGet+" "+fullPath, span.Tag(ext.ResourceName))
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
-		assert.Equal(200, span.Tag(ext.HTTPCode))
-		assert.Nil(span.Tag(ext.Error))
+		assert.Equal(float64(200), span.Tag(ext.HTTPCode))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Nil(span.Tag(ext.ErrorMsg))
 		assert.Equal(namespace, span.Tag("vault.namespace"))
 		assert.Equal("hashicorp/vault", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageHashicorpVaultAPI), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal(hostname, span.Tag(ext.NetworkDestinationName))
 	})
@@ -349,54 +361,54 @@ func TestOption(t *testing.T) {
 
 	for ttName, tt := range map[string]struct {
 		opts []Option
-		test func(assert *assert.Assertions, span mocktracer.Span)
+		test func(assert *assert.Assertions, span *mocktracer.Span)
 	}{
 		"DefaultOptions": {
 			opts: []Option{},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(defaultServiceName, span.Tag(ext.ServiceName))
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
 		"CustomServiceName": {
-			opts: []Option{WithServiceName("someServiceName")},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			opts: []Option{WithService("someServiceName")},
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal("someServiceName", span.Tag(ext.ServiceName))
 			},
 		},
 		"WithAnalyticsTrue": {
 			opts: []Option{WithAnalytics(true)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsFalse": {
 			opts: []Option{WithAnalytics(false)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Nil(span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsLastOptionWins": {
 			opts: []Option{WithAnalyticsRate(0.7), WithAnalytics(true)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRateMax": {
 			opts: []Option{WithAnalyticsRate(1.0)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(1.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRateMin": {
 			opts: []Option{WithAnalyticsRate(0.0)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(0.0, span.Tag(ext.EventSampleRate))
 			},
 		},
 		"WithAnalyticsRateLastOptionWins": {
 			opts: []Option{WithAnalytics(true), WithAnalyticsRate(0.7)},
-			test: func(assert *assert.Assertions, span mocktracer.Span) {
+			test: func(assert *assert.Assertions, span *mocktracer.Span) {
 				assert.Equal(0.7, span.Tag(ext.EventSampleRate))
 			},
 		},
@@ -429,51 +441,4 @@ func TestOption(t *testing.T) {
 			tt.test(assert, span)
 		})
 	}
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		ts, cleanup := setupServer(t)
-		defer cleanup()
-
-		client, err := api.NewClient(&api.Config{
-			HttpClient: NewHTTPClient(opts...),
-			Address:    ts.URL,
-		})
-		require.NoError(t, err)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer mountKV(client, t)()
-
-		// Write key with namespace first
-		data := map[string]interface{}{"Key1": "Val1", "Key2": "Val2"}
-		_, err = client.Logical().Write("/some/path", data)
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	}
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "http.request", spans[0].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 2)
-		assert.Equal(t, "vault.query", spans[0].OperationName())
-	}
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"vault", "vault"},
-		WithDDService:            []string{"vault", "vault"},
-		WithDDServiceAndOverride: []string{namingschematest.TestServiceOverride, namingschematest.TestServiceOverride},
-	}
-	t.Run("service name", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("operation name", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }

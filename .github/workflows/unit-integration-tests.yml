@@ -19,50 +19,39 @@ env:
   # our library builds with all of the Go versions we claim to support,
   # without having to download a newer one.
   GOTOOLCHAIN: local
+  GODEBUG: "x509negativeserial=1"
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
+  TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
   contents: read
 
 jobs:
-  copyright:
+  set-up:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      - name: Copyright
-        run: |
-          go run checkcopyright.go
-
-  lint:
-    runs-on:
-      group: "APM Larger Runners"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@v2
-        with:
-          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
-          go_version: ${{ inputs.go-version }}
-          golangci_lint_version: v1.59.1
-          fail_on_error: true
-          reporter: github-pr-review
+      - name: Compute Matrix
+        id: matrix
+        run: |-
+          echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
 
-  test-contrib:
+  test-contrib-matrix:
+    needs: set-up
     runs-on:
       group: "APM Larger Runners"
     env:
-       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-       INTEGRATION: true
+      INTEGRATION: true
+    strategy:
+      matrix:
+        chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
     services:
       datadog-agent:
         image: datadog/agent:latest
@@ -103,7 +92,7 @@ jobs:
         ports:
           - 9042:9042
       mysql:
-        image: circleci/mysql:5.7
+        image: cimg/mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: admin
           MYSQL_PASSWORD: test
@@ -112,7 +101,7 @@ jobs:
         ports:
           - 3306:3306
       postgres:
-        image: circleci/postgres:9.5
+        image: cimg/postgres:16.4
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
@@ -122,8 +111,8 @@ jobs:
       mssql:
         image: mcr.microsoft.com/mssql/server:2019-latest
         env:
-         SA_PASSWORD: myPassw0rd
-         ACCEPT_EULA: Y
+          SA_PASSWORD: myPassw0rd
+          ACCEPT_EULA: Y
         ports:
           - 1433:1433
       consul:
@@ -134,6 +123,12 @@ jobs:
         image: redis:3.2
         ports:
           - 6379:6379
+      valkey:
+        image: valkey/valkey:8
+        env:
+          VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
+        ports:
+          - 6380:6380
       elasticsearch2:
         image: elasticsearch:2
         env:
@@ -167,8 +162,12 @@ jobs:
           xpack.security.enabled: false
         ports:
           - 9204:9200
+      mongo3:
+        image: mongo:3
+        ports:
+          - 27018:27017
       mongo:
-        image: circleci/mongo:latest-ram
+        image: mongo:8
         ports:
           - 27017:27017
       memcached:
@@ -195,26 +194,33 @@ jobs:
           KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
         ports:
           - 9092:9092
+          - 9093:9093
+        options: >-
+          --name "kafka"
       localstack:
         image: localstack/localstack:latest
         ports:
           - 4566:4566
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
 
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Test Contrib
+        if: always()
+        env:
+          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
-            mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./contrib/... | grep -v -e google.golang.org/api)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
 
       - name: Upload the results to Datadog CI App
         if: always()
@@ -222,15 +228,121 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report*.xml
+          path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
 
       - name: Upload Coverage
         if: always()
         continue-on-error: true
         shell: bash
-        run: bash <(curl -s https://codecov.io/bash)
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
+  test-contrib:
+    needs:
+      - test-contrib-matrix
+    runs-on:
+      group: "APM Larger Runners"
+    if: success() || failure()
+    continue-on-error: true
+    steps:
+      - name: Success
+        if: needs.test-contrib-matrix.result == 'success'
+        run: echo "Success!"
+      - name: Failure
+        if: needs.test-contrib-matrix.result != 'success'
+        run: echo "Failure!" && exit 1
+
+  test-core:
+    runs-on:
+      group: "APM Larger Runners"
+    env:
+       INTEGRATION: true
+    services:
+      datadog-agent:
+        image: datadog/agent:latest
+        env:
+          DD_HOSTNAME: "github-actions-worker"
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: "invalid_key_but_this_is_fine"
+        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
+        # we don't fully configure it with a valid API key (and possibly other reasons)
+        # This command just checks for our ability to connect to port 8126
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
+        ports:
+          - 8125:8125/udp
+          - 8126:8126
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Test Core
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
+          TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ls -al "${{ github.workspace }}/bin"
+          ./scripts/ci_test_core.sh
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ env.TEST_RESULT_PATH }}
+          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+  upload-test-results:
+    needs:
+      - test-contrib
+      - test-core
+    if: always() # Make sure this always runs, even if test-contrib or test-core fails
+    runs-on:
+      group: "APM Larger Runners"
+    services:
+      datadog-agent:
+        image: datadog/agent:latest
+        env:
+          DD_HOSTNAME: "github-actions-worker"
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: "invalid_key_but_this_is_fine"
+          DD_TEST_AGENT_HOST: "localhost"
+          DD_TEST_AGENT_PORT: 9126
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
+        ports:
+          - 8125:8125/udp
+          - 8126:8126
+      testagent:
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
+        ports:
+          - 9126:9126
+        env:
+          LOG_LEVEL: DEBUG
+          TRACE_LANGUAGE: golang
+          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
+          PORT: 9126
+          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
+          DD_POOL_TRACE_CHECK_FAILURES: true
+          DD_DISABLE_ERROR_RESPONSES: true
+    steps:
       - name: Get Datadog APM Test Agent Logs
         if: always()
         shell: bash
@@ -258,65 +370,3 @@ jobs:
                   cat summary_response.txt | jq "."
                   exit 1
               fi
-
-      - name: Testing outlier google.golang.org/api
-        run: |
-              go get google.golang.org/api@v0.192.0 # version used to generate code
-              go mod tidy # Go1.16 doesn't update the sum file correctly after the go get, this tidy fixes it
-              go test -v ./contrib/google.golang.org/api/...
-
-  test-core:
-    runs-on:
-      group: "APM Larger Runners"
-    env:
-       TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-       INTEGRATION: true
-    services:
-      datadog-agent:
-        image: datadog/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-        # We need to specify a custom health-check. By default, this container will remain "unhealthy" since
-        # we don't fully configure it with a valid API key (and possibly other reasons)
-        # This command just checks for our ability to connect to port 8126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-
-      - name: Test Core
-        env:
-          DD_APPSEC_WAF_TIMEOUT: 1h
-        run: |
-            mkdir -p $TEST_RESULTS
-            PACKAGE_NAMES=$(go list ./... | grep -v /contrib/)
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report.xml -- $PACKAGE_NAMES -v -race -coverprofile=coverage.txt -covermode=atomic
-            cd ./internal/exectracetest
-            gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-exectrace.xml -- -v -race -coverprofile=coverage.txt -covermode=atomic
-
-      - name: Upload the results to Datadog CI App
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/dd-ci-upload
-        with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
-          files: ${{ env.TEST_RESULTS }}/gotestsum-report.xml ${{ env.TEST_RESULTS }}/gotestsum-report-exectrace.xml
-          tags: go:${{ inputs.go-version }}},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-      - name: Upload Coverage
-        if: always()
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash)

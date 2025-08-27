@@ -7,14 +7,12 @@ package elastic
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	elasticsearch7 "github.com/elastic/go-elasticsearch/v7"
 	esapi7 "github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +25,7 @@ func checkGETTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("/twitter/tweet/1", span.Tag("elasticsearch.url"))
 	assert.Equal("GET", span.Tag("elasticsearch.method"))
 	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
+	assert.Equal(componentName, span.Integration())
 }
 
 func checkErrTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
@@ -34,9 +33,9 @@ func checkErrTraceV7(assert *assert.Assertions, mt mocktracer.Tracer) {
 	assert.Equal("my-es-service", span.Tag(ext.ServiceName))
 	assert.Equal("GET /not-real-index/_doc/?", span.Tag(ext.ResourceName))
 	assert.Equal("/not-real-index/_doc/1", span.Tag("elasticsearch.url"))
-	assert.NotEmpty(span.Tag(ext.Error))
-	assert.Equal("*errors.errorString", fmt.Sprintf("%T", span.Tag(ext.Error).(error)))
+	assert.NotEmpty(span.Tag(ext.ErrorMsg))
 	assert.Equal("127.0.0.1", span.Tag(ext.NetworkDestinationName))
+	assert.Equal(componentName, span.Integration())
 }
 
 func TestClientV7(t *testing.T) {
@@ -45,7 +44,7 @@ func TestClientV7(t *testing.T) {
 	defer mt.Stop()
 
 	cfg := elasticsearch7.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			elasticV7URL,
 		},
@@ -91,7 +90,7 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	bodyCutoff = 10
 
 	cfg := elasticsearch7.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			elasticV7URL,
 		},
@@ -106,7 +105,7 @@ func TestClientErrorCutoffV7(t *testing.T) {
 	assert.NoError(err)
 
 	span := mt.FinishedSpans()[1]
-	assert.Equal(`{"error":{`, span.Tag(ext.Error).(error).Error())
+	assert.NotEmpty(span.Tag(ext.ErrorMsg))
 }
 
 func TestClientV7Failure(t *testing.T) {
@@ -115,7 +114,7 @@ func TestClientV7Failure(t *testing.T) {
 	defer mt.Stop()
 
 	cfg := elasticsearch7.Config{
-		Transport: NewRoundTripper(WithServiceName("my-es-service")),
+		Transport: NewRoundTripper(WithService("my-es-service")),
 		Addresses: []string{
 			"http://127.0.0.1:9207", // inexistent service, it must fail
 		},
@@ -131,13 +130,12 @@ func TestClientV7Failure(t *testing.T) {
 	assert.Error(err)
 
 	spans := mt.FinishedSpans()
-	assert.NotEmpty(spans[0].Tag(ext.Error))
-	assert.Equal("*net.OpError", fmt.Sprintf("%T", spans[0].Tag(ext.Error).(error)))
+	assert.NotEmpty(spans[0].Tag(ext.ErrorMsg))
 }
 
 func TestResourceNamerSettingsV7(t *testing.T) {
 	staticName := "static resource name"
-	staticNamer := func(url, method string) string {
+	staticNamer := func(_, _ string) string {
 		return staticName
 	}
 
@@ -225,10 +223,7 @@ func TestAnalyticsSettingsV7(t *testing.T) {
 		t.Skip("global flag disabled")
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -250,10 +245,7 @@ func TestAnalyticsSettingsV7(t *testing.T) {
 	t.Run("override", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})

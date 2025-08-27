@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package gocql provides functions to trace the gocql/gocql package (https://github.com/gocql/gocql).
-package gocql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gocql/gocql"
+package gocql // import "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
 
 import (
 	"context"
@@ -14,20 +14,17 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/gocql/gocql"
 )
 
-const componentName = "gocql/gocql"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gocql/gocql")
+	instr = instrumentation.Load(instrumentation.PackageGoCQL)
 }
 
 // ClusterConfig embeds gocql.ClusterConfig and keeps information relevant to tracing.
@@ -142,7 +139,7 @@ func WrapQuery(q *gocql.Query, opts ...WrapOption) *Query {
 func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
 	cfg := defaultConfig()
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	if cfg.resourceName == "" {
 		if parts := strings.SplitN(q.String(), "\"", 3); len(parts) == 3 {
@@ -153,7 +150,7 @@ func wrapQuery(q *gocql.Query, hosts []string, opts ...WrapOption) *Query {
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
-	log.Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
+	instr.Logger().Debug("contrib/gocql/gocql: Wrapping Query: %#v", cfg)
 	tq := &Query{Query: q, params: p, ctx: q.Context()}
 	return tq
 }
@@ -168,7 +165,7 @@ func (tq *Query) WithContext(ctx context.Context) *Query {
 // WithWrapOptions applies the given set of options to the query.
 func (tq *Query) WithWrapOptions(opts ...WrapOption) *Query {
 	for _, fn := range opts {
-		fn(tq.params.config)
+		fn.apply(tq.params.config)
 	}
 	return tq
 }
@@ -223,7 +220,7 @@ func (tq *Query) ScanCAS(dest ...interface{}) (applied bool, err error) {
 // native gocql types instead of wrapped types.
 type Iter struct {
 	*gocql.Iter
-	span ddtrace.Span
+	span *tracer.Span
 }
 
 // Iter starts a new span at query.Iter call.
@@ -270,7 +267,7 @@ func (tIter *Iter) Close() error {
 // native gocql types instead of wrapped types.
 type Scanner struct {
 	gocql.Scanner
-	span ddtrace.Span
+	span *tracer.Span
 }
 
 // Scanner returns a row Scanner which provides an interface to scan rows in a
@@ -312,13 +309,13 @@ func WrapBatch(b *gocql.Batch, opts ...WrapOption) *Batch {
 func wrapBatch(b *gocql.Batch, hosts []string, opts ...WrapOption) *Batch {
 	cfg := defaultConfig()
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	p := params{config: cfg}
 	if len(hosts) > 0 {
 		p.clusterContactPoints = strings.Join(hosts, ",")
 	}
-	log.Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
+	instr.Logger().Debug("contrib/gocql/gocql: Wrapping Batch: %#v", cfg)
 	tb := &Batch{Batch: b, params: p, ctx: b.Context()}
 	return tb
 }
@@ -333,7 +330,7 @@ func (tb *Batch) WithContext(ctx context.Context) *Batch {
 // WithWrapOptions applies the given set of options to the batch.
 func (tb *Batch) WithWrapOptions(opts ...WrapOption) *Batch {
 	for _, fn := range opts {
-		fn(tb.params.config)
+		fn.apply(tb.params.config)
 	}
 	return tb
 }
@@ -362,7 +359,7 @@ func (tb *Batch) ExecuteBatch(session *gocql.Session) error {
 	return err
 }
 
-func startQuerySpan(ctx context.Context, p params) ddtrace.Span {
+func startQuerySpan(ctx context.Context, p params) *tracer.Span {
 	opts := commonStartSpanOptions(p)
 	if p.keyspace != "" {
 		opts = append(opts, tracer.Tag(ext.CassandraKeyspace, p.keyspace))
@@ -378,7 +375,7 @@ func startQuerySpan(ctx context.Context, p params) ddtrace.Span {
 }
 
 // newChildSpan creates a new span from the params and the context.
-func startBatchSpan(ctx context.Context, p params) ddtrace.Span {
+func startBatchSpan(ctx context.Context, p params) *tracer.Span {
 	cfg := p.config
 	opts := commonStartSpanOptions(p)
 	if p.keyspace != "" {
@@ -396,10 +393,10 @@ func startBatchSpan(ctx context.Context, p params) ddtrace.Span {
 
 func commonStartSpanOptions(p params) []tracer.StartSpanOption {
 	cfg := p.config
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
 		tracer.ServiceName(cfg.serviceName),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGoCQL),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),
 	}
@@ -433,11 +430,11 @@ func commonStartSpanOptions(p params) []tracer.StartSpanOption {
 	return opts
 }
 
-func finishSpan(span ddtrace.Span, err error, p params) {
+func finishSpan(span *tracer.Span, err error, p params) {
 	if err != nil && p.config.shouldIgnoreError(err) {
 		err = nil
 	}
-	opts := []ddtrace.FinishOption{
+	opts := []tracer.FinishOption{
 		tracer.WithError(err),
 	}
 	if !p.finishTime.IsZero() {

@@ -6,10 +6,7 @@
 package pgx
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
@@ -21,12 +18,13 @@ type config struct {
 	traceConnect  bool
 	traceAcquire  bool
 	poolStats     bool
-	statsdClient  internal.StatsdClient
+	errCheck      func(error) bool
+	statsdClient  instrumentation.StatsdClient
 }
 
 func defaultConfig() *config {
 	return &config{
-		serviceName:   namingschema.ServiceName(defaultServiceName),
+		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
 		traceQuery:    true,
 		traceBatch:    true,
 		traceCopyFrom: true,
@@ -42,19 +40,19 @@ func (c *config) checkStatsdRequired() {
 	if c.poolStats && c.statsdClient == nil {
 		// contrib/jackc/pgx's statsdclient should always inherit its address from the tracer's statsdclient via the globalconfig
 		// destination is not user-configurable
-		sc, err := internal.NewStatsdClient(globalconfig.DogstatsdAddr(), statsTags(c))
+		sc, err := instr.StatsdClient(statsTags(c))
 		if err == nil {
 			c.statsdClient = sc
 		} else {
-			log.Warn("contrib/jackc/pgx.v5: Error creating statsd client; Pool stats will be dropped: %v", err)
+			instr.Logger().Warn("contrib/jackc/pgx.v5: Error creating statsd client; Pool stats will be dropped: %s", err.Error())
 		}
 	}
 }
 
 type Option func(*config)
 
-// WithServiceName sets the service name to use for all spans.
-func WithServiceName(name string) Option {
+// WithService sets the service name to use for all spans.
+func WithService(name string) Option {
 	return func(c *config) {
 		c.serviceName = name
 	}
@@ -89,15 +87,6 @@ func WithTraceAcquire(enabled bool) Option {
 }
 
 // WithTracePrepare enables tracing prepared statements.
-//
-//	conn, err := pgx.Connect(ctx, "postgres://user:pass@example.com:5432/dbname", pgx.WithTraceConnect())
-//	if err != nil {
-//		// handle err
-//	}
-//	defer conn.Close(ctx)
-//
-//	_, err := conn.Prepare(ctx, "stmt", "select $1::integer")
-//	row, err := conn.QueryRow(ctx, "stmt", 1)
 func WithTracePrepare(enabled bool) Option {
 	return func(c *config) {
 		c.tracePrepare = enabled
@@ -105,8 +94,6 @@ func WithTracePrepare(enabled bool) Option {
 }
 
 // WithTraceConnect enables tracing calls to Connect and ConnectConfig.
-//
-//	pgx.Connect(ctx, "postgres://user:pass@example.com:5432/dbname", pgx.WithTraceConnect())
 func WithTraceConnect(enabled bool) Option {
 	return func(c *config) {
 		c.traceConnect = enabled
@@ -119,5 +106,18 @@ func WithTraceConnect(enabled bool) Option {
 func WithPoolStats() Option {
 	return func(cfg *config) {
 		cfg.poolStats = true
+	}
+}
+
+// WithErrCheck specifies a function fn which determines whether the passed
+// error should be tagged into the span as an error.
+// fn is called whenever a pgx operation finishes with an error
+//
+// When the function returns true, the span will be tagged with the error.
+// When the function returns false, the span will not be tagged with the error.
+// When the function is nil, the span will be tagged with the error.
+func WithErrCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }

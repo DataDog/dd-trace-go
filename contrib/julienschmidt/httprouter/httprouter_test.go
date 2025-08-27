@@ -8,15 +8,13 @@ package httprouter
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/assert"
@@ -47,8 +45,9 @@ func TestHttpTracer200(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("julienschmidt/httprouter", s.Tag(ext.Component))
+	assert.Equal("julienschmidt/httprouter", s.Integration())
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 }
 
@@ -77,8 +76,9 @@ func TestHttpTracer200WithPathParameter(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal(nil, s.Tag(ext.Error))
+	assert.Zero(s.Tag(ext.ErrorMsg))
 	assert.Equal("julienschmidt/httprouter", s.Tag(ext.Component))
+	assert.Equal("julienschmidt/httprouter", s.Integration())
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 }
 
@@ -107,8 +107,9 @@ func TestHttpTracer500(t *testing.T) {
 	assert.Equal("GET", s.Tag(ext.HTTPMethod))
 	assert.Equal("http://example.com"+url, s.Tag(ext.HTTPURL))
 	assert.Equal("testvalue", s.Tag("testkey"))
-	assert.Equal("500: Internal Server Error", s.Tag(ext.Error).(error).Error())
+	assert.Equal("500: Internal Server Error", s.Tag(ext.ErrorMsg))
 	assert.Equal("julienschmidt/httprouter", s.Tag(ext.Component))
+	assert.Equal("julienschmidt/httprouter", s.Integration())
 	assert.Equal(ext.SpanKindServer, s.Tag(ext.SpanKind))
 }
 
@@ -137,9 +138,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -162,9 +161,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -172,7 +169,7 @@ func TestAnalyticsSettings(t *testing.T) {
 
 func router() http.Handler {
 	router := New(
-		WithServiceName("my-service"),
+		WithService("my-service"),
 		WithSpanOptions(tracer.Tag("testkey", "testvalue")),
 	)
 
@@ -193,26 +190,6 @@ func handler200Parameter(w http.ResponseWriter, _ *http.Request, p httprouter.Pa
 
 func handler500(w http.ResponseWriter, _ *http.Request, _ httprouter.Params) {
 	http.Error(w, "500!", http.StatusInternalServerError)
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []RouterOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		mux := New(opts...)
-		mux.GET("/200", handler200)
-		r := httptest.NewRequest("GET", "/200", nil)
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, r)
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewHTTPServerTest(genSpans, "http.router")(t)
 }
 
 func TestWithHeaderTags(t *testing.T) {
@@ -238,60 +215,58 @@ func TestWithHeaderTags(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
-		for _, arg := range htArgs {
-			_, tag := normalizer.HeaderTag(arg)
+
+		instrumentation.NewHeaderTags(htArgs).Iter(func(_ string, tag string) {
 			assert.NotContains(s.Tags(), tag)
-		}
+		})
 	})
 	t.Run("integration", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
-		r := setupReq(WithHeaderTags(htArgs))
+		_ = setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
+		assert.Equal("val,val2", s.Tags()["http.request.headers.h_e_a-d_e_r"])
+		assert.Equal("2val", s.Tags()["tag"])
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 	t.Run("global", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		header, tag := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(header, tag)
+		testutils.SetGlobalHeaderTags(t, "3header")
 
-		r := setupReq()
+		_ = setupReq()
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+		assert.Equal("3val", s.Tags()["http.request.headers.3header"])
+		assert.NotContains(s.Tags(), "http.request.headers.other")
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
 	})
 	t.Run("override", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		globalH, globalT := normalizer.HeaderTag("3header")
-		globalconfig.SetHeaderTag(globalH, globalT)
+		testutils.SetGlobalHeaderTags(t, "3header")
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
-		r := setupReq(WithHeaderTags(htArgs))
+		_ = setupReq(WithHeaderTags(htArgs))
 		spans := mt.FinishedSpans()
 		assert := assert.New(t)
 		assert.Equal(len(spans), 1)
 		s := spans[0]
 
-		for _, arg := range htArgs {
-			header, tag := normalizer.HeaderTag(arg)
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
-		}
-		assert.NotContains(s.Tags(), globalT)
+		assert.Equal("val,val2", s.Tags()["http.request.headers.h_e_a-d_e_r"])
+		assert.Equal("2val", s.Tags()["tag"])
+		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+		assert.NotContains(s.Tags(), "http.request.headers.3header")
 	})
 }

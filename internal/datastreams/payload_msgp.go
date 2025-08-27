@@ -585,6 +585,25 @@ func (z *StatsPayload) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Version")
 				return
 			}
+		case "ProcessTags":
+			var zb0003 uint32
+			zb0003, err = dc.ReadArrayHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "ProcessTags")
+				return
+			}
+			if cap(z.ProcessTags) >= int(zb0003) {
+				z.ProcessTags = (z.ProcessTags)[:zb0003]
+			} else {
+				z.ProcessTags = make([]string, zb0003)
+			}
+			for za0002 := range z.ProcessTags {
+				z.ProcessTags[za0002], err = dc.ReadString()
+				if err != nil {
+					err = msgp.WrapError(err, "ProcessTags", za0002)
+					return
+				}
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -598,9 +617,9 @@ func (z *StatsPayload) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *StatsPayload) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 6
+	// map header, size 7
 	// write "Env"
-	err = en.Append(0x86, 0xa3, 0x45, 0x6e, 0x76)
+	err = en.Append(0x87, 0xa3, 0x45, 0x6e, 0x76)
 	if err != nil {
 		return
 	}
@@ -666,6 +685,23 @@ func (z *StatsPayload) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "Version")
 		return
 	}
+	// write "ProcessTags"
+	err = en.Append(0xab, 0x50, 0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x54, 0x61, 0x67, 0x73)
+	if err != nil {
+		return
+	}
+	err = en.WriteArrayHeader(uint32(len(z.ProcessTags)))
+	if err != nil {
+		err = msgp.WrapError(err, "ProcessTags")
+		return
+	}
+	for za0002 := range z.ProcessTags {
+		err = en.WriteString(z.ProcessTags[za0002])
+		if err != nil {
+			err = msgp.WrapError(err, "ProcessTags", za0002)
+			return
+		}
+	}
 	return
 }
 
@@ -675,7 +711,10 @@ func (z *StatsPayload) Msgsize() (s int) {
 	for za0001 := range z.Stats {
 		s += z.Stats[za0001].Msgsize()
 	}
-	s += 14 + msgp.StringPrefixSize + len(z.TracerVersion) + 5 + msgp.StringPrefixSize + len(z.Lang) + 8 + msgp.StringPrefixSize + len(z.Version)
+	s += 14 + msgp.StringPrefixSize + len(z.TracerVersion) + 5 + msgp.StringPrefixSize + len(z.Lang) + 8 + msgp.StringPrefixSize + len(z.Version) + 12 + msgp.ArrayHeaderSize
+	for za0002 := range z.ProcessTags {
+		s += msgp.StringPrefixSize + len(z.ProcessTags[za0002])
+	}
 	return
 }
 
@@ -697,12 +736,6 @@ func (z *StatsPoint) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "Service":
-			z.Service, err = dc.ReadString()
-			if err != nil {
-				err = msgp.WrapError(err, "Service")
-				return
-			}
 		case "EdgeTags":
 			var zb0002 uint32
 			zb0002, err = dc.ReadArrayHeader()
@@ -775,19 +808,9 @@ func (z *StatsPoint) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *StatsPoint) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 8
-	// write "Service"
-	err = en.Append(0x88, 0xa7, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65)
-	if err != nil {
-		return
-	}
-	err = en.WriteString(z.Service)
-	if err != nil {
-		err = msgp.WrapError(err, "Service")
-		return
-	}
+	// map header, size 7
 	// write "EdgeTags"
-	err = en.Append(0xa8, 0x45, 0x64, 0x67, 0x65, 0x54, 0x61, 0x67, 0x73)
+	err = en.Append(0x87, 0xa8, 0x45, 0x64, 0x67, 0x65, 0x54, 0x61, 0x67, 0x73)
 	if err != nil {
 		return
 	}
@@ -868,7 +891,7 @@ func (z *StatsPoint) EncodeMsg(en *msgp.Writer) (err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *StatsPoint) Msgsize() (s int) {
-	s = 1 + 8 + msgp.StringPrefixSize + len(z.Service) + 9 + msgp.ArrayHeaderSize
+	s = 1 + 9 + msgp.ArrayHeaderSize
 	for za0001 := range z.EdgeTags {
 		s += msgp.StringPrefixSize + len(z.EdgeTags[za0001])
 	}

@@ -4,27 +4,25 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package mux provides tracing functions for tracing the gorilla/mux package (https://github.com/gorilla/mux).
-package mux // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
+package mux // import "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 
 import (
 	"net/http"
 
-	httptraceinternal "gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
 	"github.com/gorilla/mux"
 )
 
-const componentName = "gorilla/mux"
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gorilla/mux")
+	instr = instrumentation.Load(instrumentation.PackageGorillaMux)
 }
 
 // Router registers routes to be matched and dispatches a handler.
@@ -99,7 +97,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		match mux.RouteMatch
 		route string
 	)
-	spanopts := options.Copy(r.config.spanOpts...)
+	spanopts := options.Expand(r.config.spanOpts, 0, 2)
 	// get the resource associated to this request
 	if r.Match(req, &match) && match.Route != nil {
 		if h, err := match.Route.GetHostTemplate(); err == nil {
@@ -107,16 +105,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		route, _ = match.Route.GetPathTemplate()
 	}
-	spanopts = append(spanopts, httptraceinternal.HeaderTagsFromRequest(req, r.config.headerTags))
+	spanopts = append(spanopts, instrhttptrace.HeaderTagsFromRequest(req, r.config.headerTags))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
-		Service:     r.config.serviceName,
-		Resource:    resource,
-		FinishOpts:  r.config.finishOpts,
-		SpanOpts:    spanopts,
-		QueryParams: r.config.queryParams,
-		RouteParams: match.Vars,
-		Route:       route,
+		Framework:     "github.com/gorilla/mux",
+		Service:       r.config.serviceName,
+		Resource:      resource,
+		FinishOpts:    r.config.finishOpts,
+		SpanOpts:      spanopts,
+		QueryParams:   r.config.queryParams,
+		RouteParams:   match.Vars,
+		Route:         route,
+		IsStatusError: r.config.isStatusError,
 	})
 }
 
@@ -124,9 +124,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // requests and responses served by the router.
 func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	cfg := newConfig(opts)
-	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
+	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, instrumentation.PackageGorillaMux))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
-	log.Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
+	instr.Logger().Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
 		Router: router,
 		config: cfg,

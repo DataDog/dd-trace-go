@@ -9,15 +9,15 @@ import (
 	"log"
 	"net"
 
-	grpctrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
+	grpctrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
 
 	"google.golang.org/grpc"
 )
 
 func Example_client() {
 	// Create the client interceptor using the grpc trace package.
-	si := grpctrace.StreamClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
-	ui := grpctrace.UnaryClientInterceptor(grpctrace.WithServiceName("my-grpc-client"))
+	si := grpctrace.StreamClientInterceptor(grpctrace.WithService("my-grpc-client"))
+	ui := grpctrace.UnaryClientInterceptor(grpctrace.WithService("my-grpc-client"))
 
 	// Dial in using the created interceptor.
 	// Note: To use multiple UnaryInterceptors with grpc.Dial, you must use
@@ -40,8 +40,8 @@ func Example_server() {
 	}
 
 	// Create the server interceptor using the grpc trace package.
-	si := grpctrace.StreamServerInterceptor(grpctrace.WithServiceName("my-grpc-server"))
-	ui := grpctrace.UnaryServerInterceptor(grpctrace.WithServiceName("my-grpc-server"))
+	si := grpctrace.StreamServerInterceptor(grpctrace.WithService("my-grpc-server"))
+	ui := grpctrace.UnaryServerInterceptor(grpctrace.WithService("my-grpc-server"))
 
 	// Initialize the grpc server as normal, using the tracing interceptor.
 	s := grpc.NewServer(grpc.StreamInterceptor(si), grpc.UnaryInterceptor(ui))

@@ -8,21 +8,25 @@ package echo
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/labstack/echo/v4"
 )
 
-func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
+func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		// Hijack the context with monitoring methods...
+		c = appsecContext{c}
+
 		params := make(map[string]string)
 		for _, n := range c.ParamNames() {
 			params[n] = c.Param(n)
 		}
 		var err error
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			c.SetRequest(r)
 			err = next(c)
 			// If the error is a monitoring one, it means appsec actions will take care of writing the response
@@ -32,7 +36,11 @@ func withAppSec(next echo.HandlerFunc, span tracer.Span) echo.HandlerFunc {
 			}
 		})
 		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
-		httpsec.WrapHandler(handler, span, params, nil).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
+		httpsec.WrapHandler(handler, span, &httpsec.Config{
+			Framework:   "github.com/labstack/echo/v4",
+			Route:       c.Path(),
+			RouteParams: params,
+		}).ServeHTTP(&statusResponseWriter{Response: c.Response()}, c.Request())
 		// If an error occurred, wrap it under an echo.HTTPError. We need to do this so that APM doesn't override
 		// the response code tag with 500 in case it doesn't recognize the error type.
 		if _, ok := err.(*echo.HTTPError); !ok && err != nil {
@@ -54,4 +62,43 @@ type statusResponseWriter struct {
 // Status returns the status code of the response
 func (w *statusResponseWriter) Status() int {
 	return w.Response.Status
+}
+
+type appsecContext struct {
+	echo.Context
+}
+
+func (c appsecContext) JSON(code int, i any) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.JSON(code, i)
+}
+
+func (c appsecContext) JSONPretty(code int, i any, indent string) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.JSONPretty(code, i, indent)
+}
+
+func (c appsecContext) JSONP(code int, callback string, i any) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.JSONP(code, callback, i)
+}
+
+func (c appsecContext) XML(code int, i any) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.XML(code, i)
+}
+
+func (c appsecContext) XMLPretty(code int, i any, indent string) error {
+	if err := appsec.MonitorHTTPResponseBody(c.Request().Context(), i); err != nil {
+		return err
+	}
+	return c.Context.XMLPretty(code, i, indent)
 }

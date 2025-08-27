@@ -4,28 +4,27 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package gin provides functions to trace the gin-gonic/gin package (https://github.com/gin-gonic/gin).
-package gin // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/gin-gonic/gin"
+package gin // import "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"
 
 import (
 	"fmt"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/httptrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
 	"github.com/gin-gonic/gin"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 const componentName = "gin-gonic/gin"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/gin-gonic/gin")
+	instr = instrumentation.Load(instrumentation.PackageGin)
 }
 
 // Middleware returns middleware that will trace incoming requests. If service is empty then the
@@ -33,9 +32,9 @@ func init() {
 func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	cfg := newConfig(service)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	log.Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
+	instr.Logger().Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ServiceName(cfg.serviceName),
 		tracer.Tag(ext.Component, componentName),
@@ -45,23 +44,23 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		if cfg.ignoreRequest(c) {
 			return
 		}
-		opts := options.Copy(spanOpts...) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
+		opts := options.Expand(spanOpts, 0, 4) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
 		opts = append(opts, tracer.ResourceName(cfg.resourceNamer(c)))
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
 		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
-		span, ctx := httptrace.StartRequestSpan(c.Request, opts...)
+		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
-			httptrace.FinishRequestSpan(span, c.Writer.Status(), nil)
+			finishSpans(c.Writer.Status(), nil)
 		}()
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
 
 		// Use AppSec if enabled by user
-		if appsec.Enabled() {
+		if instr.AppSecEnabled() {
 			useAppSec(c, span)
 		}
 
@@ -84,9 +83,8 @@ func HTML(c *gin.Context, code int, name string, obj interface{}) {
 			err := fmt.Errorf("error rendering tmpl:%s: %s", name, r)
 			span.Finish(tracer.WithError(err))
 			panic(r)
-		} else {
-			span.Finish()
 		}
+		span.Finish()
 	}()
 	c.HTML(code, name, obj)
 }

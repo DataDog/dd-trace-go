@@ -6,20 +6,19 @@
 package mocktracer
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestStart(t *testing.T) {
 	trc := Start()
-	if tt, ok := internal.GetGlobalTracer().(Tracer); !ok || tt != trc {
+	if tt, ok := getGlobalTracer().(Tracer); !ok || tt != trc {
 		t.Fail()
 	}
 	// If the tracer isn't stopped it leaks goroutines, and breaks other tests.
@@ -28,59 +27,65 @@ func TestStart(t *testing.T) {
 
 func TestTracerStop(t *testing.T) {
 	Start().Stop()
-	if _, ok := internal.GetGlobalTracer().(*internal.NoopTracer); !ok {
-		t.Fail()
+	tr := getGlobalTracer()
+	if _, ok := tr.(*tracer.NoopTracer); !ok {
+		t.Errorf("tracer is not a NoopTracer: %T", tr)
 	}
 }
 
 func TestTracerStartSpan(t *testing.T) {
-	parentTags := map[string]interface{}{ext.ServiceName: "root-service", ext.SamplingPriority: -1}
-	startTime := time.Now()
+	parentTags := map[string]interface{}{ext.ServiceName: "root-service", ext.ManualDrop: true}
+	// Need to round the monotonic clock so parsed UnixNano values are equal.
+	// See time.Time documentation for details:
+	// https://pkg.go.dev/time#Time
+	startTime := time.Now().Round(0)
 
 	t.Run("with-service", func(t *testing.T) {
 		mt := newMockTracer()
 		defer mt.Stop()
-
-		parent := newSpan(mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
-		s, ok := mt.StartSpan(
+		parent := MockSpan(newSpan("http.request", &tracer.StartSpanConfig{Tags: parentTags}))
+		s := MockSpan(mt.StartSpan(
 			"db.query",
 			tracer.ServiceName("my-service"),
 			tracer.StartTime(startTime),
 			tracer.ChildOf(parent.Context()),
-		).(*mockspan)
+		))
 
 		assert := assert.New(t)
-		assert.True(ok)
+		assert.NotNil(s)
 		assert.Equal("db.query", s.OperationName())
 		assert.Equal(startTime, s.StartTime())
 		assert.Equal("my-service", s.Tag(ext.ServiceName))
 		assert.Equal(parent.SpanID(), s.ParentID())
 		assert.Equal(parent.TraceID(), s.TraceID())
-		assert.True(parent.context.hasSamplingPriority())
-		assert.Equal(-1, parent.context.samplingPriority())
+		sp, ok := parent.Context().SamplingPriority()
+		assert.True(ok)
+		assert.Equal(-1, sp)
 	})
 
 	t.Run("inherit", func(t *testing.T) {
 		mt := newMockTracer()
 		defer mt.Stop()
-
-		parent := newSpan(mt, "http.request", &ddtrace.StartSpanConfig{Tags: parentTags})
-		s, ok := mt.StartSpan("db.query", tracer.ChildOf(parent.Context())).(*mockspan)
+		parent := MockSpan(newSpan("http.request", &tracer.StartSpanConfig{Tags: parentTags}))
+		s := MockSpan(mt.StartSpan("db.query", tracer.ChildOf(parent.Context())))
 
 		assert := assert.New(t)
-		assert.True(ok)
+		assert.NotNil(s)
 		assert.Equal("db.query", s.OperationName())
 		assert.Equal("root-service", s.Tag(ext.ServiceName))
 		assert.Equal(parent.SpanID(), s.ParentID())
 		assert.Equal(parent.TraceID(), s.TraceID())
-		assert.True(s.context.hasSamplingPriority())
-		assert.Equal(-1, s.context.samplingPriority())
+		sp, ok := parent.Context().SamplingPriority()
+		assert.True(ok)
+		assert.Equal(-1, sp)
 	})
 }
 
 func TestTracerFinishedSpans(t *testing.T) {
-	mt := newMockTracer()
-	defer mt.Stop()
+	mt := Start()
+	t.Cleanup(func() {
+		mt.Stop()
+	})
 
 	assert.Empty(t, mt.FinishedSpans())
 	parent := mt.StartSpan("http.request")
@@ -92,10 +97,10 @@ func TestTracerFinishedSpans(t *testing.T) {
 	for _, s := range mt.FinishedSpans() {
 		switch s.OperationName() {
 		case "http.request":
-			assert.Equal(t, parent, s)
+			assert.Equal(t, parent, s.Unwrap())
 			found++
 		case "db.query":
-			assert.Equal(t, child, s)
+			assert.Equal(t, child, s.Unwrap())
 			found++
 		}
 	}
@@ -103,16 +108,18 @@ func TestTracerFinishedSpans(t *testing.T) {
 }
 
 func TestTracerOpenSpans(t *testing.T) {
-	mt := newMockTracer()
-	defer mt.Stop()
+	mt := Start()
+	t.Cleanup(func() {
+		mt.Stop()
+	})
 
 	assert.Empty(t, mt.OpenSpans())
 	parent := mt.StartSpan("http.request")
 	child := mt.StartSpan("db.query", tracer.ChildOf(parent.Context()))
 
 	assert.Len(t, mt.OpenSpans(), 2)
-	assert.Contains(t, mt.OpenSpans(), parent)
-	assert.Contains(t, mt.OpenSpans(), child)
+	assert.Contains(t, UnwrapSlice(mt.OpenSpans()), parent)
+	assert.Contains(t, UnwrapSlice(mt.OpenSpans()), child)
 
 	child.Finish()
 	assert.Len(t, mt.OpenSpans(), 1)
@@ -123,9 +130,8 @@ func TestTracerOpenSpans(t *testing.T) {
 }
 
 func TestTracerSetUser(t *testing.T) {
-	mt := newMockTracer()
-	defer mt.Stop()
-
+	mt := Start()
+	defer mt.Stop() // TODO (hannahkm): confirm this is correct
 	span := mt.StartSpan("http.request")
 	tracer.SetUser(span, "test-user",
 		tracer.WithUserEmail("email"),
@@ -150,8 +156,10 @@ func TestTracerSetUser(t *testing.T) {
 
 func TestTracerReset(t *testing.T) {
 	assert := assert.New(t)
-	mt := newMockTracer()
-	defer mt.Stop()
+	mt := Start().(*mocktracer)
+	t.Cleanup(func() {
+		mt.Stop()
+	})
 
 	span := mt.StartSpan("parent")
 	_ = mt.StartSpan("child", tracer.ChildOf(span.Context()))
@@ -174,33 +182,32 @@ func TestTracerInject(t *testing.T) {
 
 		assert := assert.New(t)
 
-		err := mt.Inject(&spanContext{}, 2)
+		err := mt.Inject(&tracer.SpanContext{}, 2)
 		assert.Equal(tracer.ErrInvalidCarrier, err) // 2 is not a carrier
 
-		err = mt.Inject(&spanContext{}, tracer.TextMapCarrier(map[string]string{}))
+		err = mt.Inject(&tracer.SpanContext{}, tracer.TextMapCarrier(map[string]string{}))
 		assert.Equal(tracer.ErrInvalidSpanContext, err) // no traceID and spanID
 
-		err = mt.Inject(&spanContext{traceID: 2}, tracer.TextMapCarrier(map[string]string{}))
-		assert.Equal(tracer.ErrInvalidSpanContext, err) // no spanID
+		sp := mt.StartSpan("op")
 
-		err = mt.Inject(&spanContext{traceID: 2, spanID: 1}, tracer.TextMapCarrier(map[string]string{}))
+		err = mt.Inject(sp.Context(), tracer.TextMapCarrier(map[string]string{}))
 		assert.Nil(err) // ok
 	})
 
 	t.Run("ok", func(t *testing.T) {
-		sctx := &spanContext{
-			traceID:     1,
-			spanID:      2,
-			priority:    -1,
-			hasPriority: true,
-			baggage:     map[string]string{"A": "B", "C": "D"},
-		}
-		carrier := make(map[string]string)
-		err := (&mocktracer{}).Inject(sctx, tracer.TextMapCarrier(carrier))
-
+		mt := newMockTracer()
+		defer mt.Stop()
 		assert := assert.New(t)
+
+		sp := mt.StartSpan("op", tracer.WithSpanID(2))
+		sp.SetTag(ext.ManualDrop, true)
+		sp.SetBaggageItem("A", "B")
+		sp.SetBaggageItem("C", "D")
+		carrier := make(map[string]string)
+		err := (&mocktracer{}).Inject(sp.Context(), tracer.TextMapCarrier(carrier))
+
 		assert.Nil(err)
-		assert.Equal("1", carrier[traceHeader])
+		assert.Equal(fmt.Sprintf("%d", sp.Context().TraceIDLower()), carrier[traceHeader])
 		assert.Equal("2", carrier[spanHeader])
 		assert.Equal("-1", carrier[priorityHeader])
 		assert.Equal("B", carrier[baggagePrefix+"A"])
@@ -269,40 +276,54 @@ func TestTracerExtract(t *testing.T) {
 
 		ctx, err := mt.Extract(carry(traceHeader, "1", spanHeader, "2"))
 		assert.Nil(err)
-		sc, ok := ctx.(*spanContext)
-		assert.True(ok)
-		assert.Equal(uint64(1), sc.traceID)
-		assert.Equal(uint64(2), sc.spanID)
+		assert.Equal(uint64(1), ctx.TraceIDLower())
+		assert.Equal(uint64(2), ctx.SpanID())
 
 		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", baggagePrefix+"A", "B", baggagePrefix+"C", "D"))
 		assert.Nil(err)
-		sc, ok = ctx.(*spanContext)
-		assert.True(ok)
-		assert.Equal("B", sc.baggageItem("a"))
-		assert.Equal("D", sc.baggageItem("c"))
+		ctx.ForeachBaggageItem(func(k string, v string) bool {
+			if k == "a" {
+				assert.Equal("B", v)
+			}
+			if k == "c" {
+				assert.Equal("D", v)
+			}
+			return true
+		})
 
 		ctx, err = mt.Extract(carry(traceHeader, "1", spanHeader, "2", priorityHeader, "-1"))
 		assert.Nil(err)
-		sc, ok = ctx.(*spanContext)
+		sp, ok := ctx.SamplingPriority()
 		assert.True(ok)
-		assert.True(sc.hasSamplingPriority())
-		assert.Equal(-1, sc.samplingPriority())
+		assert.Equal(-1, sp)
 	})
 
 	t.Run("consistency", func(t *testing.T) {
 		assert := assert.New(t)
-		want := &spanContext{traceID: 1, spanID: 2, baggage: map[string]string{"a": "B", "C": "D"}}
+
+		mt := newMockTracer()
+		defer mt.Stop()
+		sp := mt.StartSpan("op", tracer.WithSpanID(2))
+		sp.SetTag(ext.ManualDrop, true)
+		sp.SetBaggageItem("a", "B")
+		sp.SetBaggageItem("C", "D")
+
 		mc := tracer.TextMapCarrier(make(map[string]string))
-		err := mt.Inject(want, mc)
+		err := mt.Inject(sp.Context(), mc)
 		assert.Nil(err)
 		sc, err := mt.Extract(mc)
 		assert.Nil(err)
-		got, ok := sc.(*spanContext)
-		assert.True(ok)
 
-		assert.Equal(uint64(1), got.traceID)
-		assert.Equal(uint64(2), got.spanID)
-		assert.Equal("D", got.baggageItem("c"))
-		assert.Equal("B", got.baggageItem("a"))
+		assert.Equal(sp.Context().TraceID(), sc.TraceID())
+		assert.Equal(uint64(2), sc.SpanID())
+		sc.ForeachBaggageItem(func(k string, v string) bool {
+			if k == "a" {
+				assert.Equal("B", v)
+			}
+			if k == "C" {
+				assert.Equal("D", v)
+			}
+			return true
+		})
 	})
 }

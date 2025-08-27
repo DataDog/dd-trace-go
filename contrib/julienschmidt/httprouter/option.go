@@ -6,25 +6,14 @@
 package httprouter
 
 import (
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/julienschmidt/httprouter/internal/tracing"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
+	"github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2/internal/tracing"
 )
-
-const defaultServiceName = "http.router"
-
-type routerConfig struct {
-	serviceName   string
-	spanOpts      []ddtrace.StartSpanOption
-	analyticsRate float64
-	headerTags    *internal.LockMap
-}
 
 // RouterOption represents an option that can be passed to New.
 type RouterOption = tracing.Option
 
-// WithServiceName sets the given service name for the returned router.
-var WithServiceName = tracing.WithServiceName
+// WithService sets the given service name for the returned router.
+var WithService = tracing.WithService
 
 // WithSpanOptions applies the given set of options to the span started by the router.
 var WithSpanOptions = tracing.WithSpanOptions

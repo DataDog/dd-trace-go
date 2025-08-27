@@ -57,6 +57,9 @@ type payload struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// protocol specifies the trace protocol to use.
+	protocol float64
 }
 
 var _ io.Reader = (*payload)(nil)
@@ -71,9 +74,14 @@ func newPayload() *payload {
 }
 
 // push pushes a new item into the stream.
-func (p *payload) push(t spanList) error {
-	p.buf.Grow(t.Msgsize())
-	if err := msgp.Encode(&p.buf, t); err != nil {
+func (p *payload) push(t []*Span) error {
+	// if p.protocol == traceProtocolV1 {
+	//     // TODO: implement v1.0 encoding
+	// } else {
+	sl := spanList(t)
+	// }
+	p.buf.Grow(sl.Msgsize())
+	if err := msgp.Encode(&p.buf, sl); err != nil {
 		return err
 	}
 	atomic.AddUint32(&p.count, 1)
@@ -111,8 +119,8 @@ func (p *payload) clear() {
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
 const (
 	msgpackArrayFix byte = 144  // up to 15 items
-	msgpackArray16       = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
-	msgpackArray32       = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
+	msgpackArray16  byte = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
+	msgpackArray32  byte = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
 )
 
 // updateHeader updates the payload header based on the number of items currently

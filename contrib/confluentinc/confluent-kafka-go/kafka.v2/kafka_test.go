@@ -13,17 +13,15 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/datastreams"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	internaldsm "gopkg.in/DataDog/dd-trace-go.v1/internal/datastreams"
-
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 var (
@@ -87,12 +85,14 @@ func TestConsumerChannel(t *testing.T) {
 		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
 		assert.Equal(t, "Consume Topic gotest", s.Tag(ext.ResourceName))
 		assert.Equal(t, "queue", s.Tag(ext.SpanType))
-		assert.Equal(t, int32(1), s.Tag(ext.MessagingKafkaPartition))
+		assert.Equal(t, float64(1), s.Tag(ext.MessagingKafkaPartition))
 		assert.Equal(t, 0.3, s.Tag(ext.EventSampleRate))
 		assert.EqualValues(t, kafka.Offset(i+1), s.Tag("offset"))
 		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s.Tag(ext.Component))
+		assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s.Integration())
 		assert.Equal(t, ext.SpanKindConsumer, s.Tag(ext.SpanKind))
 		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, "gotest", s.Tag("messaging.destination.name"))
 	}
 	for _, msg := range []*kafka.Message{msg1, msg2} {
 		p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
@@ -136,11 +136,13 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "Produce Topic gotest", s0.Tag(ext.ResourceName))
 			assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s0.Tag(ext.SpanType))
-			assert.Equal(t, int32(0), s0.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s0.Tag(ext.Component))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s0.Integration())
 			assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s0.Tag(ext.KafkaBootstrapServers))
+			assert.Equal(t, "gotest", s0.Tag("messaging.destination.name"))
 
 			s1 := spans[1] // consume
 			assert.Equal(t, "kafka.consume", s1.OperationName())
@@ -148,11 +150,13 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "Consume Topic gotest", s1.Tag(ext.ResourceName))
 			assert.Equal(t, nil, s1.Tag(ext.EventSampleRate))
 			assert.Equal(t, "queue", s1.Tag(ext.SpanType))
-			assert.Equal(t, int32(0), s1.Tag(ext.MessagingKafkaPartition))
+			assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
 			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s1.Tag(ext.Component))
+			assert.Equal(t, "confluentinc/confluent-kafka-go/kafka.v2", s1.Integration())
 			assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 			assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
+			assert.Equal(t, "gotest", s1.Tag("messaging.destination.name"))
 
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
@@ -187,6 +191,7 @@ func TestDeprecatedContext(t *testing.T) {
 		"session.timeout.ms":       10,
 		"enable.auto.offset.store": false,
 	}, WithContext(ctx)) // Adds the parent context containing a span
+	assert.NoError(t, err)
 
 	err = c.Subscribe(testTopic, nil)
 	assert.NoError(t, err)
@@ -278,23 +283,10 @@ func TestCustomTags(t *testing.T) {
 	s := spans[0]
 
 	assert.Equal(t, "bar", s.Tag("foo"))
-	assert.Equal(t, []byte("key1"), s.Tag("key"))
+	assert.Equal(t, "key1", s.Tag("key"))
 }
 
-func TestNamingSchema(t *testing.T) {
-	genSpans := func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		consumerAction := consumerActionFn(func(c *Consumer) (*kafka.Message, error) {
-			return c.ReadMessage(3000 * time.Millisecond)
-		})
-		spans, _ := produceThenConsume(t, consumerAction, opts, opts)
-		return spans
-	}
-	namingschematest.NewKafkaTest(genSpans)(t)
-}
+type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
 // Test we don't leak goroutines and properly close the span when Produce returns an error.
 func TestProduceError(t *testing.T) {
@@ -342,9 +334,7 @@ func TestProduceError(t *testing.T) {
 	assert.Len(t, spans, 1)
 }
 
-type consumerActionFn func(c *Consumer) (*kafka.Message, error)
-
-func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]mocktracer.Span, *kafka.Message) {
+func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
@@ -403,7 +393,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 
 	if c.tracer.DSMEnabled() {
 		backlogs := mt.SentDSMBacklogs()
-		toMap := func(_ []internaldsm.Backlog) map[string]struct{} {
+		toMap := func(_ []mocktracer.DSMBacklog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
 				m[strings.Join(b.Tags, "")] = struct{}{}
@@ -417,3 +407,27 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	}
 	return spans, msg2
 }
+
+/*
+to run the integration test locally:
+
+    docker network create confluent
+
+    docker run --rm \
+        --name zookeeper \
+        --network confluent \
+        -p 2181:2181 \
+        -e ZOOKEEPER_CLIENT_PORT=2181 \
+        confluentinc/cp-zookeeper:5.0.0
+
+    docker run --rm \
+        --name kafka \
+        --network confluent \
+        -p 9092:9092 \
+        -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 \
+        -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+        -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092 \
+        -e KAFKA_CREATE_TOPICS=gotest:1:1 \
+        -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+        confluentinc/cp-kafka:5.0.0
+*/

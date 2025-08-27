@@ -9,13 +9,17 @@ import (
 	"fmt"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/dyngo"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 
 	appsecLog "github.com/DataDog/appsec-internal-go/log"
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/go-libddwaf/v4"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
@@ -36,8 +40,13 @@ func RASPEnabled() bool {
 // Start AppSec when enabled is enabled by both using the appsec build tag and
 // setting the environment variable DD_APPSEC_ENABLED to true.
 func Start(opts ...config.StartOption) {
-	telemetry := newAppsecTelemetry()
-	defer telemetry.emit()
+	// TODO: Add support to configure the tracer via a public interface
+	if globalinternal.BoolEnv("_DD_APPSEC_BLOCKING_UNAVAILABLE", false) {
+		opts = append(opts, config.WithBlockingUnavailable(true))
+	}
+	if globalinternal.BoolEnv("_DD_APPSEC_PROXY_ENVIRONMENT", false) {
+		opts = append(opts, config.WithProxyEnvironment())
+	}
 
 	startConfig := config.NewStartConfig(opts...)
 
@@ -52,32 +61,20 @@ func Start(opts ...config.StartOption) {
 		return
 	}
 
-	switch modeOrigin {
-	case config.OriginEnvVar:
-		telemetry.addEnvConfig("DD_APPSEC_ENABLED", mode == config.ForcedOn)
-		if mode == config.ForcedOff {
-			log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
-			return
-		}
-	case config.OriginExplicitOption:
-		telemetry.addCodeConfig("WithEnablementMode", mode)
-	}
-
-	// In any case, if we're forced off, we no longer have any business here...
 	if mode == config.ForcedOff {
+		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
 		return
 	}
 
 	// Check whether libddwaf - required for Threats Detection - is ok or not
-	if ok, err := waf.Health(); !ok {
+	if ok, err := libddwaf.Usable(); !ok && err != nil {
 		// We need to avoid logging an error to APM tracing users who don't necessarily intend to enable appsec
 		if mode == config.ForcedOn {
-			// DD_APPSEC_ENABLED is explicitly set so we log an error
-			log.Error("appsec: threats detection cannot be enabled for the following reasons: %v\nappsec: no security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+			logUnexpectedStartError(err)
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.
-			log.Debug("appsec: remote activation of threats detection cannot be enabled for the following reasons: %v", err)
+			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled for the following reasons: %s", err.Error())
 		}
 		return
 	}
@@ -93,7 +90,7 @@ func Start(opts ...config.StartOption) {
 	// Start the remote configuration client
 	log.Debug("appsec: starting the remote configuration client")
 	if err := appsec.startRC(); err != nil {
-		log.Error("appsec: Remote config: disabled due to an instanciation error: %v", err)
+		telemetrylog.Error("appsec: Remote config: disabled due to an instanciation error: %s", err.Error())
 	}
 
 	if mode == config.RCStandby {
@@ -106,17 +103,25 @@ func Start(opts ...config.StartOption) {
 			return
 		}
 		log.Debug("appsec: awaiting for possible remote activation")
-	} else if err := appsec.start(telemetry); err != nil { // AppSec is specifically enabled
+		setActiveAppSec(appsec)
+		return
+	}
+
+	if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
 		appsec.stopRC()
 		return
 	}
+
+	registerAppsecStartTelemetry(mode, modeOrigin)
 	setActiveAppSec(appsec)
 }
 
 // Implement the AppSec log message C1
 func logUnexpectedStartError(err error) {
-	log.Error("appsec: could not start because of an unexpected error: %v\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err)
+	log.Error("appsec: could not start because of an unexpected error: %s\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err.Error())
+	telemetry.Log(telemetry.LogError, fmt.Sprintf("appsec: could not start because of an unexpected error: %s", err.Error()), telemetry.WithTags([]string{"product:appsec"}))
+	telemetry.ProductStartError(telemetry.NamespaceAppSec, err)
 }
 
 // Stop AppSec.
@@ -153,9 +158,9 @@ func newAppSec(cfg *config.Config) *appsec {
 }
 
 // Start AppSec by registering its security protections according to the configured the security rules.
-func (a *appsec) start(telemetry *appsecTelemetry) error {
+func (a *appsec) start() error {
 	// Load the waf to catch early errors if any
-	if ok, err := waf.Load(); err != nil {
+	if ok, err := libddwaf.Load(); err != nil {
 		// 1. If there is an error and the loading is not ok: log as an unexpected error case and quit appsec
 		// Note that we assume here that the test for the unsupported target has been done before calling
 		// this method, so it is now considered an error for this method
@@ -163,7 +168,7 @@ func (a *appsec) start(telemetry *appsecTelemetry) error {
 			return fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		log.Error("appsec: non-critical error while loading libddwaf: %v", err)
+		log.Error("appsec: non-critical error while loading libddwaf: %s", err.Error())
 	}
 
 	// Register dyngo listeners
@@ -180,7 +185,6 @@ func (a *appsec) start(telemetry *appsecTelemetry) error {
 	// TODO: log the config like the APM tracer does but we first need to define
 	//   an user-friendly string representation of our config and its sources
 
-	telemetry.setEnabled()
 	return nil
 }
 
@@ -189,10 +193,8 @@ func (a *appsec) stop() {
 	if !a.started {
 		return
 	}
-	telemetry := newAppsecTelemetry()
-	defer telemetry.emit()
-
 	a.started = false
+	registerAppsecStopTelemetry()
 	// Disable RC blocking first so that the following is guaranteed not to be concurrent anymore.
 	a.disableRCBlocking()
 
@@ -202,9 +204,8 @@ func (a *appsec) stop() {
 	// Disable the currently applied instrumentation
 	dyngo.SwapRootOperation(nil)
 
-	// Reset rules edits received from the remote configuration
-	// We skip the error because we can't do anything about and it was already logged in config.NewRulesManager
-	a.cfg.RulesManager, _ = config.NewRulesManager(nil)
+	// Close the WAF manager to release all resources associated with it
+	a.cfg.WAFManager.Reset()
 
 	// TODO: block until no more requests are using dyngo operations
 
@@ -222,7 +223,7 @@ func init() {
 		Warn:  log.Warn,
 		Errorf: func(s string, a ...any) error {
 			err := fmt.Errorf(s, a...)
-			log.Error(err.Error())
+			log.Error("%s", err.Error())
 			return err
 		},
 	})
