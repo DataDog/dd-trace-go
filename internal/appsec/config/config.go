@@ -210,7 +210,7 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 	return &Config{
 		WAFManager:          manager,
 		WAFTimeout:          WAFTimeoutFromEnv(),
-		TraceRateLimit:      int64(RateLimitFromEnv()),
+		TraceRateLimit:      RateLimitFromEnv(),
 		APISec:              NewAPISecConfig(c.APISecOptions...),
 		RASP:                RASPEnabled(),
 		RC:                  c.RC,

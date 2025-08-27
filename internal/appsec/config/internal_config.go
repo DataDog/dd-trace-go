@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
@@ -64,7 +65,7 @@ const (
 	// DefaultWAFTimeout is the default time limit past which a WAF run will timeout
 	DefaultWAFTimeout = time.Millisecond
 	// DefaultTraceRate is the default limit (trace/sec) past which ASM traces are sampled out
-	DefaultTraceRate uint = 100 // up to 100 appsec traces/s
+	DefaultTraceRate = 100 // up to 100 appsec traces/s
 )
 
 // APISecConfig holds the configuration for API Security schemas reporting.
@@ -202,7 +203,7 @@ func WAFTimeoutFromEnv() (timeout time.Duration) {
 
 // RateLimitFromEnv reads and parses the trace rate limit set through the env
 // If not set, it defaults to `DefaultTraceRate`
-func RateLimitFromEnv() (rate uint) {
+func RateLimitFromEnv() (rate int64) {
 	rate = DefaultTraceRate
 	value := os.Getenv(EnvTraceRateLimit)
 	if value == "" {
@@ -217,7 +218,11 @@ func RateLimitFromEnv() (rate uint) {
 		logUnexpectedEnvVarValue(EnvTraceRateLimit, parsed, "expecting a value strictly greater than 0", rate)
 		return
 	}
-	return uint(parsed)
+	if parsed > math.MaxInt64 {
+		logUnexpectedEnvVarValue(EnvTraceRateLimit, parsed, "expecting a value less than or equal to math.MaxInt64", rate)
+		return
+	}
+	return int64(parsed)
 }
 
 // RulesFromEnv returns the security rules provided through the environment

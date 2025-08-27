@@ -109,7 +109,7 @@ func TestTraceRateLimit(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		env      string
-		expected uint
+		expected int64
 	}{
 		{
 			name:     "parsable",

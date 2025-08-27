@@ -132,19 +132,18 @@ func (m *WAFManager) RemoveDefaultConfig() bool {
 func (m *WAFManager) AddOrUpdateConfig(path string, fragment any) (libddwaf.Diagnostics, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	diag, err := m.builder.AddOrUpdateConfig(path, fragment)
+	diags, err := m.builder.AddOrUpdateConfig(path, fragment)
 	if err != nil {
-		return diag, err
+		return diags, err
 	}
 
 	// Submit the telemetry metrics for error counts obtained from the [libddwaf.Diagnostics] object.
 	// See: https://docs.google.com/document/d/1lcCvURsWTS_p01-MvrI6SmDB309L1e8bx9txuUR1zCk/edit?tab=t.0#heading=h.nwzm8andnx41
-	eventRulesVersion := diag.Version
-	if eventRulesVersion == "" {
-		eventRulesVersion = m.rulesVersion
+	if diags.Version != "" {
+		m.rulesVersion = diags.Version
 	}
-	diag.EachFeature(updateTelemetryMetrics(eventRulesVersion))
-	return diag, err
+	diags.EachFeature(updateTelemetryMetrics(m.rulesVersion))
+	return diags, err
 }
 
 // RestoreDefaultConfig restores the initial configurations to the receiving [WAFManager].
