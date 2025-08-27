@@ -205,7 +205,7 @@ func TestTracingDialUrlContext(t *testing.T) {
 
 	ctx := context.Background()
 	url := "redis://127.0.0.1:6379"
-	client, err := DialURLContext(ctx, url, WithServiceName("redis-service"))
+	client, err := DialURLContext(ctx, url, WithService("redis-service"))
 	assert.Nil(err)
 	client.Do("SET", "ONE", " TWO", context.Background())
 
