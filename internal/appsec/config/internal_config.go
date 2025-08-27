@@ -103,8 +103,8 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 		rate := internal.IntEnv(EnvAPISecProxySampleRate, DefaultAPISecProxySampleRate)
 		cfg.Sampler = apisec.NewProxySampler(rate, DefaultAPISecProxySampleInterval)
 	} else {
-		seconds := internal.IntEnv(envAPISecSampleDelay, int(DefaultAPISecSampleInterval.Seconds()))
-		cfg.Sampler = apisec.NewSampler(time.Duration(seconds) * time.Second)
+		interval := internal.DurationEnvWithUnit(envAPISecSampleDelay, "s", DefaultAPISecSampleInterval)
+		cfg.Sampler = apisec.NewSampler(interval)
 	}
 
 	return cfg
