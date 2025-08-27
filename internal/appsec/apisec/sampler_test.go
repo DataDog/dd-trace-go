@@ -137,7 +137,7 @@ func TestSamplingKeyHash(t *testing.T) {
 	t.Run("collisions-are-infrequent", func(t *testing.T) {
 		hashes := make(map[uint64]struct{}, len(testVector))
 		for _, key := range testVector {
-			hashes[hash(key)] = struct{}{}
+			hashes[key.hash()] = struct{}{}
 		}
 
 		// Validates that the hash function results in less than 1% collisions. This
@@ -150,7 +150,7 @@ func TestSamplingKeyHash(t *testing.T) {
 	t.Run("distribution-is-uniform-on-buckets", func(t *testing.T) {
 		buckets := make(map[int]struct{}, len(testVector))
 		for _, key := range testVector {
-			buckets[int(hash(key)%config.MaxItemCount)] = struct{}{}
+			buckets[int(key.hash()%config.MaxItemCount)] = struct{}{}
 		}
 
 		// Validates that the hash function results in hitting at least 80% of the
