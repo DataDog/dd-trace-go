@@ -56,6 +56,7 @@ use (
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
 	./contrib/twitchtv/twirp
+	./contrib/uber-go/zap
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go

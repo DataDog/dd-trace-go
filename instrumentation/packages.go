@@ -68,6 +68,7 @@ const (
 	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
 	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
 	PackageGorillaMux              Package = "gorilla/mux"
+	PackageUberGoZap               Package = "uber-go/zap"
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "log/slog"
 
@@ -766,6 +767,10 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("http.server.request"),
 			},
 		},
+	},
+	PackageUberGoZap: {
+		TracedPackage: "go.uber.org/zap",
+		EnvVarPrefix:  "ZAP",
 	},
 	PackageUptraceBun: {
 		TracedPackage: "github.com/uptrace/bun",

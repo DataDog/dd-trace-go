@@ -1,0 +1,26 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/uber-go/zap/v2
+  description: Tracing & Log correlation for Uber's Zap logging library.
+
+aspects:
+  - id: ExtractTracingContext
+    join-point:
+      struct-definition: github.com/uber-go/zap.Logger
+    advice:
+      - inject-declarations:
+          imports:
+            context: context
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
+            zap: go.uber.org/zap
+            zapcore: go.uber.org/zap/zapcore
+          template: |-
+            func init() {
+              tracer.MarkIntegrationImported("github.com/uber-go/zap")
+            }
