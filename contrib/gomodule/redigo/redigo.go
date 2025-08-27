@@ -95,18 +95,7 @@ func wrapConn(c redis.Conn, p *params) redis.Conn {
 // Dial dials into the network address and returns a traced redis.Conn.
 // The set of supported options must be either of type redis.DialOption or this package's DialOption.
 func Dial(network, address string, options ...interface{}) (redis.Conn, error) {
-	dialOpts, cfg := parseOptions(options...)
-	instr.Logger().Debug("contrib/gomodule/redigo: Dialing %s %s, %#v", network, address, cfg)
-	c, err := redis.Dial(network, address, dialOpts...)
-	if err != nil {
-		return nil, err
-	}
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return nil, err
-	}
-	tc := wrapConn(c, &params{cfg, network, host, port})
-	return tc, nil
+	return DialContext(context.Background(), network, address, options...)
 }
 
 // DialContext dials into the network address using redis.DialContext and returns a traced redis.Conn.
@@ -131,6 +120,14 @@ func DialContext(ctx context.Context, network, address string, options ...interf
 // scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
 // The returned redis.Conn is traced.
 func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
+	return DialURLContext(context.Background(), rawurl, options...)
+}
+
+// DialURLContext connects to a Redis server at the given URL using the Redis
+// URI scheme. URLs should follow the draft IANA specification for the
+// scheme (https://www.iana.org/assignments/uri-schemes/prov/redis).
+// The returned redis.Conn is traced.
+func DialURLContext(ctx context.Context, rawurl string, options ...interface{}) (redis.Conn, error) {
 	dialOpts, cfg := parseOptions(options...)
 	instr.Logger().Debug("contrib/gomodule/redigo: Dialing %s, %#v", rawurl, cfg)
 	u, err := url.Parse(rawurl)
@@ -146,7 +143,7 @@ func DialURL(rawurl string, options ...interface{}) (redis.Conn, error) {
 		host = "localhost"
 	}
 	network := "tcp"
-	c, err := redis.DialURL(rawurl, dialOpts...)
+	c, err := redis.DialURLContext(ctx, rawurl, dialOpts...)
 	tc := wrapConn(c, &params{cfg, network, host, port})
 	return tc, err
 }
