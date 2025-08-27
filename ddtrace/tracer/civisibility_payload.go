@@ -157,12 +157,12 @@ func (p *ciVisibilityPayload) stats() payloadStats {
 
 // size returns the payload size in bytes (for backward compatibility).
 func (p *ciVisibilityPayload) size() int {
-	return p.stats().size
+	return p.payload.size()
 }
 
 // itemCount returns the number of items available in the stream (for backward compatibility).
 func (p *ciVisibilityPayload) itemCount() int {
-	return p.stats().itemCount
+	return p.payload.itemCount()
 }
 
 // protocol returns the protocol version of the payload.

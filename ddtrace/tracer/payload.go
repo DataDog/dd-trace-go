@@ -316,7 +316,6 @@ func (sp *safePayload) stats() payloadStats {
 
 // protocol returns the protocol version of the payload in a thread-safe manner.
 func (sp *safePayload) protocol() float64 {
-	sp.mu.RLock()
-	defer sp.mu.RUnlock()
+	// Protocol is immutable after creation - no lock needed
 	return sp.p.protocol()
 }
