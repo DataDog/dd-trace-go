@@ -103,6 +103,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestAutoFlush(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		config := defaultConfig(ClientConfig{
 			AgentURL: "http://localhost:8126",
@@ -116,11 +117,16 @@ func TestAutoFlush(t *testing.T) {
 		defer c.Close()
 
 		recordWriter := &internal.RecordWriter{}
+
+		c.flushMu.Lock()
 		c.writer = recordWriter
+		c.flushMu.Unlock()
 
 		time.Sleep(config.FlushInterval.Max + time.Second)
 
+		c.flushMu.Lock()
 		require.Len(t, recordWriter.Payloads(), 1)
+		c.flushMu.Unlock()
 	})
 }
 
