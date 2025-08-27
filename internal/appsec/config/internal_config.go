@@ -240,9 +240,11 @@ func RulesFromEnv() ([]byte, error) {
 }
 
 func logEnvVarParsingError(name, value string, err error, defaultValue any) {
+	//nolint:gocritic // we're trying to be helpful here...
 	log.Debug("appsec: could not parse the env var %s=%s as a duration: %v. Using default value %v.", name, value, err, defaultValue)
 }
 
 func logUnexpectedEnvVarValue(name string, value any, reason string, defaultValue any) {
+	//nolint:gocritic // we're trying to be helpful here...
 	log.Debug("appsec: unexpected configuration value of %s=%v: %s. Using default value %v.", name, value, reason, defaultValue)
 }
