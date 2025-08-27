@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -217,5 +218,128 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 	// Verify final state
 	if p.stats().itemCount == 0 {
 		t.Error("Expected payload to have items")
+	}
+}
+
+func BenchmarkPayloadPush(b *testing.B) {
+	sizes := []struct {
+		name     string
+		numSpans int
+		spanSize int
+	}{
+		{"1span_1KB", 1, 1},
+		{"5span_1KB", 5, 1},
+		{"10span_1KB", 10, 1},
+		{"1span_10KB", 1, 10},
+		{"5span_10KB", 5, 10},
+		{"10span_50KB", 10, 50},
+	}
+
+	for _, size := range sizes {
+		b.Run(size.name, func(b *testing.B) {
+			spans := make(spanList, size.numSpans)
+			for i := 0; i < size.numSpans; i++ {
+				span := newBasicSpan("benchmark-span")
+				span.meta["data"] = strings.Repeat("x", size.spanSize*1024)
+				spans[i] = span
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				p := newUnsafePayload(traceProtocolV04)
+				_, _ = p.push(spans)
+			}
+		})
+	}
+}
+
+func BenchmarkPayloadStats(b *testing.B) {
+	tests := []struct {
+		name      string
+		numTraces int
+		spansPer  int
+	}{
+		{"empty", 0, 0},
+		{"small_1trace_1span", 1, 1},
+		{"medium_10trace_5span", 10, 5},
+		{"large_100trace_10span", 100, 10},
+	}
+
+	for _, test := range tests {
+		b.Run(test.name, func(b *testing.B) {
+			p := newPayload(traceProtocolV04)
+
+			for i := 0; i < test.numTraces; i++ {
+				spans := make(spanList, test.spansPer)
+				for j := 0; j < test.spansPer; j++ {
+					spans[j] = newBasicSpan("test-span")
+				}
+				_, _ = p.push(spans)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				stats := p.stats()
+				_ = stats.size
+				_ = stats.itemCount
+			}
+		})
+	}
+}
+
+func BenchmarkPayloadConcurrentAccess(b *testing.B) {
+	concurrencyLevels := []int{1, 2, 4, 8}
+
+	for _, concurrency := range concurrencyLevels {
+		b.Run(fmt.Sprintf("concurrency_%d", concurrency), func(b *testing.B) {
+			p := newPayload(traceProtocolV04)
+			span := newBasicSpan("concurrent-test")
+			spans := spanList{span}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				var wg sync.WaitGroup
+
+				for j := 0; j < concurrency; j++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						_, _ = p.push(spans)
+					}()
+				}
+
+				for j := 0; j < concurrency; j++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						_ = p.stats()
+					}()
+				}
+
+				wg.Wait()
+				p.clear()
+			}
+		})
+	}
+}
+
+func TestMsgsizeAnalysis(t *testing.T) {
+	sizes := []int{1, 5, 10}
+	for _, numSpans := range sizes {
+		spans := make(spanList, numSpans)
+		for i := 0; i < numSpans; i++ {
+			span := newBasicSpan("test")
+			span.meta["data"] = strings.Repeat("x", 1024)
+			spans[i] = span
+		}
+
+		msgsize := spans.Msgsize()
+		t.Logf("%d spans with 1KB each: msgsize=%d bytes", numSpans, msgsize)
 	}
 }
