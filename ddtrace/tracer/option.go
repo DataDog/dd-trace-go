@@ -27,6 +27,8 @@ import (
 	"golang.org/x/mod/semver"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+	"github.com/tinylib/msgp/msgp"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -40,7 +42,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
@@ -1505,7 +1506,7 @@ func (t *dummyTransport) ObfuscationVersion() int {
 	return t.obfVersion
 }
 
-func (t *dummyTransport) send(p *payload) (io.ReadCloser, error) {
+func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 	traces, err := decode(p)
 	if err != nil {
 		return nil, err
@@ -1521,7 +1522,7 @@ func (t *dummyTransport) endpoint() string {
 	return "http://localhost:9/v0.4/traces"
 }
 
-func decode(p *payload) (spanLists, error) {
+func decode(p payloadReader) (spanLists, error) {
 	var traces spanLists
 	err := msgp.Decode(p, &traces)
 	return traces, err

@@ -128,8 +128,8 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 // Returns:
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
-func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error) {
-	ciVisibilityPayload := &ciVisibilityPayload{p, 0}
+func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) {
+	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
 		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
