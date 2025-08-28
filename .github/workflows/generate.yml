@@ -6,10 +6,6 @@ on:
       - release-*
       - mq-working-branch-**
   pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
   workflow_call:
     inputs:
       go-version:

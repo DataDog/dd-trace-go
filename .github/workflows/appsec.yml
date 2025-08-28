@@ -10,10 +10,6 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
   pull_request: # on pull requests touching appsec files
-    types:
-      - opened
-      - synchronize
-      - reopened
     paths:
       - '.github/workflows/appsec.yml'
       - 'internal/appsec/**'

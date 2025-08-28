@@ -3,10 +3,6 @@ name: Check Pull Request CI Status
 on:
   workflow_dispatch: # allow to trigger the workflow on main, to add it in suggestion on branch protection rules
   pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
 
 permissions:
   checks: read
