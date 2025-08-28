@@ -1,13 +1,12 @@
 module github.com/DataDog/dd-trace-go/v2
 
-go 1.23.0
+go 1.24.0
 
 godebug x509negativeserial=1
 
 replace github.com/DataDog/datadog-agent/pkg/trace => github.com/DataDog/datadog-agent/pkg/trace v0.67.0
 
 require (
-	github.com/DataDog/appsec-internal-go v1.13.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.67.0
 	github.com/DataDog/datadog-agent/pkg/proto v0.67.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.69.0
@@ -19,7 +18,6 @@ require (
 	github.com/DataDog/sketches-go v1.4.7
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
-	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4
 	github.com/go-viper/mapstructure/v2 v2.3.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
@@ -29,6 +27,7 @@ require (
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.10.0
+	github.com/theckman/httpforwarded v0.4.0
 	github.com/tinylib/msgp v1.2.5
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
 	go.opentelemetry.io/otel v1.35.0

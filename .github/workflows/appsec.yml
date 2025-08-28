@@ -25,8 +25,10 @@ on:
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   PACKAGES: >-
     ./appsec/...
+    ./instrumentation/appsec/...
     ./internal/appsec/...
   SUBMODULES: >-
     ./contrib/database/sql
@@ -105,7 +107,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-13, macos-15 ] # oldest and newest macos runners available - macos-15 is an ARM runner
-        go-version: [ "1.24", "1.23" ]
+        go-version: [ "1.25", "1.24" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -135,24 +137,24 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
-          cgocheck="GOEXPERIMENT=cgocheck2"
+          cgocheck="$GOEXPERIMENT,cgocheck2"
           report_error=0
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $PACKAGES"
+                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES"
                   fi
 
                   for submodule in $SUBMODULES; do
-                    if [[ $cgocheck_env == "GOEXPERIMENT=cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
-                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
+                    if [[ $cgocheck_env =~ "cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
+                      echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
                       continue
                     fi
 
                     cd $submodule
-                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v .; then
-                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v . (submodule: $submodule)"
+                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v .; then
+                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule)"
                       report_error=1
                     fi
                     cd -
@@ -223,8 +225,8 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.24", "1.23" ]
-        distribution: [ bookworm, bullseye, alpine ]
+        go-version: [ "1.25", "1.24" ]
+        distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 
       fail-fast: false
@@ -270,6 +272,7 @@ jobs:
             -v "$PWD:$PWD"                                                      \
             -w "$PWD"                                                           \
             -e "DD_APPSEC_WAF_TIMEOUT=${{ env.DD_APPSEC_WAF_TIMEOUT }}"         \
+            -e "GOEXPERIMENT=${{ env.GOEXPERIMENT }}"                           \
             golang:${{ matrix.go-version }}-${{ matrix.distribution }}
       - name: Install pre-requisites on Alpine
         if: matrix.distribution == 'alpine'

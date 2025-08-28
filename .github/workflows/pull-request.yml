@@ -25,6 +25,6 @@ jobs:
       id-token: write
       pull-requests: write
     with:
-      go-version: "1.23"
+      go-version: "1.24"
       ref: ${{ github.ref }}
     secrets: inherit

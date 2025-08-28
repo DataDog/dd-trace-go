@@ -44,9 +44,12 @@ func (mux *ServeMux) Handle(pttrn string, inner http.Handler) {
 		// Calling TraceAndServe before `http.ServeMux.ServeHTTP` does not give enough information
 		// about routing for AppSec to work properly when using the ServeMux tracing wrapper.
 		// Therefore, we need to wrap the handlerFunc with a handler that finished the job here
-		// after pattern data and matches are available.
+		// after pattern data and matches are available
+		// This also means stopping the handle from being called if security rules disallow it
 		handlerFunc = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httpsec.RouteMatched(r.Context(), pattern.Route(r.Pattern), pattern.PathParameters(r.Pattern, r))
+			if httpsec.RouteMatched(r.Context(), pattern.Route(r.Pattern), pattern.PathParameters(r.Pattern, r)) != nil {
+				return
+			}
 			inner.ServeHTTP(w, r)
 		})
 	}

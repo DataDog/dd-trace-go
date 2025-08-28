@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/tools/v2fix/_stage
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
@@ -57,6 +57,7 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.9.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.3 // indirect
+	github.com/theckman/httpforwarded v0.4.0 // indirect
 	github.com/tinylib/msgp v1.2.5 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.9.0 // indirect

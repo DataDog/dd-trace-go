@@ -116,6 +116,8 @@ type client struct {
 
 	// flushTicker is the ticker that triggers a call to client.Flush every flush interval
 	flushTicker *internal.Ticker
+	// flushMu is used to ensure that only one flush is happening at a time
+	flushMu sync.Mutex
 
 	// writer is the writer to use to send the payloads to the backend or the agent
 	writer internal.Writer
@@ -271,6 +273,8 @@ func (c *client) transform(payloads []transport.Payload) []transport.Payload {
 // flush sends all the data sources to the writer after having sent them through the [transform] function.
 // It returns the amount of bytes sent to the writer.
 func (c *client) flush(payloads []transport.Payload) (int, error) {
+	c.flushMu.Lock()
+	defer c.flushMu.Unlock()
 	payloads = c.transform(payloads)
 
 	if c.payloadQueue.IsEmpty() && len(payloads) == 0 {
