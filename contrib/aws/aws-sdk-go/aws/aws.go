@@ -228,7 +228,12 @@ func sqsTags(params interface{}, region string) (map[string]interface{}, error) 
 }
 
 func extractSQSMetadata(queueURL string, region string) (queueName string, arn string) {
-	// https://sqs.{region}.amazonaws.com/{account-id}/{queue-name}
+	// Remove trailing slash if present
+	if len(queueURL) > 0 && queueURL[len(queueURL)-1] == '/' {
+		queueURL = queueURL[:len(queueURL)-1]
+	}
+
+	// *.amazonaws.com/{accountID}/{queueName}
 	parts := strings.Split(queueURL, "/")
 	if len(parts) < 2 {
 		return "", ""
@@ -248,7 +253,7 @@ func extractSQSMetadata(queueURL string, region string) (queueName string, arn s
 	queueName = parts[len(parts)-1]
 	accountID := parts[len(parts)-2]
 
-	arn = fmt.Sprintf("arn:%s:sqs:%s:%s:%s", partition, region, accountID, queueName)
+	arn = strings.Join([]string{"arn", partition, "sqs", region, accountID, queueName}, ":")
 	return queueName, arn
 }
 

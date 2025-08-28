@@ -1223,3 +1223,71 @@ func TestStreamName(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractSQSMetadata(t *testing.T) {
+	tests := []struct {
+		name              string
+		queueURL          string
+		region            string
+		expectedQueueName string
+		expectedARN       string
+	}{
+		{
+			name:              "normal URL",
+			queueURL:          "https://sqs.us-east-1.amazonaws.com/123456789012/MyQueue",
+			region:            "us-east-1",
+			expectedQueueName: "MyQueue",
+			expectedARN:       "arn:aws:sqs:us-east-1:123456789012:MyQueue",
+		},
+		{
+			name:              "URL with trailing slash",
+			queueURL:          "https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueue/",
+			region:            "eu-west-1",
+			expectedQueueName: "MyQueue",
+			expectedARN:       "arn:aws:sqs:eu-west-1:123456789012:MyQueue",
+		},
+		{
+			name:              "China region",
+			queueURL:          "https://sqs.cn-north-1.amazonaws.com.cn/123456789012/ChinaQueue",
+			region:            "cn-north-1",
+			expectedQueueName: "ChinaQueue",
+			expectedARN:       "arn:aws-cn:sqs:cn-north-1:123456789012:ChinaQueue",
+		},
+		{
+			name:              "GovCloud region",
+			queueURL:          "https://sqs.us-gov-west-1.amazonaws.com/123456789012/GovQueue",
+			region:            "us-gov-west-1",
+			expectedQueueName: "GovQueue",
+			expectedARN:       "arn:aws-us-gov:sqs:us-gov-west-1:123456789012:GovQueue",
+		},
+		{
+			name:              "malformed URL - just slash",
+			queueURL:          "/",
+			region:            "us-east-1",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+		{
+			name:              "malformed URL - empty",
+			queueURL:          "",
+			region:            "us-east-1",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+		{
+			name:              "malformed URL - single part",
+			queueURL:          "invalidurl",
+			region:            "us-east-1",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region)
+			assert.Equal(t, tt.expectedQueueName, queueName)
+			assert.Equal(t, tt.expectedARN, arn)
+		})
+	}
+}

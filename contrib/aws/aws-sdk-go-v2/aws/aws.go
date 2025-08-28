@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -38,6 +39,12 @@ import (
 const componentName = "aws/aws-sdk-go-v2/aws"
 
 var instr = internal.Instr
+
+var tagMapPool = sync.Pool{
+	New: func() interface{} {
+		return make(map[string]string, 2)
+	},
+}
 
 type spanTimestampKey struct{}
 
@@ -102,7 +109,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 				if v != "" {
 					opts = append(opts, tracer.Tag(k, v))
 				}
+				delete(resourceTags, k)
 			}
+			tagMapPool.Put(resourceTags)
 		}
 
 		if !math.IsNaN(mw.cfg.analyticsRate) {
@@ -136,7 +145,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 }
 
 func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService string, region string) (map[string]string, bool) {
-	tags := make(map[string]string)
+	tags := tagMapPool.Get().(map[string]string)
 
 	switch awsService {
 	case "SQS":
@@ -159,6 +168,7 @@ func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService 
 	case "SFN":
 		tags[ext.SFNStateMachineName] = stateMachineName(requestInput)
 	default:
+		tagMapPool.Put(tags)
 		return nil, false
 	}
 
@@ -182,7 +192,12 @@ func queueURL(requestInput middleware.InitializeInput) string {
 }
 
 func extractSQSMetadata(queueURL string, region string) (queueName string, arn string) {
-	// https://sqs.{region}.amazonaws.com/{account-id}/{queue-name}
+	// Remove trailing slash if present
+	if len(queueURL) > 0 && queueURL[len(queueURL)-1] == '/' {
+		queueURL = queueURL[:len(queueURL)-1]
+	}
+
+	// *.amazonaws.com/{accountID}/{queueName}
 	parts := strings.Split(queueURL, "/")
 	if len(parts) < 2 {
 		return "", ""
@@ -202,7 +217,7 @@ func extractSQSMetadata(queueURL string, region string) (queueName string, arn s
 	queueName = parts[len(parts)-1]
 	accountID := parts[len(parts)-2]
 
-	arn = fmt.Sprintf("arn:%s:sqs:%s:%s:%s", partition, region, accountID, queueName)
+	arn = strings.Join([]string{"arn", partition, "sqs", region, accountID, queueName}, ":")
 	return queueName, arn
 }
 
