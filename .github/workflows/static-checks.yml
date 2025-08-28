@@ -12,10 +12,6 @@ on:
       - 'orchestrion/**'
       - 'scripts/**'
   pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
   workflow_call:
     inputs:
       go-version:

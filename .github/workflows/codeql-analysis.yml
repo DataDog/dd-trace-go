@@ -11,11 +11,6 @@ on:
     branches:
       - mq-working-branch-**
   pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-
 jobs:
   analyze:
     name: Analyze
