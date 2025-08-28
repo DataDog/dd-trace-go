@@ -65,6 +65,9 @@ const (
 	defaultHTTPTimeout       = 10 * time.Second              // defines the current timeout before giving up with the send process
 	traceCountHeader         = "X-Datadog-Trace-Count"       // header containing the number of traces in the payload
 	obfuscationVersionHeader = "Datadog-Obfuscation-Version" // header containing the version of obfuscation used, if any
+
+	tracesAPIPath = "/v0.4/traces"
+	statsAPIPath  = "/v0.6/stats"
 )
 
 // transport is an interface for communicating data to the agent.
@@ -112,8 +115,8 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 		defaultHeaders["Datadog-External-Env"] = extEnv
 	}
 	return &httpTransport{
-		traceURL: fmt.Sprintf("%s/v0.4/traces", url),
-		statsURL: fmt.Sprintf("%s/v0.6/stats", url),
+		traceURL: fmt.Sprintf("%s%s", url, tracesAPIPath),
+		statsURL: fmt.Sprintf("%s%s", url, statsAPIPath),
 		client:   client,
 		headers:  defaultHeaders,
 	}
@@ -136,10 +139,12 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	}
 	resp, err := t.client.Do(req)
 	if err != nil {
+		reportAPIErrorsMetric(resp, err, statsAPIPath)
 		return err
 	}
 	defer resp.Body.Close()
 	if code := resp.StatusCode; code >= 400 {
+		reportAPIErrorsMetric(resp, err, statsAPIPath)
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
@@ -188,11 +193,11 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
-		reportAPIErrorsMetric(response, err)
+		reportAPIErrorsMetric(response, err, tracesAPIPath)
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
-		reportAPIErrorsMetric(response, err)
+		reportAPIErrorsMetric(response, err, tracesAPIPath)
 		// error, check the body for context information and
 		// return a nice error.
 		msg := make([]byte, 1000)
@@ -207,7 +212,7 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	return response.Body, nil
 }
 
-func reportAPIErrorsMetric(response *http.Response, err error) {
+func reportAPIErrorsMetric(response *http.Response, err error, endpoint string) {
 	if t, ok := getGlobalTracer().(*tracer); ok {
 		var reason string
 		if err != nil {
@@ -216,7 +221,8 @@ func reportAPIErrorsMetric(response *http.Response, err error) {
 		if response != nil {
 			reason = fmt.Sprintf("server_response_%d", response.StatusCode)
 		}
-		t.statsd.Incr("datadog.tracer.api.errors", []string{"reason:" + reason}, 1)
+		tags := []string{"reason:" + reason, "endpoint:" + endpoint}
+		t.statsd.Incr("datadog.tracer.api.errors", tags, 1)
 	} else {
 		return
 	}
