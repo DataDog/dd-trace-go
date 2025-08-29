@@ -25,14 +25,14 @@ type traceChunk struct {
 	attributes map[uint32]anyValue
 
 	// a list of spans in this chunk
-	spans []Span
+	spans []*Span
 
 	// whether the trace only contains analyzed spans
 	// (not required by tracers and set by the agent)
 	droppedTrace bool
 
 	// the ID of the trace to which all spans in this chunk belong
-	traceID uint8
+	traceID []byte
 
 	// the optional string decision maker (previously span tag _dd.p.dm)
 	decisionMaker uint32
