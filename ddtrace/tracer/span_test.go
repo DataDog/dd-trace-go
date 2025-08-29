@@ -174,7 +174,7 @@ func TestSpanFinishTwice(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 
-	assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
+	assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
 
 	// the finish must be idempotent
 	span := tracer.newRootSpan("pylons.request", "pylons", "/")
