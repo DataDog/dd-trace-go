@@ -56,6 +56,14 @@ test-contrib: tools-install ## Run contrib package tests
 test-integration: tools-install ## Run integration tests
 	$(BIN_PATH) ./scripts/test.sh --integration
 
+.PHONY: test-deadlock
+test-deadlock: tools-install ## Run tests with deadlock detection
+	BUILD_TAGS=deadlock $(BIN_PATH) ./scripts/test.sh --all
+
+.PHONY: test-debug-deadlock
+test-debug-deadlock: tools-install ## Run tests with debug and deadlock detection
+	BUILD_TAGS=debug,deadlock $(BIN_PATH) ./scripts/test.sh --all
+
 .PHONY: fix-modules
 fix-modules: tools-install ## Fix module dependencies and consistency
 	$(BIN_PATH) ./scripts/fix_modules.sh
