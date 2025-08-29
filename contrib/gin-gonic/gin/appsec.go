@@ -54,6 +54,7 @@ func init() {
 	binding.JSON = AppsecBinding{BindingBody: binding.JSON}
 	binding.XML = AppsecBinding{BindingBody: binding.XML}
 	binding.ProtoBuf = AppsecBinding{BindingBody: binding.ProtoBuf}
+	binding.MsgPack = AppsecBinding{BindingBody: binding.MsgPack}
 	binding.YAML = AppsecBinding{BindingBody: binding.YAML}
 	binding.TOML = AppsecBinding{BindingBody: binding.TOML}
 }
