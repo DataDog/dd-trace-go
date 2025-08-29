@@ -3,12 +3,15 @@ name: Static Checks
 on:
   push:
     branches:
-      - main
       - release-*
+      - mq-working-branch-**
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   pull_request:
-    branches:
-      - main
-      - release-*
   workflow_call:
     inputs:
       go-version:

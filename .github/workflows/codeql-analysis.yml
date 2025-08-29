@@ -8,15 +8,9 @@ on:
         required: true
         type: string
   push:
-    branches: [ main, master ]
-    tags-ignore:
-      - 'contrib/**'
-      - 'instrumentation/**'
+    branches:
+      - mq-working-branch-**
   pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ main ]
-  merge_group:
-
 jobs:
   analyze:
     name: Analyze

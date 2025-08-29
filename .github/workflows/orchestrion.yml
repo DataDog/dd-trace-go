@@ -15,13 +15,15 @@ on:
       DD_API_KEY:
         required: false
   pull_request:
-  merge_group:
   push:
     branches:
       - release-v*
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
 
 permissions: read-all
 
