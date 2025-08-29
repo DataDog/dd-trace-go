@@ -58,35 +58,33 @@ type payloadV04 struct {
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
 
-	// protocol specifies the trace protocol to use.
-	protocol float64
+	// protocolVersion specifies the trace protocol to use.
+	protocolVersion float64
 }
 
 var _ io.Reader = (*payloadV04)(nil)
 
-// newPayload returns a ready to use payload.
-func newPayload() *payloadV04 {
+// newPayloadV04 returns a ready to use payload.
+func newPayloadV04(protocol float64) *payloadV04 {
 	p := &payloadV04{
-		header: make([]byte, 8),
-		off:    8,
+		header:          make([]byte, 8),
+		off:             8,
+		protocolVersion: protocol,
 	}
 	return p
 }
 
 // push pushes a new item into the stream.
-func (p *payloadV04) push(t []*Span) error {
+func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
 	// if p.protocol == traceProtocolV1 {
 	//     // TODO: implement v1.0 encoding
-	// } else {
-	sl := spanList(t)
 	// }
-	p.buf.Grow(sl.Msgsize())
-	if err := msgp.Encode(&p.buf, sl); err != nil {
-		return err
+	p.buf.Grow(t.Msgsize())
+	if err := msgp.Encode(&p.buf, t); err != nil {
+		return payloadStats{}, err
 	}
-	atomic.AddUint32(&p.count, 1)
-	p.updateHeader()
-	return nil
+	p.recordItem()
+	return p.stats(), nil
 }
 
 // itemCount returns the number of items available in the stream.
@@ -114,6 +112,35 @@ func (p *payloadV04) reset() {
 func (p *payloadV04) clear() {
 	p.buf = bytes.Buffer{}
 	p.reader = nil
+}
+
+// Write implements io.Writer. It writes data directly to the buffer.
+func (p *payloadV04) Write(data []byte) (n int, err error) {
+	return p.buf.Write(data)
+}
+
+// grow grows the buffer to ensure it can accommodate n more bytes.
+func (p *payloadV04) grow(n int) {
+	p.buf.Grow(n)
+}
+
+// recordItem records that an item was added and updates the header.
+func (p *payloadV04) recordItem() {
+	atomic.AddUint32(&p.count, 1)
+	p.updateHeader()
+}
+
+// stats returns the current stats of the payload.
+func (p *payloadV04) stats() payloadStats {
+	return payloadStats{
+		size:      p.size(),
+		itemCount: int(atomic.LoadUint32(&p.count)),
+	}
+}
+
+// protocol returns the protocol version of the payload.
+func (p *payloadV04) protocol() float64 {
+	return p.protocolVersion
 }
 
 // updateHeader updates the payload header based on the number of items currently
