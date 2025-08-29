@@ -82,6 +82,7 @@ type traceChunk struct {
 
 // newPayload returns a ready to use thread-safe payload.
 func newPayload(protocol float64) payload {
+	// TODO(hannahkm): add support for v1 protocol
 	return &safePayload{
 		p: newPayloadV04(protocol),
 	}
