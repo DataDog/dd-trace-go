@@ -8,7 +8,6 @@ package tracer
 import (
 	"io"
 	"sync"
-	"sync/atomic"
 )
 
 // payloadStats contains the statistics of a payload.
@@ -41,6 +40,23 @@ type payloadReader interface {
 	protocol() float64
 }
 
+// unsafePayload defines the interface for unsafe (non-thread-safe) payload implementations.
+type unsafePayload interface {
+	io.Reader
+	io.Writer
+	io.Closer
+
+	push(t spanList) (stats payloadStats, err error)
+	itemCount() int
+	size() int
+	reset()
+	clear()
+	grow(n int)
+	recordItem()
+	stats() payloadStats
+	protocol() float64
+}
+
 // payload combines both reading and writing operations for a payload.
 type payload interface {
 	payloadWriter
@@ -54,44 +70,20 @@ const (
 	msgpackArray32  byte = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
 )
 
-// traceChunk represents a list of spans with the same trace ID,
-// i.e. a chunk of a trace
-type traceChunk struct {
-	// the sampling priority of the trace
-	priority int32
-
-	// the optional string origin ("lambda", "rum", etc.) of the trace chunk
-	origin uint32
-
-	// a collection of key to value pairs common in all `spans`
-	attributes map[uint32]anyValue
-
-	// a list of spans in this chunk
-	spans []Span
-
-	// whether the trace only contains analyzed spans
-	// (not required by tracers and set by the agent)
-	droppedTrace bool
-
-	// the ID of the trace to which all spans in this chunk belong
-	traceID uint8
-
-	// the optional string decision maker (previously span tag _dd.p.dm)
-	decisionMaker uint32
-}
-
 // newPayload returns a ready to use thread-safe payload.
 func newPayload(protocol float64) payload {
 	// TODO(hannahkm): add support for v1 protocol
+	// if protocol == traceProtocolV1 {
+	// }
 	return &safePayload{
 		p: newPayloadV04(protocol),
 	}
 }
 
-// safePayload provides a thread-safe wrapper around payloadV04.
+// safePayload provides a thread-safe wrapper around unsafePayload.
 type safePayload struct {
 	mu sync.RWMutex
-	p  *payloadV04
+	p  unsafePayload
 }
 
 // push pushes a new item into the stream in a thread-safe manner.
@@ -103,8 +95,7 @@ func (sp *safePayload) push(t spanList) (stats payloadStats, err error) {
 
 // itemCount returns the number of items available in the stream in a thread-safe manner.
 func (sp *safePayload) itemCount() int {
-	// Use direct atomic access for better performance - no mutex needed
-	return int(atomic.LoadUint32(&sp.p.count))
+	return sp.p.itemCount()
 }
 
 // size returns the payload size in bytes in a thread-safe manner.
@@ -175,4 +166,30 @@ func (sp *safePayload) stats() payloadStats {
 func (sp *safePayload) protocol() float64 {
 	// Protocol is immutable after creation - no lock needed
 	return sp.p.protocol()
+}
+
+// traceChunk represents a list of spans with the same trace ID,
+// i.e. a chunk of a trace
+type traceChunk struct {
+	// the sampling priority of the trace
+	priority int32
+
+	// the optional string origin ("lambda", "rum", etc.) of the trace chunk
+	origin uint32
+
+	// a collection of key to value pairs common in all `spans`
+	attributes map[uint32]anyValue
+
+	// a list of spans in this chunk
+	spans []Span
+
+	// whether the trace only contains analyzed spans
+	// (not required by tracers and set by the agent)
+	droppedTrace bool
+
+	// the ID of the trace to which all spans in this chunk belong
+	traceID uint8
+
+	// the optional string decision maker (previously span tag _dd.p.dm)
+	decisionMaker uint32
 }

@@ -21,8 +21,8 @@ import (
 // from the msgpack array spec:
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
 //
-// payloadV04 implements io.Reader and can be used with the decoder directly. To create
-// a new payload use the newPayload method.
+// payloadV04 implements unsafePayload and can be used with the decoder directly. To create
+// a new payload use the newPayloadV04 method.
 //
 // payloadV04 is not safe for concurrent use.
 //
@@ -76,9 +76,6 @@ func newPayloadV04(protocol float64) *payloadV04 {
 
 // push pushes a new item into the stream.
 func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
-	// if p.protocol == traceProtocolV1 {
-	//     // TODO: implement v1.0 encoding
-	// }
 	p.buf.Grow(t.Msgsize())
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return payloadStats{}, err
@@ -112,11 +109,6 @@ func (p *payloadV04) reset() {
 func (p *payloadV04) clear() {
 	p.buf = bytes.Buffer{}
 	p.reader = nil
-}
-
-// Write implements io.Writer. It writes data directly to the buffer.
-func (p *payloadV04) Write(data []byte) (n int, err error) {
-	return p.buf.Write(data)
 }
 
 // grow grows the buffer to ensure it can accommodate n more bytes.
@@ -165,6 +157,11 @@ func (p *payloadV04) updateHeader() {
 // Close implements io.Closer
 func (p *payloadV04) Close() error {
 	return nil
+}
+
+// Write implements io.Writer. It writes data directly to the buffer.
+func (p *payloadV04) Write(data []byte) (n int, err error) {
+	return p.buf.Write(data)
 }
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
