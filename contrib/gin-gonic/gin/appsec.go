@@ -9,11 +9,52 @@ import (
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 )
+
+// appsecBinding wraps a binding.BindingBody to add AppSec monitoring of the parsed request body.
+// It is used to override the default bindings in the gin binding package at init time.
+// Keep in mind that this does not cover all the ways to bind a request in gin because of the
+// [binding.BindingBody.BindBody] method that we do not wrap because we would be missing the request context.
+type appsecBinding struct {
+	binding.BindingBody
+}
+
+func (b appsecBinding) Bind(req *http.Request, obj any) error {
+	err := b.BindingBody.Bind(req, obj)
+	if err != nil {
+		return err
+	}
+
+	err = appsec.MonitorParsedHTTPBody(req.Context(), obj)
+	if events.IsSecurityError(err) {
+		// Write the blocking response NOW instead of waiting for the end of the request
+		// because the function just on top of us will write a 400 Bad Request "Could not parse request body"
+		op, ok := dyngo.FindOperation[httpsec.HandlerOperation](req.Context())
+		if !ok {
+			instr.Logger().Debug("Unknown operation in context, cannot block")
+			return nil // Don't return the blocking error, as we cannot block ourselves which would trigger a 400
+		}
+
+		dyngo.EmitData(op, httpsec.EarlyBlock{})
+	}
+	return err
+}
+
+func init() {
+	// Override the default bindings to add AppSec monitoring of the parsed request body
+	binding.JSON = appsecBinding{BindingBody: binding.JSON}
+	binding.XML = appsecBinding{BindingBody: binding.XML}
+	binding.ProtoBuf = appsecBinding{BindingBody: binding.ProtoBuf}
+	binding.YAML = appsecBinding{BindingBody: binding.YAML}
+	binding.TOML = appsecBinding{BindingBody: binding.TOML}
+}
 
 // useAppSec executes the AppSec logic related to the operation start
 func useAppSec(c *gin.Context, span trace.TagSetter) {

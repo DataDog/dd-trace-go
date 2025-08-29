@@ -65,6 +65,9 @@ type (
 		Headers    map[string][]string
 		StatusCode int
 	}
+
+	// EarlyBlock is used to trigger an early block before the handler is executed.
+	EarlyBlock struct{}
 )
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
@@ -256,6 +259,16 @@ func BeforeHandle(
 		blockPtr.Handler = nil
 		handled = true
 	}
+
+	// We register a handler for cases that would require us to write the blocking response before any more code
+	// from a specific framework (like Gin) is executed that would write another (wrong) response here.
+	dyngo.OnData(op, func(e EarlyBlock) {
+		if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
+			blockPtr.Handler.ServeHTTP(w, tr)
+			blockPtr.Handler = nil
+		}
+	})
+
 	return w, tr, afterHandle, handled
 }
 

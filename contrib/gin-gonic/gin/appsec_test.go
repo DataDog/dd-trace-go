@@ -407,8 +407,18 @@ func TestBlocking(t *testing.T) {
 
 	r := gin.New()
 	r.Use(Middleware("appsec"))
-	r.Any("/", func(c *gin.Context) {
+	r.Any("/test", func(c *gin.Context) {
 		c.String(200, "Hello World!\n")
+	})
+	r.Any("/body", func(c *gin.Context) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := c.Bind(&body); err != nil {
+			c.AbortWithError(400, err) // Should be ignored
+			return
+		}
+		c.String(200, "Hello %s!\n", body.Name)
 	})
 	srv := httptest.NewServer(r)
 	defer srv.Close()
@@ -417,7 +427,7 @@ func TestBlocking(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("POST", srv.URL, nil)
+		req, err := http.NewRequest("POST", srv.URL+"/test", nil)
 		if err != nil {
 			panic(err)
 		}
@@ -434,29 +444,54 @@ func TestBlocking(t *testing.T) {
 		require.Equal(t, 403, res.StatusCode)
 	})
 
+	t.Run("body-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srv.URL+"/body", strings.NewReader(`{"name":"$globals"}`))
+		if err != nil {
+			panic(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// Hardcoded IP header holding an IP that is blocked
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		// Check that the request was blocked
+		b, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.NotContains(t, string(b), "Hello")
+		require.Equal(t, 403, res.StatusCode)
+	})
+
 	t.Run("no-block", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req1, err := http.NewRequest("POST", srv.URL, nil)
+		req1, err := http.NewRequest("POST", srv.URL+"/test", nil)
 		if err != nil {
 			panic(err)
 		}
-		req2, err := http.NewRequest("POST", srv.URL, nil)
+		req2, err := http.NewRequest("POST", srv.URL+"/test", nil)
 		if err != nil {
 			panic(err)
 		}
 		req2.Header.Set("x-forwarded-for", "1.2.3.5")
+		req3, err := http.NewRequest("POST", srv.URL+"/body", strings.NewReader(`{"name":"toto"}`))
+		if err != nil {
+			panic(err)
+		}
+		req3.Header.Set("Content-Type", "application/json")
 
-		for _, r := range []*http.Request{req1, req2} {
+		for _, r := range []*http.Request{req1, req2, req3} {
 			res, err := srv.Client().Do(r)
 			require.NoError(t, err)
 			defer res.Body.Close()
 			// Check that the request was not blocked
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
-			require.Equal(t, "Hello World!\n", string(b))
-
+			require.Contains(t, string(b), "Hello")
 		}
 	})
 }
