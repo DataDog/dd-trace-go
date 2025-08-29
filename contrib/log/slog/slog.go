@@ -123,3 +123,12 @@ func (h *handler) WithGroup(name string) slog.Handler {
 		groups:  append(h.groups, group{name: name}),
 	}
 }
+
+// IsAlreadyWrapped checks whether the given handler is already wrapped by this package.
+// This can happen when a lot of packages are using slog and you want to avoid double wrapping.
+// This was originally created to avoid a deadlock in calling slog.SetDefault multiple times.
+// See internal/orchestrion/_integration/slog/slog.go#testDeadlock
+func IsAlreadyWrapped(h slog.Handler) bool {
+	_, ok := h.(*handler)
+	return ok
+}
