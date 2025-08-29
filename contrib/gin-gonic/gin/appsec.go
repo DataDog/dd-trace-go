@@ -30,7 +30,7 @@ type AppsecBinding struct {
 
 func (b AppsecBinding) Bind(req *http.Request, obj any) error {
 	err := b.BindingBody.Bind(req, obj)
-	if err != nil {
+	if err != nil || !instr.AppSecEnabled() {
 		return err
 	}
 
