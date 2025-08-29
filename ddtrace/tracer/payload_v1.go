@@ -5,10 +5,6 @@
 
 package tracer
 
-import (
-	"io"
-)
-
 // payloadV1 is a new version of a msgp payload that can be sent to the agent.
 // Be aware that payloadV1 follows the same rules and constraints as payloadV04. That is:
 //
@@ -103,78 +99,4 @@ func newPayloadV1(protocol float64) *payloadV1 {
 		attributes:      make(map[uint32]anyValue),
 		chunks:          make([]traceChunk, 0),
 	}
-}
-
-// Implement unsafePayload interface methods for payloadV1
-
-// push pushes a new item into the stream.
-func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
-	// TODO: implement v1.0 encoding for spanList
-	// For now, this is a placeholder
-	p.recordItem()
-	return p.stats(), nil
-}
-
-// itemCount returns the number of items available in the stream.
-func (p *payloadV1) itemCount() int {
-	return int(p.itemsCount)
-}
-
-// size returns the payload size in bytes.
-func (p *payloadV1) size() int {
-	// TODO: implement actual size calculation for v1 payload
-	return 0
-}
-
-// reset sets up the payload to be read a second time.
-func (p *payloadV1) reset() {
-	// TODO: implement reset logic for v1 payload
-}
-
-// clear empties the payload buffers.
-func (p *payloadV1) clear() {
-	p.strings = p.strings[:0]
-	p.chunks = p.chunks[:0]
-	p.attributes = make(map[uint32]anyValue)
-	p.itemsCount = 0
-}
-
-// Write implements io.Writer.
-func (p *payloadV1) Write(data []byte) (n int, err error) {
-	// TODO: implement Write for v1 payload
-	return len(data), nil
-}
-
-// grow grows the buffer to ensure it can accommodate n more bytes.
-func (p *payloadV1) grow(n int) {
-	// TODO: implement grow for v1 payload
-}
-
-// recordItem records that an item was added.
-func (p *payloadV1) recordItem() {
-	p.itemsCount++
-}
-
-// stats returns the current stats of the payload.
-func (p *payloadV1) stats() payloadStats {
-	return payloadStats{
-		size:      p.size(),
-		itemCount: int(p.itemsCount),
-	}
-}
-
-// protocol returns the protocol version of the payload.
-func (p *payloadV1) protocol() float64 {
-	return p.protocolVersion
-}
-
-// Close implements io.Closer.
-func (p *payloadV1) Close() error {
-	return nil
-}
-
-// Read implements io.Reader.
-func (p *payloadV1) Read(b []byte) (n int, err error) {
-	// TODO: implement Read for v1 payload
-	return 0, io.EOF
 }
