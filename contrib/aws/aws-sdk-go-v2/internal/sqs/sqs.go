@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -30,6 +31,7 @@ func EnrichOperation(span *tracer.Span, in middleware.InitializeInput, operation
 	case "SendMessageBatch":
 		handleSendMessageBatch(span, in)
 	}
+	span.SetTag(ext.MessagingSystem, ext.MessagingSystemSQS)
 }
 
 func handleSendMessage(span *tracer.Span, in middleware.InitializeInput) {
