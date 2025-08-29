@@ -18,11 +18,11 @@ import (
 	"github.com/gin-gonic/gin/binding"
 )
 
-// AppsecBinding wraps a binding.BindingBody to add AppSec monitoring of the parsed request body.
+// AppsecBinding wraps a [binding.BindingBody] to add AppSec monitoring of the parsed request body.
 // It is used to override the default bindings in the gin binding package at init time.
 // Keep in mind that this does not cover all the ways to bind a request in gin because of the
 // [binding.BindingBody.BindBody] method that we do not wrap because we would be missing the request context.
-// You can also you it manually by wrapping any binding.BindingBody you want and using it with [gin.Context.MustBindWith]
+// You can also you it manually by wrapping any [binding.BindingBody] you want and using it with [gin.Context.MustBindWith]
 // or [gin.Context.BindWith].
 type AppsecBinding struct {
 	binding.BindingBody
