@@ -18,15 +18,17 @@ import (
 	"github.com/gin-gonic/gin/binding"
 )
 
-// appsecBinding wraps a binding.BindingBody to add AppSec monitoring of the parsed request body.
+// AppsecBinding wraps a binding.BindingBody to add AppSec monitoring of the parsed request body.
 // It is used to override the default bindings in the gin binding package at init time.
 // Keep in mind that this does not cover all the ways to bind a request in gin because of the
 // [binding.BindingBody.BindBody] method that we do not wrap because we would be missing the request context.
-type appsecBinding struct {
+// You can also you it manually by wrapping any binding.BindingBody you want and using it with [gin.Context.MustBindWith]
+// or [gin.Context.BindWith].
+type AppsecBinding struct {
 	binding.BindingBody
 }
 
-func (b appsecBinding) Bind(req *http.Request, obj any) error {
+func (b AppsecBinding) Bind(req *http.Request, obj any) error {
 	err := b.BindingBody.Bind(req, obj)
 	if err != nil {
 		return err
@@ -49,11 +51,11 @@ func (b appsecBinding) Bind(req *http.Request, obj any) error {
 
 func init() {
 	// Override the default bindings to add AppSec monitoring of the parsed request body
-	binding.JSON = appsecBinding{BindingBody: binding.JSON}
-	binding.XML = appsecBinding{BindingBody: binding.XML}
-	binding.ProtoBuf = appsecBinding{BindingBody: binding.ProtoBuf}
-	binding.YAML = appsecBinding{BindingBody: binding.YAML}
-	binding.TOML = appsecBinding{BindingBody: binding.TOML}
+	binding.JSON = AppsecBinding{BindingBody: binding.JSON}
+	binding.XML = AppsecBinding{BindingBody: binding.XML}
+	binding.ProtoBuf = AppsecBinding{BindingBody: binding.ProtoBuf}
+	binding.YAML = AppsecBinding{BindingBody: binding.YAML}
+	binding.TOML = AppsecBinding{BindingBody: binding.TOML}
 }
 
 // useAppSec executes the AppSec logic related to the operation start
