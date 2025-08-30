@@ -6,11 +6,14 @@
 package wrap
 
 import (
+	"crypto/tls"
 	"fmt"
 	"math"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
@@ -18,10 +21,62 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	instrumentationhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 type AfterRoundTrip = func(*http.Response, error) (*http.Response, error)
+
+// httpTraceTimings captures key timing events from httptrace.ClientTrace
+type httpTraceTimings struct {
+	dnsStart, dnsEnd           time.Time
+	connectStart, connectEnd   time.Time
+	tlsStart, tlsEnd           time.Time
+	getConnStart, gotConn      time.Time
+	wroteHeaders, gotFirstByte time.Time
+	connectErr                 error
+	tlsErr                     error
+}
+
+// addDurationTag adds a timing tag to the span if both timestamps are valid
+func (t *httpTraceTimings) addDurationTag(span *tracer.Span, tagName string, start, end time.Time) {
+	if !start.IsZero() && !end.IsZero() {
+		duration := float64(end.Sub(start).Nanoseconds()) / 1e6
+		span.SetTag(tagName, duration)
+	}
+}
+
+// addTimingTags adds all timing information to the span
+func (t *httpTraceTimings) addTimingTags(span *tracer.Span) {
+	t.addDurationTag(span, "http.dns.duration_ms", t.dnsStart, t.dnsEnd)
+	t.addDurationTag(span, "http.connect.duration_ms", t.connectStart, t.connectEnd)
+	t.addDurationTag(span, "http.tls.duration_ms", t.tlsStart, t.tlsEnd)
+	t.addDurationTag(span, "http.get_conn.duration_ms", t.getConnStart, t.gotConn)
+	t.addDurationTag(span, "http.first_byte.duration_ms", t.wroteHeaders, t.gotFirstByte)
+	
+	// Add error information if present
+	if t.connectErr != nil {
+		span.SetTag("http.connect.error", t.connectErr.Error())
+	}
+	if t.tlsErr != nil {
+		span.SetTag("http.tls.error", t.tlsErr.Error())
+	}
+}
+
+// newClientTrace creates a ClientTrace that captures timing information
+func newClientTrace(timings *httpTraceTimings) *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{
+		DNSStart:             func(httptrace.DNSStartInfo) { timings.dnsStart = time.Now() },
+		DNSDone:              func(httptrace.DNSDoneInfo) { timings.dnsEnd = time.Now() },
+		ConnectStart:         func(network, addr string) { timings.connectStart = time.Now() },
+		ConnectDone:          func(network, addr string, err error) { timings.connectEnd = time.Now(); timings.connectErr = err },
+		TLSHandshakeStart:    func() { timings.tlsStart = time.Now() },
+		TLSHandshakeDone:     func(_ tls.ConnectionState, err error) { timings.tlsEnd = time.Now(); timings.tlsErr = err },
+		GetConn:              func(hostPort string) { timings.getConnStart = time.Now() },
+		GotConn:              func(httptrace.GotConnInfo) { timings.gotConn = time.Now() },
+		WroteHeaders:         func() { timings.wroteHeaders = time.Now() },
+		GotFirstResponseByte: func() { timings.gotFirstByte = time.Now() },
+	}
+}
 
 // ObserveRoundTrip performs actions before the base [http.RoundTripper.RoundTrip] using the
 // provided [*config.RoundTripperConfig] (which cannot be nil). It returns the possibly modified
@@ -45,7 +100,7 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.HTTPMethod, req.Method),
-		tracer.Tag(ext.HTTPURL, httptrace.URLFromRequest(req, cfg.QueryString)),
+		tracer.Tag(ext.HTTPURL, instrumentationhttptrace.URLFromRequest(req, cfg.QueryString)),
 		tracer.Tag(ext.Component, config.ComponentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.NetworkDestinationName, url.Hostname()),
@@ -69,6 +124,13 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 	// Apply the before hook, if any
 	if cfg.Before != nil {
 		cfg.Before(req, span)
+	}
+
+	// Setup ClientTrace for detailed timing if enabled
+	var timings *httpTraceTimings
+	if cfg.ClientTrace {
+		timings = &httpTraceTimings{}
+		ctx = httptrace.WithClientTrace(ctx, newClientTrace(timings))
 	}
 
 	// Clone the request so we can modify it without causing visible side-effects to the caller...
@@ -106,6 +168,10 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 				span.SetTag("http.errors", resp.Status)
 				span.SetTag(ext.Error, fmt.Errorf("%d: %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
 			}
+		}
+
+		if cfg.ClientTrace && timings != nil {
+			timings.addTimingTags(span)
 		}
 
 		// Run the after hooks & finish the span
