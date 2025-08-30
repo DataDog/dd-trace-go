@@ -50,7 +50,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("service", span.Tag(ext.ServiceName))
 		assert.Equal("resource", span.Tag(ext.ResourceName))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
+		assert.Equal("/path", span.Tag(ext.HTTPURL))
 		assert.Equal("503", span.Tag(ext.HTTPCode))
 		assert.Equal("503: Service Unavailable", span.Tag(ext.ErrorMsg))
 		assert.Equal("server", span.Tag(ext.SpanKind))
@@ -76,8 +76,9 @@ func TestTraceAndServe(t *testing.T) {
 			called = true
 		}
 		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
-			Service:  "service",
-			Resource: "resource",
+			Service:     "service",
+			Resource:    "resource",
+			QueryParams: true,
 		})
 		spans := mt.FinishedSpans()
 		span := spans[0]
@@ -258,8 +259,9 @@ func TestTraceAndServe(t *testing.T) {
 			called = true
 		}
 		TraceAndServe(http.HandlerFunc(handler), w, r, &ServeConfig{
-			Service:  "service",
-			Resource: "resource",
+			Service:     "service",
+			Resource:    "resource",
+			QueryParams: true,
 		})
 		spans := mt.FinishedSpans()
 		span := spans[0]
@@ -301,7 +303,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("http.request", span.Tag(ext.ResourceName))
 		assert.Nil(span.Tag(ext.HTTPRoute))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
+		assert.Equal("/path", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("server", span.Tag(ext.SpanKind))
 		assert.Equal("net/http", span.Tag(ext.Component))
@@ -333,7 +335,7 @@ func TestTraceAndServe(t *testing.T) {
 		assert.Equal("http.request", span.Tag(ext.ResourceName))
 		assert.Nil(span.Tag(ext.HTTPRoute))
 		assert.Equal("GET", span.Tag(ext.HTTPMethod))
-		assert.Equal("/path?<redacted>", span.Tag(ext.HTTPURL))
+		assert.Equal("/path", span.Tag(ext.HTTPURL))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("custom.kind", span.Tag(ext.SpanKind))
 		assert.Equal("custom.component", span.Tag(ext.Component))
