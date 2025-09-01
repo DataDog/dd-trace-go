@@ -16,11 +16,30 @@ aspects:
       - inject-declarations:
           imports:
             context: context
+            telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
             zap: go.uber.org/zap
             zapcore: go.uber.org/zap/zapcore
           template: |-
             func init() {
+              telemetry.LoadIntegration("uber-go/zap")
               tracer.MarkIntegrationImported("github.com/uber-go/zap")
             }
+
+  - id: Logger.Info
+    join-point:
+      function-call: '*go.uber.org/zap.Logger.Info'
+    advice:
+      - wrap-expression:
+          imports:
+            context: context
+            ddzap: github.com/DataDog/dd-trace-go/contrib/uber-go/zap/v2
+            zap: go.uber.org/zap
+          template: |-
+            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- if $ctx -}}
+              {{ .AST.X }}.With(ddzap.ExtractTracingContext({{ $ctx }})).Info
+            {{- else -}}
+              {{ .AST.X }}.With(ddzap.ExtractTracingContext(context.TODO())).Info
+            {{- end -}}
