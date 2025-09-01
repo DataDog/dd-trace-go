@@ -313,6 +313,10 @@ The `configinverter` tool provides a command to add new environment variable key
 go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
 ```
 
+After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
+If the key already exists in the registry because another language already registred it this step can be skipped.
+Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
+
 #### Auto-detection via tests
 
 All environment variables should be read at least once by a test. When this happens, a helper automatically detects the usage and adds the variable to the [JSON configuration file](./internal/env/supported_configurations.json). Since the variable isn't yet present in the generated code, it won't read any actual environment values initially, but it will be recorded for code generation.
@@ -331,9 +335,13 @@ After the first test run that detects your new environment variable, regenerate 
 go run ./scripts/configinverter/main.go generate
 ```
 
+After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
+If the key already exists in the registry because another language already registred it this step can be skipped.
+Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
+
 #### Handling related CI failures
 
-The GitLab `validate_supported_configurations_local_file` job validates the JSON file content against Datadog's internal configuration registry to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass.
+The GitLab `validate_supported_configurations_local_file` job validates the JSON file content against Datadog's [configuration registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass, the key will need to be documented before merging the PR onto main.
 
 Additionally, multiple CI jobs include a [step](./.github/actions/supported_configurations_validation/action.yml) that checks for newly discovered environment variables during test execution and will fail if keys are missing from the generated list. To resolve this failure, use one of the two methods described above to add the key to the generated list.
 
