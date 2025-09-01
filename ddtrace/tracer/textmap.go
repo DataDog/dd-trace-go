@@ -172,8 +172,8 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := env.Getenv(headerPropagationStyleInject)
-	extractorsPs := env.Getenv(headerPropagationStyleExtract)
+	injectorsPs := env.Get(headerPropagationStyleInject)
+	extractorsPs := env.Get(headerPropagationStyleExtract)
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp

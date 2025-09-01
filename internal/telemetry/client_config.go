@@ -168,7 +168,7 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	}
 
 	if config.APIKey == "" {
-		config.APIKey = env.Getenv("DD_API_KEY")
+		config.APIKey = env.Get("DD_API_KEY")
 	}
 
 	if config.FlushInterval.Min == 0 {

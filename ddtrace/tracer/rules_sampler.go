@@ -670,12 +670,12 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 
 	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
 		envKey := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
-		rulesEnv := env.Getenv(envKey)
+		rulesEnv := env.Get(envKey)
 		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-		rulesFile := env.Getenv(envKey + "_FILE")
+		rulesFile := env.Get(envKey + "_FILE")
 		if len(rules) != 0 {
 			if rulesFile != "" {
 				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", envKey, envKey)

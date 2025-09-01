@@ -139,9 +139,9 @@ type registerConfig = config
 
 func defaults(cfg *config, driverName string, rc *registerConfig) {
 	cfg.analyticsRate = instr.AnalyticsRate(false)
-	mode := env.Getenv("DD_DBM_PROPAGATION_MODE")
+	mode := env.Get("DD_DBM_PROPAGATION_MODE")
 	if mode == "" {
-		mode = env.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
+		mode = env.Get("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 	cfg.serviceName = defaultServiceName(driverName, rc)

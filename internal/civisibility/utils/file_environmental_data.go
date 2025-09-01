@@ -102,7 +102,7 @@ func getEnvironmentalData() *fileEnvironmentalData {
 //
 //go:linkname getEnvDataFileName
 func getEnvDataFileName() string {
-	envDataFileName := strings.TrimSpace(env.Getenv(constants.CIVisibilityEnvironmentDataFilePath))
+	envDataFileName := strings.TrimSpace(env.Get(constants.CIVisibilityEnvironmentDataFilePath))
 	if envDataFileName != "" {
 		return envDataFileName
 	}

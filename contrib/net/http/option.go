@@ -135,7 +135,7 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		QueryString:   options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
 		IsStatusError: isClientError,
 	}
-	v := env.Getenv(internal.EnvClientErrorStatuses)
+	v := env.Get(internal.EnvClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
 		rtConfig.IsStatusError = fn
 	}

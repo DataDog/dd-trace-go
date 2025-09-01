@@ -83,7 +83,7 @@ func getProviderTestSessionTypeFromProviderString(provider string) TestSessionTy
 func TestSession(providerName string) {
 	var tags []string
 	tags = append(tags, getProviderTestSessionTypeFromProviderString(providerName)...)
-	if env.Getenv(constants.CIVisibilityAutoInstrumentationProviderEnvironmentVariable) != "" {
+	if env.Get(constants.CIVisibilityAutoInstrumentationProviderEnvironmentVariable) != "" {
 		tags = append(tags, IsAutoInstrumentationTestSessionType...)
 	}
 	telemetry.Count(telemetry.NamespaceCIVisibility, "test_session", removeEmptyStrings(tags)).Submit(1.0)

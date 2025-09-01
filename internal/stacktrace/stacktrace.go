@@ -41,7 +41,7 @@ const (
 )
 
 func init() {
-	if env := env.Getenv(envStackTraceEnabled); env != "" {
+	if env := env.Get(envStackTraceEnabled); env != "" {
 		if e, err := strconv.ParseBool(env); err == nil {
 			enabled = e
 		} else {
@@ -49,7 +49,7 @@ func init() {
 		}
 	}
 
-	if env := env.Getenv(envStackTraceDepth); env != "" {
+	if env := env.Get(envStackTraceDepth); env != "" {
 		if !enabled {
 			log.Warn("Ignoring %s because stacktrace generation is disable", envStackTraceDepth)
 			return

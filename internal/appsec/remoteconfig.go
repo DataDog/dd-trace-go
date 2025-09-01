@@ -351,7 +351,7 @@ func (a *appsec) enableRCBlocking() {
 		}
 	}
 
-	if localRulesPath, hasLocalRules := env.LookupEnv(config.EnvRules); hasLocalRules {
+	if localRulesPath, hasLocalRules := env.Lookup(config.EnvRules); hasLocalRules {
 		log.Debug("appsec: remote config: using rules from %s; will not register blocking capabilities", localRulesPath)
 		return
 	}

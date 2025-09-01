@@ -29,8 +29,8 @@ type Config struct {
 
 func getConfig() Config {
 	cfg := Config{
-		ListenAddr:      env.Getenv("DD_REQUEST_MIRROR_LISTEN_ADDR"),
-		HealthCheckAddr: env.Getenv("DD_REQUEST_MIRROR_HEALTHCHECK_ADDR"),
+		ListenAddr:      env.Get("DD_REQUEST_MIRROR_LISTEN_ADDR"),
+		HealthCheckAddr: env.Get("DD_REQUEST_MIRROR_HEALTHCHECK_ADDR"),
 	}
 
 	if cfg.ListenAddr == "" {

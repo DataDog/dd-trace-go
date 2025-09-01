@@ -19,7 +19,7 @@ import (
 //
 // [1] github.com/DataDog/datadog-agent/pkg/util/log
 func init() {
-	if env.Getenv("DD_TRACE_DEBUG_SEELOG_WORKAROUND") == "false" {
+	if env.Get("DD_TRACE_DEBUG_SEELOG_WORKAROUND") == "false" {
 		return
 	}
 

@@ -299,7 +299,7 @@ Please view our contrib [README.md](contrib/README.md) for information on integr
 
 ### Working with environment variables
 
-When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Getenv` and `env.LookupEnv` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
+When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
 
 Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal configuration registry for tracking and documentation purposes.
 

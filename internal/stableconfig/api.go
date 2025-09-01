@@ -68,7 +68,7 @@ func stableConfigByPriority(key string) iter.Seq[ConfigData] {
 		}) {
 			return
 		}
-		if v, ok := env.LookupEnv(key); ok && !yield(ConfigData{
+		if v, ok := env.Lookup(key); ok && !yield(ConfigData{
 			Origin:   telemetry.OriginEnvVar,
 			Value:    v,
 			ConfigID: telemetry.EmptyID, // environment variables do not have config ID

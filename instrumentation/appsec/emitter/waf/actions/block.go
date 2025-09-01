@@ -36,7 +36,7 @@ const (
 
 func init() {
 	for key, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
-		if path, ok := env.LookupEnv(key); ok {
+		if path, ok := env.Lookup(key); ok {
 			if t, err := os.ReadFile(path); err != nil {
 				log.Error("Could not read template at %q: %v", path, err.Error())
 			} else {

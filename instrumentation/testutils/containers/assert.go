@@ -21,7 +21,7 @@ func AssertTestContainersError(t testing.TB, err error) {
 	if err == nil {
 		return
 	}
-	if _, ok := env.LookupEnv("CI"); ok && runtime.GOOS != "linux" {
+	if _, ok := env.Lookup("CI"); ok && runtime.GOOS != "linux" {
 		t.Skipf("failed to start container (CI does not support docker, skipping test): %s", err.Error())
 		return
 	}

@@ -140,7 +140,7 @@ func main() {
 	branch := flag.String("branch", "prod", "The branch to get the configuration from")
 	flag.Parse()
 
-	githubToken := env.Getenv("GITHUB_TOKEN")
+	githubToken := env.Get("GITHUB_TOKEN")
 	if githubToken == "" {
 		if _, err := exec.LookPath("gh"); err != nil {
 			fmt.Println("Please specify a GITHUB_TOKEN environment variable or install the GitHub CLI.")

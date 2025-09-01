@@ -39,7 +39,7 @@ var (
 )
 
 func LoadFromEnv() {
-	schemaVersionStr := env.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+	schemaVersionStr := env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := parseVersionStr(schemaVersionStr); ok {
 		setVersion(v)
 	} else {
@@ -54,7 +54,7 @@ func LoadFromEnv() {
 // ReloadConfig is used to reload the configuration in tests.
 func ReloadConfig() {
 	LoadFromEnv()
-	globalconfig.SetServiceName(env.Getenv("DD_SERVICE"))
+	globalconfig.SetServiceName(env.Get("DD_SERVICE"))
 }
 
 // GetConfig returns the naming schema config.

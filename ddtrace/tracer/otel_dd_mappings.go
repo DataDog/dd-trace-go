@@ -105,9 +105,9 @@ func getDDorOtelConfig(configName string) string {
 	}
 
 	// 2. Check environment variables (DD or OT)
-	val := env.Getenv(config.dd)
+	val := env.Get(config.dd)
 	key := config.dd // Store the environment variable that will be used to set the config
-	if otVal := env.Getenv(config.ot); otVal != "" {
+	if otVal := env.Get(config.ot); otVal != "" {
 		ddPrefix := "config_datadog:"
 		otelPrefix := "config_opentelemetry:"
 		if val != "" {
@@ -195,7 +195,7 @@ func mapEnabled(ot string) (string, error) {
 
 // mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE
 func otelTraceIDRatio() string {
-	if v := env.Getenv("OTEL_TRACES_SAMPLER_ARG"); v != "" {
+	if v := env.Get("OTEL_TRACES_SAMPLER_ARG"); v != "" {
 		return v
 	}
 	return "1.0"

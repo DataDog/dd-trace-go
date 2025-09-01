@@ -15,7 +15,7 @@ import (
 // IntEnv returns the parsed int value of an environment variable, or
 // def otherwise.
 func intEnv(key string, def int) int {
-	vv, ok := env.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
 		return def
 	}
@@ -29,7 +29,7 @@ func intEnv(key string, def int) int {
 
 // IpEnv returns the valid IP value of an environment variable, or def otherwise.
 func ipEnv(key string, def net.IP) net.IP {
-	vv, ok := env.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
 		return def
 	}
@@ -46,7 +46,7 @@ func ipEnv(key string, def net.IP) net.IP {
 // BoolEnv returns the parsed boolean value of an environment variable, or
 // def otherwise.
 func boolEnv(key string, def bool) bool {
-	vv, ok := env.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
 		return def
 	}

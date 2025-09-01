@@ -123,7 +123,7 @@ func Register(driverName string, driver driver.Driver, opts ...Option) {
 		panic("sqltrace: Register driver is nil")
 	}
 	testModeInitOnce.Do(func() {
-		_, ok := env.LookupEnv("__DD_TRACE_SQL_TEST")
+		_, ok := env.Lookup("__DD_TRACE_SQL_TEST")
 		testMode.Store(ok)
 	})
 	testModeEnabled := testMode.Load()

@@ -43,7 +43,7 @@ type TestCase struct {
 }
 
 func RunTest(t *testing.T, tc TestCase) {
-	if _, ok := env.LookupEnv("INTEGRATION"); !ok {
+	if _, ok := env.Lookup("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
 	t.Run(strings.ReplaceAll(string(tc.Name), "/", "_"), func(t *testing.T) {

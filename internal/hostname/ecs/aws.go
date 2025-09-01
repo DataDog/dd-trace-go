@@ -18,7 +18,7 @@ import (
 
 // declare these as vars not const to ease testing
 var (
-	metadataURL = env.Getenv("ECS_CONTAINER_METADATA_URI_V4")
+	metadataURL = env.Get("ECS_CONTAINER_METADATA_URI_V4")
 	timeout     = 300 * time.Millisecond
 )
 

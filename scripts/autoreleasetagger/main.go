@@ -167,7 +167,7 @@ func main() {
 	}
 
 	version := version.Tag
-	envVersion := env.Getenv("VERSION")
+	envVersion := env.Get("VERSION")
 	if envVersion != "" {
 		version = envVersion
 	}

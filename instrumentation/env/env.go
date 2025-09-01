@@ -9,7 +9,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
-// Getenv is a wrapper around os.Getenv that validates the environment variable
+// Get is a wrapper around os.Getenv that validates the environment variable
 // against a list of supported environment variables.
 //
 // When a environment variable is not supported because it is not
@@ -20,11 +20,11 @@ import (
 // to the configuration file.
 //
 // This function is a passthrough to the internal env package.
-func Getenv(name string) string {
-	return env.Getenv(name)
+func Get(name string) string {
+	return env.Get(name)
 }
 
-// LookupEnv is a wrapper around os.LookupEnv that validates the environment variable
+// Lookup is a wrapper around os.LookupEnv that validates the environment variable
 // against a list of supported environment variables.
 //
 // When a environment variable is not supported because it is not
@@ -35,6 +35,6 @@ func Getenv(name string) string {
 // to the configuration file.
 //
 // This function is a passthrough to the internal env package.
-func LookupEnv(name string) (string, bool) {
-	return env.LookupEnv(name)
+func Lookup(name string) (string, bool) {
+	return env.Lookup(name)
 }

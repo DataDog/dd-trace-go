@@ -49,7 +49,7 @@ type IgnoreRequestFunc func(c echo.Context) bool
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.analyticsRate = math.NaN()
-	if fn := httptrace.GetErrorCodesFromInput(env.Getenv(envServerErrorStatuses)); fn != nil {
+	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
 	} else {
 		cfg.isStatusError = isServerError

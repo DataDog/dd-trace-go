@@ -7,7 +7,7 @@ If a variable is not present in the file and the generated code it won't never b
 
 ## 🛠️ Usage
 
-Using `internal/env` package is the only way to read env using `env.LookupEnv` or `env.Getenv` as `os.Getenv` and `os.LookupEnv` are forbidden via linter rules. This packages checks the existence of the variable read against a generated list in `internal/env/supported_configurations.gen.go`
+Using `internal/env` package is the only way to read env using `env.Lookup` or `env.Get` as `os.Getenv` and `os.LookupEnv` are forbidden via linter rules. This packages checks the existence of the variable read against a generated list in `internal/env/supported_configurations.gen.go`
 
 
 ### Generate `supported_configurations.gen.go`

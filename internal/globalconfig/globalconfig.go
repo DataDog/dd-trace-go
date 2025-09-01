@@ -134,15 +134,15 @@ func ClearHeaderTags() {
 
 // InstrumentationInstallID returns the install ID as described in DD_INSTRUMENTATION_INSTALL_ID
 func InstrumentationInstallID() string {
-	return env.Getenv("DD_INSTRUMENTATION_INSTALL_ID")
+	return env.Get("DD_INSTRUMENTATION_INSTALL_ID")
 }
 
 // InstrumentationInstallType returns the install type as described in DD_INSTRUMENTATION_INSTALL_TYPE
 func InstrumentationInstallType() string {
-	return env.Getenv("DD_INSTRUMENTATION_INSTALL_TYPE")
+	return env.Get("DD_INSTRUMENTATION_INSTALL_TYPE")
 }
 
 // InstrumentationInstallTime returns the install time as described in DD_INSTRUMENTATION_INSTALL_TIME
 func InstrumentationInstallTime() string {
-	return env.Getenv("DD_INSTRUMENTATION_INSTALL_TIME")
+	return env.Get("DD_INSTRUMENTATION_INSTALL_TIME")
 }

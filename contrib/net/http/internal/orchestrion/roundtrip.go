@@ -51,7 +51,7 @@ func defaultRoundTripperConfig() *config.RoundTripperConfig {
 				ServiceName: config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
 			},
 			IsStatusError: func() func(int) bool {
-				envVal := env.Getenv(config.EnvClientErrorStatuses)
+				envVal := env.Get(config.EnvClientErrorStatuses)
 				if fn := httptrace.GetErrorCodesFromInput(envVal); fn != nil {
 					return fn
 				}

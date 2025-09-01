@@ -51,7 +51,7 @@ func main() {
 	defer cancel()
 
 	// Load kubeconfig
-	kubeconfig := env.Getenv("KUBECONFIG")
+	kubeconfig := env.Get("KUBECONFIG")
 	if kubeconfig == "" {
 		kubeconfig = clientcmd.RecommendedHomeFile
 	}

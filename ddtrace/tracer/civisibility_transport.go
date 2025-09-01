@@ -78,7 +78,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 	testCycleURL := ""
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		APIKeyValue := env.Getenv(constants.APIKeyEnvironmentVariable)
+		APIKeyValue := env.Get(constants.APIKeyEnvironmentVariable)
 		if APIKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 		}
@@ -87,14 +87,14 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := env.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
 			agentlessURL = v
 		}
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
 			site := "datadoghq.com"
-			if v := env.Getenv("DD_SITE"); v != "" {
+			if v := env.Get("DD_SITE"); v != "" {
 				site = v
 			}
 

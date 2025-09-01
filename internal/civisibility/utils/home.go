@@ -64,17 +64,17 @@ func getHomeDir() (homeDir string) {
 	}()
 
 	if runtime.GOOS == "windows" {
-		if home := env.Getenv("HOME"); home != "" {
+		if home := env.Get("HOME"); home != "" {
 			// First prefer the HOME environment variable
 			return home
 		}
-		if userProfile := env.Getenv("USERPROFILE"); userProfile != "" {
+		if userProfile := env.Get("USERPROFILE"); userProfile != "" {
 			// Prefer the USERPROFILE environment variable
 			return userProfile
 		}
 
-		homeDrive := env.Getenv("HOMEDRIVE")
-		homePath := env.Getenv("HOMEPATH")
+		homeDrive := env.Get("HOMEDRIVE")
+		homePath := env.Get("HOMEPATH")
 		return homeDrive + homePath
 	}
 
@@ -84,7 +84,7 @@ func getHomeDir() (homeDir string) {
 		homeEnv = "home"
 	}
 
-	if home := env.Getenv(homeEnv); home != "" {
+	if home := env.Get(homeEnv); home != "" {
 		// Prefer the HOME environment variable
 		return home
 	}

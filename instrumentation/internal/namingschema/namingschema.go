@@ -40,7 +40,7 @@ func init() {
 }
 
 func LoadFromEnv() {
-	schemaVersionStr := env.Getenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+	schemaVersionStr := env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
 	if v, ok := parseVersionString(schemaVersionStr); ok {
 		setVersion(v)
 	} else {
@@ -54,7 +54,7 @@ func LoadFromEnv() {
 
 func ReloadConfig() {
 	LoadFromEnv()
-	globalconfig.SetServiceName(env.Getenv("DD_SERVICE"))
+	globalconfig.SetServiceName(env.Get("DD_SERVICE"))
 }
 
 func GetConfig() Config {

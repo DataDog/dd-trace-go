@@ -23,7 +23,7 @@ import (
 
 // ErrorExtensionsFromEnv returns the configured error extensions from an environment variable.
 func ErrorExtensionsFromEnv() []string {
-	s := env.Getenv("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
+	s := env.Get("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
 	if s == "" {
 		return nil
 	}

@@ -45,13 +45,13 @@ type ClientConfig struct {
 // DefaultClientConfig returns the default remote config client configuration
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
-		Env:           env.Getenv("DD_ENV"),
+		Env:           env.Get("DD_ENV"),
 		HTTP:          &http.Client{Timeout: 10 * time.Second},
 		PollInterval:  pollIntervalFromEnv(),
 		RuntimeID:     globalconfig.RuntimeID(),
 		ServiceName:   globalconfig.ServiceName(),
 		TracerVersion: version.Tag,
-		TUFRoot:       env.Getenv("DD_RC_TUF_ROOT"),
+		TUFRoot:       env.Get("DD_RC_TUF_ROOT"),
 	}
 }
 

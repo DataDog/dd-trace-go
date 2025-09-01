@@ -13,7 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// Getenv is a wrapper around env.Getenv that validates the environment variable
+// Get is a wrapper around env.Get that validates the environment variable
 // against a list of supported environment variables.
 //
 // If the environment variable has aliases, the function will also check the aliases
@@ -25,7 +25,7 @@ import (
 //
 // In testing mode, the reader will automatically add the environment variable
 // to the configuration file.
-func Getenv(name string) string {
+func Get(name string) string {
 	if !verifySupportedConfiguration(name) {
 		return ""
 	}
@@ -43,7 +43,7 @@ func Getenv(name string) string {
 	return ""
 }
 
-// LookupEnv is a wrapper around os.LookupEnv that validates the environment variable
+// Lookup is a wrapper around os.LookupEnv that validates the environment variable
 // against a list of supported environment variables.
 //
 // If the environment variable has aliases, the function will also check the aliases.
@@ -55,7 +55,7 @@ func Getenv(name string) string {
 //
 // In testing mode, the reader will automatically add the environment variable
 // to the configuration file.
-func LookupEnv(name string) (string, bool) {
+func Lookup(name string) (string, bool) {
 	if !verifySupportedConfiguration(name) {
 		return "", false
 	}

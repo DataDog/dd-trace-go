@@ -155,7 +155,7 @@ func makeCollectedHTTPHeadersLookupMap() {
 }
 
 func readMonitoredClientIPHeadersConfig() {
-	if header := env.Getenv(envClientIPHeader); header != "" {
+	if header := env.Get(envClientIPHeader); header != "" {
 		// Make this header the only one to consider in RemoteAddr
 		monitoredClientIPHeadersCfg = []string{header}
 

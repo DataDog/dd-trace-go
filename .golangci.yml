@@ -40,9 +40,9 @@ linters:
     forbidigo:
       forbid:
         - pattern: "^os\\.Getenv$"
-          msg: "use internal/env.GetEnv instead of os.Getenv"
+          msg: "use internal/env.Get instead of os.Getenv"
         - pattern: "^os\\.LookupEnv$"
-          msg: "use internal/env.LookupEnv instead of os.LookupEnv"
+          msg: "use internal/env.Lookup instead of os.LookupEnv"
       exclude_godoc_examples: true
       analyze_types: true
     govet:

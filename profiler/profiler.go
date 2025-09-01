@@ -147,7 +147,7 @@ var (
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	if env.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+	if env.Get("AWS_LAMBDA_FUNCTION_NAME") != "" {
 		return nil, errProfilingNotSupportedInAWSLambda
 	}
 	cfg, err := defaultConfig()
@@ -167,7 +167,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 
 	// TODO(fg) remove this after making expGoroutineWaitProfile public.
-	if env.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
+	if env.Get("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
 	// Agentless upload is disabled by default as of v1.30.0, but

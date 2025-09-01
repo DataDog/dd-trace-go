@@ -20,7 +20,7 @@ import (
 // RegisterContainerCleanup registers a function to terminate the provided container to be executed after the test finishes.
 func RegisterContainerCleanup(t testing.TB, container testcontainers.Container) {
 	t.Cleanup(func() {
-		if _, ok := env.LookupEnv("CI"); ok {
+		if _, ok := env.Lookup("CI"); ok {
 			t.Log("skipping container cleanup in CI environment")
 			return
 		}

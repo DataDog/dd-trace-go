@@ -111,7 +111,7 @@ func startTelemetry(c *config) telemetry.Client {
 		AgentURL:   c.agentURL.String(),
 	}
 	if c.logToStdout || c.ciVisibilityAgentless {
-		cfg.APIKey = env.Getenv("DD_API_KEY")
+		cfg.APIKey = env.Get("DD_API_KEY")
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
 	if err != nil {
