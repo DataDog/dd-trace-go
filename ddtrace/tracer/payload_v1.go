@@ -5,6 +5,8 @@
 
 package tracer
 
+import "github.com/tinylib/msgp/msgp"
+
 // payloadV1 is a new version of a msgp payload that can be sent to the agent.
 // Be aware that payloadV1 follows the same rules and constraints as payloadV04. That is:
 //
@@ -20,41 +22,40 @@ package tracer
 // Close the request body before attempting to re-use it again!
 type payloadV1 struct {
 	// array of strings referenced in this tracer payload, its chunks and spans
-	strings []string
+	strings []string `msgp:"strings"`
 
 	// the string ID of the container where the tracer is running
-	containerID uint32
+	containerID uint32 `msgp:"containerID"`
 
 	// the string language name of the tracer
-	languageName uint32
+	languageName uint32 `msgp:"languageName"`
 
 	// the string language version of the tracer
-	languageVersion uint32
+	languageVersion uint32 `msgp:"languageVersion"`
 
 	// the string version of the tracer
-	tracerVersion uint32
+	tracerVersion uint32 `msgp:"tracerVersion"`
 
 	// the V4 string UUID representation of a tracer session
-	runtimeID uint32
+	runtimeID uint32 `msgp:"runtimeID"`
 
 	// the optional `env` string tag that set with the tracer
-	env uint32
+	env uint32 `msgp:"env,omitempty"`
 
 	// the optional string hostname of where the tracer is running
-	hostname uint32
+	hostname uint32 `msgp:"hostname,omitempty"`
 
 	// the optional string `version` tag for the application set in the tracer
-	appVersion uint32
+	appVersion uint32 `msgp:"appVersion,omitempty"`
 
 	// a collection of key to value pairs common in all `chunks`
-	attributes map[uint32]anyValue
+	attributes map[uint32]anyValue `msgp:"attributes,omitempty"`
 
 	// a list of trace `chunks`
-	chunks []traceChunk
+	chunks []traceChunk `msgp:"chunks,omitempty"`
 
-	// fields needed to implement unsafePayload interface
+	// protocolVersion specifies the trace protocol to use.
 	protocolVersion float64
-	itemsCount      uint32
 }
 
 // AnyValue is a representation of the `any` value. It can take the following types:
@@ -70,6 +71,13 @@ type anyValue struct {
 	valueType int
 	value     interface{}
 }
+
+// EncodeMsg implements msgp.Encodable.
+func (a *anyValue) EncodeMsg(*msgp.Writer) error {
+	panic("unimplemented")
+}
+
+var _ msgp.Encodable = (*anyValue)(nil)
 
 const (
 	StringValueType  = iota + 1 // string or uint
@@ -92,17 +100,20 @@ type keyValue struct {
 type keyValueList = []keyValue
 
 // newPayloadV1 returns a ready to use payloadV1.
-func newPayloadV1(protocol float64) *payloadV1 {
+func newPayloadV1() *payloadV1 {
 	return &payloadV1{
-		protocolVersion: protocol,
+		protocolVersion: traceProtocolV1,
 		strings:         make([]string, 0),
 		attributes:      make(map[uint32]anyValue),
 		chunks:          make([]traceChunk, 0),
 	}
 }
 
-func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
-	panic("not implemented")
+// push pushes a new item into the stream.
+func (p *payloadV1) push(t []*Span) error {
+	// We need to hydrate the payload with everything we get from the spans.
+	// Conceptually, our `t []*Span` corresponds to one `traceChunk`.
+	return nil
 }
 
 func (p *payloadV1) grow(n int) {

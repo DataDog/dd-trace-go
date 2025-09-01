@@ -155,24 +155,24 @@ func (sp *safePayload) protocol() float64 {
 // i.e. a chunk of a trace
 type traceChunk struct {
 	// the sampling priority of the trace
-	priority int32
+	priority int32 `msg:"priority"`
 
 	// the optional string origin ("lambda", "rum", etc.) of the trace chunk
-	origin uint32
+	origin uint32 `msg:"origin,omitempty"`
 
 	// a collection of key to value pairs common in all `spans`
-	attributes map[uint32]anyValue
+	attributes map[uint32]anyValue `msg:"attributes,omitempty"`
 
 	// a list of spans in this chunk
-	spans []Span
+	spans spanListV1 `msg:"spans,omitempty"`
 
 	// whether the trace only contains analyzed spans
 	// (not required by tracers and set by the agent)
-	droppedTrace bool
+	droppedTrace bool `msg:"droppedTrace"`
 
 	// the ID of the trace to which all spans in this chunk belong
-	traceID uint8
+	traceID []byte `msg:"traceID"`
 
 	// the optional string decision maker (previously span tag _dd.p.dm)
-	decisionMaker uint32
+	decisionMaker uint32 `msg:"decisionMaker,omitempty"`
 }
