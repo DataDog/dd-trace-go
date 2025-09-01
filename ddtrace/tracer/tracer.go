@@ -308,6 +308,23 @@ func storeConfig(c *config) {
 	if err != nil {
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
+
+	processContext := otelProcessContext{
+		DeploymentEnvironmentName: c.env,
+		HostName:                  c.hostname,
+		ServiceInstanceID:         globalconfig.RuntimeID(),
+		ServiceName:               c.serviceName,
+		ServiceVersion:            c.version,
+		TelemetrySDKLanguage:      "go",
+		TelemetrySDKVersion:       version.Tag,
+		TelemetrySdkName:          "dd-trace-go",
+	}
+
+	data, _ = processContext.MarshalMsg(nil)
+	err = globalinternal.CreateOtelProcessContextMapping(data)
+	if err != nil {
+		log.Error("failed to store the OTEL process context: %s", err.Error())
+	}
 }
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
