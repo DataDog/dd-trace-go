@@ -9,6 +9,15 @@
     "DD_API_KEY": [
       "A"
     ],
+    "DD_API_SECURITY_ENABLED": [
+      "A"
+    ],
+    "DD_API_SECURITY_PROXY_SAMPLE_RATE": [
+      "A"
+    ],
+    "DD_API_SECURITY_REQUEST_SAMPLE_RATE": [
+      "A"
+    ],
     "DD_API_SECURITY_SAMPLE_DELAY": [
       "A"
     ],
@@ -28,6 +37,12 @@
       "A"
     ],
     "DD_APPSEC_MAX_STACK_TRACE_DEPTH": [
+      "A"
+    ],
+    "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP": [
+      "A"
+    ],
+    "DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP": [
       "A"
     ],
     "DD_APPSEC_RASP_ENABLED": [
