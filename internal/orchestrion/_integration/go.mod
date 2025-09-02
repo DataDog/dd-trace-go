@@ -6,8 +6,8 @@ require (
 	cloud.google.com/go/pubsub v1.37.0
 	github.com/99designs/gqlgen v0.17.62
 	github.com/DataDog/datadog-agent/pkg/proto v0.68.0
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.2.3-rc.1
-	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.2.3-rc.1
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.2.3
+	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.2.3
 	github.com/DataDog/dd-trace-go/v2 v2.2.3
 	github.com/DataDog/go-libddwaf/v4 v4.3.2
 	github.com/DataDog/orchestrion v1.5.0
