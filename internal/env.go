@@ -63,7 +63,7 @@ func DurationEnv(key string, def time.Duration) time.Duration {
 // DurationEnvWithUnit returns the parsed duration value of an environment
 // variable with the specified unit, or def otherwise.
 func DurationEnvWithUnit(key string, unit string, def time.Duration) time.Duration {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
 		return def
 	}
