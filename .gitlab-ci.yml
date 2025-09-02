@@ -90,4 +90,4 @@ include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
-  - local: ".gitlab/config-central-validation.yml"
+  - local: ".gitlab/configuration-central-validation.yml"
