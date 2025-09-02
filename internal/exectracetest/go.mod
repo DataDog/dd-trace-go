@@ -6,7 +6,7 @@ require (
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6
 	github.com/mattn/go-sqlite3 v1.14.18
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
-	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-rc.28
+	gopkg.in/DataDog/dd-trace-go.v1 v1.74.6
 )
 
 require (

@@ -67,7 +67,7 @@ require (
 	google.golang.org/api v0.213.0
 	google.golang.org/grpc v1.72.0
 	google.golang.org/grpc/examples v0.0.0-20241018153737-98959d9a4904
-	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-rc.30
+	gopkg.in/DataDog/dd-trace-go.v1 v1.74.6
 	gorm.io/driver/sqlite v1.5.7
 	gorm.io/gorm v1.25.12
 	gotest.tools/v3 v3.5.2
