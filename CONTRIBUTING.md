@@ -307,7 +307,7 @@ This repository used to omit many dependencies from the `go.mod` file due to con
 git update-index --no-assume-unchanged go.*
 ```
 
-### Uprading Go Modules
+### Upgrading Go Modules
 
 Please also see the section about "Adding Go modules" when it comes to selecting the minimum secure versions of a module rather than the latest versions.
 
