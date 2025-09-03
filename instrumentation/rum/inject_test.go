@@ -94,6 +94,7 @@ func TestInjectorWrite(t *testing.T) {
 		{"spaces", "abc</hea d>def", "abc</hea d>def"},
 		{"spaces", "abc</head >def", "abc<snippet></head >def"},
 		{"spaces", "abc</head> def", "abc<snippet></head> def"},
+		// {"comment", "<!-- </head>", "<!-- </head>"}, // TODO: don't inject if </head> is found in a comment
 	}
 
 	for _, tc := range cases {
