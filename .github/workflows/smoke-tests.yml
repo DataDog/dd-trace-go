@@ -13,20 +13,22 @@ on:
         type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   schedule: # nightly
     - cron: "0 0 * * *"
   workflow_dispatch: { } # manually
   pull_request:
-    branches:
-      - '**'
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read
@@ -37,10 +39,10 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     env:
-      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -87,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -111,9 +113,9 @@ jobs:
     name: Test dd-trace-go
     runs-on: ubuntu-latest
     env:
-      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -131,7 +133,7 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
@@ -222,7 +224,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is

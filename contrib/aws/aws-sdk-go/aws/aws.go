@@ -174,7 +174,7 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 	)
 	switch service {
 	case sqs.ServiceName:
-		extraTags, err = sqsTags(req.Params)
+		extraTags, err = sqsTags(req.Params, awsRegion(req))
 	case s3.ServiceName:
 		extraTags, err = s3Tags(req.Params)
 	case sns.ServiceName:
@@ -197,7 +197,7 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 	return extraTags
 }
 
-func sqsTags(params interface{}) (map[string]interface{}, error) {
+func sqsTags(params interface{}, region string) (map[string]interface{}, error) {
 	var queueURL string
 	switch input := params.(type) {
 	case *sqs.SendMessageInput:
@@ -213,15 +213,48 @@ func sqsTags(params interface{}) (map[string]interface{}, error) {
 	default:
 		return nil, nil
 	}
-	parts := strings.Split(queueURL, "/")
-	if len(parts) < 2 {
+
+	queueName, arn := extractSQSMetadata(queueURL, region)
+	if queueName == "" {
 		return nil, fmt.Errorf("got unexpected queue URL format: %q", queueURL)
 	}
-	queueName := parts[len(parts)-1]
 
-	return map[string]interface{}{
-		ext.SQSQueueName: queueName,
-	}, nil
+	tags := map[string]interface{}{
+		ext.SQSQueueName:    queueName,
+		ext.CloudResourceID: arn,
+	}
+
+	return tags, nil
+}
+
+func extractSQSMetadata(queueURL string, region string) (queueName string, arn string) {
+	// Remove trailing slash if present
+	if len(queueURL) > 0 && queueURL[len(queueURL)-1] == '/' {
+		queueURL = queueURL[:len(queueURL)-1]
+	}
+
+	// *.amazonaws.com/{accountID}/{queueName}
+	parts := strings.Split(queueURL, "/")
+	if len(parts) < 2 {
+		return "", ""
+	}
+
+	// Determine partition based on region
+	var partition string
+	switch {
+	case strings.HasPrefix(region, "cn-"):
+		partition = "aws-cn"
+	case strings.HasPrefix(region, "us-gov-"):
+		partition = "aws-us-gov"
+	default:
+		partition = "aws"
+	}
+
+	queueName = parts[len(parts)-1]
+	accountID := parts[len(parts)-2]
+
+	arn = strings.Join([]string{"arn", partition, "sqs", region, accountID, queueName}, ":")
+	return queueName, arn
 }
 
 func s3Tags(params interface{}) (map[string]interface{}, error) {

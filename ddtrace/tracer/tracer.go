@@ -217,9 +217,6 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 	setGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -253,6 +250,10 @@ func Start(opts ...StartOption) error {
 	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
 
 	appsec.Start(appsecopts...)
+
+	if t.config.logStartup {
+		logStartup(t)
+	}
 
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var

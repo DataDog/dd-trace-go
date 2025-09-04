@@ -141,4 +141,7 @@ const (
 
 	// MapSpanEvents is used by Span.AsMap to store the spanEvents value.
 	MapSpanEvents = "_ddtrace.span_events"
+
+	// CloudResourceID is the cloud provider resource identifier.
+	CloudResourceID = "cloud.resource_id"
 )

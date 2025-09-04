@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/appsec-internal-go/limiter"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
@@ -18,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"

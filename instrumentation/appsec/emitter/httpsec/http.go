@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
@@ -64,6 +65,9 @@ type (
 		Headers    map[string][]string
 		StatusCode int
 	}
+
+	// EarlyBlock is used to trigger an early block before the handler is executed.
+	EarlyBlock struct{}
 )
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
@@ -168,22 +172,30 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 // before the router has matched the request to a route. This can happen when the HTTP handler is wrapped
 // using http.NewServeMux instead of http.WrapHandler. In this case the route is empty and so are the path parameters.
 // In this case the route and path parameters will be filled in later by calling RouteMatched with the actual route.
-func RouteMatched(ctx context.Context, route string, routeParams map[string]string) {
+// If RouteMatched returns an error, the request should be considered blocked and the error should be reported.
+func RouteMatched(ctx context.Context, route string, routeParams map[string]string) error {
 	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
 	if !ok {
 		log.Debug("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
 		telemetrylog.Warn("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring", telemetry.WithTags([]string{"product:appsec"}))
-		return
+		return nil
 	}
 
 	// Overwrite the previous route that was created using a quantization algorithm
 	op.route = route
+
+	var err error
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
+		err = e
+	})
 
 	// Call the WAF with this new data
 	op.Run(op, addresses.NewAddressesBuilder().
 		WithPathParams(routeParams).
 		Build(),
 	)
+
+	return err
 }
 
 // BeforeHandle contains the appsec functionality that should be executed before a http.Handler runs.
@@ -247,6 +259,16 @@ func BeforeHandle(
 		blockPtr.Handler = nil
 		handled = true
 	}
+
+	// We register a handler for cases that would require us to write the blocking response before any more code
+	// from a specific framework (like Gin) is executed that would write another (wrong) response here.
+	dyngo.OnData(op, func(e EarlyBlock) {
+		if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
+			blockPtr.Handler.ServeHTTP(w, tr)
+			blockPtr.Handler = nil
+		}
+	})
+
 	return w, tr, afterHandle, handled
 }
 
