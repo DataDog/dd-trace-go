@@ -25,9 +25,13 @@ aspects:
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             errortrace: github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace
           template: |-
-            ctx := context.TODO()
+            {{ $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- if (eq $ctx "") -}}
+              {{- $ctx = "ctx" -}}
+              ctx := context.TODO()
+            {{ end -}}
             var span *tracer.Span
-            span, _ = tracer.StartSpanFromContext(ctx, {{ printf "%q" .Function.Name }},
+            span, {{ $ctx }} = tracer.StartSpanFromContext({{ $ctx }}, {{ printf "%q" .Function.Name }},
               tracer.Tag("function-name", {{ printf "%q" .Function.Name }}),
             )
             {{ $ret := .Function.LastResultThatImplements "error" }}
