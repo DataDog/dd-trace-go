@@ -12,11 +12,12 @@ import (
 
 // Special context keys for W3C baggage operations on SpanContext
 type (
-	W3CBaggageSetKey    struct{ Key, Value string }
-	W3CBaggageGetKey    struct{ Key string }
-	W3CBaggageRemoveKey struct{ Key string }
-	W3CBaggageAllKey    struct{}
-	W3CBaggageClearKey  struct{}
+	W3CBaggageSetKey     struct{ Key, Value string }
+	W3CBaggageGetKey     struct{ Key string }
+	W3CBaggageRemoveKey  struct{ Key string }
+	W3CBaggageAllKey     struct{}
+	W3CBaggageClearKey   struct{}
+	W3CBaggageIterateKey struct{ Handler func(string, string) bool }
 )
 
 // baggageKey is an unexported type used as a context key. It is used to store baggage in the context.
@@ -134,4 +135,22 @@ func Clear(ctx context.Context) context.Context {
 
 	// Fallback to the original context-based baggage implementation
 	return withBaggage(ctx, nil)
+}
+
+// ForeachBaggageItem iterates over W3C baggage items from a context.
+// Since this package is dedicated to W3C baggage, this only iterates over W3C baggage.
+func ForeachBaggageItem(ctx context.Context, handler func(k, v string) bool) {
+	// Try to iterate over SpanContext W3C baggage via context.Value
+	if result := ctx.Value(W3CBaggageIterateKey{Handler: handler}); result != nil {
+		return // SpanContext handled the iteration
+	}
+
+	// Fallback for regular context.Context - iterate over context-stored baggage
+	if bm, ok := baggageMap(ctx); ok && bm != nil {
+		for k, v := range bm {
+			if !handler(k, v) {
+				break
+			}
+		}
+	}
 }

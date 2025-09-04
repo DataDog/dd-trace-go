@@ -120,7 +120,9 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
-			parentCtx.ForeachBaggageItem(func(k, v string) bool {
+			// Use W3C baggage for "baggage.*" span tags (not OpenTracing baggage)
+			// This ensures proper separation as required by the baggage revamp
+			baggage.ForeachBaggageItem(parentCtx, func(k, v string) bool {
 				if cfg.tagBaggageKey(k) {
 					ssCfg.Tags["baggage."+k] = v
 				}

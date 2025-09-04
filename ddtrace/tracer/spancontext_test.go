@@ -824,13 +824,13 @@ func TestSpanContextParent(t *testing.T) {
 	}
 	for name, parentCtx := range map[string]*SpanContext{
 		"basic": {
-			baggage:    map[string]string{"A": "A", "B": "B"},
+			baggage:  map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace:      newTrace(),
 		},
 		"nil-trace": {},
 		"priority": {
-			baggage:    map[string]string{"A": "A", "B": "B"},
+			baggage:  map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
 				spans:    []*Span{newBasicSpan("abc")},
@@ -838,7 +838,7 @@ func TestSpanContextParent(t *testing.T) {
 			},
 		},
 		"sampling_decision": {
-			baggage:    map[string]string{"A": "A", "B": "B"},
+			baggage:  map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
 			trace: &trace{
 				spans:            []*Span{newBasicSpan("abc")},

@@ -1062,7 +1062,7 @@ func SpanContextFromContext(ctx context.Context) *SpanContext {
 	// Create new SpanContext wrapping the regular context
 	sc := &SpanContext{
 		parent:     ctx,
-		baggage:    make(map[string]string), // OpenTracing baggage
+		baggage:  make(map[string]string), // OpenTracing baggage
 		w3cBaggage: make(map[string]string), // W3C baggage
 	}
 

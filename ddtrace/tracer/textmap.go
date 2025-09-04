@@ -346,12 +346,13 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				baggage:     make(map[string]string, len(pendingBaggage)),
-				w3cBaggage:  make(map[string]string),
+				baggage:   make(map[string]string, len(pendingBaggage)),
+				w3cBaggage:  make(map[string]string, len(pendingBaggage)),
 				baggageOnly: true,
 			}
-			// For interoperability, put W3C baggage into the main baggage field
-			maps.Copy(ctx.baggage, pendingBaggage)
+			// Store W3C baggage in both places for compatibility + separation
+			maps.Copy(ctx.w3cBaggage, pendingBaggage) // For span tag generation
+			maps.Copy(ctx.baggage, pendingBaggage)  // For ForeachBaggageItem compatibility
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
 		}
@@ -359,13 +360,18 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		return nil, ErrSpanContextNotFound
 	}
 	if len(pendingBaggage) > 0 {
-		// For interoperability, merge W3C baggage into OpenTracing baggage field
-		// This maintains backward compatibility where all baggage is accessible via ctx.baggage
+		// Store W3C baggage in BOTH places for compatibility + separation:
+		// 1. otBaggage: for ForeachBaggageItem compatibility
+		// 2. w3cBaggage: for span tag generation
+		if ctx.w3cBaggage == nil {
+			ctx.w3cBaggage = make(map[string]string, len(pendingBaggage))
+		}
 		if ctx.baggage == nil {
 			ctx.baggage = make(map[string]string, len(pendingBaggage))
 		}
 		for k, v := range pendingBaggage {
-			ctx.baggage[k] = v
+			ctx.w3cBaggage[k] = v // For span tag generation
+			ctx.baggage[k] = v  // For ForeachBaggageItem compatibility
 		}
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
@@ -1451,7 +1457,7 @@ func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
 func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
 	var baggageHeader string
 	ctx := &SpanContext{
-		baggage:    make(map[string]string),
+		baggage:  make(map[string]string),
 		w3cBaggage: make(map[string]string),
 	}
 	err := reader.ForeachKey(func(k, v string) error {

@@ -172,7 +172,7 @@ func TestIsValid(t *testing.T) {
 // TestThreadSafeBaggageOperations verifies thread safety of baggage operations
 func TestThreadSafeBaggageOperations(t *testing.T) {
 	spanCtx := &SpanContext{
-		baggage:    make(map[string]string),
+		baggage:  make(map[string]string),
 		w3cBaggage: make(map[string]string),
 	}
 

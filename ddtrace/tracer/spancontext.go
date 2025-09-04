@@ -112,17 +112,18 @@ type SpanContext struct {
 	traceID traceID
 	spanID  uint64
 
-	mu         sync.RWMutex      // guards below fields
-	baggage    map[string]string // OpenTracing baggage (ot-baggage-* headers)
-	hasBaggage uint32            // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	origin     string            // e.g. "synthetics"
-
-	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
-	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
-
+	mu          sync.RWMutex      // guards below fields
+	baggage   map[string]string // OpenTracing baggage (ot-baggage-* headers)
+	hasBaggage  uint32            // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	baggageOnly bool              // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
 	// NEW fields for context.Context implementation and W3C baggage separation
 	parent     context.Context   // parent context for delegation
 	w3cBaggage map[string]string // W3C baggage (baggage header) - separate from OpenTracing baggage
+
+	origin string // e.g. "synthetics"
+
+	spanLinks []SpanLink // links to related spans in separate|external|disconnected traces
+
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
@@ -338,7 +339,18 @@ func (c *SpanContext) safeDebugString() string {
 		c.mu.RUnlock()
 	}
 
+	// Count unique baggage items (avoid double counting overlapping keys)
 	totalBaggageCount := otBaggageCount + w3cBaggageCount
+	if c.baggage != nil && c.w3cBaggage != nil {
+		// Subtract overlapping keys to avoid double counting
+		overlap := 0
+		for key := range c.w3cBaggage {
+			if _, exists := c.baggage[key]; exists {
+				overlap++
+			}
+		}
+		totalBaggageCount -= overlap
+	}
 	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, otBaggageCount=%d, w3cBaggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
 		c.TraceID(), c.SpanID(), hasBaggage, totalBaggageCount, otBaggageCount, w3cBaggageCount, c.origin, c.updated, c.isRemote, c.baggageOnly)
 }
@@ -802,6 +814,9 @@ func (c *SpanContext) Value(key interface{}) interface{} {
 	case baggage.W3CBaggageClearKey:
 		c.clearW3CBaggage()
 		return c // Return self as the updated context
+	case baggage.W3CBaggageIterateKey:
+		c.foreachW3CBaggageItem(k.Handler)
+		return true // Indicate iteration completed
 	}
 
 	// Delegate to parent context for other keys
@@ -882,4 +897,25 @@ func (c *SpanContext) clearW3CBaggage() {
 	defer c.mu.Unlock()
 	c.w3cBaggage = nil
 	c.updateHasBaggageFlag()
+}
+
+// foreachW3CBaggageItem iterates over W3C baggage items only.
+// This is used for span tag generation to ensure only W3C baggage
+// appears as "baggage.*" span tags, not OpenTracing baggage.
+func (c *SpanContext) foreachW3CBaggageItem(handler func(k, v string) bool) {
+	if c == nil {
+		return
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Only iterate over W3C baggage for span tags
+	if c.w3cBaggage != nil {
+		for k, v := range c.w3cBaggage {
+			if !handler(k, v) {
+				return
+			}
+		}
+	}
 }
