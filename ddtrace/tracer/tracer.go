@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	gocontext "context"
 	"encoding/binary"
 	"fmt"
@@ -1046,3 +1047,69 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 }
 
 func noopTaskEnd() {}
+
+// Helper conversion functions for SpanContext and context.Context interoperability
+
+// SpanContextFromContext converts any context.Context to a SpanContext.
+// If the provided context is already a SpanContext, it returns it directly.
+// Otherwise, it creates a new SpanContext wrapping the provided context,
+// extracting any existing W3C baggage from it.
+func SpanContextFromContext(ctx context.Context) *SpanContext {
+	if sc, ok := ctx.(*SpanContext); ok {
+		return sc // Already a SpanContext
+	}
+
+	// Create new SpanContext wrapping the regular context
+	sc := &SpanContext{
+		parent:     ctx,
+		baggage:    make(map[string]string), // OpenTracing baggage
+		w3cBaggage: make(map[string]string), // W3C baggage
+	}
+
+	// Extract existing W3C baggage from context using the baggage package
+	// This maintains backward compatibility with existing baggage usage
+	if baggageMap := extractBaggageFromContext(ctx); baggageMap != nil {
+		sc.mu.Lock()
+		for k, v := range baggageMap {
+			sc.w3cBaggage[k] = v
+		}
+		sc.updateHasBaggageFlag()
+		sc.mu.Unlock()
+	}
+
+	return sc
+}
+
+// InjectContext injects trace and baggage information from any context.Context
+// into the provided carrier. This is a convenience function that works with
+// both regular context.Context and SpanContext.
+func InjectContext(ctx context.Context, carrier interface{}) error {
+	sc := SpanContextFromContext(ctx)
+	return getGlobalTracer().Inject(sc, carrier)
+}
+
+// ExtractToContext extracts trace and baggage information from a carrier
+// and returns it as a context.Context (specifically a SpanContext).
+// The returned context can be used with both trace and baggage operations.
+func ExtractToContext(parentCtx context.Context, carrier interface{}) (context.Context, error) {
+	sc, err := getGlobalTracer().Extract(carrier)
+	if err != nil {
+		return parentCtx, err
+	}
+
+	// Set the parent context for delegation
+	sc.parent = parentCtx
+	return sc, nil
+}
+
+// extractBaggageFromContext extracts baggage from a regular context.Context
+// This is a helper that avoids import cycles with the baggage package
+func extractBaggageFromContext(ctx context.Context) map[string]string {
+	// Use reflection-like approach to extract baggage without import cycle
+	type baggageKey struct{}
+	val := ctx.Value(baggageKey{})
+	if bm, ok := val.(map[string]string); ok {
+		return bm
+	}
+	return nil
+}

@@ -287,8 +287,8 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
-			if extractedCtx != nil && len(extractedCtx.baggage) > 0 {
-				for k, v := range extractedCtx.baggage {
+			if extractedCtx != nil && len(extractedCtx.w3cBaggage) > 0 {
+				for k, v := range extractedCtx.w3cBaggage {
 					pendingBaggage[k] = v
 				}
 			}
@@ -347,8 +347,10 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
 				baggage:     make(map[string]string, len(pendingBaggage)),
+				w3cBaggage:  make(map[string]string),
 				baggageOnly: true,
 			}
+			// For interoperability, put W3C baggage into the main baggage field
 			maps.Copy(ctx.baggage, pendingBaggage)
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
@@ -357,6 +359,8 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		return nil, ErrSpanContextNotFound
 	}
 	if len(pendingBaggage) > 0 {
+		// For interoperability, merge W3C baggage into OpenTracing baggage field
+		// This maintains backward compatibility where all baggage is accessible via ctx.baggage
 		if ctx.baggage == nil {
 			ctx.baggage = make(map[string]string, len(pendingBaggage))
 		}
@@ -1391,9 +1395,27 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 
 	ctr := 0
 	var baggageBuilder strings.Builder
+
+	// Inject both W3C baggage and OpenTracing baggage for interoperability
+	// This maintains backward compatibility where OpenTracing baggage appears in both headers
+	allBaggage := make(map[string]string)
+
+	// Add W3C baggage
+	if w3cBaggage := ctx.getAllW3CBaggage(); w3cBaggage != nil {
+		for k, v := range w3cBaggage {
+			allBaggage[k] = v
+		}
+	}
+
+	// Add OpenTracing baggage for interoperability (maintains existing behavior)
 	ctx.ForeachBaggageItem(func(k, v string) bool {
+		allBaggage[k] = v
+		return true
+	})
+
+	for k, v := range allBaggage {
 		if ctr >= baggageMaxItems {
-			return false
+			break
 		}
 
 		var itemBuilder strings.Builder
@@ -1405,12 +1427,12 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		itemBuilder.WriteRune('=')
 		itemBuilder.WriteString(encodeValue(v))
 		if itemBuilder.Len()+baggageBuilder.Len() > baggageMaxBytes {
-			return false
+			break
 		}
 		baggageBuilder.WriteString(itemBuilder.String())
 		ctr++
-		return true
-	})
+	}
+
 	if baggageBuilder.Len() > 0 {
 		writer.Set("baggage", baggageBuilder.String())
 	}
@@ -1428,7 +1450,10 @@ func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
 
 func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
 	var baggageHeader string
-	var ctx SpanContext
+	ctx := &SpanContext{
+		baggage:    make(map[string]string),
+		w3cBaggage: make(map[string]string),
+	}
 	err := reader.ForeachKey(func(k, v string) error {
 		if strings.ToLower(k) == "baggage" {
 			// Expect only one baggage header, return early
@@ -1442,7 +1467,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	}
 
 	if baggageHeader == "" {
-		return &ctx, nil
+		return ctx, nil
 	}
 
 	parts := strings.Split(baggageHeader, ",")
@@ -1454,7 +1479,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		trimmedV := strings.TrimSpace(v)
 		if !ok || trimmedK == "" || trimmedV == "" {
 			log.Warn("invalid baggage item: %q, dropping entire header", kv)
-			return &ctx, nil
+			return ctx, nil
 		}
 		// store back the trimmed pair so we don't re-trim below
 		parts[i] = trimmedK + "=" + trimmedV
@@ -1465,8 +1490,8 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		rawK, rawV, _ := strings.Cut(kv, "=")
 		key, _ := url.QueryUnescape(rawK)
 		val, _ := url.QueryUnescape(rawV)
-		ctx.setBaggageItem(key, val)
+		ctx.setW3CBaggageItem(key, val) // Use W3C baggage for baggage header
 	}
 
-	return &ctx, nil
+	return ctx, nil
 }
