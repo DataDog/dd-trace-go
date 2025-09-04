@@ -6,6 +6,7 @@
 package kafka
 
 import (
+	"errors"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 
 	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
@@ -104,8 +105,8 @@ func (w wTopicPartition) GetOffset() int64 {
 	return int64(w.Offset)
 }
 
-func (w wTopicPartition) GetError() error {
-	return w.Error
+func (w wTopicPartition) GetError() kafkatrace.TopicPartitionError {
+	return wTopicPartitionError{w.Error}
 }
 
 type wEvent struct {
@@ -128,6 +129,26 @@ func (w wEvent) KafkaOffsetsCommitted() (kafkatrace.OffsetsCommitted, bool) {
 		return wrapOffsetsCommitted(oc), true
 	}
 	return nil, false
+}
+
+type wTopicPartitionError struct {
+	error
+}
+
+func (w wTopicPartitionError) IsUnknownServerError() bool {
+	if w.error == nil {
+		return false
+	}
+	var kafkaErr kafka.Error
+	if errors.As(w.error, &kafkaErr) {
+		return kafkaErr.Code() == kafka.ErrUnknown
+	}
+
+	return false
+}
+
+func (w wTopicPartitionError) Error() error {
+	return w.error
 }
 
 type wOffsetsCommitted struct {
