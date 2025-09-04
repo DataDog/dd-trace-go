@@ -1,4 +1,6 @@
-go 1.23.1 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.24.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+
+toolchain go1.24.1
 
 use (
 	.

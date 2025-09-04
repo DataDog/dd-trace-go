@@ -26,26 +26,32 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 func (*TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
+			Tags: map[string]any{
+				"function-name": "generateError",
+			},
 			Meta: map[string]string{
 				"error.details": "test error",
 				"error.type":    "*errors.errorString",
-				"error.message": "test error",
+				"error.message": "return error",
 			},
 		},
 		{
+			Tags: map[string]any{
+				"function-name": "generateTracerError",
+			},
 			Meta: map[string]string{
 				"error.details": "test error",
 				"error.type":    "errortrace.TracerError",
-				"error.message": "test error",
+				"error.message": "return tracer error",
 			},
 		},
 	}
 }
 
 func generateError(_ context.Context) error {
-	return fmt.Errorf("test error")
+	return fmt.Errorf("return error")
 }
 
 func generateTracerError(_ context.Context) *errortrace.TracerError {
-	return errortrace.New("test error")
+	return errortrace.New("return tracer error")
 }
