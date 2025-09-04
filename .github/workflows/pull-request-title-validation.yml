@@ -2,7 +2,11 @@ name: Validate PR Title
 
 on:
   pull_request:
-    types: [opened, edited,reopened,synchronize]
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
 
 jobs:
   check-title:
