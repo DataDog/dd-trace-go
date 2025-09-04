@@ -14,11 +14,10 @@ aspects:
       all-of:
         - package-filter:
             root: true
-            pattern: "**"
+            pattern: "*"
         - function-body:
             function:
-              - signature-contains:
-                  args: [context.Context]
+              - signature:
                   returns: [error]
     advice:
       - prepend-statements:
@@ -26,13 +25,9 @@ aspects:
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             errortrace: github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace
           template: |-
-            {{ $ctx := .Function.ArgumentOfType "context.Context" -}}
-            {{- if (eq $ctx "") -}}
-              {{- $ctx = "ctx" -}}
-              ctx := context.TODO()
-            {{ end -}}
+            ctx := context.TODO()
             var span *tracer.Span
-            span, {{ $ctx }} = tracer.StartSpanFromContext({{ $ctx }}, {{ printf "%q" .Function.Name }},
+            span, _ = tracer.StartSpanFromContext(ctx, {{ printf "%q" .Function.Name }},
               tracer.Tag("function-name", {{ printf "%q" .Function.Name }}),
             )
             {{ $ret := .Function.LastResultThatImplements "error" }}
