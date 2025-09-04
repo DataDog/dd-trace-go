@@ -5,14 +5,17 @@
 
 //go:build linux
 
+// This is a go port of https://github.com/DataDog/fullhost-code-hotspots-wip/blob/main/lang-exp/anonmapping-clib/otel_process_ctx.c
+
 package internal
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
+	"sync/atomic"
 	"unsafe"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -79,8 +82,9 @@ func CreateOtelProcessContextMapping(data []byte) error {
 
 	copy(mappingBytes[headerSize:], data)
 	copy(mappingBytes[:headerSize], unsafe.Slice((*byte)(unsafe.Pointer(&header)), headerSize))
-	// write the signature last to ensure that once a process validates the signature, it can safely read the whole data
-	copy(mappingBytes, otelContextSignature)
+	// write atomically the signature last to ensure that once a process validates the signature, it can safely read the whole data
+	sig := binary.NativeEndian.Uint64(unsafe.Slice(unsafe.StringData(otelContextSignature), len(otelContextSignature)))
+	atomic.StoreUint64((*uint64)(unsafe.Pointer(&mappingBytes[0])), sig)
 
 	err = unix.Mprotect(mappingBytes, unix.PROT_READ)
 	if err != nil {
@@ -90,17 +94,14 @@ func CreateOtelProcessContextMapping(data []byte) error {
 
 	// prctl expects a null-terminated string
 	contextNameNullTerminated, _ := unix.ByteSliceFromString(otelContextSignature)
-	err = unix.Prctl(
+	// Failure to set the vma anon name is not a critical error (only supported on Linux 5.17+), so we ignore the return value.
+	_ = unix.Prctl(
 		PR_SET_VMA,
 		uintptr(PR_SET_VMA_ANON_NAME),
 		addr,
 		uintptr(otelContextMappingSize),
 		uintptr(unsafe.Pointer(&contextNameNullTerminated[0])),
 	)
-	if err != nil {
-		// Failure to set the vma anon name is not a critical error (only supported on Linux 5.17+), so we log it at the warning level.
-		log.Warn("failed to set vma anon name: %s", err.Error())
-	}
 
 	existingMappingBytes = mappingBytes
 	return nil
