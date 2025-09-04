@@ -165,3 +165,7 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 }
 
 func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
+
+func (c *otelCtxToDDCtx) IsSampled() bool {
+	return c.oc.IsSampled()
+}
