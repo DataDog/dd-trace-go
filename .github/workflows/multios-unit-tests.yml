@@ -4,13 +4,11 @@ on:
   workflow_dispatch: # manually
     inputs:
       go-version:
+        description: The Go version to use
         required: true
         type: string
       runs-on:
-        required: true
-        type: string
-      ref:
-        description: 'The branch to run the workflow on'
+        description: The OS to run the tests on
         required: true
         type: string
   workflow_call:
@@ -19,10 +17,6 @@ on:
         required: true
         type: string
       runs-on:
-        required: true
-        type: string
-      ref:
-        description: 'The branch to run the workflow on'
         required: true
         type: string
 
@@ -51,10 +45,16 @@ jobs:
         shell: pwsh
         run: |
           "normalized_workspace=${{ github.workspace }}" >> $env:GITHUB_ENV
+      - name: Restore repo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v2.7.0
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ github.sha }}
+          clean: false
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
@@ -64,7 +64,7 @@ jobs:
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
-      - name: "Runner ${{ matrix.runner-index }}: Test Core and Contrib (No Integration Tests)"
+      - name: "Runner: Test Core and Contrib (No Integration Tests)"
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
