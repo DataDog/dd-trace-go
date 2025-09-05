@@ -8,6 +8,8 @@ package tracer
 import (
 	"io"
 	"sync"
+
+	"github.com/tinylib/msgp/msgp"
 )
 
 // payloadStats contains the statistics of a payload.
@@ -64,6 +66,17 @@ const (
 )
 
 type spanListV1 []*Span
+
+// EncodeMsg implements msgp.Encodable.
+func (s *spanListV1) EncodeMsg(*msgp.Writer) error {
+	// From here, encoding goes full manual.
+	// Span, SpanLink, and SpanEvent structs are different for v0.4 and v1.0.
+	// For v1 we need to manually encode the spans, span links, and span events
+	// if we don't want to do extra allocations.
+	panic("unimplemented")
+}
+
+var _ msgp.Encodable = (*spanListV1)(nil)
 
 // safePayload provides a thread-safe wrapper around payload.
 type safePayload struct {
