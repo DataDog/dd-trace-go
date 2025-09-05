@@ -93,8 +93,9 @@ func NewClient(cfg *config.Config) *Client {
 		if cfg.AgentURL.Scheme == "unix" {
 			baseURL = internal.UnixDataSocketURL(cfg.AgentURL.Path).String()
 		} else {
-			baseURL = cfg.AgentURL.String() + basePathEVPProxy
+			baseURL = cfg.AgentURL.String()
 		}
+		baseURL += basePathEVPProxy
 	}
 	log.Debug("llmobs/internal/dne: using baseURL: %s", baseURL)
 
