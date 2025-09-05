@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/internal/json"
 	"github.com/DataDog/dd-trace-go/v2/appsec"
@@ -27,8 +28,9 @@ type Processor[O any] struct {
 	ProcessorConfig[O]
 	instr *instrumentation.Instrumentation
 
-	metrics *metrics
-	done    context.CancelFunc
+	metrics      *metrics
+	done         context.CancelFunc
+	firstRequest sync.Once
 }
 
 // NewProcessor creates a new [Processor] instance with the given configuration and instrumentation
@@ -56,6 +58,10 @@ func NewProcessor[O any](config ProcessorConfig[O], instr *instrumentation.Instr
 // along with an optional output message of type O created by either [ProcessorConfig.ContinueMessageFunc] or [ProcessorConfig.BlockMessageFunc]
 // If the request is blocked or the message ends the stream, it returns io.EOF as error
 func (mp *Processor[O]) OnRequestHeaders(ctx context.Context, req RequestHeaders) (reqState RequestState, _ *O, err error) {
+	mp.firstRequest.Do(func() {
+		mp.instr.Logger().Info("external_processing: first request received. Configuration: BlockingUnavailable=%v, BodyParsingSizeLimit=%d, Framework=%s")
+	})
+
 	mp.metrics.incrementRequestCount()
 	pseudoRequest, err := req.ExtractRequest(ctx)
 	if err != nil {
