@@ -9,15 +9,15 @@ on:
         type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   pull_request:
-    branches:
-      - "**"
-  merge_group:
   workflow_dispatch:
     inputs:
       ref:

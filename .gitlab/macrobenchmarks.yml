@@ -199,6 +199,7 @@ go-stable-profile-trace-asm:
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 check-slo-breaches:
+  extends: .check-slo-breaches
   stage: gates
   needs: [
     "go-oldstable-baseline",
@@ -217,11 +218,10 @@ check-slo-breaches:
     "go-stable-profile-trace-asm",
   ]
   when: on_success
-  tags: ["arch:amd64"]
-  image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:latest
-  script:
-    - export ARTIFACTS_DIR="$(pwd)/platform/artifacts"
-    - bp-runner .gitlab/bp-runner.fail-on-breach.yml
+  variables:
+    DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
+    ARTIFACTS_DIR: "platform/artifacts"
+    SLO_FILE: ".gitlab/bp-runner.fail-on-breach.yml"
   artifacts:
     name: "artifacts"
     when: always
@@ -230,8 +230,10 @@ check-slo-breaches:
     expire_in: 3 months
 
 include:
-  project: 'DataDog/benchmarking-platform-tools'
-  file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
+  - project: 'DataDog/benchmarking-platform-tools'
+    file: 'images/templates/gitlab/check-slo-breaches.template.yml'
+  - project: 'DataDog/benchmarking-platform-tools'
+    file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
 
 notify-slo-breaches:
   extends: .notify-slo-breaches

@@ -1751,7 +1751,7 @@ func TestEnvVars(t *testing.T) {
 		}
 	})
 
-	t.Run("w3c extract,update span, inject", func(t *testing.T) {
+	t.Run("w3c extract,update span with UserID, inject", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleInject: "tracecontext", headerPropagationStyleExtract: "tracecontext"},
 			{headerPropagationStyleInject: "datadog,tracecontext", headerPropagationStyleExtract: "datadog,tracecontext"},
@@ -1765,9 +1765,9 @@ func TestEnvVars(t *testing.T) {
 				outMap     TextMapCarrier
 				out        []uint64 // contains [<parent_id>, <span_id>]
 				tid        traceID
-				priority   float64
 				origin     string
 				lastParent string
+				userID     string
 			}{
 				{
 					in: TextMapCarrier{
@@ -1776,16 +1776,18 @@ func TestEnvVars(t *testing.T) {
 					},
 					outMap: TextMapCarrier{
 						traceparentHeader: "00-12345678901234567890123456789012-0000000000000001-01",
-						tracestateHeader:  "dd=s:1;o:rum;p:0000000000000001;t.usr.id:baz64~~;t.tid:1234567890123456",
+						// Note: tracestate will be recomposed due to updated=true from SetUserID
+						tracestateHeader: "dd=s:2;o:rum;p:0000000000000001;t.usr.id:dGVzdDEyMw__,", // base64 of "test123"
 					},
 					out:        []uint64{1311768467284833366, 1},
 					tid:        traceIDFrom128Bits(1311768467284833366, 8687463697196027922),
-					priority:   1,
+					origin:     "rum",
 					lastParent: "0123456789abcdef",
+					userID:     "test123",
 				},
 			}
 			for i, tc := range tests {
-				t.Run(fmt.Sprintf("#%d w3c inject/extract with env=%q", i, testEnv), func(t *testing.T) {
+				t.Run(fmt.Sprintf("#%d w3c extract,set userID,inject with env=%q", i, testEnv), func(t *testing.T) {
 					tracer, err := newTracer(WithHTTPClient(c), withStatsdClient(&statsd.NoOpClientDirect{}))
 					defer tracer.Stop()
 					assert := assert.New(t)
@@ -1794,15 +1796,20 @@ func TestEnvVars(t *testing.T) {
 					if err != nil {
 						t.FailNow()
 					}
+
+					// Verify the extracted trace is locked
+					assert.True(pCtx.trace.isLocked())
+
 					s := tracer.StartSpan("op", ChildOf(pCtx), WithSpanID(1))
 					sctx := s.Context()
 
-					// unlock the trace to allow setting the priority
-					sctx.trace.setLocked(false)
+					// Initially, the child span context should not be marked as updated
+					assert.False(sctx.updated)
 
-					// changing priority must set ctx.updated = true
-					if tc.priority != 0 {
-						sctx.setSamplingPriority(int(tc.priority), samplernames.Unknown)
+					// Setting User modifies propagating tags, so updated=true
+					if tc.userID != "" {
+						s.SetUser(tc.userID, WithPropagation())
+						assert.True(sctx.updated)
 					}
 
 					if tc.lastParent == "" {
@@ -1810,9 +1817,6 @@ func TestEnvVars(t *testing.T) {
 					} else {
 						assert.Equal(s.meta["_dd.parent_id"], tc.lastParent)
 					}
-
-					assert.Equal(true, sctx.updated)
-					sctx.trace.setLocked(true)
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(s.Context(), headers)
@@ -1822,7 +1826,8 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[1], sctx.spanID)
 
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
-					checkSameElements(assert, tc.outMap[tracestateHeader], headers[tracestateHeader])
+					// The tracestate should be recomposed because updated=true
+					assert.Contains(headers[tracestateHeader], "dd=")
 					ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 					// -3 as we don't count dd= as part of the "value" length limit
 					assert.LessOrEqual(len(ddTag)-3, 256)
@@ -1830,7 +1835,6 @@ func TestEnvVars(t *testing.T) {
 			}
 		}
 	})
-
 	t.Run("datadog extract precedence", func(t *testing.T) {
 		testEnvs = []map[string]string{
 			{headerPropagationStyleExtract: "datadog,tracecontext"},
