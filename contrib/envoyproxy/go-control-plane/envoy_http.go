@@ -11,19 +11,42 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
+	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoycore "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyextprocfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
-
 	"google.golang.org/grpc/metadata"
 )
 
-// buildImmediateResponse creates an Envoy immediate response for when the request is blocked
-func buildImmediateResponse(data *message_processor.BlockResponseData) *envoyextproc.ProcessingResponse {
+func continueActionFunc(options proxy.ContinueActionOptions) (envoyextproc.ProcessingResponse, error) {
+	if len(options.HeaderMutations) > 0 {
+		return buildHeadersResponse(options), nil
+	}
+
+	switch options.MessageType {
+	case proxy.MessageTypeRequestHeaders:
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestHeaders{RequestHeaders: &envoyextproc.HeadersResponse{}}}, nil
+	case proxy.MessageTypeRequestBody:
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestBody{RequestBody: &envoyextproc.BodyResponse{}}}, nil
+	case proxy.MessageTypeResponseHeaders:
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_ResponseHeaders{ResponseHeaders: &envoyextproc.HeadersResponse{}}}, nil
+	case proxy.MessageTypeResponseBody:
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_ResponseBody{ResponseBody: &envoyextproc.BodyResponse{}}}, nil
+	case proxy.MessageTypeRequestTrailers:
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestTrailers{RequestTrailers: &envoyextproc.TrailersResponse{}}}, nil
+	case proxy.MessageTypeResponseTrailers:
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_ResponseTrailers{ResponseTrailers: &envoyextproc.TrailersResponse{}}}, nil
+	default:
+		return envoyextproc.ProcessingResponse{}, status.Errorf(codes.Unknown, "Unknown request type: %v", options.MessageType)
+	}
+}
+
+func blockActionFunc(data proxy.BlockActionOptions) (envoyextproc.ProcessingResponse, error) {
 	blockedHeaders := convertHeadersToEnvoy(data.Headers)
 
 	var statusCode int32
@@ -31,7 +54,7 @@ func buildImmediateResponse(data *message_processor.BlockResponseData) *envoyext
 		statusCode = int32(data.StatusCode)
 	}
 
-	return &envoyextproc.ProcessingResponse{
+	return envoyextproc.ProcessingResponse{
 		Response: &envoyextproc.ProcessingResponse_ImmediateResponse{
 			ImmediateResponse: &envoyextproc.ImmediateResponse{
 				Status: &envoytypes.HttpStatus{
@@ -46,27 +69,27 @@ func buildImmediateResponse(data *message_processor.BlockResponseData) *envoyext
 				},
 			},
 		},
-	}
+	}, nil
 }
 
 // buildHeadersResponse creates an Envoy HeadersResponse from provided data answering a RequestHeaders or ResponseHeaders message
-func buildHeadersResponse(data *message_processor.HeadersResponseData) *envoyextproc.ProcessingResponse {
+func buildHeadersResponse(data proxy.ContinueActionOptions) envoyextproc.ProcessingResponse {
 	var modeOverride *envoyextprocfilter.ProcessingMode
-	if data.RequestBody {
+	if data.Body {
 		modeOverride = &envoyextprocfilter.ProcessingMode{RequestBodyMode: envoyextprocfilter.ProcessingMode_STREAMED}
 	}
 
-	processingResponse := &envoyextproc.ProcessingResponse{ModeOverride: modeOverride}
+	processingResponse := envoyextproc.ProcessingResponse{ModeOverride: modeOverride}
 	headersResponse := &envoyextproc.HeadersResponse{
 		Response: &envoyextproc.CommonResponse{
 			Status: envoyextproc.CommonResponse_CONTINUE,
 			HeaderMutation: &envoyextproc.HeaderMutation{
-				SetHeaders: convertHeadersToEnvoy(data.HeaderMutation),
+				SetHeaders: convertHeadersToEnvoy(data.HeaderMutations),
 			},
 		},
 	}
 
-	if data.Direction == message_processor.DirectionRequest {
+	if data.MessageType == proxy.MessageTypeRequestHeaders {
 		processingResponse.Response = &envoyextproc.ProcessingResponse_RequestHeaders{
 			RequestHeaders: headersResponse,
 		}
@@ -118,8 +141,8 @@ func mergeMetadataHeaders(md metadata.MD, headers http.Header) {
 // splitPseudoHeaders splits normal headers of the initial request made by the client and the pseudo headers of HTTP/2
 // - Format the headers to be used by the tracer as http.Header
 // - Set headers keys to be canonical
-func splitPseudoHeaders(receivedHeaders []*corev3.HeaderValue) (headers http.Header, pseudoHeaders map[string]string) {
-	headers = make(http.Header, len(receivedHeaders)-4)
+func splitPseudoHeaders(receivedHeaders []*corev3.HeaderValue) (headers map[string][]string, pseudoHeaders map[string]string) {
+	headers = make(map[string][]string, len(receivedHeaders)-4)
 	pseudoHeaders = make(map[string]string, 4)
 	for _, v := range receivedHeaders {
 		key := v.GetKey()

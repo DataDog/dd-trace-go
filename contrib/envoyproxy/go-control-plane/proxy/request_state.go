@@ -3,11 +3,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package message_processor
+package proxy
 
 import (
 	"context"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"errors"
 	"io"
 	"net/http"
 	"path"
@@ -22,10 +22,7 @@ var _ io.Closer = (*RequestState)(nil)
 // RequestState manages the state of a single request through its lifecycle
 type RequestState struct {
 	ctx         context.Context
-	Span        *tracer.Span
 	afterHandle func()
-
-	instr *instrumentation.Instrumentation
 
 	// HTTP components
 	wrappedResponseWriter http.ResponseWriter
@@ -36,28 +33,17 @@ type RequestState struct {
 	responseBuffer *bodyBuffer
 
 	// Processing state
-	blocked              bool
-	Ongoing              bool
-	AwaitingRequestBody  bool
-	AwaitingResponseBody bool
+	State MessageType
 }
 
 // newRequestState creates a new request state
-func newRequestState(request *http.Request, instr *instrumentation.Instrumentation, bodyLimit int, componentName string, framework string) (*RequestState, bool) {
+func newRequestState(request *http.Request, bodyLimit int, framework string, options ...tracer.StartSpanOption) (RequestState, bool) {
 	fakeResponseWriter := newFakeResponseWriter()
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
 		Resource:  request.Method + " " + path.Clean(request.URL.Path),
-		SpanOpts: []tracer.StartSpanOption{
-			tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-			tracer.Tag(ext.Component, componentName),
-		},
+		SpanOpts:  append(options, tracer.Tag(ext.SpanKind, ext.SpanKindServer)),
 	}, fakeResponseWriter, request)
-
-	span, ok := tracer.SpanFromContext(spanRequest.Context())
-	if !ok {
-		return nil, false
-	}
 
 	var requestBuffer *bodyBuffer
 	if bodyLimit > 0 {
@@ -69,37 +55,44 @@ func newRequestState(request *http.Request, instr *instrumentation.Instrumentati
 		responseBuffer = newBodyBuffer(bodyLimit)
 	}
 
-	return &RequestState{
+	return RequestState{
 		ctx:                   spanRequest.Context(),
-		Span:                  span,
 		afterHandle:           afterHandle,
-		instr:                 instr,
 		fakeResponseWriter:    fakeResponseWriter,
 		wrappedResponseWriter: wrappedResponseWriter,
 		requestBuffer:         requestBuffer,
 		responseBuffer:        responseBuffer,
-		Ongoing:               true,
+		State:                 MessageTypeRequestHeaders,
 	}, blocked
 }
 
 // PropagationHeaders creates header mutations for trace propagation
 func (rs *RequestState) PropagationHeaders() (http.Header, error) {
-	newHeaders := make(http.Header)
-	if err := tracer.Inject(rs.Span.Context(), tracer.HTTPHeadersCarrier(newHeaders)); err != nil {
-		return nil, err
+	span, ok := tracer.SpanFromContext(rs.ctx)
+	if !ok {
+		return nil, errors.New("no span found in context")
 	}
 
-	if len(newHeaders) > 0 {
-		rs.instr.Logger().Debug("message_processor: injecting propagation headers: %v\n", newHeaders)
+	newHeaders := make(http.Header)
+	if err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(newHeaders)); err != nil {
+		return nil, err
 	}
 
 	return newHeaders, nil
 }
 
-// SetBlocked marks the request as blocked and completes it.
-func (rs *RequestState) SetBlocked() {
-	rs.blocked = true
+// BlockAction marks the request as blocked and completes it.
+func (rs *RequestState) BlockAction() BlockActionOptions {
 	rs.Close()
+	if rs.fakeResponseWriter.status == 0 {
+		panic("cannot block request without a status code")
+	}
+
+	return BlockActionOptions{
+		StatusCode: rs.fakeResponseWriter.status,
+		Headers:    rs.fakeResponseWriter.headers,
+		Body:       rs.fakeResponseWriter.body,
+	}
 }
 
 // Close finalizes the request processing.
@@ -110,6 +103,9 @@ func (rs *RequestState) Close() error {
 		rs.afterHandle = nil
 		afterHandle()
 	}
-	rs.Ongoing = false
+
+	if rs.State.Ongoing() {
+		rs.State = MessageTypeFinished
+	}
 	return nil
 }

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-package message_processor
+package proxy
 
 import (
 	"context"
@@ -16,20 +16,34 @@ import (
 	"sync"
 )
 
-// NewRequest is a function that creates a new http.Request from the given parameters.
-func NewRequest(ctx context.Context, scheme, authority, path, method string, headers http.Header, remoteAddr string, tlsState *tls.ConnectionState) (*http.Request, error) {
-	parsedURL, err := urlParse(scheme, authority, path)
+// PseudoRequest represents the pseudo headers of an HTTP request.
+type PseudoRequest struct {
+	Scheme     string
+	Authority  string
+	Path       string
+	Method     string
+	RemoteAddr string
+	Headers    map[string][]string
+}
+
+func (pr PseudoRequest) toNetHTTP(ctx context.Context) (*http.Request, error) {
+	parsedURL, err := urlParse(pr.Scheme, pr.Authority, pr.Path)
 	if err != nil {
 		return nil, err
 	}
 
+	var tlsState *tls.ConnectionState
+	if pr.Scheme == "https" {
+		tlsState = &tls.ConnectionState{}
+	}
+
 	return (&http.Request{
-		Method:     method,
-		Host:       authority,
-		RequestURI: path,
+		Method:     pr.Method,
+		Host:       pr.Authority,
+		RequestURI: pr.Path,
 		URL:        parsedURL,
-		Header:     headers,
-		RemoteAddr: remoteAddr,
+		Header:     pr.Headers,
+		RemoteAddr: pr.RemoteAddr,
 		TLS:        tlsState,
 	}).WithContext(ctx), nil
 }
@@ -59,6 +73,22 @@ func urlParse(scheme, authority, rest string) (*url.URL, error) {
 			err)
 	}
 	return parsedURL, nil
+}
+
+// PseudoResponse represents the pseudo headers of an HTTP response.
+type PseudoResponse struct {
+	StatusCode int
+	Headers    map[string][]string
+}
+
+func (pr PseudoResponse) toNetHTTP(rw http.ResponseWriter) {
+	for k, v := range pr.Headers {
+		for _, vv := range v {
+			rw.Header().Add(k, vv)
+		}
+	}
+
+	rw.WriteHeader(pr.StatusCode)
 }
 
 type fakeResponseWriter struct {
