@@ -13,7 +13,7 @@ import (
 type ContinueActionOptions struct {
 	// HeaderMutations are the HTTP header mutations to be applied to the message (default is empty)
 	HeaderMutations map[string][]string
-	// RequestBody indicates whether the body should be requested from the proxy to the external processing service (default is false)
+	// Body indicates whether the body should be requested from the proxy to the external processing service (default is false)
 	Body bool
 	// MessageType indicates when the response is being created
 	MessageType MessageType

@@ -118,13 +118,7 @@ func (mp *Processor[O]) OnRequestHeaders(ctx context.Context, req RequestHeaders
 // If the request is blocked or the message ends the stream, it returns io.EOF as error
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
-func (mp *Processor[O]) OnRequestBody(req HTTPBody, reqState *RequestState) (_ *O, err error) {
-	defer func() {
-		if err != nil {
-			reqState.Close()
-		}
-	}()
-
+func (mp *Processor[O]) OnRequestBody(req HTTPBody, reqState *RequestState) (*O, error) {
 	if !reqState.State.Ongoing() {
 		return nil, errors.New("received request body too early")
 	}
@@ -160,15 +154,9 @@ func (mp *Processor[O]) OnRequestBody(req HTTPBody, reqState *RequestState) (_ *
 // It returns a [RequestState] to be used in subsequent calls for the same request/response cycle
 // along with an optional output message of type O created by either [ProcessorConfig.ContinueMessageFunc] or [ProcessorConfig.BlockMessageFunc]
 // If the request is blocked or the message ends the stream, it returns io.EOF as error
-func (mp *Processor[O]) OnResponseHeaders(res ResponseHeaders, reqState *RequestState) (msg *O, err error) {
-	defer func() {
-		if err != nil {
-			reqState.Close()
-		}
-	}()
-
+func (mp *Processor[O]) OnResponseHeaders(res ResponseHeaders, reqState *RequestState) (*O, error) {
 	if !reqState.State.Request() {
-		return msg, fmt.Errorf("received response headers too early: %v", reqState.State)
+		return nil, fmt.Errorf("received response headers too early: %v", reqState.State)
 	}
 
 	reqState.State = MessageTypeResponseHeaders
@@ -225,15 +213,9 @@ func (mp *Processor[O]) OnResponseHeaders(res ResponseHeaders, reqState *Request
 // If the request is blocked or the message ends the stream, it returns io.EOF as error
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
-func (mp *Processor[O]) OnResponseBody(resp HTTPBody, reqState *RequestState) (msg *O, err error) {
-	defer func() {
-		if err != nil {
-			reqState.Close()
-		}
-	}()
-
+func (mp *Processor[O]) OnResponseBody(resp HTTPBody, reqState *RequestState) (*O, error) {
 	if !reqState.State.Response() {
-		return msg, fmt.Errorf("received response body too early: %v", reqState.State)
+		return nil, fmt.Errorf("received response body too early: %v", reqState.State)
 	}
 
 	mp.instr.Logger().Debug("message_processor: received response body: %v - EOS: %v\n", len(resp.GetBody()), resp.GetEndOfStream())

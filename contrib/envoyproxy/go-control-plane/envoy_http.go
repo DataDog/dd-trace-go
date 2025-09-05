@@ -12,31 +12,34 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
-	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoycore "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyextprocfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	envoyextproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	envoytypes "github.com/envoyproxy/go-control-plane/envoy/type/v3"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 func continueActionFunc(options proxy.ContinueActionOptions) (envoyextproc.ProcessingResponse, error) {
-	if len(options.HeaderMutations) > 0 {
+	if len(options.HeaderMutations) > 0 || options.Body {
 		return buildHeadersResponse(options), nil
+	}
+
+	common := &envoyextproc.CommonResponse{
+		Status: envoyextproc.CommonResponse_CONTINUE,
 	}
 
 	switch options.MessageType {
 	case proxy.MessageTypeRequestHeaders:
-		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestHeaders{RequestHeaders: &envoyextproc.HeadersResponse{}}}, nil
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestHeaders{RequestHeaders: &envoyextproc.HeadersResponse{Response: common}}}, nil
 	case proxy.MessageTypeRequestBody:
-		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestBody{RequestBody: &envoyextproc.BodyResponse{}}}, nil
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestBody{RequestBody: &envoyextproc.BodyResponse{Response: common}}}, nil
 	case proxy.MessageTypeResponseHeaders:
-		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_ResponseHeaders{ResponseHeaders: &envoyextproc.HeadersResponse{}}}, nil
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_ResponseHeaders{ResponseHeaders: &envoyextproc.HeadersResponse{Response: common}}}, nil
 	case proxy.MessageTypeResponseBody:
-		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_ResponseBody{ResponseBody: &envoyextproc.BodyResponse{}}}, nil
+		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_ResponseBody{ResponseBody: &envoyextproc.BodyResponse{Response: common}}}, nil
 	case proxy.MessageTypeRequestTrailers:
 		return envoyextproc.ProcessingResponse{Response: &envoyextproc.ProcessingResponse_RequestTrailers{RequestTrailers: &envoyextproc.TrailersResponse{}}}, nil
 	case proxy.MessageTypeResponseTrailers:
