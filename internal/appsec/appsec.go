@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/DataDog/go-libddwaf/v4"
@@ -74,7 +75,7 @@ func Start(opts ...config.StartOption) {
 		} else {
 			// DD_APPSEC_ENABLED is not set so we cannot know what the intent is here, we must log a
 			// debug message instead to avoid showing an error to APM-tracing-only users.
-			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled for the following reasons: %s", err.Error())
+			telemetrylog.Error("appsec: remote activation of threats detection cannot be enabled", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 		return
 	}
@@ -90,7 +91,7 @@ func Start(opts ...config.StartOption) {
 	// Start the remote configuration client
 	log.Debug("appsec: starting the remote configuration client")
 	if err := appsec.startRC(); err != nil {
-		telemetrylog.Error("appsec: Remote config: disabled due to an instanciation error: %s", err.Error())
+		telemetrylog.Error("appsec: Remote config: disabled due to an instantiation error", slog.Any("error", telemetrylog.NewSafeError(err)))
 	}
 
 	if mode == config.RCStandby {
