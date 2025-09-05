@@ -102,12 +102,12 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 		p := newCiVisibilityPayload()
 		for _, t := range tc.payload {
 			for _, span := range t {
-				err := p.push(getCiVisibilityEvent(span))
+				_, err := p.push(getCiVisibilityEvent(span))
 				assert.NoError(err)
 			}
 		}
 
-		_, err := transport.send(p.payloadV04)
+		_, err := transport.send(p.payload)
 		assert.NoError(err)
 	}
 	assert.Equal(hits, len(testCases))

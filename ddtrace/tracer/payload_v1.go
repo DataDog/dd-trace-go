@@ -51,6 +51,10 @@ type payloadV1 struct {
 
 	// a list of trace `chunks`
 	chunks []traceChunk
+
+	// fields needed to implement unsafePayload interface
+	protocolVersion float64
+	itemsCount      uint32
 }
 
 // AnyValue is a representation of the `any` value. It can take the following types:
@@ -86,3 +90,13 @@ type keyValue struct {
 }
 
 type keyValueList = []keyValue
+
+// newPayloadV1 returns a ready to use payloadV1.
+func newPayloadV1(protocol float64) *payloadV1 {
+	return &payloadV1{
+		protocolVersion: protocol,
+		strings:         make([]string, 0),
+		attributes:      make(map[uint32]anyValue),
+		chunks:          make([]traceChunk, 0),
+	}
+}
