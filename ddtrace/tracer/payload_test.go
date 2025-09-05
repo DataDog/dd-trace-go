@@ -88,7 +88,7 @@ func BenchmarkPayloadThroughput(b *testing.B) {
 // payload is filled.
 func benchmarkPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
-		p := newUnsafePayload(traceProtocolV04)
+		p := newPayloadV04()
 		s := newBasicSpan("X")
 		s.meta["key"] = strings.Repeat("X", 10*1024)
 		trace := make(spanList, count)
@@ -248,7 +248,7 @@ func BenchmarkPayloadPush(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				p := newUnsafePayload(traceProtocolV04)
+				p := newPayloadV04()
 				_, _ = p.push(spans)
 			}
 		})
