@@ -15,23 +15,23 @@ experiments:
               - agg_http_req_duration_p99 < 125.0 ms
           - name: high_load_cgo-cpu-bound/go-oldstable-profile-trace-asm
             thresholds:
-              - throughput < 40 op/s
+              - throughput > 30 op/s
           - name: normal_operation_cgo-cpu-bound/go-oldstable-only-trace
             thresholds:
               - agg_http_req_duration_p99 < 125.0 ms
           - name: high_load_cgo-cpu-bound/go-oldstable-only-trace
             thresholds:
-              - throughput < 40 op/s
+              - throughput > 30 op/s
           # Go stable
           - name: normal_operation_cgo-cpu-bound/go-stable-profile-trace-asm
             thresholds:
               - agg_http_req_duration_p99 < 125.0 ms
           - name: high_load_cgo-cpu-bound/go-stable-profile-trace-asm
             thresholds:
-              - throughput < 40 op/s
+              - throughput > 30 op/s
           - name: normal_operation_cgo-cpu-bound/go-stable-only-trace
             thresholds:
               - agg_http_req_duration_p99 < 125.0 ms
           - name: high_load_cgo-cpu-bound/go-stable-only-trace
             thresholds:
-              - throughput < 40 op/s
+              - throughput > 30 op/s
