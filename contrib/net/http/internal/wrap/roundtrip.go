@@ -128,7 +128,7 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 
 	// Setup ClientTrace for detailed timing if enabled
 	var timings *httpTraceTimings
-	if cfg.ClientTrace {
+	if cfg.ClientTimings {
 		timings = &httpTraceTimings{}
 		ctx = httptrace.WithClientTrace(ctx, newClientTrace(timings))
 	}
@@ -170,7 +170,7 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 			}
 		}
 
-		if cfg.ClientTrace && timings != nil {
+		if cfg.ClientTimings && timings != nil {
 			timings.addTimingTags(span)
 		}
 

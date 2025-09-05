@@ -581,8 +581,8 @@ func TestSpanOptions(t *testing.T) {
 	assert.Equal(t, tagValue, spans[0].Tag(tagKey))
 }
 
-func TestClientTrace(t *testing.T) {
-	assertClientTrace := func(t *testing.T, enabled bool, expectTags bool) {
+func TestClientTimings(t *testing.T) {
+	assertClientTimings := func(t *testing.T, enabled bool, expectTags bool) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
@@ -591,7 +591,7 @@ func TestClientTrace(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		rt := WrapRoundTripper(http.DefaultTransport, WithClientTrace(enabled))
+		rt := WrapRoundTripper(http.DefaultTransport, WithClientTimings(enabled))
 		client := &http.Client{Transport: rt}
 		resp, err := client.Get(srv.URL)
 		assert.Nil(t, err)
@@ -609,11 +609,11 @@ func TestClientTrace(t *testing.T) {
 	}
 
 	t.Run("disabled", func(t *testing.T) {
-		assertClientTrace(t, false, false)
+		assertClientTimings(t, false, false)
 	})
 
 	t.Run("enabled", func(t *testing.T) {
-		assertClientTrace(t, true, true)
+		assertClientTimings(t, true, true)
 	})
 }
 

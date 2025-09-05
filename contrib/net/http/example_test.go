@@ -69,10 +69,10 @@ func ExampleWrapClient() {
 	http.ListenAndServe(":8080", mux)
 }
 
-// ExampleWrapClient_withClientTrace demonstrates how to enable detailed HTTP request tracing
+// ExampleWrapClient_withClientTimings demonstrates how to enable detailed HTTP request tracing
 // using httptrace.ClientTrace. This provides timing information for DNS lookups, connection
 // establishment, TLS handshakes, and other HTTP request events as span tags.
-func ExampleWrapClient_withClientTrace() {
+func ExampleWrapClient_withClientTimings() {
 	tracer.Start()
 	defer tracer.Stop()
 
@@ -83,8 +83,8 @@ func ExampleWrapClient_withClientTrace() {
 	}))
 	defer server.Close()
 
-	// Create an HTTP client with ClientTrace enabled
-	c := httptrace.WrapClient(http.DefaultClient, httptrace.WithClientTrace(true))
+	// Create an HTTP client with ClientTimings enabled
+	c := httptrace.WrapClient(http.DefaultClient, httptrace.WithClientTimings(true))
 
 	// Make a request - the span will include detailed timing information
 	// such as http.dns.duration_ms, http.connect.duration_ms, etc.

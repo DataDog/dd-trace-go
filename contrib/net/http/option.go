@@ -191,13 +191,13 @@ func WithErrorCheck(fn func(err error) bool) RoundTripperOptionFn {
 	}
 }
 
-// WithClientTrace enables detailed HTTP request tracing using httptrace.ClientTrace.
+// WithClientTimings enables detailed HTTP request tracing using httptrace.ClientTrace.
 // When enabled, the integration will add timing information for DNS lookups,
 // connection establishment, TLS handshakes, and other HTTP request events as span tags.
 // This feature is disabled by default and adds minimal overhead when enabled.
-func WithClientTrace(enabled bool) RoundTripperOptionFn {
+func WithClientTimings(enabled bool) RoundTripperOptionFn {
 	return func(cfg *internal.RoundTripperConfig) {
-		cfg.ClientTrace = enabled
+		cfg.ClientTimings = enabled
 	}
 }
 
