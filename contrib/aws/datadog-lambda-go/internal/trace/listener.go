@@ -1,10 +1,7 @@
-/*
- * Unless explicitly stated otherwise all files in this repository are licensed
- * under the Apache License Version 2.0.
- *
- * This product includes software developed at Datadog (https://www.datadoghq.com/).
- * Copyright 2021 Datadog, Inc.
- */
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
 
 package trace
 
@@ -18,11 +15,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/extension"
 	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/logger"
 	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/version"
-	"github.com/aws/aws-lambda-go/lambdacontext"
-	"go.opentelemetry.io/otel"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	ddotel "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry"
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/aws/aws-lambda-go/lambdacontext"
+	"go.opentelemetry.io/otel"
 )
 
 type (
@@ -167,7 +164,7 @@ func startFunctionExecutionSpan(ctx context.Context, mergeXrayTraces bool, isDdS
 		ddtracer.Tag("datadog_lambda", version.DDLambdaVersion),
 		ddtracer.Tag("dd_trace", version.DDTraceVersion),
 	}
-	
+
 	if parentSpanContext != nil {
 		if sc, ok := parentSpanContext.(*ddtracer.SpanContext); ok {
 			spanOptions = append(spanOptions, ddtracer.ChildOf(sc))

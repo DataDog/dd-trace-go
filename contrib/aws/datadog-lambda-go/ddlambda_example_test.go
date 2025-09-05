@@ -1,11 +1,17 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
 package ddlambda_test
 
 import (
 	"context"
 	"encoding/json"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/aws/aws-lambda-go/events"
 
