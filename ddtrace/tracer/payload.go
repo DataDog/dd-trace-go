@@ -63,6 +63,8 @@ const (
 	msgpackArray32  byte = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
 )
 
+type spanListV1 []*Span
+
 // safePayload provides a thread-safe wrapper around payload.
 type safePayload struct {
 	mu sync.RWMutex
