@@ -5,7 +5,9 @@
 
 package experiment
 
-import "github.com/DataDog/dd-trace-go/v2/llmobs/internal"
+import (
+	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/config"
+)
 
 type newCfg struct {
 	projectName   string
@@ -13,7 +15,7 @@ type newCfg struct {
 	experimentCfg map[string]any
 }
 
-func defaultNewCfg(globalCfg *internal.Config) *newCfg {
+func defaultNewCfg(globalCfg *config.Config) *newCfg {
 	projectName := ""
 	if globalCfg != nil {
 		projectName = globalCfg.ProjectName

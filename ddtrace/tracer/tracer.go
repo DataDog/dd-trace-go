@@ -254,6 +254,10 @@ func Start(opts ...StartOption) error {
 
 	appsec.Start(appsecopts...)
 
+	//if t.config.llmobsEnabled {
+	//	llmobs.Start()
+	//}
+
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	t.telemetry = startTelemetry(t.config)

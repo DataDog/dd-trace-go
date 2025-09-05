@@ -21,6 +21,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
+	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/dne"
 )
 
 const experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
@@ -42,11 +43,22 @@ type Dataset struct {
 
 // Record represents a record in a Dataset.
 type Record struct {
-	ID             string
 	Input          map[string]any
 	ExpectedOutput any
 	Metadata       map[string]any
-	Version        int
+
+	id      string
+	version int
+}
+
+// ID returns the record id.
+func (r *Record) ID() string {
+	return r.id
+}
+
+// Version returns the record version.
+func (r *Record) Version() int {
+	return r.version
 }
 
 func (r *Record) applyUpdate(update RecordUpdate) {
@@ -82,7 +94,7 @@ func (u *RecordUpdate) merge(new RecordUpdate) {
 	}
 }
 
-// Create initializes a [Dataset] and pushes it to DataDog.
+// Create initializes a Dataset and pushes it to DataDog.
 // FIXME(rarguelloF): this will likely timeout if the dataset is big
 func Create(ctx context.Context, name string, records []Record, opts ...CreateOption) (*Dataset, error) {
 	llmobs, err := internal.ActiveLLMObs()
@@ -93,6 +105,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 	for _, opt := range opts {
 		opt(cfg)
 	}
+
 	resp, err := llmobs.DNEClient.DatasetCreate(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
@@ -240,14 +253,15 @@ func Pull(ctx context.Context, name string) (*Dataset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
-	records := make([]*Record, len(recordsResp), 0)
+
+	records := make([]*Record, 0, len(recordsResp))
 	for _, rec := range recordsResp {
 		records = append(records, &Record{
-			ID:             rec.ID,
+			id:             rec.ID,
 			Input:          rec.Input,
 			ExpectedOutput: rec.ExpectedOutput,
 			Metadata:       rec.Metadata,
-			Version:        rec.Version,
+			version:        rec.Version,
 		})
 	}
 	ds := &Dataset{
@@ -259,14 +273,17 @@ func Pull(ctx context.Context, name string) (*Dataset, error) {
 	return ds, nil
 }
 
+// ID returns the dataset id.
 func (d *Dataset) ID() string {
 	return d.id
 }
 
+// Name returns the dataset name.
 func (d *Dataset) Name() string {
 	return d.name
 }
 
+// Version returns the dataset version.
 func (d *Dataset) Version() int {
 	return d.version
 }
@@ -282,13 +299,14 @@ func (d *Dataset) Append(records ...Record) {
 		// This id will be discarded after push, since the backend will generate a new one.
 		// It is used for tracking new records locally before the push.
 		id := uuid.New().String()
-		rec.ID = id
+		rec.id = id
+
 		d.appendRecords[id] = &rec
 		d.records = append(d.records, &rec)
 	}
 }
 
-// Update updates the given
+// Update updates the item at the given index.
 func (d *Dataset) Update(index int, update RecordUpdate) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -304,27 +322,28 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 
 	d.initialize()
 	rec := d.records[index]
-	if rec.ID == "" {
+	if rec.id == "" {
 		log.Warn("llmobs: invalid record with no ID at index %d, canceling update and removing record", index)
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
 
 	// if it is an addition that was not pushed yet, just modify the addition
-	if _, ok := d.appendRecords[rec.ID]; ok {
+	if _, ok := d.appendRecords[rec.id]; ok {
 		rec.applyUpdate(update)
 		return
 	}
 
 	// if there were updates before, just merge them
-	if prevUpdate, ok := d.updateRecords[rec.ID]; ok {
+	if prevUpdate, ok := d.updateRecords[rec.id]; ok {
 		prevUpdate.merge(update)
 		return
 	}
-	d.updateRecords[rec.ID] = &update
+	d.updateRecords[rec.id] = &update
 	return
 }
 
+// Delete deletes the record at the given index.
 func (d *Dataset) Delete(index int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -336,21 +355,21 @@ func (d *Dataset) Delete(index int) {
 
 	d.initialize()
 	rec := d.records[index]
-	if rec.ID == "" {
+	if rec.id == "" {
 		log.Warn("llmobs: invalid record with no ID at index %d, canceling deletion and removing record", index)
 		d.records = slices.Delete(d.records, index, index+1)
 		return
 	}
 
 	// additionally, remove it from append/update in case it was one
-	if _, ok := d.appendRecords[rec.ID]; ok {
-		delete(d.appendRecords, rec.ID)
+	if _, ok := d.appendRecords[rec.id]; ok {
+		delete(d.appendRecords, rec.id)
 	}
 	// TODO(rarguelloF): should this be done? or should I just keep/not remove the updates?
-	if _, ok := d.updateRecords[rec.ID]; ok {
-		delete(d.updateRecords, rec.ID)
+	if _, ok := d.updateRecords[rec.id]; ok {
+		delete(d.updateRecords, rec.id)
 	}
-	d.deleteRecords[rec.ID] = struct{}{}
+	d.deleteRecords[rec.id] = struct{}{}
 	d.records = slices.Delete(d.records, index, index+1)
 
 	return
@@ -371,21 +390,21 @@ func (d *Dataset) Push(ctx context.Context) error {
 	d.initialize()
 
 	insertOldIDs := make([]string, 0, len(d.appendRecords))
-	insert := make([]internal.DatasetRecordCreate, 0, len(d.appendRecords))
+	insert := make([]dne.DatasetRecordCreate, 0, len(d.appendRecords))
 	for id, rec := range d.appendRecords {
 		insertOldIDs = append(insertOldIDs, id)
-		insert = append(insert, internal.DatasetRecordCreate{
+		insert = append(insert, dne.DatasetRecordCreate{
 			Input:          rec.Input,
 			ExpectedOutput: rec.ExpectedOutput,
 			Metadata:       rec.Metadata,
 		})
 	}
-	update := make([]internal.DatasetRecordUpdate, 0, len(d.updateRecords))
+	update := make([]dne.DatasetRecordUpdate, 0, len(d.updateRecords))
 	for id, rec := range d.updateRecords {
-		update = append(update, internal.DatasetRecordUpdate{
+		update = append(update, dne.DatasetRecordUpdate{
 			ID:             id,
 			Input:          rec.Input,
-			ExpectedOutput: internal.AnyPtr(rec.ExpectedOutput),
+			ExpectedOutput: dne.AnyPtr(rec.ExpectedOutput),
 			Metadata:       rec.Metadata,
 		})
 	}
@@ -415,7 +434,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 	// update the inserted records with the new IDs generated by the backend
 	for i, newID := range newRecordIDs {
 		oldID := insertOldIDs[i]
-		d.appendRecords[oldID].ID = newID
+		d.appendRecords[oldID].id = newID
 	}
 	d.appendRecords = make(map[string]*Record)
 	d.updateRecords = make(map[string]*RecordUpdate)
@@ -424,39 +443,43 @@ func (d *Dataset) Push(ctx context.Context) error {
 	return nil
 }
 
+// URL returns the url to access the dataset in DataDog.
 func (d *Dataset) URL() string {
 	// FIXME(rarguelloF): will not work for subdomain orgs
 	return fmt.Sprintf("%s/llm/datasets/%s", internal.ResourceBaseURL(), d.id)
 }
 
+// Len returns the length of the dataset records.
 func (d *Dataset) Len() int {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return len(d.records)
 }
 
-// Records returns an iterator with read-only copies of the records in the Dataset.
+// Records returns an iterator with copies of the records in the Dataset.
 // To modify the records, use the Append, Update or Delete methods.
+//
+// Warning: Do not call any of the methods that modify the records while in the loop, or you will cause a deadlock.
 func (d *Dataset) Records() iter.Seq2[int, Record] {
 	return func(yield func(int, Record) bool) {
 		d.mu.RLock()
 		defer d.mu.RUnlock()
 
-		for i, v := range d.records {
-			// FIXME(rarguelloF): return a deep copy
-			if !yield(i, *v) {
+		for i, rec := range d.records {
+			if !yield(i, *rec) {
 				return
 			}
 		}
 	}
 }
 
+// Record returns the record at the given index.
 func (d *Dataset) Record(idx int) (Record, bool) {
 	if idx < 0 || idx >= len(d.records) {
 		return Record{}, false
 	}
-	// FIXME(rarguelloF): return a deep copy
-	return *d.records[idx], true
+	rec := d.records[idx]
+	return *rec, true
 }
 
 func (d *Dataset) initialize() {

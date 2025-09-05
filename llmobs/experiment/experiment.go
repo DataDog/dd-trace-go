@@ -9,15 +9,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
-	ierrors "github.com/DataDog/dd-trace-go/v2/llmobs/internal/errors"
+	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/dne"
 )
 
 var (
@@ -25,6 +28,7 @@ var (
 environment variable, using the global llmobs.WithProjectName option, or experiment.WithProjectName option.`)
 )
 
+// Experiment represents a DataDog LLM Observability experiment.
 type Experiment struct {
 	Name string
 
@@ -40,14 +44,44 @@ type Experiment struct {
 	runName string
 }
 
-type Task func(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error)
-
-type Evaluator interface {
+// Task represents the task to run for an Experiment.
+type Task interface {
 	Name() string
-	Run(input map[string]any, output any, expectedOutput any) (any, error)
+	Run(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error)
 }
 
-type EvaluatorFunc func(input map[string]any, output any, expectedOutput any) (any, error)
+// Evaluator represents an evaluator for an Experiment.
+type Evaluator interface {
+	Name() string
+	Run(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error)
+}
+
+// TaskFunc is the type for Task functions.
+type TaskFunc func(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error)
+
+type namedTask struct {
+	name string
+	fn   TaskFunc
+}
+
+func (n *namedTask) Name() string {
+	return n.name
+}
+
+func (n *namedTask) Run(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error) {
+	return n.fn(ctx, inputData, experimentCfg)
+}
+
+// NewTask creates a new Task.
+func NewTask(name string, fn TaskFunc) Task {
+	return &namedTask{
+		name: name,
+		fn:   fn,
+	}
+}
+
+// EvaluatorFunc is the type for Evaluator functions.
+type EvaluatorFunc func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error)
 
 type namedEvaluator struct {
 	name string
@@ -58,10 +92,11 @@ func (n *namedEvaluator) Name() string {
 	return n.name
 }
 
-func (n *namedEvaluator) Run(input map[string]any, output any, expectedOutput any) (any, error) {
-	return n.fn(input, output, expectedOutput)
+func (n *namedEvaluator) Run(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+	return n.fn(ctx, input, output, expectedOutput)
 }
 
+// NewEvaluator creates a new Evaluator.
 func NewEvaluator(name string, fn EvaluatorFunc) Evaluator {
 	return &namedEvaluator{
 		name: name,
@@ -69,6 +104,7 @@ func NewEvaluator(name string, fn EvaluatorFunc) Evaluator {
 	}
 }
 
+// Result represents an experiment result.
 type Result struct {
 	RecordIndex    int
 	SpanID         string
@@ -82,6 +118,7 @@ type Result struct {
 	Error          error
 }
 
+// Evaluation represents the output of an evaluator.
 type Evaluation struct {
 	Name  string
 	Value any
@@ -208,13 +245,21 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *internal.LLMObs, cfg *
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+	// Ensure spans get submitted in serverless environments
+	llmobs.Flush()
 	return results, nil
 }
 
 func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *internal.LLMObs, recIdx int, rec dataset.Record) *Result {
-	// TODO: create experiment span
+	var (
+		err       error
+		startTime = time.Now()
+	)
 
-	tags := make(map[string]string)
+	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, internal.WithTracerStartSpanOptions(tracer.StartTime(startTime)))
+	defer span.Finish(tracer.WithError(err))
+
+	tags := make(map[string]any)
 	for k, v := range e.cfg.tags {
 		tags[k] = v
 	}
@@ -223,21 +268,25 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *internal.LLMO
 	tags["experiment_id"] = e.id
 
 	// TODO: context cancelation
-	out, err := e.task(ctx, rec.Input, e.cfg.experimentCfg)
+	out, err := e.task.Run(ctx, rec.Input, e.cfg.experimentCfg)
 	if err != nil {
-		err = ierrors.WithStack(err)
-
-		// TODO(rarguelloF): annotate span with error
+		err = errortrace.Wrap(err)
 	}
 	// TODO(rarguelloF): annotate span with output data and the tags
+	// self._llmobs_instance.annotate(span, input_data=input_data, output_data=output_data, tags=tags)
+	llmobs.AnnotateSpan(span, internal.SpanAnnotations{
+		InputData:  rec.Input,
+		OutputData: out,
+		Tags:       tags,
+	})
 
 	// TODO(rarguelloF): span._set_ctx_item(EXPERIMENT_EXPECTED_OUTPUT, safe_json(record["expected_output"]))
 
 	return &Result{
 		RecordIndex:    recIdx,
-		SpanID:         "",          // TODO
-		TraceID:        "",          // TODO
-		Timestamp:      time.Time{}, // TODO: span.start_ns
+		SpanID:         strconv.FormatUint(span.SpanID(), 10),
+		TraceID:        span.TraceID(),
+		Timestamp:      startTime,
 		Input:          rec.Input,
 		Output:         out,
 		ExpectedOutput: rec.ExpectedOutput,
@@ -267,11 +316,11 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*Result, cfg *
 		eg.Go(func() error {
 			evs := make([]*Evaluation, 0, len(e.evaluators))
 			for evIdx, ev := range e.evaluators {
-				val, err := ev.Run(rec.Input, res.Output, rec.ExpectedOutput)
+				val, err := ev.Run(ctx, rec.Input, res.Output, rec.ExpectedOutput)
 				if err != nil {
 					// this error will be used later to create the payload sent to the backend, so it must contain the
 					// stacktrace.
-					err = ierrors.WithStack(err)
+					err = errortrace.Wrap(err)
 					retErr := fmt.Errorf("evaluator %d (%s) failed on record %d: %w", evIdx, ev.Name(), res.RecordIndex, err)
 					if cfg.abortOnError {
 						return retErr
@@ -292,8 +341,8 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*Result, cfg *
 	return eg.Wait()
 }
 
-func (e *Experiment) generateMetrics(results []*Result) []internal.ExperimentEvalMetricEvent {
-	metrics := make([]internal.ExperimentEvalMetricEvent, 0, len(results))
+func (e *Experiment) generateMetrics(results []*Result) []dne.ExperimentEvalMetricEvent {
+	metrics := make([]dne.ExperimentEvalMetricEvent, 0, len(results))
 
 	for _, res := range results {
 		for _, ev := range res.Evaluations {
@@ -303,7 +352,7 @@ func (e *Experiment) generateMetrics(results []*Result) []internal.ExperimentEva
 	return metrics
 }
 
-func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) internal.ExperimentEvalMetricEvent {
+func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) dne.ExperimentEvalMetricEvent {
 	var (
 		catVal   *string
 		scoreVal *float64
@@ -314,19 +363,19 @@ func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) i
 	switch t := ev.Value.(type) {
 	case bool:
 		metricType = "boolean"
-		boolVal = internal.AnyPtr(t)
+		boolVal = dne.AnyPtr(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
 		metricType = "score"
-		scoreVal = internal.AnyPtr(asFloat64(t))
+		scoreVal = dne.AnyPtr(asFloat64(t))
 
 	default:
-		catVal = internal.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = dne.AnyPtr(fmt.Sprintf("%v", t))
 	}
 
-	return internal.ExperimentEvalMetricEvent{
+	return dne.ExperimentEvalMetricEvent{
 		SpanID:           res.SpanID,
 		TraceID:          res.TraceID,
 		TimestampMS:      res.Timestamp.UnixMilli(),
@@ -335,7 +384,7 @@ func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) i
 		CategoricalValue: catVal,
 		ScoreValue:       scoreVal,
 		BooleanValue:     boolVal,
-		Error:            internal.NewErrorMessage(ev.Error),
+		Error:            dne.NewErrorMessage(ev.Error),
 		Tags:             e.tagsSlice,
 		ExperimentID:     e.id,
 	}

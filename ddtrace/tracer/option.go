@@ -319,6 +319,9 @@ type config struct {
 
 	// traceProtocol specifies the trace protocol to use.
 	traceProtocol float64
+
+	// llmobsEnabled specifies whether LLM Observability is enabled.
+	llmobsEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.

@@ -1,7 +1,10 @@
-package internal
+package dne
 
 import (
-	ierrors "github.com/DataDog/dd-trace-go/v2/llmobs/internal/errors"
+	"errors"
+	"reflect"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 )
 
 // ---------- Resources ----------
@@ -22,7 +25,7 @@ type DatasetCreate struct {
 
 type DatasetRecordView struct {
 	ID             string
-	Input          map[string]any `json:"input_data"`
+	Input          map[string]any `json:"input"`
 	ExpectedOutput any            `json:"expected_output"`
 	Metadata       map[string]any `json:"metadata"`
 	Version        int            `json:"version"`
@@ -46,14 +49,14 @@ type ExperimentView struct {
 }
 
 type DatasetRecordCreate struct {
-	Input          map[string]any `json:"input_data,omitempty"`
+	Input          map[string]any `json:"input,omitempty"`
 	ExpectedOutput any            `json:"expected_output,omitempty"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
 type DatasetRecordUpdate struct {
 	ID             string         `json:"id"`
-	Input          map[string]any `json:"input_data,omitempty"`
+	Input          map[string]any `json:"input,omitempty"`
 	ExpectedOutput *any           `json:"expected_output,omitempty"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
@@ -76,17 +79,18 @@ type RequestData[T any] struct {
 }
 
 type RequestAttributesDatasetCreateRecords struct {
-	Records []DatasetRecordCreate
+	Records []DatasetRecordCreate `json:"records,omitempty"`
 }
 
 type RequestAttributesDatasetDelete struct {
-	DatasetIDs []string `json:"dataset_ids"`
+	DatasetIDs []string `json:"dataset_ids,omitempty"`
 }
 
 type RequestAttributesDatasetBatchUpdate struct {
 	InsertRecords []DatasetRecordCreate `json:"insert_records,omitempty"`
 	UpdateRecords []DatasetRecordUpdate `json:"update_records,omitempty"`
 	DeleteRecords []string              `json:"delete_records,omitempty"`
+	Deduplicate   *bool                 `json:"deduplicate,omitempty"`
 }
 
 type RequestAttributesProjectCreate struct {
@@ -171,9 +175,6 @@ type (
 
 // AnyPtr returns a pointer to the given value. This is used to create payloads that require pointers instead of values.
 func AnyPtr[T any](v T) *T {
-	if v == nil {
-		return nil
-	}
 	return &v
 }
 
@@ -184,7 +185,26 @@ func NewErrorMessage(err error) *ErrorMessage {
 	}
 	return &ErrorMessage{
 		Message: err.Error(),
-		Type:    ierrors.ErrorType(err),
-		Stack:   ierrors.StackTrace(err),
+		Type:    errType(err),
+		Stack:   errStackTrace(err),
 	}
+}
+
+func errType(err error) string {
+	var originalErr error
+	var wErr *errortrace.TracerError
+	if !errors.As(err, &wErr) {
+		originalErr = err
+	} else {
+		originalErr = wErr.Unwrap()
+	}
+	return reflect.TypeOf(originalErr).String()
+}
+
+func errStackTrace(err error) string {
+	var wErr *errortrace.TracerError
+	if !errors.As(err, &wErr) {
+		return ""
+	}
+	return wErr.Format()
 }

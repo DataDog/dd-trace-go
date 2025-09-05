@@ -3,22 +3,25 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package internal
+package dne
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/cenkalti/backoff/v5"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/config"
 )
 
 const (
@@ -55,35 +58,19 @@ const (
 	resourceTypeProjects    = "projects"
 )
 
-// We copy the transport to avoid using the default one, as it might be
-// augmented with tracing and we don't want these calls to be recorded.
-// See https://golang.org/pkg/net/http/#DefaultTransport .
-var defaultHTTPClient = &http.Client{
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-	Timeout: defaultTimeout,
-}
+var (
+	ErrDatasetNotFound = errors.New("dataset not found")
+)
 
-// DNEClient sends requests to the LLMObs “experiments” API set like the Python client.
-type DNEClient struct {
+// Client sends requests to the LLMObs “experiments” API set like the Python client.
+type Client struct {
 	httpClient     *http.Client
 	defaultHeaders map[string]string
 	baseURL        string
-	agentless      bool
 }
 
-// NewDNEClient builds a client configured like the Python one.
-func newDNEClient(cfg *Config) *DNEClient {
+// NewClient builds a new Datasets and Experiments client.
+func NewClient(cfg *config.Config) *Client {
 	site := defaultSite
 	if cfg.Site != "" {
 		site = cfg.Site
@@ -93,7 +80,6 @@ func newDNEClient(cfg *Config) *DNEClient {
 	defaultHeaders := map[string]string{
 		"Content-Type": "application/json",
 	}
-	httpClient := defaultHTTPClient
 
 	if cfg.AgentlessEnabled {
 		defaultHeaders["DD-API-KEY"] = cfg.APIKey
@@ -105,40 +91,53 @@ func newDNEClient(cfg *Config) *DNEClient {
 		defaultHeaders[headerEVPSubdomain] = subdomainDNE
 
 		if cfg.AgentURL.Scheme == "unix" {
-			dialer := &net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}
-			httpClient = &http.Client{
-				Transport: &http.Transport{
-					Proxy: http.ProxyFromEnvironment,
-					DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-						return dialer.DialContext(ctx, "unix", (&net.UnixAddr{
-							Name: cfg.AgentURL.Path,
-							Net:  "unix",
-						}).String())
-					},
-					MaxIdleConns:          100,
-					IdleConnTimeout:       90 * time.Second,
-					TLSHandshakeTimeout:   10 * time.Second,
-					ExpectContinueTimeout: 1 * time.Second,
-				},
-				Timeout: 10 * time.Second,
-			}
 			baseURL = internal.UnixDataSocketURL(cfg.AgentURL.Path).String()
+		} else {
+			baseURL = cfg.AgentURL.String() + basePathEVPProxy
 		}
 	}
+	log.Debug("llmobs/internal/dne: using baseURL: %s", baseURL)
 
-	return &DNEClient{
-		httpClient:     httpClient,
+	return &Client{
+		httpClient:     cfg.HTTPClient,
 		defaultHeaders: defaultHeaders,
 		baseURL:        baseURL,
-		agentless:      cfg.AgentlessEnabled,
 	}
 }
 
+func (c *Client) DatasetGetByName(ctx context.Context, name string) (*DatasetView, error) {
+	q := url.Values{}
+	q.Set("filter[name]", name)
+	datasetPath := basePathDNE + "/datasets" + "?" + q.Encode()
+	method := http.MethodGet
+
+	status, b, err := c.request(ctx, method, datasetPath, nil)
+	if err != nil || status != http.StatusOK {
+		return nil, fmt.Errorf("get dataset by name %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
+	}
+
+	var datasetResp ResponseDatasetGet
+	if err := json.Unmarshal(b, &datasetResp); err != nil {
+		return nil, fmt.Errorf("decode datasets list: %w", err)
+	}
+	if len(datasetResp.Data) == 0 {
+		return nil, ErrDatasetNotFound
+	}
+	ds := datasetResp.Data[0].Attributes
+	ds.ID = datasetResp.Data[0].ID
+	return &ds, nil
+}
+
 // DatasetCreate -> POST /datasets
-func (c *DNEClient) DatasetCreate(ctx context.Context, name, description string) (*DatasetView, error) {
+func (c *Client) DatasetCreate(ctx context.Context, name, description string) (*DatasetView, error) {
+	_, err := c.DatasetGetByName(ctx, name)
+	if err == nil {
+		return nil, errors.New("dataset already exists")
+	}
+	if !errors.Is(err, ErrDatasetNotFound) {
+		return nil, err
+	}
+
 	path := basePathDNE + "/datasets"
 	method := http.MethodPost
 	body := RequestDatasetCreate{
@@ -156,6 +155,8 @@ func (c *DNEClient) DatasetCreate(ctx context.Context, name, description string)
 		return nil, fmt.Errorf("create dataset %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
 
+	log.Debug("llmobs/internal/dne.DatasetGetOrCreate: create dataset success (status code: %d)", status)
+
 	var resp ResponseDatasetCreate
 	if err := json.Unmarshal(b, &resp); err != nil {
 		return nil, fmt.Errorf("decode create dataset response: %w", err)
@@ -167,7 +168,7 @@ func (c *DNEClient) DatasetCreate(ctx context.Context, name, description string)
 }
 
 // DatasetDelete -> POST /datasets/delete
-func (c *DNEClient) DatasetDelete(ctx context.Context, datasetIDs ...string) error {
+func (c *Client) DatasetDelete(ctx context.Context, datasetIDs ...string) error {
 	path := basePathDNE + "/datasets/delete"
 	method := http.MethodPost
 	body := RequestDatasetDelete{
@@ -187,7 +188,7 @@ func (c *DNEClient) DatasetDelete(ctx context.Context, datasetIDs ...string) err
 }
 
 // DatasetBatchUpdateRecords -> POST /datasets/{id}/batch_update
-func (c *DNEClient) DatasetBatchUpdateRecords(
+func (c *Client) DatasetBatchUpdateRecords(
 	ctx context.Context,
 	datasetID string,
 	insert []DatasetRecordCreate,
@@ -203,6 +204,7 @@ func (c *DNEClient) DatasetBatchUpdateRecords(
 				InsertRecords: insert,
 				UpdateRecords: update,
 				DeleteRecords: delete,
+				Deduplicate:   AnyPtr(false),
 			},
 		},
 	}
@@ -218,48 +220,39 @@ func (c *DNEClient) DatasetBatchUpdateRecords(
 	}
 
 	// FIXME: we don't get version numbers in responses to deletion requests
-	// TODO(rarguelloF): clarify this part
-	var version = -1
-	var ids []string
+	// TODO(rarguelloF): the backend could return a better response here...
+	var (
+		newDatasetVersion = -1
+		newRecordIDs      []string
+	)
 	if len(resp.Data) > 0 {
 		if resp.Data[0].Attributes.Version > 0 {
-			version = resp.Data[0].Attributes.Version
-		}
-		for _, d := range resp.Data {
-			if d.ID != "" {
-				ids = append(ids, d.ID)
-			}
+			newDatasetVersion = resp.Data[0].Attributes.Version
 		}
 	}
-	return version, ids, nil
+	if len(resp.Data) == len(insert)+len(update) {
+		// new records are at the end of the slice
+		for _, rec := range resp.Data[len(update):] {
+			newRecordIDs = append(newRecordIDs, rec.ID)
+		}
+	} else {
+		log.Warn("llmobs/internal/dne: DatasetBatchUpdateRecords: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
+	}
+	return newDatasetVersion, newRecordIDs, nil
 }
 
 // DatasetGetWithRecords -> GET /datasets?filter[name]=... , then GET /datasets/{id}/records
-func (c *DNEClient) DatasetGetWithRecords(ctx context.Context, name string) (*DatasetView, []DatasetRecordView, error) {
-	// 1) Fetch dataset
-
-	q := url.Values{}
-	q.Set("filter[name]", name)
-	datasetPath := basePathDNE + "/datasets" + "?" + q.Encode()
-	method := http.MethodGet
-
-	status, b, err := c.request(ctx, method, datasetPath, nil)
-	if err != nil || status != http.StatusOK {
-		return nil, nil, fmt.Errorf("get dataset by name %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
+func (c *Client) DatasetGetWithRecords(ctx context.Context, name string) (*DatasetView, []DatasetRecordView, error) {
+	// 1) Fetch record by name
+	ds, err := c.DatasetGetByName(ctx, name)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	var datasetResp ResponseDatasetGet
-	if err := json.Unmarshal(b, &datasetResp); err != nil {
-		return nil, nil, fmt.Errorf("decode datasets list: %w", err)
-	}
-	if len(datasetResp.Data) == 0 {
-		return nil, nil, fmt.Errorf("dataset %q not found", name)
-	}
-	datasetID := datasetResp.Data[0].ID
 
 	// 2) Fetch records
-	recordsPath := fmt.Sprintf("%s/datasets/%s/records", basePathDNE, url.PathEscape(datasetID))
-	status, b, err = c.request(ctx, method, recordsPath, nil)
+	method := http.MethodGet
+	recordsPath := fmt.Sprintf("%s/datasets/%s/records", basePathDNE, url.PathEscape(ds.ID))
+	status, b, err := c.request(ctx, method, recordsPath, nil)
 	if err != nil || status != http.StatusOK {
 		return nil, nil, fmt.Errorf("get dataset %q records failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
@@ -275,14 +268,11 @@ func (c *DNEClient) DatasetGetWithRecords(ctx context.Context, name string) (*Da
 		rec.ID = r.ID
 		records = append(records, rec)
 	}
-	dataset := datasetResp.Data[0].Attributes
-	dataset.ID = datasetID
-
-	return &dataset, records, nil
+	return ds, records, nil
 }
 
 // ProjectGetOrCreate -> POST /projects
-func (c *DNEClient) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectView, error) {
+func (c *Client) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectView, error) {
 	path := basePathDNE + "/projects"
 	method := http.MethodPost
 
@@ -311,13 +301,13 @@ func (c *DNEClient) ProjectGetOrCreate(ctx context.Context, name string) (*Proje
 }
 
 // ExperimentCreate -> POST /experiments
-func (c *DNEClient) ExperimentCreate(
+func (c *Client) ExperimentCreate(
 	ctx context.Context,
 	name, datasetID, projectID string,
 	datasetVersion int,
 	expConfig map[string]any,
 	tags []string,
-	description string, //TODO: change to use RequestAttributesExperimentCreate
+	description string,
 ) (*ExperimentView, error) {
 	path := basePathDNE + "/experiments"
 	method := http.MethodPost
@@ -358,7 +348,7 @@ func (c *DNEClient) ExperimentCreate(
 }
 
 // ExperimentPushEvents -> POST /experiments/{id}/events  (accepts 200/202)
-func (c *DNEClient) ExperimentPushEvents(
+func (c *Client) ExperimentPushEvents(
 	ctx context.Context,
 	experimentID string,
 	metrics []ExperimentEvalMetricEvent,
@@ -390,7 +380,7 @@ func (c *DNEClient) ExperimentPushEvents(
 
 // ---------- private stuff ----------
 
-func (c *DNEClient) request(ctx context.Context, method, path string, body any) (int, []byte, error) {
+func (c *Client) request(ctx context.Context, method, path string, body any) (int, []byte, error) {
 	urlStr := c.baseURL + path
 
 	var rdr io.Reader
@@ -421,12 +411,18 @@ func (c *DNEClient) request(ctx context.Context, method, path string, body any) 
 		MaxInterval:         1 * time.Second,
 	}
 
-	doRequest := func() (*http.Response, error) {
-		resp, err := c.httpClient.Do(req)
+	log.Debug("llmobs/internal/dne: sending request to %s: %s", method, urlStr)
+
+	doRequest := func() (resp *http.Response, err error) {
+		resp, err = c.httpClient.Do(req)
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err != nil && resp != nil {
+				_ = resp.Body.Close()
+			}
+		}()
 
 		if resp.StatusCode < 200 || resp.StatusCode > 400 {
 			return nil, fmt.Errorf("got a non-success error code: %d", resp.StatusCode)
@@ -454,7 +450,7 @@ func (c *DNEClient) request(ctx context.Context, method, path string, body any) 
 			return nil, backoff.RetryAfter(waitSeconds)
 		}
 
-		if resp.StatusCode >= 400 || resp.StatusCode <= 499 {
+		if resp.StatusCode >= 400 && resp.StatusCode <= 499 {
 			return nil, backoff.Permanent(fmt.Errorf("client status error: %d", resp.StatusCode))
 		}
 		return resp, nil
@@ -473,6 +469,7 @@ func (c *DNEClient) request(ctx context.Context, method, path string, body any) 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return resp.StatusCode, b, &httpError{Status: resp.StatusCode, Body: b}
 	}
+	log.Debug("llmobs/internal/dne: got success response body: %s", string(b))
 	return resp.StatusCode, b, nil
 }
 
