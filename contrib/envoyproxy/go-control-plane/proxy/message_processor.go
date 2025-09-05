@@ -59,7 +59,7 @@ func NewProcessor[O any](config ProcessorConfig[O], instr *instrumentation.Instr
 // If the request is blocked or the message ends the stream, it returns io.EOF as error
 func (mp *Processor[O]) OnRequestHeaders(ctx context.Context, req RequestHeaders) (reqState RequestState, _ *O, err error) {
 	mp.firstRequest.Do(func() {
-		mp.instr.Logger().Info("external_processing: first request received. Configuration: BlockingUnavailable=%v, BodyParsingSizeLimit=%d, Framework=%s")
+		mp.instr.Logger().Info("external_processing: first request received. Configuration: BlockingUnavailable=%v, BodyParsingSizeLimit=%dB, Framework=%s", mp.BlockingUnavailable, mp.BodyParsingSizeLimit, mp.Framework)
 	})
 
 	mp.metrics.incrementRequestCount()
