@@ -55,15 +55,15 @@ func (z *otelProcessContext) DecodeMsg(dc *msgp.Reader) (err error) {
 				return
 			}
 		case "telemetry.sdk.language":
-			z.TelemetrySdkLanguage, err = dc.ReadString()
+			z.TelemetrySDKLanguage, err = dc.ReadString()
 			if err != nil {
-				err = msgp.WrapError(err, "TelemetrySdkLanguage")
+				err = msgp.WrapError(err, "TelemetrySDKLanguage")
 				return
 			}
 		case "telemetry.sdk.version":
-			z.TelemetrySdkVersion, err = dc.ReadString()
+			z.TelemetrySDKVersion, err = dc.ReadString()
 			if err != nil {
-				err = msgp.WrapError(err, "TelemetrySdkVersion")
+				err = msgp.WrapError(err, "TelemetrySDKVersion")
 				return
 			}
 		case "telemetry.sdk.name":
@@ -141,9 +141,9 @@ func (z *otelProcessContext) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.TelemetrySdkLanguage)
+	err = en.WriteString(z.TelemetrySDKLanguage)
 	if err != nil {
-		err = msgp.WrapError(err, "TelemetrySdkLanguage")
+		err = msgp.WrapError(err, "TelemetrySDKLanguage")
 		return
 	}
 	// write "telemetry.sdk.version"
@@ -151,9 +151,9 @@ func (z *otelProcessContext) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.TelemetrySdkVersion)
+	err = en.WriteString(z.TelemetrySDKVersion)
 	if err != nil {
-		err = msgp.WrapError(err, "TelemetrySdkVersion")
+		err = msgp.WrapError(err, "TelemetrySDKVersion")
 		return
 	}
 	// write "telemetry.sdk.name"
@@ -190,10 +190,10 @@ func (z *otelProcessContext) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.AppendString(o, z.ServiceVersion)
 	// string "telemetry.sdk.language"
 	o = append(o, 0xb6, 0x74, 0x65, 0x6c, 0x65, 0x6d, 0x65, 0x74, 0x72, 0x79, 0x2e, 0x73, 0x64, 0x6b, 0x2e, 0x6c, 0x61, 0x6e, 0x67, 0x75, 0x61, 0x67, 0x65)
-	o = msgp.AppendString(o, z.TelemetrySdkLanguage)
+	o = msgp.AppendString(o, z.TelemetrySDKLanguage)
 	// string "telemetry.sdk.version"
 	o = append(o, 0xb5, 0x74, 0x65, 0x6c, 0x65, 0x6d, 0x65, 0x74, 0x72, 0x79, 0x2e, 0x73, 0x64, 0x6b, 0x2e, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e)
-	o = msgp.AppendString(o, z.TelemetrySdkVersion)
+	o = msgp.AppendString(o, z.TelemetrySDKVersion)
 	// string "telemetry.sdk.name"
 	o = append(o, 0xb2, 0x74, 0x65, 0x6c, 0x65, 0x6d, 0x65, 0x74, 0x72, 0x79, 0x2e, 0x73, 0x64, 0x6b, 0x2e, 0x6e, 0x61, 0x6d, 0x65)
 	o = msgp.AppendString(o, z.TelemetrySdkName)
@@ -249,15 +249,15 @@ func (z *otelProcessContext) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				return
 			}
 		case "telemetry.sdk.language":
-			z.TelemetrySdkLanguage, bts, err = msgp.ReadStringBytes(bts)
+			z.TelemetrySDKLanguage, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "TelemetrySdkLanguage")
+				err = msgp.WrapError(err, "TelemetrySDKLanguage")
 				return
 			}
 		case "telemetry.sdk.version":
-			z.TelemetrySdkVersion, bts, err = msgp.ReadStringBytes(bts)
+			z.TelemetrySDKVersion, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
-				err = msgp.WrapError(err, "TelemetrySdkVersion")
+				err = msgp.WrapError(err, "TelemetrySDKVersion")
 				return
 			}
 		case "telemetry.sdk.name":
@@ -280,6 +280,6 @@ func (z *otelProcessContext) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *otelProcessContext) Msgsize() (s int) {
-	s = 1 + 28 + msgp.StringPrefixSize + len(z.DeploymentEnvironmentName) + 10 + msgp.StringPrefixSize + len(z.HostName) + 20 + msgp.StringPrefixSize + len(z.ServiceInstanceID) + 13 + msgp.StringPrefixSize + len(z.ServiceName) + 16 + msgp.StringPrefixSize + len(z.ServiceVersion) + 23 + msgp.StringPrefixSize + len(z.TelemetrySdkLanguage) + 22 + msgp.StringPrefixSize + len(z.TelemetrySdkVersion) + 19 + msgp.StringPrefixSize + len(z.TelemetrySdkName)
+	s = 1 + 28 + msgp.StringPrefixSize + len(z.DeploymentEnvironmentName) + 10 + msgp.StringPrefixSize + len(z.HostName) + 20 + msgp.StringPrefixSize + len(z.ServiceInstanceID) + 13 + msgp.StringPrefixSize + len(z.ServiceName) + 16 + msgp.StringPrefixSize + len(z.ServiceVersion) + 23 + msgp.StringPrefixSize + len(z.TelemetrySDKLanguage) + 22 + msgp.StringPrefixSize + len(z.TelemetrySDKVersion) + 19 + msgp.StringPrefixSize + len(z.TelemetrySdkName)
 	return
 }

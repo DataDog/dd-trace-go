@@ -13,6 +13,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"structs"
 	"sync/atomic"
 	"unsafe"
 
@@ -36,6 +37,7 @@ var (
 )
 
 type processContextHeader struct {
+	_           structs.HostLayout
 	Signature   [8]byte
 	Version     uint32
 	PayloadSize uint32

@@ -295,8 +295,8 @@ func storeConfig(c *config) {
 		ServiceInstanceID:         globalconfig.RuntimeID(),
 		ServiceName:               c.serviceName,
 		ServiceVersion:            c.version,
-		TelemetrySdkLanguage:      "go",
-		TelemetrySdkVersion:       version.Tag,
+		TelemetrySDKLanguage:      "go",
+		TelemetrySDKVersion:       version.Tag,
 		TelemetrySdkName:          "dd-trace-go",
 	}
 

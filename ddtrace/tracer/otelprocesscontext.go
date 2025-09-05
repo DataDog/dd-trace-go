@@ -19,9 +19,9 @@ type otelProcessContext struct {
 	// https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/#service-version
 	ServiceVersion string `msg:"service.version"`
 	// https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language
-	TelemetrySdkLanguage string `msg:"telemetry.sdk.language"`
+	TelemetrySDKLanguage string `msg:"telemetry.sdk.language"`
 	// https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-version
-	TelemetrySdkVersion string `msg:"telemetry.sdk.version"`
+	TelemetrySDKVersion string `msg:"telemetry.sdk.version"`
 	// https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-name
 	TelemetrySdkName string `msg:"telemetry.sdk.name"`
 }
