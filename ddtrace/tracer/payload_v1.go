@@ -101,32 +101,6 @@ func newPayloadV1(protocol float64) *payloadV1 {
 	}
 }
 
-// traceChunk represents a list of spans with the same trace ID,
-// i.e. a chunk of a trace
-type traceChunk struct {
-	// the sampling priority of the trace
-	priority int32
-
-	// the optional string origin ("lambda", "rum", etc.) of the trace chunk
-	origin uint32
-
-	// a collection of key to value pairs common in all `spans`
-	attributes map[uint32]anyValue
-
-	// a list of spans in this chunk
-	spans []Span
-
-	// whether the trace only contains analyzed spans
-	// (not required by tracers and set by the agent)
-	droppedTrace bool
-
-	// the ID of the trace to which all spans in this chunk belong
-	traceID uint8
-
-	// the optional string decision maker (previously span tag _dd.p.dm)
-	decisionMaker uint32
-}
-
 func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	panic("not implemented")
 }
