@@ -7,6 +7,7 @@ package waf
 
 import (
 	"errors"
+	"log/slog"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -164,6 +165,7 @@ func (m *HandleMetrics) NewContextMetrics() *ContextMetrics {
 				libddwaf.DecodeTimeKey:   &atomic.Int64{},
 			},
 		},
+		logger: telemetrylog.With(telemetry.WithTags([]string{"product:appsec"})),
 	}
 }
 
@@ -189,6 +191,9 @@ type ContextMetrics struct {
 
 	// Milestones are the tags of the metric `waf.requests` that will be submitted at the end of the waf context
 	Milestones RequestMilestones
+
+	// logger is a pre-configured logger with appsec product tags
+	logger *telemetrylog.Logger
 }
 
 // Submit increment the metrics for the WAF run stats at the end of each waf context lifecycle
@@ -203,7 +208,7 @@ func (m *ContextMetrics) Submit(truncations map[libddwaf.TruncationReason][]int,
 		// Add metrics `{waf,rasp}.duration_ext`
 		metric, found := m.externalTimerDistributions[scope]
 		if !found {
-			telemetrylog.Error("unexpected scope name: %s", scope, telemetry.WithTags([]string{"product:appsec"}))
+			m.logger.Error("unexpected scope name", slog.String("scope", string(scope)))
 			continue
 		}
 
@@ -286,7 +291,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStat
 		m.SumRASPCalls.Add(1)
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
-			telemetrylog.Error("unexpected call to RASPRuleTypeFromAddressSet", telemetry.WithTags([]string{"product:appsec"}))
+			m.logger.Error("unexpected call to RASPRuleTypeFromAddressSet")
 			return
 		}
 		if metric := m.raspRuleEval[ruleType]; metric != nil {
@@ -327,7 +332,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStat
 			m.Milestones.wafError = true
 		}
 	default:
-		telemetrylog.Error("unexpected scope name: %s", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
+		m.logger.Error("unexpected scope name", slog.String("scope", string(addrs.TimerKey)))
 	}
 }
 
@@ -341,22 +346,21 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 	}
 
 	if !errors.Is(in, waferrors.ErrTimeout) {
-		telemetrylog.Error("unexpected WAF error: %s", in, telemetry.WithTags(append([]string{
-			"product:appsec",
-		}, m.baseTags...)))
+		logger := m.logger.With(telemetry.WithTags(m.baseTags))
+		logger.Error("unexpected WAF error", slog.Any("error", telemetrylog.NewSafeError(in)))
 	}
 
 	switch addrs.TimerKey {
 	case addresses.RASPScope:
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
-			telemetrylog.Error("unexpected call to RASPRuleTypeFromAddressSet: %s", in, telemetry.WithTags([]string{"product:appsec"}))
+			m.logger.Error("unexpected call to RASPRuleTypeFromAddressSet", slog.Any("error", telemetrylog.NewSafeError(in)))
 		}
 		m.raspError(in, ruleType)
 	case addresses.WAFScope, "":
 		m.wafError(in)
 	default:
-		telemetrylog.Error("unexpected scope name: %s", addrs.TimerKey, telemetry.WithTags([]string{"product:appsec"}))
+		m.logger.Error("unexpected scope name", slog.String("scope", string(addrs.TimerKey)))
 	}
 }
 
