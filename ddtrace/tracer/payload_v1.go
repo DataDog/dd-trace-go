@@ -110,10 +110,10 @@ func newPayloadV1() *payloadV1 {
 }
 
 // push pushes a new item into the stream.
-func (p *payloadV1) push(t []*Span) error {
+func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
 	// Conceptually, our `t []*Span` corresponds to one `traceChunk`.
-	return nil
+	return payloadStats{}, nil
 }
 
 func (p *payloadV1) grow(n int) {

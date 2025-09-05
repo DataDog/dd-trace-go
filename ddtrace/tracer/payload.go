@@ -48,11 +48,13 @@ type payload interface {
 	payloadReader
 }
 
-// newpayload returns a ready to use unsafe payload.
+// newPayload returns a ready to use payload.
 func newPayload(protocol float64) payload {
-	// TODO(hannahkm): add support for v1 protocol
-	// if protocol == traceProtocolV1 {
-	// }
+	if protocol == traceProtocolV1 {
+		return &safePayload{
+			p: newPayloadV1(),
+		}
+	}
 	return &safePayload{
 		p: newPayloadV04(),
 	}
@@ -65,7 +67,7 @@ const (
 	msgpackArray32  byte = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
 )
 
-type spanListV1 []*Span
+type spanListV1 = spanList
 
 // EncodeMsg implements msgp.Encodable.
 func (s *spanListV1) EncodeMsg(*msgp.Writer) error {
