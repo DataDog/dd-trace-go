@@ -219,6 +219,11 @@ jobs:
             done
           done
 
+      # Check for changes in the supported configurations
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
+
   # Same tests but on the official golang container for linux
   golang-linux-container:
     name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
@@ -330,6 +335,12 @@ jobs:
               echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
             fi
           done
+
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        run: |
+          sudo docker exec -i test.runner bash -c "go run ./scripts/configinverter/main.go check"
 
       - name: Clean up
         if: always()

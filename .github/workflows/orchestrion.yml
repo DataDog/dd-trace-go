@@ -260,6 +260,14 @@ jobs:
           # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
           XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
 
+        # Check for changes in the supported_configurations.json file
+      - name: Run Config Inverter Check
+        if: always()
+        run: |
+          git diff internal/env/supported_configurations.json
+          cd scripts/configinverter && go run main.go -input ../../internal/env/supported_configurations.json check
+        working-directory: ${{ github.workspace }}/dd-trace-go
+
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
         if: inputs.collect-coverage
@@ -297,7 +305,6 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests

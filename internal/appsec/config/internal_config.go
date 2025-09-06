@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -112,7 +113,7 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 }
 
 func readAPISecuritySampleRate() float64 {
-	value := os.Getenv(EnvAPISecSampleRate)
+	value := env.Get(EnvAPISecSampleRate)
 	if value == "" {
 		return DefaultAPISecSampleRate
 	}
@@ -160,7 +161,7 @@ func NewObfuscatorConfig() ObfuscatorConfig {
 }
 
 func readObfuscatorConfigRegexp(name, defaultValue string) string {
-	val, present := os.LookupEnv(name)
+	val, present := env.Lookup(name)
 	if !present {
 		log.Debug("appsec: %s not defined, starting with the default obfuscator regular expression", name)
 		return defaultValue
@@ -177,7 +178,7 @@ func readObfuscatorConfigRegexp(name, defaultValue string) string {
 // If not set, it defaults to `DefaultWAFTimeout`
 func WAFTimeoutFromEnv() (timeout time.Duration) {
 	timeout = DefaultWAFTimeout
-	value := os.Getenv(EnvWAFTimeout)
+	value := env.Get(EnvWAFTimeout)
 	if value == "" {
 		return
 	}
@@ -205,7 +206,7 @@ func WAFTimeoutFromEnv() (timeout time.Duration) {
 // If not set, it defaults to `DefaultTraceRate`
 func RateLimitFromEnv() (rate int64) {
 	rate = DefaultTraceRate
-	value := os.Getenv(EnvTraceRateLimit)
+	value := env.Get(EnvTraceRateLimit)
 	if value == "" {
 		return rate
 	}
@@ -228,7 +229,7 @@ func RateLimitFromEnv() (rate int64) {
 // RulesFromEnv returns the security rules provided through the environment
 // If the env var is not set, the default recommended rules are returned instead
 func RulesFromEnv() ([]byte, error) {
-	filepath := os.Getenv(EnvRules)
+	filepath := env.Get(EnvRules)
 	if filepath == "" {
 		log.Debug("appsec: using the default built-in recommended security rules")
 		return nil, nil

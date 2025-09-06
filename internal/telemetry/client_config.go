@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"runtime/debug"
 	"time"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 )
@@ -168,10 +168,7 @@ func defaultConfig(config ClientConfig) ClientConfig {
 	}
 
 	if config.APIKey == "" {
-		config.APIKey = os.Getenv("DD_API_KEY")
-		if config.APIKey == "" {
-			config.APIKey = os.Getenv("DD-API-KEY")
-		}
+		config.APIKey = env.Get("DD_API_KEY")
 	}
 
 	if config.FlushInterval.Min == 0 {

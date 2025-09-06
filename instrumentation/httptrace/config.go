@@ -7,12 +7,12 @@ package httptrace
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -62,7 +62,7 @@ func newConfig() config {
 		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
 		baggageTagKeys:               make(map[string]struct{}),
 	}
-	if v, ok := os.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
 		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
@@ -77,7 +77,7 @@ func newConfig() config {
 	} else {
 		c.baggageTagKeys = defaultBaggageTagKeys()
 	}
-	v := os.Getenv(envServerErrorStatuses)
+	v := env.Get(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
 		c.isStatusError = fn
 	}
@@ -89,7 +89,7 @@ func isServerError(statusCode int) bool {
 }
 
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := os.LookupEnv(EnvQueryStringRegexp); !ok {
+	if s, ok := env.Lookup(EnvQueryStringRegexp); !ok {
 		return defaultQueryStringRegexp
 	} else if s == "" {
 		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", EnvQueryStringRegexp)

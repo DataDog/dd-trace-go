@@ -8,12 +8,12 @@ package http
 import (
 	"math"
 	"net/http"
-	"os"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
@@ -135,7 +135,7 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		QueryString:   options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
 		IsStatusError: isClientError,
 	}
-	v := os.Getenv(internal.EnvClientErrorStatuses)
+	v := env.Get(internal.EnvClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
 		rtConfig.IsStatusError = fn
 	}

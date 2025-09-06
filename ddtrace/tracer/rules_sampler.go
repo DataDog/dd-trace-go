@@ -19,6 +19,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -668,16 +669,16 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 	}()
 
 	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
-		env := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
-		rulesEnv := os.Getenv(fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String())))
+		envKey := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
+		rulesEnv := env.Get(envKey)
 		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-		rulesFile := os.Getenv(env + "_FILE")
+		rulesFile := env.Get(envKey + "_FILE")
 		if len(rules) != 0 {
 			if rulesFile != "" {
-				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", env, env)
+				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", envKey, envKey)
 			}
 			return rules, errs
 		}
@@ -686,7 +687,7 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 		}
 		rulesFromEnvFile, err := os.ReadFile(rulesFile)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", env, err))
+			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", envKey, err))
 		}
 		rules, err = unmarshalSamplingRules(rulesFromEnvFile, spanType)
 		if err != nil {

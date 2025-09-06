@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -50,7 +51,7 @@ func main() {
 	defer cancel()
 
 	// Load kubeconfig
-	kubeconfig := os.Getenv("KUBECONFIG")
+	kubeconfig := env.Get("KUBECONFIG")
 	if kubeconfig == "" {
 		kubeconfig = clientcmd.RecommendedHomeFile
 	}

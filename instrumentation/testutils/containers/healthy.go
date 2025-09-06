@@ -8,10 +8,10 @@
 package containers
 
 import (
-	"os"
 	"runtime"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/testcontainers/testcontainers-go"
 )
 
@@ -21,7 +21,7 @@ import (
 func SkipIfProviderIsNotHealthy(t *testing.T) {
 	t.Helper()
 
-	if _, ci := os.LookupEnv("CI"); ci && runtime.GOOS == "linux" {
+	if _, ci := env.Lookup("CI"); ci && runtime.GOOS == "linux" {
 		// We never want to skip tests on Linux CI, as this could lead to not noticing the tests are not
 		// running at all, resulting in usurped confidence in the (un)tested code.
 		return

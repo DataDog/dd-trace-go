@@ -10,10 +10,10 @@ package go_elasticsearch
 import (
 	"context"
 	"io"
-	"os"
 	"runtime"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/elastic/go-elasticsearch/v6"
 	"github.com/elastic/go-elasticsearch/v6/esapi"
 	"github.com/stretchr/testify/require"
@@ -25,7 +25,7 @@ type TestCaseV6 struct {
 
 func (tc *TestCaseV6) Setup(ctx context.Context, t *testing.T) {
 	// skip test if CI runner os arch is not amd64
-	if _, ok := os.LookupEnv("CI"); ok && runtime.GOOS == "linux" && runtime.GOARCH != "amd64" {
+	if _, ok := env.Lookup("CI"); ok && runtime.GOOS == "linux" && runtime.GOARCH != "amd64" {
 		t.Skip("Skipping test as the official elasticsearch v6 docker image only supports amd64")
 	} else if runtime.GOOS == "darwin" && runtime.GOARCH != "amd64" {
 		t.Skip("Skipping test as the official elasticsearch v6 docker image cannot run under rosetta")

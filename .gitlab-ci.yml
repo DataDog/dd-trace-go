@@ -4,6 +4,7 @@ stages:
   - benchmarks
   - macrobenchmarks
   - gates
+  - config-validation
   - test-apps
 
 variables:
@@ -45,7 +46,7 @@ check-big-regressions:
   needs:
     - job: trigger_child_pipeline
   when: on_success
-  tags: 
+  tags:
     - "arch:amd64"
   image: $BASE_CI_IMAGE
   script:
@@ -65,7 +66,28 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
+validate_supported_configurations_local_file:
+  stage: config-validation
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  rules:
+    - when: on_success
+  extends: .validate_supported_configurations_local_file
+  variables:
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+
+update_central_configurations_version_range:
+  stage: config-validation
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  extends: .update_central_configurations_version_range
+  variables:
+    LOCAL_REPO_NAME: "dd-trace-go"
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    LANGUAGE_NAME: "golang"
+
 include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
+  - local: ".gitlab/configuration-central-validation.yml"
