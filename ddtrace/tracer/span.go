@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"runtime"
@@ -926,6 +927,28 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 		event.RawAttributes = cfg.Attributes
 	}
 	s.spanEvents = append(s.spanEvents, event)
+}
+
+// RecordException attaches error information to the current span as a span event.
+// Additional span event attributes can be provided. The values may be (array of)
+// string, boolean, int or float type.
+func (s *Span) RecordException(err error, attributes ...map[string]any) {
+	if err == nil {
+		return
+	}
+
+	eventAttributes := map[string]any{
+		"exception.type":       reflect.TypeOf(err).String(),
+		"exception.message":    err.Error(),
+		"exception.stacktrace": takeStacktrace(0, 0),
+	}
+
+	// Merge with provided attributes if any, with provided attributes taking precedence
+	if len(attributes) > 0 {
+		maps.Copy(eventAttributes, attributes[0])
+	}
+
+	s.AddEvent("exception", WithSpanEventAttributes(eventAttributes))
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
