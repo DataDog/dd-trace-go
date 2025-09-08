@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/tools/v2fix
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.2.0-rc.2
+	github.com/DataDog/dd-trace-go/v2 v2.2.3
 	golang.org/x/tools v0.34.0
-	gopkg.in/DataDog/dd-trace-go.v1 v1.74.3
+	gopkg.in/DataDog/dd-trace-go.v1 v1.999.0-rc.44.0.20250908153651-8304df9184f2
 )
 
 require (
@@ -13,7 +13,7 @@ require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.67.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.67.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.69.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/log v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.67.0 // indirect
