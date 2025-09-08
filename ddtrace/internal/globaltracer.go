@@ -18,6 +18,9 @@ func setGlobalTracer(tracer v2.Tracer)
 //go:linkname getGlobalTracer github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.getGlobalTracer
 func getGlobalTracer() v2.Tracer
 
+//go:linkname setServiceName github.com/DataDog/dd-trace-go/v2/internal/globalconfig.SetServiceName
+func setServiceName(string)
+
 // SetGlobalTracer sets the global tracer to t.
 func SetGlobalTracer(t ddtrace.Tracer) {
 	rt := t.(TracerV2Adapter)
@@ -28,6 +31,11 @@ func SetGlobalTracer(t ddtrace.Tracer) {
 func GetGlobalTracer() ddtrace.Tracer {
 	tr := getGlobalTracer()
 	return TracerV2Adapter{Tracer: tr}
+}
+
+// SetServiceName sets the global service name.
+func SetServiceName(s string) {
+	setServiceName(s)
 }
 
 var NoopTracerV2 = TracerV2Adapter{Tracer: &v2.NoopTracer{}}
