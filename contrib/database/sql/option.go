@@ -8,13 +8,13 @@ package sql
 import (
 	"database/sql/driver"
 	"math"
-	"os"
 	"reflect"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 type config struct {
@@ -139,9 +139,9 @@ type registerConfig = config
 
 func defaults(cfg *config, driverName string, rc *registerConfig) {
 	cfg.analyticsRate = instr.AnalyticsRate(false)
-	mode := os.Getenv("DD_DBM_PROPAGATION_MODE")
+	mode := env.Get("DD_DBM_PROPAGATION_MODE")
 	if mode == "" {
-		mode = os.Getenv("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
+		mode = env.Get("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 	cfg.serviceName = defaultServiceName(driverName, rc)

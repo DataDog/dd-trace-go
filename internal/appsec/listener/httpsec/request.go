@@ -8,11 +8,11 @@ package httpsec
 import (
 	"net/http"
 	"net/netip"
-	"os"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 const (
@@ -155,7 +155,7 @@ func makeCollectedHTTPHeadersLookupMap() {
 }
 
 func readMonitoredClientIPHeadersConfig() {
-	if header := os.Getenv(envClientIPHeader); header != "" {
+	if header := env.Get(envClientIPHeader); header != "" {
 		// Make this header the only one to consider in RemoteAddr
 		monitoredClientIPHeadersCfg = []string{header}
 

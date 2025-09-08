@@ -120,6 +120,10 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
       - run: go test $PACKAGES
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.

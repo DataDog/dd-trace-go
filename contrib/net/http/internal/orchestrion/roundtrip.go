@@ -8,12 +8,12 @@ package orchestrion
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/wrap"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
@@ -51,7 +51,7 @@ func defaultRoundTripperConfig() *config.RoundTripperConfig {
 				ServiceName: config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
 			},
 			IsStatusError: func() func(int) bool {
-				envVal := os.Getenv(config.EnvClientErrorStatuses)
+				envVal := env.Get(config.EnvClientErrorStatuses)
 				if fn := httptrace.GetErrorCodesFromInput(envVal); fn != nil {
 					return fn
 				}
