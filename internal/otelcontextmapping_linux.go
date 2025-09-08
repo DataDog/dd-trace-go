@@ -34,6 +34,7 @@ var (
 	otelContextMappingSize = 2 * os.Getpagesize()
 
 	existingMappingBytes []byte
+	publisherPID         int
 )
 
 type processContextHeader struct {
@@ -45,12 +46,14 @@ type processContextHeader struct {
 }
 
 func CreateOtelProcessContextMapping(data []byte) error {
-	if existingMappingBytes != nil {
+	if existingMappingBytes != nil && publisherPID == os.Getpid() {
 		// Unmap the previous mapping if it exists
 		err := unix.Munmap(existingMappingBytes)
 		if err != nil {
 			return fmt.Errorf("failed to munmap previous mapping: %w", err)
 		}
+		existingMappingBytes = nil
+		publisherPID = 0
 	}
 
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
@@ -106,5 +109,6 @@ func CreateOtelProcessContextMapping(data []byte) error {
 	)
 
 	existingMappingBytes = mappingBytes
+	publisherPID = os.Getpid()
 	return nil
 }
