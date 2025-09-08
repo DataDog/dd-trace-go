@@ -24,7 +24,8 @@ func TestLogSamplingRules(t *testing.T) {
 	defer stop()
 
 	assert.Len(tp.Logs(), 1)
-	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors:\n\tat index 4: ignoring rule {Rate:9\.10}: rate is out of \[0\.0, 1\.0] range$`, tp.Logs()[0])
+	expected := logPrefixRegexp + ` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors: \n\tat index 4: ignoring rule {Rate:9\.10}: rate is out of \[0\.0, 1\.0] range$`
+	assert.Regexp(expected, tp.Logs()[0])
 }
 
 func TestLogFormat(t *testing.T) {
