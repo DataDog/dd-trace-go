@@ -947,6 +947,7 @@ func startTestTracer(_ testing.TB, opts ...StartOption) (trc ddtrace.Tracer, sto
 	tracer := newTracer(o...)
 	return tracer, func() {
 		internal.SetGlobalTracer(internal.NoopTracerV2)
+		internal.SetServiceName("")
 		tracer.Stop()
 	}
 }
