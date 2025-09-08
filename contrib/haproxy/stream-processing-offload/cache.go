@@ -25,15 +25,17 @@ func getCurrentRequest(msg *message.Message) (message_processor.RequestState, er
 	if requestStateCache == nil {
 		return message_processor.RequestState{}, fmt.Errorf("requestStateCache is not initialized")
 	}
-	key := spanIDFromMessage(msg)
-	if key == 0 {
-		return message_processor.RequestState{}, fmt.Errorf("span_id not found in message")
+	key, err := spanIDFromMessage(msg)
+	if err != nil {
+		return message_processor.RequestState{}, fmt.Errorf("failed to extract span_id from message: %w", err)
 	}
+
 	if item := requestStateCache.Get(key); item != nil {
 		if v := item.Value(); v != nil {
 			return *v, nil
 		}
 	}
+
 	return message_processor.RequestState{}, fmt.Errorf("no current request found for span_id %d", key)
 }
 

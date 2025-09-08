@@ -20,11 +20,9 @@ import (
 var log = NewLogger()
 
 func main() {
-	log.Info("datadog_haproxy_spoa: starting\n")
-
 	listener, err := net.Listen("tcp4", "127.0.0.1:3000")
 	if err != nil {
-		log.Error("datadog_haproxy_spoa: error create listener, %v", err)
+		log.Error("haproxy_spoa: error create listener, %v", err)
 		os.Exit(1)
 	}
 	defer listener.Close()
@@ -40,7 +38,8 @@ func main() {
 
 	a := agent.New(appsecHAProxy.Handler, logger.NewDefaultLog())
 
+	log.Info("haproxy_spoa: started\n")
 	if err := a.Serve(listener); err != nil {
-		log.Printf("error agent serve: %+v\n", err)
+		log.Printf("haproxy_spoa: error agent serve: %+v\n", err)
 	}
 }

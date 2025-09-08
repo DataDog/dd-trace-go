@@ -3,8 +3,6 @@ package streamprocessingoffload
 import (
 	"context"
 	"fmt"
-	"log"
-
 	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
@@ -45,8 +43,7 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 
 // Handler processes SPOE requests from HAProxy
 func (s *HAProxySPOA) Handler(req *request.Request) {
-	log.Printf("handle request EngineID: '%s', StreamID: '%d', FrameID: '%d' with %d messages",
-		req.EngineID, req.StreamID, req.FrameID, req.Messages.Len())
+	instr.Logger().Debug("haproxy_spoa: handle request EngineID: '%s', StreamID: '%d', FrameID: '%d' with %d messages", req.EngineID, req.StreamID, req.FrameID, req.Messages.Len())
 
 	mp := message_processor.NewMessageProcessor(
 		message_processor.MessageProcessorConfig{
@@ -60,27 +57,27 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 	for i := 0; i < req.Messages.Len(); i++ {
 		msg, err := req.Messages.GetByIndex(i)
 		if err != nil {
-			log.Printf("Failed to get message at index %d: %v", i, err)
+			instr.Logger().Warn("haproxy_spoa: failed to get message at index %d: %v", i, err)
 			continue
 		}
 
 		ctx := context.Background()
 		mpAction, reqState, err := processMessage(mp, ctx, req, msg)
 		if err != nil {
-			log.Printf("Error processing message %s: %v", msg.Name, err)
+			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
 			return
 		}
 
 		err = s.handleAction(mpAction, req, &reqState)
 		if err != nil {
-			log.Printf("Error handling action for message %s: %v", msg.Name, err)
+			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
 			return
 		}
 	}
 }
 
 func processMessage(mp message_processor.MessageProcessor, ctx context.Context, req *request.Request, msg *message.Message) (message_processor.Action, message_processor.RequestState, error) {
-	log.Printf("Handling message: %s", msg.Name)
+	instr.Logger().Debug("haproxy_spoa: handling message: %s", msg.Name)
 
 	switch msg.Name {
 	case "http-request-headers-msg":
@@ -131,9 +128,7 @@ func (s *HAProxySPOA) handleAction(action message_processor.Action, req *request
 		}
 
 		if data := action.Response.(*message_processor.HeadersResponseData); data != nil {
-			// Set the headers in the request
-			// setHeadersResponseData(data)
-			return nil
+			return setHeadersResponseData(data, req, reqState)
 		}
 
 		// Could happen if a new response type with data is implemented, and we forget to handle it here.
@@ -141,12 +136,11 @@ func (s *HAProxySPOA) handleAction(action message_processor.Action, req *request
 		return fmt.Errorf("unknown action data type: %T for ActionTypeContinue", action.Response)
 	case message_processor.ActionTypeBlock:
 		data := action.Response.(*message_processor.BlockResponseData)
-		setBlockResponseData(data, req)
+		_ = deleteCurrentRequest(reqState.Span.Context().SpanID())
+		return setBlockResponseData(data, req)
+	case message_processor.ActionTypeFinish:
 		_ = deleteCurrentRequest(reqState.Span.Context().SpanID())
 		return nil
-	case message_processor.ActionTypeFinish:
-		// Remove the current request from the cache
-		_ = deleteCurrentRequest(reqState.Span.Context().SpanID())
 	}
 
 	return fmt.Errorf("unknown action type: %T", action.Type)
