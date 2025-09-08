@@ -1809,6 +1809,9 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
 		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should be set even when rate is 0
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("0", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
@@ -1825,11 +1828,16 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		root.Finish()
 		assert.Equal(1., root.metrics[keyRulesSamplerAppliedRate])
 		assert.Contains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should be set with rate 1.0
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("1", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+		// child span should not have Knuth sampling rate tag
+		assert.NotContains(child.meta, keyKnuthSamplingRate)
 	})
 
 	t.Run("with-ctx-propagation", func(t *testing.T) {
@@ -1850,11 +1858,16 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
 		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should be set even when rate is 0
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("0", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+		// child span should not have Knuth sampling rate tag
+		assert.NotContains(child.meta, keyKnuthSamplingRate)
 
 		// context propagation locks the span, so no re-sampling should occur
 		tr.Inject(root.Context(), TextMapCarrier(map[string]string{}))
@@ -1866,10 +1879,15 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		root.Finish()
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should still be "0" since no re-sampling occurred
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("0", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+		// child span should not have Knuth sampling rate tag
+		assert.NotContains(child.meta, keyKnuthSamplingRate)
 	})
 }
