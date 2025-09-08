@@ -986,6 +986,9 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
+	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
+	keyKnuthSamplingRate = "_dd.p.ksr"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
