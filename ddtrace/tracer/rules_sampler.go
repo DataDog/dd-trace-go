@@ -499,13 +499,15 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 		return
 	}
 
-	sampled, rate := rs.limiter.allowOne(now)
+	sampled, limitRate := rs.limiter.allowOne(now)
 	if sampled {
 		span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
 	} else {
 		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
 	}
-	span.setMetric(keyRulesSamplerLimiterRate, rate)
+	span.setMetric(keyRulesSamplerLimiterRate, limitRate)
+	// Set the Knuth sampling rate tag when sampled by trace sampling rules
+	span.setMeta(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 }
 
 // limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and

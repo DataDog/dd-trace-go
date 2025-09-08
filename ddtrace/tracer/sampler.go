@@ -176,10 +176,10 @@ func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.traceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
-		// Set the Knuth sampling rate tag when sampled by agent rate
-		spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 	} else {
 		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
+	// Set the Knuth sampling rate tag when sampled by agent rate
+	spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 }
