@@ -75,6 +75,7 @@ var (
 func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
 	return func(cfg *v2.StartSpanConfig) {
 		ssc := startSpanConfigPool.Get().(*ddtrace.StartSpanConfig)
+		ssc.Tags = make(map[string]interface{})
 		defer releaseStartSpanConfig(ssc)
 		for _, o := range opts {
 			if o == nil {
@@ -97,7 +98,7 @@ func ApplyV1Options(opts ...ddtrace.StartSpanOption) v2.StartSpanOption {
 		if !ssc.StartTime.IsZero() {
 			cfg.StartTime = ssc.StartTime
 		}
-		if ssc.Tags == nil {
+		if len(ssc.Tags) == 0 {
 			return
 		}
 		if cfg.Tags == nil {
