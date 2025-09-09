@@ -38,73 +38,91 @@ package log
 import (
 	"log/slog"
 	"slices"
-	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // Logger represents a contextual logger with pre-configured telemetry options
 type Logger struct {
-	opts []telemetry.LogOption
+	handler slog.Handler
+	writer  *handlerWriter
+	opts    []telemetry.LogOption
 }
 
 // defaultLogger is the global logger instance with no pre-configured options
-var defaultLogger = &Logger{}
+var defaultLogger atomic.Pointer[Logger]
+
+func init() {
+	handler := NewTelemetryHandler()
+	defaultLogger.Store(&Logger{
+		handler: handler,
+		writer:  NewHandlerWriter(handler, true),
+	})
+}
+
+func SetDefaultLogger(logger *Logger) {
+	defaultLogger.CompareAndSwap(defaultLogger.Load(), logger)
+}
 
 // With creates a new contextual logger with the given telemetry options
 func With(opts ...telemetry.LogOption) *Logger {
-	return &Logger{opts: opts}
+	handler := NewTelemetryHandler(opts...)
+	return &Logger{
+		handler: handler,
+		writer:  NewHandlerWriter(handler, true),
+		opts:    opts,
+	}
 }
 
 // With creates a new logger that extends the current logger's options with additional options
 func (l *Logger) With(opts ...telemetry.LogOption) *Logger {
-	return &Logger{opts: slices.Concat(l.opts, opts)}
+	combinedOpts := slices.Concat(l.opts, opts)
+	handler := NewTelemetryHandler(combinedOpts...)
+	return &Logger{
+		handler: handler,
+		writer:  NewHandlerWriter(handler, true),
+		opts:    combinedOpts,
+	}
 }
 
-func formatMessageWithAttrs(message string, attrs []slog.Attr) string {
-	if len(attrs) == 0 {
-		return message
-	}
-
-	parts := make([]string, len(attrs))
-	for i, attr := range attrs {
-		parts[i] = "<" + attr.Key + ":" + attr.Value.String() + ">"
-	}
-	return message + ": " + strings.Join(parts, ", ")
-}
 
 // Debug sends a telemetry payload with a debug log message to the backend using the default logger
 func Debug(message string, attrs ...slog.Attr) {
-	defaultLogger.Debug(message, attrs...) //nolint:gocritic // Telemetry plumbing - message parameter delegation is safe
+	defaultLogger.Load().Debug(message, attrs...) //nolint:gocritic // Telemetry plumbing - message parameter delegation is safe
 }
 
 // Warn sends a telemetry payload with a warning log message to the backend using the default logger
 func Warn(message string, attrs ...slog.Attr) {
-	defaultLogger.Warn(message, attrs...) //nolint:gocritic // Telemetry plumbing - message parameter delegation is safe
+	defaultLogger.Load().Warn(message, attrs...) //nolint:gocritic // Telemetry plumbing - message parameter delegation is safe
 }
 
 // Error sends a telemetry payload with an error log message to the backend using the default logger.
 // SECURITY: Only accepts constant message strings. Use SafeError for error details.
 func Error(message string, attrs ...slog.Attr) {
-	defaultLogger.Error(message, attrs...)
+	defaultLogger.Load().Error(message, attrs...)
 }
 
 // Debug sends a telemetry payload with a debug log message to the backend
 func (l *Logger) Debug(message string, attrs ...slog.Attr) {
-	text := formatMessageWithAttrs(message, attrs)
-	telemetry.Log(telemetry.LogDebug, text, l.opts...)
+	record := slog.NewRecord(time.Now(), slog.LevelDebug, message, 0)
+	record.AddAttrs(attrs...)
+	l.writer.LogRecord(record)
 }
 
 // Warn sends a telemetry payload with a warning log message to the backend and the console as a debug log
 func (l *Logger) Warn(message string, attrs ...slog.Attr) {
-	text := formatMessageWithAttrs(message, attrs)
-	telemetry.Log(telemetry.LogWarn, text, l.opts...)
+	record := slog.NewRecord(time.Now(), slog.LevelWarn, message, 0)
+	record.AddAttrs(attrs...)
+	l.writer.LogRecord(record)
 }
 
 // Error sends a telemetry payload with an error log message to the backend and the console as a debug log.
 // SECURITY: Only accepts constant message strings. Use SafeError with slog.Any() for error details.
 // Example: logger.Error("operation failed", slog.Any("error", SafeError(err)))
 func (l *Logger) Error(message string, attrs ...slog.Attr) {
-	text := formatMessageWithAttrs(message, attrs)
-	telemetry.Log(telemetry.LogError, text, l.opts...)
+	record := slog.NewRecord(time.Now(), slog.LevelError, message, 0)
+	record.AddAttrs(attrs...)
+	l.writer.LogRecord(record)
 }
