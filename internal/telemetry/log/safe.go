@@ -104,61 +104,10 @@ var knownThirdPartyLibraries = []string{
 	"k8s.io/apimachinery",
 }
 
-// TODO: Dynamically generate standardLibraryPrefixes from Go's standard library at build time
-// This should use go/build or similar to get the complete list of standard library packages
-var standardLibraryPrefixes = []string{
-	"runtime.",
-	"net/",
-	"net.",
-	"encoding/",
-	"encoding.",
-	"crypto/",
-	"crypto.",
-	"database/",
-	"database.",
-	"fmt.",
-	"log.",
-	"os.",
-	"io.",
-	"strings.",
-	"strconv.",
-	"time.",
-	"context.",
-	"reflect.",
-	"syscall.",
-	"sync.",
-	"sort.",
-	"regexp.",
-	"path/",
-	"path.",
-	"mime/",
-	"mime.",
-	"html/",
-	"html.",
-	"errors.",
-	"bufio.",
-	"bytes.",
-	"compress/",
-	"compress.",
-	"container/",
-	"container.",
-	"debug/",
-	"debug.",
-	"go/",
-	"go.",
-	"hash/",
-	"hash.",
-	"image/",
-	"image.",
-	"index/",
-	"index.",
-	"math/",
-	"math.",
-	"text/",
-	"text.",
-	"unicode/",
-	"unicode.",
-}
+// Standard library detection adapted from Go's build logic.
+// We treat a path as part of the standard library if the first element of the
+// import path has no dot (e.g., "fmt", "net/http"). This mirrors the behavior
+// of go/build's IsStandardImportPath and avoids maintaining hard-coded lists.
 
 // NewSafeError creates a SafeError from a regular error with stack trace redaction
 func NewSafeError(err error) SafeError {
@@ -271,31 +220,49 @@ func classifyFrame(frame runtime.Frame) frameType {
 
 // isStandardLibrary checks if a function is from Go's standard library
 func isStandardLibrary(fn string) bool {
-	// Standard library packages don't have dots in their import path before the first slash
-	// Examples: runtime.*, net/http.*, encoding/json.*
-	parts := strings.Split(fn, "/")
-	if len(parts) == 0 {
-		return false
-	}
+	// For runtime function names, we need to extract the package path correctly.
+	// Function names have formats like:
+	//   "fmt.Println" -> package: "fmt"
+	//   "net/http.(*Server).Serve" -> package: "net/http"
+	//   "github.com/user/pkg.Function" -> package: "github.com/user/pkg"
 
-	firstPart := parts[0]
+	// Strategy: Find the boundary between package path and function name
+	// Look for patterns like ".Function", ".(*Type)", etc.
 
-	// Special case: main package is customer code, not stdlib
-	if strings.HasPrefix(fn, "main.") {
-		return false
-	}
+	var pkgPath string
 
-	// Built-in packages like runtime (but not main)
-	if !strings.Contains(firstPart, ".") {
-		return true
-	}
-	for _, prefix := range standardLibraryPrefixes {
-		if strings.HasPrefix(fn, prefix) {
-			return true
+	// Handle method receivers like "pkg.(*Type).Method"
+	if methodPos := strings.Index(fn, ".(*"); methodPos >= 0 {
+		pkgPath = fn[:methodPos]
+	} else {
+		// Find the last dot that's likely the package/function boundary
+		lastDot := strings.LastIndexByte(fn, '.')
+		if lastDot <= 0 {
+			return false
 		}
+		pkgPath = fn[:lastDot]
 	}
 
-	return false
+	// Special case: main package is user code, not stdlib
+	if pkgPath == "main" {
+		return false
+	}
+
+	// Standard library detection: no dot in the first path element
+	// Mirrors go/build's IsStandardImportPath.
+	// For standard library imports, the first element doesn't contain a dot.
+	// Examples:
+	//   "fmt" -> first element "fmt" (no dot) -> standard library
+	//   "net/http" -> first element "net" (no dot) -> standard library
+	//   "github.com/user/pkg" -> first element "github.com" (has dot) -> NOT standard library
+	slash := strings.IndexByte(pkgPath, '/')
+	if slash < 0 {
+		// single-element path like "fmt", "os", "runtime"
+		return !strings.Contains(pkgPath, ".")
+	}
+	// multi-element path like "net/http", "encoding/json", or "github.com/user/pkg"
+	first := pkgPath[:slash]
+	return !strings.Contains(first, ".")
 }
 
 // SafeSlice provides secure logging for slice/array types
@@ -350,20 +317,12 @@ func NewSafeSliceWithLimit[T any](items []T, maxItems int) SafeSlice {
 // LogValue implements slog.LogValuer for secure slice logging
 func (s SafeSlice) LogValue() slog.Value {
 	attrs := []slog.Attr{
-		slog.Int("count", s.count),
 		slog.Any("items", s.items),
 	}
 
 	if s.truncated {
-		attrs = append(attrs, slog.Bool("truncated", true))
+		attrs = append(attrs, slog.Bool("truncated", true), slog.Int("count", s.count))
 	}
 
 	return slog.GroupValue(attrs...)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
