@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"strconv"
 	"sync"
@@ -65,7 +66,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
 		},
-		logger: logger{
+		backend: loggerBackend{
 			store:           xsync.NewMapOf[loggerKey, *loggerValue](),
 			maxDistinctLogs: config.MaxDistinctLogs,
 		},
@@ -79,7 +80,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 	)
 
 	if config.LogsEnabled {
-		client.dataSources = append(client.dataSources, &client.logger)
+		client.dataSources = append(client.dataSources, &client.backend)
 	}
 
 	if config.MetricsEnabled {
@@ -106,7 +107,7 @@ type client struct {
 	products      products
 	configuration configuration
 	dependencies  dependencies
-	logger        logger
+	backend       loggerBackend
 	metrics       metrics
 	distributions distributions
 
@@ -130,12 +131,12 @@ type client struct {
 	flushTickerFuncsMu sync.Mutex
 }
 
-func (c *client) Log(level LogLevel, text string, options ...LogOption) {
+func (c *client) Log(record slog.Record, options ...LogOption) {
 	if !c.clientConfig.LogsEnabled {
 		return
 	}
 
-	c.logger.Add(level, text, options...)
+	c.backend.Add(record, options...)
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {

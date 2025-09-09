@@ -562,7 +562,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-debug",
 			when: func(c *client) {
-				c.Log(LogDebug, "test")
+				c.Log(newRecord(LogDebug, "test"))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -576,7 +576,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-warn",
 			when: func(c *client) {
-				c.Log(LogWarn, "test")
+				c.Log(newRecord(LogWarn, "test"))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -590,7 +590,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-error",
 			when: func(c *client) {
-				c.Log(LogError, "test")
+				c.Log(newRecord(LogError, "test"))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -604,9 +604,9 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "multiple-logs-same-key",
 			when: func(c *client) {
-				c.Log(LogError, "test")
-				c.Log(LogError, "test")
-				c.Log(LogError, "test")
+				c.Log(newRecord(LogError, "test"))
+				c.Log(newRecord(LogError, "test"))
+				c.Log(newRecord(LogError, "test"))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -621,7 +621,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-tag",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithTags([]string{"key:value"}))
+				c.Log(newRecord(LogError, "test"), WithTags([]string{"key:value"}))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -636,7 +636,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-tags",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithTags([]string{"key:value", "key2:value2"}))
+				c.Log(newRecord(LogError, "test"), WithTags([]string{"key:value", "key2:value2"}))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -653,8 +653,8 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-tags-and-without",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithTags([]string{"key:value", "key2:value2"}))
-				c.Log(LogError, "test")
+				c.Log(newRecord(LogError, "test"), WithTags([]string{"key:value", "key2:value2"}))
+				c.Log(newRecord(LogError, "test"))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -682,7 +682,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-stacktrace",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithStacktrace())
+				c.Log(newRecord(LogError, "test"), WithStacktrace())
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -697,7 +697,7 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "single-log-with-stacktrace-and-tags",
 			when: func(c *client) {
-				c.Log(LogError, "test", WithStacktrace(), WithTags([]string{"key:value", "key2:value2"}))
+				c.Log(newRecord(LogError, "test"), WithStacktrace(), WithTags([]string{"key:value", "key2:value2"}))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -716,9 +716,9 @@ func TestClientFlush(t *testing.T) {
 		{
 			name: "multiple-logs-different-levels",
 			when: func(c *client) {
-				c.Log(LogError, "test")
-				c.Log(LogWarn, "test")
-				c.Log(LogDebug, "test")
+				c.Log(newRecord(LogError, "test"))
+				c.Log(newRecord(LogWarn, "test"))
+				c.Log(newRecord(LogDebug, "test"))
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -1262,7 +1262,7 @@ func TestHeartBeatInterval(t *testing.T) {
 	defer c.Close()
 
 	for i := 0; i < 10; i++ {
-		c.Log(LogError, "test")
+		c.Log(newRecord(LogError, "test"))
 		time.Sleep(1 * time.Second)
 	}
 
@@ -1303,7 +1303,7 @@ func TestSendingFailures(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	c.Log(LogError, "test")
+	c.Log(newRecord(LogError, "test"))
 	c.Flush()
 
 	require.False(t, c.payloadQueue.IsEmpty())
@@ -1340,7 +1340,7 @@ func BenchmarkLogs(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length with a variable message: "+strconv.Itoa(i%10))
+			c.Log(newRecord(LogDebug, "this is supposed to be a DEBUG log of representative length with a variable message: "+strconv.Itoa(i%10)))
 		}
 	})
 
@@ -1356,7 +1356,7 @@ func BenchmarkLogs(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Log(LogWarn, "this is supposed to be a WARN log of representative length", WithTags([]string{"key:" + strconv.Itoa(i%10)}))
+			c.Log(newRecord(LogWarn, "this is supposed to be a WARN log of representative length"), WithTags([]string{"key:" + strconv.Itoa(i%10)}))
 		}
 	})
 
@@ -1372,7 +1372,7 @@ func BenchmarkLogs(b *testing.B) {
 
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			c.Log(LogError, "this is supposed to be a ERROR log of representative length", WithStacktrace())
+			c.Log(newRecord(LogError, "this is supposed to be a ERROR log of representative length"), WithStacktrace())
 		}
 	})
 }
@@ -1415,7 +1415,7 @@ func BenchmarkParallelLogs(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			i := int(i.Add(1)) % nbGoroutines
-			c.Log(LogDebug, "this is supposed to be a DEBUG log of representative length"+strconv.Itoa(i), WithTags([]string{"key:" + strconv.Itoa(i)}))
+			c.Log(newRecord(LogDebug, "this is supposed to be a DEBUG log of representative length"+strconv.Itoa(i)), WithTags([]string{"key:" + strconv.Itoa(i)}))
 		}
 	})
 }
