@@ -119,7 +119,6 @@ func sampledByRate(n uint64, rate float64) bool {
 
 // formatKnuthSamplingRate formats a sampling rate as a string with up to 6 decimal digits
 func formatKnuthSamplingRate(rate float64) string {
-	// Use 'g' format to avoid padding with extra zeros, with precision of 6 significant digits
 	return strconv.FormatFloat(rate, 'g', 6, 64)
 }
 
