@@ -16,6 +16,9 @@
 //   - Errors MUST use SafeError type with message redaction
 //   - slog.Any() only allowed with LogValuer implementations
 //
+// BENEFITS:
+//   - Constant messages enable deduplication to reduce redundant log transmission
+//
 // SECURE USAGE PATTERNS:
 //
 //	// ✅ Correct - constant message with structured data

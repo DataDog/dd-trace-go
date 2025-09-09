@@ -53,7 +53,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
 		logger := telemetrylog.With(telemetry.WithTags([]string{"product:appsec"}))
-		logger.Warn("appsec: non-critical error while loading libddwaf", slog.String("error", err.Error()))
+		logger.Warn("appsec: non-critical error while loading libddwaf", slog.Any("error", telemetrylog.NewSafeError(err)))
 	}
 
 	newHandle, rulesVersion := cfg.NewHandle()

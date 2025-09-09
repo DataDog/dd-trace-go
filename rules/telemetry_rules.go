@@ -99,6 +99,30 @@ func telemetryLogConstantMessage(m dsl.Matcher) {
 
 }
 
+//doc:summary TELEMETRY SECURITY: detects slog.String usage with err.Error() calls
+//doc:before  telemetrylog.Warn("failed", slog.String("error", err.Error()))
+//doc:after   telemetrylog.Warn("failed", slog.Any("error", SafeError(err)))
+//doc:tags    security telemetry error-handling safeerror string-conversion
+func telemetryLogStringErrorCall(m dsl.Matcher) {
+	// SECURITY POLICY: Using slog.String with err.Error() exposes raw error messages
+	// Rationale: err.Error() can contain sensitive information in error messages
+	// SafeError with slog.Any provides secure error logging with redaction
+	m.Import(telemetryLogPackage)
+
+	// Match telemetry log calls that use slog.String with err.Error()
+	m.Match(
+		`$pkg.Debug($msg, $*_, slog.String($key, $value.Error()), $*_)`,
+		`$pkg.Warn($msg, $*_, slog.String($key, $value.Error()), $*_)`,
+		`$pkg.Error($msg, $*_, slog.String($key, $value.Error()), $*_)`,
+		`$logger.Debug($msg, $*_, slog.String($key, $value.Error()), $*_)`,
+		`$logger.Warn($msg, $*_, slog.String($key, $value.Error()), $*_)`,
+		`$logger.Error($msg, $*_, slog.String($key, $value.Error()), $*_)`,
+	).
+		Where(m["value"].Type.Is("error") &&
+			m.File().Imports(telemetryLogPackage)).
+		Report("Forbidden: (telemetry logging) slog.String with err.Error() exposes raw error messages. Use SafeError wrapper: slog.Any(\"error\", SafeError(err))")
+}
+
 //doc:summary TELEMETRY SECURITY: detects direct error usage without SafeError wrapper
 //doc:before  telemetrylog.Error("failed", slog.Any("error", rawError))
 //doc:after   telemetrylog.Error("failed", slog.Any("error", SafeError(rawError)))
