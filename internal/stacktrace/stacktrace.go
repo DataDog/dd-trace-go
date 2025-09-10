@@ -32,12 +32,84 @@ var (
 		"github.com/datadog/orchestrion",
 		"github.com/DataDog/orchestrion",
 	}
+
+	// TODO(kakkoyun): Dynamically generate knownThirdPartyLibraries from contrib/ directory structure at build time
+	// This should scan contrib/*/go.mod files and extract third-party library patterns automatically
+	knownThirdPartyLibraries = []string{
+		// Cloud providers
+		"cloud.google.com/go/",
+		"github.com/aws/aws-sdk-go",
+
+		// Web frameworks
+		"github.com/gin-gonic/gin",
+		"github.com/gorilla/mux",
+		"github.com/go-chi/chi",
+		"github.com/labstack/echo",
+		"github.com/gofiber/fiber",
+		"github.com/valyala/fasthttp",
+		"github.com/urfave/negroni",
+		"github.com/julienschmidt/httprouter",
+		"github.com/dimfeld/httptreemux",
+		"github.com/emicklei/go-restful",
+
+		// Databases
+		"go.mongodb.org/mongo-driver",
+		"github.com/go-redis/redis",
+		"github.com/redis/go-redis",
+		"github.com/redis/rueidis",
+		"github.com/valkey-io/valkey-go",
+		"github.com/gomodule/redigo",
+		"github.com/gocql/gocql",
+		"github.com/go-pg/pg",
+		"github.com/jackc/pgx",
+		"github.com/jmoiron/sqlx",
+		"github.com/go-sql-driver/mysql",
+		"github.com/lib/pq",
+		"github.com/denisenkom/go-mssqldb",
+		"github.com/globalsign/mgo",
+		"github.com/syndtr/goleveldb",
+		"github.com/tidwall/buntdb",
+		"gopkg.in/olivere/elastic",
+		"github.com/elastic/go-elasticsearch",
+
+		// Message queues
+		"github.com/Shopify/sarama",
+		"github.com/IBM/sarama",
+		"github.com/segmentio/kafka-go",
+		"github.com/confluentinc/confluent-kafka-go",
+
+		// GraphQL
+		"github.com/99designs/gqlgen",
+		"github.com/graph-gophers/graphql-go",
+		"github.com/graphql-go/graphql",
+
+		// Other integrations
+		"github.com/hashicorp/consul",
+		"github.com/hashicorp/vault",
+		"github.com/bradfitz/gomemcache",
+		"github.com/miekg/dns",
+		"github.com/twitchtv/twirp",
+		"github.com/sirupsen/logrus",
+		"github.com/envoyproxy/go-control-plane",
+		"k8s.io/api",
+		"k8s.io/apimachinery",
+	}
 )
+
+// Redaction-specific frame types for secure logging
+type frameType string
 
 const (
 	defaultCallerSkip    = 4
 	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
 	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLE"
+
+	frameTypeDatadog    frameType = "datadog"
+	frameTypeRuntime    frameType = "runtime"
+	frameTypeThirdParty frameType = "third_party"
+	frameTypeCustomer   frameType = "customer"
+
+	redactedPlaceholder = "REDACTED"
 )
 
 func init() {
@@ -173,7 +245,12 @@ func SkipAndCapture(skip int) StackTrace {
 }
 
 func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
-	iter := iterator(skip, maxDepth, symbolSkip)
+	opts := frameOptions{
+		skipInternalFrames:      true,
+		redactCustomerFrames:    false,
+		internalPackagePrefixes: symbolSkip,
+	}
+	iter := iterator(skip, maxDepth, opts)
 	stack := make([]StackFrame, defaultMaxDepth)
 	nbStoredFrames := 0
 	topFramesQueue := newQueue[StackFrame](defaultTopFrameDepth)
@@ -205,28 +282,58 @@ func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
 	return stack[:nbStoredFrames]
 }
 
-// framesIterator is an iterator over the frames of a call stack
-// It skips internal packages and caches the frames to avoid multiple calls to runtime.Callers
-// It also skips the first `skip` frames
-// It is not thread-safe
-type framesIterator struct {
-	skipPrefixes []string
-	cache        []uintptr
-	frames       *queue[runtime.Frame]
-	cacheDepth   int
-	cacheSize    int
-	currDepth    int
+// frameOptions configures iterator behavior for frame processing
+type frameOptions struct {
+	skipInternalFrames      bool     // Whether to skip internal DD frames
+	redactCustomerFrames    bool     // Whether to redact customer code frames
+	internalPackagePrefixes []string // Prefixes for internal packages
 }
 
-func iterator(skip, cacheSize int, internalPrefixSkip []string) framesIterator {
+// framesIterator is an iterator over the frames of a call stack
+// It skips internal packages and caches the frames to avoid multiple calls to runtime.Callers
+// It also skips the first `skip` frames and can redact customer code for secure logging
+// It is not thread-safe
+type framesIterator struct {
+	frameOpts  frameOptions
+	cache      []uintptr
+	frames     *queue[runtime.Frame]
+	cacheDepth int
+	cacheSize  int
+	currDepth  int
+}
+
+func iterator(skip, cacheSize int, opts frameOptions) framesIterator {
 	return framesIterator{
-		skipPrefixes: internalPrefixSkip,
-		cache:        make([]uintptr, cacheSize),
-		frames:       newQueue[runtime.Frame](cacheSize + 4),
-		cacheDepth:   skip,
-		cacheSize:    cacheSize,
-		currDepth:    0,
+		frameOpts:  opts,
+		cache:      make([]uintptr, cacheSize),
+		frames:     newQueue[runtime.Frame](cacheSize + 4),
+		cacheDepth: skip,
+		cacheSize:  cacheSize,
+		currDepth:  0,
 	}
+}
+
+func iteratorFromPC(pc uintptr, opts frameOptions) framesIterator {
+	iter := framesIterator{
+		frameOpts:  opts,
+		cache:      []uintptr{pc},
+		frames:     newQueue[runtime.Frame](4),
+		cacheDepth: 0,
+		cacheSize:  1,
+		currDepth:  0,
+	}
+
+	// Pre-populate frames from PC unwinding
+	frames := runtime.CallersFrames([]uintptr{pc})
+	for {
+		frame, more := frames.Next()
+		iter.frames.Add(frame)
+		if !more {
+			break
+		}
+	}
+
+	return iter
 }
 
 // next returns the next runtime.Frame in the call stack, filling the cache if needed
@@ -264,30 +371,182 @@ func (it *framesIterator) Next() (StackFrame, bool) {
 			continue
 		}
 
-		parsedSymbol := parseSymbol(frame.Function)
-		return StackFrame{
-			Index:     uint32(it.currDepth - 1),
-			Text:      "",
-			File:      frame.File,
-			Line:      uint32(frame.Line),
-			Column:    0, // No column given by the runtime
-			Namespace: parsedSymbol.Package,
-			ClassName: parsedSymbol.Receiver,
-			Function:  parsedSymbol.Function,
-		}, true
+		var (
+			parsedSymbol = parseSymbol(frame.Function)
+			shouldRedact = it.shouldRedactSymbol(parsedSymbol)
+			stackFrame   = StackFrame{
+				Index:     uint32(it.currDepth - 1),
+				Text:      "",
+				File:      frame.File,
+				Line:      uint32(frame.Line),
+				Column:    0, // No column given by the runtime
+				Namespace: parsedSymbol.Package,
+				ClassName: parsedSymbol.Receiver,
+				Function:  parsedSymbol.Function,
+			}
+		)
+		if shouldRedact {
+			stackFrame.Function = redactedPlaceholder
+			stackFrame.File = redactedPlaceholder
+			stackFrame.Line = 0
+			stackFrame.Namespace = ""
+			stackFrame.ClassName = ""
+		}
+
+		return stackFrame, true
 	}
 }
 
 func (it *framesIterator) skipFrame(frame runtime.Frame) bool {
-	if frame.File == "<generated>" { // skip orchestrion generated code
+	if frame.File == "<generated>" {
 		return true
 	}
 
-	for _, prefix := range it.skipPrefixes {
-		if strings.HasPrefix(frame.Function, prefix) {
-			return true
+	if it.frameOpts.skipInternalFrames {
+		for _, prefix := range it.frameOpts.internalPackagePrefixes {
+			if strings.HasPrefix(frame.Function, prefix) {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+func (it *framesIterator) shouldRedactSymbol(sym symbol) bool {
+	if !it.frameOpts.redactCustomerFrames {
+		return false
+	}
+	return classifySymbol(sym, it.frameOpts.internalPackagePrefixes) == frameTypeCustomer
+}
+
+func classifySymbol(sym symbol, internalPrefixes []string) frameType {
+	pkg := sym.Package
+
+	for _, prefix := range internalPrefixes {
+		if strings.HasPrefix(pkg, prefix) {
+			return frameTypeDatadog
+		}
+	}
+
+	if isStandardLibraryPackage(pkg) {
+		return frameTypeRuntime
+	}
+
+	for _, lib := range knownThirdPartyLibraries {
+		if strings.HasPrefix(pkg, lib) {
+			return frameTypeThirdParty
+		}
+	}
+
+	return frameTypeCustomer
+}
+
+// UnwindStackFromPC creates a StackTrace from a program counter using existing facilities
+func UnwindStackFromPC(pc uintptr, opts ...UnwindOption) StackTrace {
+	if pc == 0 {
+		return nil
+	}
+
+	cfg := applyUnwindOptions(opts)
+
+	// Configure frame processing for telemetry: skip=no, redact=yes
+	frameOpts := frameOptions{
+		skipInternalFrames:      !cfg.includeInternal,
+		redactCustomerFrames:    cfg.redactUserCode,
+		internalPackagePrefixes: internalSymbolPrefixes,
+	}
+
+	// Create PC iterator for processing frames from the specific PC
+	iter := iteratorFromPC(pc, frameOpts)
+	var stack []StackFrame
+	skippedFrames := 0
+
+	for frame, ok := iter.Next(); ok; frame, ok = iter.Next() {
+		// Skip frames if requested
+		if skippedFrames < cfg.skipFrames {
+			skippedFrames++
+			continue
+		}
+
+		stack = append(stack, frame)
+
+		// Respect max depth
+		if len(stack) >= cfg.maxDepth {
+			break
+		}
+	}
+
+	return stack
+}
+
+// Format converts a StackTrace to a string representation
+func Format(stack StackTrace) string {
+	if len(stack) == 0 {
+		return ""
+	}
+
+	var result []byte
+	for i, frame := range stack {
+		if i > 0 {
+			result = append(result, '\n')
+		}
+
+		// Use full function name (namespace + class + function)
+		function := frame.Function
+		if frame.Namespace != "" {
+			if frame.ClassName != "" {
+				function = frame.Namespace + ".(" + frame.ClassName + ")." + frame.Function
+			} else {
+				function = frame.Namespace + "." + frame.Function
+			}
+		}
+
+		result = append(result, function...)
+		result = append(result, '\n', '\t')
+		result = append(result, frame.File...)
+		result = append(result, ':')
+
+		// Convert line number to string
+		line := int(frame.Line)
+		if line == 0 {
+			result = append(result, '0')
+		} else {
+			digits := make([]byte, 0, 10)
+			for line > 0 {
+				digits = append(digits, byte('0'+line%10))
+				line /= 10
+			}
+			// Reverse digits
+			for j := len(digits) - 1; j >= 0; j-- {
+				result = append(result, digits[j])
+			}
+		}
+	}
+
+	return string(result)
+}
+
+// isStandardLibraryPackage checks if a package is from Go's standard library
+func isStandardLibraryPackage(pkg string) bool {
+	// Special case: main package is user code, not stdlib
+	if pkg == "main" {
+		return false
+	}
+
+	// Standard library detection: no dot in the first path element
+	// Mirrors go/build's IsStandardImportPath.
+	// For standard library imports, the first element doesn't contain a dot.
+	// Examples:
+	//   "fmt" -> first element "fmt" (no dot) -> standard library
+	//   "net/http" -> first element "net" (no dot) -> standard library
+	//   "github.com/user/pkg" -> first element "github.com" (has dot) -> NOT standard library
+	slash := strings.IndexByte(pkg, '/')
+	if slash < 0 {
+		// single-element path like "fmt", "os", "runtime"
+		return !strings.Contains(pkg, ".")
+	}
+	// multi-element path like "net/http", "encoding/json", or "github.com/user/pkg"
+	first := pkg[:slash]
+	return !strings.Contains(first, ".")
 }

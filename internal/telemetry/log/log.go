@@ -24,6 +24,7 @@
 //	// ✅ Correct - constant message with structured data
 //	telemetrylog.Error("operation failed", slog.String("operation", "startup"))
 //	telemetrylog.Error("validation error", slog.Any("error", SafeError(err)))
+//	telemetrylog.Error("operation failed", slog.Any("error", SafeError(err)), WithStacktrace())
 //
 //	// ❌ Forbidden - dynamic messages
 //	telemetrylog.Error(err.Error()) // Raw error message

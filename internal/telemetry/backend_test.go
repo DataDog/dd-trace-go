@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
@@ -216,7 +217,8 @@ func TestLoggerBackend_Tags(t *testing.T) {
 
 func TestUnwindStackFromPC(t *testing.T) {
 	t.Run("returns empty string for zero PC", func(t *testing.T) {
-		result := unwindStackFromPC(0)
+		stack := stacktrace.UnwindStackFromPC(0, stacktrace.WithRedaction())
+		result := stacktrace.Format(stack)
 		assert.Empty(t, result)
 	})
 
@@ -226,7 +228,8 @@ func TestUnwindStackFromPC(t *testing.T) {
 		n := runtime.Callers(1, pcs[:])
 		require.Greater(t, n, 0, "Should capture at least one PC")
 
-		result := unwindStackFromPC(pcs[0])
+		stack := stacktrace.UnwindStackFromPC(pcs[0], stacktrace.WithRedaction())
+		result := stacktrace.Format(stack)
 		assert.NotEmpty(t, result)
 		assert.Contains(t, result, "TestUnwindStackFromPC")
 
