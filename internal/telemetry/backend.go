@@ -6,8 +6,11 @@
 package telemetry
 
 import (
+	"bytes"
+	"context"
 	"log/slog"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -28,12 +31,47 @@ type loggerValue struct {
 	captureStacktrace bool
 }
 
+type formatter struct {
+	buffer  *bytes.Buffer
+	handler slog.Handler
+}
+
 type loggerBackend struct {
 	store *xsync.MapOf[loggerKey, *loggerValue]
 
 	distinctLogs       atomic.Int32
 	maxDistinctLogs    int32
 	onceMaxLogsReached sync.Once
+
+	formatters *sync.Pool
+}
+
+func newLoggerBackend(maxDistinctLogs int32) *loggerBackend {
+	return &loggerBackend{
+		store:           xsync.NewMapOf[loggerKey, *loggerValue](),
+		maxDistinctLogs: maxDistinctLogs,
+
+		formatters: &sync.Pool{
+			New: func() interface{} {
+				buf := &bytes.Buffer{}
+				return &formatter{
+					buffer: buf,
+					handler: slog.NewTextHandler(buf, &slog.HandlerOptions{
+						ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+							// Remove time, level, source attributes, and empty message attributes
+							if a.Key == slog.TimeKey || a.Key == slog.LevelKey || a.Key == slog.SourceKey {
+								return slog.Attr{}
+							}
+							if a.Key == slog.MessageKey && a.Value.String() == "" {
+								return slog.Attr{}
+							}
+							return a
+						},
+					}),
+				}
+			},
+		},
+	}
 }
 
 func (logger *loggerBackend) Add(record slog.Record, opts ...LogOption) {
@@ -72,7 +110,69 @@ func (logger *loggerBackend) add(record slog.Record, opts ...LogOption) {
 	value.count.Add(1)
 }
 
-// TODO: Explore using internal/stacktrace/stacktrace.go for stack unwinding
+func (logger *loggerBackend) Payload() transport.Payload {
+	logs := make([]transport.LogMessage, 0, logger.store.Size()+1)
+	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
+		logger.store.Delete(key)
+		logger.distinctLogs.Add(-1)
+		msg := transport.LogMessage{
+			Message:    logger.formatMessage(value.record),
+			Level:      key.level,
+			Tags:       key.tags,
+			Count:      value.count.Load(),
+			TracerTime: value.record.Time.Unix(),
+		}
+		if value.captureStacktrace {
+			msg.StackTrace = unwindStackFromPC(value.record.PC)
+		}
+		logs = append(logs, msg)
+		return true
+	})
+
+	if len(logs) == 0 {
+		return nil
+	}
+
+	return transport.Logs{Logs: logs}
+}
+
+func (logger *loggerBackend) formatMessage(record slog.Record) string {
+	if logger.formatters == nil {
+		return record.Message
+	}
+
+	hasAttrs := false
+	record.Attrs(func(attr slog.Attr) bool {
+		hasAttrs = true
+		return false
+	})
+
+	if !hasAttrs {
+		return record.Message
+	}
+
+	// Capture the message before clearing it.
+	message := record.Message
+
+	formatter := logger.formatters.Get().(*formatter)
+	defer func() {
+		formatter.buffer.Reset()
+		logger.formatters.Put(formatter)
+	}()
+
+	// Clear the message so TextHandler only formats attributes.
+	record.Message = ""
+	formatter.handler.Handle(context.Background(), record)
+	formattedAttrs := strings.TrimSpace(formatter.buffer.String())
+
+	if formattedAttrs == "" {
+		return message
+	}
+
+	return message + ": " + formattedAttrs
+}
+
+// TODO(kakkoyun): Explore using internal/stacktrace/stacktrace.go for stack unwinding
 func unwindStackFromPC(pc uintptr) string {
 	if pc == 0 {
 		return ""
@@ -109,30 +209,4 @@ func unwindStackFromPC(pc uintptr) string {
 		}
 	}
 	return string(stackTrace)
-}
-
-func (logger *loggerBackend) Payload() transport.Payload {
-	logs := make([]transport.LogMessage, 0, logger.store.Size()+1)
-	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
-		logger.store.Delete(key)
-		logger.distinctLogs.Add(-1)
-		msg := transport.LogMessage{
-			Message:    key.message,
-			Level:      key.level,
-			Tags:       key.tags,
-			Count:      value.count.Load(),
-			TracerTime: value.record.Time.Unix(),
-		}
-		if value.captureStacktrace {
-			msg.StackTrace = unwindStackFromPC(value.record.PC)
-		}
-		logs = append(logs, msg)
-		return true
-	})
-
-	if len(logs) == 0 {
-		return nil
-	}
-
-	return transport.Logs{Logs: logs}
 }
