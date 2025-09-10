@@ -7,8 +7,6 @@
 package telemetrytest
 
 import (
-	"log/slog"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
@@ -68,7 +66,7 @@ func (m *MockClient) Distribution(namespace telemetry.Namespace, name string, ta
 	return m.Called(namespace, name, tags).Get(0).(telemetry.MetricHandle)
 }
 
-func (m *MockClient) Log(record slog.Record, options ...telemetry.LogOption) {
+func (m *MockClient) Log(record telemetry.Record, options ...telemetry.LogOption) {
 	m.Called(record, options)
 }
 

@@ -6,7 +6,6 @@
 package config
 
 import (
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -57,12 +56,13 @@ func TestSCAEnabled(t *testing.T) {
 			telemetryClient := new(telemetrytest.MockClient)
 			telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar}}).Return()
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
+
+			var logMatcher interface{}
 			if tc.telemetryLog != "" {
-				// Use pattern matching for slog.Record message
-				telemetryClient.On("Log",
-					mock.MatchedBy(func(record slog.Record) bool {
-						return strings.HasPrefix(record.Message, tc.telemetryLog)
-					}), []telemetry.LogOption(nil)).Return()
+				logMatcher = mock.MatchedBy(func(record telemetry.Record) bool {
+					return strings.HasPrefix(record.Message(), tc.telemetryLog)
+				})
+				telemetryClient.On("Log", logMatcher, []telemetry.LogOption(nil)).Return()
 			}
 			defer telemetry.MockClient(telemetryClient)()
 
@@ -75,11 +75,7 @@ func TestSCAEnabled(t *testing.T) {
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 0)
 			}
 			if tc.telemetryLog != "" {
-				// Assert that telemetry log was called with expected message prefix
-				telemetryClient.AssertCalled(t, "Log",
-					mock.MatchedBy(func(record slog.Record) bool {
-						return strings.HasPrefix(record.Message, tc.telemetryLog)
-					}), []telemetry.LogOption(nil))
+				telemetryClient.AssertCalled(t, "Log", logMatcher, []telemetry.LogOption(nil))
 			}
 		})
 	}

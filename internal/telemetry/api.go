@@ -28,7 +28,6 @@ package telemetry
 
 import (
 	"io"
-	"log/slog"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
@@ -139,7 +138,7 @@ type Client interface {
 
 	// Log sends a telemetry log with the given [slog.Record] and options.
 	// Options include sending key-value pairs as tags, and a stack trace frozen from inside the Log function.
-	Log(record slog.Record, options ...LogOption)
+	Log(record Record, options ...LogOption)
 
 	// ProductStarted declares a product to have started at the customer's request
 	ProductStarted(product Namespace)

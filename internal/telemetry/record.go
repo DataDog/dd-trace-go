@@ -8,18 +8,11 @@ package telemetry
 import (
 	"log/slog"
 	"runtime"
+	"time"
 )
 
-const defaultSkipFrames = 3
-
-// capturePC captures the program counter of the current function.
-func capturePC() uintptr {
-	// Lazy stack unwinding - only capture when actually needed
-	// Skip the appropriate number of frames:
-	// [runtime.Callers, capturePC, caller's logging method, user code]
-	var pcs [1]uintptr
-	runtime.Callers(defaultSkipFrames, pcs[:])
-	return pcs[0]
+type Record struct {
+	record slog.Record
 }
 
 func logLevelToSlogLevel(level LogLevel) slog.Level {
@@ -48,10 +41,39 @@ func slogLevelToLogLevel(level slog.Level) LogLevel {
 	}
 }
 
-func newRecord(level LogLevel, message string) slog.Record {
-	return slog.Record{
-		Level:   logLevelToSlogLevel(level),
-		Message: message,
-		PC:      capturePC(),
+func NewRecord(level LogLevel, message string) Record {
+	var pcs [1]uintptr
+	runtime.Callers(3, pcs[:])
+	return Record{
+		record: slog.Record{
+			Time:    time.Now(),
+			Level:   logLevelToSlogLevel(level),
+			Message: message,
+			PC:      pcs[0],
+		},
 	}
+}
+
+func (r *Record) AddAttrs(attrs ...slog.Attr) {
+	r.record.AddAttrs(attrs...)
+}
+
+func (r *Record) Time() time.Time {
+	return r.record.Time
+}
+
+func (r *Record) Level() slog.Level {
+	return r.record.Level
+}
+
+func (r *Record) Message() string {
+	return r.record.Message
+}
+
+func (r *Record) Attrs(f func(slog.Attr) bool) {
+	r.record.Attrs(f)
+}
+
+func (r *Record) PC() uintptr {
+	return r.record.PC
 }

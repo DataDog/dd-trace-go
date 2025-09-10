@@ -7,7 +7,6 @@ package telemetry
 
 import (
 	"errors"
-	"log/slog"
 	"os"
 	"strconv"
 	"sync"
@@ -128,7 +127,7 @@ type client struct {
 	flushTickerFuncsMu sync.Mutex
 }
 
-func (c *client) Log(record slog.Record, options ...LogOption) {
+func (c *client) Log(record Record, options ...LogOption) {
 	if !c.clientConfig.LogsEnabled {
 		return
 	}

@@ -38,19 +38,16 @@ package log
 
 import (
 	"log/slog"
-	"runtime"
 	"slices"
 	"sync/atomic"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-var sendLog func(r slog.Record, opts ...telemetry.LogOption) = telemetry.Log
+var sendLog func(r telemetry.Record, opts ...telemetry.LogOption) = telemetry.Log
 
 type Logger struct {
-	capturePC bool
-	opts      []telemetry.LogOption
+	opts []telemetry.LogOption
 }
 
 var (
@@ -62,9 +59,7 @@ var (
 )
 
 func init() {
-	defaultLogger.Store(&Logger{
-		capturePC: defaultCapturePC,
-	})
+	defaultLogger.Store(&Logger{})
 }
 
 func SetDefaultLogger(logger *Logger) {
@@ -73,16 +68,13 @@ func SetDefaultLogger(logger *Logger) {
 
 func With(opts ...telemetry.LogOption) *Logger {
 	return &Logger{
-		capturePC: defaultCapturePC,
-		opts:      opts,
+		opts: opts,
 	}
 }
 
 func (l *Logger) With(opts ...telemetry.LogOption) *Logger {
-	combinedOpts := slices.Concat(l.opts, opts)
 	return &Logger{
-		capturePC: l.capturePC,
-		opts:      combinedOpts,
+		opts: slices.Concat(l.opts, opts),
 	}
 }
 
@@ -99,39 +91,19 @@ func Error(message string, attrs ...slog.Attr) {
 }
 
 func (l *Logger) Debug(message string, attrs ...slog.Attr) {
-	record := slog.NewRecord(time.Now(), slog.LevelDebug, message, 0)
+	record := telemetry.NewRecord(telemetry.LogDebug, message)
 	record.AddAttrs(attrs...)
-	l.sendLogRecord(record)
+	sendLog(record, l.opts...)
 }
 
 func (l *Logger) Warn(message string, attrs ...slog.Attr) {
-	record := slog.NewRecord(time.Now(), slog.LevelWarn, message, 0)
+	record := telemetry.NewRecord(telemetry.LogWarn, message)
 	record.AddAttrs(attrs...)
-	l.sendLogRecord(record)
+	sendLog(record, l.opts...)
 }
 
 func (l *Logger) Error(message string, attrs ...slog.Attr) {
-	record := slog.NewRecord(time.Now(), slog.LevelError, message, 0)
+	record := telemetry.NewRecord(telemetry.LogError, message)
 	record.AddAttrs(attrs...)
-	l.sendLogRecord(record)
-}
-
-func (l *Logger) sendLogRecord(r slog.Record) {
-	// Capture PC if:
-	// 1. Logger is configured to always capture PC, OR
-	// 2. Logger has options (which might include WithStacktrace)
-	//    Since we can't inspect option contents without exposing internal types,
-	//    we conservatively capture PC whenever options are present.
-	//    This ensures WithStacktrace() works correctly while keeping the overhead minimal.
-	// Also capturing a single frame is cheap enough to do always.
-	needsPC := l.capturePC || (!l.capturePC && len(l.opts) > 0)
-
-	if needsPC && r.PC == 0 {
-		var pcs [1]uintptr
-		n := runtime.Callers(4, pcs[:])
-		if n > 0 {
-			r.PC = pcs[0]
-		}
-	}
-	sendLog(r, l.opts...)
+	sendLog(record, l.opts...)
 }

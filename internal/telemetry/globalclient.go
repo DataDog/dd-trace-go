@@ -6,7 +6,6 @@
 package telemetry
 
 import (
-	"log/slog"
 	"sync"
 	"sync/atomic"
 
@@ -143,7 +142,7 @@ func Distribution(namespace Namespace, name string, tags []string) MetricHandle 
 	return globalClientNewMetric(namespace, transport.DistMetric, name, tags)
 }
 
-func Log(record slog.Record, options ...LogOption) {
+func Log(record Record, options ...LogOption) {
 	globalClientCall(func(client Client) {
 		client.Log(record, options...)
 	})
