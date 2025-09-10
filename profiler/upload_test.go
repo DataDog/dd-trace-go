@@ -186,7 +186,6 @@ func TestGitMetadata(t *testing.T) {
 
 func TestProcessTags(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 		processtags.Reload()
 
 		profile := doOneShortProfileUpload(t)
