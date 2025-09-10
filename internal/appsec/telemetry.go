@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -33,15 +34,33 @@ var (
 		{Name: "waf_supports_target", Value: wafSupported, Origin: telemetry.OriginCode},
 		{Name: "waf_healthy", Value: wafUsable, Origin: telemetry.OriginCode},
 	}
+	appsecEnabledOrigin atomic.Pointer[telemetry.Origin]
 )
 
 // init sends the static telemetry for AppSec.
 func init() {
 	telemetry.RegisterAppConfigs(staticConfigs...)
+	telemetry.AddFlushTicker(func(client telemetry.Client) {
+		var val float64
+		if Enabled() {
+			val = 1.0
+		}
+
+		origin := telemetry.OriginDefault
+		if o := appsecEnabledOrigin.Load(); o != nil {
+			origin = *o
+		}
+
+		client.Gauge(telemetry.NamespaceAppSec, "enabled", []string{"origin:" + string(origin)}).Submit(val)
+	})
 }
 
 func registerAppsecStartTelemetry(mode config.EnablementMode, origin telemetry.Origin) {
-	if mode == config.RCStandby {
+	telemetry.RegisterAppConfig(config.EnvEnabled, Enabled(), origin)
+	appsecEnabledOrigin.Store(&origin)
+	detectLibDLOnce.Do(detectLibDL)
+
+	if !Enabled() {
 		return
 	}
 
@@ -50,9 +69,6 @@ func registerAppsecStartTelemetry(mode config.EnablementMode, origin telemetry.O
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceAppSec)
-	// TODO: add appsec.enabled metric once this metric is enabled backend-side
-
-	detectLibDLOnce.Do(detectLibDL)
 }
 
 func detectLibDL() {
