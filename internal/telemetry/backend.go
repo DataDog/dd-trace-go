@@ -9,15 +9,17 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/puzpuzpuz/xsync/v3"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
+
+const stackTraceKey = "stacktrace"
 
 type loggerKey struct {
 	tags    string
@@ -58,8 +60,11 @@ func newLoggerBackend(maxDistinctLogs int32) *loggerBackend {
 					buffer: buf,
 					handler: slog.NewTextHandler(buf, &slog.HandlerOptions{
 						ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-							// Remove time, level, source attributes, and empty message attributes
-							if a.Key == slog.TimeKey || a.Key == slog.LevelKey || a.Key == slog.SourceKey {
+							// Remove time, level, source attributes, stacktrace and empty message attributes
+							if a.Key == slog.TimeKey ||
+								a.Key == slog.LevelKey ||
+								a.Key == slog.SourceKey ||
+								a.Key == stackTraceKey {
 								return slog.Attr{}
 							}
 							if a.Key == slog.MessageKey && a.Value.String() == "" {
@@ -103,6 +108,13 @@ func (logger *loggerBackend) add(record slog.Record, opts ...LogOption) {
 		for _, opt := range opts {
 			opt(nil, value)
 		}
+		if value.captureStacktrace {
+			stack := stacktrace.UnwindStackFromPC(value.record.PC, stacktrace.WithRedaction())
+			value.record.AddAttrs(slog.Attr{
+				Key:   stackTraceKey,
+				Value: slog.StringValue(stacktrace.Format(stack)),
+			})
+		}
 		logger.distinctLogs.Add(1)
 		return value
 	})
@@ -123,7 +135,13 @@ func (logger *loggerBackend) Payload() transport.Payload {
 			TracerTime: value.record.Time.Unix(),
 		}
 		if value.captureStacktrace {
-			msg.StackTrace = unwindStackFromPC(value.record.PC)
+			value.record.Attrs(func(attr slog.Attr) bool {
+				if attr.Key == stackTraceKey {
+					msg.StackTrace = attr.Value.String()
+					return false
+				}
+				return true
+			})
 		}
 		logs = append(logs, msg)
 		return true
@@ -170,43 +188,4 @@ func (logger *loggerBackend) formatMessage(record slog.Record) string {
 	}
 
 	return message + ": " + formattedAttrs
-}
-
-// TODO(kakkoyun): Explore using internal/stacktrace/stacktrace.go for stack unwinding
-func unwindStackFromPC(pc uintptr) string {
-	if pc == 0 {
-		return ""
-	}
-
-	frames := runtime.CallersFrames([]uintptr{pc})
-	var stackTrace []byte
-	for {
-		frame, more := frames.Next()
-		if len(stackTrace) > 0 {
-			stackTrace = append(stackTrace, '\n')
-		}
-		stackTrace = append(stackTrace, frame.Function...)
-		stackTrace = append(stackTrace, '\n', '\t')
-		stackTrace = append(stackTrace, frame.File...)
-		stackTrace = append(stackTrace, ':')
-		// Simple integer to string conversion
-		line := frame.Line
-		if line == 0 {
-			stackTrace = append(stackTrace, '0')
-		} else {
-			digits := make([]byte, 0, 10)
-			for line > 0 {
-				digits = append(digits, byte('0'+line%10))
-				line /= 10
-			}
-			// Reverse digits
-			for i := len(digits) - 1; i >= 0; i-- {
-				stackTrace = append(stackTrace, digits[i])
-			}
-		}
-		if !more {
-			break
-		}
-	}
-	return string(stackTrace)
 }
