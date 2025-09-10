@@ -250,7 +250,7 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 			log.Error("appsec: remote config: error while processing %q. Configuration won't be applied: %s", path, err.Error())
 			return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
 		}
-		registerAppsecStartTelemetry(config.ForcedOn, telemetry.OriginRemoteConfig)
+		registerAppsecStartTelemetry(config.RCStandby, telemetry.OriginRemoteConfig)
 	}
 
 	// RC triggers desactivation of ASM; ASM is started... Stopping it!
