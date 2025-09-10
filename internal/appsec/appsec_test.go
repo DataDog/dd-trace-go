@@ -43,10 +43,9 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestAppsecEnabledTelemetry(t *testing.T) {
-	var telemetryClient telemetrytest.RecordClient
-	defer telemetry.MockClient(&telemetryClient)()
-
 	t.Run("default", func(t *testing.T) {
+		var telemetryClient telemetrytest.RecordClient
+		defer telemetry.MockClient(&telemetryClient)()
 		t.Setenv(config.EnvEnabled, "")
 
 		appsec.Start()
@@ -56,6 +55,8 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	})
 
 	t.Run("env_enabled", func(t *testing.T) {
+		var telemetryClient telemetrytest.RecordClient
+		defer telemetry.MockClient(&telemetryClient)()
 		t.Setenv(config.EnvEnabled, "true")
 
 		appsec.Start()
@@ -65,6 +66,8 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	})
 
 	t.Run("env_disable", func(t *testing.T) {
+		var telemetryClient telemetrytest.RecordClient
+		defer telemetry.MockClient(&telemetryClient)()
 		t.Setenv(config.EnvEnabled, "false")
 
 		appsec.Start()
@@ -74,6 +77,8 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	})
 
 	t.Run("code_enabled", func(t *testing.T) {
+		var telemetryClient telemetrytest.RecordClient
+		defer telemetry.MockClient(&telemetryClient)()
 		t.Setenv(config.EnvEnabled, "")
 
 		appsec.Start(config.WithEnablementMode(config.ForcedOn))
@@ -83,6 +88,8 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 	})
 
 	t.Run("code_enabled", func(t *testing.T) {
+		var telemetryClient telemetrytest.RecordClient
+		defer telemetry.MockClient(&telemetryClient)()
 		t.Setenv(config.EnvEnabled, "")
 
 		appsec.Start(config.WithEnablementMode(config.ForcedOff))
