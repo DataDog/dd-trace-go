@@ -62,7 +62,8 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 		appsec.Start()
 		defer appsec.Stop()
 
-		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: config.EnvEnabled, Value: true, Origin: telemetry.OriginEnvVar})
+		shouldBeEnabled, _ := libddwaf.Usable()
+		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: config.EnvEnabled, Value: shouldBeEnabled, Origin: telemetry.OriginEnvVar})
 	})
 
 	t.Run("env_disable", func(t *testing.T) {
@@ -84,7 +85,8 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 		appsec.Start(config.WithEnablementMode(config.ForcedOn))
 		defer appsec.Stop()
 
-		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: config.EnvEnabled, Value: true, Origin: telemetry.OriginCode})
+		shouldBeEnabled, _ := libddwaf.Usable()
+		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: config.EnvEnabled, Value: shouldBeEnabled, Origin: telemetry.OriginCode})
 	})
 
 	t.Run("code_enabled", func(t *testing.T) {
