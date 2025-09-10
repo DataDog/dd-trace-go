@@ -66,10 +66,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
 		},
-		backend: loggerBackend{
-			store:           xsync.NewMapOf[loggerKey, *loggerValue](),
-			maxDistinctLogs: config.MaxDistinctLogs,
-		},
+		backend: newLoggerBackend(config.MaxDistinctLogs),
 	}
 
 	client.dataSources = append(client.dataSources,
@@ -80,7 +77,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 	)
 
 	if config.LogsEnabled {
-		client.dataSources = append(client.dataSources, &client.backend)
+		client.dataSources = append(client.dataSources, client.backend)
 	}
 
 	if config.MetricsEnabled {
@@ -107,7 +104,7 @@ type client struct {
 	products      products
 	configuration configuration
 	dependencies  dependencies
-	backend       loggerBackend
+	backend       *loggerBackend
 	metrics       metrics
 	distributions distributions
 

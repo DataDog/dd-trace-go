@@ -42,7 +42,7 @@ const (
 	redactedPlaceholder  = "REDACTED"
 )
 
-// TODO: Dynamically generate knownThirdPartyLibraries from contrib/ directory structure at build time
+// TODO(kakkoyun): Dynamically generate knownThirdPartyLibraries from contrib/ directory structure at build time
 // This should scan contrib/*/go.mod files and extract third-party library patterns automatically
 var knownThirdPartyLibraries = []string{
 	// Cloud providers

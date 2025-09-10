@@ -37,6 +37,7 @@ package log
 
 import (
 	"log/slog"
+	"runtime"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -44,21 +45,24 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-// Logger represents a contextual logger with pre-configured telemetry options
+var sendLog func(r slog.Record, opts ...telemetry.LogOption) = telemetry.Log
+
 type Logger struct {
-	handler slog.Handler
-	writer  *handlerWriter
-	opts    []telemetry.LogOption
+	capturePC bool
+	opts      []telemetry.LogOption
 }
 
-// defaultLogger is the global logger instance with no pre-configured options
-var defaultLogger atomic.Pointer[Logger]
+var (
+	// defaultLogger is the global logger instance with no pre-configured options
+	defaultLogger atomic.Pointer[Logger]
+
+	// defaultCapturePC is whether to capture the program counter for stack traces
+	defaultCapturePC = true
+)
 
 func init() {
-	handler := NewTelemetryHandler()
 	defaultLogger.Store(&Logger{
-		handler: handler,
-		writer:  NewHandlerWriter(handler, true),
+		capturePC: defaultCapturePC,
 	})
 }
 
@@ -66,63 +70,67 @@ func SetDefaultLogger(logger *Logger) {
 	defaultLogger.CompareAndSwap(defaultLogger.Load(), logger)
 }
 
-// With creates a new contextual logger with the given telemetry options
 func With(opts ...telemetry.LogOption) *Logger {
-	handler := NewTelemetryHandler(opts...)
 	return &Logger{
-		handler: handler,
-		writer:  NewHandlerWriter(handler, true),
-		opts:    opts,
+		capturePC: defaultCapturePC,
+		opts:      opts,
 	}
 }
 
-// With creates a new logger that extends the current logger's options with additional options
 func (l *Logger) With(opts ...telemetry.LogOption) *Logger {
 	combinedOpts := slices.Concat(l.opts, opts)
-	handler := NewTelemetryHandler(combinedOpts...)
 	return &Logger{
-		handler: handler,
-		writer:  NewHandlerWriter(handler, true),
-		opts:    combinedOpts,
+		capturePC: l.capturePC,
+		opts:      combinedOpts,
 	}
 }
 
-
-// Debug sends a telemetry payload with a debug log message to the backend using the default logger
 func Debug(message string, attrs ...slog.Attr) {
-	defaultLogger.Load().Debug(message, attrs...) //nolint:gocritic // Telemetry plumbing - message parameter delegation is safe
+	defaultLogger.Load().Debug(message, attrs...)
 }
 
-// Warn sends a telemetry payload with a warning log message to the backend using the default logger
 func Warn(message string, attrs ...slog.Attr) {
-	defaultLogger.Load().Warn(message, attrs...) //nolint:gocritic // Telemetry plumbing - message parameter delegation is safe
+	defaultLogger.Load().Warn(message, attrs...)
 }
 
-// Error sends a telemetry payload with an error log message to the backend using the default logger.
-// SECURITY: Only accepts constant message strings. Use SafeError for error details.
 func Error(message string, attrs ...slog.Attr) {
 	defaultLogger.Load().Error(message, attrs...)
 }
 
-// Debug sends a telemetry payload with a debug log message to the backend
 func (l *Logger) Debug(message string, attrs ...slog.Attr) {
 	record := slog.NewRecord(time.Now(), slog.LevelDebug, message, 0)
 	record.AddAttrs(attrs...)
-	l.writer.LogRecord(record)
+	l.sendLogRecord(record)
 }
 
-// Warn sends a telemetry payload with a warning log message to the backend and the console as a debug log
 func (l *Logger) Warn(message string, attrs ...slog.Attr) {
 	record := slog.NewRecord(time.Now(), slog.LevelWarn, message, 0)
 	record.AddAttrs(attrs...)
-	l.writer.LogRecord(record)
+	l.sendLogRecord(record)
 }
 
-// Error sends a telemetry payload with an error log message to the backend and the console as a debug log.
-// SECURITY: Only accepts constant message strings. Use SafeError with slog.Any() for error details.
-// Example: logger.Error("operation failed", slog.Any("error", SafeError(err)))
 func (l *Logger) Error(message string, attrs ...slog.Attr) {
 	record := slog.NewRecord(time.Now(), slog.LevelError, message, 0)
 	record.AddAttrs(attrs...)
-	l.writer.LogRecord(record)
+	l.sendLogRecord(record)
+}
+
+func (l *Logger) sendLogRecord(r slog.Record) {
+	// Capture PC if:
+	// 1. Logger is configured to always capture PC, OR
+	// 2. Logger has options (which might include WithStacktrace)
+	//    Since we can't inspect option contents without exposing internal types,
+	//    we conservatively capture PC whenever options are present.
+	//    This ensures WithStacktrace() works correctly while keeping the overhead minimal.
+	// Also capturing a single frame is cheap enough to do always.
+	needsPC := l.capturePC || (!l.capturePC && len(l.opts) > 0)
+
+	if needsPC && r.PC == 0 {
+		var pcs [1]uintptr
+		n := runtime.Callers(4, pcs[:])
+		if n > 0 {
+			r.PC = pcs[0]
+		}
+	}
+	sendLog(r, l.opts...)
 }
