@@ -4,6 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:generate go run github.com/tinylib/msgp -o=stacktrace_msgp.go -tests=false
+//go:generate env GOWORK=off go run -C ../../scripts/gencontribs . ../../internal/stacktrace/contribs_generated.go
 
 package stacktrace
 
@@ -33,67 +34,10 @@ var (
 		"github.com/DataDog/orchestrion",
 	}
 
-	// TODO(kakkoyun): Dynamically generate knownThirdPartyLibraries from contrib/ directory structure at build time
-	// This should scan contrib/*/go.mod files and extract third-party library patterns automatically
-	knownThirdPartyLibraries = []string{
-		// Cloud providers
-		"cloud.google.com/go/",
-		"github.com/aws/aws-sdk-go",
-
-		// Web frameworks
-		"github.com/gin-gonic/gin",
-		"github.com/gorilla/mux",
-		"github.com/go-chi/chi",
-		"github.com/labstack/echo",
-		"github.com/gofiber/fiber",
-		"github.com/valyala/fasthttp",
-		"github.com/urfave/negroni",
-		"github.com/julienschmidt/httprouter",
-		"github.com/dimfeld/httptreemux",
-		"github.com/emicklei/go-restful",
-
-		// Databases
-		"go.mongodb.org/mongo-driver",
-		"github.com/go-redis/redis",
-		"github.com/redis/go-redis",
-		"github.com/redis/rueidis",
-		"github.com/valkey-io/valkey-go",
-		"github.com/gomodule/redigo",
-		"github.com/gocql/gocql",
-		"github.com/go-pg/pg",
-		"github.com/jackc/pgx",
-		"github.com/jmoiron/sqlx",
-		"github.com/go-sql-driver/mysql",
-		"github.com/lib/pq",
-		"github.com/denisenkom/go-mssqldb",
-		"github.com/globalsign/mgo",
-		"github.com/syndtr/goleveldb",
-		"github.com/tidwall/buntdb",
-		"gopkg.in/olivere/elastic",
-		"github.com/elastic/go-elasticsearch",
-
-		// Message queues
-		"github.com/Shopify/sarama",
-		"github.com/IBM/sarama",
-		"github.com/segmentio/kafka-go",
-		"github.com/confluentinc/confluent-kafka-go",
-
-		// GraphQL
-		"github.com/99designs/gqlgen",
-		"github.com/graph-gophers/graphql-go",
-		"github.com/graphql-go/graphql",
-
-		// Other integrations
-		"github.com/hashicorp/consul",
-		"github.com/hashicorp/vault",
-		"github.com/bradfitz/gomemcache",
-		"github.com/miekg/dns",
-		"github.com/twitchtv/twirp",
-		"github.com/sirupsen/logrus",
-		"github.com/envoyproxy/go-control-plane",
-		"k8s.io/api",
-		"k8s.io/apimachinery",
-	}
+	// knownThirdPartyLibraries contains third-party library patterns for stack frame classification.
+	// This list is automatically generated from contrib/ directory structure at build time,
+	// with some fallback patterns for libraries not covered by contrib integrations.
+	knownThirdPartyLibraries = generatedThirdPartyLibraries()
 )
 
 // Redaction-specific frame types for secure logging
