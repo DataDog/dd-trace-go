@@ -19,7 +19,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
-const stackTraceKey = "stacktrace"
+const (
+	stackTraceKey      = "stacktrace"
+	telemetryStackSkip = 4 // Skip: CaptureWithRedaction, capture, loggerBackend.add, loggerBackend.Add
+)
 
 type loggerKey struct {
 	tags    string
@@ -28,9 +31,11 @@ type loggerKey struct {
 }
 
 type loggerValue struct {
-	count             atomic.Uint32
-	record            slog.Record
+	count  atomic.Uint32
+	record Record
+
 	captureStacktrace bool
+	stack             stacktrace.StackTrace
 }
 
 type formatter struct {
@@ -54,7 +59,7 @@ func newLoggerBackend(maxDistinctLogs int32) *loggerBackend {
 		maxDistinctLogs: maxDistinctLogs,
 
 		formatters: &sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				buf := &bytes.Buffer{}
 				return &formatter{
 					buffer: buf,
@@ -79,10 +84,10 @@ func newLoggerBackend(maxDistinctLogs int32) *loggerBackend {
 	}
 }
 
-func (logger *loggerBackend) Add(record slog.Record, opts ...LogOption) {
+func (logger *loggerBackend) Add(record Record, opts ...LogOption) {
 	if logger.distinctLogs.Load() >= logger.maxDistinctLogs {
 		logger.onceMaxLogsReached.Do(func() {
-			logger.add(newRecord(LogError, "telemetry: log count exceeded maximum, dropping log"), WithStacktrace())
+			logger.add(NewRecord(LogError, "telemetry: log count exceeded maximum, dropping log"), WithStacktrace())
 		})
 		return
 	}
@@ -90,10 +95,10 @@ func (logger *loggerBackend) Add(record slog.Record, opts ...LogOption) {
 	logger.add(record, opts...)
 }
 
-func (logger *loggerBackend) add(record slog.Record, opts ...LogOption) {
+func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 	key := loggerKey{
-		level:   slogLevelToLogLevel(record.Level),
-		message: record.Message,
+		level:   slogLevelToLogLevel(record.Level()),
+		message: record.Message(),
 	}
 
 	for _, opt := range opts {
@@ -109,11 +114,7 @@ func (logger *loggerBackend) add(record slog.Record, opts ...LogOption) {
 			opt(nil, value)
 		}
 		if value.captureStacktrace {
-			stack := stacktrace.UnwindStackFromPC(value.record.PC, stacktrace.WithRedaction())
-			value.record.AddAttrs(slog.Attr{
-				Key:   stackTraceKey,
-				Value: slog.StringValue(stacktrace.Format(stack)),
-			})
+			value.stack = stacktrace.CaptureWithRedaction(telemetryStackSkip)
 		}
 		logger.distinctLogs.Add(1)
 		return value
@@ -132,16 +133,10 @@ func (logger *loggerBackend) Payload() transport.Payload {
 			Level:      key.level,
 			Tags:       key.tags,
 			Count:      value.count.Load(),
-			TracerTime: value.record.Time.Unix(),
+			TracerTime: value.record.Time().Unix(),
 		}
 		if value.captureStacktrace {
-			value.record.Attrs(func(attr slog.Attr) bool {
-				if attr.Key == stackTraceKey {
-					msg.StackTrace = attr.Value.String()
-					return false
-				}
-				return true
-			})
+			msg.StackTrace = stacktrace.Format(value.stack)
 		}
 		logs = append(logs, msg)
 		return true
@@ -154,9 +149,9 @@ func (logger *loggerBackend) Payload() transport.Payload {
 	return transport.Logs{Logs: logs}
 }
 
-func (logger *loggerBackend) formatMessage(record slog.Record) string {
+func (logger *loggerBackend) formatMessage(record Record) string {
 	if logger.formatters == nil {
-		return record.Message
+		return record.Message()
 	}
 
 	hasAttrs := false
@@ -166,11 +161,11 @@ func (logger *loggerBackend) formatMessage(record slog.Record) string {
 	})
 
 	if !hasAttrs {
-		return record.Message
+		return record.Message()
 	}
 
 	// Capture the message before clearing it.
-	message := record.Message
+	message := record.Message()
 
 	formatter := logger.formatters.Get().(*formatter)
 	defer func() {
@@ -178,9 +173,11 @@ func (logger *loggerBackend) formatMessage(record slog.Record) string {
 		logger.formatters.Put(formatter)
 	}()
 
+	// Create a copy of the internal record for formatting
+	slogRecord := record.record
 	// Clear the message so TextHandler only formats attributes.
-	record.Message = ""
-	formatter.handler.Handle(context.Background(), record)
+	slogRecord.Message = ""
+	formatter.handler.Handle(context.Background(), slogRecord)
 	formattedAttrs := strings.TrimSpace(formatter.buffer.String())
 
 	if formattedAttrs == "" {

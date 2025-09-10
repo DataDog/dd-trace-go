@@ -22,7 +22,7 @@ import (
 var (
 	enabled              = true
 	defaultTopFrameDepth = 8
-	defaultMaxDepth      = 32
+	defaultMaxDepth      = 64
 
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
@@ -44,7 +44,8 @@ var (
 type frameType string
 
 const (
-	defaultCallerSkip    = 4
+	defaultCallerSkip = 4
+
 	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
 	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLE"
 
@@ -112,6 +113,8 @@ type (
 	}
 )
 
+// queue is a simple circular buffer for storing the most recent frames.
+// It is NOT thread-safe and is intended for single-goroutine use only.
 type queue[T any] struct {
 	data       []T
 	head, tail int
@@ -185,15 +188,25 @@ func Capture() StackTrace {
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return skipAndCapture(skip, defaultMaxDepth, internalSymbolPrefixes)
-}
-
-func skipAndCapture(skip int, maxDepth int, symbolSkip []string) StackTrace {
-	opts := frameOptions{
+	return capture(skip, defaultMaxDepth, frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
-		internalPackagePrefixes: symbolSkip,
-	}
+		internalPackagePrefixes: internalSymbolPrefixes,
+	})
+}
+
+// CaptureWithRedaction creates a stack trace with customer code redaction but keeps internal Datadog frames
+// This is designed for telemetry logging where we want to see internal frames for debugging
+// but need to redact customer code for security
+func CaptureWithRedaction(skip int) StackTrace {
+	return capture(skip+1, defaultMaxDepth, frameOptions{
+		skipInternalFrames:      false, // Keep DD internal frames
+		redactCustomerFrames:    true,  // Redact customer code
+		internalPackagePrefixes: internalSymbolPrefixes,
+	})
+}
+
+func capture(skip int, maxDepth int, opts frameOptions) StackTrace {
 	iter := iterator(skip, maxDepth, opts)
 	stack := make([]StackFrame, defaultMaxDepth)
 	nbStoredFrames := 0
@@ -236,7 +249,9 @@ type frameOptions struct {
 // framesIterator is an iterator over the frames of a call stack
 // It skips internal packages and caches the frames to avoid multiple calls to runtime.Callers
 // It also skips the first `skip` frames and can redact customer code for secure logging
-// It is not thread-safe
+//
+// IMPORTANT: This iterator is NOT thread-safe and should only be used within a single goroutine.
+// Each call to Capture/SkipAndCapture/CaptureWithRedaction creates a new iterator instance.
 type framesIterator struct {
 	frameOpts  frameOptions
 	cache      []uintptr
@@ -255,29 +270,6 @@ func iterator(skip, cacheSize int, opts frameOptions) framesIterator {
 		cacheSize:  cacheSize,
 		currDepth:  0,
 	}
-}
-
-func iteratorFromPC(pc uintptr, opts frameOptions) framesIterator {
-	iter := framesIterator{
-		frameOpts:  opts,
-		cache:      []uintptr{pc},
-		frames:     newQueue[runtime.Frame](4),
-		cacheDepth: 0,
-		cacheSize:  1,
-		currDepth:  0,
-	}
-
-	// Pre-populate frames from PC unwinding
-	frames := runtime.CallersFrames([]uintptr{pc})
-	for {
-		frame, more := frames.Next()
-		iter.frames.Add(frame)
-		if !more {
-			break
-		}
-	}
-
-	return iter
 }
 
 // next returns the next runtime.Frame in the call stack, filling the cache if needed
@@ -384,44 +376,6 @@ func classifySymbol(sym symbol, internalPrefixes []string) frameType {
 	}
 
 	return frameTypeCustomer
-}
-
-// UnwindStackFromPC creates a StackTrace from a program counter using existing facilities
-func UnwindStackFromPC(pc uintptr, opts ...UnwindOption) StackTrace {
-	if pc == 0 {
-		return nil
-	}
-
-	cfg := applyUnwindOptions(opts)
-
-	// Configure frame processing for telemetry: skip=no, redact=yes
-	frameOpts := frameOptions{
-		skipInternalFrames:      !cfg.includeInternal,
-		redactCustomerFrames:    cfg.redactUserCode,
-		internalPackagePrefixes: internalSymbolPrefixes,
-	}
-
-	// Create PC iterator for processing frames from the specific PC
-	iter := iteratorFromPC(pc, frameOpts)
-	var stack []StackFrame
-	skippedFrames := 0
-
-	for frame, ok := iter.Next(); ok; frame, ok = iter.Next() {
-		// Skip frames if requested
-		if skippedFrames < cfg.skipFrames {
-			skippedFrames++
-			continue
-		}
-
-		stack = append(stack, frame)
-
-		// Respect max depth
-		if len(stack) >= cfg.maxDepth {
-			break
-		}
-	}
-
-	return stack
 }
 
 // Format converts a StackTrace to a string representation
