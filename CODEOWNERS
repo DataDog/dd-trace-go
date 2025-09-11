@@ -18,6 +18,32 @@
 /contrib/envoyproxy             @DataDog/asm-go
 /contrib/k8s.io/gateway-api     @DataDog/asm-go
 
+# capabilities - config, dynamic config, remote config
+/internal/env                        @DataDog/apm-sdk-api-go
+/internal/stableconfig               @DataDog/apm-sdk-api-go
+/internal/globalconfig               @DataDog/apm-sdk-api-go
+/internal/remoteconfig               @DataDog/apm-sdk-api-go
+/ddtrace/tracer/dynamic_config.go    @DataDog/apm-sdk-api-go
+/ddtrace/tracer/remote_config.go     @DataDog/apm-sdk-api-go
+/ddtrace/tracer/otel_dd_mappings.go  @DataDog/apm-sdk-api-go
+# capabilities - telemetry
+/internal/telemetry                  @DataDog/apm-sdk-api-go
+/ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-api-go
+# capabilities - sampling
+/ddtrace/tracer/tracer.go            @DataDog/apm-sdk-api-go
+/ddtrace/tracer/sampler.go           @DataDog/apm-sdk-api-go
+/ddtrace/tracer/rules_sampler.go     @DataDog/apm-sdk-api-go
+/internal/samplernames               @DataDog/apm-sdk-api-go
+# capabilities - context, propagation, injection/extraction
+/ddtrace/baggage                     @DataDog/apm-sdk-api-go
+/ddtrace/tracer/textmap.go           @DataDog/apm-sdk-api-go
+/ddtrace/tracer/spancontext.go       @DataDog/apm-sdk-api-go
+/ddtrace/tracer/context.go           @DataDog/apm-sdk-api-go
+/ddtrace/tracer/propagator.go        @DataDog/apm-sdk-api-go
+/ddtrace/tracer/propagating_tags.go  @DataDog/apm-sdk-api-go
+# capabilities- OTel integration
+/ddtrace/opentelemetry               @DataDog/apm-sdk-api-go
+
 # datastreams
 /datastreams                    @Datadog/data-streams-monitoring
 /internal/datastreams           @Datadog/data-streams-monitoring
