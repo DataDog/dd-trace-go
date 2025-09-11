@@ -6,7 +6,6 @@
 package log
 
 import (
-	"fmt"
 	"log/slog"
 	"reflect"
 	"strconv"
@@ -81,8 +80,6 @@ func NewSafeSliceWithLimit[T any](items []T, maxItems int) SafeSlice {
 		// Convert item to string safely - only explicit conversions allowed
 		var str string
 		switch v := any(item).(type) {
-		case fmt.Stringer:
-			str = v.String()
 		case string:
 			str = v
 		case int:
