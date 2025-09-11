@@ -193,6 +193,10 @@ func (p *payloadV1) Read(b []byte) (n int, err error) {
 	panic("not implemented")
 }
 
+type spanListV1 spanList
+
+var _ msgp.Encodable = (*spanListV1)(nil)
+
 // Encode the anyValue
 // EncodeMsg implements msgp.Encodable.
 func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
@@ -257,6 +261,41 @@ func encodeKeyValueList(kv keyValueList, e *msgp.Writer) error {
 	return nil
 }
 
+// EncodeMsg writes the contents of the TraceChunk into `p.buf`
+// Span, SpanLink, and SpanEvent structs are different for v0.4 and v1.0.
+// For v1 we need to manually encode the spans, span links, and span events
+// if we don't want to do extra allocations.
+// EncodeMsg implements msgp.Encodable.
+func (s spanListV1) EncodeMsg(e *msgp.Writer) error {
+	err := e.WriteArrayHeader(uint32(len(s)))
+	if err != nil {
+		return msgp.WrapError(err)
+	}
+
+	e.WriteInt32(4)
+	for _, span := range s {
+		if span == nil {
+			err := e.WriteNil()
+			if err != nil {
+				return err
+			}
+		} else {
+			err := encodeSpan(span, e)
+			if err != nil {
+				return msgp.WrapError(err, span)
+			}
+		}
+	}
+
+	return nil
+}
+
+// Custom encoding for spans under the v1 trace protocol.
+func encodeSpan(s *Span, e *msgp.Writer) error {
+	panic("not implemented")
+}
+
+// encodeString and decodeString handles encoding a string to the payload's string table.
 // When writing a string:
 // - use its index in the string table if it exists
 // - otherwise, write the string into the message, then add the string at the next index
