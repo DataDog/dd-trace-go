@@ -7,9 +7,9 @@ package stacktrace
 
 // unwindConfig holds configuration for stack unwinding
 type unwindConfig struct {
-	redactUserCode  bool
 	maxDepth        int
 	skipFrames      int
+	redactUserCode  bool
 	includeInternal bool
 }
 

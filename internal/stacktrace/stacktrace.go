@@ -96,14 +96,21 @@ type (
 
 	// StackFrame represents a single frame in the stack trace
 	StackFrame struct {
-		Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
 		Text      string `msg:"text,omitempty"`       // Text version of the stackframe as a string
 		File      string `msg:"file,omitempty"`       // File name where the code line is
-		Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
-		Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
 		Namespace string `msg:"namespace,omitempty"`  // Namespace is the fully qualified name of the package where the code is
 		ClassName string `msg:"class_name,omitempty"` // ClassName is the fully qualified name of the class where the line of code is
 		Function  string `msg:"function,omitempty"`   // Function is the fully qualified name of the function where the line of code is
+		Index     uint32 `msg:"id"`                   // Index of the frame (0 = top of the stack)
+		Line      uint32 `msg:"line,omitempty"`       // Line number in the context of the file where the code is
+		Column    uint32 `msg:"column,omitempty"`     // Column where the code ran is
+	}
+
+	// RawStackTrace represents captured program counters without symbolication.
+	// This allows for fast capture with deferred processing - symbolication,
+	// skipping, and redaction can be performed later when needed.
+	RawStackTrace struct {
+		PCs []uintptr
 	}
 
 	symbol struct {
@@ -188,27 +195,69 @@ func Capture() StackTrace {
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return capture(skip, defaultMaxDepth, frameOptions{
+	return iterator(skip, defaultMaxDepth, frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: internalSymbolPrefixes,
-	})
+	}).capture()
+}
+
+// CaptureRaw captures only program counters without symbolication.
+// This is significantly faster than full capture as it avoids runtime.CallersFrames
+// and symbol parsing. The skip parameter determines how many frames to skip from
+// the top of the stack (similar to runtime.Callers).
+func CaptureRaw(skip int) RawStackTrace {
+	pcs := make([]uintptr, defaultMaxDepth)
+	n := runtime.Callers(skip, pcs)
+	return RawStackTrace{
+		PCs: pcs[:n],
+	}
 }
 
 // CaptureWithRedaction creates a stack trace with customer code redaction but keeps internal Datadog frames
 // This is designed for telemetry logging where we want to see internal frames for debugging
 // but need to redact customer code for security
 func CaptureWithRedaction(skip int) StackTrace {
-	return capture(skip+1, defaultMaxDepth, frameOptions{
+	return iterator(skip+1, defaultMaxDepth, frameOptions{
 		skipInternalFrames:      false, // Keep DD internal frames
 		redactCustomerFrames:    true,  // Redact customer code
 		internalPackagePrefixes: internalSymbolPrefixes,
-	})
+	}).capture()
 }
 
-func capture(skip int, maxDepth int, opts frameOptions) StackTrace {
-	iter := iterator(skip, maxDepth, opts)
-	stack := make([]StackFrame, defaultMaxDepth)
+// Symbolicate converts raw PCs to a full StackTrace with symbolication,
+// applying the default skipping and redaction rules (skips internal frames,
+// no customer code redaction).
+func (r RawStackTrace) Symbolicate() StackTrace {
+	if len(r.PCs) == 0 {
+		return nil
+	}
+
+	return iteratorFromRaw(r.PCs, frameOptions{
+		skipInternalFrames:      true,
+		redactCustomerFrames:    false,
+		internalPackagePrefixes: internalSymbolPrefixes,
+	}).capture()
+}
+
+// SymbolicateWithRedaction converts raw PCs to a StackTrace with
+// customer code redaction (for telemetry logging). This keeps internal
+// Datadog frames but redacts customer code for security.
+func (r RawStackTrace) SymbolicateWithRedaction() StackTrace {
+	if len(r.PCs) == 0 {
+		return nil
+	}
+
+	return iteratorFromRaw(r.PCs, frameOptions{
+		skipInternalFrames:      false, // Keep DD internal frames
+		redactCustomerFrames:    true,  // Redact customer code
+		internalPackagePrefixes: internalSymbolPrefixes,
+	}).capture()
+}
+
+// capture extracts frames from an iterator using the same algorithm as capture
+func (iter *framesIterator) capture() StackTrace {
+	stack := make([]StackFrame, iter.cacheSize)
 	nbStoredFrames := 0
 	topFramesQueue := newQueue[StackFrame](defaultTopFrameDepth)
 
@@ -241,9 +290,9 @@ func capture(skip int, maxDepth int, opts frameOptions) StackTrace {
 
 // frameOptions configures iterator behavior for frame processing
 type frameOptions struct {
+	internalPackagePrefixes []string // Prefixes for internal packages
 	skipInternalFrames      bool     // Whether to skip internal DD frames
 	redactCustomerFrames    bool     // Whether to redact customer code frames
-	internalPackagePrefixes []string // Prefixes for internal packages
 }
 
 // framesIterator is an iterator over the frames of a call stack
@@ -253,42 +302,91 @@ type frameOptions struct {
 // IMPORTANT: This iterator is NOT thread-safe and should only be used within a single goroutine.
 // Each call to Capture/SkipAndCapture/CaptureWithRedaction creates a new iterator instance.
 type framesIterator struct {
-	frameOpts  frameOptions
-	cache      []uintptr
 	frames     *queue[runtime.Frame]
-	cacheDepth int
+	frameOpts  frameOptions
+	rawPCs     []uintptr
+	cache      []uintptr
 	cacheSize  int
+	cacheDepth int
 	currDepth  int
+	useRawPCs  bool
 }
 
-func iterator(skip, cacheSize int, opts frameOptions) framesIterator {
-	return framesIterator{
+func iterator(skip, cacheSize int, opts frameOptions) *framesIterator {
+	return &framesIterator{
 		frameOpts:  opts,
-		cache:      make([]uintptr, cacheSize),
 		frames:     newQueue[runtime.Frame](cacheSize + 4),
-		cacheDepth: skip,
+		cache:      make([]uintptr, cacheSize),
 		cacheSize:  cacheSize,
+		cacheDepth: skip,
 		currDepth:  0,
+	}
+}
+
+// iteratorFromRaw creates an iterator from pre-captured PCs for deferred symbolication
+func iteratorFromRaw(pcs []uintptr, opts frameOptions) *framesIterator {
+	cacheSize := min(len(pcs), defaultMaxDepth)
+
+	return &framesIterator{
+		frameOpts:  opts,
+		frames:     newQueue[runtime.Frame](cacheSize + 4),
+		cache:      make([]uintptr, cacheSize),
+		cacheSize:  cacheSize,
+		cacheDepth: 0,
+		useRawPCs:  true,
+		rawPCs:     pcs,
+		currDepth:  0,
+	}
+}
+
+// prepareNextBatch returns the next batch of program counters to symbolicate.
+// Returns nil slice if no more frames are available.
+func (it *framesIterator) prepareNextBatch() []uintptr {
+	if it.useRawPCs {
+		// Use pre-captured PCs for deferred symbolication.
+		remaining := len(it.rawPCs) - it.cacheDepth
+		if remaining == 0 {
+			return nil
+		}
+
+		// Process a batch of PCs up to cacheSize.
+		end := min(it.cacheDepth+it.cacheSize, len(it.rawPCs))
+		pcs := it.rawPCs[it.cacheDepth:end]
+		it.cacheDepth = end
+		return pcs
+	}
+
+	// Live mode: call runtime.Callers.
+	n := runtime.Callers(it.cacheDepth, it.cache)
+	if n == 0 {
+		return nil
+	}
+
+	it.cacheDepth += n
+	return it.cache[:n]
+}
+
+// symbolicateFrames converts program counters to runtime.Frame objects
+// and adds them to the frames queue.
+func (it *framesIterator) symbolicateFrames(pcs []uintptr) {
+	frames := runtime.CallersFrames(pcs)
+	for {
+		frame, more := frames.Next()
+		it.frames.Add(frame)
+		if !more {
+			break
+		}
 	}
 }
 
 // next returns the next runtime.Frame in the call stack, filling the cache if needed
 func (it *framesIterator) next() (runtime.Frame, bool) {
 	if it.frames.Length() == 0 {
-		n := runtime.Callers(it.cacheDepth, it.cache)
-		if n == 0 {
+		pcs := it.prepareNextBatch()
+		if pcs == nil {
 			return runtime.Frame{}, false
 		}
-
-		frames := runtime.CallersFrames(it.cache[:n])
-		for {
-			frame, more := frames.Next()
-			it.frames.Add(frame)
-			it.cacheDepth++
-			if !more {
-				break
-			}
-		}
+		it.symbolicateFrames(pcs)
 	}
 
 	it.currDepth++
@@ -335,6 +433,15 @@ func (it *framesIterator) Next() (StackFrame, bool) {
 
 func (it *framesIterator) skipFrame(frame runtime.Frame) bool {
 	if frame.File == "<generated>" {
+		return true
+	}
+
+	// Always skip internal stacktrace implementation methods (but not test functions)
+	funcName := frame.Function
+	if strings.HasPrefix(funcName,
+		"github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*framesIterator).") ||
+		strings.Contains(funcName,
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace.iterator") {
 		return true
 	}
 
