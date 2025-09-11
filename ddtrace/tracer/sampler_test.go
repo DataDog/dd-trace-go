@@ -1891,3 +1891,46 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.NotContains(child.meta, keyKnuthSamplingRate)
 	})
 }
+
+func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
+	assert := assert.New(t)
+
+	testCases := []struct {
+		name     string
+		rate     float64
+		expected string
+	}{
+		{"half", 0.5, "0.5"},
+		{"precision_six_digits", 0.7654321, "0.765432"},
+		{"six_decimals", 0.123456, "0.123456"},
+		{"seven_decimals_rounded", 0.1234567, "0.123457"},
+		{"trailing_zeros", 0.100000, "0.1"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			Start(WithSamplingRules(TraceSamplingRules(
+				Rule{ServiceGlob: "test-service-" + tc.name, Rate: tc.rate},
+			)))
+			tr := getGlobalTracer()
+			defer tr.Stop()
+
+			root := tr.StartSpan("test.operation", ServiceName("test-service-"+tc.name))
+			child := tr.StartSpan("child.operation", ChildOf(root.Context()))
+			child.Finish()
+			root.Finish()
+
+			// Root span should have the sampling rule applied
+			assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
+			assert.Equal(tc.rate, root.metrics[keyRulesSamplerAppliedRate])
+
+			// Root span should have the Knuth sampling rate tag with correctly formatted value
+			assert.Contains(root.meta, keyKnuthSamplingRate)
+			assert.Equal(tc.expected, root.meta[keyKnuthSamplingRate])
+
+			// Child span should not have sampling tags
+			assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
+			assert.NotContains(child.meta, keyKnuthSamplingRate)
+		})
+	}
+}
