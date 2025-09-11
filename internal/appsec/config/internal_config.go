@@ -64,7 +64,7 @@ const (
 	// DefaultObfuscatorValueRegex is the default regexp used to obfuscate values
 	DefaultObfuscatorValueRegex = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:[_-]?phrase)?|secret(?:[_-]?key)?|(?:(?:api|private|public|access)[_-]?)key(?:[_-]?id)?|(?:(?:auth|access|id|refresh)[_-]?)?token|consumer[_-]?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?|jsessionid|phpsessid|asp\.net(?:[_-]|-)sessionid|sid|jwt)(?:\s*=([^;&]+)|"\s*:\s*("[^"]+"|\d+))|bearer\s+([a-z0-9\._\-]+)|token\s*:\s*([a-z0-9]{13})|gh[opsu]_([0-9a-zA-Z]{36})|ey[I-L][\w=-]+\.(ey[I-L][\w=-]+(?:\.[\w.+\/=-]+)?)|[\-]{5}BEGIN[a-z\s]+PRIVATE\sKEY[\-]{5}([^\-]+)[\-]{5}END[a-z\s]+PRIVATE\sKEY|ssh-rsa\s*([a-z0-9\/\.+]{100,})`
 	// DefaultWAFTimeout is the default time limit past which a WAF run will timeout
-	DefaultWAFTimeout = time.Millisecond
+	DefaultWAFTimeout = 2 * time.Millisecond
 	// DefaultTraceRate is the default limit (trace/sec) past which ASM traces are sampled out
 	DefaultTraceRate = 100 // up to 100 appsec traces/s
 )
