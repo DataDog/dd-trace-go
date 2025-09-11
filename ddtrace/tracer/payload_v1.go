@@ -5,7 +5,13 @@
 
 package tracer
 
-import "github.com/tinylib/msgp/msgp"
+import (
+	"bytes"
+	"fmt"
+	"sync"
+
+	"github.com/tinylib/msgp/msgp"
+)
 
 // payloadV1 is a new version of a msgp payload that can be sent to the agent.
 // Be aware that payloadV1 follows the same rules and constraints as payloadV04. That is:
@@ -22,7 +28,9 @@ import "github.com/tinylib/msgp/msgp"
 // Close the request body before attempting to re-use it again!
 type payloadV1 struct {
 	// array of strings referenced in this tracer payload, its chunks and spans
-	strings []string `msgp:"strings"`
+	// stringTable holds references from a string value to an index.
+	// the 0th position in the stringTable should always be the empty string.
+	strings stringTable `msgp:"strings"`
 
 	// the string ID of the container where the tracer is running
 	containerID uint32 `msgp:"containerID"`
@@ -56,6 +64,19 @@ type payloadV1 struct {
 
 	// protocolVersion specifies the trace protocol to use.
 	protocolVersion float64
+
+	// buf holds the sequence of msgpack-encoded items.
+	buf bytes.Buffer
+
+	// reader is used for reading the contents of buf.
+	reader *bytes.Reader
+}
+
+type stringTable struct {
+	m         sync.Mutex
+	strings   []string          // list of strings
+	indices   map[string]uint32 // map strings to their indices
+	nextIndex uint32            // last index of the stringTable
 }
 
 // AnyValue is a representation of the `any` value. It can take the following types:
@@ -72,11 +93,6 @@ type anyValue struct {
 	value     interface{}
 }
 
-// EncodeMsg implements msgp.Encodable.
-func (a *anyValue) EncodeMsg(*msgp.Writer) error {
-	panic("unimplemented")
-}
-
 var _ msgp.Encodable = (*anyValue)(nil)
 
 const (
@@ -89,7 +105,7 @@ const (
 	keyValueListType            // []keyValue
 )
 
-type arrayValue = []anyValue
+type arrayValue []anyValue
 
 // keyValue is made up of the key and an AnyValue (the type of the value and the value itself)
 type keyValue struct {
@@ -97,15 +113,21 @@ type keyValue struct {
 	value anyValue
 }
 
-type keyValueList = []keyValue
+type keyValueList []keyValue
+
+var _ msgp.Encodable = (*keyValue)(nil)
 
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
 		protocolVersion: traceProtocolV1,
-		strings:         make([]string, 0),
 		attributes:      make(map[uint32]anyValue),
 		chunks:          make([]traceChunk, 0),
+		strings: stringTable{
+			strings:   []string{""},
+			indices:   map[string]uint32{"": 0},
+			nextIndex: 1,
+		},
 	}
 }
 
@@ -113,7 +135,14 @@ func newPayloadV1() *payloadV1 {
 func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
 	// Conceptually, our `t []*Span` corresponds to one `traceChunk`.
-	return payloadStats{}, nil
+	p.chunks = append(p.chunks, traceChunk{
+		spans: t,
+	})
+	if err := msgp.Encode(&p.buf, t); err != nil { // TODO(hannahkm): this needs to call (spanListV1).EncodeMsg
+		return payloadStats{}, err
+	}
+	p.recordItem()
+	return p.stats(), nil
 }
 
 func (p *payloadV1) grow(n int) {
@@ -129,6 +158,7 @@ func (p *payloadV1) clear() {
 }
 
 func (p *payloadV1) recordItem() {
+	// atomic.AddUint32(&p.count, 1)
 	panic("not implemented")
 }
 
@@ -145,7 +175,7 @@ func (p *payloadV1) itemCount() int {
 }
 
 func (p *payloadV1) protocol() float64 {
-	panic("not implemented")
+	return p.protocolVersion
 }
 
 // Close implements io.Closer
@@ -160,5 +190,79 @@ func (p *payloadV1) Write(data []byte) (n int, err error) {
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
 func (p *payloadV1) Read(b []byte) (n int, err error) {
+	panic("not implemented")
+}
+
+// Encode the anyValue
+// EncodeMsg implements msgp.Encodable.
+func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
+	switch a.valueType {
+	case StringValueType:
+		e.WriteInt32(StringValueType)
+		return encodeString(a.value.(string), e)
+	case BoolValueType:
+		e.WriteInt32(BoolValueType)
+		return e.WriteBool(a.value.(bool))
+	case FloatValueType:
+		e.WriteInt32(FloatValueType)
+		return e.WriteFloat64(a.value.(float64))
+	case IntValueType:
+		e.WriteInt32(IntValueType)
+		return e.WriteUint64(a.value.(uint64))
+	case BytesValueType:
+		e.WriteInt32(BytesValueType)
+		return e.WriteBytes(a.value.([]byte))
+	default:
+		return fmt.Errorf("invalid value type: %d", a.valueType)
+	}
+}
+
+// EncodeMsg implements msgp.Encodable.
+func (av arrayValue) EncodeMsg(e *msgp.Writer) error {
+	err := e.WriteArrayHeader(uint32(len(av)))
+	if err != nil {
+		return err
+	}
+	for _, value := range av {
+		if err := value.EncodeMsg(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EncodeMsg implements msgp.Encodable.
+func (k keyValue) EncodeMsg(e *msgp.Writer) error {
+	err := e.WriteUint32(k.key)
+	if err != nil {
+		return err
+	}
+	err = k.value.EncodeMsg(e)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func encodeKeyValueList(kv keyValueList, e *msgp.Writer) error {
+	err := e.WriteMapHeader(uint32(len(kv)))
+	if err != nil {
+		return err
+	}
+	for _, k := range kv {
+		if err := k.value.EncodeMsg(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// When writing a string:
+// - use its index in the string table if it exists
+// - otherwise, write the string into the message, then add the string at the next index
+// When reading a string, check that it is a uint and then:
+// - if true, check read up the index position and return that position
+// - else, add it to thenext index position and return that position
+func encodeString(s string, e *msgp.Writer) error {
 	panic("not implemented")
 }
