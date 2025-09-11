@@ -35,7 +35,7 @@ type loggerValue struct {
 	record Record
 
 	captureStacktrace bool
-	stack             stacktrace.StackTrace
+	rawStack          stacktrace.RawStackTrace
 }
 
 type formatter struct {
@@ -114,7 +114,7 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 			opt(nil, value)
 		}
 		if value.captureStacktrace {
-			value.stack = stacktrace.CaptureWithRedaction(telemetryStackSkip)
+			value.rawStack = stacktrace.CaptureRaw(telemetryStackSkip)
 		}
 		logger.distinctLogs.Add(1)
 		return value
@@ -136,7 +136,7 @@ func (logger *loggerBackend) Payload() transport.Payload {
 			TracerTime: value.record.Time().Unix(),
 		}
 		if value.captureStacktrace {
-			msg.StackTrace = stacktrace.Format(value.stack)
+			msg.StackTrace = stacktrace.Format(value.rawStack.SymbolicateWithRedaction())
 		}
 		logs = append(logs, msg)
 		return true
@@ -173,11 +173,9 @@ func (logger *loggerBackend) formatMessage(record Record) string {
 		logger.formatters.Put(formatter)
 	}()
 
-	// Create a copy of the internal record for formatting
-	slogRecord := record.record
 	// Clear the message so TextHandler only formats attributes.
-	slogRecord.Message = ""
-	formatter.handler.Handle(context.Background(), slogRecord)
+	record.record.Message = ""
+	formatter.handler.Handle(context.Background(), record.record)
 	formattedAttrs := strings.TrimSpace(formatter.buffer.String())
 
 	if formattedAttrs == "" {
