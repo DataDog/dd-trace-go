@@ -55,9 +55,11 @@ func Start(opts ...config.StartOption) {
 	// and enforces to have AppSec disabled.
 	mode, modeOrigin, err := startConfig.EnablementMode()
 	if err != nil {
-		logUnexpectedStartError(err)
-		return
+		// Even when DD_APPSEC_ENABLED is an empty string or unset, an error can be returned here
+		log.Debug("appsec: could not determine the AppSec enablement mode from DD_APPSEC_ENABLED: %s", err.Error())
 	}
+
+	defer registerAppsecStartTelemetry(mode, modeOrigin)
 
 	if mode == config.ForcedOff {
 		log.Debug("appsec: disabled by the configuration: set the environment variable DD_APPSEC_ENABLED to true to enable it")
@@ -111,7 +113,6 @@ func Start(opts ...config.StartOption) {
 		return
 	}
 
-	registerAppsecStartTelemetry(mode, modeOrigin)
 	setActiveAppSec(appsec)
 }
 
