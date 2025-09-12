@@ -131,6 +131,13 @@ func newPayloadV1() *payloadV1 {
 	}
 }
 
+var _ msgp.Encodable = (*payloadV1)(nil)
+
+// EncodeMsg implements msgp.Encodable.
+func (p *payloadV1) EncodeMsg(e *msgp.Writer) error {
+	panic("not implemented")
+}
+
 // push pushes a new item into the stream.
 func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
@@ -203,7 +210,11 @@ func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
 	switch a.valueType {
 	case StringValueType:
 		e.WriteInt32(StringValueType)
-		return encodeString(a.value.(string), e)
+		v, err := encodeString(a.value.(string))
+		if err != nil {
+			return err
+		}
+		return e.WriteUint32(v)
 	case BoolValueType:
 		e.WriteInt32(BoolValueType)
 		return e.WriteBool(a.value.(bool))
@@ -216,6 +227,9 @@ func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
 	case BytesValueType:
 		e.WriteInt32(BytesValueType)
 		return e.WriteBytes(a.value.([]byte))
+	case ArrayValueType:
+		e.WriteInt32(ArrayValueType)
+		return a.value.(arrayValue).EncodeMsg(e)
 	default:
 		return fmt.Errorf("invalid value type: %d", a.valueType)
 	}
@@ -253,8 +267,13 @@ func encodeKeyValueList(kv keyValueList, e *msgp.Writer) error {
 	if err != nil {
 		return err
 	}
-	for _, k := range kv {
-		if err := k.value.EncodeMsg(e); err != nil {
+	for i, k := range kv {
+		err := e.WriteUint32(uint32(i))
+		if err != nil {
+			return err
+		}
+		err = k.EncodeMsg(e)
+		if err != nil {
 			return err
 		}
 	}
@@ -291,17 +310,101 @@ func (s spanListV1) EncodeMsg(e *msgp.Writer) error {
 }
 
 // Custom encoding for spans under the v1 trace protocol.
+// The encoding of attributes is the combination of the meta, metrics, and metaStruct fields of the v0.4 protocol.
 func encodeSpan(s *Span, e *msgp.Writer) error {
-	panic("not implemented")
+	kv := keyValueList{
+		{key: 1, value: anyValue{valueType: StringValueType, value: s.service}},      // service
+		{key: 2, value: anyValue{valueType: StringValueType, value: s.name}},         // name
+		{key: 3, value: anyValue{valueType: StringValueType, value: s.resource}},     // resource
+		{key: 4, value: anyValue{valueType: IntValueType, value: s.spanID}},          // spanID
+		{key: 5, value: anyValue{valueType: IntValueType, value: s.parentID}},        // parentID
+		{key: 6, value: anyValue{valueType: IntValueType, value: s.start}},           // start
+		{key: 7, value: anyValue{valueType: IntValueType, value: s.duration}},        // duration
+		{key: 8, value: anyValue{valueType: BoolValueType, value: s.error}},          // error
+		{key: 10, value: anyValue{valueType: StringValueType, value: s.spanType}},    // type
+		{key: 11, value: anyValue{valueType: keyValueListType, value: s.spanLinks}},  // SpanLink
+		{key: 12, value: anyValue{valueType: keyValueListType, value: s.spanEvents}}, // SpanEvent
+		{key: 15, value: anyValue{valueType: StringValueType, value: s.integration}}, // component
+	}
+
+	// encode meta attributes
+	attr := keyValueList{}
+	for k, v := range s.meta {
+		idx, err := encodeString(k)
+		if err != nil {
+			// print something here
+		}
+		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: StringValueType, value: v}})
+	}
+
+	// encode metric attributes
+	for k, v := range s.metrics {
+		idx, err := encodeString(k)
+		if err != nil {
+			// print something here
+		}
+		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: FloatValueType, value: v}})
+	}
+
+	// encode metaStruct attributes
+	for k, v := range s.metaStruct {
+		idx, err := encodeString(k)
+		if err != nil {
+			// print something here
+		}
+		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
+	}
+
+	kv = append(kv, keyValue{key: 9, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+
+	env, ok := s.meta["env"]
+	if ok {
+		kv = append(kv, keyValue{key: 13, value: anyValue{valueType: StringValueType, value: env}}) // env
+	}
+	version, ok := s.meta["version"]
+	if ok {
+		kv = append(kv, keyValue{key: 14, value: anyValue{valueType: StringValueType, value: version}}) // version
+	}
+
+	return encodeKeyValueList(kv, e)
 }
 
 // encodeString and decodeString handles encoding a string to the payload's string table.
 // When writing a string:
 // - use its index in the string table if it exists
 // - otherwise, write the string into the message, then add the string at the next index
+// Returns the index of the string in the string table, and an error if there is one
+func encodeString(s string) (uint32, error) {
+	panic("not implemented")
+}
+
 // When reading a string, check that it is a uint and then:
 // - if true, check read up the index position and return that position
-// - else, add it to thenext index position and return that position
-func encodeString(s string, e *msgp.Writer) error {
+// - else, add it to the next index position and return that position
+func decodeString(i uint32, e *msgp.Writer) (string, error) {
 	panic("not implemented")
+}
+
+func encodeSpanLinks(sl []SpanLink, e *msgp.Writer) error {
+	panic("not implemented")
+}
+
+func encodeSpanEvents(se []spanEvent, e *msgp.Writer) error {
+	panic("not implemented")
+}
+
+func getAnyValueType(v any) int {
+	switch v.(type) {
+	case string:
+		return StringValueType
+	case bool:
+		return BoolValueType
+	case float64:
+		return FloatValueType
+	case float32:
+		return FloatValueType
+	case []byte:
+		return BytesValueType
+	}
+	return IntValueType
 }
