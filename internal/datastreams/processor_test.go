@@ -334,7 +334,6 @@ func TestSetCheckpoint(t *testing.T) {
 }
 
 func TestSetCheckpointProcessTags(t *testing.T) {
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 	processtags.Reload()
 	pTags := processtags.GlobalTags().Slice()
 	require.NotEmpty(t, pTags)
@@ -421,7 +420,6 @@ func BenchmarkSetCheckpoint(b *testing.B) {
 }
 
 func BenchmarkSetCheckpointProcessTags(b *testing.B) {
-	b.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 	processtags.Reload()
 
 	client := &http.Client{

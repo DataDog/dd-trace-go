@@ -6,15 +6,15 @@
 package processtags
 
 import (
-	"github.com/stretchr/testify/assert"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestProcessTags(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 		Reload()
 
 		wantTagsRe := regexp.MustCompile(`^entrypoint\.basedir:[a-zA-Z0-9._-]+,entrypoint\.name:[a-zA-Z0-9._-]+,entrypoint.type:executable,entrypoint\.workdir:[a-zA-Z0-9._-]+$`)
