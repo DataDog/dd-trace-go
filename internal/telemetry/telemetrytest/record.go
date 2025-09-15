@@ -135,8 +135,8 @@ func (r *RecordClient) Log(record telemetry.Record, _ ...telemetry.LogOption) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Logs = append(r.Logs, LogLine{
-		Level: slogLevelToLogLevel(record.Level()),
-		Text:  record.Message(),
+		Level: slogLevelToLogLevel(record.Level),
+		Text:  record.Message,
 	})
 }
 

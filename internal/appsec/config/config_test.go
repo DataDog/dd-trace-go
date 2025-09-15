@@ -57,10 +57,10 @@ func TestSCAEnabled(t *testing.T) {
 			telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar}}).Return()
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
 
-			var logMatcher interface{}
+			var logMatcher any
 			if tc.telemetryLog != "" {
 				logMatcher = mock.MatchedBy(func(record telemetry.Record) bool {
-					return strings.HasPrefix(record.Message(), tc.telemetryLog)
+					return strings.HasPrefix(record.Message, tc.telemetryLog)
 				})
 				telemetryClient.On("Log", logMatcher, []telemetry.LogOption(nil)).Return()
 			}

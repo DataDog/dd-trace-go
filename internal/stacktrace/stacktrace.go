@@ -22,7 +22,7 @@ import (
 var (
 	enabled              = true
 	defaultTopFrameDepth = 8
-	defaultMaxDepth      = 64
+	defaultMaxDepth      = 32
 
 	// internalPackagesPrefixes is the list of prefixes for internal packages that should be hidden in the stack trace
 	internalSymbolPrefixes = []string{
@@ -542,6 +542,7 @@ func isStandardLibraryPackage(pkg string) bool {
 	// Standard library detection: no dot in the first path element
 	// Mirrors go/build's IsStandardImportPath.
 	// For standard library imports, the first element doesn't contain a dot.
+	// See: https://github.com/golang/go/blob/861c90c907db1129dcd1540eecd3c66b6309db7a/src/cmd/go/internal/search/search.go#L529
 	// Examples:
 	//   "fmt" -> first element "fmt" (no dot) -> standard library
 	//   "net/http" -> first element "net" (no dot) -> standard library

@@ -119,7 +119,7 @@ func Start(opts ...config.StartOption) {
 
 // Implement the AppSec log message C1
 func logUnexpectedStartError(err error) {
-	telemetrylog.Error("appsec: could not start because of an unexpected error: %s\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", slog.Any("error", telemetrylog.NewSafeError(err)))
+	log.Error("appsec: could not start because of an unexpected error: %s\nNo security activities will be collected. Please contact support at https://docs.datadoghq.com/help/ for help.", err.Error())
 
 	telemetrylog.Error("appsec: could not start because of an unexpected error", slog.Any("error", telemetrylog.NewSafeError(err)))
 	telemetry.ProductStartError(telemetry.NamespaceAppSec, err)

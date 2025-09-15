@@ -97,8 +97,8 @@ func (logger *loggerBackend) Add(record Record, opts ...LogOption) {
 
 func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 	key := loggerKey{
-		level:   slogLevelToLogLevel(record.Level()),
-		message: record.Message(),
+		level:   slogLevelToLogLevel(record.Level),
+		message: record.Message,
 	}
 
 	for _, opt := range opts {
@@ -133,7 +133,7 @@ func (logger *loggerBackend) Payload() transport.Payload {
 			Level:      key.level,
 			Tags:       key.tags,
 			Count:      value.count.Load(),
-			TracerTime: value.record.Time().Unix(),
+			TracerTime: value.record.Time.Unix(),
 		}
 		if value.captureStacktrace {
 			msg.StackTrace = stacktrace.Format(value.rawStack.SymbolicateWithRedaction())
@@ -151,7 +151,7 @@ func (logger *loggerBackend) Payload() transport.Payload {
 
 func (logger *loggerBackend) formatMessage(record Record) string {
 	if logger.formatters == nil {
-		return record.Message()
+		return record.Message
 	}
 
 	hasAttrs := false
@@ -161,11 +161,11 @@ func (logger *loggerBackend) formatMessage(record Record) string {
 	})
 
 	if !hasAttrs {
-		return record.Message()
+		return record.Message
 	}
 
 	// Capture the message before clearing it.
-	message := record.Message()
+	message := record.Message
 
 	formatter := logger.formatters.Get().(*formatter)
 	defer func() {
@@ -174,8 +174,8 @@ func (logger *loggerBackend) formatMessage(record Record) string {
 	}()
 
 	// Clear the message so TextHandler only formats attributes.
-	record.record.Message = ""
-	formatter.handler.Handle(context.Background(), record.record)
+	record.Message = ""
+	formatter.handler.Handle(context.Background(), record.Record)
 	formattedAttrs := strings.TrimSpace(formatter.buffer.String())
 
 	if formattedAttrs == "" {

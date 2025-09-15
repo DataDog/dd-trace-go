@@ -177,8 +177,8 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
 	if !ok {
 		log.Debug("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
-		logger := telemetrylog.With(telemetry.WithTags([]string{"product:appsec"}))
-		logger.Warn("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
+		telemetrylog.With(telemetry.WithTags([]string{"product:appsec"})).
+			Warn("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
 		return nil
 	}
 

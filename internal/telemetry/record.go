@@ -12,7 +12,7 @@ import (
 )
 
 type Record struct {
-	record slog.Record
+	slog.Record
 }
 
 func logLevelToSlogLevel(level LogLevel) slog.Level {
@@ -45,35 +45,11 @@ func NewRecord(level LogLevel, message string) Record {
 	var pcs [1]uintptr
 	runtime.Callers(3, pcs[:])
 	return Record{
-		record: slog.Record{
+		Record: slog.Record{
 			Time:    time.Now(),
 			Level:   logLevelToSlogLevel(level),
 			Message: message,
 			PC:      pcs[0],
 		},
 	}
-}
-
-func (r *Record) AddAttrs(attrs ...slog.Attr) {
-	r.record.AddAttrs(attrs...)
-}
-
-func (r *Record) Time() time.Time {
-	return r.record.Time
-}
-
-func (r *Record) Level() slog.Level {
-	return r.record.Level
-}
-
-func (r *Record) Message() string {
-	return r.record.Message
-}
-
-func (r *Record) Attrs(f func(slog.Attr) bool) {
-	r.record.Attrs(f)
-}
-
-func (r *Record) PC() uintptr {
-	return r.record.PC
 }

@@ -30,36 +30,36 @@ func TestLogger_PCCapture(t *testing.T) {
 	t.Run("Debug captures PC", func(t *testing.T) {
 		logger.Debug("debug message", slog.String("key", "value"))
 
-		assert.Equal(t, "debug message", capturedRecord.Message())
-		assert.Equal(t, slog.LevelDebug, capturedRecord.Level())
+		assert.Equal(t, "debug message", capturedRecord.Message)
+		assert.Equal(t, slog.LevelDebug, capturedRecord.Level)
 		// PC should be captured
-		assert.NotZero(t, capturedRecord.PC())
+		assert.NotZero(t, capturedRecord.PC)
 	})
 
 	t.Run("Warn captures PC", func(t *testing.T) {
 		logger.Warn("warn message", slog.String("key", "value"))
 
-		assert.Equal(t, "warn message", capturedRecord.Message())
-		assert.Equal(t, slog.LevelWarn, capturedRecord.Level())
-		assert.NotZero(t, capturedRecord.PC())
+		assert.Equal(t, "warn message", capturedRecord.Message)
+		assert.Equal(t, slog.LevelWarn, capturedRecord.Level)
+		assert.NotZero(t, capturedRecord.PC)
 	})
 
 	t.Run("Error captures PC", func(t *testing.T) {
 		logger.Error("error message", slog.String("key", "value"))
 
-		assert.Equal(t, "error message", capturedRecord.Message())
-		assert.Equal(t, slog.LevelError, capturedRecord.Level())
-		assert.NotZero(t, capturedRecord.PC())
+		assert.Equal(t, "error message", capturedRecord.Message)
+		assert.Equal(t, slog.LevelError, capturedRecord.Level)
+		assert.NotZero(t, capturedRecord.PC)
 	})
 }
 
 func TestNewRecord_PCCapture(t *testing.T) {
 	record := telemetry.NewRecord(telemetry.LogError, "test message")
 
-	assert.Equal(t, "test message", record.Message())
-	assert.Equal(t, slog.LevelError, record.Level())
-	assert.NotZero(t, record.PC())
-	assert.NotZero(t, record.Time())
+	assert.Equal(t, "test message", record.Message)
+	assert.Equal(t, slog.LevelError, record.Level)
+	assert.NotZero(t, record.PC)
+	assert.NotZero(t, record.Time)
 }
 
 func TestLogger_With(t *testing.T) {
@@ -88,20 +88,20 @@ func TestGlobalFunctions(t *testing.T) {
 
 	t.Run("Debug", func(t *testing.T) {
 		Debug("debug message")
-		assert.Equal(t, "debug message", capturedRecord.Message())
-		assert.Equal(t, slog.LevelDebug, capturedRecord.Level())
+		assert.Equal(t, "debug message", capturedRecord.Message)
+		assert.Equal(t, slog.LevelDebug, capturedRecord.Level)
 	})
 
 	t.Run("Warn", func(t *testing.T) {
 		Warn("warn message")
-		assert.Equal(t, "warn message", capturedRecord.Message())
-		assert.Equal(t, slog.LevelWarn, capturedRecord.Level())
+		assert.Equal(t, "warn message", capturedRecord.Message)
+		assert.Equal(t, slog.LevelWarn, capturedRecord.Level)
 	})
 
 	t.Run("Error", func(t *testing.T) {
 		Error("error message")
-		assert.Equal(t, "error message", capturedRecord.Message())
-		assert.Equal(t, slog.LevelError, capturedRecord.Level())
+		assert.Equal(t, "error message", capturedRecord.Message)
+		assert.Equal(t, slog.LevelError, capturedRecord.Level)
 	})
 }
 
@@ -131,7 +131,7 @@ func TestDifferentLocations(t *testing.T) {
 	// Records from different functions might have different PCs
 	// But in this test context, they might be the same due to similar call patterns
 	// The key is that the PC capture mechanism works correctly
-	pc1, pc2 := records[0].PC(), records[1].PC()
+	pc1, pc2 := records[0].PC, records[1].PC
 	if pc1 != pc2 {
 		t.Log("Great! Different call sites produced different PCs")
 	} else {
@@ -162,9 +162,9 @@ func TestStackTraceIntegration(t *testing.T) {
 	logger := With(telemetry.WithStacktrace())
 	logger.Error("error with stacktrace")
 
-	assert.Equal(t, "error with stacktrace", capturedRecord.Message())
+	assert.Equal(t, "error with stacktrace", capturedRecord.Message)
 	assert.Len(t, capturedOpts, 1) // Should have WithStacktrace option
-	assert.NotZero(t, capturedRecord.PC())
+	assert.NotZero(t, capturedRecord.PC)
 }
 
 // Benchmark to ensure PC capture is fast
@@ -199,9 +199,9 @@ func TestPCCapture(t *testing.T) {
 	record := telemetry.NewRecord(telemetry.LogError, "test")
 
 	// PC should be non-zero
-	assert.NotZero(t, record.PC())
+	assert.NotZero(t, record.PC)
 
 	// PC should be within reasonable range (not obviously corrupted)
-	pc := record.PC()
+	pc := record.PC
 	assert.Greater(t, pc, uintptr(0x1000)) // Should be a reasonable program counter
 }
