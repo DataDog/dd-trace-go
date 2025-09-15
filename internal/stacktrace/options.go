@@ -50,22 +50,3 @@ func WithInternalFrames(include bool) UnwindOption {
 		cfg.includeInternal = include
 	}
 }
-
-// defaultUnwindConfig returns the default configuration for stack unwinding
-func defaultUnwindConfig() unwindConfig {
-	return unwindConfig{
-		redactUserCode:  true,            // Secure by default
-		maxDepth:        defaultMaxDepth, // Use package default
-		skipFrames:      0,               // Don't skip frames by default
-		includeInternal: true,            // Include internal frames by default
-	}
-}
-
-// applyUnwindOptions applies functional options to create final configuration
-func applyUnwindOptions(opts []UnwindOption) unwindConfig {
-	cfg := defaultUnwindConfig()
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-	return cfg
-}

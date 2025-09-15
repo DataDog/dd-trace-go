@@ -227,38 +227,16 @@ func TestParseSymbol(t *testing.T) {
 	}
 }
 
-func recursiveBench(i int, depth int, b *testing.B) StackTrace {
-	if i == 0 {
-		b.StartTimer()
-		stack := CaptureWithRedaction(defaultCallerSkip) // Note: depth parameter removed for simplicity
-		b.StopTimer()
-		return stack
-	}
-
-	return recursiveBench(i-1, depth, b)
-}
-
-func BenchmarkCaptureStackTrace(b *testing.B) {
-	for _, depth := range []int{10, 20, 50, 100, 200} {
-		b.Run(fmt.Sprintf("%v", depth), func(b *testing.B) {
-			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
-			for n := 0; n < b.N; n++ {
-				runtime.KeepAlive(recursiveBench(depth, depth, b))
-			}
-		})
-	}
-}
-
 func BenchmarkCaptureWithRedaction(b *testing.B) {
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("depth_%d", depth), func(b *testing.B) {
 			originalMaxDepth := defaultMaxDepth
 			defaultMaxDepth = depth * 2 // Ensure we capture the full stack
-			defer func() { defaultMaxDepth = originalMaxDepth }()
+			b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
 
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				stack := recursiveBenchRedaction(depth, depth, b)
+				stack := recursiveBenchRedaction(depth, b)
 				runtime.KeepAlive(stack)
 			}
 		})
@@ -269,12 +247,12 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 	const depth = 50
 	originalMaxDepth := defaultMaxDepth
 	defaultMaxDepth = depth * 2
-	defer func() { defaultMaxDepth = originalMaxDepth }()
+	b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
 
 	b.Run("SkipAndCapture", func(b *testing.B) {
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
-			stack := recursiveBenchSkip(depth, depth, b)
+			stack := recursiveBenchSkip(depth, b)
 			runtime.KeepAlive(stack)
 		}
 	})
@@ -282,24 +260,24 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 	b.Run("CaptureWithRedaction", func(b *testing.B) {
 		b.ResetTimer()
 		for n := 0; n < b.N; n++ {
-			stack := recursiveBenchRedaction(depth, depth, b)
+			stack := recursiveBenchRedaction(depth, b)
 			runtime.KeepAlive(stack)
 		}
 	})
 }
 
-func recursiveBenchRedaction(i int, depth int, b *testing.B) StackTrace {
+func recursiveBenchRedaction(i int, b *testing.B) StackTrace {
 	if i == 0 {
 		return CaptureWithRedaction(defaultCallerSkip)
 	}
-	return recursiveBenchRedaction(i-1, depth, b)
+	return recursiveBenchRedaction(i-1, b)
 }
 
-func recursiveBenchSkip(i int, depth int, b *testing.B) StackTrace {
+func recursiveBenchSkip(i int, b *testing.B) StackTrace {
 	if i == 0 {
 		return SkipAndCapture(defaultCallerSkip)
 	}
-	return recursiveBenchSkip(i-1, depth, b)
+	return recursiveBenchSkip(i-1, b)
 }
 
 func TestShouldRedactSymbol_DatadogFrames(t *testing.T) {

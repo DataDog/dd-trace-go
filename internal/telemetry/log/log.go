@@ -44,8 +44,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-var sendLog func(r telemetry.Record, opts ...telemetry.LogOption) = telemetry.Log
-
 type Logger struct {
 	opts []telemetry.LogOption
 }
@@ -53,9 +51,7 @@ type Logger struct {
 var (
 	// defaultLogger is the global logger instance with no pre-configured options
 	defaultLogger atomic.Pointer[Logger]
-
-	// defaultCapturePC is whether to capture the program counter for stack traces
-	defaultCapturePC = true
+	sendLog       func(r telemetry.Record, opts ...telemetry.LogOption) = telemetry.Log
 )
 
 func init() {
