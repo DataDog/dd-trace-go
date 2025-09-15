@@ -39,6 +39,15 @@ var (
 	// This list is automatically generated from contrib/ directory structure at build time,
 	// with some fallback patterns for libraries not covered by contrib integrations.
 	knownThirdPartyLibraries = generatedThirdPartyLibraries()
+
+	// thirdPartyTrie provides fast O(m) prefix matching for third-party libraries
+	// where m is the length of the string being checked, rather than O(n) linear search
+	// where n is the number of prefixes (765+ libraries). This provides significant
+	// performance improvements especially for stack trace generation.
+	thirdPartyTrie *segmentPrefixTrie
+
+	// internalPrefixTrie provides fast prefix matching for internal package prefixes
+	internalPrefixTrie *segmentPrefixTrie
 )
 
 // Redaction-specific frame types for secure logging
@@ -84,6 +93,12 @@ func init() {
 	}
 
 	defaultTopFrameDepth = defaultMaxDepth / 4
+
+	thirdPartyTrie = newSegmentPrefixTrie()
+	thirdPartyTrie.InsertAll(slices.Concat(knownThirdPartyLibraries, []string{"golang.org/"}))
+
+	internalPrefixTrie = newSegmentPrefixTrie()
+	internalPrefixTrie.InsertAll(internalSymbolPrefixes)
 }
 
 // Enabled returns whether stacktrace should be collected
@@ -447,10 +462,8 @@ func (it *framesIterator) skipFrame(frame runtime.Frame) bool {
 	}
 
 	if it.frameOpts.skipInternalFrames {
-		for _, prefix := range it.frameOpts.internalPackagePrefixes {
-			if strings.HasPrefix(frame.Function, prefix) {
-				return true
-			}
+		if internalPrefixTrie.HasPrefix(frame.Function) {
+			return true
 		}
 	}
 
@@ -533,12 +546,7 @@ func Format(stack StackTrace) string {
 
 // isKnownThirdPartyLibrary checks if a package is a known third-party library
 func isKnownThirdPartyLibrary(pkg string) bool {
-	for _, lib := range slices.Concat(knownThirdPartyLibraries, []string{"golang.org/"}) {
-		if strings.HasPrefix(pkg, lib) {
-			return true
-		}
-	}
-	return false
+	return thirdPartyTrie.HasPrefix(pkg)
 }
 
 // isStandardLibraryPackage checks if a package is from Go's standard library
