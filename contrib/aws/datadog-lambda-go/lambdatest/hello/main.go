@@ -14,8 +14,8 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	ddlambda "github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go"
-	httptrace "github.com/DataDog/dd-trace-go/v2/contrib/net/http"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-lambda-go/events"
 )
