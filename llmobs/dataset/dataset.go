@@ -21,7 +21,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/dne"
+	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/transport"
 )
 
 const experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
@@ -106,7 +106,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 		opt(cfg)
 	}
 
-	resp, err := llmobs.DNEClient.DatasetCreate(ctx, name, cfg.description)
+	resp, err := llmobs.Transport.DatasetCreate(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -143,7 +143,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 		opt(cfg)
 	}
 	// 1) Create dataset
-	resp, err := llmobs.DNEClient.DatasetCreate(ctx, name, cfg.description)
+	resp, err := llmobs.Transport.DatasetCreate(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -249,7 +249,7 @@ func Pull(ctx context.Context, name string) (*Dataset, error) {
 	if err != nil {
 		return nil, err
 	}
-	dsResp, recordsResp, err := llmobs.DNEClient.DatasetGetWithRecords(ctx, name)
+	dsResp, recordsResp, err := llmobs.Transport.DatasetGetWithRecords(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
@@ -390,21 +390,21 @@ func (d *Dataset) Push(ctx context.Context) error {
 	d.initialize()
 
 	insertOldIDs := make([]string, 0, len(d.appendRecords))
-	insert := make([]dne.DatasetRecordCreate, 0, len(d.appendRecords))
+	insert := make([]transport.DatasetRecordCreate, 0, len(d.appendRecords))
 	for id, rec := range d.appendRecords {
 		insertOldIDs = append(insertOldIDs, id)
-		insert = append(insert, dne.DatasetRecordCreate{
+		insert = append(insert, transport.DatasetRecordCreate{
 			Input:          rec.Input,
 			ExpectedOutput: rec.ExpectedOutput,
 			Metadata:       rec.Metadata,
 		})
 	}
-	update := make([]dne.DatasetRecordUpdate, 0, len(d.updateRecords))
+	update := make([]transport.DatasetRecordUpdate, 0, len(d.updateRecords))
 	for id, rec := range d.updateRecords {
-		update = append(update, dne.DatasetRecordUpdate{
+		update = append(update, transport.DatasetRecordUpdate{
 			ID:             id,
 			Input:          rec.Input,
-			ExpectedOutput: dne.AnyPtr(rec.ExpectedOutput),
+			ExpectedOutput: transport.AnyPtr(rec.ExpectedOutput),
 			Metadata:       rec.Metadata,
 		})
 	}
@@ -414,7 +414,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 	}
 
 	// newRecordIDs should go in the same order
-	newVersion, newRecordIDs, err := llmobs.DNEClient.DatasetBatchUpdateRecords(ctx, d.id, insert, update, del)
+	newVersion, newRecordIDs, err := llmobs.Transport.DatasetBatchUpdateRecords(ctx, d.id, insert, update, del)
 	if err != nil {
 		return fmt.Errorf("failed to batch update dataset: %w", err)
 	}

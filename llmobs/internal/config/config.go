@@ -30,6 +30,10 @@ type Config struct {
 	InstrumentedProxyURLs []string
 	ProjectName           string
 
+	DDTags        map[string]string
+	Env           string
+	Service       string
+	Version       string
 	AgentURL      *url.URL
 	APIKey        string
 	APPKey        string
@@ -73,7 +77,23 @@ func Default() *Config {
 		HTTPClient:            nil,
 		Site:                  os.Getenv("DD_SITE"),
 		SkipSSLVerify:         internal.BoolEnv("DD_SKIP_SSL_VALIDATION", false),
+		DDTags:                ddTagsFromEnv(),
+		Env:                   os.Getenv("DD_ENV"),
+		Service:               os.Getenv("DD_SERVICE"),
+		Version:               os.Getenv("DD_VERSION"),
 	}
+}
+
+func ddTagsFromEnv() map[string]string {
+	tags := make(map[string]string)
+	if v := os.Getenv("DD_TAGS"); v != "" {
+		tags = internal.ParseTagString(v)
+		internal.CleanGitMetadataTags(tags)
+	}
+	for key, val := range internal.GetGitMetadataTags() {
+		tags[key] = val
+	}
+	return tags
 }
 
 func (c *Config) DefaultHTTPClient() *http.Client {

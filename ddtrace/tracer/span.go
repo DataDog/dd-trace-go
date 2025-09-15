@@ -986,6 +986,12 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keyPropagatedParentID contains the propagated llmobs span ID.
+	keyPropagatedParentID = "_dd.p.llmobs_parent_id"
+	// keyPropagatedMLAPP contains the propagated ML App.
+	keyPropagatedMLAPP = "_dd.p.llmobs_ml_app"
+	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
+	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

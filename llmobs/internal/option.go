@@ -1,7 +1,8 @@
 package internal
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"time"
+
 	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/config"
 )
 
@@ -108,7 +109,7 @@ type startSpanConfig struct {
 	modelName     string
 	modelProvider string
 	mlApp         string
-	startSpanOpts []tracer.StartSpanOption
+	startTime     time.Time
 }
 
 type StartSpanOption func(cfg *startSpanConfig)
@@ -137,8 +138,33 @@ func WithMLApp(mlApp string) StartSpanOption {
 	}
 }
 
-func WithTracerStartSpanOptions(opts ...tracer.StartSpanOption) StartSpanOption {
+func WithStartTime(t time.Time) StartSpanOption {
 	return func(cfg *startSpanConfig) {
-		cfg.startSpanOpts = opts
+		cfg.startTime = t
+	}
+}
+
+//func WithTracerStartSpanOptions(opts ...tracer.StartSpanOption) StartSpanOption {
+//	return func(cfg *startSpanConfig) {
+//		cfg.startSpanOpts = opts
+//	}
+//}
+
+type finishSpanConfig struct {
+	finishTime time.Time
+	error      error
+}
+
+type FinishSpanOption func(cfg *finishSpanConfig)
+
+func WithError(err error) FinishSpanOption {
+	return func(cfg *finishSpanConfig) {
+		cfg.error = err
+	}
+}
+
+func WithFinishTime(t time.Time) FinishSpanOption {
+	return func(cfg *finishSpanConfig) {
+		cfg.finishTime = t
 	}
 }

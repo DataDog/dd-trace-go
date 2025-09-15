@@ -14,13 +14,12 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/dne"
+	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/transport"
 )
 
 var (
@@ -171,13 +170,13 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 	}
 
 	// 1) Create or get the project
-	proj, err := llmobs.DNEClient.ProjectGetOrCreate(ctx, e.cfg.projectName)
+	proj, err := llmobs.Transport.ProjectGetOrCreate(ctx, e.cfg.projectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
 
 	// 2) Create the experiment
-	expResp, err := llmobs.DNEClient.ExperimentCreate(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description)
+	expResp, err := llmobs.Transport.ExperimentCreate(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create experiment: %w", err)
 	}
@@ -199,7 +198,7 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 
 	// 4) Generate and publish metrics from the results
 	metrics := e.generateMetrics(results)
-	if err := llmobs.DNEClient.ExperimentPushEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
+	if err := llmobs.Transport.ExperimentPushEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
 		return nil, fmt.Errorf("failed to push experiment events: %w", err)
 	}
 
@@ -256,15 +255,15 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *internal.LLMO
 		startTime = time.Now()
 	)
 
-	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, internal.WithTracerStartSpanOptions(tracer.StartTime(startTime)))
-	defer span.Finish(tracer.WithError(err))
+	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, internal.WithStartTime(startTime))
+	defer span.Finish(internal.WithError(err))
 
-	tags := make(map[string]any)
+	tags := make(map[string]string)
 	for k, v := range e.cfg.tags {
 		tags[k] = v
 	}
 	tags["dataset_id"] = e.dataset.ID()
-	tags["dataset_record_id"] = rec.ID
+	tags["dataset_record_id"] = rec.ID()
 	tags["experiment_id"] = e.id
 
 	// TODO: context cancelation
@@ -272,15 +271,13 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *internal.LLMO
 	if err != nil {
 		err = errortrace.Wrap(err)
 	}
-	// TODO(rarguelloF): annotate span with output data and the tags
-	// self._llmobs_instance.annotate(span, input_data=input_data, output_data=output_data, tags=tags)
-	llmobs.AnnotateSpan(span, internal.SpanAnnotations{
-		InputData:  rec.Input,
-		OutputData: out,
-		Tags:       tags,
-	})
 
-	// TODO(rarguelloF): span._set_ctx_item(EXPERIMENT_EXPECTED_OUTPUT, safe_json(record["expected_output"]))
+	llmobs.AnnotateExperimentSpan(span, internal.ExperimentSpanAnnotations{
+		Input:          rec.Input,
+		Output:         out,
+		Tags:           tags,
+		ExpectedOutput: rec.ExpectedOutput,
+	})
 
 	return &Result{
 		RecordIndex:    recIdx,
@@ -341,8 +338,8 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*Result, cfg *
 	return eg.Wait()
 }
 
-func (e *Experiment) generateMetrics(results []*Result) []dne.ExperimentEvalMetricEvent {
-	metrics := make([]dne.ExperimentEvalMetricEvent, 0, len(results))
+func (e *Experiment) generateMetrics(results []*Result) []transport.ExperimentEvalMetricEvent {
+	metrics := make([]transport.ExperimentEvalMetricEvent, 0, len(results))
 
 	for _, res := range results {
 		for _, ev := range res.Evaluations {
@@ -352,7 +349,7 @@ func (e *Experiment) generateMetrics(results []*Result) []dne.ExperimentEvalMetr
 	return metrics
 }
 
-func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) dne.ExperimentEvalMetricEvent {
+func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) transport.ExperimentEvalMetricEvent {
 	var (
 		catVal   *string
 		scoreVal *float64
@@ -363,19 +360,19 @@ func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) d
 	switch t := ev.Value.(type) {
 	case bool:
 		metricType = "boolean"
-		boolVal = dne.AnyPtr(t)
+		boolVal = transport.AnyPtr(t)
 
 	case int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64, uintptr,
 		float32, float64:
 		metricType = "score"
-		scoreVal = dne.AnyPtr(asFloat64(t))
+		scoreVal = transport.AnyPtr(asFloat64(t))
 
 	default:
-		catVal = dne.AnyPtr(fmt.Sprintf("%v", t))
+		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
 	}
 
-	return dne.ExperimentEvalMetricEvent{
+	return transport.ExperimentEvalMetricEvent{
 		SpanID:           res.SpanID,
 		TraceID:          res.TraceID,
 		TimestampMS:      res.Timestamp.UnixMilli(),
@@ -384,7 +381,7 @@ func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) d
 		CategoricalValue: catVal,
 		ScoreValue:       scoreVal,
 		BooleanValue:     boolVal,
-		Error:            dne.NewErrorMessage(ev.Error),
+		Error:            transport.NewErrorMessage(ev.Error),
 		Tags:             e.tagsSlice,
 		ExperimentID:     e.id,
 	}

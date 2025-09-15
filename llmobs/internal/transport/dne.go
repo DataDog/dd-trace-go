@@ -3,53 +3,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package dne
+package transport
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"strconv"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/cenkalti/backoff/v5"
-
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/config"
-)
-
-const (
-	headerEVPSubdomain   = "X-Datadog-EVP-Subdomain"
-	headerRateLimitReset = "x-ratelimit-reset"
-)
-
-const (
-	endpointEvalMetric = "/api/intake/llm-obs/v2/eval-metric"
-	endpointLLMSpan    = "/api/v2/llmobs"
-
-	subdomainLLMSpan    = "llmobs-intake"
-	subdomainEvalMetric = "api"
-	subdomainDNE        = "api"
-)
-
-const (
-	basePathEVPProxy = "/evp_proxy/v2"
-	basePathDNE      = "/api/unstable/llm-obs/v1"
-)
-
-const (
-	defaultSite    = "datadoghq.com"
-	defaultTimeout = 5 * time.Second
-	// DefaultMaxRetries is the default number of retries for a request.
-	defaultMaxRetries uint = 3
-	// DefaultBackoff is the default backoff time for a request.
-	defaultBackoff time.Duration = 100 * time.Millisecond
 )
 
 const (
@@ -58,61 +22,177 @@ const (
 	resourceTypeProjects    = "projects"
 )
 
-var (
-	ErrDatasetNotFound = errors.New("dataset not found")
+// ---------- Resources ----------
+
+type DatasetView struct {
+	ID             string
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	Metadata       map[string]any `json:"metadata"`
+	CurrentVersion int            `json:"current_version"`
+}
+
+type DatasetCreate struct {
+	Name        string         `json:"name,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
+type DatasetRecordView struct {
+	ID             string
+	Input          map[string]any `json:"input"`
+	ExpectedOutput any            `json:"expected_output"`
+	Metadata       map[string]any `json:"metadata"`
+	Version        int            `json:"version"`
+}
+
+type ProjectView struct {
+	ID   string
+	Name string `json:"name"`
+}
+
+type ExperimentView struct {
+	ID             string
+	ProjectID      string         `json:"project_id"`
+	DatasetID      string         `json:"dataset_id"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	Metadata       map[string]any `json:"metadata"`
+	Config         map[string]any `json:"config"`
+	DatasetVersion int            `json:"dataset_version"`
+	EnsureUnique   bool           `json:"ensure_unique"`
+}
+
+type DatasetRecordCreate struct {
+	Input          map[string]any `json:"input,omitempty"`
+	ExpectedOutput any            `json:"expected_output,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+}
+
+type DatasetRecordUpdate struct {
+	ID             string         `json:"id"`
+	Input          map[string]any `json:"input,omitempty"`
+	ExpectedOutput *any           `json:"expected_output,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+}
+
+type ErrorMessage struct {
+	Message string `json:"message,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Stack   string `json:"stack,omitempty"`
+}
+
+// ---------- Requests ----------
+
+type Request[T any] struct {
+	Data RequestData[T] `json:"data"`
+}
+
+type RequestData[T any] struct {
+	Type       string `json:"type"`
+	Attributes T      `json:"attributes"`
+}
+
+type RequestAttributesDatasetCreateRecords struct {
+	Records []DatasetRecordCreate `json:"records,omitempty"`
+}
+
+type RequestAttributesDatasetDelete struct {
+	DatasetIDs []string `json:"dataset_ids,omitempty"`
+}
+
+type RequestAttributesDatasetBatchUpdate struct {
+	InsertRecords []DatasetRecordCreate `json:"insert_records,omitempty"`
+	UpdateRecords []DatasetRecordUpdate `json:"update_records,omitempty"`
+	DeleteRecords []string              `json:"delete_records,omitempty"`
+	Deduplicate   *bool                 `json:"deduplicate,omitempty"`
+}
+
+type RequestAttributesProjectCreate struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type RequestAttributesExperimentCreate struct {
+	ProjectID      string         `json:"project_id,omitempty"`
+	DatasetID      string         `json:"dataset_id,omitempty"`
+	Name           string         `json:"name,omitempty"`
+	Description    string         `json:"description,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	Config         map[string]any `json:"config,omitempty"`
+	DatasetVersion int            `json:"dataset_version,omitempty"`
+	EnsureUnique   bool           `json:"ensure_unique,omitempty"`
+}
+
+type RequestAttributesExperimentPushEvents struct {
+	Scope   string                      `json:"scope,omitempty"`
+	Metrics []ExperimentEvalMetricEvent `json:"metrics,omitempty"`
+	Tags    []string                    `json:"tags,omitempty"`
+}
+
+type ExperimentEvalMetricEvent struct {
+	SpanID           string        `json:"span_id,omitempty"`
+	TraceID          string        `json:"trace_id,omitempty"`
+	TimestampMS      int64         `json:"timestamp_ms,omitempty"`
+	MetricType       string        `json:"metric_type,omitempty"`
+	Label            string        `json:"label,omitempty"`
+	CategoricalValue *string       `json:"categorical_value,omitempty"`
+	ScoreValue       *float64      `json:"score_value,omitempty"`
+	BooleanValue     *bool         `json:"boolean_value,omitempty"`
+	Error            *ErrorMessage `json:"error,omitempty"`
+	Tags             []string      `json:"tags,omitempty"`
+	ExperimentID     string        `json:"experiment_id,omitempty"`
+}
+
+type (
+	RequestDatasetCreate        = Request[DatasetCreate]
+	RequestDatasetDelete        = Request[RequestAttributesDatasetDelete]
+	RequestDatasetCreateRecords = Request[RequestAttributesDatasetCreateRecords]
+	RequestDatasetBatchUpdate   = Request[RequestAttributesDatasetBatchUpdate]
+
+	RequestProjectCreate = Request[RequestAttributesProjectCreate]
+
+	RequestExperimentCreate     = Request[RequestAttributesExperimentCreate]
+	RequestExperimentPushEvents = Request[RequestAttributesExperimentPushEvents]
 )
 
-// Client sends requests to the LLMObs “experiments” API set like the Python client.
-type Client struct {
-	httpClient     *http.Client
-	defaultHeaders map[string]string
-	baseURL        string
+// ---------- Responses ----------
+
+type Response[T any] struct {
+	Data ResponseData[T] `json:"data"`
 }
 
-// NewClient builds a new Datasets and Experiments client.
-func NewClient(cfg *config.Config) *Client {
-	site := defaultSite
-	if cfg.Site != "" {
-		site = cfg.Site
-	}
-
-	baseURL := ""
-	defaultHeaders := map[string]string{
-		"Content-Type": "application/json",
-	}
-
-	if cfg.AgentlessEnabled {
-		defaultHeaders["DD-API-KEY"] = cfg.APIKey
-		if cfg.APPKey != "" {
-			defaultHeaders["DD-APPLICATION-KEY"] = cfg.APPKey
-		}
-		baseURL = fmt.Sprintf("https://%s.%s", subdomainDNE, site)
-	} else {
-		defaultHeaders[headerEVPSubdomain] = subdomainDNE
-
-		if cfg.AgentURL.Scheme == "unix" {
-			baseURL = internal.UnixDataSocketURL(cfg.AgentURL.Path).String()
-		} else {
-			baseURL = cfg.AgentURL.String()
-		}
-		baseURL += basePathEVPProxy
-	}
-	log.Debug("llmobs/internal/dne: using baseURL: %s", baseURL)
-
-	return &Client{
-		httpClient:     cfg.HTTPClient,
-		defaultHeaders: defaultHeaders,
-		baseURL:        baseURL,
-	}
+type ResponseList[T any] struct {
+	Data []ResponseData[T] `json:"data"`
 }
+
+type ResponseData[T any] struct {
+	ID         string `json:"id"`
+	Type       string `json:"string"`
+	Attributes T      `json:"attributes"`
+}
+
+type (
+	ResponseDatasetGet           = ResponseList[DatasetView]
+	ResponseDatasetCreate        = Response[DatasetView]
+	ResponseDatasetUpdate        = Response[DatasetView]
+	ResponseDatasetGetRecords    = ResponseList[DatasetRecordView]
+	ResponseDatasetCreateRecords = ResponseList[DatasetRecordView]
+	ResponseDatasetUpdateRecords = ResponseList[DatasetRecordView]
+	ResponseDatasetBatchUpdate   = ResponseList[DatasetRecordView]
+
+	ResponseProjectCreate = Response[ProjectView]
+
+	ResponseExperimentCreate = Response[ExperimentView]
+)
 
 func (c *Client) DatasetGetByName(ctx context.Context, name string) (*DatasetView, error) {
 	q := url.Values{}
 	q.Set("filter[name]", name)
-	datasetPath := basePathDNE + "/datasets" + "?" + q.Encode()
+	datasetPath := endpointPrefixDNE + "/datasets" + "?" + q.Encode()
 	method := http.MethodGet
 
-	status, b, err := c.request(ctx, method, datasetPath, nil)
+	status, b, err := c.request(ctx, method, datasetPath, subdomainDNE, nil)
 	if err != nil || status != http.StatusOK {
 		return nil, fmt.Errorf("get dataset by name %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
@@ -139,7 +219,7 @@ func (c *Client) DatasetCreate(ctx context.Context, name, description string) (*
 		return nil, err
 	}
 
-	path := basePathDNE + "/datasets"
+	path := endpointPrefixDNE + "/datasets"
 	method := http.MethodPost
 	body := RequestDatasetCreate{
 		Data: RequestData[DatasetCreate]{
@@ -151,12 +231,12 @@ func (c *Client) DatasetCreate(ctx context.Context, name, description string) (*
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, body)
+	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil {
 		return nil, fmt.Errorf("create dataset %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
 
-	log.Debug("llmobs/internal/dne.DatasetGetOrCreate: create dataset success (status code: %d)", status)
+	log.Debug("llmobs/internal/transport.DatasetGetOrCreate: create dataset success (status code: %d)", status)
 
 	var resp ResponseDatasetCreate
 	if err := json.Unmarshal(b, &resp); err != nil {
@@ -170,7 +250,7 @@ func (c *Client) DatasetCreate(ctx context.Context, name, description string) (*
 
 // DatasetDelete -> POST /datasets/delete
 func (c *Client) DatasetDelete(ctx context.Context, datasetIDs ...string) error {
-	path := basePathDNE + "/datasets/delete"
+	path := endpointPrefixDNE + "/datasets/delete"
 	method := http.MethodPost
 	body := RequestDatasetDelete{
 		Data: RequestData[RequestAttributesDatasetDelete]{
@@ -181,7 +261,7 @@ func (c *Client) DatasetDelete(ctx context.Context, datasetIDs ...string) error 
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, body)
+	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
 		return fmt.Errorf("delete dataset %v failed: %v (status=%d, body=%s)", datasetIDs, err, status, string(b))
 	}
@@ -196,7 +276,7 @@ func (c *Client) DatasetBatchUpdateRecords(
 	update []DatasetRecordUpdate,
 	delete []string,
 ) (int, []string, error) {
-	path := fmt.Sprintf("%s/datasets/%s/batch_update", basePathDNE, url.PathEscape(datasetID))
+	path := fmt.Sprintf("%s/datasets/%s/batch_update", endpointPrefixDNE, url.PathEscape(datasetID))
 	method := http.MethodPost
 	body := RequestDatasetBatchUpdate{
 		Data: RequestData[RequestAttributesDatasetBatchUpdate]{
@@ -210,7 +290,7 @@ func (c *Client) DatasetBatchUpdateRecords(
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, body)
+	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
 		return -1, nil, fmt.Errorf("batch_update for dataset %q failed: %v (status=%d, body=%s)", datasetID, err, status, string(b))
 	}
@@ -237,7 +317,7 @@ func (c *Client) DatasetBatchUpdateRecords(
 			newRecordIDs = append(newRecordIDs, rec.ID)
 		}
 	} else {
-		log.Warn("llmobs/internal/dne: DatasetBatchUpdateRecords: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
+		log.Warn("llmobs/internal/transport: DatasetBatchUpdateRecords: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
 	}
 	return newDatasetVersion, newRecordIDs, nil
 }
@@ -252,8 +332,8 @@ func (c *Client) DatasetGetWithRecords(ctx context.Context, name string) (*Datas
 
 	// 2) Fetch records
 	method := http.MethodGet
-	recordsPath := fmt.Sprintf("%s/datasets/%s/records", basePathDNE, url.PathEscape(ds.ID))
-	status, b, err := c.request(ctx, method, recordsPath, nil)
+	recordsPath := fmt.Sprintf("%s/datasets/%s/records", endpointPrefixDNE, url.PathEscape(ds.ID))
+	status, b, err := c.request(ctx, method, recordsPath, subdomainDNE, nil)
 	if err != nil || status != http.StatusOK {
 		return nil, nil, fmt.Errorf("get dataset %q records failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
@@ -274,7 +354,7 @@ func (c *Client) DatasetGetWithRecords(ctx context.Context, name string) (*Datas
 
 // ProjectGetOrCreate -> POST /projects
 func (c *Client) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectView, error) {
-	path := basePathDNE + "/projects"
+	path := endpointPrefixDNE + "/projects"
 	method := http.MethodPost
 
 	body := RequestProjectCreate{
@@ -286,7 +366,7 @@ func (c *Client) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectV
 			},
 		},
 	}
-	status, b, err := c.request(ctx, method, path, body)
+	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
 		return nil, fmt.Errorf("create project %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
@@ -310,7 +390,7 @@ func (c *Client) ExperimentCreate(
 	tags []string,
 	description string,
 ) (*ExperimentView, error) {
-	path := basePathDNE + "/experiments"
+	path := endpointPrefixDNE + "/experiments"
 	method := http.MethodPost
 
 	if expConfig == nil {
@@ -333,7 +413,7 @@ func (c *Client) ExperimentCreate(
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, body)
+	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
 		return nil, fmt.Errorf("create experiment %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
@@ -355,7 +435,7 @@ func (c *Client) ExperimentPushEvents(
 	metrics []ExperimentEvalMetricEvent,
 	tags []string,
 ) error {
-	path := fmt.Sprintf("%s/experiments/%s/events", basePathDNE, url.PathEscape(experimentID))
+	path := fmt.Sprintf("%s/experiments/%s/events", endpointPrefixDNE, url.PathEscape(experimentID))
 	method := http.MethodPost
 
 	body := RequestExperimentPushEvents{
@@ -369,7 +449,7 @@ func (c *Client) ExperimentPushEvents(
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, body)
+	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil {
 		return fmt.Errorf("post experiment eval metrics failed: %v (status=%d, body=%s)", err, status, string(b))
 	}
@@ -377,112 +457,4 @@ func (c *Client) ExperimentPushEvents(
 		return fmt.Errorf("unexpected status %d: %s", status, string(b))
 	}
 	return nil
-}
-
-// ---------- private stuff ----------
-
-func (c *Client) request(ctx context.Context, method, path string, body any) (int, []byte, error) {
-	urlStr := c.baseURL + path
-
-	var rdr io.Reader
-	if body != nil {
-		var buf bytes.Buffer
-		enc := json.NewEncoder(&buf)
-		enc.SetEscapeHTML(false)
-		if err := enc.Encode(body); err != nil {
-			return 0, nil, fmt.Errorf("encode body: %w", err)
-		}
-		rdr = &buf
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, urlStr, rdr)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	for key, val := range c.defaultHeaders {
-		req.Header.Set(key, val)
-	}
-
-	// TODO: review this makes sense
-	backoffStrat := &backoff.ExponentialBackOff{
-		InitialInterval:     defaultBackoff,
-		RandomizationFactor: 0.5,
-		Multiplier:          1.5,
-		MaxInterval:         1 * time.Second,
-	}
-
-	log.Debug("llmobs/internal/dne: sending request to %s: %s", method, urlStr)
-
-	doRequest := func() (resp *http.Response, err error) {
-		resp, err = c.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			if err != nil && resp != nil {
-				_ = resp.Body.Close()
-			}
-		}()
-
-		if resp.StatusCode < 200 || resp.StatusCode > 400 {
-			return nil, fmt.Errorf("got a non-success error code: %d", resp.StatusCode)
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
-			// TODO: log.Debug something here
-			rateLimitReset := resp.Header.Get(headerRateLimitReset)
-			waitSeconds := 1
-			if rateLimitReset != "" {
-				if resetTime, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
-					seconds := 0
-					if resetTime > time.Now().Unix() {
-						// Assume it's a Unix timestamp
-						seconds = int(time.Until(time.Unix(resetTime, 0)).Seconds())
-					} else {
-						// Assume it's a duration in seconds
-						seconds = int(resetTime)
-					}
-					if seconds > 0 {
-						waitSeconds = seconds
-					}
-				}
-			}
-			return nil, backoff.RetryAfter(waitSeconds)
-		}
-
-		if resp.StatusCode >= 400 && resp.StatusCode <= 499 {
-			return nil, backoff.Permanent(fmt.Errorf("client status error: %d", resp.StatusCode))
-		}
-		return resp, nil
-	}
-
-	resp, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
-	if err != nil {
-		return 0, nil, err
-	}
-	defer resp.Body.Close()
-
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp.StatusCode, nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp.StatusCode, b, &httpError{Status: resp.StatusCode, Body: b}
-	}
-	log.Debug("llmobs/internal/dne: got success response body: %s", string(b))
-	return resp.StatusCode, b, nil
-}
-
-type httpError struct {
-	Status int
-	Body   []byte
-}
-
-func (e *httpError) Error() string {
-	body := string(e.Body)
-	if len(body) > 512 {
-		body = body[:512] + "…"
-	}
-	return fmt.Sprintf("http %d: %s", e.Status, body)
 }
