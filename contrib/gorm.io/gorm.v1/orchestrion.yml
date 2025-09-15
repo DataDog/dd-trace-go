@@ -23,7 +23,7 @@ aspects:
               if err != nil {
                 return nil, err
               }
-              if db.Plugins["DDTracePlugin"] {
+              if _, ok := db.Plugins["DDTracePlugin"]; ok {
                 return db, nil
               }
               if err := db.Use(gormtrace.NewTracePlugin()); err != nil {
