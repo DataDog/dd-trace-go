@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:generate go run github.com/tinylib/msgp -o=stacktrace_msgp.go -tests=false
-//go:generate env GOWORK=off go run -C ../../scripts/gencontribs . ../../internal/stacktrace/contribs_generated.go
+//go:generate env GOWORK=off go run ../../scripts/gencontribs/main.go ../.. contribs_generated.go
 
 package stacktrace
 
@@ -12,6 +12,7 @@ import (
 	"errors"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -110,7 +111,7 @@ type (
 	// This allows for fast capture with deferred processing - symbolication,
 	// skipping, and redaction can be performed later when needed.
 	RawStackTrace struct {
-		PCs []uintptr
+		PCs []uintptr `msg:"-"`
 	}
 
 	symbol struct {
@@ -476,10 +477,8 @@ func classifySymbol(sym symbol, internalPrefixes []string) frameType {
 		return frameTypeRuntime
 	}
 
-	for _, lib := range knownThirdPartyLibraries {
-		if strings.HasPrefix(pkg, lib) {
-			return frameTypeThirdParty
-		}
+	if isKnownThirdPartyLibrary(pkg) {
+		return frameTypeThirdParty
 	}
 
 	return frameTypeCustomer
@@ -530,6 +529,16 @@ func Format(stack StackTrace) string {
 	}
 
 	return string(result)
+}
+
+// isKnownThirdPartyLibrary checks if a package is a known third-party library
+func isKnownThirdPartyLibrary(pkg string) bool {
+	for _, lib := range slices.Concat(knownThirdPartyLibraries, []string{"golang.org/"}) {
+		if strings.HasPrefix(pkg, lib) {
+			return true
+		}
+	}
+	return false
 }
 
 // isStandardLibraryPackage checks if a package is from Go's standard library

@@ -141,37 +141,6 @@ func TestScanContribDirectories(t *testing.T) {
 	}
 }
 
-// TestGeneratedThirdPartyLibrariesConsistency tests that the generated function
-// produces results consistent with current hardcoded list
-func TestGeneratedThirdPartyLibrariesConsistency(t *testing.T) {
-	projectRoot, err := findProjectRoot()
-	require.NoError(t, err)
-
-	contribDir := filepath.Join(projectRoot, "contrib")
-	generated, err := extractAllThirdPartyLibraries(contribDir)
-	require.NoError(t, err)
-
-	// Compare with current hardcoded list
-	current := knownThirdPartyLibraries
-
-	// Generated list should contain most of the current hardcoded entries
-	// (allowing for some differences due to contrib structure evolution)
-	overlapping := 0
-	for _, currentLib := range current {
-		for _, genLib := range generated {
-			if strings.HasPrefix(genLib, currentLib) || strings.HasPrefix(currentLib, genLib) {
-				overlapping++
-				break
-			}
-		}
-	}
-
-	// At least 70% should overlap (allowing for evolution)
-	overlapPercentage := float64(overlapping) / float64(len(current))
-	require.Greater(t, overlapPercentage, 0.7,
-		"generated list should have significant overlap with current hardcoded list")
-}
-
 // TestClassifySymbolWithGeneratedLibraries tests that symbol classification
 // works correctly with generated libraries
 func TestClassifySymbolWithGeneratedLibraries(t *testing.T) {
