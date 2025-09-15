@@ -96,13 +96,13 @@ type anyValue struct {
 var _ msgp.Encodable = (*anyValue)(nil)
 
 const (
-	StringValueType  = iota + 1 // string or uint
-	BoolValueType               // boolean
-	FloatValueType              // float64
-	IntValueType                // uint64
-	BytesValueType              // []uint8
-	ArrayValueType              // []AnyValue
-	keyValueListType            // []keyValue
+	StringValueType  = iota + 1 // string or uint -- 1
+	BoolValueType               // boolean -- 2
+	FloatValueType              // float64 -- 3
+	IntValueType                // uint64 -- 4
+	BytesValueType              // []uint8 -- 5
+	ArrayValueType              // []AnyValue -- 6
+	keyValueListType            // []keyValue -- 7
 )
 
 type arrayValue []anyValue
@@ -385,12 +385,84 @@ func decodeString(i uint32, e *msgp.Writer) (string, error) {
 	panic("not implemented")
 }
 
+// encodeSpanLinks encodes the span links into a msgp.Writer
+// Span links are represented as an array of fixmaps (keyValueList)
 func encodeSpanLinks(sl []SpanLink, e *msgp.Writer) error {
-	panic("not implemented")
+	// write the number of span links
+	err := e.WriteArrayHeader(uint32(len(sl)))
+	if err != nil {
+		return err
+	}
+
+	// represent each span link as a fixmap (keyValueList) and add it to an array
+	kv := arrayValue{}
+	for _, s := range sl {
+		slKeyValues := keyValueList{
+			{key: 1, value: anyValue{valueType: IntValueType, value: s.TraceID}},       // traceID
+			{key: 2, value: anyValue{valueType: IntValueType, value: s.SpanID}},        // spanID
+			{key: 4, value: anyValue{valueType: StringValueType, value: s.Tracestate}}, // tracestate
+			{key: 5, value: anyValue{valueType: IntValueType, value: s.Flags}},         // flags
+		}
+
+		attr := keyValueList{}
+		// attributes
+		for k, v := range s.Attributes {
+			idx, err := encodeString(k)
+			if err != nil {
+				return err
+			}
+			attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
+		}
+		slKeyValues = append(slKeyValues, keyValue{key: 3, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+		kv = append(kv, anyValue{valueType: keyValueListType, value: slKeyValues})
+	}
+
+	for _, v := range kv {
+		err := v.EncodeMsg(e)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
+// encodeSpanEvents encodes the span events into a msgp.Writer
+// Span events are represented as an array of fixmaps (keyValueList)
 func encodeSpanEvents(se []spanEvent, e *msgp.Writer) error {
-	panic("not implemented")
+	// write the number of span events
+	err := e.WriteArrayHeader(uint32(len(se)))
+	if err != nil {
+		return err
+	}
+
+	// represent each span event as a fixmap (keyValueList) and add it to an array
+	kv := arrayValue{}
+	for _, s := range se {
+		slKeyValues := keyValueList{
+			{key: 1, value: anyValue{valueType: IntValueType, value: s.TimeUnixNano}}, // time
+			{key: 2, value: anyValue{valueType: StringValueType, value: s.Name}},      // name
+		}
+
+		attr := keyValueList{}
+		// attributes
+		for k, v := range s.Attributes {
+			idx, err := encodeString(k)
+			if err != nil {
+				return err
+			}
+			attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
+		}
+		slKeyValues = append(slKeyValues, keyValue{key: 3, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+		kv = append(kv, anyValue{valueType: keyValueListType, value: slKeyValues})
+	}
+
+	for _, v := range kv {
+		err := v.EncodeMsg(e)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func getAnyValueType(v any) int {
