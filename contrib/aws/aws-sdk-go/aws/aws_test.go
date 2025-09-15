@@ -82,6 +82,7 @@ func TestAWS(t *testing.T) {
 		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
 		assert.Equal(t, "CreateBucket", s.Tag("aws.operation"))
 		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
+		assert.Equal(t, "aws", s.Tag("partition"))
 		assert.Equal(t, "s3.CreateBucket", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.s3", s.Tag(ext.ServiceName))
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
@@ -111,6 +112,7 @@ func TestAWS(t *testing.T) {
 		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
 		assert.Equal(t, "DescribeInstances", s.Tag("aws.operation"))
 		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
+		assert.Equal(t, "aws", s.Tag("partition"))
 		assert.Equal(t, "ec2.DescribeInstances", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.ec2", s.Tag(ext.ServiceName))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
@@ -287,6 +289,46 @@ func TestWithErrorCheck(t *testing.T) {
 	t.Run("errcheck", testOpts(false, WithErrorCheck(func(_ error) bool {
 		return false
 	})))
+}
+
+func TestPartitionTag(t *testing.T) {
+	tests := []struct {
+		region    string
+		partition string
+	}{
+		{"us-east-1", "aws"},
+		{"eu-west-1", "aws"},
+		{"cn-north-1", "aws-cn"},
+		{"us-gov-east-1", "aws-us-gov"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.region, func(t *testing.T) {
+			cfg := aws.NewConfig().
+				WithRegion(tt.region).
+				WithDisableSSL(true).
+				WithCredentials(credentials.AnonymousCredentials)
+
+			session := WrapSession(session.Must(session.NewSession(cfg)))
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			root, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+			s3api := s3.New(session)
+			s3api.CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+				Bucket: aws.String("my-test-bucket"),
+			})
+			root.Finish()
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 2)
+
+			s := spans[0]
+			assert.Equal(t, tt.partition, s.Tag("partition"))
+			assert.Equal(t, tt.region, s.Tag("aws.region"))
+		})
+	}
 }
 
 func TestExtraTagsForService(t *testing.T) {
@@ -503,6 +545,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 		name              string
 		queueURL          string
 		region            string
+		partition         string
 		expectedQueueName string
 		expectedARN       string
 	}{
@@ -510,6 +553,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "normal URL",
 			queueURL:          "https://sqs.us-east-1.amazonaws.com/123456789012/MyQueue",
 			region:            "us-east-1",
+			partition:         "aws",
 			expectedQueueName: "MyQueue",
 			expectedARN:       "arn:aws:sqs:us-east-1:123456789012:MyQueue",
 		},
@@ -517,6 +561,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "URL with trailing slash",
 			queueURL:          "https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueue/",
 			region:            "eu-west-1",
+			partition:         "aws",
 			expectedQueueName: "MyQueue",
 			expectedARN:       "arn:aws:sqs:eu-west-1:123456789012:MyQueue",
 		},
@@ -524,6 +569,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "URL with trailing slash - different region",
 			queueURL:          "https://sqs.eu-west-2.amazonaws.com/987654321098/TestQueue/",
 			region:            "eu-west-2",
+			partition:         "aws",
 			expectedQueueName: "TestQueue",
 			expectedARN:       "arn:aws:sqs:eu-west-2:987654321098:TestQueue",
 		},
@@ -531,6 +577,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "China region with trailing slash",
 			queueURL:          "https://sqs.cn-north-1.amazonaws.com.cn/123456789012/ChinaQueue/",
 			region:            "cn-north-1",
+			partition:         "aws-cn",
 			expectedQueueName: "ChinaQueue",
 			expectedARN:       "arn:aws-cn:sqs:cn-north-1:123456789012:ChinaQueue",
 		},
@@ -538,6 +585,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "GovCloud region with trailing slash",
 			queueURL:          "https://sqs.us-gov-west-1.amazonaws.com/123456789012/GovQueue/",
 			region:            "us-gov-west-1",
+			partition:         "aws-us-gov",
 			expectedQueueName: "GovQueue",
 			expectedARN:       "arn:aws-us-gov:sqs:us-gov-west-1:123456789012:GovQueue",
 		},
@@ -545,6 +593,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "malformed URL - just slash",
 			queueURL:          "/",
 			region:            "us-east-1",
+			partition:         "aws",
 			expectedQueueName: "",
 			expectedARN:       "",
 		},
@@ -552,6 +601,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "malformed URL - empty",
 			queueURL:          "",
 			region:            "us-east-1",
+			partition:         "aws",
 			expectedQueueName: "",
 			expectedARN:       "",
 		},
@@ -559,6 +609,7 @@ func TestExtractSQSMetadata(t *testing.T) {
 			name:              "malformed URL - single part",
 			queueURL:          "invalidurl",
 			region:            "us-east-1",
+			partition:         "aws",
 			expectedQueueName: "",
 			expectedARN:       "",
 		},
@@ -566,9 +617,38 @@ func TestExtractSQSMetadata(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region)
+			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region, tt.partition)
 			assert.Equal(t, tt.expectedQueueName, queueName)
 			assert.Equal(t, tt.expectedARN, arn)
+		})
+	}
+}
+
+func TestAwsPartition(t *testing.T) {
+	tests := []struct {
+		name      string
+		partition string
+	}{
+		{
+			name:      "AWS standard partition",
+			partition: "aws",
+		},
+		{
+			name:      "AWS China partition",
+			partition: "aws-cn",
+		},
+		{
+			name:      "AWS GovCloud partition",
+			partition: "aws-us-gov",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &request.Request{}
+			req.ClientInfo.PartitionID = tt.partition
+			partition := awsPartition(req)
+			assert.Equal(t, tt.partition, partition)
 		})
 	}
 }
