@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/ka
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.3.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
 	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/goleak v1.3.0

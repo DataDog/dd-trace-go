@@ -494,6 +494,8 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
+	// Set the Knuth sampling rate tag when trace sampling rules are applied
+	span.setMeta(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 	if !sampledByRate(span.traceID, rate) {
 		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
 		return
