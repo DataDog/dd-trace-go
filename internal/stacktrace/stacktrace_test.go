@@ -8,6 +8,7 @@ package stacktrace
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -463,11 +464,21 @@ func TestIsStandardLibraryPackage(t *testing.T) {
 		{"go tools", "go/ast", true},
 		{"cmd tools", "cmd/link/internal/ld", true},
 
+		// Standard library test packages
+		{"strconv.test", "strconv.test", true},
+		{"net/http.test", "net/http.test", true},
+		{"encoding/json.test", "encoding/json.test", true},
+		{"go/ast.test", "go/ast.test", true},
+
 		// Non-standard library
 		{"main package", "main", false},
+		{"main.test", "main.test", false},
 		{"third-party github", "github.com/user/repo", false},
+		{"third-party github test", "github.com/user/repo.test", false},
 		{"third-party gopkg.in", "gopkg.in/yaml.v3", false},
+		{"third-party gopkg.in test", "gopkg.in/yaml.v3.test", false},
 		{"datadog repo", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace", false},
+		{"datadog repo test", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.test", false},
 	}
 
 	for _, tt := range tests {
@@ -628,6 +639,66 @@ func TestFormat(t *testing.T) {
 		expected := fmt.Sprintf("%s\n\t%s:0", redactedPlaceholder, redactedPlaceholder)
 		require.Equal(t, expected, result)
 	})
+}
+
+// Capture both stack traces from the exact same line to ensure identical line numbers.
+func stackTrace() ([]uintptr, int, RawStackTrace) {
+	pcs := make([]uintptr, 10)
+	return pcs, runtime.Callers(1, pcs), CaptureRaw(2)
+}
+
+// TestFormatMatchesRuntime ensures Format() output matches Go's standard runtime.CallersFrames format
+func TestFormatMatchesRuntime(t *testing.T) {
+	// Capture both stack traces from the exact same line to ensure identical line numbers.
+	pcs, n, rawStack := stackTrace()
+	require.Greater(t, n, 0, "Should capture frames")
+	require.Greater(t, len(rawStack.PCs), 0, "Should capture frames")
+
+	// Copied from span.go#takeStacktrace
+	var builder strings.Builder
+	frames := runtime.CallersFrames(pcs[:n])
+	for i := 0; ; i++ {
+		frame, more := frames.Next()
+		if i != 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(frame.Function)
+		builder.WriteByte('\n')
+		builder.WriteByte('\t')
+		builder.WriteString(frame.File)
+		builder.WriteByte(':')
+		builder.WriteString(strconv.Itoa(frame.Line))
+		if !more {
+			break
+		}
+	}
+	standardFormat := builder.String()
+
+	// Create our format using raw capture with no filtering
+	opts := frameOptions{
+		skipInternalFrames:      false, // Don't skip any frames
+		redactCustomerFrames:    false, // Don't redact anything
+		internalPackagePrefixes: internalSymbolPrefixes,
+	}
+	iterator := iteratorFromRaw(rawStack.PCs, opts)
+	stack := iterator.capture()
+	require.NotEmpty(t, stack, "Should capture stack frames")
+	ourFormat := Format(stack)
+
+	// Both should not be empty
+	require.NotEmpty(t, standardFormat, "Standard format should not be empty")
+	require.NotEmpty(t, ourFormat, "Our format should not be empty")
+
+	// Compare the formats - they should be identical since captured from same line
+	require.Equal(t, standardFormat, ourFormat,
+		"Format() output should match standard Go runtime format.\n\nStandard format:\n%s\n\nOur format:\n%s",
+		standardFormat, ourFormat)
+
+	// Verify both contain expected elements (sanity checks)
+	require.Contains(t, standardFormat, "TestFormatMatchesRuntime", "Standard format should contain test function name")
+	require.Contains(t, ourFormat, "TestFormatMatchesRuntime", "Our format should contain test function name")
+	require.Contains(t, standardFormat, ".go:", "Standard format should contain file extension and line separator")
+	require.Contains(t, ourFormat, ".go:", "Our format should contain file extension and line separator")
 }
 
 // TestStackTraceCapture provides regression testing for stacktrace capture behavior

@@ -523,22 +523,7 @@ func Format(stack StackTrace) string {
 		result = append(result, '\n', '\t')
 		result = append(result, frame.File...)
 		result = append(result, ':')
-
-		// Convert line number to string
-		line := int(frame.Line)
-		if line == 0 {
-			result = append(result, '0')
-		} else {
-			digits := make([]byte, 0, 10)
-			for line > 0 {
-				digits = append(digits, byte('0'+line%10))
-				line /= 10
-			}
-			// Reverse digits
-			for j := len(digits) - 1; j >= 0; j-- {
-				result = append(result, digits[j])
-			}
-		}
+		result = append(result, strconv.Itoa(int(frame.Line))...)
 	}
 
 	return string(result)
@@ -551,6 +536,11 @@ func isKnownThirdPartyLibrary(pkg string) bool {
 
 // isStandardLibraryPackage checks if a package is from Go's standard library
 func isStandardLibraryPackage(pkg string) bool {
+	// Handle test packages (e.g., "strconv.test", "net/http.test")
+	// When running `go test strconv`, Go creates a test binary with package name "strconv.test"
+	// Strip the .test suffix if present to check if the remaining part is a stdlib package
+	pkg = strings.TrimSuffix(pkg, ".test")
+
 	// Special case: main package is user code, not stdlib
 	if pkg == "main" {
 		return false
