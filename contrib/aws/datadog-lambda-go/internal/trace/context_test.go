@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/extension"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/aws/aws-xray-sdk-go/v2/header"
 	"github.com/aws/aws-xray-sdk-go/v2/xray"
 	"github.com/stretchr/testify/assert"

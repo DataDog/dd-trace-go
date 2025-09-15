@@ -12,7 +12,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 
-	ddlambda "github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go"
+	ddlambda "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"
 	"github.com/aws/aws-lambda-go/events"
 )
 

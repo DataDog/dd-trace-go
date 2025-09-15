@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/extension"
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/logger"
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/version"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/version"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 
 	"github.com/stretchr/testify/assert"
@@ -107,9 +107,9 @@ func TestAddDistributionMetricWithFIPSMode(t *testing.T) {
 
 	// Create a listener with FIPS mode enabled
 	listener := MakeListener(Config{
-		APIKey:    "12345",
-		Site:      server.URL,
-		FIPSMode:  true,
+		APIKey:   "12345",
+		Site:     server.URL,
+		FIPSMode: true,
 	}, &extension.ExtensionManager{})
 
 	// Verify the API client wasn't created

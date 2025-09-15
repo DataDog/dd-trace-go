@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go
+module github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
 
 go 1.24.0
 

@@ -14,7 +14,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/logger"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/stretchr/testify/assert"
@@ -224,11 +224,11 @@ type mockSpanContext struct {
 	ddtrace.SpanContext
 }
 
-func (m mockSpanContext) TraceID() string               { return "123" }
-func (m mockSpanContext) TraceIDBytes() [16]byte        { return [16]byte{} }
-func (m mockSpanContext) TraceIDLower() uint64          { return 123 }
-func (m mockSpanContext) SpanID() uint64                { return 456 }
-func (m mockSpanContext) SamplingPriority() (int, bool) { return -1, true }
+func (m mockSpanContext) TraceID() string                                   { return "123" }
+func (m mockSpanContext) TraceIDBytes() [16]byte                            { return [16]byte{} }
+func (m mockSpanContext) TraceIDLower() uint64                              { return 123 }
+func (m mockSpanContext) SpanID() uint64                                    { return 456 }
+func (m mockSpanContext) SamplingPriority() (int, bool)                     { return -1, true }
 func (m mockSpanContext) ForeachBaggageItem(handler func(k, v string) bool) {}
 
 type mockSpan struct{ ddtrace.Span }
@@ -276,7 +276,7 @@ func TestExtensionEndInvocationErrorHeaders(t *testing.T) {
 
 	data, err := base64.StdEncoding.DecodeString(hdr.Get("X-Datadog-Invocation-Error-Stack"))
 	assert.Nil(t, err)
-	assert.Contains(t, string(data), "github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go")
+	assert.Contains(t, string(data), "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2")
 	assert.Contains(t, string(data), "TestExtensionEndInvocationErrorHeaders")
 }
 

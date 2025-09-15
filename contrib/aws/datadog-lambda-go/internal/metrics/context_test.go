@@ -9,7 +9,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/extension"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/stretchr/testify/assert"
 )
 

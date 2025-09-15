@@ -15,7 +15,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 
-	ddlambda "github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go"
+	ddlambda "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"
 )
 
 var exampleSQSExtractor = func(ctx context.Context, ev json.RawMessage) map[string]string {

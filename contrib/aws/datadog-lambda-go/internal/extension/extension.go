@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/internal/logger"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )

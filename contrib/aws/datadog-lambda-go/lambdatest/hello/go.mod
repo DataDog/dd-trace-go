@@ -1,11 +1,11 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/lambdatest/hello
+module github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/lambdatest/hello/v2
 
 go 1.24.0
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.4.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
-	github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go v0.0.0-00010101000000-000000000000
 	github.com/aws/aws-lambda-go v1.46.0
 )
 
@@ -106,7 +106,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go => ../../
+replace github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 => ../../
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../../../..
 
