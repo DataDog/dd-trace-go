@@ -116,6 +116,7 @@ type keyValue struct {
 type keyValueList []keyValue
 
 var _ msgp.Encodable = (*keyValue)(nil)
+var _ msgp.Encodable = (keyValueList)(nil)
 
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
@@ -135,7 +136,19 @@ var _ msgp.Encodable = (*payloadV1)(nil)
 
 // EncodeMsg implements msgp.Encodable.
 func (p *payloadV1) EncodeMsg(e *msgp.Writer) error {
-	panic("not implemented")
+	kv := keyValueList{
+		{key: 2, value: anyValue{valueType: IntValueType, value: p.containerID}},     // containerID
+		{key: 3, value: anyValue{valueType: IntValueType, value: p.languageName}},    // languageName
+		{key: 4, value: anyValue{valueType: IntValueType, value: p.languageVersion}}, // languageVersion
+		{key: 5, value: anyValue{valueType: IntValueType, value: p.tracerVersion}},   // tracerVersion
+		{key: 6, value: anyValue{valueType: IntValueType, value: p.runtimeID}},       // runtimeID
+		{key: 7, value: anyValue{valueType: StringValueType, value: p.env}},          // env
+		{key: 8, value: anyValue{valueType: StringValueType, value: p.hostname}},     // hostname
+		{key: 9, value: anyValue{valueType: StringValueType, value: p.appVersion}},   // appVersion
+		{key: 10, value: anyValue{valueType: keyValueListType, value: p.attributes}}, // attributes
+		{key: 11, value: anyValue{valueType: keyValueListType, value: p.chunks}},     // chunks
+	}
+	return kv.EncodeMsg(e)
 }
 
 // push pushes a new item into the stream.
@@ -230,6 +243,9 @@ func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
 	case ArrayValueType:
 		e.WriteInt32(ArrayValueType)
 		return a.value.(arrayValue).EncodeMsg(e)
+	case keyValueListType:
+		e.WriteInt32(keyValueListType)
+		return a.value.(keyValueList).EncodeMsg(e)
 	default:
 		return fmt.Errorf("invalid value type: %d", a.valueType)
 	}
@@ -262,7 +278,7 @@ func (k keyValue) EncodeMsg(e *msgp.Writer) error {
 	return nil
 }
 
-func encodeKeyValueList(kv keyValueList, e *msgp.Writer) error {
+func (kv keyValueList) EncodeMsg(e *msgp.Writer) error {
 	err := e.WriteMapHeader(uint32(len(kv)))
 	if err != nil {
 		return err
@@ -366,7 +382,7 @@ func encodeSpan(s *Span, e *msgp.Writer) error {
 		kv = append(kv, keyValue{key: 14, value: anyValue{valueType: StringValueType, value: version}}) // version
 	}
 
-	return encodeKeyValueList(kv, e)
+	return kv.EncodeMsg(e)
 }
 
 // encodeString and decodeString handles encoding a string to the payload's string table.
