@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.1
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
 	github.com/stretchr/testify v1.10.0
 	go.mongodb.org/mongo-driver/v2 v2.2.2
 )
