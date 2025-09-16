@@ -8,6 +8,7 @@ use (
 	./contrib/Shopify/sarama
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
+	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
