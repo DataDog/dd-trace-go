@@ -117,6 +117,7 @@ type keyValueList []keyValue
 
 var _ msgp.Encodable = (*keyValue)(nil)
 var _ msgp.Encodable = (keyValueList)(nil)
+var _ msgp.Encodable = (*traceChunk)(nil)
 
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
@@ -158,7 +159,7 @@ func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 	p.chunks = append(p.chunks, traceChunk{
 		spans: t,
 	})
-	if err := msgp.Encode(&p.buf, t); err != nil { // TODO(hannahkm): this needs to call (spanListV1).EncodeMsg
+	if err := t.EncodeMsg(&p.buf); err != nil { // TODO(hannahkm): this needs to call (spanListV1).EncodeMsg
 		return payloadStats{}, err
 	}
 	p.recordItem()
@@ -296,7 +297,26 @@ func (kv keyValueList) EncodeMsg(e *msgp.Writer) error {
 	return nil
 }
 
-// EncodeMsg writes the contents of the TraceChunk into `p.buf`
+func (t *traceChunk) EncodeMsg(e *msgp.Writer) error {
+	kv := keyValueList{
+		{key: 1, value: anyValue{valueType: IntValueType, value: t.priority}},      // priority
+		{key: 2, value: anyValue{valueType: StringValueType, value: t.origin}},     // origin
+		{key: 4, value: anyValue{valueType: keyValueListType, value: t.spans}},     // spans
+		{key: 5, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}}, // droppedTrace
+		{key: 6, value: anyValue{valueType: BytesValueType, value: t.traceID}},     // traceID
+		{key: 7, value: anyValue{valueType: IntValueType, value: t.decisionMaker}}, // samplingMechanism
+	}
+
+	attr := keyValueList{}
+	for k, v := range t.attributes {
+		attr = append(attr, keyValue{key: k, value: anyValue{valueType: getAnyValueType(v), value: v}})
+	}
+	kv = append(kv, keyValue{key: 3, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+
+	return kv.EncodeMsg(e)
+}
+
+// EncodeMsg writes the contents of a list of spans into `p.buf`
 // Span, SpanLink, and SpanEvent structs are different for v0.4 and v1.0.
 // For v1 we need to manually encode the spans, span links, and span events
 // if we don't want to do extra allocations.
