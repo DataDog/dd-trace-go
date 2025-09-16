@@ -23,7 +23,7 @@ type LLMObsEvaluationMetricEvent struct {
 	Tags             []string                     `json:"tags,omitempty"`
 }
 
-func (c *Client) LLMObsEvalMetricsSend(
+func (c *Transport) LLMObsEvalMetricsSend(
 	ctx context.Context,
 	metrics []*LLMObsEvaluationMetricEvent,
 ) error {

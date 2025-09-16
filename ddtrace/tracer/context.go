@@ -7,11 +7,9 @@ package tracer
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
@@ -52,9 +50,9 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	}
 
 	// TODO: figure out this
-	if mlApp, ok := illmobs.PropagatedMLAppFromContext(ctx); ok {
-		fmt.Printf("propagated mlapp: %s", mlApp)
-	}
+	//if mlApp, ok := illmobs.PropagatedMLAppFromContext(ctx); ok {
+	//	fmt.Printf("propagated mlapp: %s", mlApp)
+	//}
 
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)

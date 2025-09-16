@@ -23,8 +23,8 @@ import (
 	"github.com/cenkalti/backoff/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/config"
 )
 
 const (
@@ -54,38 +54,37 @@ var (
 	ErrDatasetNotFound = errors.New("dataset not found")
 )
 
-// Client sends requests to the LLMObs “experiments” API set like the Python client.
-type Client struct {
-	httpClient       *http.Client
-	defaultHeaders   map[string]string
-	site             string
-	agentURL         *url.URL
-	agentlessEnabled bool
+// Transport sends requests to the LLMObs “experiments” API set like the Python client.
+type Transport struct {
+	httpClient     *http.Client
+	defaultHeaders map[string]string
+	site           string
+	agentURL       *url.URL
+	agentless      bool
 }
 
 // NewClient builds a new Datasets and Experiments client.
-func NewClient(cfg *config.Config) *Client {
+func New(cfg config.Config, agentless bool) *Transport {
 	site := defaultSite
-	if cfg.Site != "" {
-		site = cfg.Site
+	if cfg.TracerConfig.Site != "" {
+		site = cfg.TracerConfig.Site
 	}
 
 	defaultHeaders := map[string]string{
 		"Content-Type": "application/json",
 	}
-	if cfg.AgentlessEnabled {
-		defaultHeaders["DD-API-KEY"] = cfg.APIKey
-		if cfg.APPKey != "" {
-			defaultHeaders["DD-APPLICATION-KEY"] = cfg.APPKey
+	if agentless {
+		defaultHeaders["DD-API-KEY"] = cfg.TracerConfig.APIKey
+		if cfg.TracerConfig.APPKey != "" {
+			defaultHeaders["DD-APPLICATION-KEY"] = cfg.TracerConfig.APPKey
 		}
 	}
-
-	return &Client{
-		httpClient:       cfg.HTTPClient,
-		defaultHeaders:   defaultHeaders,
-		site:             site,
-		agentURL:         cfg.AgentURL,
-		agentlessEnabled: cfg.AgentlessEnabled,
+	return &Transport{
+		httpClient:     cfg.TracerConfig.HTTPClient,
+		defaultHeaders: defaultHeaders,
+		site:           site,
+		agentURL:       cfg.TracerConfig.AgentURL,
+		agentless:      agentless,
 	}
 }
 
@@ -125,8 +124,8 @@ func errStackTrace(err error) string {
 	return wErr.Format()
 }
 
-func (c *Client) baseURL(subdomain string) string {
-	if c.agentlessEnabled {
+func (c *Transport) baseURL(subdomain string) string {
+	if c.agentless {
 		return fmt.Sprintf("https://%s.%s", subdomain, c.site)
 	}
 	u := ""
@@ -139,7 +138,7 @@ func (c *Client) baseURL(subdomain string) string {
 	return u
 }
 
-func (c *Client) request(ctx context.Context, method, path, subdomain string, body any) (int, []byte, error) {
+func (c *Transport) request(ctx context.Context, method, path, subdomain string, body any) (int, []byte, error) {
 	urlStr := c.baseURL(subdomain) + path
 
 	var reqBody io.Reader
@@ -161,7 +160,7 @@ func (c *Client) request(ctx context.Context, method, path, subdomain string, bo
 	for key, val := range c.defaultHeaders {
 		req.Header.Set(key, val)
 	}
-	if !c.agentlessEnabled {
+	if !c.agentless {
 		req.Header.Set(headerEVPSubdomain, subdomain)
 	}
 
@@ -213,6 +212,7 @@ func (c *Client) request(ctx context.Context, method, path, subdomain string, bo
 	}
 
 	if log.DebugEnabled() {
+		// TODO(rarguelloF): change this as this can log sensitive data
 		if reqb, err := httputil.DumpRequest(req, true); err == nil {
 			log.Debug("llmobs/internal/transport: sending request: %s", string(reqb))
 		} else {

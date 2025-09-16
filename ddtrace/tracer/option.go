@@ -32,6 +32,7 @@ import (
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -43,6 +44,15 @@ import (
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+)
+
+const (
+	envLLMObsEnabled               = "DD_LLMOBS_ENABLED"
+	envLLMObsSampleRate            = "DD_LLMOBS_SAMPLE_RATE"
+	envLLMObsMlApp                 = "DD_LLMOBS_ML_APP"
+	envLLMObsAgentlessEnabled      = "DD_LLMOBS_AGENTLESS_ENABLED"
+	envLLMObsInstrumentedProxyUrls = "DD_LLMOBS_INSTRUMENTED_PROXY_URLS"
+	envLLMObsProjectName           = "DD_LLMOBS_PROJECT_NAME"
 )
 
 var contribIntegrations = map[string]struct {
@@ -320,8 +330,8 @@ type config struct {
 	// traceProtocol specifies the trace protocol to use.
 	traceProtocol float64
 
-	// llmobsEnabled specifies whether LLM Observability is enabled.
-	llmobsEnabled bool
+	// llmobs contains the LLM Observability config
+	llmobs llmobsconfig.Config
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -509,6 +519,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
+
+	// LLM Observability config
+	c.llmobs = llmobsconfig.Config{
+		Enabled:               internal.BoolEnv(envLLMObsEnabled, false),
+		SampleRate:            internal.FloatEnv(envLLMObsSampleRate, 1.0),
+		MLApp:                 os.Getenv(envLLMObsMlApp),
+		AgentlessEnabled:      llmobsAgentlessEnabledFromEnv(),
+		InstrumentedProxyURLs: llmobsInstrumentedProxyURLsFromEnv(),
+		ProjectName:           os.Getenv(envLLMObsProjectName),
+	}
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -623,8 +643,56 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
+	// Update the llmobs config with stuff needed from the tracer.
+	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
+		DDTags:        c.globalTags.get(),
+		Env:           c.env,
+		Service:       c.serviceName,
+		Version:       c.version,
+		AgentURL:      c.agentURL,
+		APIKey:        os.Getenv("DD_API_KEY"),
+		APPKey:        os.Getenv("DD_APP_KEY"),
+		HTTPClient:    c.httpClient,
+		Site:          os.Getenv("DD_SITE"),
+		SkipSSLVerify: internal.BoolEnv("DD_SKIP_SSL_VALIDATION", false),
+	}
+	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
+		EVPProxyV2: c.agent.evpProxyV2,
+	}
 
 	return c, nil
+}
+
+func llmobsAgentlessEnabledFromEnv() *bool {
+	v, ok := internal.BoolEnvNoDefault(envLLMObsAgentlessEnabled)
+	if !ok {
+		return nil
+	}
+	return &v
+}
+
+func llmobsInstrumentedProxyURLsFromEnv() []string {
+	v := os.Getenv(envLLMObsInstrumentedProxyUrls)
+	if v == "" {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+	for _, part := range strings.Split(v, ",") {
+		s := strings.TrimSpace(part)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func apmTracingDisabled(c *config) {
@@ -769,6 +837,9 @@ type agentFeatures struct {
 
 	// spanEvents reports whether the trace-agent can receive spans with the `span_events` field.
 	spanEventsAvailable bool
+
+	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
+	evpProxyV2 bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -825,6 +896,8 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		switch endpoint {
 		case "/v0.6/stats":
 			features.Stats = true
+		case "/evp_proxy/v2/":
+			features.evpProxyV2 = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
@@ -1466,6 +1539,42 @@ func WithTestDefaults(statsdClient any) StartOption {
 		}
 		c.statsdClient = statsdClient.(internal.StatsdClient)
 		c.transport = newDummyTransport()
+	}
+}
+
+func WithLLMObsEnabled(enabled bool) StartOption {
+	return func(c *config) {
+		c.llmobs.Enabled = enabled
+	}
+}
+
+func WithLLMObsMLApp(mlApp string) StartOption {
+	return func(c *config) {
+		c.llmobs.MLApp = mlApp
+	}
+}
+
+func WithLLMObsProjectName(projectName string) StartOption {
+	return func(c *config) {
+		c.llmobs.ProjectName = projectName
+	}
+}
+
+func WithLLMObsSampleRate(sampleRate float64) StartOption {
+	return func(c *config) {
+		c.llmobs.SampleRate = sampleRate
+	}
+}
+
+func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
+	return func(c *config) {
+		c.llmobs.AgentlessEnabled = &agentlessEnabled
+	}
+}
+
+func WithLLMObsInstrumentedProxyURLs(instrumentedProxyURLs []string) StartOption {
+	return func(c *config) {
+		c.llmobs.InstrumentedProxyURLs = instrumentedProxyURLs
 	}
 }
 

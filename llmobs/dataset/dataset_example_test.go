@@ -9,15 +9,15 @@ import (
 	"context"
 	"log"
 
-	"github.com/DataDog/dd-trace-go/v2/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
 )
 
 func ExampleCreate() {
-	if err := llmobs.Start(); err != nil {
+	if err := tracer.Start(tracer.WithLLMObsEnabled(true)); err != nil {
 		log.Fatal(err)
 	}
-	defer llmobs.Stop()
+	defer tracer.Stop()
 
 	ctx := context.Background()
 
@@ -58,10 +58,10 @@ func ExampleCreate() {
 }
 
 func ExampleDataset_Append() {
-	if err := llmobs.Start(); err != nil {
+	if err := tracer.Start(tracer.WithLLMObsEnabled(true)); err != nil {
 		log.Fatal(err)
 	}
-	defer llmobs.Stop()
+	defer tracer.Stop()
 
 	ctx := context.Background()
 
@@ -113,11 +113,11 @@ func ExampleDataset_Append() {
 }
 
 func ExampleDataset_Update() {
-	if err := llmobs.Start(); err != nil {
+	if err := tracer.Start(tracer.WithLLMObsEnabled(true)); err != nil {
 		log.Fatal(err)
 	}
-	defer llmobs.Stop()
-
+	defer tracer.Stop()
+	
 	ctx := context.Background()
 
 	// First, create the dataset

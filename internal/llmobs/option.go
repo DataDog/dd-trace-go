@@ -1,19 +1,8 @@
-package internal
+package llmobs
 
 import (
-	"net/http"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/config"
 )
-
-type Option func(cfg *config.Config)
-
-func WithHTTPClient(cl *http.Client) Option {
-	return func(cfg *config.Config) {
-		cfg.HTTPClient = cl
-	}
-}
 
 // TODO(rarguelloF): add options
 
@@ -57,7 +46,7 @@ func WithStartTime(t time.Time) StartSpanOption {
 	}
 }
 
-//func WithTracerStartSpanOptions(opts ...tracer.StartSpanOption) StartSpanOption {
+//func WithTracerStartSpanOptions(opts ...Tracer.StartSpanOption) StartSpanOption {
 //	return func(cfg *startSpanConfig) {
 //		cfg.startSpanOpts = opts
 //	}

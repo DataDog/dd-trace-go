@@ -13,30 +13,30 @@ package llmobs
 import (
 	"context"
 
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
 )
 
 // Reference: https://docs.datadoghq.com/llm_observability/instrumentation/sdk/
 
-type SpanKind string
+// type SpanKind string
 
-func Start(opts ...Option) error {
-	return internal.Start(opts...)
-}
+//func Start(opts ...Option) error {
+//	return illmobs.Start(opts...)
+//}
+//
+//func Stop() {
+//	internal.Stop()
+//}
 
-func Stop() {
-	internal.Stop()
-}
+type Span = illmobs.Span
 
-type Span = internal.Span
-
-func StartWorkflowSpan(ctx context.Context, name string) (*Span, context.Context) {
-	llm, err := internal.ActiveLLMObs()
+func StartWorkflowSpan(ctx context.Context, name string, opts ...StartSpanOption) (*Span, context.Context) {
+	llm, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		log.Warn("llmobs: failed to start llmobs span: %v", err)
 		return nil, ctx
 	}
 
-	return llm.StartSpan(ctx, internal.SpanKindWorkflow, name)
+	return llm.StartSpan(ctx, illmobs.SpanKindWorkflow, name, opts...)
 }

@@ -9,17 +9,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/transport"
 )
 
 var (
@@ -125,12 +124,12 @@ type Evaluation struct {
 }
 
 func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, description string, opts ...Option) (*Experiment, error) {
-	llmobs, err := internal.ActiveLLMObs()
+	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
 	}
 
-	cfg := defaultNewCfg(llmobs.Config)
+	cfg := defaultNewCfg(ll.Config)
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -160,7 +159,7 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, de
 }
 
 func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, error) {
-	llmobs, err := internal.ActiveLLMObs()
+	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
 	}
@@ -170,13 +169,13 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 	}
 
 	// 1) Create or get the project
-	proj, err := llmobs.Transport.ProjectGetOrCreate(ctx, e.cfg.projectName)
+	proj, err := ll.Transport.ProjectGetOrCreate(ctx, e.cfg.projectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
 
 	// 2) Create the experiment
-	expResp, err := llmobs.Transport.ExperimentCreate(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description)
+	expResp, err := ll.Transport.ExperimentCreate(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create experiment: %w", err)
 	}
@@ -188,7 +187,7 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 	pushEventsTags = append(pushEventsTags, fmt.Sprintf("%s:%s", "experiment_id", e.id))
 
 	// 3) Run the experiment task for each record in the dataset
-	results, err := e.runTask(ctx, llmobs, cfg)
+	results, err := e.runTask(ctx, ll, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run experiment task: %w", err)
 	}
@@ -198,7 +197,7 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 
 	// 4) Generate and publish metrics from the results
 	metrics := e.generateMetrics(results)
-	if err := llmobs.Transport.ExperimentPushEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
+	if err := ll.Transport.ExperimentPushEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
 		return nil, fmt.Errorf("failed to push experiment events: %w", err)
 	}
 
@@ -207,10 +206,10 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 
 func (e *Experiment) URL() string {
 	// FIXME(rarguelloF): will not work for subdomain orgs
-	return fmt.Sprintf("%s/llm/experiments/%s", internal.ResourceBaseURL(), e.id)
+	return fmt.Sprintf("%s/llm/experiments/%s", illmobs.PublicResourceBaseURL(), e.id)
 }
 
-func (e *Experiment) runTask(ctx context.Context, llmobs *internal.LLMObs, cfg *runCfg) ([]*Result, error) {
+func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *runCfg) ([]*Result, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	if cfg.maxConcurrency > 0 {
 		eg.SetLimit(cfg.maxConcurrency)
@@ -249,14 +248,14 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *internal.LLMObs, cfg *
 	return results, nil
 }
 
-func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *internal.LLMObs, recIdx int, rec dataset.Record) *Result {
+func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record) *Result {
 	var (
 		err       error
 		startTime = time.Now()
 	)
 
-	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, internal.WithStartTime(startTime))
-	defer span.Finish(internal.WithError(err))
+	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.WithStartTime(startTime))
+	defer span.Finish(illmobs.WithError(err))
 
 	tags := make(map[string]string)
 	for k, v := range e.cfg.tags {
@@ -272,7 +271,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *internal.LLMO
 		err = errortrace.Wrap(err)
 	}
 
-	llmobs.AnnotateExperimentSpan(span, internal.ExperimentSpanAnnotations{
+	llmobs.AnnotateExperimentSpan(span, illmobs.ExperimentSpanAnnotations{
 		Input:          rec.Input,
 		Output:         out,
 		Tags:           tags,
@@ -281,7 +280,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *internal.LLMO
 
 	return &Result{
 		RecordIndex:    recIdx,
-		SpanID:         strconv.FormatUint(span.SpanID(), 10),
+		SpanID:         span.SpanID(),
 		TraceID:        span.TraceID(),
 		Timestamp:      startTime,
 		Input:          rec.Input,

@@ -186,7 +186,7 @@ type (
 	ResponseExperimentCreate = Response[ExperimentView]
 )
 
-func (c *Client) DatasetGetByName(ctx context.Context, name string) (*DatasetView, error) {
+func (c *Transport) DatasetGetByName(ctx context.Context, name string) (*DatasetView, error) {
 	q := url.Values{}
 	q.Set("filter[name]", name)
 	datasetPath := endpointPrefixDNE + "/datasets" + "?" + q.Encode()
@@ -210,7 +210,7 @@ func (c *Client) DatasetGetByName(ctx context.Context, name string) (*DatasetVie
 }
 
 // DatasetCreate -> POST /datasets
-func (c *Client) DatasetCreate(ctx context.Context, name, description string) (*DatasetView, error) {
+func (c *Transport) DatasetCreate(ctx context.Context, name, description string) (*DatasetView, error) {
 	_, err := c.DatasetGetByName(ctx, name)
 	if err == nil {
 		return nil, errors.New("dataset already exists")
@@ -249,7 +249,7 @@ func (c *Client) DatasetCreate(ctx context.Context, name, description string) (*
 }
 
 // DatasetDelete -> POST /datasets/delete
-func (c *Client) DatasetDelete(ctx context.Context, datasetIDs ...string) error {
+func (c *Transport) DatasetDelete(ctx context.Context, datasetIDs ...string) error {
 	path := endpointPrefixDNE + "/datasets/delete"
 	method := http.MethodPost
 	body := RequestDatasetDelete{
@@ -269,7 +269,7 @@ func (c *Client) DatasetDelete(ctx context.Context, datasetIDs ...string) error 
 }
 
 // DatasetBatchUpdateRecords -> POST /datasets/{id}/batch_update
-func (c *Client) DatasetBatchUpdateRecords(
+func (c *Transport) DatasetBatchUpdateRecords(
 	ctx context.Context,
 	datasetID string,
 	insert []DatasetRecordCreate,
@@ -323,7 +323,7 @@ func (c *Client) DatasetBatchUpdateRecords(
 }
 
 // DatasetGetWithRecords -> GET /datasets?filter[name]=... , then GET /datasets/{id}/records
-func (c *Client) DatasetGetWithRecords(ctx context.Context, name string) (*DatasetView, []DatasetRecordView, error) {
+func (c *Transport) DatasetGetWithRecords(ctx context.Context, name string) (*DatasetView, []DatasetRecordView, error) {
 	// 1) Fetch record by name
 	ds, err := c.DatasetGetByName(ctx, name)
 	if err != nil {
@@ -353,7 +353,7 @@ func (c *Client) DatasetGetWithRecords(ctx context.Context, name string) (*Datas
 }
 
 // ProjectGetOrCreate -> POST /projects
-func (c *Client) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectView, error) {
+func (c *Transport) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectView, error) {
 	path := endpointPrefixDNE + "/projects"
 	method := http.MethodPost
 
@@ -382,7 +382,7 @@ func (c *Client) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectV
 }
 
 // ExperimentCreate -> POST /experiments
-func (c *Client) ExperimentCreate(
+func (c *Transport) ExperimentCreate(
 	ctx context.Context,
 	name, datasetID, projectID string,
 	datasetVersion int,
@@ -429,7 +429,7 @@ func (c *Client) ExperimentCreate(
 }
 
 // ExperimentPushEvents -> POST /experiments/{id}/events  (accepts 200/202)
-func (c *Client) ExperimentPushEvents(
+func (c *Transport) ExperimentPushEvents(
 	ctx context.Context,
 	experimentID string,
 	metrics []ExperimentEvalMetricEvent,

@@ -18,16 +18,26 @@ import (
 // BoolEnv returns the parsed boolean value of an environment variable, or
 // def otherwise.
 func BoolEnv(key string, def bool) bool {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := BoolEnvNoDefault(key)
 	if !ok {
 		return def
 	}
+	return vv
+}
+
+// BoolEnvNoDefault returns the parsed boolean value of an environment variable. The second returned bool signals if
+// the value was set and was a correct boolean value.
+func BoolEnvNoDefault(key string) (bool, bool) {
+	vv, ok := os.LookupEnv(key)
+	if !ok {
+		return false, false
+	}
 	v, err := strconv.ParseBool(vv)
 	if err != nil {
-		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err.Error())
-		return def
+		log.Warn("Non-boolean value for env var %s. Parse failed with error: %v", key, err.Error())
+		return false, false
 	}
-	return v
+	return v, true
 }
 
 // IntEnv returns the parsed int value of an environment variable, or

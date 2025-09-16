@@ -6,9 +6,15 @@
 package llmobs
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
-type Option = internal.Option
+type StartSpanOption = illmobs.StartSpanOption
 
-var WithHTTPClient = internal.WithHTTPClient
+var (
+	WithSessionID     = illmobs.WithSessionID
+	WithModelName     = illmobs.WithModelName
+	WithModelProvider = illmobs.WithModelProvider
+	WithMLApp         = illmobs.WithMLApp
+	WithStartTime     = illmobs.WithStartTime
+)

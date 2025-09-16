@@ -19,9 +19,9 @@ import (
 
 	"github.com/google/uuid"
 
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal"
-	"github.com/DataDog/dd-trace-go/v2/llmobs/internal/transport"
 )
 
 const experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
@@ -97,7 +97,7 @@ func (u *RecordUpdate) merge(new RecordUpdate) {
 // Create initializes a Dataset and pushes it to DataDog.
 // FIXME(rarguelloF): this will likely timeout if the dataset is big
 func Create(ctx context.Context, name string, records []Record, opts ...CreateOption) (*Dataset, error) {
-	llmobs, err := internal.ActiveLLMObs()
+	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 		opt(cfg)
 	}
 
-	resp, err := llmobs.Transport.DatasetCreate(ctx, name, cfg.description)
+	resp, err := ll.Transport.DatasetCreate(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -134,7 +134,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 //
 // FIXME(rarguelloF): this will likely timeout if the dataset is big
 func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string, opts ...CreateOption) (*Dataset, error) {
-	llmobs, err := internal.ActiveLLMObs()
+	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 		opt(cfg)
 	}
 	// 1) Create dataset
-	resp, err := llmobs.Transport.DatasetCreate(ctx, name, cfg.description)
+	resp, err := ll.Transport.DatasetCreate(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -245,11 +245,11 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 // Pull fetches the given Dataset from DataDog.
 // FIXME(rarguelloF): this will likely timeout if the dataset is big
 func Pull(ctx context.Context, name string) (*Dataset, error) {
-	llmobs, err := internal.ActiveLLMObs()
+	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
 	}
-	dsResp, recordsResp, err := llmobs.Transport.DatasetGetWithRecords(ctx, name)
+	dsResp, recordsResp, err := ll.Transport.DatasetGetWithRecords(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
@@ -383,7 +383,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 	if d.id == "" {
 		return errors.New("dataset has no ID (create it using Create or CreateFromCSV)")
 	}
-	llmobs, err := internal.ActiveLLMObs()
+	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return err
 	}
@@ -414,7 +414,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 	}
 
 	// newRecordIDs should go in the same order
-	newVersion, newRecordIDs, err := llmobs.Transport.DatasetBatchUpdateRecords(ctx, d.id, insert, update, del)
+	newVersion, newRecordIDs, err := ll.Transport.DatasetBatchUpdateRecords(ctx, d.id, insert, update, del)
 	if err != nil {
 		return fmt.Errorf("failed to batch update dataset: %w", err)
 	}
@@ -446,7 +446,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 // URL returns the url to access the dataset in DataDog.
 func (d *Dataset) URL() string {
 	// FIXME(rarguelloF): will not work for subdomain orgs
-	return fmt.Sprintf("%s/llm/datasets/%s", internal.ResourceBaseURL(), d.id)
+	return fmt.Sprintf("%s/llm/datasets/%s", illmobs.PublicResourceBaseURL(), d.id)
 }
 
 // Len returns the length of the dataset records.
