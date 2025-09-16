@@ -246,14 +246,16 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 			sp.Finish()
 		}()
 	}
-	time.Sleep(150 * time.Millisecond)
-	flush(5)
-	tg.Wait(assert, 10, 100*time.Millisecond)
 	wg.Wait()
+	flush(5)
 
-	counts := tg.Counts()
-	assert.Equal(int64(5), counts["datadog.tracer.spans_started"])
-	assert.Equal(int64(5), counts["datadog.tracer.spans_finished"])
+	cond := func() bool {
+		counts := tg.Counts()
+		return counts["datadog.tracer.spans_started"] == 5 && counts["datadog.tracer.spans_finished"] == 5
+	}
+	assert.Eventually(cond, 5*time.Second, time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
+	assert.True(cond())
 
 	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
