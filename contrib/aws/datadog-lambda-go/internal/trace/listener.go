@@ -12,9 +12,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	ddotel "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry"
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -161,8 +161,8 @@ func startFunctionExecutionSpan(ctx context.Context, mergeXrayTraces bool, isDdS
 		ddtracer.Tag("request_id", lambdaCtx.AwsRequestID),
 		ddtracer.Tag("resource_names", lambdacontext.FunctionName),
 		ddtracer.Tag("functionname", strings.ToLower(lambdacontext.FunctionName)),
-		ddtracer.Tag("datadog_lambda", version.DDLambdaVersion),
-		ddtracer.Tag("dd_trace", version.DDTraceVersion),
+		ddtracer.Tag("datadog_lambda", internal.Instr.Version()),
+		ddtracer.Tag("dd_trace", internal.Instr.Version()),
 	}
 
 	if parentSpanContext != nil {

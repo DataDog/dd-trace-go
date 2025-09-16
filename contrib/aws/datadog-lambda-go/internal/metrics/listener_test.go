@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/version"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 
 	"github.com/stretchr/testify/assert"
@@ -150,7 +150,7 @@ func TestGetEnhancedMetricsTags(t *testing.T) {
 	}
 	tags := getEnhancedMetricsTags(lambdacontext.NewContext(ctx, lc))
 
-	assert.ElementsMatch(t, tags, []string{"functionname:go-lambda-test", "region:us-east-1", "memorysize:256", "cold_start:false", "account_id:123497558138", "resource:go-lambda-test:Latest", "datadog_lambda:v" + version.DDLambdaVersion})
+	assert.ElementsMatch(t, tags, []string{"functionname:go-lambda-test", "region:us-east-1", "memorysize:256", "cold_start:false", "account_id:123497558138", "resource:go-lambda-test:Latest", "datadog_lambda:v" + internal.Instr.Version()})
 }
 
 func TestGetEnhancedMetricsTagsWithAlias(t *testing.T) {
@@ -165,7 +165,7 @@ func TestGetEnhancedMetricsTagsWithAlias(t *testing.T) {
 	}
 
 	tags := getEnhancedMetricsTags((lambdacontext.NewContext(ctx, lc)))
-	assert.ElementsMatch(t, tags, []string{"functionname:go-lambda-test", "region:us-east-1", "memorysize:256", "cold_start:false", "account_id:123497558138", "resource:go-lambda-test:my-alias", "executedversion:1", "datadog_lambda:v" + version.DDLambdaVersion})
+	assert.ElementsMatch(t, tags, []string{"functionname:go-lambda-test", "region:us-east-1", "memorysize:256", "cold_start:false", "account_id:123497558138", "resource:go-lambda-test:my-alias", "executedversion:1", "datadog_lambda:v" + internal.Instr.Version()})
 }
 
 func TestGetEnhancedMetricsTagsNoLambdaContext(t *testing.T) {

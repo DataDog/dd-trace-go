@@ -17,9 +17,9 @@ import (
 	"github.com/aws/aws-lambda-go/lambdacontext"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/version"
 )
 
 type (
@@ -248,7 +248,7 @@ func getEnhancedMetricsTags(ctx context.Context) []string {
 		memorySize := fmt.Sprintf("memorysize:%d", lambdacontext.MemoryLimitInMB)
 		coldStart := fmt.Sprintf("cold_start:%t", isColdStart.(bool))
 		resource := fmt.Sprintf("resource:%s", lambdacontext.FunctionName)
-		datadogLambda := fmt.Sprintf("datadog_lambda:v%s", version.DDLambdaVersion)
+		datadogLambda := fmt.Sprintf("datadog_lambda:v%s", internal.Instr.Version())
 
 		tags := []string{functionName, region, accountId, memorySize, coldStart, datadogLambda}
 

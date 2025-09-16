@@ -40,8 +40,8 @@ if [ -n "$UPDATE_SNAPSHOTS" ]; then
 fi
 
 echo "Building Go binaries"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/hello/bootstrap hello/main.go
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/error/bootstrap error/main.go
+cd hello && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/hello/bootstrap && cd ..
+cd error && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/error/bootstrap && cd ..
 zip -j build/hello.zip build/hello/bootstrap
 zip -j build/error.zip build/error/bootstrap
 
