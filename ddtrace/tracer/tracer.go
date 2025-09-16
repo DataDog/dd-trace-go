@@ -1055,11 +1055,7 @@ func noopTaskEnd() {}
 // Otherwise, it creates a new SpanContext wrapping the provided context,
 // extracting any existing W3C baggage from it.
 func SpanContextFromContext(ctx context.Context) *SpanContext {
-	if sc, ok := ctx.(*SpanContext); ok {
-		return sc // Already a SpanContext
-	}
-
-	// Create new SpanContext wrapping the regular context
+	// Create new SpanContext from regular context
 	sc := &SpanContext{}
 
 	// Extract existing W3C baggage from context using the baggage package
@@ -1087,8 +1083,8 @@ func ExtractToContext(parentCtx context.Context, carrier interface{}) (context.C
 		return parentCtx, err
 	}
 
-	// No need to set parent context - SpanContext implements context.Context directly
-	return sc, nil
+	// Store SpanContext in regular context.Context using standard pattern
+	return ContextWithSpan(parentCtx, &Span{context: sc}), nil
 }
 
 // extractBaggageFromContext extracts baggage from a regular context.Context

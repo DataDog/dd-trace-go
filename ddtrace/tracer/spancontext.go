@@ -29,7 +29,6 @@ import (
 const TraceIDZero string = "00000000000000000000000000000000"
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
-var _ context.Context = (*SpanContext)(nil)
 
 type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
 
@@ -722,46 +721,16 @@ func spanIDHexEncoded(u uint64, padding int) string {
 	return string(buf[i:])
 }
 
-// context.Context interface implementation for SpanContext
-
-// Deadline returns the time when work done on behalf of this context
-// should be canceled. This implementation delegates to the parent context
-// if present, otherwise returns zero time and false.
-func (c *SpanContext) Deadline() (deadline time.Time, ok bool) {
-	return time.Time{}, false
-}
-
-// Done returns a channel that's closed when work done on behalf of this
-// context should be canceled. This implementation delegates to the parent
-// context if present, otherwise returns nil.
-func (c *SpanContext) Done() <-chan struct{} {
-	return nil
-}
-
-// Err returns a non-nil error value after Done is closed. This implementation
-// delegates to the parent context if present, otherwise returns nil.
-func (c *SpanContext) Err() error {
-	return nil
-}
-
-// Value returns the value associated with this context for key. This implementation
-// handles special W3C baggage operation keys and delegates other keys to parent context.
-func (c *SpanContext) Value(key interface{}) interface{} {
-	// Handle special W3C baggage operation keys from baggage package
-	if c.baggage != nil {
-		// Delegate baggage operations to the baggage context
-		if baggageCtx, ok := c.baggage.(context.Context); ok {
-			if value := baggageCtx.Value(key); value != nil {
-				return value
-			}
-		}
-	}
-	return nil
-}
-
 // IsValid returns true if this SpanContext contains valid trace context
 // (non-zero trace ID and span ID). This method helps identify contexts
 // that should be used for trace propagation vs baggage-only contexts.
 func (c *SpanContext) IsValid() bool {
 	return !c.traceID.Empty() && c.spanID != 0
+}
+
+// ForeachW3CBaggage iterates over W3C baggage items for span tag generation.
+func (c *SpanContext) ForeachW3CBaggage(handler func(k, v string) bool) {
+	if c.baggage != nil {
+		c.baggage.ForeachBaggage(handler)
+	}
 }
