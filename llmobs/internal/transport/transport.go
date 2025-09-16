@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -149,7 +150,7 @@ func (c *Client) request(ctx context.Context, method, path, subdomain string, bo
 		if err := enc.Encode(body); err != nil {
 			return 0, nil, fmt.Errorf("encode body: %w", err)
 		}
-		reqBody = &buf
+		reqBody = bytes.NewReader(buf.Bytes())
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, urlStr, reqBody)
@@ -211,7 +212,13 @@ func (c *Client) request(ctx context.Context, method, path, subdomain string, bo
 		return resp, nil
 	}
 
-	log.Debug("llmobs/internal/transport: sending request (method: %s | url: %s)", method, urlStr)
+	if log.DebugEnabled() {
+		if reqb, err := httputil.DumpRequest(req, true); err == nil {
+			log.Debug("llmobs/internal/transport: sending request: %s", string(reqb))
+		} else {
+			log.Debug("llmobs/internal/transport: sending request (method: %s | url: %s)", method, urlStr)
+		}
+	}
 	resp, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
 	if err != nil {
 		return 0, nil, err

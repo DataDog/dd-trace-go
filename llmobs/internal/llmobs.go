@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strconv"
@@ -67,36 +68,14 @@ const (
 	defaultEvalPoolSize    = 4
 )
 
+const (
+	sizeLimitEVPEvent        = 5_000_000 // 5MB
+	collectionErrorDroppedIO = "dropped_io"
+	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
+)
+
 // See: https://docs.datadoghq.com/getting_started/site/#access-the-datadog-site
 var ddSitesNeedingAppSubdomain = []string{"datadoghq.com", "datadoghq.eu", "ddog-gov.com"}
-
-const (
-	keySpanKind                = "_ml_obs.meta.span.kind"
-	keySessionID               = "_ml_obs.session_id"
-	keyMetadata                = "_ml_obs.meta.metadata"
-	keyMetrics                 = "_ml_obs.metrics"
-	keyMLApp                   = "_ml_obs.meta.ml_app"
-	keyPropagatedParentID      = "_dd.p.llmobs_parent_id"
-	keyPropagatedMLAPP         = "_dd.p.llmobs_ml_app"
-	keyParentID                = "_ml_obs.llmobs_parent_id"
-	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
-	keyLLMObsTraceID           = "_ml_obs.llmobs_trace_id"
-	keyTags                    = "_ml_obs.tags"
-	keyAgentManifest           = "_ml_obs.meta.agent_manifest"
-
-	keyModelName     = "_ml_obs.meta.model_name"
-	keyModelProvider = "_ml_obs.meta.model_provider"
-
-	keyInputDocuments  = "_ml_obs.meta.input.documents"
-	keyInputMessages   = "_ml_obs.meta.input.messages"
-	keyInputValue      = "_ml_obs.meta.input.value"
-	keyInputPrompt     = "_ml_obs.meta.input.prompt"
-	keyToolDefinitions = "_ml_obs.meta.tool_definitions"
-
-	keyOutputDocuments = "_ml_obs.meta.output.documents"
-	keyOutputMessages  = "_ml_obs.meta.output.messages"
-	keyOutputValue     = "_ml_obs.meta.output.value"
-)
 
 type Document struct{}
 
@@ -233,6 +212,7 @@ func Stop() {
 	}
 }
 
+// ActiveLLMObs returns the current active llmobs instance, or an error if there isn't one.
 func ActiveLLMObs() (*LLMObs, error) {
 	if activeLLMObs == nil || !activeLLMObs.Config.Enabled {
 		return nil, errLLMObsNotEnabled
@@ -461,6 +441,7 @@ type Span struct {
 	llmobsTraceID string
 	name          string
 	integration   string
+	scope         string
 	isEvaluation  bool
 	error         error
 	startTime     time.Time
@@ -682,13 +663,12 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		tagsSlice = append(tagsSlice, fmt.Sprintf("%s:%s", k, v))
 	}
 
-	return &transport.LLMObsSpanEvent{
+	ev := &transport.LLMObsSpanEvent{
 		SpanID:           spanID,
 		TraceID:          span.llmobsTraceID,
 		ParentID:         parentID,
 		SessionID:        span.sessionID(),
 		Tags:             tagsSlice,
-		Service:          l.Config.Service,
 		Name:             span.name,
 		StartNS:          span.startTime.UnixNano(),
 		Duration:         span.finishTime.Sub(span.startTime).Nanoseconds(),
@@ -698,7 +678,53 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Metrics:          metrics,
 		CollectionErrors: nil,
 		SpanLinks:        span.spanLinks,
+		Scope:            span.scope,
 	}
+	if b, err := json.Marshal(ev); err == nil {
+		if len(b) > sizeLimitEVPEvent {
+			log.Warn(
+				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
+				readableBytes(len(b)),
+			)
+			truncateLLMObsSpanEvent(ev, input, output)
+		}
+	}
+	return ev
+}
+
+func truncateLLMObsSpanEvent(ev *transport.LLMObsSpanEvent, input, output map[string]any) {
+	if _, ok := input["value"]; ok {
+		input["value"] = droppedValueText
+	}
+	ev.Meta["input"] = input
+
+	if _, ok := output["value"]; ok {
+		output["value"] = droppedValueText
+	}
+	ev.Meta["output"] = output
+
+	ev.CollectionErrors = []string{collectionErrorDroppedIO}
+}
+
+func readableBytes(s int) string {
+	const base = 1000
+	sizes := []string{"B", "kB", "MB", "GB", "TB", "PB", "EB"}
+
+	if s < 10 {
+		return fmt.Sprintf("%dB", s)
+	}
+	e := math.Floor(logn(float64(s), base))
+	suffix := sizes[int(e)]
+	val := math.Floor(float64(s)/math.Pow(base, e)*10+0.5) / 10
+	f := "%.0f%s"
+	if val < 10 {
+		f = "%.1f%s"
+	}
+	return fmt.Sprintf(f, val, suffix)
+}
+
+func logn(n, b float64) float64 {
+	return math.Log(n) / math.Log(b)
 }
 
 func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name string, opts ...StartSpanOption) (*Span, context.Context) {
@@ -739,6 +765,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name strin
 
 	parent, ok := getActiveLLMSpan(ctx)
 	if ok {
+		log.Debug("llmobs: found active llm span in context: %v", parent)
 		span.parent = parent
 		span.llmobsTraceID = parent.llmobsTraceID
 	} else {
@@ -782,6 +809,7 @@ func (l *LLMObs) AnnotateSpan(span *Span, annotations SpanAnnotations) {
 	span.mu.Lock()
 	defer span.mu.Unlock()
 
+	//TODO(rarguelloF): complete
 }
 
 type ExperimentSpanAnnotations struct {
@@ -806,6 +834,7 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimen
 
 	if experimentID != "" {
 		span.apm.SetBaggageItem(baggageKeyExperimentID, experimentID)
+		span.scope = "experiments"
 	}
 	return span, ctx
 }

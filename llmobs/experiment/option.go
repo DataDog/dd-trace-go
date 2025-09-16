@@ -62,3 +62,21 @@ func defaultRunCfg() *runCfg {
 }
 
 type RunOption func(cfg *runCfg)
+
+func WithMaxConcurrency(maxConcurrency int) RunOption {
+	return func(cfg *runCfg) {
+		cfg.maxConcurrency = maxConcurrency
+	}
+}
+
+func WithAbortOnError(abortOnError bool) RunOption {
+	return func(cfg *runCfg) {
+		cfg.abortOnError = abortOnError
+	}
+}
+
+func WithSampleSize(sampleSize int) RunOption {
+	return func(cfg *runCfg) {
+		cfg.sampleSize = sampleSize
+	}
+}

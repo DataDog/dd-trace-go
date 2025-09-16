@@ -11,4 +11,4 @@ import (
 
 type Option = internal.Option
 
-// TODO(rarguelloF): add options
+var WithHTTPClient = internal.WithHTTPClient
