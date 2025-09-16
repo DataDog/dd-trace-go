@@ -556,6 +556,7 @@ func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// fatal error: runtime: netpoll failed
 	cpuProfileRate := int(9999 + rand.Int63n(9999))
 
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
 	profile := <-startTestProfiler(t, 1,
@@ -912,6 +913,7 @@ func gzipDecompress(data []byte) ([]byte, error) {
 }
 
 func TestHeapProfileCompression(t *testing.T) {
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	t.Run("delta", func(t *testing.T) { testHeapProfileCompression(t, true) })
 	t.Run("non-delta", func(t *testing.T) { testHeapProfileCompression(t, false) })
 }
