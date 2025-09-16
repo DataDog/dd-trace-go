@@ -824,22 +824,19 @@ func TestSpanContextParent(t *testing.T) {
 	}
 	for name, parentCtx := range map[string]*SpanContext{
 		"basic": {
-			baggage:  map[string]string{"A": "A", "B": "B"},
-			hasBaggage: 1,
-			trace:      newTrace(),
+			baggage: NewBaggageContextWithItems(context.Background(), nil, map[string]string{"A": "A", "B": "B"}),
+			trace:   newTrace(),
 		},
 		"nil-trace": {},
 		"priority": {
-			baggage:  map[string]string{"A": "A", "B": "B"},
-			hasBaggage: 1,
+			baggage: NewBaggageContextWithItems(context.Background(), nil, map[string]string{"A": "A", "B": "B"}),
 			trace: &trace{
 				spans:    []*Span{newBasicSpan("abc")},
 				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
 			},
 		},
 		"sampling_decision": {
-			baggage:  map[string]string{"A": "A", "B": "B"},
-			hasBaggage: 1,
+			baggage: NewBaggageContextWithItems(context.Background(), nil, map[string]string{"A": "A", "B": "B"}),
 			trace: &trace{
 				spans:            []*Span{newBasicSpan("abc")},
 				samplingDecision: decisionKeep,
@@ -901,14 +898,14 @@ func TestSpanContextBaggage(t *testing.T) {
 
 	var ctx SpanContext
 	ctx.setBaggageItem("key", "value")
-	assert.Equal("value", ctx.baggage["key"])
+	assert.Equal("value", ctx.baggageItem("key"))
 }
 
 func TestSpanContextIterator(t *testing.T) {
 	assert := assert.New(t)
 
 	got := make(map[string]string)
-	ctx := SpanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
+	ctx := SpanContext{baggage: NewBaggageContextWithItems(context.Background(), nil, map[string]string{"key": "value"})}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		got[k] = v
 		return true
@@ -931,7 +928,7 @@ func TestNilSpanContextIterator(t *testing.T) {
 
 func TestSpanContextIteratorBreak(t *testing.T) {
 	got := make(map[string]string)
-	ctx := SpanContext{baggage: map[string]string{"key": "value"}}
+	ctx := SpanContext{baggage: NewBaggageContextWithItems(context.Background(), nil, map[string]string{"key": "value"})}
 	ctx.ForeachBaggageItem(func(_, _ string) bool {
 		return false
 	})
@@ -940,7 +937,7 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 }
 
 func BenchmarkBaggageItemPresent(b *testing.B) {
-	ctx := SpanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
+	ctx := SpanContext{baggage: NewBaggageContextWithItems(context.Background(), nil, map[string]string{"key": "value"})}
 	for n := 0; n < b.N; n++ {
 		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true

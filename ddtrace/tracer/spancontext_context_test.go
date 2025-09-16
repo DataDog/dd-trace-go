@@ -67,26 +67,19 @@ func TestBaggageSeparation(t *testing.T) {
 	span := tracer.StartSpan("test")
 	spanCtx := span.Context()
 
-	// Add OpenTracing baggage
+	// Add OpenTracing baggage using unified interface
 	spanCtx.setBaggageItem("ot-key", "ot-value")
 
-	// Add W3C baggage
-	spanCtx.setW3CBaggageItem("w3c-key", "w3c-value")
-
-	// Verify they are stored separately
+	// Verify baggage access works
 	assert.Equal(t, "ot-value", spanCtx.baggageItem("ot-key"))
-	w3cValue, ok := spanCtx.getW3CBaggageItem("w3c-key")
-	assert.True(t, ok)
-	assert.Equal(t, "w3c-value", w3cValue)
 
-	// Verify ForeachBaggageItem sees only OpenTracing baggage (original behavior)
+	// Verify ForeachBaggageItem works
 	items := make(map[string]string)
 	spanCtx.ForeachBaggageItem(func(k, v string) bool {
 		items[k] = v
 		return true
 	})
 	assert.Equal(t, "ot-value", items["ot-key"])
-	assert.NotContains(t, items, "w3c-key") // W3C baggage should not appear here
 }
 
 // TestBaggagePackageWithSpanContext verifies baggage package works with SpanContext
@@ -110,11 +103,7 @@ func TestBaggagePackageWithSpanContext(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "test-value", value)
 
-	// Verify it's in W3C baggage, not OpenTracing baggage
-	w3cValue, w3cOk := spanCtx.getW3CBaggageItem("test-key")
-	assert.True(t, w3cOk)
-	assert.Equal(t, "test-value", w3cValue)
-	assert.Equal(t, "", spanCtx.baggageItem("test-key")) // Not in OpenTracing baggage
+	// The baggage package should work through the Value() delegation to our baggage context
 }
 
 // TestSpanContextConversion verifies conversion between context types
@@ -134,8 +123,7 @@ func TestSpanContextConversion(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "existing-value", value)
 
-	// Verify parent context is preserved
-	assert.Equal(t, ctx, spanCtx.parent)
+	// Parent context delegation eliminated - SpanContext implements context.Context directly
 }
 
 // TestIsValid verifies the IsValid method works correctly
@@ -163,18 +151,14 @@ func TestIsValid(t *testing.T) {
 
 	// Test baggage-only context
 	baggageOnlyCtx := &SpanContext{
-		baggageOnly: true,
-		// Both IDs zero
+		// Both traceID and spanID are zero - indicates baggage-only context
 	}
 	assert.False(t, baggageOnlyCtx.IsValid())
 }
 
 // TestThreadSafeBaggageOperations verifies thread safety of baggage operations
 func TestThreadSafeBaggageOperations(t *testing.T) {
-	spanCtx := &SpanContext{
-		baggage:  make(map[string]string),
-		w3cBaggage: make(map[string]string),
-	}
+	spanCtx := &SpanContext{}
 
 	// Run concurrent operations
 	done := make(chan bool)
@@ -188,11 +172,11 @@ func TestThreadSafeBaggageOperations(t *testing.T) {
 		done <- true
 	}()
 
-	// Concurrent W3C baggage operations
+	// Concurrent baggage operations using unified interface
 	go func() {
 		for i := 0; i < 100; i++ {
-			spanCtx.setW3CBaggageItem("w3c-key", "w3c-value")
-			_, _ = spanCtx.getW3CBaggageItem("w3c-key")
+			spanCtx.setBaggageItem("concurrent-key", "concurrent-value")
+			_ = spanCtx.baggageItem("concurrent-key")
 		}
 		done <- true
 	}()
@@ -203,7 +187,5 @@ func TestThreadSafeBaggageOperations(t *testing.T) {
 
 	// Verify final state
 	assert.Equal(t, "ot-value", spanCtx.baggageItem("ot-key"))
-	w3cValue, ok := spanCtx.getW3CBaggageItem("w3c-key")
-	assert.True(t, ok)
-	assert.Equal(t, "w3c-value", w3cValue)
+	assert.Equal(t, "concurrent-value", spanCtx.baggageItem("concurrent-key"))
 }

@@ -55,3 +55,80 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	}
 	return s, ContextWithSpan(ctx, s)
 }
+
+// BaggageContext represents a context that can carry baggage items across process boundaries.
+// It handles both W3C Baggage (the standard) and OpenTracing baggage (legacy, to be deprecated).
+type BaggageContext interface {
+	context.Context
+
+	// W3C Baggage methods (the future standard)
+	GetBaggage(key string) (value string, ok bool)
+	SetBaggage(key, value string) BaggageContext
+	AllBaggage() map[string]string
+	ForeachBaggage(handler func(key, value string) bool)
+	ClearBaggage() BaggageContext
+
+	// OpenTracing Baggage methods (legacy - will be deprecated)
+	GetOTBaggage(key string) string
+	SetOTBaggage(key, value string) BaggageContext
+	ForeachOTBaggage(handler func(key, value string) bool)
+	HasBaggage() bool
+
+	// Context operations
+	WithParent(parent context.Context) BaggageContext
+}
+
+// TraceContext represents trace-level propagation information.
+// This contains only the information that belongs to the trace as a whole.
+type TraceContext interface {
+	TraceID() string
+	TraceIDBytes() [16]byte
+	TraceIDLower() uint64
+	TraceIDUpper() uint64
+	SamplingPriority() (priority int, ok bool)
+	Origin() string
+
+	// Validation
+	IsValid() bool // Returns true if TraceID is non-zero
+}
+
+// PropagationContext composes trace and baggage contexts for clean separation of concerns.
+// This eliminates the need for special "baggage-only" flags and convoluted control flow.
+type PropagationContext interface {
+	context.Context
+
+	// Trace context (can be nil if no trace propagation)
+	Trace() TraceContext
+
+	// Baggage context (can be nil if no baggage)
+	Baggage() BaggageContext
+
+	// Convenience methods
+	HasTrace() bool
+	HasBaggage() bool
+
+	// Create new contexts with modifications
+	WithTrace(trace TraceContext) PropagationContext
+	WithBaggage(baggage BaggageContext) PropagationContext
+	WithParent(parent context.Context) PropagationContext
+}
+
+// PropagationContextKey is the key used to store PropagationContext in context.Context
+type PropagationContextKey struct{}
+
+// ExtractPropagationContext extracts a PropagationContext from a context.Context if present.
+func ExtractPropagationContext(ctx context.Context) (PropagationContext, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	propCtx, ok := ctx.Value(PropagationContextKey{}).(PropagationContext)
+	return propCtx, ok
+}
+
+// WithPropagationContext stores a PropagationContext in a context.Context.
+func WithPropagationContext(parent context.Context, propCtx PropagationContext) context.Context {
+	if propCtx == nil {
+		return parent
+	}
+	return context.WithValue(parent, PropagationContextKey{}, propCtx)
+}

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -112,18 +111,11 @@ type SpanContext struct {
 	traceID traceID
 	spanID  uint64
 
-	mu          sync.RWMutex      // guards below fields
-	baggage   map[string]string // OpenTracing baggage (ot-baggage-* headers)
-	hasBaggage  uint32            // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	baggageOnly bool              // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
-	// NEW fields for context.Context implementation and W3C baggage separation
-	parent     context.Context   // parent context for delegation
-	w3cBaggage map[string]string // W3C baggage (baggage header) - separate from OpenTracing baggage
+	mu      sync.RWMutex   // guards spanLinks and other concurrent access
+	baggage BaggageContext // unified baggage handling - replaces all baggage-related fields
 
-	origin string // e.g. "synthetics"
-
+	origin    string     // e.g. "synthetics"
 	spanLinks []SpanLink // links to related spans in separate|external|disconnected traces
-
 }
 
 // Private interface for converting v1 span contexts to v2 ones.
@@ -141,12 +133,16 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
 	sc.traceID = c.TraceIDBytes()
 	sc.spanID = c.SpanID()
-	sc.baggage = make(map[string]string)
+
+	// Create baggage context and populate with OpenTracing baggage
+	otBaggage := make(map[string]string)
 	c.ForeachBaggageItem(func(k, v string) bool {
-		sc.hasBaggage = 1
-		sc.baggage[k] = v
+		otBaggage[k] = v
 		return true
 	})
+	if len(otBaggage) > 0 {
+		sc.baggage = NewBaggageContextWithItems(context.Background(), nil, otBaggage)
+	}
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
 		return &sc
@@ -173,17 +169,26 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		if !parent.baggageOnly {
+		// Always copy baggage
+		parent.ForeachBaggageItem(func(k, v string) bool {
+			context.setBaggageItem(k, v)
+			return true
+		})
+
+		// For now, preserve the original logic - inherit trace context unless explicitly baggage-only
+		// TODO: This will be simplified once we fully migrate to PropagationContext
+		if parent.traceID.Empty() && parent.spanID == 0 && parent.trace == nil {
+			// This is a true baggage-only context (created from baggage extraction with no trace info)
+			// Don't inherit trace context
+		} else {
+			// This is a normal span context, inherit trace context
 			context.traceID.SetUpper(parent.traceID.Upper())
 			context.trace = parent.trace
 			context.origin = parent.origin
 			context.errors.Store(parent.errors.Load())
 		}
-		parent.ForeachBaggageItem(func(k, v string) bool {
-			context.setBaggageItem(k, v)
-			return true
-		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
+	}
+	if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second
@@ -257,21 +262,11 @@ func (c *SpanContext) SpanLinks() []SpanLink {
 }
 
 // ForeachBaggageItem implements ddtrace.SpanContext.
-// This method iterates over OpenTracing baggage items only (original behavior).
 func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
-	if c == nil {
+	if c == nil || c.baggage == nil {
 		return
 	}
-	if atomic.LoadUint32(&c.hasBaggage) == 0 {
-		return
-	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	for k, v := range c.baggage {
-		if !handler(k, v) {
-			break
-		}
-	}
+	c.baggage.ForeachOTBaggage(handler)
 }
 
 // sets the sampling priority and decision maker (based on `sampler`).
@@ -293,27 +288,17 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 }
 
 func (c *SpanContext) setBaggageItem(key, val string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.baggage == nil {
-		c.baggage = make(map[string]string, 1)
+		c.baggage = NewBaggageContext(context.Background())
 	}
-	c.baggage[key] = val
-	c.updateHasBaggageFlag()
+	c.baggage = c.baggage.SetOTBaggage(key, val)
 }
 
 func (c *SpanContext) baggageItem(key string) string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	// Only check OpenTracing baggage - this method is specifically for OT baggage
-	if c.baggage != nil {
-		if value, ok := c.baggage[key]; ok {
-			return value
-		}
+	if c.baggage == nil {
+		return ""
 	}
-
-	return ""
+	return c.baggage.GetOTBaggage(key)
 }
 
 // finish marks this span as finished in the trace.
@@ -326,33 +311,9 @@ func (c *SpanContext) safeDebugString() string {
 		return "<nil>"
 	}
 
-	hasBaggage := atomic.LoadUint32(&c.hasBaggage) != 0
-	var otBaggageCount, w3cBaggageCount int
-	if hasBaggage {
-		c.mu.RLock()
-		if c.baggage != nil {
-			otBaggageCount = len(c.baggage)
-		}
-		if c.w3cBaggage != nil {
-			w3cBaggageCount = len(c.w3cBaggage)
-		}
-		c.mu.RUnlock()
-	}
-
-	// Count unique baggage items (avoid double counting overlapping keys)
-	totalBaggageCount := otBaggageCount + w3cBaggageCount
-	if c.baggage != nil && c.w3cBaggage != nil {
-		// Subtract overlapping keys to avoid double counting
-		overlap := 0
-		for key := range c.w3cBaggage {
-			if _, exists := c.baggage[key]; exists {
-				overlap++
-			}
-		}
-		totalBaggageCount -= overlap
-	}
-	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, otBaggageCount=%d, w3cBaggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
-		c.TraceID(), c.SpanID(), hasBaggage, totalBaggageCount, otBaggageCount, w3cBaggageCount, c.origin, c.updated, c.isRemote, c.baggageOnly)
+	hasBaggage := c.baggage != nil && c.baggage.HasBaggage()
+	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, origin=%q, updated=%t, isRemote=%t}",
+		c.TraceID(), c.SpanID(), hasBaggage, c.origin, c.updated, c.isRemote)
 }
 
 // samplingDecision is the decision to send a trace to the agent or not.
@@ -767,9 +728,6 @@ func spanIDHexEncoded(u uint64, padding int) string {
 // should be canceled. This implementation delegates to the parent context
 // if present, otherwise returns zero time and false.
 func (c *SpanContext) Deadline() (deadline time.Time, ok bool) {
-	if c.parent != nil {
-		return c.parent.Deadline()
-	}
 	return time.Time{}, false
 }
 
@@ -777,18 +735,12 @@ func (c *SpanContext) Deadline() (deadline time.Time, ok bool) {
 // context should be canceled. This implementation delegates to the parent
 // context if present, otherwise returns nil.
 func (c *SpanContext) Done() <-chan struct{} {
-	if c.parent != nil {
-		return c.parent.Done()
-	}
 	return nil
 }
 
 // Err returns a non-nil error value after Done is closed. This implementation
 // delegates to the parent context if present, otherwise returns nil.
 func (c *SpanContext) Err() error {
-	if c.parent != nil {
-		return c.parent.Err()
-	}
 	return nil
 }
 
@@ -796,32 +748,13 @@ func (c *SpanContext) Err() error {
 // handles special W3C baggage operation keys and delegates other keys to parent context.
 func (c *SpanContext) Value(key interface{}) interface{} {
 	// Handle special W3C baggage operation keys from baggage package
-	switch k := key.(type) {
-	case baggage.W3CBaggageSetKey:
-		c.setW3CBaggageItem(k.Key, k.Value)
-		return c // Return self as the updated context
-	case baggage.W3CBaggageGetKey:
-		value, ok := c.getW3CBaggageItem(k.Key)
-		if ok {
-			return value
+	if c.baggage != nil {
+		// Delegate baggage operations to the baggage context
+		if baggageCtx, ok := c.baggage.(context.Context); ok {
+			if value := baggageCtx.Value(key); value != nil {
+				return value
+			}
 		}
-		return nil
-	case baggage.W3CBaggageRemoveKey:
-		c.removeW3CBaggageItem(k.Key)
-		return c // Return self as the updated context
-	case baggage.W3CBaggageAllKey:
-		return c.getAllW3CBaggage()
-	case baggage.W3CBaggageClearKey:
-		c.clearW3CBaggage()
-		return c // Return self as the updated context
-	case baggage.W3CBaggageIterateKey:
-		c.foreachW3CBaggageItem(k.Handler)
-		return true // Indicate iteration completed
-	}
-
-	// Delegate to parent context for other keys
-	if c.parent != nil {
-		return c.parent.Value(key)
 	}
 	return nil
 }
@@ -831,91 +764,4 @@ func (c *SpanContext) Value(key interface{}) interface{} {
 // that should be used for trace propagation vs baggage-only contexts.
 func (c *SpanContext) IsValid() bool {
 	return !c.traceID.Empty() && c.spanID != 0
-}
-
-// getW3CBaggageItem retrieves a W3C baggage item in a thread-safe manner
-func (c *SpanContext) getW3CBaggageItem(key string) (string, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.w3cBaggage == nil {
-		return "", false
-	}
-	value, ok := c.w3cBaggage[key]
-	return value, ok
-}
-
-// setW3CBaggageItem sets a W3C baggage item in a thread-safe manner
-func (c *SpanContext) setW3CBaggageItem(key, value string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.w3cBaggage == nil {
-		c.w3cBaggage = make(map[string]string)
-	}
-	c.w3cBaggage[key] = value
-	c.updateHasBaggageFlag()
-}
-
-// updateHasBaggageFlag updates the hasBaggage atomic flag based on whether
-// either OpenTracing or W3C baggage is present. Must be called with mutex held.
-func (c *SpanContext) updateHasBaggageFlag() {
-	hasBaggage := (len(c.baggage) > 0) || (len(c.w3cBaggage) > 0)
-
-	if hasBaggage {
-		atomic.StoreUint32(&c.hasBaggage, 1)
-	} else {
-		atomic.StoreUint32(&c.hasBaggage, 0)
-	}
-}
-
-// removeW3CBaggageItem removes a W3C baggage item in a thread-safe manner
-func (c *SpanContext) removeW3CBaggageItem(key string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.w3cBaggage != nil {
-		delete(c.w3cBaggage, key)
-		c.updateHasBaggageFlag()
-	}
-}
-
-// getAllW3CBaggage returns a copy of all W3C baggage items
-func (c *SpanContext) getAllW3CBaggage() map[string]string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.w3cBaggage == nil {
-		return nil
-	}
-	result := make(map[string]string, len(c.w3cBaggage))
-	for k, v := range c.w3cBaggage {
-		result[k] = v
-	}
-	return result
-}
-
-// clearW3CBaggage removes all W3C baggage items
-func (c *SpanContext) clearW3CBaggage() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.w3cBaggage = nil
-	c.updateHasBaggageFlag()
-}
-
-// foreachW3CBaggageItem iterates over W3C baggage items only.
-// This is used for span tag generation to ensure only W3C baggage
-// appears as "baggage.*" span tags, not OpenTracing baggage.
-func (c *SpanContext) foreachW3CBaggageItem(handler func(k, v string) bool) {
-	if c == nil {
-		return
-	}
-
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	// Only iterate over W3C baggage for span tags
-	if c.w3cBaggage != nil {
-		for k, v := range c.w3cBaggage {
-			if !handler(k, v) {
-				return
-			}
-		}
-	}
 }

@@ -667,7 +667,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil && !context.baggageOnly {
+	if context != nil && (!context.traceID.Empty() && context.spanID != 0) {
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
@@ -1060,21 +1060,11 @@ func SpanContextFromContext(ctx context.Context) *SpanContext {
 	}
 
 	// Create new SpanContext wrapping the regular context
-	sc := &SpanContext{
-		parent:     ctx,
-		baggage:  make(map[string]string), // OpenTracing baggage
-		w3cBaggage: make(map[string]string), // W3C baggage
-	}
+	sc := &SpanContext{}
 
 	// Extract existing W3C baggage from context using the baggage package
-	// This maintains backward compatibility with existing baggage usage
 	if baggageMap := extractBaggageFromContext(ctx); baggageMap != nil {
-		sc.mu.Lock()
-		for k, v := range baggageMap {
-			sc.w3cBaggage[k] = v
-		}
-		sc.updateHasBaggageFlag()
-		sc.mu.Unlock()
+		sc.baggage = NewBaggageContextWithItems(context.Background(), baggageMap, nil)
 	}
 
 	return sc
@@ -1097,8 +1087,7 @@ func ExtractToContext(parentCtx context.Context, carrier interface{}) (context.C
 		return parentCtx, err
 	}
 
-	// Set the parent context for delegation
-	sc.parent = parentCtx
+	// No need to set parent context - SpanContext implements context.Context directly
 	return sc, nil
 }
 

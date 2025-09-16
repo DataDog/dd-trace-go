@@ -6,14 +6,12 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
-
-	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -287,10 +285,11 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
-			if extractedCtx != nil && len(extractedCtx.w3cBaggage) > 0 {
-				for k, v := range extractedCtx.w3cBaggage {
+			if extractedCtx != nil && extractedCtx.baggage != nil {
+				extractedCtx.baggage.ForeachBaggage(func(k, v string) bool {
 					pendingBaggage[k] = v
-				}
+					return true
+				})
 			}
 			continue
 		}
@@ -345,35 +344,26 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
+			// Create baggage-only context with clean interface
+			baggageCtx := NewBaggageContextWithItems(context.Background(), pendingBaggage, nil)
 			ctx := &SpanContext{
-				baggage:   make(map[string]string, len(pendingBaggage)),
-				w3cBaggage:  make(map[string]string, len(pendingBaggage)),
-				baggageOnly: true,
+				baggage: baggageCtx,
+				// traceID and spanID remain zero - indicates baggage-only context
 			}
-			// Store W3C baggage in both places for compatibility + separation
-			maps.Copy(ctx.w3cBaggage, pendingBaggage) // For span tag generation
-			maps.Copy(ctx.baggage, pendingBaggage)  // For ForeachBaggageItem compatibility
-			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
 		}
-		// 0 successful extractions
 		return nil, ErrSpanContextNotFound
 	}
 	if len(pendingBaggage) > 0 {
-		// Store W3C baggage in BOTH places for compatibility + separation:
-		// 1. otBaggage: for ForeachBaggageItem compatibility
-		// 2. w3cBaggage: for span tag generation
-		if ctx.w3cBaggage == nil {
-			ctx.w3cBaggage = make(map[string]string, len(pendingBaggage))
-		}
+		// Add W3C baggage to existing context
 		if ctx.baggage == nil {
-			ctx.baggage = make(map[string]string, len(pendingBaggage))
+			ctx.baggage = NewBaggageContextWithItems(context.Background(), pendingBaggage, nil)
+		} else {
+			// Merge with existing baggage
+			for k, v := range pendingBaggage {
+				ctx.baggage = ctx.baggage.SetBaggage(k, v)
+			}
 		}
-		for k, v := range pendingBaggage {
-			ctx.w3cBaggage[k] = v // For span tag generation
-			ctx.baggage[k] = v  // For ForeachBaggageItem compatibility
-		}
-		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
 	if len(links) > 0 {
@@ -1406,18 +1396,20 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	// This maintains backward compatibility where OpenTracing baggage appears in both headers
 	allBaggage := make(map[string]string)
 
-	// Add W3C baggage
-	if w3cBaggage := ctx.getAllW3CBaggage(); w3cBaggage != nil {
-		for k, v := range w3cBaggage {
-			allBaggage[k] = v
+	// Add all baggage from the unified baggage context
+	if ctx.baggage != nil {
+		// Add W3C baggage
+		if w3cBaggage := ctx.baggage.AllBaggage(); w3cBaggage != nil {
+			for k, v := range w3cBaggage {
+				allBaggage[k] = v
+			}
 		}
+		// Add OpenTracing baggage for interoperability
+		ctx.baggage.ForeachOTBaggage(func(k, v string) bool {
+			allBaggage[k] = v
+			return true
+		})
 	}
-
-	// Add OpenTracing baggage for interoperability (maintains existing behavior)
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		allBaggage[k] = v
-		return true
-	})
 
 	for k, v := range allBaggage {
 		if ctr >= baggageMaxItems {
@@ -1456,10 +1448,7 @@ func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
 
 func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
 	var baggageHeader string
-	ctx := &SpanContext{
-		baggage:  make(map[string]string),
-		w3cBaggage: make(map[string]string),
-	}
+	ctx := &SpanContext{}
 	err := reader.ForeachKey(func(k, v string) error {
 		if strings.ToLower(k) == "baggage" {
 			// Expect only one baggage header, return early
@@ -1496,7 +1485,11 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		rawK, rawV, _ := strings.Cut(kv, "=")
 		key, _ := url.QueryUnescape(rawK)
 		val, _ := url.QueryUnescape(rawV)
-		ctx.setW3CBaggageItem(key, val) // Use W3C baggage for baggage header
+		// Set W3C baggage using unified interface
+		if ctx.baggage == nil {
+			ctx.baggage = NewBaggageContext(context.Background())
+		}
+		ctx.baggage = ctx.baggage.SetBaggage(key, val)
 	}
 
 	return ctx, nil
