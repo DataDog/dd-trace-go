@@ -9,7 +9,6 @@ import (
 
 type Tracer interface {
 	StartSpan(ctx context.Context, name string, cfg StartAPMSpanConfig) (APMSpan, context.Context)
-	Flush()
 }
 
 type StartAPMSpanConfig struct {

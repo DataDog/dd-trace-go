@@ -223,6 +223,12 @@ func ActiveLLMObs() (*LLMObs, error) {
 	return activeLLMObs, nil
 }
 
+func Flush() {
+	if activeLLMObs != nil {
+		activeLLMObs.Flush()
+	}
+}
+
 // Run starts the worker loop.
 func (l *LLMObs) Run() {
 	l.mu.Lock()
@@ -274,7 +280,6 @@ func (l *LLMObs) Run() {
 // Flush forces an immediate flush of anything currently buffered.
 // It does not wait for new items to arrive.
 func (l *LLMObs) Flush() {
-	l.Tracer.Flush()
 	// non-blocking edge trigger so multiple calls coalesce
 	select {
 	case l.flushNowCh <- struct{}{}:

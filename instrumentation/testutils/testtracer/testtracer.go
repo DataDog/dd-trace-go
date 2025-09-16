@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
@@ -69,9 +70,12 @@ type SpanLink struct {
 	Flags       uint32            `json:"flags"`
 }
 
+type LLMObsSpan = llmobstransport.LLMObsSpanEvent
+
 // TestTracer is an inspectable tracer useful for tests.
 type TestTracer struct {
 	Spans        <-chan Span
+	LLMSpans     <-chan LLMObsSpan
 	roundTripper *mockTransport
 }
 
@@ -84,15 +88,21 @@ func Start(t *testing.T, opts ...Option) *TestTracer {
 	}
 
 	spansChan := make(chan Span)
+	llmobsSpansChan := make(chan LLMObsSpan)
 	rt := &mockTransport{
-		T:         t,
-		spansChan: spansChan,
-		agentInfo: cfg.AgentInfoResponse,
+		T:               t,
+		spansChan:       spansChan,
+		llmobsSpansChan: llmobsSpansChan,
+		agentInfo:       cfg.AgentInfoResponse,
 	}
 	httpClient := &http.Client{
 		Transport: rt,
 	}
-	tt := &TestTracer{Spans: spansChan, roundTripper: rt}
+	tt := &TestTracer{
+		Spans:        spansChan,
+		LLMSpans:     llmobsSpansChan,
+		roundTripper: rt,
+	}
 	t.Cleanup(tt.Stop)
 
 	startOpts := append([]tracer.StartOption{
@@ -169,12 +179,38 @@ func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 	}
 }
 
+// WaitForLLMObsSpans returns when receiving a number of LLMSpan equal to count. It fails the test if it did not receive
+// that number of spans after 5 seconds.
+func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
+	if count == 0 {
+		return nil
+	}
+	// force a flush so we don't need to wait for the default flush interval.
+	tracer.Flush()
+
+	timeoutChan := time.After(5 * time.Second)
+	spans := make([]LLMObsSpan, 0)
+
+	for {
+		select {
+		case span := <-tt.LLMSpans:
+			spans = append(spans, span)
+			if len(spans) == count {
+				return spans
+			}
+		case <-timeoutChan:
+			assert.FailNowf(t, "timeout waiting for LLMObs spans", "got: %d, want: %d", len(spans), count)
+		}
+	}
+}
+
 type mockTransport struct {
 	*testing.T
-	spansChan chan Span
-	mu        sync.RWMutex
-	finished  bool
-	agentInfo AgentInfo
+	spansChan       chan Span
+	llmobsSpansChan chan LLMObsSpan
+	mu              sync.RWMutex
+	finished        bool
+	agentInfo       AgentInfo
 }
 
 func (rt *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -189,6 +225,7 @@ func (rt *mockTransport) Stop() {
 	}
 	rt.finished = true
 	close(rt.spansChan)
+	close(rt.llmobsSpansChan)
 }
 
 func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
@@ -203,7 +240,13 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 		return rt.handleTraces(r)
 	case "/info":
 		return rt.handleInfo(r)
+	case "/evp_proxy/v2/api/v2/llmobs", "api/v2/llmobs":
+		return rt.handleLLMObsSpanEvents(r)
+	case "/v0.7/config", "/telemetry/proxy/api/v2/apmtelemetry":
+		// known cases, no need to log these
+		return rt.emptyResponse(r)
 	default:
+		rt.T.Logf("testtracer: received request to a non-implemented path: %s", r.URL.Path)
 		return rt.emptyResponse(r)
 	}
 }
@@ -258,6 +301,27 @@ func (rt *mockTransport) handleTraces(r *http.Request) (resp *http.Response) {
 	for _, spans := range traces {
 		for _, span := range spans {
 			rt.spansChan <- span
+		}
+	}
+	return
+}
+
+func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) (resp *http.Response) {
+	resp = rt.emptyResponse(r)
+
+	req := r.Clone(context.Background())
+	defer req.Body.Close()
+
+	buf, err := io.ReadAll(req.Body)
+	require.NoError(rt.T, err)
+
+	var payload []llmobstransport.RequestLLMObsSpanEventsCreate
+	err = json.Unmarshal(buf, &payload)
+	require.NoError(rt.T, err)
+
+	for _, p := range payload {
+		for _, span := range p.Spans {
+			rt.llmobsSpansChan <- *span
 		}
 	}
 	return

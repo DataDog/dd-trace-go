@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -928,6 +929,18 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.spanEvents = append(s.spanEvents, event)
 }
 
+func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
+	if parentID, ok := illmobs.PropagatedParentIDFromContext(ctx); ok {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, parentID)
+	}
+	if mlApp, ok := illmobs.PropagatedMLAppFromContext(ctx); ok {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, mlApp)
+	}
+	if trID, ok := illmobs.PropagatedTraceIDFromContext(ctx); ok {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, trID)
+	}
+}
+
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
@@ -986,10 +999,10 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
-	// keyPropagatedParentID contains the propagated llmobs span ID.
-	keyPropagatedParentID = "_dd.p.llmobs_parent_id"
-	// keyPropagatedMLAPP contains the propagated ML App.
-	keyPropagatedMLAPP = "_dd.p.llmobs_ml_app"
+	// keyPropagatedLLMObsParentID contains the propagated llmobs span ID.
+	keyPropagatedLLMObsParentID = "_dd.p.llmobs_parent_id"
+	// keyPropagatedLLMObsMLAPP contains the propagated ML App.
+	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 )

@@ -21,10 +21,6 @@ func (l *llmobsTracerAdapter) StartSpan(ctx context.Context, name string, cfg ll
 	return &llmobsSpanAdapter{span}, ctx
 }
 
-func (l *llmobsTracerAdapter) Flush() {
-	Flush()
-}
-
 type llmobsSpanAdapter struct {
 	span *Span
 }

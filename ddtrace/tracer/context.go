@@ -10,12 +10,37 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+)
+
+const (
+	propagatingTagLLMObsParentID = "_dd.p.llmobs_parent_id"
+	propagatingTagLLMObsMLApp    = "_dd.p.llmobs_ml_app"
+	propagatingTagLLMObsTraceID  = "_dd.p.llmobs_trace_id"
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
-	return orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
+	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
+	return withLLMObsPropagatedTags(newCtx, s)
+}
+
+func withLLMObsPropagatedTags(ctx context.Context, s *Span) context.Context {
+	if s == nil {
+		return ctx
+	}
+	newCtx := ctx
+	if parentID := s.context.trace.propagatingTag(propagatingTagLLMObsParentID); parentID != "" {
+		newCtx = context.WithValue(newCtx, illmobs.CtxKeyPropagatedParentID{}, parentID)
+	}
+	if mlApp := s.context.trace.propagatingTag(propagatingTagLLMObsMLApp); mlApp != "" {
+		newCtx = context.WithValue(newCtx, illmobs.CtxKeyPropagatedMLApp{}, mlApp)
+	}
+	if trID := s.context.trace.propagatingTag(propagatingTagLLMObsTraceID); trID != "" {
+		newCtx = context.WithValue(newCtx, illmobs.CtxKeyPropagatedTraceID{}, trID)
+	}
+	return newCtx
 }
 
 // SpanFromContext returns the span contained in the given context. A second return
@@ -48,12 +73,6 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	} else if s, ok := SpanFromContext(ctx); ok {
 		optsLocal = append(optsLocal, ChildOf(s.Context()))
 	}
-
-	// TODO: figure out this
-	//if mlApp, ok := illmobs.PropagatedMLAppFromContext(ctx); ok {
-	//	fmt.Printf("propagated mlapp: %s", mlApp)
-	//}
-
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)
 	if s != nil && s.pprofCtxActive != nil {

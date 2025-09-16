@@ -3,31 +3,27 @@ package llmobs
 import "context"
 
 type (
-	ctxKeyPropagatedMLApp          struct{}
-	ctxKeyPropagatedLLMObsParentID struct{}
-	ctxKeyPropagatedLLMObsTraceID  struct{}
+	CtxKeyPropagatedMLApp    struct{}
+	CtxKeyPropagatedParentID struct{}
+	CtxKeyPropagatedTraceID  struct{}
 )
 
-func WithPropagatedMLApp(ctx context.Context, s string) context.Context {
-	return context.WithValue(ctx, ctxKeyPropagatedMLApp{}, s)
-}
-
 func PropagatedMLAppFromContext(ctx context.Context) (string, bool) {
-	if val, ok := ctx.Value(ctxKeyPropagatedMLApp{}).(string); ok {
+	if val, ok := ctx.Value(CtxKeyPropagatedMLApp{}).(string); ok {
 		return val, true
 	}
 	return "", false
 }
 
-func PropagatedLLMObsParentIDFromContext(ctx context.Context) (string, bool) {
-	if val, ok := ctx.Value(ctxKeyPropagatedLLMObsParentID{}).(string); ok {
+func PropagatedParentIDFromContext(ctx context.Context) (string, bool) {
+	if val, ok := ctx.Value(CtxKeyPropagatedParentID{}).(string); ok {
 		return val, true
 	}
 	return "", false
 }
 
-func PropagatedLLMObsTraceIDFromContext(ctx context.Context) (string, bool) {
-	if val, ok := ctx.Value(ctxKeyPropagatedLLMObsTraceID{}).(string); ok {
+func PropagatedTraceIDFromContext(ctx context.Context) (string, bool) {
+	if val, ok := ctx.Value(CtxKeyPropagatedTraceID{}).(string); ok {
 		return val, true
 	}
 	return "", false
