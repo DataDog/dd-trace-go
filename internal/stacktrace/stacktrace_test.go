@@ -227,6 +227,17 @@ func TestParseSymbol(t *testing.T) {
 	}
 }
 
+func BenchmarkCaptureStackTrace(b *testing.B) {
+	for _, depth := range []int{10, 20, 50, 100, 200} {
+		b.Run(fmt.Sprintf("%v", depth), func(b *testing.B) {
+			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
+			for n := 0; n < b.N; n++ {
+				runtime.KeepAlive(recursiveBench(depth, depth, b))
+			}
+		})
+	}
+}
+
 func BenchmarkCaptureWithRedaction(b *testing.B) {
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("depth_%d", depth), func(b *testing.B) {
@@ -264,6 +275,20 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 			runtime.KeepAlive(stack)
 		}
 	})
+}
+
+func recursiveBench(i int, depth int, b *testing.B) StackTrace {
+	if i == 0 {
+		b.StartTimer()
+		stack := iterator(defaultCallerSkip, depth*2, frameOptions{
+			skipInternalFrames:      true,
+			redactCustomerFrames:    false,
+			internalPackagePrefixes: nil,
+		}).capture()
+		b.StopTimer()
+		return stack
+	}
+	return recursiveBench(i-1, depth, b)
 }
 
 func recursiveBenchRedaction(i int, b *testing.B) StackTrace {
