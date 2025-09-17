@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -78,7 +79,8 @@ func detectLibDL() {
 
 	for _, method := range detectLibDLMethods {
 		if ok, err := method.method(); ok {
-			telemetrylog.Debug("libdl detected using method: %s", method.name, telemetry.WithTags([]string{"method:" + method.name}))
+			logger := telemetrylog.With(telemetry.WithTags([]string{"method:" + method.name}))
+			logger.Debug("libdl detected using method", slog.String("method", method.name))
 			log.Debug("libdl detected using method: %s", method.name)
 			telemetry.RegisterAppConfig("libdl_present", true, telemetry.OriginCode)
 			return

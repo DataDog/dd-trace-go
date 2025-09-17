@@ -32,6 +32,10 @@ generate: tools-install ## Run code generation
 lint: tools-install ## Run linting checks
 	$(BIN_PATH) ./scripts/lint.sh --all
 
+.PHONY: lint/go
+lint/go: tools-install ## Run Go linting checks
+	$(BIN_PATH) golangci-lint run ./...
+
 .PHONY: lint-fix
 lint-fix: tools-install ## Fix linting issues automatically
 	$(BIN_PATH) golangci-lint run --fix ./...

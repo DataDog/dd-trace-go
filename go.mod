@@ -19,7 +19,9 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
+	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
+	github.com/minio/simdjson-go v0.4.5
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
@@ -62,7 +64,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.3 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect

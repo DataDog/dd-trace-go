@@ -8,6 +8,8 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"runtime"
 	"sync"
 
@@ -175,14 +177,16 @@ func (m *WAFManager) RestoreDefaultConfig() error {
 }
 
 func logLocalDiagnosticMessages(name string, feature *libddwaf.Feature) {
+	logger := telemetryLog.With(telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+
 	if feature.Error != "" {
-		telemetryLog.Error("%s", feature.Error, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+		logger.Error("feature error", slog.String("message", feature.Error))
 	}
 	for msg, ids := range feature.Errors {
-		telemetryLog.Error("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+		logger.Error("feature error", slog.String("message", msg), slog.String("affected_rule_ids", fmt.Sprintf("%v", ids)))
 	}
 	for msg, ids := range feature.Warnings {
-		telemetryLog.Warn("%s: %q", msg, ids, telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+		logger.Warn("feature warning", slog.String("message", msg), slog.String("affected_rule_ids", fmt.Sprintf("%v", ids)))
 	}
 }
 

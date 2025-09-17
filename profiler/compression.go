@@ -45,7 +45,7 @@ func legacyCompressionStrategy(pt ProfileType, isDelta bool) (compression, compr
 }
 
 func compressionStrategy(pt ProfileType, isDelta bool, config string) (compression, compression) {
-	if config == "" {
+	if config == "" || config == "legacy" {
 		return legacyCompressionStrategy(pt, isDelta)
 	}
 	algorithm, levelStr, _ := strings.Cut(config, "-")

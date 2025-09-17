@@ -9,12 +9,13 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"log/slog"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	otelbaggage "go.opentelemetry.io/otel/baggage"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -128,7 +129,7 @@ func mergeBaggageFromContext(ctx context.Context) otelbaggage.Baggage {
 				if err == nil {
 					otelBag = b
 				} else {
-					log.Debug("Error adding baggage member with key %s; dropping", key)
+					telemetrylog.Debug("Error adding baggage member; dropping", slog.String("key", key))
 				}
 			}
 		}
