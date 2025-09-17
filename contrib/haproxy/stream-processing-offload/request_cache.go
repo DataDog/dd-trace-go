@@ -10,7 +10,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
+
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/negasus/haproxy-spoe-go/message"
 )

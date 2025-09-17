@@ -10,8 +10,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
+
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
@@ -139,19 +140,4 @@ func (s *HAProxySPOA) cacheRequest(reqState proxy.RequestState, msg *message.Mes
 	storeRequestState(s.requestStateCache, spanId, reqState, timeout)
 
 	return nil
-}
-
-func (s *HAProxySPOA) getCachedRequest(req *request.Request, msg *message.Message) (context.Context, *proxy.RequestState) {
-	// Get current request state from cache or if nil it will be created by the request headers message
-	reqState, _ := getCurrentRequest(s.requestStateCache, msg)
-
-	ctx := context.Background()
-	requestContextData := &haproxyContextRequestDataType{req: req, msg: msg}
-	if reqState == nil {
-		ctx = context.WithValue(ctx, haproxyRequestKey, requestContextData)
-	} else {
-		reqState.Context = context.WithValue(reqState.Context, haproxyRequestKey, requestContextData)
-	}
-
-	return ctx, reqState
 }
