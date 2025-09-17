@@ -4,8 +4,6 @@ go 1.24.0
 
 godebug x509negativeserial=1
 
-replace github.com/DataDog/datadog-agent/pkg/trace => github.com/DataDog/datadog-agent/pkg/trace v0.67.0
-
 require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.67.0
 	github.com/DataDog/datadog-agent/pkg/proto v0.67.0
