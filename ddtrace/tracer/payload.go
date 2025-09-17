@@ -160,7 +160,7 @@ type traceChunk struct {
 	priority int32 `msg:"priority"`
 
 	// the optional string origin ("lambda", "rum", etc.) of the trace chunk
-	origin uint32 `msg:"origin,omitempty"`
+	origin string `msg:"origin,omitempty"`
 
 	// a collection of key to value pairs common in all `spans`
 	attributes map[uint32]anyValue `msg:"attributes,omitempty"`
@@ -173,8 +173,8 @@ type traceChunk struct {
 	droppedTrace bool `msg:"droppedTrace"`
 
 	// the ID of the trace to which all spans in this chunk belong
-	traceID []byte `msg:"traceID"`
+	traceID [16]byte `msg:"traceID"`
 
 	// the optional string decision maker (previously span tag _dd.p.dm)
-	decisionMaker uint32 `msg:"decisionMaker,omitempty"`
+	samplingMechanism string `msg:"samplingMechanism,omitempty"`
 }
