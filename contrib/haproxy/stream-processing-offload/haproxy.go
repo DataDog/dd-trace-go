@@ -1,14 +1,18 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package streamprocessingoffload
 
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
+	"io"
+
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/jellydator/ttlcache/v3"
-	"sync/atomic"
-	"time"
-
 	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
 )
@@ -20,9 +24,8 @@ func init() {
 }
 
 type HAProxySPOA struct {
-	mp                message_processor.MessageProcessor
-	requestCounter    atomic.Uint32
-	requestStateCache *ttlcache.Cache[uint64, *message_processor.RequestState]
+	requestStateCache *ttlcache.Cache[uint64, *proxy.RequestState]
+	messageProcessor  proxy.Processor
 }
 
 type AppsecHAProxyConfig struct {
@@ -32,29 +35,23 @@ type AppsecHAProxyConfig struct {
 }
 
 func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
-	mp := message_processor.NewMessageProcessor(message_processor.MessageProcessorConfig{
-		BlockingUnavailable:  config.BlockingUnavailable,
-		BodyParsingSizeLimit: config.BodyParsingSizeLimit,
-	}, instr)
-
 	spoa := &HAProxySPOA{
-		mp: mp,
+		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
+			BlockingUnavailable:  config.BlockingUnavailable,
+			BodyParsingSizeLimit: config.BodyParsingSizeLimit,
+			Framework:            "github.com/haproxy/haproxy",
+			Context:              config.Context,
+			ContinueMessageFunc:  continueActionFunc,
+			BlockMessageFunc:     blockActionFunc,
+		}, instr),
 	}
 
-	spoa.requestStateCache = initRequestStateCache(func(rs *message_processor.RequestState) {
-		spoa.requestCounter.Add(1)
-
-		if rs.Ongoing {
-			if !rs.AwaitingResponseBody {
-				instr.Logger().Warn("haproxy_spoa: stream stopped during a request, making sure the current span is closed\n")
-			}
+	spoa.requestStateCache = initRequestStateCache(func(rs *proxy.RequestState) {
+		if rs.State.Ongoing() {
+			instr.Logger().Warn("haproxy_spoa: stream stopped during a request, making sure the current span is closed\n")
 			_ = rs.Close()
 		}
 	})
-
-	if config.Context != nil {
-		spoa.startMetricsReporter(config.Context)
-	}
 
 	if config.BodyParsingSizeLimit <= 0 {
 		instr.Logger().Info("haproxy_spoa: body parsing size limit set to 0 or negative. The request and response bodies will be ignored.")
@@ -63,22 +60,13 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 	return spoa
 }
 
-// startMetricsReporter starts a background goroutine to report request metrics
-func (s *HAProxySPOA) startMetricsReporter(ctx context.Context) {
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				instr.Logger().Info("haproxy_spoa: analyzed %d requests in the last minute", s.requestCounter.Swap(0))
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+type haproxyContextRequestDataType struct {
+	req     *request.Request
+	msg     *message.Message
+	timeout string
 }
+
+var haproxyRequestKey haproxyContextRequestDataType
 
 // Handler processes SPOE requests from HAProxy
 func (s *HAProxySPOA) Handler(req *request.Request) {
@@ -92,78 +80,78 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 			continue
 		}
 
-		// Get current request state from cache or if nil it will be created by the request headers message
 		reqState, _ := getCurrentRequest(s.requestStateCache, msg)
 
-		ctx := context.Background()
-		reqState, mpAction, err := processMessage(s.mp, ctx, req, msg, reqState)
-		if err != nil {
-			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
-			return
-		}
-
-		err = s.handleAction(mpAction, req, msg, reqState)
-		if err != nil {
+		err = s.processMessage(req, msg, reqState)
+		if err != nil && err != io.EOF {
 			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
 			return
 		}
 	}
 }
 
-func processMessage(mp message_processor.MessageProcessor, ctx context.Context, req *request.Request, msg *message.Message, currentRequest *message_processor.RequestState) (*message_processor.RequestState, message_processor.Action, error) {
+func (s *HAProxySPOA) processMessage(req *request.Request, msg *message.Message, currentRequest *proxy.RequestState) error {
 	instr.Logger().Debug("haproxy_spoa: handling message: %s", msg.Name)
+
+	requestContextData := &haproxyContextRequestDataType{req: req, msg: msg}
 
 	switch msg.Name {
 	case "http-request-headers-msg":
-		return mp.OnRequestHeaders(ctx, &requestHeadersHAProxy{req: req, msg: msg})
+		ctx := context.WithValue(context.Background(), haproxyRequestKey, requestContextData)
+		requestState, err := s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{req: req, msg: msg})
+		if err != nil {
+			return err
+		}
+		return s.cacheRequest(requestState, msg)
+
 	case "http-request-body-msg":
-		if currentRequest == nil || !currentRequest.Ongoing {
-			return nil, message_processor.Action{}, fmt.Errorf("received request body without request headers")
-		}
+		ctx := currentRequest.Context
+		currentRequest.Context = context.WithValue(ctx, haproxyRequestKey, requestContextData)
+		err := s.messageProcessor.OnRequestBody(&messageBody{msg: msg}, currentRequest)
+		currentRequest.Context = ctx
+		return err
 
-		action, err := mp.OnRequestBody(&requestBodyHAProxy{msg: msg}, currentRequest)
-		return currentRequest, action, err
 	case "http-response-headers-msg":
-		if currentRequest == nil || !currentRequest.Ongoing {
-			return nil, message_processor.Action{}, fmt.Errorf("received response headers without request context")
-		}
+		ctx := currentRequest.Context
+		currentRequest.Context = context.WithValue(ctx, haproxyRequestKey, requestContextData)
+		err := s.messageProcessor.OnResponseHeaders(&responseHeadersHAProxy{msg: msg}, currentRequest)
+		currentRequest.Context = ctx
+		return err
 
-		action, err := mp.OnResponseHeaders(&responseHeadersHAProxy{msg: msg}, currentRequest)
-		return currentRequest, action, err
 	case "http-response-body-msg":
-		if currentRequest == nil || !currentRequest.Ongoing {
-			return nil, message_processor.Action{}, fmt.Errorf("received response body without request context")
-		}
+		currentRequest.Context = context.WithValue(currentRequest.Context, haproxyRequestKey, requestContextData)
+		return s.messageProcessor.OnResponseBody(&messageBody{msg: msg}, currentRequest)
 
-		action, err := mp.OnResponseBody(&responseBodyHAProxy{msg: msg}, currentRequest)
-		return currentRequest, action, err
 	default:
-		return nil, message_processor.Action{}, fmt.Errorf("unknown message type: %s", msg.Name)
+		return fmt.Errorf("unknown message type: %s", msg.Name)
 	}
 }
 
-func (s *HAProxySPOA) handleAction(action message_processor.Action, req *request.Request, msg *message.Message, reqState *message_processor.RequestState) error {
-	switch action.Type {
-	case message_processor.ActionTypeContinue:
-		if action.Response == nil {
-			return nil
-		}
+func (s *HAProxySPOA) cacheRequest(reqState proxy.RequestState, msg *message.Message) error {
+	timeout := getStringValue(msg, "timeout")
 
-		if data := action.Response.(*message_processor.HeadersResponseData); data != nil {
-			return setHeadersResponseData(data, req, msg, reqState, s.requestStateCache)
-		}
-
-		// Could happen if a new response type with data is implemented, and we forget to handle it here.
-		// However, at the moment, we only have HeadersResponseData as a response type for ActionTypeContinue
-		return fmt.Errorf("unknown action data type: %T for ActionTypeContinue", action.Response)
-	case message_processor.ActionTypeBlock:
-		data := action.Response.(*message_processor.BlockResponseData)
-		deleteCurrentRequest(s.requestStateCache, reqState.Span.Context().SpanID())
-		return setBlockResponseData(data, req)
-	case message_processor.ActionTypeFinish:
-		deleteCurrentRequest(s.requestStateCache, reqState.Span.Context().SpanID())
-		return nil
+	span, ok := reqState.Span()
+	if !ok {
+		return fmt.Errorf("failed to retreive the span from the context of the request")
 	}
 
-	return fmt.Errorf("unknown action type: %T", action.Type)
+	spanId := span.Context().SpanID()
+	storeRequestState(s.requestStateCache, spanId, reqState, timeout)
+
+	return nil
+}
+
+func (s *HAProxySPOA) getCachedRequest(req *request.Request, msg *message.Message) (context.Context, *proxy.RequestState) {
+	// Get current request state from cache or if nil it will be created by the request headers message
+	reqState, _ := getCurrentRequest(s.requestStateCache, msg)
+
+	ctx := context.Background()
+	requestContextData := &haproxyContextRequestDataType{req: req, msg: msg}
+	if reqState == nil {
+		ctx = context.WithValue(ctx, haproxyRequestKey, requestContextData)
+	} else {
+		reqState.Context = context.WithValue(reqState.Context, haproxyRequestKey, requestContextData)
+	}
+
+	return ctx, reqState
 }

@@ -1,21 +1,27 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package streamprocessingoffload
 
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/negasus/haproxy-spoe-go/message"
-	"time"
 )
 
-func initRequestStateCache(cleanup func(*message_processor.RequestState)) *ttlcache.Cache[uint64, *message_processor.RequestState] {
+func initRequestStateCache(cleanup func(*proxy.RequestState)) *ttlcache.Cache[uint64, *proxy.RequestState] {
 	const requestStateTTL = time.Minute // Default TTL but will be overridden by the timeout value of the HAProxy configuration
-	requestStateCache := ttlcache.New[uint64, *message_processor.RequestState](
-		ttlcache.WithTTL[uint64, *message_processor.RequestState](requestStateTTL),
+	requestStateCache := ttlcache.New[uint64, *proxy.RequestState](
+		ttlcache.WithTTL[uint64, *proxy.RequestState](requestStateTTL),
 	)
 
-	requestStateCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[uint64, *message_processor.RequestState]) {
+	requestStateCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[uint64, *proxy.RequestState]) {
 		cleanup(item.Value())
 	})
 
@@ -24,7 +30,7 @@ func initRequestStateCache(cleanup func(*message_processor.RequestState)) *ttlca
 	return requestStateCache
 }
 
-func getCurrentRequest(cache *ttlcache.Cache[uint64, *message_processor.RequestState], msg *message.Message) (*message_processor.RequestState, error) {
+func getCurrentRequest(cache *ttlcache.Cache[uint64, *proxy.RequestState], msg *message.Message) (*proxy.RequestState, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("requestStateCache is not initialized")
 	}
@@ -42,7 +48,7 @@ func getCurrentRequest(cache *ttlcache.Cache[uint64, *message_processor.RequestS
 	return nil, fmt.Errorf("no current request found for span_id %d", key)
 }
 
-func storeCurrentRequest(cache *ttlcache.Cache[uint64, *message_processor.RequestState], spanId uint64, rs message_processor.RequestState, timeout string) {
+func storeRequestState(cache *ttlcache.Cache[uint64, *proxy.RequestState], spanId uint64, rs proxy.RequestState, timeout string) {
 	timeoutValue, err := time.ParseDuration(timeout)
 	if err != nil {
 		instr.Logger().Warn("haproxy_spoa: the timeout value '%s' is invalid. Please configure correctly the DD_SPOA_TIMEOUT variable in your HAProxy global configuration. Fallback to 1 minute.", timeout)
@@ -51,9 +57,4 @@ func storeCurrentRequest(cache *ttlcache.Cache[uint64, *message_processor.Reques
 
 	local := rs
 	cache.Set(spanId, &local, timeoutValue)
-}
-
-// deleteCurrentRequest removes a RequestState from the cache; call this at end of request lifecycle
-func deleteCurrentRequest(cache *ttlcache.Cache[uint64, *message_processor.RequestState], spanId uint64) {
-	cache.Delete(spanId)
 }

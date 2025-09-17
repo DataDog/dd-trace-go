@@ -1,13 +1,19 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package streamprocessingoffload
 
 import (
 	"bytes"
 	"fmt"
-	"github.com/negasus/haproxy-spoe-go/varint"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"reflect"
 	"testing"
+
+	"github.com/negasus/haproxy-spoe-go/varint"
+	"github.com/stretchr/testify/require"
 )
 
 // encodeHeader appends a single <name,value> pair using SPOE varint length-prefixed strings.

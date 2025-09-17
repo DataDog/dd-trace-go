@@ -1,16 +1,22 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package streamprocessingoffload
 
 import (
+	"context"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/message_processor"
-	"github.com/jellydator/ttlcache/v3"
-	"github.com/negasus/haproxy-spoe-go/action"
-	"github.com/negasus/haproxy-spoe-go/message"
-	"github.com/negasus/haproxy-spoe-go/request"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/negasus/haproxy-spoe-go/action"
+	"github.com/negasus/haproxy-spoe-go/message"
 )
 
 // Helper functions to extract values from SPOE messages
@@ -81,27 +87,36 @@ func spanIDFromMessage(msg *message.Message) (uint64, error) {
 }
 
 // setHeadersResponseData sets HeadersResponseData data into the request variables answering a Request Headers message
-func setHeadersResponseData(data *message_processor.HeadersResponseData, req *request.Request, msg *message.Message, reqState *message_processor.RequestState, cache *ttlcache.Cache[uint64, *message_processor.RequestState]) error {
-	if req.Actions == nil {
-		return fmt.Errorf("req.Actions is nil, cannot set headers response data")
+func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions) error {
+	requestContextData, _ := ctx.Value(haproxyRequestKey).(*haproxyContextRequestDataType)
+	if requestContextData == nil {
+		return fmt.Errorf("no haproxy request data found in context")
+	}
+
+	if requestContextData.req == nil || requestContextData.req.Actions == nil {
+		return fmt.Errorf("the haproxy context data have not been correctly initialized")
 	}
 
 	// Only set the span id from a request headers message
-	if data.Direction == message_processor.DirectionRequest {
-		spanId := reqState.Span.Context().SpanID()
-		timeout := getStringValue(msg, "timeout")
+	if options.MessageType == proxy.MessageTypeRequestHeaders {
+		s, ok := tracer.SpanFromContext(ctx)
+		if !ok {
+			return fmt.Errorf("failed to retreive the span from the context of the request")
+		}
 
-		storeCurrentRequest(cache, spanId, *reqState, timeout)
+		timeout := getStringValue(requestContextData.msg, "timeout")
+		requestContextData.timeout = timeout
 
+		spanId := s.Context().SpanID()
 		spanIdStr := strconv.FormatUint(spanId, 10)
-		req.Actions.SetVar(action.ScopeTransaction, "span_id", spanIdStr)
+		requestContextData.req.Actions.SetVar(action.ScopeTransaction, "span_id", spanIdStr)
 	}
 
-	if data.RequestBody {
-		req.Actions.SetVar(action.ScopeTransaction, "request_body", true)
+	if options.Body {
+		requestContextData.req.Actions.SetVar(action.ScopeTransaction, "request_body", true)
 	}
 
-	if len(data.HeaderMutation) > 0 {
+	if len(options.HeaderMutations) > 0 {
 		// TODO: List all possible headers that can be mutated (trace injection)
 	}
 
@@ -109,15 +124,20 @@ func setHeadersResponseData(data *message_processor.HeadersResponseData, req *re
 }
 
 // setBlockResponseData sets blocked data into the request variables when the request is blocked
-func setBlockResponseData(data *message_processor.BlockResponseData, req *request.Request) error {
-	if req.Actions == nil {
-		return fmt.Errorf("req.Actions is nil, cannot set block response data")
+func blockActionFunc(ctx context.Context, data proxy.BlockActionOptions) error {
+	requestContext, _ := ctx.Value(haproxyRequestKey).(*haproxyContextRequestDataType)
+	if requestContext == nil {
+		return fmt.Errorf("no haproxy request data found in context")
 	}
 
-	req.Actions.SetVar(action.ScopeTransaction, "blocked", true)
-	req.Actions.SetVar(action.ScopeTransaction, "headers", convertHeadersToString(data.Headers))
-	req.Actions.SetVar(action.ScopeTransaction, "body", data.Body)
-	req.Actions.SetVar(action.ScopeTransaction, "status_code", data.StatusCode)
+	if requestContext.req == nil || requestContext.req.Actions == nil {
+		return fmt.Errorf("the haproxy context data have not been correctly initialized")
+	}
+
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, "blocked", true)
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, "headers", convertHeadersToString(data.Headers))
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, "body", data.Body)
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, "status_code", data.StatusCode)
 
 	return nil
 }
