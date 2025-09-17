@@ -1103,6 +1103,7 @@ github.com/aws/aws-sdk-go-v2/service/kinesis v1.27.2 h1:71gafPkX0RyJJqq921QJ+JvV
 github.com/aws/aws-sdk-go-v2/service/kinesis v1.27.2/go.mod h1:7w4Wsl8JbRrZmi6YHRa0fxvLyY+VoYSVmC7OpdJP/VQ=
 github.com/aws/aws-sdk-go-v2/service/kinesis v1.33.2 h1:t3Ukha929to7c4SZDeCP3aRQBgn01nhwKxggYOVRMR0=
 github.com/aws/aws-sdk-go-v2/service/kinesis v1.33.2/go.mod h1:dJngkoVMrq0K7QvRkdRZYM4NUp6cdWa2GBdpm8zoY8U=
+github.com/aws/aws-sdk-go-v2/service/route53 v1.6.2 h1:OsggywXCk9iFKdu2Aopg3e1oJITIuyW36hA/B0rqupE=
 github.com/aws/aws-sdk-go-v2/service/route53 v1.6.2/go.mod h1:ZnAMilx42P7DgIrdjlWCkNIGSBLzeyk6T31uB8oGTwY=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.32.0/go.mod h1:aSl9/LJltSz1cVusiR/Mu8tvI4Sv/5w/WWrJmmkNii0=
 github.com/aws/aws-sdk-go-v2/service/sfn v1.19.4/go.mod h1:uWCH4ATwNrkRO40j8Dmy7u/Y1/BVWgCM+YjBNYZeOro=
