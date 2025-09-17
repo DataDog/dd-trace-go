@@ -79,7 +79,7 @@ func TestStartFunctionExecutionSpanFromXrayWithMergeEnabled(t *testing.T) {
 
 	assert.Equal(t, "aws.lambda", finishedSpan.OperationName())
 
-	assert.Equal(t, true, finishedSpan.Tag("cold_start"))
+	assert.Equal(t, "true", finishedSpan.Tag("cold_start"))
 	// We expect the function ARN to be lowercased, and the version removed
 	assert.Equal(t, "arn:aws:lambda:us-east-1:123456789012:function:myfunction", finishedSpan.Tag("function_arn"))
 	assert.Equal(t, "11", finishedSpan.Tag("function_version"))
