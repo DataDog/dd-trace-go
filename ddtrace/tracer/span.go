@@ -930,14 +930,10 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 }
 
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
-	if parentID, ok := illmobs.PropagatedParentIDFromContext(ctx); ok {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, parentID)
-	}
-	if mlApp, ok := illmobs.PropagatedMLAppFromContext(ctx); ok {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, mlApp)
-	}
-	if trID, ok := illmobs.PropagatedTraceIDFromContext(ctx); ok {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, trID)
+	if llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.LLMTraceID())
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 	}
 }
 

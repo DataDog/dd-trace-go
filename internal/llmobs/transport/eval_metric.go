@@ -23,6 +23,19 @@ type LLMObsEvaluationMetricEvent struct {
 	Tags             []string                     `json:"tags,omitempty"`
 }
 
+type RequestLLMObsEvaluationMetricsCreate struct {
+	Data RequestLLMObsEvaluationMetricsCreateData `json:"data"`
+}
+
+type RequestLLMObsEvaluationMetricsCreateData struct {
+	Type       string                                             `json:"type"`
+	Attributes RequestLLMObsEvaluationMetricsCreateDataAttributes `json:"attributes"`
+}
+
+type RequestLLMObsEvaluationMetricsCreateDataAttributes struct {
+	Metrics []*LLMObsEvaluationMetricEvent `json:"metrics"`
+}
+
 func (c *Transport) LLMObsEvalMetricsSend(
 	ctx context.Context,
 	metrics []*LLMObsEvaluationMetricEvent,
@@ -32,8 +45,16 @@ func (c *Transport) LLMObsEvalMetricsSend(
 	}
 	path := endpointEvalMetric
 	method := http.MethodPost
+	body := &RequestLLMObsEvaluationMetricsCreate{
+		Data: RequestLLMObsEvaluationMetricsCreateData{
+			Type: "evaluation_metric",
+			Attributes: RequestLLMObsEvaluationMetricsCreateDataAttributes{
+				Metrics: metrics,
+			},
+		},
+	}
 
-	status, b, err := c.request(ctx, method, path, subdomainEvalMetric, metrics)
+	status, b, err := c.request(ctx, method, path, subdomainEvalMetric, body)
 	if err != nil {
 		return fmt.Errorf("post llmobs eval metrics failed: %v (status=%d, body=%s)", err, status, string(b))
 	}

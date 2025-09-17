@@ -14,33 +14,44 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
-const (
-	propagatingTagLLMObsParentID = "_dd.p.llmobs_parent_id"
-	propagatingTagLLMObsMLApp    = "_dd.p.llmobs_ml_app"
-	propagatingTagLLMObsTraceID  = "_dd.p.llmobs_trace_id"
-)
-
 // ContextWithSpan returns a copy of the given context which includes the span s.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
-	return withLLMObsPropagatedTags(newCtx, s)
+	return contextWithPropagatedLLMSpan(newCtx, s)
 }
 
-func withLLMObsPropagatedTags(ctx context.Context, s *Span) context.Context {
+func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context {
 	if s == nil {
 		return ctx
 	}
+	// if there is a propagated llm span already just skip
+	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
+		return ctx
+	}
 	newCtx := ctx
-	if parentID := s.context.trace.propagatingTag(propagatingTagLLMObsParentID); parentID != "" {
-		newCtx = context.WithValue(newCtx, illmobs.CtxKeyPropagatedParentID{}, parentID)
-	}
-	if mlApp := s.context.trace.propagatingTag(propagatingTagLLMObsMLApp); mlApp != "" {
-		newCtx = context.WithValue(newCtx, illmobs.CtxKeyPropagatedMLApp{}, mlApp)
-	}
-	if trID := s.context.trace.propagatingTag(propagatingTagLLMObsTraceID); trID != "" {
-		newCtx = context.WithValue(newCtx, illmobs.CtxKeyPropagatedTraceID{}, trID)
+
+	propagatedLLMObs := propagatedLLMSpanFromTags(s)
+	if propagatedLLMObs.SpanID != "" && propagatedLLMObs.TraceID != "" {
+		newCtx = illmobs.ContextWithPropagatedLLMSpan(newCtx, propagatedLLMObs)
 	}
 	return newCtx
+}
+
+func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
+	propagatedLLMObs := &illmobs.PropagatedLLMSpan{}
+	if s.context == nil || s.context.trace == nil {
+		return propagatedLLMObs
+	}
+	if parentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentID); parentID != "" {
+		propagatedLLMObs.SpanID = parentID
+	}
+	if mlApp := s.context.trace.propagatingTag(keyPropagatedLLMObsMLAPP); mlApp != "" {
+		propagatedLLMObs.MLApp = mlApp
+	}
+	if trID := s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID); trID != "" {
+		propagatedLLMObs.TraceID = trID
+	}
+	return propagatedLLMObs
 }
 
 // SpanFromContext returns the span contained in the given context. A second return

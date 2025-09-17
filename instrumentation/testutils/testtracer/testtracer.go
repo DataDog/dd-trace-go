@@ -26,6 +26,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
+// chanSize is a big enough channel size so we never block sending while the test is running.
+const chanSize = 10_0000
+
 // AgentInfo defines the response from the agent /info endpoint.
 type AgentInfo struct {
 	Endpoints          []string    `json:"endpoints"`
@@ -87,8 +90,8 @@ func Start(t *testing.T, opts ...Option) *TestTracer {
 		opt(cfg)
 	}
 
-	spansChan := make(chan Span)
-	llmobsSpansChan := make(chan LLMObsSpan)
+	spansChan := make(chan Span, chanSize)
+	llmobsSpansChan := make(chan LLMObsSpan, chanSize)
 	rt := &mockTransport{
 		T:               t,
 		spansChan:       spansChan,

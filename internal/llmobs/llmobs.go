@@ -32,8 +32,6 @@ var (
 	activeLLMObs *LLMObs
 )
 
-type ctxKeyActiveLLMSpan struct{}
-
 var (
 	errLLMObsNotEnabled        = errors.New("LLMObs is not enabled. Ensure the experiment has been correctly initialized using experiment.New and llmobs.Start() has been called or set DD_LLMOBS_ENABLED=1")
 	errAgentlessRequiresAPIKey = errors.New("LLMOBs agentless mode requires a valid API key - set the DD_API_KEY env variable to configure one")
@@ -82,21 +80,17 @@ type Message struct {
 }
 
 type llmobsContext struct {
-	spanKind           string
-	sessionID          string
-	metadata           map[string]any
-	metrics            map[string]any
-	mlApp              string
-	propagatedParentID string
-	propagatedMLApp    string
-	parentID           string
-	propagatedTraceID  string
-	traceID            string
-	tags               map[string]string
-	agentManifest      string
-	modelName          string
-	modelProvider      string
-	toolDefinitions    string
+	spanKind        string
+	sessionID       string
+	metadata        map[string]any
+	metrics         map[string]any
+	parentID        string
+	traceID         string
+	tags            map[string]string
+	agentManifest   string
+	modelName       string
+	modelProvider   string
+	toolDefinitions string
 
 	inputDocuments []Document
 	inputMessages  []Message
@@ -261,14 +255,18 @@ func (l *LLMObs) Run() {
 
 			// periodic flush
 			case <-ticker.C:
+				log.Debug("llmobs: periodic flush signal")
 				l.flushBuffers()
 
 			// on-demand flush
 			case <-l.flushNowCh:
+				log.Debug("llmobs: explicit flush signal")
 				l.flushBuffers()
 
 			// shutdown: drain whatever's currently available, then final flush and exit
 			case <-l.stopCh:
+				log.Debug("llmobs: stop signal")
+
 				l.drainNonBlocking()
 				l.flushBuffers()
 				return
@@ -407,6 +405,7 @@ func (l *LLMObs) flushBuffers() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	// FIXME(rarguelloF): this blocks the reader goroutine
 	if len(events) > 0 {
 		log.Debug("llmobs: sending %d LLMObs Span Events", len(events))
 		if log.DebugEnabled() {
@@ -418,6 +417,8 @@ func (l *LLMObs) flushBuffers() {
 		}
 		if err := l.Transport.LLMObsSpanSendEvents(ctx, events); err != nil {
 			log.Error("llmobs: LLMObsSpanSendEvents failed: %v", err)
+		} else {
+			log.Debug("llmobs: LLMObsSpanSendEvents success")
 		}
 	}
 
@@ -440,69 +441,6 @@ func (l *LLMObs) runEvalTask(task *spanEvalTask) {
 	log.Debug("llmobs: runEvalTask not implemented yet")
 }
 
-type Span struct {
-	mu sync.RWMutex
-
-	apm           APMSpan
-	parent        *Span
-	llmobsCtx     llmobsContext
-	llmobsTraceID string
-	name          string
-	integration   string
-	scope         string
-	isEvaluation  bool
-	error         error
-	startTime     time.Time
-	finishTime    time.Time
-	spanLinks     []SpanLink
-}
-
-func (s *Span) AddLink(link SpanLink) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.apm.AddLink(link)
-	s.spanLinks = append(s.spanLinks, link)
-}
-
-func (s *Span) SpanID() string {
-	return s.apm.SpanID()
-}
-
-func (s *Span) TraceID() string {
-	return s.apm.TraceID()
-}
-
-func (s *Span) Finish(opts ...FinishSpanOption) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	cfg := &finishSpanConfig{
-		finishTime: time.Now(),
-	}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	s.finishTime = cfg.finishTime
-	apmFinishCfg := FinishAPMSpanConfig{
-		FinishTime: cfg.finishTime,
-	}
-	if cfg.error != nil {
-		s.error = cfg.error
-		apmFinishCfg.Error = cfg.error
-	}
-
-	s.apm.Finish(apmFinishCfg)
-	l, err := ActiveLLMObs()
-	if err != nil {
-		return
-	}
-	l.submitLLMObsSpan(s)
-
-	//TODO: telemetry.record_span_created(span)
-}
-
 // submitLLMObsSpan generates and submits an LLMObs span event to the LLMObs intake.
 func (l *LLMObs) submitLLMObsSpan(span *Span) {
 	event := l.llmobsSpanEvent(span)
@@ -519,23 +457,23 @@ func (l *LLMObs) submitLLMObsSpan(span *Span) {
 func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	meta := make(map[string]any)
 
-	spanKind := span.llmobsCtx.spanKind
+	spanKind := span.llmCtx.spanKind
 	meta["span.kind"] = spanKind
 
-	if (spanKind == SpanKindLLM || spanKind == SpanKindEmbedding) && span.llmobsCtx.modelName != "" {
-		meta["model_name"] = span.llmobsCtx.modelName
-		modelProvider := strings.ToLower(span.llmobsCtx.modelProvider)
+	if (spanKind == SpanKindLLM || spanKind == SpanKindEmbedding) && span.llmCtx.modelName != "" {
+		meta["model_name"] = span.llmCtx.modelName
+		modelProvider := strings.ToLower(span.llmCtx.modelProvider)
 		if modelProvider == "" {
 			modelProvider = "custom"
 		}
 	}
 
-	metadata := span.llmobsCtx.metadata
+	metadata := span.llmCtx.metadata
 	if metadata == nil {
 		metadata = make(map[string]any)
 	}
-	if spanKind == SpanKindAgent && span.llmobsCtx.agentManifest != "" {
-		metadata["agent_manifest"] = span.llmobsCtx.agentManifest
+	if spanKind == SpanKindAgent && span.llmCtx.agentManifest != "" {
+		metadata["agent_manifest"] = span.llmCtx.agentManifest
 	}
 	if len(metadata) > 0 {
 		meta["metadata"] = metadata
@@ -544,54 +482,54 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	input := make(map[string]any)
 	output := make(map[string]any)
 
-	if spanKind == SpanKindLLM && len(span.llmobsCtx.inputMessages) > 0 {
-		input["messages"] = span.llmobsCtx.inputMessages
-	} else if inputValue := span.llmobsCtx.inputValue; inputValue != "" {
+	if spanKind == SpanKindLLM && len(span.llmCtx.inputMessages) > 0 {
+		input["messages"] = span.llmCtx.inputMessages
+	} else if inputValue := span.llmCtx.inputValue; inputValue != "" {
 		input["value"] = inputValue
 	}
 
-	if spanKind == SpanKindLLM && len(span.llmobsCtx.outputMessages) > 0 {
-		output["messages"] = span.llmobsCtx.outputMessages
-	} else if outputValue := span.llmobsCtx.outputValue; outputValue != "" {
+	if spanKind == SpanKindLLM && len(span.llmCtx.outputMessages) > 0 {
+		output["messages"] = span.llmCtx.outputMessages
+	} else if outputValue := span.llmCtx.outputValue; outputValue != "" {
 		output["value"] = outputValue
 	}
 
 	if spanKind == SpanKindExperiment {
-		if expectedOut := span.llmobsCtx.experimentExpectedOutput; expectedOut != nil {
+		if expectedOut := span.llmCtx.experimentExpectedOutput; expectedOut != nil {
 			meta["expected_output"] = expectedOut
 		}
-		if expInput := span.llmobsCtx.experimentInput; expInput != nil {
+		if expInput := span.llmCtx.experimentInput; expInput != nil {
 			input = expInput
 		}
-		if out := span.llmobsCtx.experimentOutput; out != nil {
+		if out := span.llmCtx.experimentOutput; out != nil {
 			// FIXME: experimentOutput is any, but in python is treated as a map
 			meta["output"] = out
 		}
 	}
 
 	if spanKind == SpanKindEmbedding {
-		if inputDocs := span.llmobsCtx.inputDocuments; len(inputDocs) > 0 {
+		if inputDocs := span.llmCtx.inputDocuments; len(inputDocs) > 0 {
 			input["documents"] = inputDocs
 		}
 	}
 	if spanKind == SpanKindRetrieval {
-		if outputDocs := span.llmobsCtx.outputDocuments; len(outputDocs) > 0 {
+		if outputDocs := span.llmCtx.outputDocuments; len(outputDocs) > 0 {
 			output["documents"] = outputDocs
 		}
 	}
-	if inputPrompt := span.llmobsCtx.inputPrompt; inputPrompt != "" {
+	if inputPrompt := span.llmCtx.inputPrompt; inputPrompt != "" {
 		if spanKind != SpanKindLLM {
 			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prmpts is only supported for LLM span kinds")
 		} else {
 			input["prompt"] = inputPrompt
 		}
 	} else if spanKind == SpanKindLLM {
-		if span.parent != nil && span.parent.llmobsCtx.inputPrompt != "" {
-			input["prompt"] = span.parent.llmobsCtx.inputPrompt
+		if span.parent != nil && span.parent.llmCtx.inputPrompt != "" {
+			input["prompt"] = span.parent.llmCtx.inputPrompt
 		}
 	}
 
-	if toolDefinitions := span.llmobsCtx.toolDefinitions; toolDefinitions != "" {
+	if toolDefinitions := span.llmCtx.toolDefinitions; toolDefinitions != "" {
 		meta["tool_definitions"] = toolDefinitions
 	}
 
@@ -619,20 +557,20 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if span.parent != nil {
 		parentID = span.parent.apm.SpanID()
 	}
-	if span.llmobsTraceID == "" {
+	if span.llmTraceID == "" {
 		log.Warn("llmobs: span has no trace ID")
-		span.llmobsTraceID = newLLMObsTraceID()
+		span.llmTraceID = newLLMObsTraceID()
 	}
 
 	metrics := make(map[string]any)
-	if span.llmobsCtx.inputTokens > 0 {
-		metrics["input_tokens"] = span.llmobsCtx.inputTokens
+	if span.llmCtx.inputTokens > 0 {
+		metrics["input_tokens"] = span.llmCtx.inputTokens
 	}
-	if span.llmobsCtx.outputTokens > 0 {
-		metrics["output_tokens"] = span.llmobsCtx.outputTokens
+	if span.llmCtx.outputTokens > 0 {
+		metrics["output_tokens"] = span.llmCtx.outputTokens
 	}
-	if span.llmobsCtx.totalTokens > 0 {
-		metrics["total_tokens"] = span.llmobsCtx.totalTokens
+	if span.llmCtx.totalTokens > 0 {
+		metrics["total_tokens"] = span.llmCtx.totalTokens
 	}
 
 	tags := make(map[string]string)
@@ -643,7 +581,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	tags["env"] = l.Config.TracerConfig.Env
 	tags["service"] = l.Config.TracerConfig.Service
 	tags["source"] = "integration" // TODO(rarguelloF): is this correct?
-	tags["ml_app"] = span.llmobsCtx.mlApp
+	tags["ml_app"] = span.mlApp
 	tags["ddtrace.version"] = version.Tag
 	tags["language"] = "go"
 
@@ -663,7 +601,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	//if _is_evaluation_span(span):
 	//tags[constants.RUNNER_IS_INTEGRATION_SPAN_TAG] = "ragas"
 
-	for k, v := range span.llmobsCtx.tags {
+	for k, v := range span.llmCtx.tags {
 		tags[k] = v
 	}
 	tagsSlice := make([]string, 0, len(tags))
@@ -673,7 +611,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 
 	ev := &transport.LLMObsSpanEvent{
 		SpanID:           spanID,
-		TraceID:          span.llmobsTraceID,
+		TraceID:          span.llmTraceID,
 		ParentID:         parentID,
 		SessionID:        span.sessionID(),
 		Tags:             tagsSlice,
@@ -714,27 +652,6 @@ func truncateLLMObsSpanEvent(ev *transport.LLMObsSpanEvent, input, output map[st
 	ev.CollectionErrors = []string{collectionErrorDroppedIO}
 }
 
-func readableBytes(s int) string {
-	const base = 1000
-	sizes := []string{"B", "kB", "MB", "GB", "TB", "PB", "EB"}
-
-	if s < 10 {
-		return fmt.Sprintf("%dB", s)
-	}
-	e := math.Floor(logn(float64(s), base))
-	suffix := sizes[int(e)]
-	val := math.Floor(float64(s)/math.Pow(base, e)*10+0.5) / 10
-	f := "%.0f%s"
-	if val < 10 {
-		f = "%.1f%s"
-	}
-	return fmt.Sprintf(f, val, suffix)
-}
-
-func logn(n, b float64) float64 {
-	return math.Log(n) / math.Log(b)
-}
-
 func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name string, opts ...StartSpanOption) (*Span, context.Context) {
 	spanName := name
 	if spanName == "" {
@@ -750,9 +667,6 @@ func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name strin
 	}
 	for _, opt := range opts {
 		opt(cfg)
-	}
-	if cfg.mlApp == "" {
-		cfg.mlApp = l.Config.MLApp
 	}
 
 	startCfg := StartAPMSpanConfig{
@@ -770,37 +684,38 @@ func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name strin
 		return span, ctx
 	}
 
-	parent, ok := getActiveLLMSpan(ctx)
-	if ok {
-		log.Debug("llmobs: found active llm span in context: %v", parent)
+	if parent, ok := ActiveLLMSpanFromContext(ctx); ok {
+		log.Debug("llmobs: found active llm span in context: %+v", parent)
 		span.parent = parent
-		span.llmobsTraceID = parent.llmobsTraceID
+		span.llmTraceID = parent.llmTraceID
+	} else if propagated, ok := PropagatedLLMSpanFromContext(ctx); ok {
+		log.Debug("llmobs: found propagated llm span in context: %+v", propagated)
+		span.propagated = propagated
+		span.llmTraceID = propagated.TraceID
 	} else {
-		span.llmobsTraceID = newLLMObsTraceID()
+		span.llmTraceID = newLLMObsTraceID()
 	}
 
-	span.llmobsCtx = llmobsContext{
+	span.mlApp = cfg.mlApp
+	span.llmCtx = llmobsContext{
 		spanKind:      string(opKind),
 		modelName:     cfg.modelName,
 		modelProvider: cfg.modelProvider,
 		sessionID:     cfg.sessionID,
-		mlApp:         cfg.mlApp,
 	}
 
-	if span.llmobsCtx.sessionID == "" {
-		span.llmobsCtx.sessionID = span.sessionID()
+	if span.llmCtx.sessionID == "" {
+		span.llmCtx.sessionID = span.sessionID()
 	}
-	if span.llmobsCtx.mlApp == "" {
-		mlApp := span.mlApp(ctx)
-		if mlApp == "" {
+	if span.mlApp == "" {
+		span.mlApp = span.propagatedMLApp()
+		if span.mlApp == "" {
 			// We should ensure there's always an ML App to fall back to during startup, so this should never happen.
 			log.Warn("llmobs: ML App is required for sending LLM Observability data.")
-		} else {
-			span.llmobsCtx.mlApp = mlApp
 		}
 	}
-	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", name, opKind, span.llmobsCtx.mlApp)
-	return span, setActiveLLMSpan(ctx, span)
+	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", name, opKind, span.mlApp)
+	return span, ContextWithActiveLLMSpan(ctx, span)
 }
 
 type SpanAnnotations struct {
@@ -830,10 +745,10 @@ func (l *LLMObs) AnnotateExperimentSpan(span *Span, annotations ExperimentSpanAn
 	span.mu.Lock()
 	defer span.mu.Unlock()
 
-	span.llmobsCtx.experimentInput = annotations.Input
-	span.llmobsCtx.experimentOutput = annotations.Output
-	span.llmobsCtx.experimentExpectedOutput = annotations.ExpectedOutput
-	span.llmobsCtx.tags = annotations.Tags
+	span.llmCtx.experimentInput = annotations.Input
+	span.llmCtx.experimentOutput = annotations.Output
+	span.llmCtx.experimentExpectedOutput = annotations.ExpectedOutput
+	span.llmCtx.tags = annotations.Tags
 }
 
 func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimentID string, opts ...StartSpanOption) (*Span, context.Context) {
@@ -844,63 +759,6 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimen
 		span.scope = "experiments"
 	}
 	return span, ctx
-}
-
-// sessionID returns the session ID for a given span, by checking the span's nearest LLMObs span ancestor.
-func (s *Span) sessionID() string {
-	curSpan := s
-
-	for curSpan != nil {
-		if curSpan.llmobsCtx.sessionID != "" {
-			return curSpan.llmobsCtx.sessionID
-		}
-		curSpan = curSpan.parent
-	}
-	return ""
-}
-
-// isEvaluationSpan returns whether the current span or any of the parents is an evaluation span.
-func (s *Span) isEvaluationSpan() bool {
-	curSpan := s
-	for curSpan != nil {
-		if curSpan.isEvaluation {
-			return true
-		}
-		curSpan = curSpan.parent
-	}
-	return false
-}
-
-// mlApp returns the ML App name for a given span, by checking the span's nearest LLMObs span ancestor.
-// It defaults to the global config LLMObs ML App name.
-func (s *Span) mlApp(ctx context.Context) string {
-	curSpan := s
-
-	for curSpan != nil {
-		if curSpan.llmobsCtx.mlApp != "" {
-			return curSpan.llmobsCtx.mlApp
-		}
-		curSpan = curSpan.parent
-	}
-
-	if propagated, ok := PropagatedMLAppFromContext(ctx); ok {
-		return propagated
-	}
-	if activeLLMObs != nil {
-		return activeLLMObs.Config.MLApp
-	}
-	return ""
-}
-
-func setActiveLLMSpan(ctx context.Context, span *Span) context.Context {
-	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
-}
-
-func getActiveLLMSpan(ctx context.Context) (*Span, bool) {
-	if span, ok := ctx.Value(ctxKeyActiveLLMSpan{}).(*Span); ok {
-		return span, true
-	}
-	return nil, false
 }
 
 func newLLMObsTraceID() string {
@@ -951,4 +809,25 @@ func isAPIKeyValid(key string) bool {
 		}
 	}
 	return true
+}
+
+func readableBytes(s int) string {
+	const base = 1000
+	sizes := []string{"B", "kB", "MB", "GB", "TB", "PB", "EB"}
+
+	if s < 10 {
+		return fmt.Sprintf("%dB", s)
+	}
+	e := math.Floor(logn(float64(s), base))
+	suffix := sizes[int(e)]
+	val := math.Floor(float64(s)/math.Pow(base, e)*10+0.5) / 10
+	f := "%.0f%s"
+	if val < 10 {
+		f = "%.1f%s"
+	}
+	return fmt.Sprintf(f, val, suffix)
+}
+
+func logn(n, b float64) float64 {
+	return math.Log(n) / math.Log(b)
 }

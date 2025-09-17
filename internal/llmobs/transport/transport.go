@@ -189,10 +189,9 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			return resp, nil
 		}
 
-		// Retriable range:
 		if isRetriableStatus(code) {
 			log.Debug("llmobs/internal/transport: retriable status code: %d", resp.StatusCode)
-			return nil, fmt.Errorf("transient http status: %d", code)
+			return nil, fmt.Errorf("request failed with transient http status code: %d", code)
 		}
 
 		if code == http.StatusTooManyRequests {
@@ -202,13 +201,9 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			return nil, backoff.RetryAfter(int(wait.Seconds()))
 		}
 
-		// Non-retriable range: 3xx or 4xx
-		if resp.StatusCode >= 300 && resp.StatusCode <= 499 {
-			log.Debug("llmobs/internal/transport: non-retriable status code: %d", resp.StatusCode)
-			drainAndClose(resp.Body)
-			return nil, backoff.Permanent(fmt.Errorf("client status error: %d", resp.StatusCode))
-		}
-		return resp, nil
+		log.Debug("llmobs/internal/transport: non-retriable status code: %d", resp.StatusCode)
+		drainAndClose(resp.Body)
+		return nil, backoff.Permanent(fmt.Errorf("request failed with http status code: %d", resp.StatusCode))
 	}
 
 	if log.DebugEnabled() {

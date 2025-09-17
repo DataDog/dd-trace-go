@@ -40,3 +40,13 @@ func StartWorkflowSpan(ctx context.Context, name string, opts ...StartSpanOption
 
 	return llm.StartSpan(ctx, illmobs.SpanKindWorkflow, name, opts...)
 }
+
+func StartLLMSpan(ctx context.Context, name string, opts ...StartSpanOption) (*Span, context.Context) {
+	llm, err := illmobs.ActiveLLMObs()
+	if err != nil {
+		log.Warn("llmobs: failed to start llmobs span: %v", err)
+		return nil, ctx
+	}
+
+	return llm.StartSpan(ctx, illmobs.SpanKindWorkflow, name, opts...)
+}

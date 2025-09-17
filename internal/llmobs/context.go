@@ -3,28 +3,34 @@ package llmobs
 import "context"
 
 type (
-	CtxKeyPropagatedMLApp    struct{}
-	CtxKeyPropagatedParentID struct{}
-	CtxKeyPropagatedTraceID  struct{}
+	ctxKeyActiveLLMSpan     struct{}
+	ctxKeyPropagatedLLMSpan struct{}
 )
 
-func PropagatedMLAppFromContext(ctx context.Context) (string, bool) {
-	if val, ok := ctx.Value(CtxKeyPropagatedMLApp{}).(string); ok {
-		return val, true
-	}
-	return "", false
+type PropagatedLLMSpan struct {
+	MLApp   string
+	TraceID string
+	SpanID  string
 }
 
-func PropagatedParentIDFromContext(ctx context.Context) (string, bool) {
-	if val, ok := ctx.Value(CtxKeyPropagatedParentID{}).(string); ok {
+func PropagatedLLMSpanFromContext(ctx context.Context) (*PropagatedLLMSpan, bool) {
+	if val, ok := ctx.Value(ctxKeyPropagatedLLMSpan{}).(*PropagatedLLMSpan); ok {
 		return val, true
 	}
-	return "", false
+	return nil, false
 }
 
-func PropagatedTraceIDFromContext(ctx context.Context) (string, bool) {
-	if val, ok := ctx.Value(CtxKeyPropagatedTraceID{}).(string); ok {
-		return val, true
+func ContextWithPropagatedLLMSpan(ctx context.Context, span *PropagatedLLMSpan) context.Context {
+	return context.WithValue(ctx, ctxKeyPropagatedLLMSpan{}, span)
+}
+
+func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
+	if span, ok := ctx.Value(ctxKeyActiveLLMSpan{}).(*Span); ok {
+		return span, true
 	}
-	return "", false
+	return nil, false
+}
+
+func ContextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
+	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
 }
