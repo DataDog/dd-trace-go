@@ -6,10 +6,12 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestSCAEnabled(t *testing.T) {
@@ -42,7 +44,7 @@ func TestSCAEnabled(t *testing.T) {
 			name:              "parsing error",
 			envVarVal:         "not a boolean string representation [at {all!}]",
 			telemetryExpected: false,
-			telemetryLog:      "appsec: non-boolean value for DD_APPSEC_SCA_ENABLED: 'not a boolean string representation [at {all!}]' in env_var configuration, dropping",
+			telemetryLog:      "appsec: failed to get SCA config",
 			expectedValue:     false,
 		},
 	} {
@@ -54,8 +56,13 @@ func TestSCAEnabled(t *testing.T) {
 			telemetryClient := new(telemetrytest.MockClient)
 			telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar}}).Return()
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
+
+			var logMatcher any
 			if tc.telemetryLog != "" {
-				telemetryClient.On("Log", telemetry.LogError, tc.telemetryLog, []telemetry.LogOption(nil)).Return()
+				logMatcher = mock.MatchedBy(func(record telemetry.Record) bool {
+					return strings.HasPrefix(record.Message, tc.telemetryLog)
+				})
+				telemetryClient.On("Log", logMatcher, []telemetry.LogOption(nil)).Return()
 			}
 			defer telemetry.MockClient(telemetryClient)()
 
@@ -68,7 +75,7 @@ func TestSCAEnabled(t *testing.T) {
 				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 0)
 			}
 			if tc.telemetryLog != "" {
-				telemetryClient.AssertCalled(t, "Log", telemetry.LogError, tc.telemetryLog, []telemetry.LogOption(nil))
+				telemetryClient.AssertCalled(t, "Log", logMatcher, []telemetry.LogOption(nil))
 			}
 		})
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -35,9 +36,11 @@ func Load(pkg Package) *Instrumentation {
 	tracer.MarkIntegrationImported(info.TracedPackage)
 
 	return &Instrumentation{
-		pkg:    pkg,
-		logger: newLogger(pkg),
-		info:   info,
+		logger:       newLogger(pkg),
+		telemetrylog: telemetrylog.With(telemetry.WithTags([]string{"integration:" + string(pkg)})),
+
+		pkg:  pkg,
+		info: info,
 	}
 }
 
@@ -53,9 +56,11 @@ func Version() string {
 
 // Instrumentation represents instrumentation for a package.
 type Instrumentation struct {
-	pkg    Package
-	logger Logger
-	info   PackageInfo
+	logger       Logger
+	telemetrylog *telemetrylog.Logger
+
+	pkg  Package
+	info PackageInfo
 }
 
 // ServiceName returns the default service name to be set for the given instrumentation component.
@@ -91,6 +96,10 @@ func (i *Instrumentation) OperationName(component Component, opCtx OperationCont
 
 func (i *Instrumentation) Logger() Logger {
 	return i.logger
+}
+
+func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
+	return i.telemetrylog
 }
 
 func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
@@ -145,9 +154,7 @@ type StatsdClient = internal.StatsdClient
 func (i *Instrumentation) StatsdClient(extraTags []string) (StatsdClient, error) {
 	addr := globalconfig.DogstatsdAddr()
 	tags := globalconfig.StatsTags()
-	for _, tag := range extraTags {
-		tags = append(tags, tag)
-	}
+	tags = append(tags, extraTags...)
 	return internal.NewStatsdClient(addr, tags)
 }
 
