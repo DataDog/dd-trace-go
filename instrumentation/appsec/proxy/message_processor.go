@@ -87,7 +87,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 
 	if !mp.BlockingUnavailable && blocked {
 		actionOpts := reqState.BlockAction()
-		if err := mp.BlockMessageFunc(ctx, actionOpts); err != nil {
+		if err := mp.BlockMessageFunc(reqState.Context, actionOpts); err != nil {
 			return reqState, fmt.Errorf("error creating block message: %w", err)
 		}
 		return reqState, io.EOF
@@ -103,7 +103,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 		// Todo: Set telemetry body size (using content-length)
 	}
 
-	if err := mp.ContinueMessageFunc(ctx, ContinueActionOptions{
+	if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{
 		HeaderMutations: headerMutation,
 		Body:            reqState.State == MessageTypeRequestBody,
 		MessageType:     MessageTypeRequestHeaders,
@@ -121,7 +121,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
 func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
-	if !reqState.State.Ongoing() {
+	if reqState == nil || !reqState.State.Ongoing() {
 		return errors.New("received request body too early")
 	}
 
@@ -131,20 +131,20 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
 
-		return mp.ContinueMessageFunc(reqState.ctx, ContinueActionOptions{MessageType: MessageTypeRequestBody})
+		return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeRequestBody})
 	}
 
-	blocked := processBody(reqState.ctx, reqState.requestBuffer, req.GetBody(), req.GetEndOfStream(), appsec.MonitorParsedHTTPBody)
+	blocked := processBody(reqState.Context, reqState.requestBuffer, req.GetBody(), req.GetEndOfStream(), appsec.MonitorParsedHTTPBody)
 	if blocked != nil && !mp.BlockingUnavailable {
 		mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
 		actionOpts := reqState.BlockAction()
-		if err := mp.BlockMessageFunc(reqState.ctx, actionOpts); err != nil {
+		if err := mp.BlockMessageFunc(reqState.Context, actionOpts); err != nil {
 			return fmt.Errorf("error creating block message: %w", err)
 		}
 		return io.EOF
 	}
 
-	return mp.ContinueMessageFunc(reqState.ctx, ContinueActionOptions{MessageType: MessageTypeRequestBody})
+	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeRequestBody})
 }
 
 // OnResponseHeaders handles incoming response headers using the [ResponseHeaders] interface
@@ -152,6 +152,9 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 // along with an optional output message of type O created by either [ProcessorConfig.ContinueMessageFunc] or [ProcessorConfig.BlockMessageFunc]
 // If the request is blocked or the message ends the stream, it returns io.EOF as error
 func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestState) error {
+	if reqState == nil {
+		return fmt.Errorf("received a headers reponse without a valid request state")
+	}
 	if !reqState.State.Request() {
 		return fmt.Errorf("received response headers too early: %v", reqState.State)
 	}
@@ -167,7 +170,7 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 
 	// We need to know if the request has been blocked, but we don't have any other way than to look for the operation and bind a blocking data listener to it
 	if !mp.BlockingUnavailable {
-		op, ok := dyngo.FromContext(reqState.ctx)
+		op, ok := dyngo.FromContext(reqState.Context)
 		if ok {
 			dyngo.OnData(op, func(_ *actions.BlockHTTP) {
 				// We already wrote over the response writer, we need to reset it so the blocking Processor can write to it
@@ -185,7 +188,7 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 	if res.GetEndOfStream() || !mp.isBodySupported(reqState.wrappedResponseWriter.Header().Get("Content-Type")) {
 		reqState.Close()
 		if !mp.BlockingUnavailable && reqState.State == MessageTypeBlocked {
-			if err := mp.BlockMessageFunc(reqState.ctx, reqState.BlockAction()); err != nil {
+			if err := mp.BlockMessageFunc(reqState.Context, reqState.BlockAction()); err != nil {
 				return fmt.Errorf("error creating block message: %w", err)
 			}
 			return io.EOF
@@ -195,7 +198,7 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 		return io.EOF
 	}
 
-	return mp.ContinueMessageFunc(reqState.ctx, ContinueActionOptions{MessageType: MessageTypeResponseHeaders, Body: reqState.State == MessageTypeResponseBody})
+	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseHeaders, Body: reqState.State == MessageTypeResponseBody})
 }
 
 // OnResponseBody handles incoming response body chunks using the [HTTPBody] interface
@@ -205,6 +208,9 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
 func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error {
+	if reqState == nil {
+		return fmt.Errorf("received a body response without a valid request state")
+	}
 	if !reqState.State.Response() {
 		return fmt.Errorf("received response body too early: %v", reqState.State)
 	}
@@ -217,32 +223,38 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 		return io.EOF
 	}
 
-	blocked := processBody(reqState.ctx, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody)
+	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody)
 	if reqState.responseBuffer.analyzed {
 		reqState.Close() // Call Close to ensure the response headers are analyzed
 
 		if (reqState.State == MessageTypeBlocked || blocked != nil) && !mp.BlockingUnavailable {
 			mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
-			if err := mp.BlockMessageFunc(reqState.ctx, reqState.BlockAction()); err != nil {
+			if err := mp.BlockMessageFunc(reqState.Context, reqState.BlockAction()); err != nil {
 				return fmt.Errorf("error creating block message: %w", err)
 			}
 		}
 		return io.EOF
 	}
 
-	return mp.ContinueMessageFunc(reqState.ctx, ContinueActionOptions{MessageType: MessageTypeResponseBody})
+	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseBody})
 }
 
 // OnRequestTrailers handles incoming request trailers
 func (mp *Processor) OnRequestTrailers(reqState *RequestState) error {
+	if reqState == nil {
+		return fmt.Errorf("received a request trailer without a valid request state")
+	}
 	mp.instr.Logger().Debug("message_processor: received request trailers, ignoring")
-	return mp.ContinueMessageFunc(reqState.ctx, ContinueActionOptions{MessageType: MessageTypeRequestTrailers})
+	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeRequestTrailers})
 }
 
 // OnResponseTrailers handles incoming response trailers
 func (mp *Processor) OnResponseTrailers(reqState *RequestState) error {
+	if reqState == nil {
+		return fmt.Errorf("received a response trailer without a valid request state")
+	}
 	mp.instr.Logger().Debug("message_processor: received response trailers, ignoring")
-	return mp.ContinueMessageFunc(reqState.ctx, ContinueActionOptions{MessageType: MessageTypeResponseTrailers})
+	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseTrailers})
 }
 
 func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos bool, analyzeBody func(ctx context.Context, encodable any) error) error {

@@ -432,7 +432,7 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
-		require.Equal(t, "haproxy-spoe", span.Tag("component"))
+		require.Equal(t, "haproxy-spoa", span.Tag("component"))
 	})
 	t.Run("span-with-injected-context", func(t *testing.T) {
 		handler, mt, cleanup := setup()
@@ -460,7 +460,7 @@ func TestGeneratedSpan(t *testing.T) {
 		require.Equal(t, "GET /resource-span", span.Tag("resource.name"))
 		require.Equal(t, "server", span.Tag("span.kind"))
 		require.Equal(t, "Mistake Not...", span.Tag("http.useragent"))
-		require.Equal(t, "haproxy-spoe", span.Tag("component"))
+		require.Equal(t, "haproxy-spoa", span.Tag("component"))
 
 		// Check for trace context
 		require.Equal(t, "00000000000000000000000000003039", span.Context().TraceID())
@@ -566,7 +566,7 @@ func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), 
 	mKv.Add("path", path)
 	mKv.Add("headers", convertBinaryHeaders(headers))
 	mKv.Add("https", true)
-	mKv.Add("timeout", "1s")
+	mKv.Add("timeout", "1m")
 
 	if ip, ok := headers["X-Forwarded-For"]; ok {
 		mKv.Add("ip", net.ParseIP(ip))
