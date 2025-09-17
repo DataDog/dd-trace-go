@@ -7,8 +7,10 @@ package tracer
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -64,6 +66,17 @@ type payloadV1 struct {
 
 	// protocolVersion specifies the trace protocol to use.
 	protocolVersion float64
+
+	// header specifies the first few bytes in the msgpack stream
+	// indicating the type of array (fixarray, array16 or array32)
+	// and the number of items contained in the stream.
+	header []byte
+
+	// off specifies the current read position on the header.
+	off int
+
+	// count specifies the number of items in the stream.
+	count uint32
 
 	// buf holds the sequence of msgpack-encoded items.
 	buf bytes.Buffer
@@ -133,33 +146,30 @@ func newPayloadV1() *payloadV1 {
 	}
 }
 
-var _ msgp.Encodable = (*payloadV1)(nil)
-
-// EncodeMsg implements msgp.Encodable.
-func (p *payloadV1) EncodeMsg(e *msgp.Writer) error {
-	kv := keyValueList{
-		{key: 2, value: anyValue{valueType: IntValueType, value: p.containerID}},     // containerID
-		{key: 3, value: anyValue{valueType: IntValueType, value: p.languageName}},    // languageName
-		{key: 4, value: anyValue{valueType: IntValueType, value: p.languageVersion}}, // languageVersion
-		{key: 5, value: anyValue{valueType: IntValueType, value: p.tracerVersion}},   // tracerVersion
-		{key: 6, value: anyValue{valueType: IntValueType, value: p.runtimeID}},       // runtimeID
-		{key: 7, value: anyValue{valueType: StringValueType, value: p.env}},          // env
-		{key: 8, value: anyValue{valueType: StringValueType, value: p.hostname}},     // hostname
-		{key: 9, value: anyValue{valueType: StringValueType, value: p.appVersion}},   // appVersion
-		{key: 10, value: anyValue{valueType: keyValueListType, value: p.attributes}}, // attributes
-		{key: 11, value: anyValue{valueType: keyValueListType, value: p.chunks}},     // chunks
-	}
-	return kv.EncodeMsg(e)
-}
-
 // push pushes a new item into the stream.
 func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
 	// Conceptually, our `t []*Span` corresponds to one `traceChunk`.
+	origin, priority := "", 0
+	for _, span := range t {
+		if span == nil {
+			continue
+		}
+		if p, ok := span.Context().SamplingPriority(); ok {
+			origin = span.Context().origin
+			priority = p
+			break
+		}
+	}
+
 	p.chunks = append(p.chunks, traceChunk{
-		spans: t,
+		priority:   int32(priority),
+		origin:     origin,
+		attributes: make(map[uint32]anyValue),
+		spans:      t,
+		traceID:    t[0].Context().traceID,
 	})
-	if err := t.EncodeMsg(&p.buf); err != nil { // TODO(hannahkm): this needs to call (spanListV1).EncodeMsg
+	if err := msgp.Encode(&p.buf, t); err != nil {
 		return payloadStats{}, err
 	}
 	p.recordItem()
@@ -167,46 +177,70 @@ func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 }
 
 func (p *payloadV1) grow(n int) {
-	panic("not implemented")
+	p.buf.Grow(n)
 }
 
 func (p *payloadV1) reset() {
-	panic("not implemented")
+	p.updateHeader()
+	if p.reader != nil {
+		p.reader.Seek(0, 0)
+	}
 }
 
 func (p *payloadV1) clear() {
-	panic("not implemented")
+	p.buf = bytes.Buffer{}
+	p.reader = nil
 }
 
 func (p *payloadV1) recordItem() {
-	// atomic.AddUint32(&p.count, 1)
-	panic("not implemented")
+	atomic.AddUint32(&p.count, 1)
+	p.updateHeader()
 }
 
 func (p *payloadV1) stats() payloadStats {
-	panic("not implemented")
+	return payloadStats{
+		size:      p.size(),
+		itemCount: p.itemCount(),
+	}
 }
 
 func (p *payloadV1) size() int {
-	panic("not implemented")
+	return p.buf.Len() + len(p.header) - p.off
 }
 
 func (p *payloadV1) itemCount() int {
-	panic("not implemented")
+	return int(atomic.LoadUint32(&p.count))
 }
 
 func (p *payloadV1) protocol() float64 {
 	return p.protocolVersion
 }
 
+func (p *payloadV1) updateHeader() {
+	n := uint64(atomic.LoadUint32(&p.count))
+	switch {
+	case n <= 15:
+		p.header[7] = msgpackArrayFix + byte(n)
+		p.off = 7
+	case n <= 1<<16-1:
+		binary.BigEndian.PutUint64(p.header, n) // writes 2 bytes
+		p.header[5] = msgpackArray16
+		p.off = 5
+	default: // n <= 1<<32-1
+		binary.BigEndian.PutUint64(p.header, n) // writes 4 bytes
+		p.header[3] = msgpackArray32
+		p.off = 3
+	}
+}
+
 // Close implements io.Closer
 func (p *payloadV1) Close() error {
-	panic("not implemented")
+	return nil
 }
 
 // Write implements io.Writer. It writes data directly to the buffer.
 func (p *payloadV1) Write(data []byte) (n int, err error) {
-	panic("not implemented")
+	return p.buf.Write(data)
 }
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
@@ -299,12 +333,12 @@ func (kv keyValueList) EncodeMsg(e *msgp.Writer) error {
 
 func (t *traceChunk) EncodeMsg(e *msgp.Writer) error {
 	kv := keyValueList{
-		{key: 1, value: anyValue{valueType: IntValueType, value: t.priority}},      // priority
-		{key: 2, value: anyValue{valueType: StringValueType, value: t.origin}},     // origin
-		{key: 4, value: anyValue{valueType: keyValueListType, value: t.spans}},     // spans
-		{key: 5, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}}, // droppedTrace
-		{key: 6, value: anyValue{valueType: BytesValueType, value: t.traceID}},     // traceID
-		{key: 7, value: anyValue{valueType: IntValueType, value: t.decisionMaker}}, // samplingMechanism
+		{key: 1, value: anyValue{valueType: IntValueType, value: t.priority}},          // priority
+		{key: 2, value: anyValue{valueType: StringValueType, value: t.origin}},         // origin
+		{key: 4, value: anyValue{valueType: keyValueListType, value: t.spans}},         // spans
+		{key: 5, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}},     // droppedTrace
+		{key: 6, value: anyValue{valueType: BytesValueType, value: t.traceID}},         // traceID
+		{key: 7, value: anyValue{valueType: IntValueType, value: t.samplingMechanism}}, // samplingMechanism
 	}
 
 	attr := keyValueList{}
