@@ -9,22 +9,22 @@ on:
         type: string
   push:
     branches:
+      - main
       - release-v*
-      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
-      - 'internal/**'
-      - 'orchestrion/**'
-      - 'scripts/**'
   pull_request:
+    branches:
+      - "**"
+  merge_group:
   workflow_dispatch:
     inputs:
-        ref:
-            description: 'System Tests ref/tag/branch'
-            required: true
-            default: main
-            type: string
+      ref:
+        description: 'System Tests ref/tag/branch'
+        required: true
+        default: main
+        type: string
   schedule:
     - cron:  '00 04 * * 2-6'
 
@@ -33,32 +33,11 @@ permissions:
   packages: write
 
 jobs:
-  warm-repo-cache:
-    runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.pin.outputs.sha }}
-    steps:
-      - name: Checkout system-tests
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
-      - name: Pin exact commit SHA for system-tests
-        id: pin
-        run: |
-          echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .git
-          key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     # Note: Not using large runners because the jobs spawned by this pipeline
     # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
-    needs:
-      - warm-repo-cache
     strategy:
       matrix:
         weblog-variant:
@@ -145,20 +124,14 @@ jobs:
       SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
-      - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: .git
-          key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
-
       - name: Checkout system tests
-        shell: bash
-        run: |
-          git config safe.directory "$GITHUB_WORKSPACE"
-          git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: 'DataDog/system-tests'
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
@@ -201,38 +174,77 @@ jobs:
       push: ${{ github.ref == 'refs/heads/main' }}
       platforms: '["linux/amd64"]'
 
-  system-tests-external-processing:
+  # Pushing an image tagged with "dev" only on commit to main,
+  # otherwise build and use the image from the artifact.
+  build-haproxy:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/haproxy-spoa
+      dockerfile: ./contrib/haproxy/stream-processing-offload/cmd/spoa/Dockerfile
+      artifact_prefix: haproxy-spoa-image
+      commit_sha: ${{ github.sha }}
+      tags: >-
+        dev
+      push: ${{ github.ref == 'refs/heads/main' }}
+      platforms: '["linux/amd64"]'
+
+  system-tests-docker-images:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
-    needs: build-service-extensions-callout
+    needs:
+      - build-service-extensions-callout
+      - build-haproxy
     strategy:
+      fail-fast: false
       matrix:
+        target: [ external_processing, haproxy ]
         scenario:
           - EXTERNAL_PROCESSING
           - EXTERNAL_PROCESSING_BLOCKING
-      fail-fast: false
-    name: Test (External Processing, ${{ matrix.scenario }})
-    steps:
-      - name: Download service-extensions artifacts
-        if: github.ref != 'refs/heads/main'
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: service-extensions-image-linux-amd64
+          - STREAM_PROCESSING_OFFLOAD
+          - STREAM_PROCESSING_OFFLOAD_BLOCKING
+        include:
+          - target: external_processing
+            image_name: service-extensions-callout
+            image_artifact: service-extensions-image-linux-amd64
+            system_tests_name: external_processing
+          - target: haproxy
+            image_name: haproxy-spoa
+            image_artifact: haproxy-spoa-image-linux-amd64
+            system_tests_name: stream_processing_offload
+        exclude:
+          - target: external_processing
+            scenario: STREAM_PROCESSING_OFFLOAD
+          - target: external_processing
+            scenario: STREAM_PROCESSING_OFFLOAD_BLOCKING
+          - target: haproxy
+            scenario: EXTERNAL_PROCESSING
+          - target: haproxy
+            scenario: EXTERNAL_PROCESSING_BLOCKING
 
-      - name: Load service-extensions image
+    name: Test (${{ matrix.system_tests_name }}, ${{ matrix.scenario }})
+    steps:
+      - name: Download ${{ matrix.target }}) artifacts
         if: github.ref != 'refs/heads/main'
-        run: docker load -i service-extensions-image-linux-amd64.tar
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ matrix.image_artifact }}
+
+      - name: Load ${{ matrix.target }} image
+        if: github.ref != 'refs/heads/main'
+        run: docker load -i ${{ matrix.image_artifact }}.tar
       - name: Checkout system tests
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
-      - name: Set service extensions callout image name
-        run: echo "ghcr.io/datadog/dd-trace-go/service-extensions-callout:dev" > binaries/golang-service-extensions-callout-image
+      - name: Set ${{ matrix.image_name }} image name
+        run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
@@ -254,20 +266,20 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ always() }}
         with:
-          name: logs_external_processing_${{ matrix.scenario }}
+          name: logs_${{ matrix.system_tests_name }}_${{ matrix.scenario }}
           path: artifact.tar.gz
 
   system-tests-done:
     name: System Tests
     needs:
       - system-tests
-      - system-tests-external-processing
+      - system-tests-docker-images
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.system-tests.result == 'success' && needs.system-tests-external-processing.result == 'success'
+        if: needs.system-tests.result == 'success' && needs.system-tests-docker-images.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.system-tests.result != 'success' || needs.system-tests-external-processing.result != 'success'
+        if: needs.system-tests.result != 'success' || needs.system-tests-docker-images.result != 'success'
         run: echo "Failure!" && exit 1
