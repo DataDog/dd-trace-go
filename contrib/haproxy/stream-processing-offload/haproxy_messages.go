@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 )
 
 var _ proxy.RequestHeaders = (*messageRequestHeaders)(nil)
@@ -29,7 +29,7 @@ type messageRequestHeaders struct {
 	hasBody bool
 }
 
-func (m messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoRequest, error) {
+func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoRequest, error) {
 	headers, err := parseHAProxyReqHdrsBin(getBytesArrayValue(m.msg, "headers"))
 	if err != nil {
 		return proxy.PseudoRequest{}, err
@@ -73,17 +73,17 @@ func (m messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoRe
 	}, nil
 }
 
-func (m messageRequestHeaders) GetEndOfStream() bool {
+func (m *messageRequestHeaders) GetEndOfStream() bool {
 	return !m.hasBody
 }
 
-func (m messageRequestHeaders) MessageType() proxy.MessageType {
+func (m *messageRequestHeaders) MessageType() proxy.MessageType {
 	return proxy.MessageTypeRequestHeaders
 }
 
 const componentNameHAProxySPOA = "haproxy-spoa"
 
-func (m messageRequestHeaders) SpanOptions(_ context.Context) []tracer.StartSpanOption {
+func (m *messageRequestHeaders) SpanOptions(_ context.Context) []tracer.StartSpanOption {
 	return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameHAProxySPOA)}
 }
 
@@ -92,7 +92,7 @@ type responseHeadersHAProxy struct {
 	hasBody bool
 }
 
-func (m responseHeadersHAProxy) ExtractResponse() (proxy.PseudoResponse, error) {
+func (m *responseHeadersHAProxy) ExtractResponse() (proxy.PseudoResponse, error) {
 	headers, err := parseHAProxyReqHdrsBin(getBytesArrayValue(m.msg, "headers"))
 	if err != nil {
 		return proxy.PseudoResponse{}, err
@@ -116,11 +116,11 @@ func (m responseHeadersHAProxy) ExtractResponse() (proxy.PseudoResponse, error) 
 	}, nil
 }
 
-func (m responseHeadersHAProxy) GetEndOfStream() bool {
+func (m *responseHeadersHAProxy) GetEndOfStream() bool {
 	return !m.hasBody
 }
 
-func (m responseHeadersHAProxy) MessageType() proxy.MessageType {
+func (m *responseHeadersHAProxy) MessageType() proxy.MessageType {
 	return proxy.MessageTypeResponseHeaders
 }
 
