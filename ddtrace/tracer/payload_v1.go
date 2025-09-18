@@ -92,6 +92,11 @@ type stringTable struct {
 	nextIndex uint32            // last index of the stringTable
 }
 
+type payloadWrapper struct {
+	*msgp.Writer
+	payload *payloadV1
+}
+
 // AnyValue is a representation of the `any` value. It can take the following types:
 // - uint32
 // - bool
@@ -260,7 +265,7 @@ func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
 		e.WriteInt32(StringValueType)
 		v, err := encodeString(a.value.(string))
 		if err != nil {
-			return err
+			return e.WriteString(a.value.(string))
 		}
 		return e.WriteUint32(v)
 	case BoolValueType:
@@ -402,7 +407,7 @@ func encodeSpan(s *Span, e *msgp.Writer) error {
 	for k, v := range s.meta {
 		idx, err := encodeString(k)
 		if err != nil {
-			// print something here
+			idx = k
 		}
 		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: StringValueType, value: v}})
 	}
@@ -411,7 +416,7 @@ func encodeSpan(s *Span, e *msgp.Writer) error {
 	for k, v := range s.metrics {
 		idx, err := encodeString(k)
 		if err != nil {
-			// print something here
+			idx = k
 		}
 		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: FloatValueType, value: v}})
 	}
@@ -420,7 +425,7 @@ func encodeSpan(s *Span, e *msgp.Writer) error {
 	for k, v := range s.metaStruct {
 		idx, err := encodeString(k)
 		if err != nil {
-			// print something here
+			idx = k
 		}
 		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
 	}
@@ -444,15 +449,22 @@ func encodeSpan(s *Span, e *msgp.Writer) error {
 // - use its index in the string table if it exists
 // - otherwise, write the string into the message, then add the string at the next index
 // Returns the index of the string in the string table, and an error if there is one
-func encodeString(s string) (uint32, error) {
-	panic("not implemented")
-}
+func (p *payloadV1) encodeString(s string) (uint32, error) {
+	sTable := &p.strings
+	sTable.m.Lock()
+	defer sTable.m.Unlock()
+	idx, ok := sTable.indices[s]
+	// if the string already exists in the table, use its index
+	if ok {
+		return idx, nil
+	}
 
-// When reading a string, check that it is a uint and then:
-// - if true, check read up the index position and return that position
-// - else, add it to the next index position and return that position
-func decodeString(i uint32, e *msgp.Writer) (string, error) {
-	panic("not implemented")
+	// else, write the string into the table at the next index
+	// return an error to indicate that the string should be written to the msgp message
+	sTable.indices[s] = sTable.nextIndex
+	sTable.strings = append(sTable.strings, s)
+	sTable.nextIndex += 1
+	return sTable.nextIndex, fmt.Errorf("string not found in table")
 }
 
 // encodeSpanLinks encodes the span links into a msgp.Writer
@@ -479,7 +491,7 @@ func encodeSpanLinks(sl []SpanLink, e *msgp.Writer) error {
 		for k, v := range s.Attributes {
 			idx, err := encodeString(k)
 			if err != nil {
-				return err
+				idx = k
 			}
 			attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
 		}
@@ -518,7 +530,7 @@ func encodeSpanEvents(se []spanEvent, e *msgp.Writer) error {
 		for k, v := range s.Attributes {
 			idx, err := encodeString(k)
 			if err != nil {
-				return err
+				idx = k
 			}
 			attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
 		}
