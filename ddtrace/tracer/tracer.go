@@ -265,6 +265,12 @@ func Start(opts ...StartOption) error {
 	storeConfig(t.config)
 
 	globalinternal.SetTracerInitialized(true)
+
+	// Initialize OTLP logs if enabled
+	if err := initOTLPLogs(gocontext.Background()); err != nil {
+		log.Warn("Failed to initialize OTLP logs: %v", err)
+	}
+
 	return nil
 }
 
@@ -294,6 +300,11 @@ func storeConfig(c *config) {
 func Stop() {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
+
+	// Stop OTLP logs if active
+	if err := stopOTLPLogs(gocontext.Background()); err != nil {
+		log.Warn("Failed to stop OTLP logs: %v", err)
+	}
 
 	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
@@ -489,6 +500,11 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 func Flush() {
 	if t := getGlobalTracer(); t != nil {
 		t.Flush()
+	}
+
+	// Also flush OTLP logs if active
+	if err := flushOTLPLogs(gocontext.Background()); err != nil {
+		log.Debug("Failed to flush OTLP logs: %v", err)
 	}
 }
 
@@ -854,6 +870,68 @@ func (t *tracer) Stop() {
 		t.telemetry.Close()
 	}
 	t.config.httpClient.CloseIdleConnections()
+}
+
+// OTLP logs integration helper functions
+
+// initOTLPLogs initializes OTLP logs support if enabled
+func initOTLPLogs(ctx gocontext.Context) error {
+	// Import the logs package to avoid circular imports
+	// This is a lazy import pattern
+	if initFunc := getOTLPLogsInitFunc(); initFunc != nil {
+		return initFunc(ctx)
+	}
+	return nil
+}
+
+// stopOTLPLogs stops OTLP logs support
+func stopOTLPLogs(ctx gocontext.Context) error {
+	if stopFunc := getOTLPLogsStopFunc(); stopFunc != nil {
+		return stopFunc(ctx)
+	}
+	return nil
+}
+
+// flushOTLPLogs flushes OTLP logs
+func flushOTLPLogs(ctx gocontext.Context) error {
+	if flushFunc := getOTLPLogsFlushFunc(); flushFunc != nil {
+		return flushFunc(ctx)
+	}
+	return nil
+}
+
+// These variables will be set by the logs package to avoid circular imports
+var (
+	otlpLogsInitFunc  func(gocontext.Context) error
+	otlpLogsStopFunc  func(gocontext.Context) error
+	otlpLogsFlushFunc func(gocontext.Context) error
+)
+
+// getOTLPLogsInitFunc returns the OTLP logs init function if available
+func getOTLPLogsInitFunc() func(gocontext.Context) error {
+	return otlpLogsInitFunc
+}
+
+// getOTLPLogsStopFunc returns the OTLP logs stop function if available
+func getOTLPLogsStopFunc() func(gocontext.Context) error {
+	return otlpLogsStopFunc
+}
+
+// getOTLPLogsFlushFunc returns the OTLP logs flush function if available
+func getOTLPLogsFlushFunc() func(gocontext.Context) error {
+	return otlpLogsFlushFunc
+}
+
+// SetOTLPLogsFunctions sets the OTLP logs integration functions
+// This is called by the logs package during initialization
+func SetOTLPLogsFunctions(
+	initFunc func(gocontext.Context) error,
+	stopFunc func(gocontext.Context) error,
+	flushFunc func(gocontext.Context) error,
+) {
+	otlpLogsInitFunc = initFunc
+	otlpLogsStopFunc = stopFunc
+	otlpLogsFlushFunc = flushFunc
 }
 
 // Inject uses the configured or default TextMap Propagator.

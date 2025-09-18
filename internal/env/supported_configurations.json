@@ -582,6 +582,33 @@
     "DD_VERSION": [
       "A"
     ],
+    "DD_LOGS_OTEL_ENABLED": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_ENDPOINT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_HEADERS": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_LOGS_HEADERS": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_TIMEOUT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_PROTOCOL": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
+      "A"
+    ],
     "OTEL_LOGS_EXPORTER": [
       "A"
     ],
