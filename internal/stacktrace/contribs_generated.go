@@ -704,6 +704,7 @@ func generatedThirdPartyLibraries() []string {
 		"go.uber.org/mock",
 		"go.uber.org/multierr",
 		"go.uber.org/zap",
+		"go.yaml.in/yaml/v3",
 		"google.golang.org/api",
 		"google.golang.org/appengine",
 		"google.golang.org/genproto",
