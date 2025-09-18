@@ -87,7 +87,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-go@6edd4406fa81c3da01a34fa6f6343087c207a568 # v3.5.0
         with:
-          go-version: "1.23"
+          go-version: "1.24"
           cache: true
       - name: go mod tidy
         run: |-
@@ -110,7 +110,7 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.23", "1.24" ]
+        go: [ "1.25", "1.24" ]
         build-env: [ alpine, bookworm, bullseye ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]

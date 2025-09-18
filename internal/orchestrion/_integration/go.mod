@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/internal/orchestrion/_integration
 
-go 1.23.0
+go 1.24.0
 
 replace gopkg.in/DataDog/dd-trace-go.v1 => ../../..
 

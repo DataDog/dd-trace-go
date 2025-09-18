@@ -56,82 +56,18 @@ variables:
 # 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
 #
 
+.go125-benchmarks:
+  extends: .benchmarks-default
+  variables:
+    GO_VERSION: "1.25.0"
+
 .go124-benchmarks:
   extends: .benchmarks-default
   variables:
     GO_VERSION: "1.24.0"
 
-.go123-benchmarks:
-  extends: .benchmarks-default
-  variables:
-    GO_VERSION: "1.23.6"
-
 #
 # Specific macrobenchmark configurations are below
-
-go123-baseline:
-  extends: .go123-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "false"
-    ENABLE_PROFILING: "false"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go123-only-trace:
-  extends: .go123-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "false"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go123-only-trace-with-runtime-metrics:
-  extends: .go123-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "false"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-    DD_RUNTIME_METRICS_ENABLED: "true"
-
-go123-only-profile:
-  extends: .go123-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "false"
-    ENABLE_PROFILING: "true"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go123-profile-trace:
-  extends: .go123-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "true"
-    ENABLE_APPSEC: "false"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go123-trace-asm:
-  extends: .go123-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "false"
-    ENABLE_APPSEC: "true"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-go123-profile-trace-asm:
-  extends: .go123-benchmarks
-  variables:
-    ENABLE_DDPROF: "false"
-    ENABLE_TRACING: "true"
-    ENABLE_PROFILING: "true"
-    ENABLE_APPSEC: "true"
-    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
 go124-baseline:
   extends: .go124-benchmarks
@@ -197,6 +133,70 @@ go124-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+go125-baseline:
+  extends: .go125-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "false"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go125-only-trace:
+  extends: .go125-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go125-only-trace-with-runtime-metrics:
+  extends: .go125-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+    DD_RUNTIME_METRICS_ENABLED: "true"
+
+go125-only-profile:
+  extends: .go125-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "false"
+    ENABLE_PROFILING: "true"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go125-profile-trace:
+  extends: .go125-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "true"
+    ENABLE_APPSEC: "false"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go125-trace-asm:
+  extends: .go125-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "false"
+    ENABLE_APPSEC: "true"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
+go125-profile-trace-asm:
+  extends: .go125-benchmarks
+  variables:
+    ENABLE_DDPROF: "false"
+    ENABLE_TRACING: "true"
+    ENABLE_PROFILING: "true"
+    ENABLE_APPSEC: "true"
+    DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
+
 #
 # Macro benchmarks for Service Extensions
 # (using Envoy External Processing)
@@ -224,7 +224,7 @@ go124-profile-trace-asm:
     expire_in: 3 months
   variables:
     FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true" # Important tweak for stability of benchmarks
-    GO_VERSION: "1.23.0"
+    GO_VERSION: "1.24.0"
     ARTIFACTS_DIR: "./artifacts-se"
 
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.

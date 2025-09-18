@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/.github/workflows/apps
 
-go 1.23.3
+go 1.24.3
 
 require (
 	github.com/Masterminds/semver/v3 v3.3.1
