@@ -426,6 +426,9 @@
     "DD_TRACE_HEADER_TAGS": [
       "A"
     ],
+    "DD_TRACE_HEALTH_METRICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED": [
       "A"
     ],

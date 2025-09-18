@@ -1744,6 +1744,48 @@ func TestWithStatsComputation(t *testing.T) {
 	})
 }
 
+func TestHealthMetrics(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.True(c.healthMetricsEnabled)
+	})
+	t.Run("enabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithHealthMetrics(true))
+		assert.NoError(err)
+		assert.True(c.healthMetricsEnabled)
+	})
+	t.Run("disabled-via-option", func(t *testing.T) {
+		assert := assert.New(t)
+		c, err := newTestConfig(WithHealthMetrics(false))
+		assert.NoError(err)
+		assert.False(c.healthMetricsEnabled)
+	})
+	t.Run("enabled-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_HEALTH_METRICS_ENABLED", "true")
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.True(c.healthMetricsEnabled)
+	})
+	t.Run("disabled-via-env", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_HEALTH_METRICS_ENABLED", "false")
+		c, err := newTestConfig()
+		assert.NoError(err)
+		assert.False(c.healthMetricsEnabled)
+	})
+	t.Run("env-override", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_HEALTH_METRICS_ENABLED", "false")
+		c, err := newTestConfig(WithHealthMetrics(true))
+		assert.NoError(err)
+		assert.True(c.healthMetricsEnabled)
+	})
+}
+
 func TestWithStartSpanConfig(t *testing.T) {
 	var (
 		assert  = assert.New(t)

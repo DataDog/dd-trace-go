@@ -151,6 +151,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_GRAPHQL_ERROR_EXTENSIONS":                               {},
 	"DD_TRACE_GRPC_ANALYTICS_ENABLED":                                 {},
 	"DD_TRACE_HEADER_TAGS":                                            {},
+	"DD_TRACE_HEALTH_METRICS_ENABLED":                                 {},
 	"DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED":                           {},
 	"DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED":                          {},
 	"DD_TRACE_HTTP_ANALYTICS_ENABLED":                                 {},

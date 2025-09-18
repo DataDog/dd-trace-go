@@ -456,6 +456,13 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
 	}
+	if c.healthMetricsEnabled {
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.reportHealthMetricsAtInterval(statsInterval)
+		}()
+	}
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
@@ -466,11 +473,6 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			tick = ticker.C
 		}
 		t.worker(tick)
-	}()
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		t.reportHealthMetricsAtInterval(statsInterval)
 	}()
 	t.stats.Start()
 	return t, nil
