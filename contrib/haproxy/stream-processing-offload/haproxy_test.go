@@ -566,7 +566,7 @@ func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), 
 	mKv.Add("path", path)
 	mKv.Add("headers", convertBinaryHeaders(headers))
 	mKv.Add("https", true)
-	mKv.Add("timeout", "1m")
+	mKv.Add("timeout", "1s")
 
 	if ip, ok := headers["X-Forwarded-For"]; ok {
 		mKv.Add("ip", net.ParseIP(ip))
