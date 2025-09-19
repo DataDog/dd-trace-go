@@ -55,7 +55,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		defer func() {
 			status := c.Writer.Status()
 			err := c.Errors.Last()
-			if err != nil && cfg.isStatusError(status) {
+			if err != nil && cfg.propagateError && cfg.isStatusError(status) {
 				finishSpans(status, cfg.isStatusError, tracer.WithError(err))
 			}
 			finishSpans(status, cfg.isStatusError)
