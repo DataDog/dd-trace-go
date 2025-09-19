@@ -579,6 +579,9 @@
     "DD_TRACE__ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_V1_TEST": [
+      "A"
+    ],
     "DD_VERSION": [
       "A"
     ],

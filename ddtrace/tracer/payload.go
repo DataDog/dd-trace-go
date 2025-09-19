@@ -231,6 +231,17 @@ func newPayload(protocol float64) payload {
 	}
 }
 
+// newPayloadWithConfig returns a payload based on the configuration.
+// If v1Test is enabled, it returns a v1Payload, otherwise it returns a safePayload.
+func newPayloadWithConfig(protocol float64, v1Test bool) payload {
+	if v1Test {
+		return newV1Payload(protocol)
+	}
+	return &safePayload{
+		p: newUnsafePayload(protocol),
+	}
+}
+
 // safePayload provides a thread-safe wrapper around unsafePayload.
 type safePayload struct {
 	mu sync.RWMutex

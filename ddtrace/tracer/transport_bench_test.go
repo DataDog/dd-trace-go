@@ -22,7 +22,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false), false)
 
 	payloadSizes := []struct {
 		name     string
@@ -67,7 +67,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false), false)
 	concurrencyLevels := []int{1, 2, 4, 8}
 
 	for _, concurrency := range concurrencyLevels {

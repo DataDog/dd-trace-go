@@ -202,6 +202,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_VAULT_ANALYTICS_ENABLED":                                {},
 	"DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH":                              {},
 	"DD_TRACE__ANALYTICS_ENABLED":                                     {},
+	"DD_V1_TEST":                                                      {},
 	"DD_VERSION":                                                      {},
 	"OTEL_LOGS_EXPORTER":                                              {},
 	"OTEL_LOG_LEVEL":                                                  {},
