@@ -62,19 +62,19 @@ ARG build_tags
 RUN go env && go build -v -tags "$build_tags" -o smoke-test .
 RUN ldd smoke-test || true
 
-# debian11 deployment environment
-# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
-# this image to preperly highlight the fact that the compiled program is running
-# out of the box in it without any further installation.
-FROM debian:11 AS debian11
-COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
-
 # debian12 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
 FROM debian:12 AS debian12
+COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
+CMD /usr/local/bin/smoke-test
+
+# debian13 deployment environment
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM debian:13 AS debian13
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
 CMD /usr/local/bin/smoke-test
 
