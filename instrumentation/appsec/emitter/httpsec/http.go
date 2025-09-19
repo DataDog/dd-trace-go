@@ -44,6 +44,9 @@ type (
 		method string
 		// route is the HTTP route for the current handler operation (or the URL if no route is available).
 		route string
+
+		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
+		downstreamRequestBodyAnalysis atomic.Uint64
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -110,6 +113,10 @@ func (op *HandlerOperation) Method() string {
 // Route returns the HTTP route for the current handler operation.
 func (op *HandlerOperation) Route() string {
 	return op.route
+}
+
+func (op *HandlerOperation) DownstreamRequestBodyAnalysis() *atomic.Uint64 {
+	return &op.downstreamRequestBodyAnalysis
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.

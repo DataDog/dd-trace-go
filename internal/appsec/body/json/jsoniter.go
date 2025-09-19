@@ -22,29 +22,6 @@ type jsonIterEncodable struct {
 	data      []byte
 }
 
-func newJSONIterEncodable(reader io.ReadCloser, limit int64) (*jsonIterEncodable, error) {
-	limitedReader := io.LimitedReader{
-		R: reader,
-		N: limit,
-	}
-
-	data, err := io.ReadAll(&limitedReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read data: %w", err)
-	}
-
-	truncated := false
-	if len(data) > int(limit) {
-		data = data[:limit]
-		truncated = true
-	}
-
-	return &jsonIterEncodable{
-		truncated: truncated,
-		data:      data,
-	}, nil
-}
-
 func newJSONIterEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
 	return &jsonIterEncodable{
 		truncated: truncated,

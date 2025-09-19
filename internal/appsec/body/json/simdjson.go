@@ -27,30 +27,6 @@ var (
 	parsedJsonPool sync.Pool
 )
 
-func NewEncodable(reader io.ReadCloser, limit int64) (libddwaf.Encodable, error) {
-	if !json.SupportedCPU() {
-		return NewEncodable(reader, limit)
-	}
-
-	limitedReader := io.LimitedReader{
-		R: reader,
-		N: limit,
-	}
-
-	data, err := io.ReadAll(&limitedReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read data: %w", err)
-	}
-
-	truncated := false
-	if len(data) > int(limit) {
-		data = data[:limit]
-		truncated = true
-	}
-
-	return NewEncodableFromData(data, truncated), nil
-}
-
 func NewEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
 	parsedJson, _ := parsedJsonPool.Get().(*json.ParsedJson)
 	pj, err := json.Parse(data, parsedJson, json.WithCopyStrings(false))

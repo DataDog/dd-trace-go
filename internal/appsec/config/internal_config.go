@@ -31,6 +31,11 @@ const (
 	// EnvAPISecProxySampleRate is the env var used to set the sampling rate of API Security schema extraction for proxies.
 	// The value represents the number of schemas extracted per minute (samples per minute).
 	EnvAPISecProxySampleRate = "DD_API_SECURITY_PROXY_SAMPLE_RATE"
+	// EnvAPISecDownstreamRequestBodyAnalysisSampleRate Defines the probability of a downstream request body being sampled,
+	// or said differently, defines the overall number of requests for which the request and response body should be sampled / analysed (50%).
+	EnvAPISecDownstreamRequestBodyAnalysisSampleRate = "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE"
+	// EnvAPISecMaxDownstreamRequestBodyAnalysis The maximum number of downstream requests per request for which the request and response body should be analysed.
+	EnvAPISecMaxDownstreamRequestBodyAnalysis = "DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS"
 	// EnvObfuscatorKey is the env var used to provide the WAF key obfuscation regexp
 	EnvObfuscatorKey = "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP"
 	// EnvObfuscatorValue is the env var used to provide the WAF value obfuscation regexp
@@ -59,6 +64,10 @@ const (
 	DefaultAPISecProxySampleRate = 300
 	// DefaultAPISecProxySampleInterval is the default time window for the API Security proxy sampler rate limiter.
 	DefaultAPISecProxySampleInterval = time.Minute
+	// DefaultDownstreamRequestBodyAnalysisSampleRate is the default sample rate for downstream request body analysis per incoming request.
+	DefaultDownstreamRequestBodyAnalysisSampleRate = 0.5
+	// DefaultMaxDownstreamRequestBodyAnalysis is the default maximum size in bytes of downstream request body to be analyzed.
+	DefaultMaxDownstreamRequestBodyAnalysis = 1
 	// DefaultObfuscatorKeyRegex is the default regexp used to obfuscate keys
 	DefaultObfuscatorKeyRegex = `(?i)pass|pw(?:or)?d|secret|(?:api|private|public|access)[_-]?key|token|consumer[_-]?(?:id|key|secret)|sign(?:ed|ature)|bearer|authorization|jsessionid|phpsessid|asp\.net[_-]sessionid|sid|jwt`
 	// DefaultObfuscatorValueRegex is the default regexp used to obfuscate values
@@ -77,6 +86,10 @@ type APISecConfig struct {
 	IsProxy bool
 	// Deprecated: use the new [APISecConfig.Sampler] instead.
 	SampleRate float64
+	// DownstreamRequestBodyAnalysisSampleRate is the sample rate for downstream request body analysis per incoming request.
+	DownstreamRequestBodyAnalysisSampleRate float64
+	// MaxDownstreamRequestBodyAnalysis is the maximum size in bytes of downstream request body to be analyzed.
+	MaxDownstreamRequestBodyAnalysis int
 }
 
 // ObfuscatorConfig wraps the key and value regexp to be passed to the WAF to perform obfuscation.
@@ -90,11 +103,19 @@ type APISecOption func(*APISecConfig)
 // NewAPISecConfig creates and returns a new API Security configuration by reading the env
 func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 	cfg := APISecConfig{
-		Enabled:    internal.BoolEnv(EnvAPISecEnabled, true),
-		SampleRate: readAPISecuritySampleRate(),
+		Enabled:                                 internal.BoolEnv(EnvAPISecEnabled, true),
+		DownstreamRequestBodyAnalysisSampleRate: internal.FloatEnv(EnvAPISecDownstreamRequestBodyAnalysisSampleRate, DefaultDownstreamRequestBodyAnalysisSampleRate),
+		MaxDownstreamRequestBodyAnalysis:        internal.IntEnv(EnvAPISecMaxDownstreamRequestBodyAnalysis, DefaultMaxDownstreamRequestBodyAnalysis),
+		SampleRate:                              readAPISecuritySampleRate(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+
+	if !RASPEnabled() {
+		log.Debug("appsec: RASP functionalities are disabled, disabling API Security downward request body analysis")
+		cfg.DownstreamRequestBodyAnalysisSampleRate = 0.0
+		cfg.MaxDownstreamRequestBodyAnalysis = 0
 	}
 
 	if cfg.Sampler != nil {

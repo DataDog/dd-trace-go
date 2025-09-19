@@ -147,15 +147,23 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 		}
 	}
 
+	var afterAppsec func(*http.Response)
+
 	// if RASP is enabled, check whether the request is supposed to be blocked.
 	if config.Instrumentation.AppSecRASPEnabled() {
-		if err := httpsec.ProtectRoundTrip(ctx, req.URL.String()); err != nil {
+		var err error
+		afterAppsec, err = httpsec.ProtectRoundTrip(ctx, req)
+		if err != nil {
 			span.Finish() // Finish the span as we're blocking the request...
 			return nil, nil, err
 		}
 	}
 
 	after := func(resp *http.Response, err error) (*http.Response, error) {
+		if afterAppsec != nil {
+			afterAppsec(resp)
+		}
+
 		// Register http errors and observe the status code...
 		if err != nil {
 			span.SetTag("http.errors", err.Error())
