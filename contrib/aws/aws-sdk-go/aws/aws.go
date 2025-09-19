@@ -89,6 +89,7 @@ func (h *handlers) Send(req *request.Request) {
 		tracer.Tag(ext.AWSOperation, awsOperation(req)),
 		tracer.Tag(ext.AWSRegionLegacy, region),
 		tracer.Tag(ext.AWSRegion, region),
+		tracer.Tag(ext.AWSPartition, awsPartition(req)),
 		tracer.Tag(ext.AWSService, awsService(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, url.String()),
@@ -166,6 +167,27 @@ func awsRegion(req *request.Request) string {
 	return req.ClientInfo.SigningRegion
 }
 
+func awsPartition(req *request.Request) string {
+	partition := req.ClientInfo.PartitionID
+
+	if partition != "" {
+		return partition
+	}
+
+	// if partition ID isn't set, derive partition from region
+	region := awsRegion(req)
+	switch {
+	case strings.HasPrefix(region, "cn-"):
+		partition = "aws-cn"
+	case strings.HasPrefix(region, "us-gov-"):
+		partition = "aws-us-gov"
+	default:
+		partition = "aws"
+	}
+
+	return partition
+}
+
 func extraTagsForService(req *request.Request) map[string]interface{} {
 	service := awsService(req)
 	var (
@@ -174,7 +196,7 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 	)
 	switch service {
 	case sqs.ServiceName:
-		extraTags, err = sqsTags(req.Params, awsRegion(req))
+		extraTags, err = sqsTags(req.Params, awsRegion(req), awsPartition(req))
 	case s3.ServiceName:
 		extraTags, err = s3Tags(req.Params)
 	case sns.ServiceName:
@@ -197,7 +219,7 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 	return extraTags
 }
 
-func sqsTags(params interface{}, region string) (map[string]interface{}, error) {
+func sqsTags(params interface{}, region string, partition string) (map[string]interface{}, error) {
 	var queueURL string
 	switch input := params.(type) {
 	case *sqs.SendMessageInput:
@@ -214,7 +236,7 @@ func sqsTags(params interface{}, region string) (map[string]interface{}, error) 
 		return nil, nil
 	}
 
-	queueName, arn := extractSQSMetadata(queueURL, region)
+	queueName, arn := extractSQSMetadata(queueURL, region, partition)
 	if queueName == "" {
 		return nil, fmt.Errorf("got unexpected queue URL format: %q", queueURL)
 	}
@@ -227,7 +249,7 @@ func sqsTags(params interface{}, region string) (map[string]interface{}, error) 
 	return tags, nil
 }
 
-func extractSQSMetadata(queueURL string, region string) (queueName string, arn string) {
+func extractSQSMetadata(queueURL string, region string, partition string) (queueName string, arn string) {
 	// Remove trailing slash if present
 	if len(queueURL) > 0 && queueURL[len(queueURL)-1] == '/' {
 		queueURL = queueURL[:len(queueURL)-1]
@@ -237,17 +259,6 @@ func extractSQSMetadata(queueURL string, region string) (queueName string, arn s
 	parts := strings.Split(queueURL, "/")
 	if len(parts) < 2 {
 		return "", ""
-	}
-
-	// Determine partition based on region
-	var partition string
-	switch {
-	case strings.HasPrefix(region, "cn-"):
-		partition = "aws-cn"
-	case strings.HasPrefix(region, "us-gov-"):
-		partition = "aws-us-gov"
-	default:
-		partition = "aws"
 	}
 
 	queueName = parts[len(parts)-1]

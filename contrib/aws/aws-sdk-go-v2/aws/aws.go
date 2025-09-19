@@ -87,6 +87,12 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		operation := awsmiddleware.GetOperationName(ctx)
 		serviceID := awsmiddleware.GetServiceID(ctx)
 		region := awsmiddleware.GetRegion(ctx)
+		partition := awsmiddleware.GetPartitionID(ctx)
+
+		// if partition ID isn't set, derive partition from region
+		if partition == "" {
+			partition = awsPartition(region)
+		}
 
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
@@ -94,6 +100,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
 			tracer.Tag(ext.AWSRegionLegacy, region),
 			tracer.Tag(ext.AWSRegion, region),
+			tracer.Tag(ext.AWSPartition, partition),
 			tracer.Tag(ext.AWSOperation, operation),
 			tracer.Tag(ext.AWSServiceLegacy, serviceID),
 			tracer.Tag(ext.AWSService, serviceID),
@@ -101,7 +108,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		}
-		resourceTags, ok := resourceTagsFromParams(in, serviceID, region)
+		resourceTags, ok := resourceTagsFromParams(in, serviceID, region, partition)
 		if !ok {
 			instr.Logger().Debug("attempted to extract resourceTagsFromParams of an unsupported AWS service: %s", serviceID)
 		} else {
@@ -144,13 +151,27 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 	}), middleware.After)
 }
 
-func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService string, region string) (map[string]string, bool) {
+func awsPartition(region string) string {
+	var partition string
+	switch {
+	case strings.HasPrefix(region, "cn-"):
+		partition = "aws-cn"
+	case strings.HasPrefix(region, "us-gov-"):
+		partition = "aws-us-gov"
+	default:
+		partition = "aws"
+	}
+
+	return partition
+}
+
+func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService string, region string, partition string) (map[string]string, bool) {
 	tags := tagMapPool.Get().(map[string]string)
 
 	switch awsService {
 	case "SQS":
 		if url := queueURL(requestInput); url != "" {
-			queueName, arn := extractSQSMetadata(url, region)
+			queueName, arn := extractSQSMetadata(url, region, partition)
 			tags[ext.SQSQueueName] = queueName
 			tags[ext.CloudResourceID] = arn
 		}
@@ -191,7 +212,7 @@ func queueURL(requestInput middleware.InitializeInput) string {
 	return ""
 }
 
-func extractSQSMetadata(queueURL string, region string) (queueName string, arn string) {
+func extractSQSMetadata(queueURL string, region string, partition string) (queueName string, arn string) {
 	// Remove trailing slash if present
 	if len(queueURL) > 0 && queueURL[len(queueURL)-1] == '/' {
 		queueURL = queueURL[:len(queueURL)-1]
@@ -201,17 +222,6 @@ func extractSQSMetadata(queueURL string, region string) (queueName string, arn s
 	parts := strings.Split(queueURL, "/")
 	if len(parts) < 2 {
 		return "", ""
-	}
-
-	// Determine partition based on region
-	var partition string
-	switch {
-	case strings.HasPrefix(region, "cn-"):
-		partition = "aws-cn"
-	case strings.HasPrefix(region, "us-gov-"):
-		partition = "aws-us-gov"
-	default:
-		partition = "aws"
 	}
 
 	queueName = parts[len(parts)-1]
