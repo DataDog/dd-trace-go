@@ -349,6 +349,10 @@ func (p *v1Payload) extractChunkAttributes(span *Span, chunk *idx.InternalTraceC
 		}
 	}
 
+	if priority, exists := span.metrics["_sampling_priority_v1"]; exists {
+		chunk.Priority = int32(priority)
+	}
+
 	// Add other chunk-level attributes (excluding _dd.p.dm)
 	for k, v := range span.meta {
 		if k == "_dd.p.dm" {

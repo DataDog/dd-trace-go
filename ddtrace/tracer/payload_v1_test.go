@@ -53,7 +53,8 @@ func TestV1Payload_PushSingleSpan(t *testing.T) {
 			"custom":    "value",
 		},
 		metrics: map[string]float64{
-			"custom.metric": 42.0,
+			"custom.metric":         42.0,
+			"_sampling_priority_v1": 1.0,
 		},
 		metaStruct: map[string]interface{}{
 			"custom.struct": []byte("struct data"),
@@ -110,7 +111,7 @@ func TestV1Payload_PushSingleSpan(t *testing.T) {
 
 	chunk := unmarshaledPayload.Chunks[0]
 	assert.Len(t, chunk.Spans, 1)
-	assert.Equal(t, int32(0), chunk.Priority)
+	assert.Equal(t, int32(1), chunk.Priority)
 	assert.False(t, chunk.DroppedTrace)
 	assert.Len(t, chunk.TraceID, 16)
 
@@ -134,10 +135,11 @@ func TestV1Payload_PushSingleSpan(t *testing.T) {
 
 	// Verify attributes
 	attributes := internalSpan.Attributes()
-	assert.Len(t, attributes, 3) // custom, custom.metric, custom.struct
+	assert.Len(t, attributes, 4) // custom, custom.metric, custom.struct, _sampling_priority_v1
 	assert.Contains(t, attributes, unmarshaledPayload.Strings.Lookup("custom"))
 	assert.Contains(t, attributes, unmarshaledPayload.Strings.Lookup("custom.metric"))
 	assert.Contains(t, attributes, unmarshaledPayload.Strings.Lookup("custom.struct"))
+	assert.Contains(t, attributes, unmarshaledPayload.Strings.Lookup("_sampling_priority_v1"))
 
 	// Verify span links
 	links := internalSpan.Links()
@@ -549,6 +551,121 @@ func TestV1Payload_WriteAndGrow(t *testing.T) {
 	data, err := io.ReadAll(payload)
 	require.NoError(t, err)
 	assert.Equal(t, testData, data)
+}
+
+func TestV1Payload_SamplingPriority(t *testing.T) {
+	payload := newV1Payload(1.0)
+
+	// Test with sampling priority = 1
+	span1 := &Span{
+		name:     "test.operation",
+		service:  "test.service",
+		resource: "/test/resource",
+		spanType: "web",
+		start:    time.Now().UnixNano(),
+		duration: 1000000,
+		spanID:   12345,
+		traceID:  67890,
+		parentID: 0,
+		error:    0,
+		meta:     map[string]string{"env": "test"},
+		metrics: map[string]float64{
+			"_sampling_priority_v1": 1.0,
+		},
+	}
+
+	// Push the span
+	_, err := payload.push(spanList{span1})
+	require.NoError(t, err)
+
+	// Test reading the payload
+	data, err := io.ReadAll(payload)
+	require.NoError(t, err)
+
+	// Test unmarshaling
+	var unmarshaledPayload idx.InternalTracerPayload
+	remaining, err := unmarshaledPayload.UnmarshalMsg(data)
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+
+	// Verify the chunk has the correct priority
+	assert.Len(t, unmarshaledPayload.Chunks, 1)
+	chunk1 := unmarshaledPayload.Chunks[0]
+	assert.Equal(t, int32(1), chunk1.Priority)
+
+	// Test with sampling priority = 0
+	payload2 := newV1Payload(1.0)
+	span2 := &Span{
+		name:     "test.operation2",
+		service:  "test.service",
+		resource: "/test/resource2",
+		spanType: "web",
+		start:    time.Now().UnixNano(),
+		duration: 1000000,
+		spanID:   12346,
+		traceID:  67891,
+		parentID: 0,
+		error:    0,
+		meta:     map[string]string{"env": "test"},
+		metrics: map[string]float64{
+			"_sampling_priority_v1": 0.0,
+		},
+	}
+
+	// Push the span
+	_, err = payload2.push(spanList{span2})
+	require.NoError(t, err)
+
+	// Test reading the payload
+	data2, err := io.ReadAll(payload2)
+	require.NoError(t, err)
+
+	// Test unmarshaling
+	var unmarshaledPayload2 idx.InternalTracerPayload
+	remaining2, err := unmarshaledPayload2.UnmarshalMsg(data2)
+	require.NoError(t, err)
+	assert.Empty(t, remaining2)
+
+	// Verify the chunk has the correct priority
+	assert.Len(t, unmarshaledPayload2.Chunks, 1)
+	chunk2 := unmarshaledPayload2.Chunks[0]
+	assert.Equal(t, int32(0), chunk2.Priority)
+
+	// Test with no sampling priority (should default to 0)
+	payload3 := newV1Payload(1.0)
+	span3 := &Span{
+		name:     "test.operation3",
+		service:  "test.service",
+		resource: "/test/resource3",
+		spanType: "web",
+		start:    time.Now().UnixNano(),
+		duration: 1000000,
+		spanID:   12347,
+		traceID:  67892,
+		parentID: 0,
+		error:    0,
+		meta:     map[string]string{"env": "test"},
+		metrics:  map[string]float64{}, // No sampling priority
+	}
+
+	// Push the span
+	_, err = payload3.push(spanList{span3})
+	require.NoError(t, err)
+
+	// Test reading the payload
+	data3, err := io.ReadAll(payload3)
+	require.NoError(t, err)
+
+	// Test unmarshaling
+	var unmarshaledPayload3 idx.InternalTracerPayload
+	remaining3, err := unmarshaledPayload3.UnmarshalMsg(data3)
+	require.NoError(t, err)
+	assert.Empty(t, remaining3)
+
+	// Verify the chunk has the default priority
+	assert.Len(t, unmarshaledPayload3.Chunks, 1)
+	chunk3 := unmarshaledPayload3.Chunks[0]
+	assert.Equal(t, int32(0), chunk3.Priority)
 }
 
 func TestV1Payload_Close(t *testing.T) {
