@@ -38,6 +38,7 @@ use (
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
+	./contrib/haproxy/stream-processing-offload
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault
 	./contrib/jackc/pgx.v5
