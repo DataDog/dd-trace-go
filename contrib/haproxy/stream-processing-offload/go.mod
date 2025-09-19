@@ -92,5 +92,3 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
-replace github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2 => ../../envoyproxy/go-control-plane
