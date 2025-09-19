@@ -57,6 +57,15 @@ jobs:
       - name: go get -u
         run: |-
           go get -u -t $PACKAGES
+          go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/trace@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/util/log@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/util/scrubber@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/version@v0.71.0-rc.2
           go mod tidy
       - name: Install requested go-libddwaf version
         if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
