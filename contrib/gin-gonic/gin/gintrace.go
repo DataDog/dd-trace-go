@@ -53,7 +53,12 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
-			finishSpans(c.Writer.Status(), nil)
+			status := c.Writer.Status()
+			err := c.Errors.Last()
+			if err != nil && cfg.isStatusError(status) {
+				finishSpans(status, cfg.isStatusError, tracer.WithError(err))
+			}
+			finishSpans(status, cfg.isStatusError)
 		}()
 
 		// pass the span through the request context

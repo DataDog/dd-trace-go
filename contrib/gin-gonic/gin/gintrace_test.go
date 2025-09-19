@@ -210,7 +210,7 @@ func TestError(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
 		// server errors set the ext.ErrorMsg tag
-		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
+		assert.Equal("oh no", span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
 		assert.Equal(componentName, span.Integration())
