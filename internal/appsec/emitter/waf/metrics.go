@@ -91,10 +91,11 @@ type HandleMetrics struct {
 }
 
 var baseRASPTags = [len(addresses.RASPRuleTypes)][]string{
-	addresses.RASPRuleTypeLFI:  {"rule_type:" + addresses.RASPRuleTypeLFI.String()},
-	addresses.RASPRuleTypeSSRF: {"rule_type:" + addresses.RASPRuleTypeSSRF.String()},
-	addresses.RASPRuleTypeSQLI: {"rule_type:" + addresses.RASPRuleTypeSQLI.String()},
-	addresses.RASPRuleTypeCMDI: {"rule_type:" + addresses.RASPRuleTypeCMDI.String(), "rule_variant:exec"},
+	addresses.RASPRuleTypeLFI:          {"rule_type:" + addresses.RASPRuleTypeLFI.String()},
+	addresses.RASPRuleTypeSSRFRequest:  {"rule_type:" + addresses.RASPRuleTypeSSRFResponse.String(), "rule_variant:request"},
+	addresses.RASPRuleTypeSSRFResponse: {"rule_type:" + addresses.RASPRuleTypeSSRFResponse.String(), "rule_variant:response"},
+	addresses.RASPRuleTypeSQLI:         {"rule_type:" + addresses.RASPRuleTypeSQLI.String()},
+	addresses.RASPRuleTypeCMDI:         {"rule_type:" + addresses.RASPRuleTypeCMDI.String(), "rule_variant:exec"},
 }
 
 // NewMetricsInstance creates a new HandleMetrics struct and submit the `waf.init` or `waf.updates` metric. To be called with the raw results of the WAF handle initialization
