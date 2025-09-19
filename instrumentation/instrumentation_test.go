@@ -16,6 +16,12 @@ func TestInstrumentation_AnalyticsRate(t *testing.T) {
 	pkgs := GetPackages()
 	for pkg, info := range pkgs {
 		t.Run(string(pkg), func(t *testing.T) {
+			// Skip packages that don't implement analytics functionality
+			if pkg == PackageAWSDatadogLambdaGo {
+				t.Skip("Lambda contrib does not implement analytics functionality")
+				return
+			}
+
 			instr := Load(pkg)
 
 			// No env var set, without defaulting to global should return NaN

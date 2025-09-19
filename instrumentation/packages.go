@@ -18,6 +18,7 @@ const (
 	Package99DesignsGQLGen      Package = "99designs/gqlgen"
 	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
+	PackageAWSDatadogLambdaGo   Package = "aws/datadog-lambda-go"
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
@@ -164,6 +165,18 @@ var packages = map[Package]PackageInfo{
 					return awsService + ".request"
 				},
 				buildOpNameV1: awsBuildOpNameV1,
+			},
+		},
+	},
+	PackageAWSDatadogLambdaGo: {
+		TracedPackage: "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go",
+		EnvVarPrefix:  "LAMBDA",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("aws.lambda"),
+				buildOpNameV0:      staticName("aws.lambda.invoke"),
+				buildOpNameV1:      staticName("aws.lambda.invoke"),
 			},
 		},
 	},
