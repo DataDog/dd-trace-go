@@ -119,7 +119,7 @@ CMD /usr/local/bin/smoke-test
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM scratch AS scratch
+FROM scratch AS scratchy
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /
 ENTRYPOINT [ "/smoke-test" ]
 
