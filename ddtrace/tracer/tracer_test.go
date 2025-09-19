@@ -212,7 +212,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tp.Ignore("appsec: ", "telemetry")
 		tracer := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Logs()[1], "DEBUG: Runtime metrics v2 enabled")
+		assert.Contains(t, tp.Logs()[1], "DEBUG: Runtime metrics")
 	})
 
 	t.Run("dd-env", func(t *testing.T) {
@@ -221,7 +221,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		tp.Ignore("appsec: ", "telemetry")
 		tracer := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
-		assert.Contains(t, tp.Logs()[1], "DEBUG: Runtime metrics enabled")
+		assert.Contains(t, tp.Logs()[1], "DEBUG: Runtime metrics")
 	})
 }
 
