@@ -278,9 +278,14 @@ func (mp *Processor[O]) OnResponseTrailers(_ *RequestState) (*O, error) {
 }
 
 func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos bool, analyzeBody func(ctx context.Context, encodable any) error) error {
+	if bodyBuffer.analyzed {
+		return nil
+	}
+
 	bodyBuffer.append(body)
 
 	if eos || bodyBuffer.truncated {
+		bodyBuffer.analyzed = true
 		return analyzeBody(ctx, json.NewEncodableFromData(bodyBuffer.buffer, bodyBuffer.truncated))
 	}
 

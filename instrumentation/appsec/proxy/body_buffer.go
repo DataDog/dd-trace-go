@@ -10,6 +10,7 @@ type bodyBuffer struct {
 	buffer    []byte
 	sizeLimit int
 	truncated bool
+	analyzed  bool
 }
 
 // newBodyBuffer creates a new bodyBuffer with the specified size limit
