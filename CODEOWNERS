@@ -13,6 +13,7 @@
 # appsec
 /appsec                         @DataDog/asm-go
 /internal/appsec                @DataDog/asm-go
+/instrumentation/appsec         @DataDog/asm-go
 /contrib/**/*appsec*.go         @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
 /contrib/envoyproxy             @DataDog/asm-go
