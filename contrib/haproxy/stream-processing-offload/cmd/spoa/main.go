@@ -40,6 +40,7 @@ func getDefaultEnvVars() map[string]string {
 		"DD_APM_TRACING_ENABLED":       "false",                   // Appsec Standalone
 		"DD_APPSEC_WAF_TIMEOUT":        "10ms",                    // Proxy specific WAF timeout
 		"_DD_APPSEC_PROXY_ENVIRONMENT": "true",                    // Internal config: Enable API Security proxy sampler
+		"DD_TRACE_PROPAGATION_STYLE":   "datadog",                 // Only supports Datadog propagation format
 	}
 }
 

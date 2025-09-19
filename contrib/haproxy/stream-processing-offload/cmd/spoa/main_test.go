@@ -28,12 +28,14 @@ func TestInitializeEnvironment_All(t *testing.T) {
 		{
 			name: "existing preserved",
 			preEnv: map[string]string{
-				"DD_APM_TRACING_ENABLED": "true",
-				"DD_APPSEC_WAF_TIMEOUT":  "5ms",
+				"DD_APM_TRACING_ENABLED":     "true",
+				"DD_APPSEC_WAF_TIMEOUT":      "5ms",
+				"DD_TRACE_PROPAGATION_STYLE": "datadog,tracecontext,baggage",
 			},
 			wantEnvVal: map[string]string{
-				"DD_APM_TRACING_ENABLED": "true",
-				"DD_APPSEC_WAF_TIMEOUT":  "5ms",
+				"DD_APM_TRACING_ENABLED":     "true",
+				"DD_APPSEC_WAF_TIMEOUT":      "5ms",
+				"DD_TRACE_PROPAGATION_STYLE": "datadog,tracecontext,baggage",
 			},
 		},
 	}
