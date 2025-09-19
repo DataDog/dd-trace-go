@@ -87,7 +87,7 @@ func spanIDFromMessage(msg *message.Message) (uint64, error) {
 	return spanId, nil
 }
 
-// setHeadersResponseData sets HeadersResponseData data into the request variables answering a Request Headers message
+// continueActionFunc sets HeadersResponseData data into the request variables answering a Request Headers message
 func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions) error {
 	requestContextData, _ := ctx.Value(haproxyRequestKey).(*haproxyContextRequestDataType)
 	if requestContextData == nil {
@@ -111,17 +111,48 @@ func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions
 		spanId := s.Context().SpanID()
 		spanIdStr := strconv.FormatUint(spanId, 10)
 		requestContextData.req.Actions.SetVar(action.ScopeTransaction, "span_id", spanIdStr)
+
+		injectTracingHeaders(options.HeaderMutations, &requestContextData.req.Actions)
 	}
 
 	if options.Body {
 		requestContextData.req.Actions.SetVar(action.ScopeTransaction, "request_body", true)
 	}
 
-	if len(options.HeaderMutations) > 0 {
-		// TODO: List all possible headers that can be mutated (trace injection)
+	return nil
+}
+
+const headerCount = 5
+
+var haproxyTracingHeaderActions = [headerCount]string{
+	"tracing_x_datadog_trace_id",
+	"tracing_x_datadog_parent_id",
+	"tracing_x_datadog_origin",
+	"tracing_x_datadog_sampling_priority",
+	"tracing_x_datadog_tags",
+}
+
+var datadogTracingHeaders = [headerCount]string{
+	tracer.DefaultTraceIDHeader,
+	tracer.DefaultParentIDHeader,
+	"x-datadog-origin",
+	tracer.DefaultPriorityHeader,
+	"x-datadog-tags",
+}
+
+// injectTracingHeaders injects tracing headers when present. Supporting only the Datadog tracing format.
+// https://docs.datadoghq.com/tracing/trace_collection/trace_context_propagation/#datadog-format
+func injectTracingHeaders(headerMutations map[string][]string, actions *action.Actions) {
+	if len(headerMutations) == 0 {
+		return
 	}
 
-	return nil
+	for i := range haproxyTracingHeaderActions {
+		mutationHeader := http.CanonicalHeaderKey(datadogTracingHeaders[i])
+		if v, ok := headerMutations[mutationHeader]; ok {
+			actions.SetVar(action.ScopeTransaction, haproxyTracingHeaderActions[i], strings.TrimSpace(strings.Join(v, ",")))
+		}
+	}
 }
 
 // setBlockResponseData sets blocked data into the request variables when the request is blocked
