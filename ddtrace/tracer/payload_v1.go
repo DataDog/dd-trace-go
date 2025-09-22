@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
@@ -86,15 +85,9 @@ type payloadV1 struct {
 }
 
 type stringTable struct {
-	m         sync.Mutex
 	strings   []string          // list of strings
 	indices   map[string]uint32 // map strings to their indices
 	nextIndex uint32            // last index of the stringTable
-}
-
-type payloadWrapper struct {
-	*msgp.Writer
-	payload *payloadV1
 }
 
 // AnyValue is a representation of the `any` value. It can take the following types:
@@ -110,8 +103,6 @@ type anyValue struct {
 	valueType int
 	value     interface{}
 }
-
-var _ msgp.Encodable = (*anyValue)(nil)
 
 const (
 	StringValueType  = iota + 1 // string or uint -- 1
@@ -133,6 +124,10 @@ type keyValue struct {
 
 type keyValueList []keyValue
 
+type spanListV1 spanList
+
+var _ msgp.Encodable = (*anyValue)(nil)
+var _ msgp.Encodable = (*spanListV1)(nil)
 var _ msgp.Encodable = (*keyValue)(nil)
 var _ msgp.Encodable = (keyValueList)(nil)
 var _ msgp.Encodable = (*traceChunk)(nil)
@@ -252,10 +247,6 @@ func (p *payloadV1) Write(data []byte) (n int, err error) {
 func (p *payloadV1) Read(b []byte) (n int, err error) {
 	panic("not implemented")
 }
-
-type spanListV1 spanList
-
-var _ msgp.Encodable = (*spanListV1)(nil)
 
 // Encode the anyValue
 // EncodeMsg implements msgp.Encodable.
@@ -451,8 +442,6 @@ func encodeSpan(s *Span, e *msgp.Writer) error {
 // Returns the index of the string in the string table, and an error if there is one
 func (p *payloadV1) encodeString(s string) (uint32, error) {
 	sTable := &p.strings
-	sTable.m.Lock()
-	defer sTable.m.Unlock()
 	idx, ok := sTable.indices[s]
 	// if the string already exists in the table, use its index
 	if ok {
