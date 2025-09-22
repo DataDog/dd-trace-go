@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
 package llmobs_test
 
 import (
@@ -28,8 +33,8 @@ func TestStartSpan(t *testing.T) {
 
 	t.Run("simple", func(t *testing.T) {
 		ctx := context.Background()
-		span, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1")
-		span.Finish()
+		span, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
 
 		apmSpans := tt.WaitForSpans(t, 1)
 		s0 := apmSpans[0]
@@ -42,15 +47,15 @@ func TestStartSpan(t *testing.T) {
 
 	t.Run("child-spans", func(t *testing.T) {
 		ctx := context.Background()
-		ss0, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1")
-		ss1, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1")
+		ss0, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{})
+		ss1, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1", llmobs.StartSpanConfig{})
 		ss2, ctx := tracer.StartSpanFromContext(ctx, "apm-1")
-		ss3, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-2")
+		ss3, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-2", llmobs.StartSpanConfig{})
 
-		ss3.Finish()
+		ss3.Finish(llmobs.FinishSpanConfig{})
 		ss2.Finish()
-		ss1.Finish()
-		ss0.Finish()
+		ss1.Finish(llmobs.FinishSpanConfig{})
+		ss0.Finish(llmobs.FinishSpanConfig{})
 
 		apmSpans := tt.WaitForSpans(t, 4)
 
@@ -88,11 +93,11 @@ func TestStartSpan(t *testing.T) {
 	t.Run("distributed-context-propagation", func(t *testing.T) {
 		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			ctx := req.Context()
-			ss2, ctx := tracer.StartSpanFromContext(ctx, "apm-2")
-			defer ss2.Finish()
-
-			ss3, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1")
+			ss3, ctx := tracer.StartSpanFromContext(ctx, "apm-2")
 			defer ss3.Finish()
+
+			ss4, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1", llmobs.StartSpanConfig{})
+			defer ss4.Finish(llmobs.FinishSpanConfig{})
 
 			w.Write([]byte("ok"))
 		})
@@ -100,11 +105,14 @@ func TestStartSpan(t *testing.T) {
 
 		genSpans := func() {
 			ctx := context.Background()
-			ss0, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.WithMLApp("custom-ml-app"))
-			defer ss0.Finish()
+			ss0, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{MLApp: "custom-ml-app"})
+			defer ss0.Finish(llmobs.FinishSpanConfig{})
 
-			ss1, ctx := tracer.StartSpanFromContext(ctx, "apm-1")
-			defer ss1.Finish()
+			ss1, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "workflow-1", llmobs.StartSpanConfig{})
+			defer ss1.Finish(llmobs.FinishSpanConfig{})
+
+			ss2, ctx := tracer.StartSpanFromContext(ctx, "apm-1")
+			defer ss2.Finish()
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/", nil)
 			require.NoError(t, err)
@@ -115,22 +123,22 @@ func TestStartSpan(t *testing.T) {
 		}
 
 		genSpans()
-		apmSpans := tt.WaitForSpans(t, 6)
-
-		t.Logf("apm spans: %+v", apmSpans)
+		apmSpans := tt.WaitForSpans(t, 7)
 
 		httpServer := apmSpans[0]
 		apm2 := apmSpans[1]
 		agent1 := apmSpans[2]
 		llm1 := apmSpans[3]
-		apm1 := apmSpans[4]
-		httpClient := apmSpans[5]
+		workflow1 := apmSpans[4]
+		apm1 := apmSpans[5]
+		httpClient := apmSpans[6]
 
 		assert.Equal(t, "http.request", httpServer.Name)
 		assert.Equal(t, "server", httpServer.Meta["span.kind"])
 		assert.Equal(t, "apm-2", apm2.Name)
 		assert.Equal(t, "agent-1", agent1.Name)
 		assert.Equal(t, "llm-1", llm1.Name)
+		assert.Equal(t, "workflow-1", workflow1.Name)
 		assert.Equal(t, "apm-1", apm1.Name)
 		assert.Equal(t, "http.request", httpClient.Name)
 		assert.Equal(t, "client", httpClient.Meta["span.kind"])
@@ -139,6 +147,7 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, apmTraceID, apm2.TraceID, "wrong trace ID for span apm-2")
 		assert.Equal(t, apmTraceID, agent1.TraceID, "wrong trace ID for span agent-1")
 		assert.Equal(t, apmTraceID, llm1.TraceID, "wrong trace ID for span llm-1")
+		assert.Equal(t, apmTraceID, workflow1.TraceID, "wrong trace ID for span workflow-1")
 		assert.Equal(t, apmTraceID, apm1.TraceID, "wrong trace ID for span apm-1")
 		assert.Equal(t, apmTraceID, httpClient.TraceID, "wrong trace ID for span http-client")
 
@@ -148,20 +157,22 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, apm2.SpanID, agent1.ParentID)
 
 		assert.Equal(t, apm1.SpanID, httpClient.ParentID)
-		assert.Equal(t, llm1.SpanID, apm1.ParentID)
+		assert.Equal(t, llm1.SpanID, workflow1.ParentID)
+		assert.Equal(t, workflow1.SpanID, apm1.ParentID)
 		assert.Equal(t, uint64(0), llm1.ParentID)
 
-		llmSpans := tt.WaitForLLMObsSpans(t, 2)
-
-		t.Logf("llmobs spans: %+v", llmSpans)
+		llmSpans := tt.WaitForLLMObsSpans(t, 3)
 
 		l0 := llmSpans[0]
 		l1 := llmSpans[1]
+		l2 := llmSpans[2]
 
 		assert.Equal(t, "agent-1", l0.Name)
 		assert.Equal(t, "custom-ml-app", findTag(l0.Tags, "ml_app"), "wrong ml_app for span agent-1")
-		assert.Equal(t, "llm-1", l1.Name)
-		assert.Equal(t, "custom-ml-app", findTag(l1.Tags, "ml_app"), "wrong ml_app for span llm-1")
+		assert.Equal(t, "workflow-1", l1.Name)
+		assert.Equal(t, "custom-ml-app", findTag(l1.Tags, "ml_app"), "wrong ml_app for span workflow-1")
+		assert.Equal(t, "llm-1", l2.Name)
+		assert.Equal(t, "custom-ml-app", findTag(l2.Tags, "ml_app"), "wrong ml_app for span llm-1")
 
 		llmTraceID := l0.TraceID
 		assert.Equal(t, llmTraceID, l0.TraceID)

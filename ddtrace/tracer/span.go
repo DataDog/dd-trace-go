@@ -932,7 +932,7 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	if llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.LLMTraceID())
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 	}
 }

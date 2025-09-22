@@ -250,12 +250,11 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 
 func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record) *Result {
 	var (
-		err       error
-		startTime = time.Now()
+		err error
 	)
 
-	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.WithStartTime(startTime))
-	defer span.Finish(illmobs.WithError(err))
+	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.StartSpanConfig{})
+	defer span.Finish(illmobs.FinishSpanConfig{Error: err})
 
 	tags := make(map[string]string)
 	for k, v := range e.cfg.tags {
@@ -271,18 +270,18 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 		err = errortrace.Wrap(err)
 	}
 
-	llmobs.AnnotateExperimentSpan(span, illmobs.ExperimentSpanAnnotations{
-		Input:          rec.Input,
-		Output:         out,
-		Tags:           tags,
-		ExpectedOutput: rec.ExpectedOutput,
+	span.Annotate(illmobs.SpanAnnotations{
+		ExperimentInput:          rec.Input,
+		ExperimentOutput:         out,
+		ExperimentExpectedOutput: rec.ExpectedOutput,
+		Tags:                     tags,
 	})
 
 	return &Result{
 		RecordIndex:    recIdx,
 		SpanID:         span.SpanID(),
 		TraceID:        span.TraceID(),
-		Timestamp:      startTime,
+		Timestamp:      span.StartTime(),
 		Input:          rec.Input,
 		Output:         out,
 		ExpectedOutput: rec.ExpectedOutput,

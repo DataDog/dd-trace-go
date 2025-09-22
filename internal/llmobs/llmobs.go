@@ -33,7 +33,7 @@ var (
 )
 
 var (
-	errLLMObsNotEnabled        = errors.New("LLMObs is not enabled. Ensure the experiment has been correctly initialized using experiment.New and llmobs.Start() has been called or set DD_LLMOBS_ENABLED=1")
+	errLLMObsNotEnabled        = errors.New("LLMObs is not enabled. Ensure the tracer has been started with the option tracer.WithLLMObsEnabled(true) or set DD_LLMOBS_ENABLED=true")
 	errAgentlessRequiresAPIKey = errors.New("LLMOBs agentless mode requires a valid API key - set the DD_API_KEY env variable to configure one")
 	errMLAppRequired           = errors.New("ML App is required for sending LLM Observability data")
 )
@@ -55,6 +55,8 @@ const (
 	SpanKindEmbedding  = "embedding"
 	SpanKindAgent      = "agent"
 	SpanKindRetrieval  = "retrieval"
+	SpanKindTask       = "task"
+	SpanKindTool       = "tool"
 )
 
 const (
@@ -72,34 +74,25 @@ const (
 // See: https://docs.datadoghq.com/getting_started/site/#access-the-datadog-site
 var ddSitesNeedingAppSubdomain = []string{"datadoghq.com", "datadoghq.eu", "ddog-gov.com"}
 
-type Document struct{}
-
-type Message struct {
-	Content string `json:"content"`
-	Role    string `json:"role"`
-}
-
 type llmobsContext struct {
 	spanKind        string
 	sessionID       string
 	metadata        map[string]any
-	metrics         map[string]any
-	parentID        string
-	traceID         string
+	metrics         map[string]float64
 	tags            map[string]string
 	agentManifest   string
 	modelName       string
 	modelProvider   string
 	toolDefinitions string
 
-	inputDocuments []Document
-	inputMessages  []Message
-	inputValue     string
-	inputPrompt    string
+	inputDocuments []EmbeddedDocument
+	inputMessages  []LLMMessage
+	inputText      string
+	inputPrompt    *Prompt
 
-	outputDocuments []Document
-	outputMessages  []Message
-	outputValue     string
+	outputDocuments []RetrievedDocument
+	outputMessages  []LLMMessage
+	outputText      string
 
 	experimentInput          map[string]any
 	experimentExpectedOutput any
@@ -460,12 +453,17 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	spanKind := span.llmCtx.spanKind
 	meta["span.kind"] = spanKind
 
-	if (spanKind == SpanKindLLM || spanKind == SpanKindEmbedding) && span.llmCtx.modelName != "" {
-		meta["model_name"] = span.llmCtx.modelName
+	if (spanKind == SpanKindLLM || spanKind == SpanKindEmbedding) && span.llmCtx.modelName != "" || span.llmCtx.modelProvider != "" {
+		modelName := span.llmCtx.modelName
+		if modelName == "" {
+			modelName = "custom"
+		}
 		modelProvider := strings.ToLower(span.llmCtx.modelProvider)
 		if modelProvider == "" {
 			modelProvider = "custom"
 		}
+		meta["model_name"] = modelName
+		meta["model_provider"] = modelProvider
 	}
 
 	metadata := span.llmCtx.metadata
@@ -484,14 +482,14 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 
 	if spanKind == SpanKindLLM && len(span.llmCtx.inputMessages) > 0 {
 		input["messages"] = span.llmCtx.inputMessages
-	} else if inputValue := span.llmCtx.inputValue; inputValue != "" {
-		input["value"] = inputValue
+	} else if txt := span.llmCtx.inputText; len(txt) > 0 {
+		input["value"] = txt
 	}
 
 	if spanKind == SpanKindLLM && len(span.llmCtx.outputMessages) > 0 {
 		output["messages"] = span.llmCtx.outputMessages
-	} else if outputValue := span.llmCtx.outputValue; outputValue != "" {
-		output["value"] = outputValue
+	} else if txt := span.llmCtx.outputText; len(txt) > 0 {
+		output["value"] = txt
 	}
 
 	if spanKind == SpanKindExperiment {
@@ -517,14 +515,14 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 			output["documents"] = outputDocs
 		}
 	}
-	if inputPrompt := span.llmCtx.inputPrompt; inputPrompt != "" {
+	if inputPrompt := span.llmCtx.inputPrompt; inputPrompt != nil {
 		if spanKind != SpanKindLLM {
-			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prmpts is only supported for LLM span kinds")
+			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prompts is only supported for LLM span kinds")
 		} else {
 			input["prompt"] = inputPrompt
 		}
 	} else if spanKind == SpanKindLLM {
-		if span.parent != nil && span.parent.llmCtx.inputPrompt != "" {
+		if span.parent != nil && span.parent.llmCtx.inputPrompt != nil {
 			input["prompt"] = span.parent.llmCtx.inputPrompt
 		}
 	}
@@ -549,8 +547,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if len(output) > 0 {
 		meta["output"] = output
 	}
-
-	// TODO(rarguelloF): user span processor
 
 	spanID := span.apm.SpanID()
 	parentID := defaultParentID
@@ -580,7 +576,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	tags["version"] = l.Config.TracerConfig.Version
 	tags["env"] = l.Config.TracerConfig.Env
 	tags["service"] = l.Config.TracerConfig.Service
-	tags["source"] = "integration" // TODO(rarguelloF): is this correct?
+	tags["source"] = "integration"
 	tags["ml_app"] = span.mlApp
 	tags["ddtrace.version"] = version.Tag
 	tags["language"] = "go"
@@ -597,9 +593,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if span.integration != "" {
 		tags["integration"] = span.integration
 	}
-	// TODO(rarguelloF)
-	//if _is_evaluation_span(span):
-	//tags[constants.RUNNER_IS_INTEGRATION_SPAN_TAG] = "ragas"
 
 	for k, v := range span.llmCtx.tags {
 		tags[k] = v
@@ -652,32 +645,25 @@ func truncateLLMObsSpanEvent(ev *transport.LLMObsSpanEvent, input, output map[st
 	ev.CollectionErrors = []string{collectionErrorDroppedIO}
 }
 
-func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name string, opts ...StartSpanOption) (*Span, context.Context) {
+func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
 	spanName := name
 	if spanName == "" {
 		spanName = string(opKind)
 	}
 
-	cfg := &startSpanConfig{
-		sessionID:     "",
-		modelName:     "",
-		modelProvider: "",
-		mlApp:         "",
-		startTime:     time.Now(),
-	}
-	for _, opt := range opts {
-		opt(cfg)
+	if cfg.StartTime.IsZero() {
+		cfg.StartTime = time.Now()
 	}
 
 	startCfg := StartAPMSpanConfig{
 		SpanType:  ext.SpanTypeLLM,
-		StartTime: cfg.startTime,
+		StartTime: cfg.StartTime,
 	}
 	apmSpan, ctx := l.Tracer.StartSpan(ctx, name, startCfg)
 	span := &Span{
 		name:      spanName,
 		apm:       apmSpan,
-		startTime: cfg.startTime,
+		startTime: cfg.StartTime,
 	}
 	if !l.Config.Enabled {
 		log.Warn("llmobs: LLMObs span was started without enabling LLMObs")
@@ -696,12 +682,12 @@ func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name strin
 		span.llmTraceID = newLLMObsTraceID()
 	}
 
-	span.mlApp = cfg.mlApp
+	span.mlApp = cfg.MLApp
 	span.llmCtx = llmobsContext{
 		spanKind:      string(opKind),
-		modelName:     cfg.modelName,
-		modelProvider: cfg.modelProvider,
-		sessionID:     cfg.sessionID,
+		modelName:     cfg.ModelName,
+		modelProvider: cfg.ModelProvider,
+		sessionID:     cfg.SessionID,
 	}
 
 	if span.llmCtx.sessionID == "" {
@@ -718,47 +704,29 @@ func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name strin
 	return span, ContextWithActiveLLMSpan(ctx, span)
 }
 
-type SpanAnnotations struct {
-	Prompt     map[string]any
-	InputData  any
-	OutputData any
-	Metadata   map[string]any
-	Metrics    map[string]any
-	Tags       map[string]any
-}
-
-func (l *LLMObs) AnnotateSpan(span *Span, annotations SpanAnnotations) {
-	span.mu.Lock()
-	defer span.mu.Unlock()
-
-	//TODO(rarguelloF): complete
-}
-
-type ExperimentSpanAnnotations struct {
-	Input          map[string]any
-	Output         any
-	ExpectedOutput any
-	Tags           map[string]string
-}
-
-func (l *LLMObs) AnnotateExperimentSpan(span *Span, annotations ExperimentSpanAnnotations) {
-	span.mu.Lock()
-	defer span.mu.Unlock()
-
-	span.llmCtx.experimentInput = annotations.Input
-	span.llmCtx.experimentOutput = annotations.Output
-	span.llmCtx.experimentExpectedOutput = annotations.ExpectedOutput
-	span.llmCtx.tags = annotations.Tags
-}
-
-func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimentID string, opts ...StartSpanOption) (*Span, context.Context) {
-	span, ctx := l.StartSpan(ctx, SpanKindExperiment, name, opts...)
+func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimentID string, cfg StartSpanConfig) (*Span, context.Context) {
+	span, ctx := l.StartSpan(ctx, SpanKindExperiment, name, cfg)
 
 	if experimentID != "" {
 		span.apm.SetBaggageItem(baggageKeyExperimentID, experimentID)
 		span.scope = "experiments"
 	}
 	return span, ctx
+}
+
+// PublicResourceBaseURL returns the base URL to access a resource (experiments, projects, etc.)
+func PublicResourceBaseURL() string {
+	site := "datadoghq.com"
+	if activeLLMObs != nil {
+		site = activeLLMObs.Config.TracerConfig.Site
+	}
+
+	baseURL := "https://"
+	if slices.Contains(ddSitesNeedingAppSubdomain, site) {
+		baseURL += "app."
+	}
+	baseURL += site
+	return baseURL
 }
 
 func newLLMObsTraceID() string {
@@ -781,21 +749,6 @@ func newLLMObsTraceID() string {
 
 	// 32-byte hex string
 	return fmt.Sprintf("%032x", x)
-}
-
-// PublicResourceBaseURL returns the base URL to access a resource (experiments, projects, etc.)
-func PublicResourceBaseURL() string {
-	site := "datadoghq.com"
-	if activeLLMObs != nil {
-		site = activeLLMObs.Config.TracerConfig.Site
-	}
-
-	baseURL := "https://"
-	if slices.Contains(ddSitesNeedingAppSubdomain, site) {
-		baseURL += "app."
-	}
-	baseURL += site
-	return baseURL
 }
 
 // isAPIKeyValid reports whether the given string is a structurally valid API key
