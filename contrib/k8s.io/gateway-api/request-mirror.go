@@ -6,10 +6,8 @@
 package gatewayapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
 	"path"
@@ -25,6 +23,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
+
 	"k8s.io/utils/ptr"
 )
 
@@ -132,42 +132,6 @@ func hijackConnection(w http.ResponseWriter) net.Conn {
 	return conn
 }
 
-// parseBody parses the request body based on the list of content types provided in the Content-Type header.
-// It returns the parsed body as an interface{} or an error if parsing fails.
-func parseBody(contentType string, reader io.Reader) (any, error) {
-	for _, typ := range strings.Split(contentType, ",") {
-		if typ == "" {
-			continue
-		}
-
-		mimeType, _, err := mime.ParseMediaType(typ)
-		if err != nil {
-			logger.Debug("Failed to parse content type: %s", err.Error())
-			continue
-		}
-
-		var body any
-		switch {
-		// Handle cases like application/vnd.api+json: https://jsonapi.org/
-		case mimeType == "application/json" || strings.HasSuffix(mimeType, "+json"):
-			err = json.NewDecoder(reader).Decode(&body)
-		}
-
-		if body == nil {
-			continue
-		}
-
-		if err != nil {
-			logger.Debug("Failed to decode body using content-type %q: %s", mimeType, err.Error())
-			continue
-		}
-
-		return body, nil
-	}
-
-	return nil, fmt.Errorf("unsupported content type: %s", contentType)
-}
-
 // analyzeRequestBody check if the body can be parsed and if so, parse it and send it to the WAF
 // and return if blocking was performed on the http.ResponseWriter
 func analyzeRequestBody(r *http.Request) bool {
@@ -176,8 +140,7 @@ func analyzeRequestBody(r *http.Request) bool {
 		return false
 	}
 
-	body, err := parseBody(r.Header.Get("Content-Type"), io.LimitReader(r.Body, maxBodyBytes))
-
+	encodable, err := body.NewEncodable(r.Header.Get("Content-Type"), &r.Body, maxBodyBytes)
 	if err == io.EOF {
 		logger.Debug("Request body was too large to be parsed")
 		return false
@@ -188,9 +151,9 @@ func analyzeRequestBody(r *http.Request) bool {
 		return false
 	}
 
-	if body == nil {
+	if encodable == nil {
 		return false
 	}
 
-	return appsec.MonitorParsedHTTPBody(r.Context(), body) != nil
+	return appsec.MonitorParsedHTTPBody(r.Context(), encodable) != nil
 }
