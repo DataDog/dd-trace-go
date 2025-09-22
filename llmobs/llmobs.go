@@ -19,125 +19,76 @@ import (
 
 // StartLLMSpan starts an LLMObs span of kind LLM.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
-func StartLLMSpan(ctx context.Context, name string, opts ...StartLLMSpanOption) (LLMSpan, context.Context) {
-	ll, err := illmobs.ActiveLLMObs()
-	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+func StartLLMSpan(ctx context.Context, name string, opts ...StartSpanOption) (LLMSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindLLM, name, opts...)
+	if !ok {
 		return nil, ctx
 	}
-	cfg := llmConfig{}
-	for _, o := range opts {
-		o.applyLLM(&cfg)
-	}
-
-	s, ctx := ll.StartSpan(ctx, illmobs.SpanKindLLM, name, cfg.startSpanConfig())
-	return &llmSpan{baseSpan{s}}, ctx
+	return &llmSpan{s}, ctx
 }
 
 // StartWorkflowSpan starts an LLMObs span of kind Workflow.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
-func StartWorkflowSpan(ctx context.Context, name string, opts ...StartWorkflowSpanOption) (WorkflowSpan, context.Context) {
-	ll, err := illmobs.ActiveLLMObs()
-	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+func StartWorkflowSpan(ctx context.Context, name string, opts ...StartSpanOption) (WorkflowSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindWorkflow, name, opts...)
+	if !ok {
 		return nil, ctx
 	}
-	cfg := commonConfig{}
-	for _, o := range opts {
-		o.applyCommon(&cfg)
-	}
-
-	s, ctx := ll.StartSpan(ctx, illmobs.SpanKindLLM, name, cfg.startSpanConfig())
-	return &workflowSpan{baseSpan{s}}, ctx
+	return &workflowSpan{s}, ctx
 }
 
 // StartAgentSpan starts an LLMObs span of kind Agent.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
-func StartAgentSpan(ctx context.Context, name string, opts ...StartAgentSpanOption) (AgentSpan, context.Context) {
-	ll, err := illmobs.ActiveLLMObs()
-	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+func StartAgentSpan(ctx context.Context, name string, opts ...StartSpanOption) (AgentSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindAgent, name, opts...)
+	if !ok {
 		return nil, ctx
 	}
-	cfg := commonConfig{}
-	for _, o := range opts {
-		o.applyCommon(&cfg)
-	}
-
-	s, ctx := ll.StartSpan(ctx, illmobs.SpanKindAgent, name, cfg.startSpanConfig())
-	return &agentSpan{baseSpan{s}}, ctx
+	return &agentSpan{s}, ctx
 }
 
 // StartToolSpan starts an LLMObs span of kind Tool.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
-func StartToolSpan(ctx context.Context, name string, opts ...StartToolSpanOption) (ToolSpan, context.Context) {
-	ll, err := illmobs.ActiveLLMObs()
-	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+func StartToolSpan(ctx context.Context, name string, opts ...StartSpanOption) (ToolSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindTool, name, opts...)
+	if !ok {
 		return nil, ctx
 	}
-	cfg := commonConfig{}
-	for _, o := range opts {
-		o.applyCommon(&cfg)
-	}
-
-	s, ctx := ll.StartSpan(ctx, illmobs.SpanKindTool, name, cfg.startSpanConfig())
-	return &toolSpan{baseSpan{s}}, ctx
+	return &toolSpan{s}, ctx
 }
 
 // StartTaskSpan starts an LLMObs span of kind Task.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
-func StartTaskSpan(ctx context.Context, name string, opts ...StartTaskSpanOption) (TaskSpan, context.Context) {
-	ll, err := illmobs.ActiveLLMObs()
-	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+func StartTaskSpan(ctx context.Context, name string, opts ...StartSpanOption) (TaskSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindTask, name, opts...)
+	if !ok {
 		return nil, ctx
 	}
-	cfg := commonConfig{}
-	for _, o := range opts {
-		o.applyCommon(&cfg)
-	}
-
-	s, ctx := ll.StartSpan(ctx, illmobs.SpanKindTask, name, cfg.startSpanConfig())
-	return &taskSpan{baseSpan{s}}, ctx
+	return &taskSpan{s}, ctx
 }
 
 // StartEmbeddingSpan starts an LLMObs span of kind Embedding.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
 //
 // Note: when annotating an embedding span’s input you should use the WithEmbeddingInput option instead of the generic one.
-func StartEmbeddingSpan(ctx context.Context, name string, opts ...StartEmbeddingSpanOption) (EmbeddingSpan, context.Context) {
-	ll, err := illmobs.ActiveLLMObs()
-	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+func StartEmbeddingSpan(ctx context.Context, name string, opts ...StartSpanOption) (EmbeddingSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindEmbedding, name, opts...)
+	if !ok {
 		return nil, ctx
 	}
-	cfg := llmConfig{}
-	for _, o := range opts {
-		o.applyLLM(&cfg)
-	}
-
-	s, ctx := ll.StartSpan(ctx, illmobs.SpanKindEmbedding, name, cfg.startSpanConfig())
-	return &embeddingSpan{baseSpan{s}}, ctx
+	return &embeddingSpan{s}, ctx
 }
 
 // StartRetrievalSpan starts an LLMObs span of kind Retrieval.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
 //
 // Note: when annotating a retrieval span’s output you should use the WithAnnotatedRetrievedDocumentOutput option.
-func StartRetrievalSpan(ctx context.Context, name string, opts ...StartRetrievalSpanOption) (RetrievalSpan, context.Context) {
-	ll, err := illmobs.ActiveLLMObs()
-	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+func StartRetrievalSpan(ctx context.Context, name string, opts ...StartSpanOption) (RetrievalSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindRetrieval, name, opts...)
+	if !ok {
 		return nil, ctx
 	}
-	cfg := commonConfig{}
-	for _, o := range opts {
-		o.applyCommon(&cfg)
-	}
-
-	s, ctx := ll.StartSpan(ctx, illmobs.SpanKindRetrieval, name, cfg.startSpanConfig())
-	return &retrievalSpan{baseSpan{s}}, ctx
+	return &retrievalSpan{s}, ctx
 }
 
 type (
@@ -281,6 +232,20 @@ func (s *agentSpan) AnnotateAgentManifest(manifest string) {
 
 func (s *workflowSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
 	annotateIOText(s.Span, input, output, opts...)
+}
+
+func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (baseSpan, context.Context, bool) {
+	ll, err := illmobs.ActiveLLMObs()
+	if err != nil {
+		log.Warn("llmobs: failed to start llmobs span: %v", err)
+		return baseSpan{}, ctx, false
+	}
+	cfg := illmobs.StartSpanConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	s, ctx := ll.StartSpan(ctx, kind, name, cfg)
+	return baseSpan{s}, ctx, true
 }
 
 func parseAnnotateOptions(opts ...AnnotateOption) illmobs.SpanAnnotations {

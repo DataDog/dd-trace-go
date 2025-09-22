@@ -46,17 +46,17 @@ const (
 	defaultParentID = "undefined"
 )
 
-type OperationKind string
+type SpanKind string
 
 const (
-	SpanKindExperiment = "experiment"
-	SpanKindWorkflow   = "workflow"
-	SpanKindLLM        = "llm"
-	SpanKindEmbedding  = "embedding"
-	SpanKindAgent      = "agent"
-	SpanKindRetrieval  = "retrieval"
-	SpanKindTask       = "task"
-	SpanKindTool       = "tool"
+	SpanKindExperiment SpanKind = "experiment"
+	SpanKindWorkflow   SpanKind = "workflow"
+	SpanKindLLM        SpanKind = "llm"
+	SpanKindEmbedding  SpanKind = "embedding"
+	SpanKindAgent      SpanKind = "agent"
+	SpanKindRetrieval  SpanKind = "retrieval"
+	SpanKindTask       SpanKind = "task"
+	SpanKindTool       SpanKind = "tool"
 )
 
 const (
@@ -75,7 +75,7 @@ const (
 var ddSitesNeedingAppSubdomain = []string{"datadoghq.com", "datadoghq.eu", "ddog-gov.com"}
 
 type llmobsContext struct {
-	spanKind        string
+	spanKind        SpanKind
 	sessionID       string
 	metadata        map[string]any
 	metrics         map[string]float64
@@ -448,10 +448,12 @@ func (l *LLMObs) submitLLMObsSpan(span *Span) {
 }
 
 func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
+	log.Debug("creating span event from llmobs context: %+v", span.llmCtx)
+
 	meta := make(map[string]any)
 
 	spanKind := span.llmCtx.spanKind
-	meta["span.kind"] = spanKind
+	meta["span.kind"] = string(spanKind)
 
 	if (spanKind == SpanKindLLM || spanKind == SpanKindEmbedding) && span.llmCtx.modelName != "" || span.llmCtx.modelProvider != "" {
 		modelName := span.llmCtx.modelName
@@ -558,17 +560,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		span.llmTraceID = newLLMObsTraceID()
 	}
 
-	metrics := make(map[string]any)
-	if span.llmCtx.inputTokens > 0 {
-		metrics["input_tokens"] = span.llmCtx.inputTokens
-	}
-	if span.llmCtx.outputTokens > 0 {
-		metrics["output_tokens"] = span.llmCtx.outputTokens
-	}
-	if span.llmCtx.totalTokens > 0 {
-		metrics["total_tokens"] = span.llmCtx.totalTokens
-	}
-
 	tags := make(map[string]string)
 	for k, v := range l.Config.TracerConfig.DDTags {
 		tags[k] = fmt.Sprintf("%v", v)
@@ -614,7 +605,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Status:           spanStatus,
 		StatusMessage:    "",
 		Meta:             meta,
-		Metrics:          metrics,
+		Metrics:          span.llmCtx.metrics,
 		CollectionErrors: nil,
 		SpanLinks:        span.spanLinks,
 		Scope:            span.scope,
@@ -645,10 +636,10 @@ func truncateLLMObsSpanEvent(ev *transport.LLMObsSpanEvent, input, output map[st
 	ev.CollectionErrors = []string{collectionErrorDroppedIO}
 }
 
-func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
+func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
 	spanName := name
 	if spanName == "" {
-		spanName = string(opKind)
+		spanName = string(kind)
 	}
 
 	if cfg.StartTime.IsZero() {
@@ -684,7 +675,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name strin
 
 	span.mlApp = cfg.MLApp
 	span.llmCtx = llmobsContext{
-		spanKind:      string(opKind),
+		spanKind:      kind,
 		modelName:     cfg.ModelName,
 		modelProvider: cfg.ModelProvider,
 		sessionID:     cfg.SessionID,
@@ -700,7 +691,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, opKind OperationKind, name strin
 			log.Warn("llmobs: ML App is required for sending LLM Observability data.")
 		}
 	}
-	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", name, opKind, span.mlApp)
+	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", name, kind, span.mlApp)
 	return span, ContextWithActiveLLMSpan(ctx, span)
 }
 

@@ -19,125 +19,37 @@ const (
 
 // ------------- Start options -------------
 
-type (
-	// StartLLMSpanOption defines options for StartLLMSpan
-	StartLLMSpanOption = interface {
-		StartSpanOptionLLM
-	}
-	// StartWorkflowSpanOption defines options for StartWorkflowSpan
-	StartWorkflowSpanOption = interface {
-		StartSpanOptionCommon
-	}
-	// StartAgentSpanOption defines options for StartAgentSpan
-	StartAgentSpanOption = interface {
-		StartSpanOptionCommon
-	}
-	// StartToolSpanOption defines options for StartToolSpan
-	StartToolSpanOption = interface {
-		StartSpanOptionCommon
-	}
-	// StartTaskSpanOption defines options for StartTaskSpan
-	StartTaskSpanOption = interface {
-		StartSpanOptionCommon
-	}
-	// StartEmbeddingSpanOption defines options for StartEmbeddingSpan
-	StartEmbeddingSpanOption = interface {
-		StartSpanOptionLLM
-	}
-	// StartRetrievalSpanOption defines options for StartRetrievalSpan
-	StartRetrievalSpanOption = interface {
-		StartSpanOptionCommon
-	}
-)
+type StartSpanOption = func(cfg *illmobs.StartSpanConfig)
 
-type commonConfig struct {
-	sessionID string
-	mlApp     string
-	startTime time.Time
-}
-
-func (c *commonConfig) startSpanConfig() illmobs.StartSpanConfig {
-	return illmobs.StartSpanConfig{
-		SessionID: c.sessionID,
-		MLApp:     c.mlApp,
-		StartTime: c.startTime,
+func WithSessionID(sessionID string) StartSpanOption {
+	return func(c *illmobs.StartSpanConfig) {
+		c.SessionID = sessionID
 	}
 }
 
-type modelConfig struct {
-	modelName     string
-	modelProvider string
-}
-
-type llmConfig struct {
-	commonConfig
-	modelConfig
-}
-
-func (c *llmConfig) startSpanConfig() illmobs.StartSpanConfig {
-	if c.modelProvider == "" {
-		c.modelProvider = "custom"
-	}
-	if c.modelName == "" {
-		c.modelName = "custom"
-	}
-	return illmobs.StartSpanConfig{
-		SessionID:     c.sessionID,
-		ModelName:     c.modelName,
-		ModelProvider: c.modelProvider,
-		MLApp:         c.mlApp,
-		StartTime:     c.startTime,
+func WithMLApp(mlApp string) StartSpanOption {
+	return func(c *illmobs.StartSpanConfig) {
+		c.MLApp = mlApp
 	}
 }
 
-func WithSessionID(sessionID string) StartSpanOptionCommon {
-	return startOptionCommonFunc(func(c *commonConfig) {
-		c.sessionID = sessionID
-	})
+func WithStartTime(t time.Time) StartSpanOption {
+	return func(c *illmobs.StartSpanConfig) {
+		c.StartTime = t
+	}
 }
 
-func WithMLApp(mlApp string) StartSpanOptionCommon {
-	return startOptionCommonFunc(func(c *commonConfig) {
-		c.mlApp = mlApp
-	})
+func WithModelProvider(modelProvider string) StartSpanOption {
+	return func(c *illmobs.StartSpanConfig) {
+		c.ModelProvider = modelProvider
+	}
 }
 
-func WithStartTime(t time.Time) StartSpanOptionCommon {
-	return startOptionCommonFunc(func(c *commonConfig) {
-		c.startTime = t
-	})
+func WithModelName(modelName string) StartSpanOption {
+	return func(c *illmobs.StartSpanConfig) {
+		c.ModelName = modelName
+	}
 }
-
-func WithModelProvider(modelProvider string) StartSpanOptionLLM {
-	return startOptionLLMFunc(func(c *llmConfig) {
-		c.modelProvider = modelProvider
-	})
-}
-
-func WithModelName(modelName string) StartSpanOptionLLM {
-	return startOptionLLMFunc(func(c *llmConfig) {
-		c.modelName = modelName
-	})
-}
-
-type StartSpanOptionCommon interface {
-	applyCommon(*commonConfig)
-	applyLLM(*llmConfig)
-}
-
-type StartSpanOptionLLM interface {
-	applyLLM(*llmConfig)
-}
-
-type startOptionCommonFunc func(config *commonConfig)
-
-func (f startOptionCommonFunc) applyCommon(cfg *commonConfig) { f(cfg) }
-
-func (f startOptionCommonFunc) applyLLM(cfg *llmConfig) { f(&cfg.commonConfig) }
-
-type startOptionLLMFunc func(*llmConfig)
-
-func (f startOptionLLMFunc) applyLLM(cfg *llmConfig) { f(cfg) }
 
 // ------------- Finish options -------------
 

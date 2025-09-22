@@ -166,6 +166,8 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	log.Debug("llmobs: annotating span with annotations: %+v", a)
+
 	if s.finished {
 		log.Warn("llmobs: cannot annotate a finished span")
 		return
@@ -232,8 +234,12 @@ func (s *Span) annotateIO(a SpanAnnotations) {
 }
 
 func (s *Span) annotateIOLLM(a SpanAnnotations) {
-	s.llmCtx.inputMessages = a.InputMessages
-	s.llmCtx.outputMessages = a.OutputMessages
+	if a.InputMessages != nil {
+		s.llmCtx.inputMessages = a.InputMessages
+	}
+	if a.OutputMessages != nil {
+		s.llmCtx.outputMessages = a.OutputMessages
+	}
 }
 
 func (s *Span) annotateIOEmbedding(a SpanAnnotations) {
@@ -243,8 +249,12 @@ func (s *Span) annotateIOEmbedding(a SpanAnnotations) {
 	if a.OutputMessages != nil || a.OutputRetrievedDocs != nil {
 		log.Warn("llmobs: embedding spans can only be annotated with output text, ignoring other outputs")
 	}
-	s.llmCtx.inputDocuments = a.InputEmbeddedDocs
-	s.llmCtx.outputText = a.OutputText
+	if a.InputEmbeddedDocs != nil {
+		s.llmCtx.inputDocuments = a.InputEmbeddedDocs
+	}
+	if a.OutputText != "" {
+		s.llmCtx.outputText = a.OutputText
+	}
 }
 
 func (s *Span) annotateIORetrieval(a SpanAnnotations) {
@@ -254,14 +264,24 @@ func (s *Span) annotateIORetrieval(a SpanAnnotations) {
 	if a.OutputText != "" || a.OutputMessages != nil {
 		log.Warn("llmobs: retrieval spans can only be annotated with output retrieved docs, ignoring other outputs")
 	}
-	s.llmCtx.inputText = a.InputText
-	s.llmCtx.outputDocuments = a.OutputRetrievedDocs
+	if a.InputText != "" {
+		s.llmCtx.inputText = a.InputText
+	}
+	if a.OutputRetrievedDocs != nil {
+		s.llmCtx.outputDocuments = a.OutputRetrievedDocs
+	}
 }
 
 func (s *Span) annotateIOExperiment(a SpanAnnotations) {
-	s.llmCtx.experimentInput = a.ExperimentInput
-	s.llmCtx.experimentOutput = a.ExperimentOutput
-	s.llmCtx.experimentExpectedOutput = a.ExperimentExpectedOutput
+	if a.ExperimentInput != nil {
+		s.llmCtx.experimentInput = a.ExperimentInput
+	}
+	if a.ExperimentOutput != nil {
+		s.llmCtx.experimentOutput = a.ExperimentOutput
+	}
+	if a.ExperimentExpectedOutput != nil {
+		s.llmCtx.experimentExpectedOutput = a.ExperimentExpectedOutput
+	}
 }
 
 func (s *Span) annotateIOText(a SpanAnnotations) {
@@ -271,8 +291,12 @@ func (s *Span) annotateIOText(a SpanAnnotations) {
 	if a.OutputText != "" || a.OutputMessages != nil {
 		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.llmCtx.spanKind)
 	}
-	s.llmCtx.inputText = a.InputText
-	s.llmCtx.outputText = a.OutputText
+	if a.InputText != "" {
+		s.llmCtx.inputText = a.InputText
+	}
+	if a.OutputText != "" {
+		s.llmCtx.outputText = a.OutputText
+	}
 }
 
 // sessionID returns the session ID for a given span, by checking the span's nearest LLMObs span ancestor.

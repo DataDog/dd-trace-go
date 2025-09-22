@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -206,14 +205,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		return nil, backoff.Permanent(fmt.Errorf("request failed with http status code: %d", resp.StatusCode))
 	}
 
-	if log.DebugEnabled() {
-		// TODO(rarguelloF): change this as this can log sensitive data
-		if reqb, err := httputil.DumpRequest(req, true); err == nil {
-			log.Debug("llmobs/internal/transport: sending request: %s", string(reqb))
-		} else {
-			log.Debug("llmobs/internal/transport: sending request (method: %s | url: %s)", method, urlStr)
-		}
-	}
+	log.Debug("llmobs/internal/transport: sending request (method: %s | url: %s)", method, urlStr)
 	resp, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
 	if err != nil {
 		return 0, nil, err

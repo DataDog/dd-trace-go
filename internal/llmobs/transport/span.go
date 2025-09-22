@@ -29,21 +29,21 @@ type SpanLink struct {
 }
 
 type LLMObsSpanEvent struct {
-	SpanID           string         `json:"span_id,omitempty"`
-	TraceID          string         `json:"trace_id,omitempty"`
-	ParentID         string         `json:"parent_id,omitempty"`
-	SessionID        string         `json:"session_id,omitempty"`
-	Tags             []string       `json:"tags,omitempty"`
-	Name             string         `json:"name,omitempty"`
-	StartNS          int64          `json:"start_ns,omitempty"`
-	Duration         int64          `json:"duration,omitempty"`
-	Status           string         `json:"status,omitempty"`
-	StatusMessage    string         `json:"status_message,omitempty"`
-	Meta             map[string]any `json:"meta,omitempty"`
-	Metrics          map[string]any `json:"metrics,omitempty"`
-	CollectionErrors []string       `json:"collection_errors,omitempty"`
-	SpanLinks        []SpanLink     `json:"span_links,omitempty"`
-	Scope            string         `json:"-"`
+	SpanID           string             `json:"span_id,omitempty"`
+	TraceID          string             `json:"trace_id,omitempty"`
+	ParentID         string             `json:"parent_id,omitempty"`
+	SessionID        string             `json:"session_id,omitempty"`
+	Tags             []string           `json:"tags,omitempty"`
+	Name             string             `json:"name,omitempty"`
+	StartNS          int64              `json:"start_ns,omitempty"`
+	Duration         int64              `json:"duration,omitempty"`
+	Status           string             `json:"status,omitempty"`
+	StatusMessage    string             `json:"status_message,omitempty"`
+	Meta             map[string]any     `json:"meta,omitempty"`
+	Metrics          map[string]float64 `json:"metrics,omitempty"`
+	CollectionErrors []string           `json:"collection_errors,omitempty"`
+	SpanLinks        []SpanLink         `json:"span_links,omitempty"`
+	Scope            string             `json:"-"`
 }
 
 type RequestLLMObsSpanEventsCreate struct {
