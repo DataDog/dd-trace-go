@@ -24,17 +24,20 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageHAProxyStreamProcessingOffload)
 }
 
+// HAProxySPOA defines the AppSec HAProxy Stream Processing Offload Agent
 type HAProxySPOA struct {
 	requestStateCache *ttlcache.Cache[uint64, *proxy.RequestState]
 	messageProcessor  proxy.Processor
 }
 
+// AppsecHAProxyConfig contains configuration for the AppSec HAProxy Stream Processing Offload Agent
 type AppsecHAProxyConfig struct {
 	Context              context.Context
 	BlockingUnavailable  bool
 	BodyParsingSizeLimit int
 }
 
+// NewHAProxySPOA creates a new AppSec HAProxy Stream Processing Offload Agent
 func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 	spoa := &HAProxySPOA{
 		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
@@ -49,27 +52,23 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 
 	spoa.requestStateCache = initRequestStateCache(func(rs *proxy.RequestState) {
 		if rs.State.Ongoing() {
-			instr.Logger().Warn("haproxy_spoa: stream stopped during a request, making sure the current span is closed\n")
+			instr.Logger().Warn("haproxy_spoa: backend server timeout reached, closing the span for the request.\n")
 			_ = rs.Close()
 		}
 	})
 
-	if config.BodyParsingSizeLimit <= 0 {
-		instr.Logger().Info("haproxy_spoa: body parsing size limit set to 0 or negative. The request and response bodies will be ignored.")
-	}
-
 	return spoa
 }
 
-type haproxyContextRequestDataType struct {
+type haproxyRequestContextKey struct{}
+
+type haproxyRequestContextData struct {
 	req     *request.Request
 	msg     *message.Message
 	timeout string
 }
 
-var haproxyRequestKey haproxyContextRequestDataType
-
-// Handler processes SPOE requests from HAProxy
+// Handler processes Stream Processing Offload messages from HAProxy
 func (s *HAProxySPOA) Handler(req *request.Request) {
 	instr.Logger().Debug("haproxy_spoa: handle request EngineID: '%s', StreamID: '%d', FrameID: '%d' with %d messages", req.EngineID, req.StreamID, req.FrameID, req.Messages.Len())
 
@@ -91,14 +90,15 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 	}
 }
 
+// processMessage processes a single message from HAProxy based on its name.
 func (s *HAProxySPOA) processMessage(req *request.Request, msg *message.Message, currentRequest *proxy.RequestState) error {
 	instr.Logger().Debug("haproxy_spoa: handling message: %s", msg.Name)
 
-	requestContextData := &haproxyContextRequestDataType{req: req, msg: msg}
+	requestContextData := &haproxyRequestContextData{req: req, msg: msg}
 
 	switch msg.Name {
 	case "http-request-headers-msg":
-		ctx := context.WithValue(context.Background(), haproxyRequestKey, requestContextData)
+		ctx := context.WithValue(context.Background(), haproxyRequestContextKey{}, requestContextData)
 		requestState, err := s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{req: req, msg: msg})
 		if err != nil {
 			return err
@@ -111,7 +111,7 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *message.Message,
 		}
 
 		ctx := currentRequest.Context
-		currentRequest.Context = context.WithValue(ctx, haproxyRequestKey, requestContextData)
+		currentRequest.Context = context.WithValue(ctx, haproxyRequestContextKey{}, requestContextData)
 		err := s.messageProcessor.OnRequestBody(&messageBody{msg: msg}, currentRequest)
 		currentRequest.Context = ctx
 		return err
@@ -122,7 +122,7 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *message.Message,
 		}
 
 		ctx := currentRequest.Context
-		currentRequest.Context = context.WithValue(ctx, haproxyRequestKey, requestContextData)
+		currentRequest.Context = context.WithValue(ctx, haproxyRequestContextKey{}, requestContextData)
 		err := s.messageProcessor.OnResponseHeaders(&responseHeadersHAProxy{msg: msg}, currentRequest)
 		currentRequest.Context = ctx
 		return err
@@ -132,14 +132,15 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *message.Message,
 			return fmt.Errorf("received reponse body outside of a started a request")
 		}
 
-		currentRequest.Context = context.WithValue(currentRequest.Context, haproxyRequestKey, requestContextData)
+		currentRequest.Context = context.WithValue(currentRequest.Context, haproxyRequestContextKey{}, requestContextData)
 		return s.messageProcessor.OnResponseBody(&messageBody{msg: msg}, currentRequest)
 
 	default:
-		return fmt.Errorf("unknown message type: %s", msg.Name)
+		return fmt.Errorf("unknown message name: %s", msg.Name)
 	}
 }
 
+// cacheRequest stores the request state in the cache based on the `span_id` extracted from the message.
 func (s *HAProxySPOA) cacheRequest(reqState proxy.RequestState, msg *message.Message) error {
 	timeout := getStringValue(msg, "timeout")
 

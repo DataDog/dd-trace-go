@@ -20,7 +20,6 @@ import (
 	"github.com/negasus/haproxy-spoe-go/message"
 )
 
-// Helper functions to extract values from SPOE messages
 func getStringValue(msg *message.Message, key string) string {
 	if val, exists := msg.KV.Get(key); exists {
 		if str, ok := val.(string); ok {
@@ -29,6 +28,7 @@ func getStringValue(msg *message.Message, key string) string {
 	}
 	return ""
 }
+
 func getIntValue(msg *message.Message, key string) int {
 	if val, exists := msg.KV.Get(key); exists {
 		if i, ok := val.(int); ok {
@@ -68,7 +68,7 @@ func getIPValue(msg *message.Message, key string) net.IP {
 	return nil
 }
 
-// spanIDFromMessage extracts the span_id from the agent message to use as the key for the request state cache.
+// spanIDFromMessage extracts the `span_id` from the agent message to use as the key for the request state cache.
 func spanIDFromMessage(msg *message.Message) (uint64, error) {
 	spanIdStr := getStringValue(msg, "span_id")
 
@@ -89,7 +89,7 @@ func spanIDFromMessage(msg *message.Message) (uint64, error) {
 
 // continueActionFunc sets HeadersResponseData data into the request variables answering a Request Headers message
 func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions) error {
-	requestContextData, _ := ctx.Value(haproxyRequestKey).(*haproxyContextRequestDataType)
+	requestContextData, _ := ctx.Value(haproxyRequestContextKey{}).(*haproxyRequestContextData)
 	if requestContextData == nil {
 		return fmt.Errorf("no haproxy request data found in context")
 	}
@@ -124,6 +124,8 @@ func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions
 
 const headerCount = 5
 
+// haproxyTracingHeaderActions defines the names of the actions to set tracing headers for HAProxy.
+// These action names are used inside the HAProxy configuration to correctly set the tracing headers.
 var haproxyTracingHeaderActions = [headerCount]string{
 	"tracing_x_datadog_trace_id",
 	"tracing_x_datadog_parent_id",
@@ -132,6 +134,7 @@ var haproxyTracingHeaderActions = [headerCount]string{
 	"tracing_x_datadog_tags",
 }
 
+// datadogTracingHeaders defines the names of tracing headers supported with the Datadog tracing format.
 var datadogTracingHeaders = [headerCount]string{
 	tracer.DefaultTraceIDHeader,
 	tracer.DefaultParentIDHeader,
@@ -155,9 +158,9 @@ func injectTracingHeaders(headerMutations map[string][]string, actions *action.A
 	}
 }
 
-// setBlockResponseData sets blocked data into the request variables when the request is blocked
+// blockActionFunc sets blocked data into the request variables when the request is blocked
 func blockActionFunc(ctx context.Context, data proxy.BlockActionOptions) error {
-	requestContext, _ := ctx.Value(haproxyRequestKey).(*haproxyContextRequestDataType)
+	requestContext, _ := ctx.Value(haproxyRequestContextKey{}).(*haproxyRequestContextData)
 	if requestContext == nil {
 		return fmt.Errorf("no haproxy request data found in context")
 	}
@@ -174,8 +177,8 @@ func blockActionFunc(ctx context.Context, data proxy.BlockActionOptions) error {
 	return nil
 }
 
-// convertHeadersToString converts HTTP headers to a string format with Header: Value pairs separated by newlines.
-// These headers will then be parsed by a lua script in the haproxy module.
+// convertHeadersToString converts HTTP headers to a string format with `Header: Value` pairs separated by newlines.
+// These headers will then be parsed by a lua script loaded in the HAProxy configuration.
 func convertHeadersToString(headers http.Header) string {
 	var sb strings.Builder
 	for key, values := range headers {
