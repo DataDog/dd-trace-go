@@ -58,7 +58,7 @@ func NewSSRFProtectionFeature(config *config.Config, rootOp dyngo.Operation) (li
 
 const (
 	knuthFactor      uint64 = 11400714819323199488
-	maxBodyParseSize        = 128 * 1024 // 128 KB
+	maxBodyParseSize        = 128 * 1024 // 128 KiB arbitrary value since it is not mentioned in the RFC
 
 	// maxUint64 represented as a float64 because [math.MaxUint64] cannot be represented exactly as a float64
 	// so we use the closest representable value that is MORE than 2^64-1 so it overflows
@@ -76,9 +76,9 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 
 	// Sampling algorithm based on:
 	// https://docs.google.com/document/d/1DIGuCl1rkhx5swmGxKO7Je8Y4zvaobXBlgbm6C89yzU/edit?tab=t.0#heading=h.qawhep7pps5a
-	if int(op.HandlerOp.DownstreamRequestBodyAnalysis().Load()) < feature.maxDownstreamRequestBodyAnalysis &&
+	if op.HandlerOp.DownstreamRequestBodyAnalysis() < feature.maxDownstreamRequestBodyAnalysis &&
 		requestCount*knuthFactor <= uint64(feature.analysisSampleRate*maxUint64) {
-		op.HandlerOp.DownstreamRequestBodyAnalysis().Add(1)
+		op.HandlerOp.IncrementDownstreamRequestBodyAnalysis()
 		op.SetAnalyseBody()
 	}
 

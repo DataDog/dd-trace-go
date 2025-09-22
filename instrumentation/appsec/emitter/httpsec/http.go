@@ -46,7 +46,7 @@ type (
 		route string
 
 		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
-		downstreamRequestBodyAnalysis atomic.Uint64
+		downstreamRequestBodyAnalysis atomic.Int32
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -115,8 +115,14 @@ func (op *HandlerOperation) Route() string {
 	return op.route
 }
 
-func (op *HandlerOperation) DownstreamRequestBodyAnalysis() *atomic.Uint64 {
-	return &op.downstreamRequestBodyAnalysis
+// DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
+func (op *HandlerOperation) DownstreamRequestBodyAnalysis() int {
+	return int(op.downstreamRequestBodyAnalysis.Load())
+}
+
+// IncrementDownstreamRequestBodyAnalysis increments the number of times a call to a downstream request body monitoring function was made.
+func (op *HandlerOperation) IncrementDownstreamRequestBodyAnalysis() {
+	op.downstreamRequestBodyAnalysis.Add(1)
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
