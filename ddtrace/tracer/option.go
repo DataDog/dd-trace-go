@@ -511,7 +511,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
-	c.healthMetricsEnabled = internal.BoolEnv("DD_TRACE_HEALTH_METRICS_ENABLED", true)
+	c.healthMetricsEnabled = internal.BoolEnv("DD_HEALTH_METRICS_ENABLED", true)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
