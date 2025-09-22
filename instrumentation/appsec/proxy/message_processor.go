@@ -10,8 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
-	"strings"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec"
@@ -19,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 )
 
@@ -298,17 +297,7 @@ func (mp *Processor[O]) isBodySupported(contentType string) bool {
 		return false
 	}
 
-	parsedCT, _, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		mp.instr.Logger().Debug("message_processor: error parsing content type '%s': %v", contentType, err)
-		return false
-	}
-
-	// Handle cases like:
-	// * application/json: https://www.iana.org/assignments/media-types/application/json
-	// * application/vnd.api+json: https://jsonapi.org/
-	// * text/json: https://mimetype.io/text/json
-	return strings.HasSuffix(parsedCT, "json")
+	return body.IsBodySupported(contentType)
 }
 
 func (mp *Processor[O]) Close() error {
