@@ -1472,6 +1472,12 @@ func WithTestDefaults(statsdClient any) StartOption {
 	}
 }
 
+func WithHealthMetrics(enabled bool) StartOption {
+	return func(c *config) {
+		c.healthMetricsEnabled = enabled
+	}
+}
+
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	sync.RWMutex
@@ -1643,11 +1649,5 @@ func WithUserScope(scope string) UserMonitoringOption {
 func WithPropagation() UserMonitoringOption {
 	return func(cfg *UserMonitoringConfig) {
 		cfg.PropagateID = true
-	}
-}
-
-func WithHealthMetrics(enabled bool) StartOption {
-	return func(c *config) {
-		c.healthMetricsEnabled = enabled
 	}
 }

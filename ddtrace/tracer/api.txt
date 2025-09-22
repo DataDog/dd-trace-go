@@ -108,6 +108,7 @@ func WithUserOrg(string) (UserMonitoringOption)
 func WithUserRole(string) (UserMonitoringOption)
 func WithUserScope(string) (UserMonitoringOption)
 func WithUserSessionID(string) (UserMonitoringOption)
+func WithHealthMetrics(bool) (StartOption)
 
 // Types
 type StartOption func(*config)()
