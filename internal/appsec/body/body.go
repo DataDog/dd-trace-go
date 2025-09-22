@@ -22,7 +22,7 @@ import (
 func IsBodySupported(contentType string) bool {
 	parsedCT, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		log.Debug("failed to parse content type: %v", err)
+		log.Debug("failed to parse content type: %s", err.Error())
 		return false
 	}
 
@@ -78,7 +78,7 @@ type readerAndCloser struct {
 func NewEncodableFromData(contentType string, data []byte, truncated bool) (libddwaf.Encodable, error) {
 	parsedCT, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		log.Debug("failed to parse content type, no body parsing will be performed on data type: %v", err)
+		log.Debug("failed to parse content type, no body parsing will be performed on data type: %s", err.Error())
 		return nil, err
 	}
 

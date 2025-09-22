@@ -85,8 +85,8 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 	if op.AnalyseBody() && args.Body != nil && *args.Body != nil {
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
-			log.Debug("Unsupported response body content type or error reading body: %v", err)
-			telemetrylog.Warn("Unsupported request body content type or error reading body: %v", slog.Any("error", telemetrylog.NewSafeError(err)))
+			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())
+			telemetrylog.Warn("Unsupported request body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 		builder = builder.WithDownwardRequestBody(encodable)
 	}
@@ -102,8 +102,8 @@ func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, 
 	if op.AnalyseBody() && args.Body != nil && *args.Body != nil {
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
-			log.Debug("Unsupported response body content type or error reading body: %v", err)
-			telemetrylog.Warn("Unsupported response body content type or error reading body: %v", slog.Any("error", telemetrylog.NewSafeError(err)))
+			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())
+			telemetrylog.Warn("Unsupported response body content type or error reading body", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 		builder = builder.WithDownwardResponseBody(encodable)
 	}
