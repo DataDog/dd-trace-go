@@ -16,29 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// encodeHeader appends a single <name,value> pair using SPOE varint length-prefixed strings.
-func encodeHeader(dst []byte, name, value string) []byte {
-	var buf [10]byte
-	n := varint.PutUvarint(buf[:], uint64(len(name)))
-	dst = append(dst, buf[:n]...)
-	dst = append(dst, name...)
-
-	n = varint.PutUvarint(buf[:], uint64(len(value)))
-	dst = append(dst, buf[:n]...)
-	dst = append(dst, value...)
-	return dst
-}
-
-// encodeTerminator appends the terminating empty name/value pair.
-func encodeTerminator(dst []byte) []byte {
-	var buf [10]byte
-	n := varint.PutUvarint(buf[:], 0)
-	dst = append(dst, buf[:n]...)
-	n = varint.PutUvarint(buf[:], 0)
-	dst = append(dst, buf[:n]...)
-	return dst
-}
-
 func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 	longName := string(bytes.Repeat([]byte("N"), 300))
 	longValue := string(bytes.Repeat([]byte("V"), 500))
@@ -51,17 +28,17 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 		check   func(t *testing.T, got http.Header)
 	}{
 		{
-			name:    "EmptyBuffer_Error",
+			name:    "empty-buffer-error",
 			build:   func() []byte { return nil },
 			wantErr: true,
 		},
 		{
-			name:  "TerminationOnly_EmptyHeaders",
+			name:  "termination-only-empty-headers",
 			build: func() []byte { return encodeTerminator(nil) },
 			want:  http.Header{},
 		},
 		{
-			name: "SingleHeader",
+			name: "single-header",
 			build: func() []byte {
 				var b []byte
 				b = encodeHeader(b, "Host", "example.com")
@@ -70,7 +47,7 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			want: http.Header{"Host": {"example.com"}},
 		},
 		{
-			name: "MultipleHeadersAndDuplicates",
+			name: "multiple-headers-and-duplicates",
 			build: func() []byte {
 				var b []byte
 				b = encodeHeader(b, "X-A", "1")
@@ -81,7 +58,7 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			want: http.Header{"X-A": {"1", "2"}, "Y": {"z"}},
 		},
 		{
-			name: "EmptyValueAllowed",
+			name: "empty-value-allowed",
 			build: func() []byte {
 				var b []byte
 				b = encodeHeader(b, "X-Empty", "")
@@ -90,7 +67,7 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			want: http.Header{"X-Empty": {""}},
 		},
 		{
-			name: "MultiByteVarintLengths",
+			name: "multi-byte-varint-lengths",
 			build: func() []byte {
 				var b []byte
 				b = encodeHeader(b, longName, longValue)
@@ -103,12 +80,12 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			},
 		},
 		{
-			name:    "Malformed_TruncatedVarintForName",
+			name:    "malformed-truncated-varint-for-name",
 			build:   func() []byte { return []byte{0xF0} }, // >=240 => truncated
 			wantErr: true,
 		},
 		{
-			name: "Malformed_EmptyNameNonEmptyValue",
+			name: "malformed-empty-name-non-empty-value",
 			build: func() []byte {
 				var tmp [10]byte
 				var b []byte
@@ -124,7 +101,7 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "NameExceedsRemaining_Error",
+			name: "name-exceeds-remaining-error",
 			build: func() []byte {
 				var tmp [10]byte
 				var b []byte
@@ -136,7 +113,7 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "ValueExceedsRemaining_Error",
+			name: "value-exceeds-remaining-error",
 			build: func() []byte {
 				var b []byte
 				b = encodeHeader(b, "K", "V")
@@ -146,7 +123,7 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "IgnoresTrailingBytesAfterTerminator",
+			name: "ignores-trailing-bytes-after-terminator",
 			build: func() []byte {
 				var b []byte
 				b = encodeHeader(b, "A", "B")
@@ -157,7 +134,7 @@ func TestParseHAProxyReqHdrsBin_Table(t *testing.T) {
 			want: http.Header{"A": {"B"}},
 		},
 		{
-			name:    "Malformed_Empty",
+			name:    "malformed-empty",
 			build:   func() []byte { return nil },
 			wantErr: true,
 		},
@@ -237,4 +214,27 @@ func FuzzParseHAProxyReqHdrsBin(f *testing.F) {
 
 		_, _ = parseHAProxyReqHdrsBin(data)
 	})
+}
+
+// encodeHeader appends a single <name,value> pair using SPOE varint length-prefixed strings.
+func encodeHeader(dst []byte, name, value string) []byte {
+	var buf [10]byte
+	n := varint.PutUvarint(buf[:], uint64(len(name)))
+	dst = append(dst, buf[:n]...)
+	dst = append(dst, name...)
+
+	n = varint.PutUvarint(buf[:], uint64(len(value)))
+	dst = append(dst, buf[:n]...)
+	dst = append(dst, value...)
+	return dst
+}
+
+// encodeTerminator appends the terminating empty name/value pair.
+func encodeTerminator(dst []byte) []byte {
+	var buf [10]byte
+	n := varint.PutUvarint(buf[:], 0)
+	dst = append(dst, buf[:n]...)
+	n = varint.PutUvarint(buf[:], 0)
+	dst = append(dst, buf[:n]...)
+	return dst
 }

@@ -25,7 +25,7 @@ func readUvarintAt(buf []byte, p int) (val uint64, next int, err error) {
 	return v, p + n, nil
 }
 
-// parseHAProxyReqHdrsBin decodes HAProxy's req.hdrs_bin format into an http.Header.
+// parseHAProxyReqHdrsBin decodes HAProxy req.hdrs_bin format into an http.Header.
 // Format: repeated pairs of <str:name><str:value> where str is <varint:length><bytes>.
 // The list is terminated by a pair of empty strings (length 0 for both name and value).
 // https://www.haproxy.com/documentation/haproxy-configuration-manual/latest/#7.3.6-req.hdrs_bin

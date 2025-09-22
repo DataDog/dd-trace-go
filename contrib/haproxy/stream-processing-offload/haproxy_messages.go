@@ -39,10 +39,8 @@ func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoR
 	method := getStringValue(m.msg, "method")
 	path := getStringValue(m.msg, "path")
 	https := getBoolValue(m.msg, "https")
-	remoteIp := getIPValue(m.msg, "ip")
-	remotePort := strconv.Itoa(getIntValue(m.msg, "ip_port"))
 
-	if authority == "" || method == "" || path == "" || remoteIp == nil {
+	if authority == "" || method == "" || path == "" {
 		return proxy.PseudoRequest{}, fmt.Errorf("missing required values in the http request SPOE message")
 	}
 
@@ -61,7 +59,12 @@ func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoR
 		m.hasBody = length > 0
 	}
 
-	remoteAddr := remoteIp.String() + ":" + remotePort
+	var remoteAddr string
+	remoteIp := getIPValue(m.msg, "ip")
+	if remoteIp != nil {
+		remotePort := strconv.Itoa(getIntValue(m.msg, "ip_port"))
+		remoteAddr = remoteIp.String() + ":" + remotePort
+	}
 
 	return proxy.PseudoRequest{
 		Method:     method,

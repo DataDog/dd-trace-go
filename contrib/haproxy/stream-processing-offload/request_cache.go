@@ -16,6 +16,7 @@ import (
 	"github.com/negasus/haproxy-spoe-go/message"
 )
 
+// initRequestStateCache creates a new cache for request states with a cleanup function that is called when a request state is evicted.
 func initRequestStateCache(cleanup func(*proxy.RequestState)) *ttlcache.Cache[uint64, *proxy.RequestState] {
 	const requestStateTTL = time.Minute // Default TTL but will be overridden by the timeout value of the HAProxy configuration
 	requestStateCache := ttlcache.New[uint64, *proxy.RequestState](
@@ -31,9 +32,10 @@ func initRequestStateCache(cleanup func(*proxy.RequestState)) *ttlcache.Cache[ui
 	return requestStateCache
 }
 
+// getCurrentRequest returns the current request state from the cache based on the `span_id` extracted from the message.
 func getCurrentRequest(cache *ttlcache.Cache[uint64, *proxy.RequestState], msg *message.Message) (*proxy.RequestState, error) {
 	if cache == nil {
-		return nil, fmt.Errorf("requestStateCache is not initialized")
+		return nil, fmt.Errorf("the request state cache is not initialized")
 	}
 	key, err := spanIDFromMessage(msg)
 	if err != nil {
@@ -49,6 +51,8 @@ func getCurrentRequest(cache *ttlcache.Cache[uint64, *proxy.RequestState], msg *
 	return nil, fmt.Errorf("no current request found for span_id %d", key)
 }
 
+// storeRequestState stores the request state in the cache with the given `span_id`.
+// The `timeout` string duration value is parsed and used to set the TTL of the cached item.
 func storeRequestState(cache *ttlcache.Cache[uint64, *proxy.RequestState], spanId uint64, rs proxy.RequestState, timeout string) {
 	timeoutValue, err := time.ParseDuration(timeout)
 	if err != nil {
