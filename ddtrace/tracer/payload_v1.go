@@ -116,21 +116,24 @@ const (
 
 type arrayValue []anyValue
 
+// keys in a keyValue can either be a string or a uint32 index
+// isString is true when the key is a string value, and false when the key is a uint32 index
+type streamingKey struct {
+	isString    bool
+	stringValue string
+	idx         uint32
+}
+
 // keyValue is made up of the key and an AnyValue (the type of the value and the value itself)
+// The key is either a uint32 index into the string table or a string value.
 type keyValue struct {
-	key   uint32
+	key   streamingKey
 	value anyValue
 }
 
 type keyValueList []keyValue
 
 type spanListV1 spanList
-
-var _ msgp.Encodable = (*anyValue)(nil)
-var _ msgp.Encodable = (*spanListV1)(nil)
-var _ msgp.Encodable = (*keyValue)(nil)
-var _ msgp.Encodable = (keyValueList)(nil)
-var _ msgp.Encodable = (*traceChunk)(nil)
 
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
@@ -169,7 +172,12 @@ func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 		spans:      t,
 		traceID:    t[0].Context().traceID,
 	})
-	if err := msgp.Encode(&p.buf, t); err != nil {
+	wr := msgp.NewWriter(&p.buf)
+	err = t.EncodeMsg(wr, p)
+	if err == nil {
+		err = wr.Flush()
+	}
+	if err != nil {
 		return payloadStats{}, err
 	}
 	p.recordItem()
@@ -249,16 +257,18 @@ func (p *payloadV1) Read(b []byte) (n int, err error) {
 }
 
 // Encode the anyValue
-// EncodeMsg implements msgp.Encodable.
-func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
+func (a *anyValue) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	switch a.valueType {
 	case StringValueType:
 		e.WriteInt32(StringValueType)
-		v, err := encodeString(a.value.(string))
+		v, err := p.encodeString(a.value.(string))
 		if err != nil {
-			return e.WriteString(a.value.(string))
+			return err
 		}
-		return e.WriteUint32(v)
+		if v.isString {
+			return e.WriteString(v.stringValue)
+		}
+		return e.WriteUint32(v.idx)
 	case BoolValueType:
 		e.WriteInt32(BoolValueType)
 		return e.WriteBool(a.value.(bool))
@@ -273,43 +283,46 @@ func (a *anyValue) EncodeMsg(e *msgp.Writer) error {
 		return e.WriteBytes(a.value.([]byte))
 	case ArrayValueType:
 		e.WriteInt32(ArrayValueType)
-		return a.value.(arrayValue).EncodeMsg(e)
+		return a.value.(arrayValue).EncodeMsg(e, p)
 	case keyValueListType:
 		e.WriteInt32(keyValueListType)
-		return a.value.(keyValueList).EncodeMsg(e)
+		return a.value.(keyValueList).EncodeMsg(e, p)
 	default:
 		return fmt.Errorf("invalid value type: %d", a.valueType)
 	}
 }
 
-// EncodeMsg implements msgp.Encodable.
-func (av arrayValue) EncodeMsg(e *msgp.Writer) error {
+func (av arrayValue) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	err := e.WriteArrayHeader(uint32(len(av)))
 	if err != nil {
 		return err
 	}
 	for _, value := range av {
-		if err := value.EncodeMsg(e); err != nil {
+		if err := value.EncodeMsg(e, p); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// EncodeMsg implements msgp.Encodable.
-func (k keyValue) EncodeMsg(e *msgp.Writer) error {
-	err := e.WriteUint32(k.key)
+func (k keyValue) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
+	var err error
+	if k.key.isString {
+		err = e.WriteString(k.key.stringValue)
+	} else {
+		err = e.WriteUint32(k.key.idx)
+	}
 	if err != nil {
 		return err
 	}
-	err = k.value.EncodeMsg(e)
+	err = k.value.EncodeMsg(e, p)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (kv keyValueList) EncodeMsg(e *msgp.Writer) error {
+func (kv keyValueList) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	err := e.WriteMapHeader(uint32(len(kv)))
 	if err != nil {
 		return err
@@ -319,7 +332,7 @@ func (kv keyValueList) EncodeMsg(e *msgp.Writer) error {
 		if err != nil {
 			return err
 		}
-		err = k.EncodeMsg(e)
+		err = k.EncodeMsg(e, p)
 		if err != nil {
 			return err
 		}
@@ -327,31 +340,30 @@ func (kv keyValueList) EncodeMsg(e *msgp.Writer) error {
 	return nil
 }
 
-func (t *traceChunk) EncodeMsg(e *msgp.Writer) error {
+func (t *traceChunk) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	kv := keyValueList{
-		{key: 1, value: anyValue{valueType: IntValueType, value: t.priority}},          // priority
-		{key: 2, value: anyValue{valueType: StringValueType, value: t.origin}},         // origin
-		{key: 4, value: anyValue{valueType: keyValueListType, value: t.spans}},         // spans
-		{key: 5, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}},     // droppedTrace
-		{key: 6, value: anyValue{valueType: BytesValueType, value: t.traceID}},         // traceID
-		{key: 7, value: anyValue{valueType: IntValueType, value: t.samplingMechanism}}, // samplingMechanism
+		{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: t.priority}},          // priority
+		{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: t.origin}},         // origin
+		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: keyValueListType, value: t.spans}},         // spans
+		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}},     // droppedTrace
+		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: BytesValueType, value: t.traceID}},         // traceID
+		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: IntValueType, value: t.samplingMechanism}}, // samplingMechanism
 	}
 
 	attr := keyValueList{}
 	for k, v := range t.attributes {
-		attr = append(attr, keyValue{key: k, value: anyValue{valueType: getAnyValueType(v), value: v}})
+		attr = append(attr, keyValue{key: streamingKey{isString: false, idx: k}, value: anyValue{valueType: getAnyValueType(v), value: v}})
 	}
-	kv = append(kv, keyValue{key: 3, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
 
-	return kv.EncodeMsg(e)
+	return kv.EncodeMsg(e, p)
 }
 
 // EncodeMsg writes the contents of a list of spans into `p.buf`
 // Span, SpanLink, and SpanEvent structs are different for v0.4 and v1.0.
 // For v1 we need to manually encode the spans, span links, and span events
 // if we don't want to do extra allocations.
-// EncodeMsg implements msgp.Encodable.
-func (s spanListV1) EncodeMsg(e *msgp.Writer) error {
+func (s spanListV1) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	err := e.WriteArrayHeader(uint32(len(s)))
 	if err != nil {
 		return msgp.WrapError(err)
@@ -365,7 +377,7 @@ func (s spanListV1) EncodeMsg(e *msgp.Writer) error {
 				return err
 			}
 		} else {
-			err := encodeSpan(span, e)
+			err := encodeSpan(span, e, p)
 			if err != nil {
 				return msgp.WrapError(err, span)
 			}
@@ -377,62 +389,62 @@ func (s spanListV1) EncodeMsg(e *msgp.Writer) error {
 
 // Custom encoding for spans under the v1 trace protocol.
 // The encoding of attributes is the combination of the meta, metrics, and metaStruct fields of the v0.4 protocol.
-func encodeSpan(s *Span, e *msgp.Writer) error {
+func encodeSpan(s *Span, e *msgp.Writer, p *payloadV1) error {
 	kv := keyValueList{
-		{key: 1, value: anyValue{valueType: StringValueType, value: s.service}},      // service
-		{key: 2, value: anyValue{valueType: StringValueType, value: s.name}},         // name
-		{key: 3, value: anyValue{valueType: StringValueType, value: s.resource}},     // resource
-		{key: 4, value: anyValue{valueType: IntValueType, value: s.spanID}},          // spanID
-		{key: 5, value: anyValue{valueType: IntValueType, value: s.parentID}},        // parentID
-		{key: 6, value: anyValue{valueType: IntValueType, value: s.start}},           // start
-		{key: 7, value: anyValue{valueType: IntValueType, value: s.duration}},        // duration
-		{key: 8, value: anyValue{valueType: BoolValueType, value: s.error}},          // error
-		{key: 10, value: anyValue{valueType: StringValueType, value: s.spanType}},    // type
-		{key: 11, value: anyValue{valueType: keyValueListType, value: s.spanLinks}},  // SpanLink
-		{key: 12, value: anyValue{valueType: keyValueListType, value: s.spanEvents}}, // SpanEvent
-		{key: 15, value: anyValue{valueType: StringValueType, value: s.integration}}, // component
+		{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: StringValueType, value: s.service}},      // service
+		{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: s.name}},         // name
+		{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: StringValueType, value: s.resource}},     // resource
+		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: IntValueType, value: s.spanID}},          // spanID
+		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: IntValueType, value: s.parentID}},        // parentID
+		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: IntValueType, value: s.start}},           // start
+		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: IntValueType, value: s.duration}},        // duration
+		{key: streamingKey{isString: false, idx: 8}, value: anyValue{valueType: BoolValueType, value: s.error}},          // error
+		{key: streamingKey{isString: false, idx: 10}, value: anyValue{valueType: StringValueType, value: s.spanType}},    // type
+		{key: streamingKey{isString: false, idx: 11}, value: anyValue{valueType: keyValueListType, value: s.spanLinks}},  // SpanLink
+		{key: streamingKey{isString: false, idx: 12}, value: anyValue{valueType: keyValueListType, value: s.spanEvents}}, // SpanEvent
+		{key: streamingKey{isString: false, idx: 15}, value: anyValue{valueType: StringValueType, value: s.integration}}, // component
 	}
 
 	// encode meta attributes
 	attr := keyValueList{}
 	for k, v := range s.meta {
-		idx, err := encodeString(k)
+		idx, err := p.encodeString(k)
 		if err != nil {
-			idx = k
+			idx = streamingKey{isString: true, stringValue: k}
 		}
 		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: StringValueType, value: v}})
 	}
 
 	// encode metric attributes
 	for k, v := range s.metrics {
-		idx, err := encodeString(k)
+		idx, err := p.encodeString(k)
 		if err != nil {
-			idx = k
+			idx = streamingKey{isString: true, stringValue: k}
 		}
 		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: FloatValueType, value: v}})
 	}
 
 	// encode metaStruct attributes
 	for k, v := range s.metaStruct {
-		idx, err := encodeString(k)
+		idx, err := p.encodeString(k)
 		if err != nil {
-			idx = k
+			idx = streamingKey{isString: true, stringValue: k}
 		}
 		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
 	}
 
-	kv = append(kv, keyValue{key: 9, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 9}, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
 
 	env, ok := s.meta["env"]
 	if ok {
-		kv = append(kv, keyValue{key: 13, value: anyValue{valueType: StringValueType, value: env}}) // env
+		kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 13}, value: anyValue{valueType: StringValueType, value: env}}) // env
 	}
 	version, ok := s.meta["version"]
 	if ok {
-		kv = append(kv, keyValue{key: 14, value: anyValue{valueType: StringValueType, value: version}}) // version
+		kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 14}, value: anyValue{valueType: StringValueType, value: version}}) // version
 	}
 
-	return kv.EncodeMsg(e)
+	return kv.EncodeMsg(e, p)
 }
 
 // encodeString and decodeString handles encoding a string to the payload's string table.
@@ -440,12 +452,12 @@ func encodeSpan(s *Span, e *msgp.Writer) error {
 // - use its index in the string table if it exists
 // - otherwise, write the string into the message, then add the string at the next index
 // Returns the index of the string in the string table, and an error if there is one
-func (p *payloadV1) encodeString(s string) (uint32, error) {
+func (p *payloadV1) encodeString(s string) (streamingKey, error) {
 	sTable := &p.strings
 	idx, ok := sTable.indices[s]
 	// if the string already exists in the table, use its index
 	if ok {
-		return idx, nil
+		return streamingKey{isString: false, idx: idx}, nil
 	}
 
 	// else, write the string into the table at the next index
@@ -453,12 +465,12 @@ func (p *payloadV1) encodeString(s string) (uint32, error) {
 	sTable.indices[s] = sTable.nextIndex
 	sTable.strings = append(sTable.strings, s)
 	sTable.nextIndex += 1
-	return sTable.nextIndex, fmt.Errorf("string not found in table")
+	return streamingKey{isString: true, stringValue: s}, nil
 }
 
 // encodeSpanLinks encodes the span links into a msgp.Writer
 // Span links are represented as an array of fixmaps (keyValueList)
-func encodeSpanLinks(sl []SpanLink, e *msgp.Writer) error {
+func encodeSpanLinks(sl []SpanLink, e *msgp.Writer, p *payloadV1) error {
 	// write the number of span links
 	err := e.WriteArrayHeader(uint32(len(sl)))
 	if err != nil {
@@ -469,27 +481,27 @@ func encodeSpanLinks(sl []SpanLink, e *msgp.Writer) error {
 	kv := arrayValue{}
 	for _, s := range sl {
 		slKeyValues := keyValueList{
-			{key: 1, value: anyValue{valueType: IntValueType, value: s.TraceID}},       // traceID
-			{key: 2, value: anyValue{valueType: IntValueType, value: s.SpanID}},        // spanID
-			{key: 4, value: anyValue{valueType: StringValueType, value: s.Tracestate}}, // tracestate
-			{key: 5, value: anyValue{valueType: IntValueType, value: s.Flags}},         // flags
+			{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: s.TraceID}},       // traceID
+			{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: IntValueType, value: s.SpanID}},        // spanID
+			{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: StringValueType, value: s.Tracestate}}, // tracestate
+			{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: IntValueType, value: s.Flags}},         // flags
 		}
 
 		attr := keyValueList{}
 		// attributes
 		for k, v := range s.Attributes {
-			idx, err := encodeString(k)
+			idx, err := p.encodeString(k)
 			if err != nil {
-				idx = k
+				idx = streamingKey{isString: true, stringValue: k}
 			}
 			attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
 		}
-		slKeyValues = append(slKeyValues, keyValue{key: 3, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+		slKeyValues = append(slKeyValues, keyValue{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
 		kv = append(kv, anyValue{valueType: keyValueListType, value: slKeyValues})
 	}
 
 	for _, v := range kv {
-		err := v.EncodeMsg(e)
+		err := v.EncodeMsg(e, p)
 		if err != nil {
 			return err
 		}
@@ -499,7 +511,7 @@ func encodeSpanLinks(sl []SpanLink, e *msgp.Writer) error {
 
 // encodeSpanEvents encodes the span events into a msgp.Writer
 // Span events are represented as an array of fixmaps (keyValueList)
-func encodeSpanEvents(se []spanEvent, e *msgp.Writer) error {
+func encodeSpanEvents(se []spanEvent, e *msgp.Writer, p *payloadV1) error {
 	// write the number of span events
 	err := e.WriteArrayHeader(uint32(len(se)))
 	if err != nil {
@@ -510,25 +522,25 @@ func encodeSpanEvents(se []spanEvent, e *msgp.Writer) error {
 	kv := arrayValue{}
 	for _, s := range se {
 		slKeyValues := keyValueList{
-			{key: 1, value: anyValue{valueType: IntValueType, value: s.TimeUnixNano}}, // time
-			{key: 2, value: anyValue{valueType: StringValueType, value: s.Name}},      // name
+			{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: s.TimeUnixNano}}, // time
+			{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: s.Name}},      // name
 		}
 
 		attr := keyValueList{}
 		// attributes
 		for k, v := range s.Attributes {
-			idx, err := encodeString(k)
+			idx, err := p.encodeString(k)
 			if err != nil {
-				idx = k
+				idx = streamingKey{isString: true, stringValue: k}
 			}
 			attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
 		}
-		slKeyValues = append(slKeyValues, keyValue{key: 3, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+		slKeyValues = append(slKeyValues, keyValue{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
 		kv = append(kv, anyValue{valueType: keyValueListType, value: slKeyValues})
 	}
 
 	for _, v := range kv {
-		err := v.EncodeMsg(e)
+		err := v.EncodeMsg(e, p)
 		if err != nil {
 			return err
 		}
