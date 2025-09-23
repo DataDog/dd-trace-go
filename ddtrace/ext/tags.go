@@ -94,6 +94,7 @@ const (
 	ErrorHandlingStack = "error.handling_stack"
 
 	// ErrorDetails holds details about an error which implements a formatter.
+	// Deprecated: Use ErrorStack instead. This tag is not supported by Error Tracking.
 	ErrorDetails = "error.details"
 
 	// ErrorNoStackTrace is a tag that specifies that the error stack trace should not be captured.
