@@ -435,28 +435,23 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
-		switch err := v.(type) {
-		case xerrors.Formatter:
-			if !cfg.noDebugStack {
-				s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
-			}
-		case fmt.Formatter:
-			// pkg/errors approach
-			if !cfg.noDebugStack {
-				s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
-			}
-		case *errortrace.TracerError:
-			// instrumentation/errortrace approach
-			if !cfg.noDebugStack {
-				s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
-				s.setMeta(ext.ErrorHandlingStack, err.Format())
-			}
+		if cfg.noDebugStack {
 			return
 		}
-		if !cfg.noDebugStack {
-			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-			s.setMeta(ext.ErrorHandlingStack, stack)
+		switch err := v.(type) {
+		case xerrors.Formatter:
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+		case fmt.Formatter:
+			// pkg/errors approach
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+		case *errortrace.TracerError:
+			// instrumentation/errortrace approach
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorHandlingStack, err.Format())
+			return
 		}
+		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+		s.setMeta(ext.ErrorHandlingStack, stack)
 	case nil:
 		// no error
 		setError(false)
