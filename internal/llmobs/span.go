@@ -17,6 +17,67 @@ const (
 	TagKeySessionID = "session_id"
 )
 
+type Prompt struct {
+	Template            string            `json:"template,omitempty"`
+	ID                  string            `json:"id,omitempty"`
+	Version             string            `json:"version,omitempty"`
+	Variables           map[string]string `json:"variables,omitempty"`
+	RAGContextVariables []string          `json:"rag_context_variables,omitempty"`
+	RAGQueryVariables   []string          `json:"rag_query_variables,omitempty"`
+}
+
+type ToolCall struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+	ToolID    string          `json:"tool_id,omitempty"`
+	Type      string          `json:"type,omitempty"`
+}
+
+type ToolResult struct {
+	Result any    `json:"result"`
+	Name   string `json:"name,omitempty"`
+	ToolID string `json:"tool_id,omitempty"`
+	Type   string `json:"type,omitempty"`
+}
+
+type LLMMessage struct {
+	Role        string       `json:"role"`
+	Content     string       `json:"content"`
+	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
+	ToolResults []ToolResult `json:"tool_results,omitempty"`
+}
+
+type EmbeddedDocument struct {
+	Text string `json:"text"`
+}
+
+type RetrievedDocument struct {
+	Text  string  `json:"text"`
+	Name  string  `json:"name,omitempty"`
+	Score float64 `json:"score,omitempty"`
+	ID    string  `json:"id,omitempty"`
+}
+
+type SpanAnnotations struct {
+	InputText         string
+	InputMessages     []LLMMessage
+	InputEmbeddedDocs []EmbeddedDocument
+
+	OutputText          string
+	OutputMessages      []LLMMessage
+	OutputRetrievedDocs []RetrievedDocument
+
+	ExperimentInput          map[string]any
+	ExperimentOutput         any
+	ExperimentExpectedOutput any
+
+	Prompt        *Prompt
+	Metadata      map[string]any
+	Metrics       map[string]float64
+	Tags          map[string]string
+	AgentManifest string
+}
+
 type Span struct {
 	mu sync.RWMutex
 
@@ -99,67 +160,6 @@ func (s *Span) Finish(cfg FinishSpanConfig) {
 	s.finished = true
 
 	//TODO: telemetry.record_span_created(span)
-}
-
-type Prompt struct {
-	Template            string            `json:"template,omitempty"`
-	ID                  string            `json:"id,omitempty"`
-	Version             string            `json:"version,omitempty"`
-	Variables           map[string]string `json:"variables,omitempty"`
-	RAGContextVariables []string          `json:"rag_context_variables,omitempty"`
-	RAGQueryVariables   []string          `json:"rag_query_variables,omitempty"`
-}
-
-type ToolCall struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
-	ToolID    string          `json:"tool_id,omitempty"`
-	Type      string          `json:"type,omitempty"`
-}
-
-type ToolResult struct {
-	Result any    `json:"result"`
-	Name   string `json:"name,omitempty"`
-	ToolID string `json:"tool_id,omitempty"`
-	Type   string `json:"type,omitempty"`
-}
-
-type LLMMessage struct {
-	Role        string       `json:"role"`
-	Content     string       `json:"content"`
-	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
-	ToolResults []ToolResult `json:"tool_results,omitempty"`
-}
-
-type EmbeddedDocument struct {
-	Text string `json:"text"`
-}
-
-type RetrievedDocument struct {
-	Text  string  `json:"text"`
-	Name  string  `json:"name,omitempty"`
-	Score float64 `json:"score,omitempty"`
-	ID    string  `json:"id,omitempty"`
-}
-
-type SpanAnnotations struct {
-	InputText         string
-	InputMessages     []LLMMessage
-	InputEmbeddedDocs []EmbeddedDocument
-
-	OutputText          string
-	OutputMessages      []LLMMessage
-	OutputRetrievedDocs []RetrievedDocument
-
-	ExperimentInput          map[string]any
-	ExperimentOutput         any
-	ExperimentExpectedOutput any
-
-	Prompt        *Prompt
-	Metadata      map[string]any
-	Metrics       map[string]float64
-	Tags          map[string]string
-	AgentManifest string
 }
 
 func (s *Span) Annotate(a SpanAnnotations) {

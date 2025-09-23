@@ -60,9 +60,7 @@ const (
 )
 
 const (
-	defaultFlushInterval   = 2 * time.Second
-	defaultEvalDrainBudget = 500 * time.Millisecond
-	defaultEvalPoolSize    = 4
+	defaultFlushInterval = 2 * time.Second
 )
 
 const (
@@ -103,19 +101,13 @@ type llmobsContext struct {
 	totalTokens  int64
 }
 
-type spanEvalTask struct {
-	event *transport.LLMObsSpanEvent
-	span  *Span
-}
-
 type LLMObs struct {
 	Config    config.Config
 	Transport *transport.Transport
 	Tracer    Tracer
 
-	spanEventsCh   chan *transport.LLMObsSpanEvent
-	spanEvalTaskCh chan *spanEvalTask
-	evalMetricsCh  chan *transport.LLMObsEvaluationMetricEvent
+	spanEventsCh  chan *transport.LLMObsSpanEvent
+	evalMetricsCh chan *transport.LLMObsEvaluationMetricEvent
 
 	// runtime buffers
 	bufSpanEvents  []*transport.LLMObsSpanEvent
@@ -126,15 +118,8 @@ type LLMObs struct {
 	running       bool
 	wg            sync.WaitGroup
 	stopCh        chan struct{} // signal stop
-	doneCh        chan struct{} // closed when run exits
 	flushNowCh    chan struct{}
 	flushInterval time.Duration
-
-	// eval worker pool
-	evalPoolSize    int
-	evalWg          sync.WaitGroup
-	evalStopCh      chan struct{} // closed to stop eval workers
-	evalDrainBudget time.Duration
 }
 
 func newLLMObs(cfg config.Config, tracer Tracer) (*LLMObs, error) {
@@ -156,18 +141,13 @@ func newLLMObs(cfg config.Config, tracer Tracer) (*LLMObs, error) {
 		cfg.TracerConfig.HTTPClient = cfg.DefaultHTTPClient(agentless)
 	}
 	return &LLMObs{
-		Config:          cfg,
-		Transport:       transport.New(cfg, agentless),
-		Tracer:          tracer,
-		spanEventsCh:    make(chan *transport.LLMObsSpanEvent),
-		spanEvalTaskCh:  make(chan *spanEvalTask),
-		stopCh:          make(chan struct{}),
-		doneCh:          make(chan struct{}),
-		flushNowCh:      make(chan struct{}, 1), // small buffer so Flush() never blocks
-		flushInterval:   defaultFlushInterval,
-		evalPoolSize:    defaultEvalPoolSize,
-		evalStopCh:      make(chan struct{}),
-		evalDrainBudget: defaultEvalDrainBudget,
+		Config:        cfg,
+		Transport:     transport.New(cfg, agentless),
+		Tracer:        tracer,
+		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
+		stopCh:        make(chan struct{}),
+		flushNowCh:    make(chan struct{}, 1), // small buffer so Flush() never blocks
+		flushInterval: defaultFlushInterval,
 	}, nil
 }
 
@@ -226,46 +206,60 @@ func (l *LLMObs) Run() {
 	l.running = true
 	l.mu.Unlock()
 
-	// Start eval worker pool
-	l.startEvalWorkers()
-
 	l.wg.Add(1)
 	go func() {
+		// this goroutine should be the only one writing to the internal buffers
 		defer l.wg.Done()
-		defer close(l.doneCh)
 
 		ticker := time.NewTicker(l.flushInterval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			// ingest (append to in-memory buffers)
 			case ev := <-l.spanEventsCh:
 				l.bufSpanEvents = append(l.bufSpanEvents, ev)
 
 			case evalMetric := <-l.evalMetricsCh:
 				l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
 
-			// periodic flush
 			case <-ticker.C:
-				log.Debug("llmobs: periodic flush signal")
-				l.flushBuffers()
+				params := l.clearBuffersNonLocked()
+				l.wg.Add(1)
+				go func() {
+					defer l.wg.Done()
+					l.batchSend(params)
+				}()
 
-			// on-demand flush
 			case <-l.flushNowCh:
-				log.Debug("llmobs: explicit flush signal")
-				l.flushBuffers()
+				log.Debug("llmobs: on-demand flush signal")
+				params := l.clearBuffersNonLocked()
+				l.wg.Add(1)
+				go func() {
+					defer l.wg.Done()
+					l.batchSend(params)
+				}()
 
-			// shutdown: drain whatever's currently available, then final flush and exit
 			case <-l.stopCh:
 				log.Debug("llmobs: stop signal")
-
-				l.drainNonBlocking()
-				l.flushBuffers()
+				l.drainChannels()
+				params := l.clearBuffersNonLocked()
+				l.batchSend(params)
 				return
 			}
 		}
 	}()
+}
+
+// clearBuffersNonLocked clears the internal buffers and returns the corresponding batchSendParams to send to the backend.
+// It is meant to be called only from the main Run worker goroutine.
+func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
+	params := batchSendParams{
+		spanEvents:  l.bufSpanEvents,
+		evalMetrics: l.bufEvalMetrics,
+	}
+	l.bufSpanEvents = nil
+	l.bufEvalMetrics = nil
+	return params
 }
 
 // Flush forces an immediate flush of anything currently buffered.
@@ -286,68 +280,37 @@ func (l *LLMObs) Stop() {
 		return
 	}
 	l.running = false
-
-	// 1) Stop eval workers first
-	select {
-	case <-l.evalStopCh:
-		// already closed
-	default:
-		close(l.evalStopCh)
-	}
 	l.mu.Unlock()
 
-	// Wait for workers to finish any task they're currently running
-	l.evalWg.Wait()
-
-	// Best-effort drain any remaining tasks from the input channel (we don't own it)
-	l.drainEvalTasksWithBudget(l.evalDrainBudget)
-
-	// 3) Now stop the sender/flush loop
+	// Stop the sender/flush loop
 	select {
 	case <-l.stopCh:
 	default:
 		close(l.stopCh)
 	}
 
-	// 4) Wait for the main loop to exit (it will do a final flush)
+	// Wait for the main worker to exit (it will do a final flush)
 	l.wg.Wait()
 }
 
-func (l *LLMObs) startEvalWorkers() {
-	size := l.evalPoolSize
-	if size <= 0 {
-		size = 1
-	}
-	for i := 0; i < size; i++ {
-		l.evalWg.Add(1)
-		go func() {
-			defer l.evalWg.Done()
-			for {
-				select {
-				case <-l.evalStopCh:
-					return
-				case task := <-l.spanEvalTaskCh:
-					l.runEvalTask(task)
-				}
-			}
-		}()
-	}
-}
-
-// drainNonBlocking pulls everything currently buffered in the channels into our in-memory buffers.
-func (l *LLMObs) drainNonBlocking() {
+// drainChannels pulls everything currently buffered in the channels into our in-memory buffers.
+func (l *LLMObs) drainChannels() {
 	for {
 		progress := false
 		select {
 		case ev := <-l.spanEventsCh:
+			l.mu.Lock()
 			l.bufSpanEvents = append(l.bufSpanEvents, ev)
+			l.mu.Unlock()
 			progress = true
 		default:
 		}
 
 		select {
 		case evalMetric := <-l.evalMetricsCh:
+			l.mu.Lock()
 			l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
+			l.mu.Unlock()
 			progress = true
 		default:
 		}
@@ -358,93 +321,69 @@ func (l *LLMObs) drainNonBlocking() {
 	}
 }
 
-// drainEvalTasksWithBudget pulls tasks for a short period and runs them inline.
-// Called only after eval workers are stopped.
-func (l *LLMObs) drainEvalTasksWithBudget(budget time.Duration) {
-	if budget <= 0 {
-		return
-	}
-	deadline := time.Now().Add(budget)
-	for time.Now().Before(deadline) {
-		drained := false
-		select {
-		case task := <-l.spanEvalTaskCh:
-			if task != nil {
-				l.runEvalTask(task)
-			}
-			drained = true
-		default:
-		}
-		if !drained {
-			time.Sleep(1 * time.Millisecond)
-		}
-	}
+type batchSendParams struct {
+	spanEvents  []*transport.LLMObsSpanEvent
+	evalMetrics []*transport.LLMObsEvaluationMetricEvent
 }
 
-// flushBuffers processes and clears the in-memory buffers.
-// Replace the bodies with your real batching / API calls.
-func (l *LLMObs) flushBuffers() {
-	// fast-path: nothing to do
-	if len(l.bufSpanEvents) == 0 && len(l.bufEvalMetrics) == 0 {
+// batchSend sends the buffered payloads to the backend.
+func (l *LLMObs) batchSend(params batchSendParams) {
+	if len(params.spanEvents) == 0 && len(params.evalMetrics) == 0 {
 		return
 	}
-
-	// snapshot + clear buffers so producers can keep appending while we process
-	events := l.bufSpanEvents
-	evalMetrics := l.bufEvalMetrics
-	l.bufSpanEvents = nil
-	l.bufEvalMetrics = nil
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// FIXME(rarguelloF): this blocks the reader goroutine
-	if len(events) > 0 {
-		log.Debug("llmobs: sending %d LLMObs Span Events", len(events))
-		if log.DebugEnabled() {
-			for _, ev := range events {
-				if b, err := json.Marshal(ev); err == nil {
-					log.Debug("llmobs: LLMObs Span Event: %s", b)
+	var wg sync.WaitGroup
+
+	if len(params.spanEvents) > 0 {
+		wg.Add(1)
+		events := params.spanEvents
+		go func() {
+			defer wg.Done()
+			log.Debug("llmobs: sending %d LLMObs Span Events", len(events))
+			if log.DebugEnabled() {
+				for _, ev := range events {
+					if b, err := json.Marshal(ev); err == nil {
+						log.Debug("llmobs: LLMObs Span Event: %s", b)
+					}
 				}
 			}
-		}
-		if err := l.Transport.LLMObsSpanSendEvents(ctx, events); err != nil {
-			log.Error("llmobs: LLMObsSpanSendEvents failed: %v", err)
-		} else {
-			log.Debug("llmobs: LLMObsSpanSendEvents success")
-		}
+			if err := l.Transport.LLMObsSpanSendEvents(ctx, events); err != nil {
+				log.Error("llmobs: LLMObsSpanSendEvents failed: %v", err)
+			} else {
+				log.Debug("llmobs: LLMObsSpanSendEvents success")
+			}
+		}()
 	}
-
-	if len(evalMetrics) > 0 {
-		log.Debug("llmobs: sending %d LLMObs Span Eval Metrics", len(evalMetrics))
-		if log.DebugEnabled() {
-			for _, eval := range evalMetrics {
-				if b, err := json.Marshal(eval); err == nil {
-					log.Debug("llmobs: LLMObs Span Eval Metric: %s", b)
+	if len(params.evalMetrics) > 0 {
+		wg.Add(1)
+		metrics := params.evalMetrics
+		go func() {
+			defer wg.Done()
+			log.Debug("llmobs: sending %d LLMObs Span Eval Metrics", len(metrics))
+			if log.DebugEnabled() {
+				for _, eval := range metrics {
+					if b, err := json.Marshal(eval); err == nil {
+						log.Debug("llmobs: LLMObs Span Eval Metric: %s", b)
+					}
 				}
 			}
-		}
-		if err := l.Transport.LLMObsEvalMetricsSend(ctx, evalMetrics); err != nil {
-			log.Error("llmobs: LLMObsEvalMetricsSend failed: %v", err)
-		}
+			if err := l.Transport.LLMObsEvalMetricsSend(ctx, metrics); err != nil {
+				log.Error("llmobs: LLMObsEvalMetricsSend failed: %v", err)
+			} else {
+				log.Debug("llmobs: LLMObsEvalMetricsSend success")
+			}
+		}()
 	}
-}
-
-func (l *LLMObs) runEvalTask(task *spanEvalTask) {
-	log.Debug("llmobs: runEvalTask not implemented yet")
+	wg.Wait()
 }
 
 // submitLLMObsSpan generates and submits an LLMObs span event to the LLMObs intake.
 func (l *LLMObs) submitLLMObsSpan(span *Span) {
 	event := l.llmobsSpanEvent(span)
-
 	l.spanEventsCh <- event
-	if !(span.isEvaluationSpan()) {
-		l.spanEvalTaskCh <- &spanEvalTask{
-			event: event,
-			span:  span,
-		}
-	}
 }
 
 func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {

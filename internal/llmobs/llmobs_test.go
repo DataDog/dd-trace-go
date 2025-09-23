@@ -7,10 +7,12 @@ package llmobs_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -180,8 +182,90 @@ func TestStartSpan(t *testing.T) {
 	})
 }
 
-func testTracer(t *testing.T) *testtracer.TestTracer {
-	return testtracer.Start(t,
+func BenchmarkStartSpan(b *testing.B) {
+	run := func(b *testing.B, ll *llmobs.LLMObs, tt *testtracer.TestTracer, done chan struct{}) {
+		llmSpans := make([]testtracer.LLMObsSpan, 0, b.N)
+		apmSpans := make([]testtracer.Span, 0, b.N)
+
+		go func(n int) {
+			llCnt, apmCnt := 0, 0
+			for llCnt < n || apmCnt < n {
+				select {
+				case llmSpan := <-tt.LLMSpans:
+					llmSpans = append(llmSpans, llmSpan)
+					llCnt++
+				case apmSpan := <-tt.Spans:
+					apmSpans = append(apmSpans, apmSpan)
+					apmCnt++
+				}
+			}
+			close(done)
+		}(b.N)
+
+		b.Log("starting benchmark")
+
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
+			span.Finish(llmobs.FinishSpanConfig{})
+		}
+		b.StopTimer()
+
+		b.Log("finished benchmark")
+
+		b.Log("waiting for spans")
+
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			b.Logf("timeout waiting for spans: got llm=%d apm=%d want=%d",
+				len(llmSpans), len(apmSpans), b.N)
+		}
+	}
+
+	b.Run("basic", func(b *testing.B) {
+		tt := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
+		defer tt.Stop()
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(b, err)
+
+		done := make(chan struct{})
+
+		run(b, ll, tt, done)
+	})
+	b.Run("periodic-flush", func(b *testing.B) {
+		tt := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
+		defer tt.Stop()
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(b, err)
+
+		ticker := time.NewTicker(10 * time.Microsecond)
+		defer ticker.Stop()
+
+		done := make(chan struct{})
+
+		// force flushes to test if StartSpan gets blocked while the tracer is sending payloads
+		go func() {
+			for {
+				select {
+				case <-ticker.C:
+					ll.Flush()
+
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		run(b, ll, tt, done)
+	})
+}
+
+func testTracer(t testing.TB, opts ...testtracer.Option) *testtracer.TestTracer {
+	tOpts := append([]testtracer.Option{
 		testtracer.WithTracerStartOpts(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp(mlApp),
@@ -189,7 +273,9 @@ func testTracer(t *testing.T) *testtracer.TestTracer {
 		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
 			Endpoints: []string{"/evp_proxy/v2/"},
 		}),
-	)
+	}, opts...)
+
+	return testtracer.Start(t, tOpts...)
 }
 
 func testClientServer(t *testing.T, h http.Handler) (*httptest.Server, *http.Client) {

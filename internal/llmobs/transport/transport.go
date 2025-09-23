@@ -206,6 +206,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	}
 
 	log.Debug("llmobs/internal/transport: sending request (method: %s | url: %s)", method, urlStr)
+
 	resp, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
 	if err != nil {
 		return 0, nil, err
@@ -215,9 +216,6 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return resp.StatusCode, nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp.StatusCode, b, &httpError{Status: resp.StatusCode, Body: b}
 	}
 	log.Debug("llmobs/internal/transport: got success response body: %s", string(b))
 
@@ -263,17 +261,4 @@ func isRetriableStatus(code int) bool {
 		return true
 	}
 	return false
-}
-
-type httpError struct {
-	Status int
-	Body   []byte
-}
-
-func (e *httpError) Error() string {
-	body := string(e.Body)
-	if len(body) > 512 {
-		body = body[:512] + "…"
-	}
-	return fmt.Sprintf("http %d: %s", e.Status, body)
 }
