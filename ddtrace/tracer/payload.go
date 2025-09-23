@@ -166,7 +166,7 @@ type traceChunk struct {
 	attributes map[uint32]anyValue `msg:"attributes,omitempty"`
 
 	// a list of spans in this chunk
-	spans spanListV1 `msg:"spans,omitempty"`
+	spans spanList `msg:"spans,omitempty"`
 
 	// whether the trace only contains analyzed spans
 	// (not required by tracers and set by the agent)

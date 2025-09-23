@@ -94,7 +94,7 @@ type stringTable struct {
 // - uint32
 // - bool
 // - float64
-// - uint64
+// - int64
 // - uint8
 // intValue(5) - 0x405 (4 indicates this is an int AnyType, then 5 is encoded using positive fixed int format)
 // stringValue(“a”) - 0x1a161 (1 indicates this is a string, then “a” is encoded using fixstr 0xa161)
@@ -108,7 +108,7 @@ const (
 	StringValueType  = iota + 1 // string or uint -- 1
 	BoolValueType               // boolean -- 2
 	FloatValueType              // float64 -- 3
-	IntValueType                // uint64 -- 4
+	IntValueType                // int64 -- 4
 	BytesValueType              // []uint8 -- 5
 	ArrayValueType              // []AnyValue -- 6
 	keyValueListType            // []keyValue -- 7
@@ -133,8 +133,6 @@ type keyValue struct {
 
 type keyValueList []keyValue
 
-type spanListV1 spanList
-
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
@@ -150,7 +148,7 @@ func newPayloadV1() *payloadV1 {
 }
 
 // push pushes a new item into the stream.
-func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
+func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
 	// Conceptually, our `t []*Span` corresponds to one `traceChunk`.
 	origin, priority := "", 0
@@ -173,7 +171,7 @@ func (p *payloadV1) push(t spanListV1) (stats payloadStats, err error) {
 		traceID:    t[0].Context().traceID,
 	})
 	wr := msgp.NewWriter(&p.buf)
-	err = t.EncodeMsg(wr, p)
+	err = EncodeSpanList(t, wr, p)
 	if err == nil {
 		err = wr.Flush()
 	}
@@ -277,7 +275,7 @@ func (a *anyValue) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 		return e.WriteFloat64(a.value.(float64))
 	case IntValueType:
 		e.WriteInt32(IntValueType)
-		return e.WriteUint64(a.value.(uint64))
+		return e.WriteInt64(a.value.(int64))
 	case BytesValueType:
 		e.WriteInt32(BytesValueType)
 		return e.WriteBytes(a.value.([]byte))
@@ -363,7 +361,7 @@ func (t *traceChunk) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 // Span, SpanLink, and SpanEvent structs are different for v0.4 and v1.0.
 // For v1 we need to manually encode the spans, span links, and span events
 // if we don't want to do extra allocations.
-func (s spanListV1) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
+func EncodeSpanList(s spanList, e *msgp.Writer, p *payloadV1) error {
 	err := e.WriteArrayHeader(uint32(len(s)))
 	if err != nil {
 		return msgp.WrapError(err)
