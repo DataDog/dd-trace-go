@@ -3,12 +3,9 @@ name: Generate
 on:
   push:
     branches:
-      - main
       - release-*
+      - mq-working-branch-**
   pull_request:
-    branches:
-      - main
-      - release-*
   workflow_call:
     inputs:
       go-version:
@@ -35,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools

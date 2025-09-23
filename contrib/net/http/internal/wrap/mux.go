@@ -9,10 +9,11 @@ import (
 	"net/http"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
 )
 
 // ServeMux is an HTTP request multiplexer that traces all the incoming requests.
@@ -34,6 +35,31 @@ func NewServeMux(opts ...internal.Option) *ServeMux {
 		ServeMux: http.NewServeMux(),
 		cfg:      cfg,
 	}
+}
+
+// Handle registers the handler for the given pattern.
+func (mux *ServeMux) Handle(pttrn string, inner http.Handler) {
+	handlerFunc := inner
+	if internal.Instrumentation.AppSecEnabled() {
+		// Calling TraceAndServe before `http.ServeMux.ServeHTTP` does not give enough information
+		// about routing for AppSec to work properly when using the ServeMux tracing wrapper.
+		// Therefore, we need to wrap the handlerFunc with a handler that finished the job here
+		// after pattern data and matches are available
+		// This also means stopping the handle from being called if security rules disallow it
+		handlerFunc = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if httpsec.RouteMatched(r.Context(), pattern.Route(r.Pattern), pattern.PathParameters(r.Pattern, r)) != nil {
+				return
+			}
+			inner.ServeHTTP(w, r)
+		})
+	}
+
+	mux.ServeMux.Handle(pttrn, handlerFunc)
+}
+
+// HandleFunc registers the handler function for the given pattern.
+func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWriter, *http.Request)) {
+	mux.Handle(pttrn, http.HandlerFunc(handlerFunc))
 }
 
 // ServeHTTP dispatches the request to the handler
@@ -62,6 +88,5 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		SpanOpts:      so,
 		Route:         route,
 		IsStatusError: mux.cfg.IsStatusError,
-		RouteParams:   pattern.PathParameters(pttrn, r),
 	})
 }

@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -23,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -91,14 +91,14 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	ciTags := utils.GetCITags()
 
 	// get the environment
-	environment := os.Getenv("DD_ENV")
+	environment := env.Get("DD_ENV")
 	if environment == "" {
 		environment = "none"
 	}
 
 	// get the service name
 	if serviceName == "" {
-		serviceName = os.Getenv("DD_SERVICE")
+		serviceName = env.Get("DD_SERVICE")
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name
@@ -114,7 +114,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 	// get all custom configuration (test.configuration.*)
 	var customConfiguration map[string]string
-	if v := os.Getenv("DD_TAGS"); v != "" {
+	if v := env.Get("DD_TAGS"); v != "" {
 		prefix := "test.configuration."
 		for k, v := range internal.ParseTagString(v) {
 			if strings.HasPrefix(k, prefix) {
@@ -137,7 +137,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		apiKeyValue = os.Getenv(constants.APIKeyEnvironmentVariable)
+		apiKeyValue = env.Get(constants.APIKeyEnvironmentVariable)
 		if apiKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 			return nil
@@ -146,12 +146,12 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		defaultHeaders["dd-api-key"] = apiKeyValue
 
 		// Check for a custom agentless URL.
-		agentlessURL := os.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable)
+		agentlessURL := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable)
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
 			site := "datadoghq.com"
-			if v := os.Getenv("DD_SITE"); v != "" {
+			if v := env.Get("DD_SITE"); v != "" {
 				site = v
 			}
 
@@ -230,7 +230,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			if agentURL != nil {
 				cfg.AgentURL = agentURL.String()
 			}
-			client, err := telemetry.NewClient(serviceName, environment, os.Getenv("DD_VERSION"), cfg)
+			client, err := telemetry.NewClient(serviceName, environment, env.Get("DD_VERSION"), cfg)
 			if err != nil {
 				log.Debug("civisibility: failed to create telemetry client: %s", err.Error())
 				return

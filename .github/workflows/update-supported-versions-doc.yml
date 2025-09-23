@@ -4,7 +4,8 @@ on:
     # Every time we run smoke tests, we check what version of each library was used to run the tests and this will
     # be used as the latest supported version in our docs.
     workflows: ["Smoke Tests"]
-    branches: [main]
+    branches:
+      - mq-working-branch-**
     types:
       - completed
 
@@ -21,7 +22,7 @@ jobs:
       id-token: write
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - run: echo 'Smoke Tests workflow passed'
       - run: go run ./scripts/gen_integrations_doc.go
       - run: git diff

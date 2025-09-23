@@ -249,6 +249,16 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.Equal(t, 2, cfg.agent.obfuscationVersion)
 	})
 
+	t.Run("default_env", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"config": {"statsd_port":8125,"default_env":"prod"}}`))
+		}))
+		defer srv.Close()
+		cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
+		assert.NoError(t, err)
+		assert.Equal(t, "prod", cfg.agent.defaultEnv)
+	})
+
 	t.Run("discovery", func(t *testing.T) {
 		t.Setenv("DD_TRACE_FEATURES", "discovery")
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -283,7 +293,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 53, len(cfg.integrations))
+		assert.Equal(t, 54, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}

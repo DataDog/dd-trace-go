@@ -1,4 +1,4 @@
-go 1.23.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.24.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
@@ -10,6 +10,7 @@ use (
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
+	./contrib/cloud.google.com/go/pubsub.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
@@ -70,6 +71,7 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
+	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage
 )

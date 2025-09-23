@@ -7,6 +7,7 @@ package httpsec
 
 import (
 	"context"
+	_ "embed" // For go:embed
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,17 +15,14 @@ import (
 	"testing"
 	"time"
 
-	_ "embed" // For go:embed
-
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/DataDog/appsec-internal-go/apisec"
-	"github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -264,13 +262,13 @@ func TestTraceTagging(t *testing.T) {
 		t.Skipf("libddwaf is not usable in this context: %v", err)
 	}
 
-	wafManager, err := config.NewWAFManager(appsec.ObfuscatorConfig{}, wafRulesJSON)
+	wafManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, wafRulesJSON)
 	require.NoError(t, err)
 	cfg := config.Config{
 		WAFManager:          wafManager,
 		WAFTimeout:          time.Hour,
 		TraceRateLimit:      1_000,
-		APISec:              appsec.APISecConfig{Enabled: true, Sampler: apisec.NewSamplerWithInterval(0)},
+		APISec:              config.APISecConfig{Enabled: true, Sampler: apisec.NewSampler(0)},
 		RC:                  nil,
 		RASP:                false,
 		SupportedAddresses:  config.NewAddressSet([]string{"server.request.headers.no_cookies"}),

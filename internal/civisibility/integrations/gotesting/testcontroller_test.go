@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
@@ -15,7 +16,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -25,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 var currentM *testing.M
@@ -37,7 +38,7 @@ func TestMain(m *testing.M) {
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 
-	const scenarioStarted = "Scenario %s started.\n"
+	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection"}
 
@@ -65,34 +66,32 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv("Bypass", false) {
 		os.Exit(m.Run())
 	} else {
-		fmt.Println("Starting tests...")
-		var wg sync.WaitGroup
 		for _, v := range scenarios {
-			wg.Add(1)
 			cmd := exec.Command(os.Args[0], os.Args[1:]...)
-			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			var b bytes.Buffer
+			if log.DebugEnabled() {
+				cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			} else {
+				cmd.Stdout = &b
+				cmd.Stderr = &b
+			}
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=true", v))
-			go func() {
-				defer func() {
-					wg.Done()
-				}()
-
-				fmt.Printf("Running scenario: %s:\n", v)
-				fmt.Println(cmd.Env)
-				err := cmd.Run()
-				fmt.Printf("Done.\n\n")
-				if err != nil {
-					if exiterr, ok := err.(*exec.ExitError); ok {
-						fmt.Printf("Scenario %s failed with exit code: %d\n", v, exiterr.ExitCode())
-						os.Exit(exiterr.ExitCode())
+			fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", v)
+			err := cmd.Run()
+			fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", v)
+			if err != nil {
+				if exiterr, ok := err.(*exec.ExitError); ok {
+					fmt.Printf("\n===========================================\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", v, exiterr.ExitCode())
+					if !log.DebugEnabled() {
+						fmt.Printf("**** [SCENARIO %s OUTPUT]\n===========================================\n\n%s\n", v, b.String())
 					}
-					fmt.Printf("cmd.Run: %v\n", err)
-					os.Exit(1)
+					os.Exit(exiterr.ExitCode())
 				}
-			}()
+				fmt.Printf("cmd.Run: %v\n", err)
+				os.Exit(1)
+			}
 		}
-		wg.Wait()
 	}
 
 	os.Exit(0)
@@ -226,7 +225,6 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// check logs
 	checkLogs()
 
-	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -335,7 +333,6 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// check logs
 	checkLogs()
 
-	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -422,7 +419,6 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	// check logs
 	checkLogs()
 
-	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -597,7 +593,6 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	// check logs
 	checkLogs()
 
-	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -864,7 +859,6 @@ func runTestManagementTests(m *testing.M) {
 	// check logs
 	checkLogs()
 
-	fmt.Println("All tests passed.")
 	os.Exit(0)
 }
 
@@ -872,42 +866,42 @@ func checkSpansByType(finishedSpans []*mocktracer.Span,
 	totalFinishedSpansCount int, sessionSpansCount int, moduleSpansCount int,
 	suiteSpansCount int, testSpansCount int, normalSpansCount int) {
 	calculatedFinishedSpans := len(finishedSpans)
-	fmt.Printf("Number of spans received: %d\n", calculatedFinishedSpans)
+	log.Debug("Number of spans received: %d", calculatedFinishedSpans)
 	if calculatedFinishedSpans < totalFinishedSpansCount {
 		panic(fmt.Sprintf("expected at least %d finished spans, got %d", totalFinishedSpansCount, calculatedFinishedSpans))
 	}
 
 	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
 	calculatedSessionSpans := len(sessionSpans)
-	fmt.Printf("Number of sessions received: %d\n", calculatedSessionSpans)
+	log.Debug("Number of sessions received: %d", calculatedSessionSpans)
 	if calculatedSessionSpans != sessionSpansCount {
 		panic(fmt.Sprintf("expected exactly %d session span, got %d", sessionSpansCount, calculatedSessionSpans))
 	}
 
 	moduleSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestModule)
 	calculatedModuleSpans := len(moduleSpans)
-	fmt.Printf("Number of modules received: %d\n", calculatedModuleSpans)
+	log.Debug("Number of modules received: %d", calculatedModuleSpans)
 	if calculatedModuleSpans != moduleSpansCount {
 		panic(fmt.Sprintf("expected exactly %d module span, got %d", moduleSpansCount, calculatedModuleSpans))
 	}
 
 	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
 	calculatedSuiteSpans := len(suiteSpans)
-	fmt.Printf("Number of suites received: %d\n", calculatedSuiteSpans)
+	log.Debug("Number of suites received: %d", calculatedSuiteSpans)
 	if calculatedSuiteSpans != suiteSpansCount {
 		panic(fmt.Sprintf("expected exactly %d suite spans, got %d", suiteSpansCount, calculatedSuiteSpans))
 	}
 
 	testSpans := getSpansWithType(finishedSpans, constants.SpanTypeTest)
 	calculatedTestSpans := len(testSpans)
-	fmt.Printf("Number of tests received: %d\n", calculatedTestSpans)
+	log.Debug("Number of tests received: %d", calculatedTestSpans)
 	if calculatedTestSpans != testSpansCount {
 		panic(fmt.Sprintf("expected exactly %d test spans, got %d", testSpansCount, calculatedTestSpans))
 	}
 
 	normalSpans := getSpansWithType(finishedSpans, ext.SpanTypeHTTP)
 	calculatedNormalSpans := len(normalSpans)
-	fmt.Printf("Number of http spans received: %d\n", calculatedNormalSpans)
+	log.Debug("Number of http spans received: %d", calculatedNormalSpans)
 	if calculatedNormalSpans != normalSpansCount {
 		panic(fmt.Sprintf("expected exactly %d normal spans, got %d", normalSpansCount, calculatedNormalSpans))
 	}
@@ -969,7 +963,7 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 func checkLogs() {
 	// Assert that at least one logs payload has been sent by the library.
 	logsEntriesCount := len(logsEntries)
-	fmt.Printf("Number of logs received: %d\n", logsEntriesCount)
+	log.Debug("Number of logs received: %d", logsEntriesCount)
 	if logsEntriesCount == 0 {
 		panic("expected at least one logs payload to be sent, but none were received")
 	}
@@ -1007,12 +1001,12 @@ func setUpHTTPServer(
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
 	// mock the settings api to enable automatic test retries
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("MockApi received request: %s\n", r.URL.Path)
+		log.Debug("MockApi received request: %s", r.URL.Path)
 
 		// Settings request
 		if r.URL.Path == "/api/v2/libraries/tests/services/setting" {
 			body, _ := io.ReadAll(r.Body)
-			fmt.Printf("MockApi received body: %s\n", body)
+			log.Debug("MockApi received body: %s", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
@@ -1039,11 +1033,11 @@ func setUpHTTPServer(
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.ThirtyS = 3
 			response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveM = 2
 
-			fmt.Printf("MockApi sending response: %v\n", response)
+			log.Debug("MockApi sending response: %v", response)
 			json.NewEncoder(w).Encode(&response)
 		} else if enableKnownTests && r.URL.Path == "/api/v2/ci/libraries/tests" {
 			body, _ := io.ReadAll(r.Body)
-			fmt.Printf("MockApi received body: %s\n", body)
+			log.Debug("MockApi received body: %s", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
@@ -1057,18 +1051,18 @@ func setUpHTTPServer(
 				response.Data.Attributes = *earlyFlakyDetectionData
 			}
 
-			fmt.Printf("MockApi sending response: %v\n", response)
+			log.Debug("MockApi sending response: %v", response)
 			json.NewEncoder(w).Encode(&response)
 		} else if r.URL.Path == "/api/v2/git/repository/search_commits" {
 			body, _ := io.ReadAll(r.Body)
-			fmt.Printf("MockApi received body: %s\n", body)
+			log.Debug("MockApi received body: %s", body)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte("{}"))
 		} else if r.URL.Path == "/api/v2/git/repository/packfile" {
 			w.WriteHeader(http.StatusAccepted)
 		} else if itrEnabled && r.URL.Path == "/api/v2/ci/tests/skippable" {
 			body, _ := io.ReadAll(r.Body)
-			fmt.Printf("MockApi received body: %s\n", body)
+			log.Debug("MockApi received body: %s", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := skippableResponse{
 				Meta: skippableResponseMeta{
@@ -1083,27 +1077,27 @@ func setUpHTTPServer(
 					Attributes: data,
 				})
 			}
-			fmt.Printf("MockApi sending response: %v\n", response)
+			log.Debug("MockApi sending response: %v", response)
 			json.NewEncoder(w).Encode(&response)
 		} else if r.URL.Path == "/api/v2/logs" {
 			// Mock the logs intake endpoint.
 			reader, _ := gzip.NewReader(r.Body)
 			body, _ := io.ReadAll(reader)
-			fmt.Printf("MockApi received logs payload: %d bytes\n", len(body))
+			log.Debug("MockApi received logs payload: %d bytes", len(body))
 			var newEntries []*mockedLogEntry
 			if err := json.Unmarshal(body, &newEntries); err != nil {
-				fmt.Printf("MockApi received invalid logs payload: %s\n", err)
-				fmt.Printf("Payload: %s\n", string(body))
+				log.Debug("MockApi received invalid logs payload: %s", err)
+				log.Debug("Payload: %s", body)
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			logsEntries = append(logsEntries, newEntries...)
-			fmt.Printf("MockApi received %d log entries\n", len(newEntries))
+			log.Debug("MockApi received %d log entries", len(newEntries))
 			// A 2xx status code is required to mark the payload as accepted.
 			w.WriteHeader(http.StatusAccepted)
 		} else if r.URL.Path == "/api/v2/test/libraries/test-management/tests" {
 			body, _ := io.ReadAll(r.Body)
-			fmt.Printf("MockApi received body: %s\n", body)
+			log.Debug("MockApi received body: %s", body)
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
@@ -1114,7 +1108,7 @@ func setUpHTTPServer(
 			}{}
 			response.Data.Type = "ci_app_libraries_tests"
 			response.Data.Attributes = *testManagementData
-			fmt.Printf("MockApi sending response: %v\n", response)
+			log.Debug("MockApi sending response: %v", response)
 			json.NewEncoder(w).Encode(&response)
 		} else {
 			http.NotFound(w, r)
@@ -1122,7 +1116,7 @@ func setUpHTTPServer(
 	}))
 
 	// set the custom agentless url and the flaky retry count env-var
-	fmt.Printf("Using mockapi at: %s\n", server.URL)
+	log.Debug("Using mockapi at: %s", server.URL)
 	os.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "1")
 	os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
 	os.Setenv(constants.APIKeyEnvironmentVariable, "12345")
@@ -1176,7 +1170,7 @@ func getSpansWithTagNameAndValue(spans []*mocktracer.Span, tag, value string) []
 
 func showResourcesNameFromSpans(spans []*mocktracer.Span) {
 	for i, span := range spans {
-		fmt.Printf("  [%d] = %v | %v\n", i, span.Tag(ext.ResourceName), span.Tag(constants.TestName))
+		log.Debug("  [%d] = %v | %v", i, span.Tag(ext.ResourceName), span.Tag(constants.TestName))
 	}
 }
 

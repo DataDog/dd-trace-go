@@ -1,8 +1,6 @@
 module github.com/DataDog/dd-trace-go/_tools
 
-go 1.23.1
-
-toolchain go1.24.5
+go 1.24.0
 
 require (
 	github.com/campoy/embedmd v1.0.0
@@ -216,7 +214,7 @@ require (
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/telemetry v0.0.0-20250710130107-8d8967aff50b // indirect
-	golang.org/x/term v0.32.0 // indirect
+	golang.org/x/term v0.33.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
