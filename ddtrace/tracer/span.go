@@ -437,23 +437,24 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
 		switch err := v.(type) {
 		case xerrors.Formatter:
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			if !cfg.noDebugStack {
+				s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			}
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			if !cfg.noDebugStack {
+				s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			}
 		case *errortrace.TracerError:
 			// instrumentation/errortrace approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 			if !cfg.noDebugStack {
-				s.setMeta(ext.ErrorStack, err.Format())
-				s.setMeta(ext.ErrorHandlingStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
+				s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+				s.setMeta(ext.ErrorHandlingStack, err.Format())
 			}
 			return
 		}
 		if !cfg.noDebugStack {
-			telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
 			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-			s.setMeta(ext.ErrorStack, stack)
 			s.setMeta(ext.ErrorHandlingStack, stack)
 		}
 	case nil:
@@ -472,6 +473,7 @@ const defaultStackLength = 32
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
 // If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
 	now := time.Now()
 	defer func() {
 		dur := float64(time.Since(now))

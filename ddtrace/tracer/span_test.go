@@ -339,7 +339,7 @@ func TestSpanFinishWithError(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEmpty(span.meta[ext.ErrorStack])
+	assert.NotEmpty(span.meta[ext.ErrorHandlingStack])
 }
 
 func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
@@ -365,9 +365,9 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.Contains(span.meta[ext.ErrorStack], "tracer.TestSpanFinishWithErrorStackFrames")
-	assert.Contains(span.meta[ext.ErrorStack], "tracer.(*Span).Finish")
-	assert.Equal(strings.Count(span.meta[ext.ErrorStack], "\n\t"), 2)
+	assert.Contains(span.meta[ext.ErrorHandlingStack], "tracer.TestSpanFinishWithErrorStackFrames")
+	assert.Contains(span.meta[ext.ErrorHandlingStack], "tracer.(*Span).Finish")
+	assert.Equal(strings.Count(span.meta[ext.ErrorHandlingStack], "\n\t"), 2)
 }
 
 // nilStringer is used to test nil detection when setting tags.
@@ -413,7 +413,7 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("abc", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEmpty(span.meta[ext.ErrorStack])
+	assert.NotEmpty(span.meta[ext.ErrorHandlingStack])
 
 	span.SetTag(ext.Error, "something else")
 	assert.Equal(int32(1), span.error)
@@ -523,7 +523,7 @@ func TestSpanSetTagError(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
-		assert.NotEmpty(t, span.meta[ext.ErrorStack])
+		assert.NotEmpty(t, span.meta[ext.ErrorHandlingStack])
 	})
 }
 
@@ -793,14 +793,11 @@ func TestErrorStack(t *testing.T) {
 		assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 		assert.Equal("*errortrace.TracerError", span.meta[ext.ErrorType])
 
-		stack := span.meta[ext.ErrorStack]
+		stack := span.meta[ext.ErrorHandlingStack]
 		assert.NotEqual("", stack)
 		assert.Contains(stack, "tracer.TestErrorStack")
 		assert.Contains(stack, "tracer.createErrorTrace")
 
-		handlingStack := span.meta[ext.ErrorHandlingStack]
-		assert.NotEqual("", handlingStack)
-		assert.NotEqual(stack, handlingStack)
 		span.Finish()
 	})
 
@@ -817,14 +814,11 @@ func TestErrorStack(t *testing.T) {
 		assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 		assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
 
-		stack := span.meta[ext.ErrorStack]
+		stack := span.meta[ext.ErrorHandlingStack]
 		assert.NotEqual("", stack)
 		assert.Contains(stack, "tracer.TestErrorStack")
-		assert.NotContains(stack, "tracer.createTestError") // this checks our old behavior
+		assert.NotContains(stack, "tracer.createTestError")
 
-		handlingStack := span.meta[ext.ErrorHandlingStack]
-		assert.NotEqual("", handlingStack)
-		assert.Equal(stack, handlingStack)
 		span.Finish()
 	})
 }
@@ -843,7 +837,7 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEqual("", span.meta[ext.ErrorStack])
+	assert.NotEqual("", span.meta[ext.ErrorHandlingStack])
 	span.Finish()
 
 	// operating on a finished span is a no-op
@@ -874,7 +868,7 @@ func TestSpanError_Typed(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("boom", span.meta[ext.ErrorMsg])
 	assert.Equal("*tracer.boomError", span.meta[ext.ErrorType])
-	assert.NotEqual("", span.meta[ext.ErrorStack])
+	assert.NotEqual("", span.meta[ext.ErrorHandlingStack])
 }
 
 func TestSpanErrorNil(t *testing.T) {
