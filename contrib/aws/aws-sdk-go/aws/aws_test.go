@@ -82,7 +82,7 @@ func TestAWS(t *testing.T) {
 		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
 		assert.Equal(t, "CreateBucket", s.Tag("aws.operation"))
 		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
-		assert.Equal(t, "aws", s.Tag("partition"))
+		assert.Equal(t, "aws", s.Tag("aws.partition"))
 		assert.Equal(t, "s3.CreateBucket", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.s3", s.Tag(ext.ServiceName))
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
@@ -112,7 +112,7 @@ func TestAWS(t *testing.T) {
 		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
 		assert.Equal(t, "DescribeInstances", s.Tag("aws.operation"))
 		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
-		assert.Equal(t, "aws", s.Tag("partition"))
+		assert.Equal(t, "aws", s.Tag("aws.partition"))
 		assert.Equal(t, "ec2.DescribeInstances", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.ec2", s.Tag(ext.ServiceName))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
@@ -325,7 +325,7 @@ func TestPartitionTag(t *testing.T) {
 			assert.Len(t, spans, 2)
 
 			s := spans[0]
-			assert.Equal(t, tt.partition, s.Tag("partition"))
+			assert.Equal(t, tt.partition, s.Tag("aws.partition"))
 			assert.Equal(t, tt.region, s.Tag("aws.region"))
 		})
 	}
