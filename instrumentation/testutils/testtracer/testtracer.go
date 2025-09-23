@@ -84,7 +84,7 @@ type TestTracer struct {
 
 // Start calls [tracer.Start] with a mocked transport and provides a new [TestTracer] that allows to inspect
 // the spans produced by this application.
-func Start(t *testing.T, opts ...Option) *TestTracer {
+func Start(t testing.TB, opts ...Option) *TestTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
@@ -125,12 +125,14 @@ func Start(t *testing.T, opts ...Option) *TestTracer {
 type config struct {
 	TracerStartOpts   []tracer.StartOption
 	AgentInfoResponse AgentInfo
+	RequestDelay      time.Duration
 }
 
 func defaultConfig() *config {
 	return &config{
 		TracerStartOpts:   nil,
 		AgentInfoResponse: AgentInfo{},
+		RequestDelay:      0,
 	}
 }
 
@@ -148,6 +150,13 @@ func WithTracerStartOpts(opts ...tracer.StartOption) Option {
 func WithAgentInfoResponse(response AgentInfo) Option {
 	return func(cfg *config) {
 		cfg.AgentInfoResponse = response
+	}
+}
+
+// WithRequestDelay introduces a fake delay in all requests.
+func WithRequestDelay(delay time.Duration) Option {
+	return func(cfg *config) {
+		cfg.RequestDelay = delay
 	}
 }
 
@@ -208,15 +217,17 @@ func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
 }
 
 type mockTransport struct {
-	*testing.T
+	T               testing.TB
 	spansChan       chan Span
 	llmobsSpansChan chan LLMObsSpan
 	mu              sync.RWMutex
 	finished        bool
 	agentInfo       AgentInfo
+	requestDelay    time.Duration
 }
 
 func (rt *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	time.Sleep(rt.requestDelay)
 	return rt.handleRequest(r), nil
 }
 
@@ -331,7 +342,7 @@ func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) (resp *http.Res
 }
 
 type testLogger struct {
-	*testing.T
+	T testing.TB
 }
 
 func (l *testLogger) Log(msg string) {
