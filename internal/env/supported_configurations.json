@@ -9,7 +9,13 @@
     "DD_API_KEY": [
       "A"
     ],
+    "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE": [
+      "A"
+    ],
     "DD_API_SECURITY_ENABLED": [
+      "A"
+    ],
+    "DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS": [
       "A"
     ],
     "DD_API_SECURITY_PROXY_SAMPLE_RATE": [

@@ -4,15 +4,13 @@ go 1.24.0
 
 godebug x509negativeserial=1
 
-replace github.com/DataDog/datadog-agent/pkg/trace => github.com/DataDog/datadog-agent/pkg/trace v0.67.0
-
 require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.67.0
 	github.com/DataDog/datadog-agent/pkg/proto v0.67.0
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.69.0
 	github.com/DataDog/datadog-agent/pkg/trace v0.67.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/go-libddwaf/v4 v4.3.2
+	github.com/DataDog/go-libddwaf/v4 v4.5.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
@@ -21,7 +19,9 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
+	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
+	github.com/minio/simdjson-go v0.4.5
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
@@ -33,6 +33,7 @@ require (
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/trace v1.35.0
 	go.uber.org/goleak v1.3.0
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
 	golang.org/x/mod v0.25.0
 	golang.org/x/sys v0.33.0
@@ -41,7 +42,6 @@ require (
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
 	google.golang.org/grpc v1.72.0
 	google.golang.org/protobuf v1.36.6
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -64,7 +64,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.3 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240909124753-873cd0166683 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
@@ -98,6 +98,7 @@ require (
 	golang.org/x/text v0.26.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250425173222-7b384671a197 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 retract (

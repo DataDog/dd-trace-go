@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -135,7 +136,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				if data, err := json.Marshal(errs); err == nil {
 					errMsg = string(data)
 				} else {
-					telemetrylog.Error("appsec: remote config: failed to marshal error details: %s", err.Error())
+					telemetrylog.Error("appsec: remote config: failed to marshal error details", slog.Any("error", telemetrylog.NewSafeError(err)))
 				}
 			}
 
@@ -149,7 +150,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	if len(a.cfg.WAFManager.ConfigPaths(`^(?:datadog/\d+|employee)/ASM_DD/.+`)) == 0 {
 		log.Debug("appsec: remote config: no ASM_DD config loaded; restoring default config if available")
 		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
-			telemetrylog.Error("appsec: RC could not restore default config: %s", err.Error())
+			telemetrylog.Error("appsec: RC could not restore default config", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 	}
 
@@ -183,19 +184,19 @@ func logDiagnosticMessages(product string, path string) func(string, *libddwaf.F
 
 		path, _ := remoteconfig.ParsePath(path)
 		// As defined @ https://docs.google.com/document/d/1t6U7WXko_QChhoNIApn0-CRNe6SAKuiiAQIyCRPUXP4/edit?tab=t.0#bookmark=id.cthxzqjuodhh
-		tags := []string{
+		logger := telemetrylog.With(telemetry.WithTags([]string{
 			"log_type:rc::" + strings.ToLower(product) + "::diagnostic",
 			"appsec_config_key:" + name,
 			"rc_config_id:" + path.ConfigID,
-		}
+		}))
 		if err := feat.Error; err != "" {
-			telemetrylog.Error("%s", err, telemetry.WithTags(tags))
+			logger.Error("rule error occurred", slog.String("error", err))
 		}
 		for err, ids := range feat.Errors {
-			telemetrylog.Error("%q: %q", err, ids, telemetry.WithTags(tags))
+			logger.Error("rule error occurred", slog.String("error", err), slog.Any("affected_rule_ids", telemetrylog.NewSafeSlice(ids)))
 		}
 		for err, ids := range feat.Warnings {
-			telemetrylog.Warn("%q: %q", err, ids, telemetry.WithTags(tags))
+			logger.Warn("rule warning occurred", slog.String("error", err), slog.Any("affected_rule_ids", telemetrylog.NewSafeSlice(ids)))
 		}
 	}
 }
@@ -250,12 +251,14 @@ func (a *appsec) handleASMFeatures(u remoteconfig.ProductUpdate) map[string]stat
 			log.Error("appsec: remote config: error while processing %q. Configuration won't be applied: %s", path, err.Error())
 			return map[string]state.ApplyStatus{path: {State: state.ApplyStateError, Error: err.Error()}}
 		}
+		registerAppsecStartTelemetry(config.RCStandby, telemetry.OriginRemoteConfig)
 	}
 
 	// RC triggers desactivation of ASM; ASM is started... Stopping it!
 	if !parsed.ASM.Enabled && a.started {
 		log.Debug("appsec: remote config: Stopping AppSec")
 		a.stop()
+		registerAppsecStartTelemetry(config.ForcedOff, telemetry.OriginRemoteConfig)
 		return map[string]state.ApplyStatus{path: {State: state.ApplyStateAcknowledged}}
 	}
 

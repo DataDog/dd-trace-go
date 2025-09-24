@@ -10,16 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
-	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/internal/json"
 	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 )
 
 // Processor is a state machine that handles incoming HTTP request and response is a streaming manner
@@ -278,9 +277,14 @@ func (mp *Processor[O]) OnResponseTrailers(_ *RequestState) (*O, error) {
 }
 
 func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos bool, analyzeBody func(ctx context.Context, encodable any) error) error {
+	if bodyBuffer.analyzed {
+		return nil
+	}
+
 	bodyBuffer.append(body)
 
 	if eos || bodyBuffer.truncated {
+		bodyBuffer.analyzed = true
 		return analyzeBody(ctx, json.NewEncodableFromData(bodyBuffer.buffer, bodyBuffer.truncated))
 	}
 
@@ -293,17 +297,7 @@ func (mp *Processor[O]) isBodySupported(contentType string) bool {
 		return false
 	}
 
-	parsedCT, _, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		mp.instr.Logger().Debug("message_processor: error parsing content type '%s': %v", contentType, err)
-		return false
-	}
-
-	// Handle cases like:
-	// * application/json: https://www.iana.org/assignments/media-types/application/json
-	// * application/vnd.api+json: https://jsonapi.org/
-	// * text/json: https://mimetype.io/text/json
-	return strings.HasSuffix(parsedCT, "json")
+	return body.IsBodySupported(contentType)
 }
 
 func (mp *Processor[O]) Close() error {

@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2/proxy"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoycore "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyextprocfilter "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"

@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -187,7 +188,7 @@ func defaultConfig() (*config, error) {
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
-		compressionConfig:    env.Get("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"),
+		compressionConfig:    cmp.Or(env.Get("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"), "zstd"),
 		traceConfig: executionTraceConfig{
 			Enabled: internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault),
 			Period:  internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute),

@@ -10,7 +10,7 @@ require (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.4.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.4.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
-	github.com/DataDog/go-libddwaf/v4 v4.3.2
+	github.com/DataDog/go-libddwaf/v4 v4.5.0
 	github.com/DataDog/orchestrion v1.5.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -265,6 +265,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mdelapenya/tlscert v0.2.0 // indirect
 	github.com/minio/highwayhash v1.0.3 // indirect
+	github.com/minio/simdjson-go v0.4.5 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
@@ -350,6 +351,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.13.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc // indirect
