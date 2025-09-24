@@ -26,6 +26,12 @@ type Prompt struct {
 	RAGQueryVariables   []string          `json:"rag_query_variables,omitempty"`
 }
 
+type ToolDefinition struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Schema      json.RawMessage `json:"schema,omitempty"`
+}
+
 type ToolCall struct {
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
@@ -59,43 +65,59 @@ type RetrievedDocument struct {
 }
 
 type SpanAnnotations struct {
+	// input
 	InputText         string
 	InputMessages     []LLMMessage
 	InputEmbeddedDocs []EmbeddedDocument
 
+	// output
 	OutputText          string
 	OutputMessages      []LLMMessage
 	OutputRetrievedDocs []RetrievedDocument
 
+	// experiment specific
 	ExperimentInput          map[string]any
 	ExperimentOutput         any
 	ExperimentExpectedOutput any
 
-	Prompt        *Prompt
-	Metadata      map[string]any
-	Metrics       map[string]float64
-	Tags          map[string]string
+	// llm specific
+	Prompt          *Prompt
+	ToolDefinitions []ToolDefinition
+
+	// agent specific
 	AgentManifest string
+
+	// generic
+	Metadata map[string]any
+	Metrics  map[string]float64
+	Tags     map[string]string
 }
 
 type Span struct {
 	mu sync.RWMutex
 
-	apm          APMSpan
-	parent       *Span
-	propagated   *PropagatedLLMSpan
-	llmCtx       llmobsContext
-	llmTraceID   string
-	name         string
-	mlApp        string
+	apm        APMSpan
+	parent     *Span
+	propagated *PropagatedLLMSpan
+
+	llmCtx llmobsContext
+
+	llmTraceID string
+	name       string
+	mlApp      string
+	spanKind   SpanKind
+	sessionID  string
+
 	integration  string
 	scope        string
 	isEvaluation bool
 	error        error
 	finished     bool
-	startTime    time.Time
-	finishTime   time.Time
-	spanLinks    []SpanLink
+
+	startTime  time.Time
+	finishTime time.Time
+
+	spanLinks []SpanLink
 }
 
 func (s *Span) SpanID() string {
@@ -166,7 +188,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	log.Debug("llmobs: annotating span with annotations: %+v", a)
+	log.Debug("llmobs: annotating span with: %+v", a)
 
 	if s.finished {
 		log.Warn("llmobs: cannot annotate a finished span")
@@ -179,12 +201,12 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	if len(a.Tags) > 0 {
 		s.llmCtx.tags = updateMapKeys(s.llmCtx.tags, a.Tags)
 		if sessionID, ok := a.Tags[TagKeySessionID]; ok {
-			s.llmCtx.sessionID = sessionID
+			s.sessionID = sessionID
 		}
 	}
 
 	if a.Prompt != nil {
-		if s.llmCtx.spanKind != SpanKindLLM {
+		if s.spanKind != SpanKindLLM {
 			log.Warn("llmobs: input prompt can only be annotated on llm spans, ignoring")
 		} else {
 			if a.Prompt.RAGContextVariables == nil {
@@ -193,12 +215,20 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			if a.Prompt.RAGQueryVariables == nil {
 				a.Prompt.RAGQueryVariables = []string{"question"}
 			}
-			s.llmCtx.inputPrompt = a.Prompt
+			s.llmCtx.prompt = a.Prompt
+		}
+	}
+
+	if len(a.ToolDefinitions) > 0 {
+		if s.spanKind != SpanKindLLM {
+			log.Warn("llmobs: tool definitions can only be annotated on llm spans, ignoring")
+		} else {
+			s.llmCtx.toolDefinitions = a.ToolDefinitions
 		}
 	}
 
 	if a.AgentManifest != "" {
-		if s.llmCtx.spanKind != SpanKindAgent {
+		if s.spanKind != SpanKindAgent {
 			log.Warn("llmobs: agent manifest can only be annotated on agent spans, ignoring")
 		} else {
 			s.llmCtx.agentManifest = a.AgentManifest
@@ -209,13 +239,13 @@ func (s *Span) Annotate(a SpanAnnotations) {
 }
 
 func (s *Span) annotateIO(a SpanAnnotations) {
-	if a.OutputRetrievedDocs != nil && s.llmCtx.spanKind != SpanKindRetrieval {
+	if a.OutputRetrievedDocs != nil && s.spanKind != SpanKindRetrieval {
 		log.Warn("llmobs: retrieve docs can only be used to annotate outputs for retrieval spans, ignoring")
 	}
-	if a.InputEmbeddedDocs != nil && s.llmCtx.spanKind != SpanKindEmbedding {
+	if a.InputEmbeddedDocs != nil && s.spanKind != SpanKindEmbedding {
 		log.Warn("llmobs: embedding docs can only be used to annotate inputs for embedding spans, ignoring")
 	}
-	switch s.llmCtx.spanKind {
+	switch s.spanKind {
 	case SpanKindLLM:
 		s.annotateIOLLM(a)
 
@@ -286,10 +316,10 @@ func (s *Span) annotateIOExperiment(a SpanAnnotations) {
 
 func (s *Span) annotateIOText(a SpanAnnotations) {
 	if a.InputMessages != nil || a.InputEmbeddedDocs != nil {
-		log.Warn("llmobs: %s spans can only be annotated with input text, ignoring other inputs", s.llmCtx.spanKind)
+		log.Warn("llmobs: %s spans can only be annotated with input text, ignoring other inputs", s.spanKind)
 	}
 	if a.OutputText != "" || a.OutputMessages != nil {
-		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.llmCtx.spanKind)
+		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.spanKind)
 	}
 	if a.InputText != "" {
 		s.llmCtx.inputText = a.InputText
@@ -300,14 +330,19 @@ func (s *Span) annotateIOText(a SpanAnnotations) {
 }
 
 // sessionID returns the session ID for a given span, by checking the span's nearest LLMObs span ancestor.
-func (s *Span) sessionID() string {
+func (s *Span) propagatedSessionID() string {
 	curSpan := s
+	usingParent := false
 
 	for curSpan != nil {
-		if curSpan.llmCtx.sessionID != "" {
-			return curSpan.llmCtx.sessionID
+		if curSpan.sessionID != "" {
+			if usingParent {
+				log.Debug("llmobs: using session_id from parent span: %s", curSpan.sessionID)
+			}
+			return curSpan.sessionID
 		}
 		curSpan = curSpan.parent
+		usingParent = true
 	}
 	return ""
 }
@@ -316,18 +351,25 @@ func (s *Span) sessionID() string {
 // It defaults to the global config LLMObs ML App name.
 func (s *Span) propagatedMLApp() string {
 	curSpan := s
+	usingParent := false
 
 	for curSpan != nil {
 		if curSpan.mlApp != "" {
+			if usingParent {
+				log.Debug("llmobs: using ml_app from parent span: %s", curSpan.mlApp)
+			}
 			return curSpan.mlApp
 		}
 		curSpan = curSpan.parent
+		usingParent = true
 	}
 
 	if s.propagated != nil && s.propagated.MLApp != "" {
+		log.Debug("llmobs: using ml_app from propagated span: %s", s.propagated.MLApp)
 		return s.propagated.MLApp
 	}
 	if activeLLMObs != nil {
+		log.Debug("llmobs: using ml_app from global config: %s", activeLLMObs.Config.MLApp)
 		return activeLLMObs.Config.MLApp
 	}
 	return ""

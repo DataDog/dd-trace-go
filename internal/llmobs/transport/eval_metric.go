@@ -11,7 +11,7 @@ import (
 	"net/http"
 )
 
-type LLMObsEvaluationMetricEvent struct {
+type LLMObsMetric struct {
 	JoinOn           map[string]map[string]string `json:"join_on,omitempty"`
 	MetricType       string                       `json:"metric_type,omitempty"`
 	Label            string                       `json:"label,omitempty"`
@@ -23,32 +23,32 @@ type LLMObsEvaluationMetricEvent struct {
 	Tags             []string                     `json:"tags,omitempty"`
 }
 
-type RequestLLMObsEvaluationMetricsCreate struct {
-	Data RequestLLMObsEvaluationMetricsCreateData `json:"data"`
+type PushMetricsRequest struct {
+	Data PushMetricsRequestData `json:"data"`
 }
 
-type RequestLLMObsEvaluationMetricsCreateData struct {
-	Type       string                                             `json:"type"`
-	Attributes RequestLLMObsEvaluationMetricsCreateDataAttributes `json:"attributes"`
+type PushMetricsRequestData struct {
+	Type       string                           `json:"type"`
+	Attributes PushMetricsRequestDataAttributes `json:"attributes"`
 }
 
-type RequestLLMObsEvaluationMetricsCreateDataAttributes struct {
-	Metrics []*LLMObsEvaluationMetricEvent `json:"metrics"`
+type PushMetricsRequestDataAttributes struct {
+	Metrics []*LLMObsMetric `json:"metrics"`
 }
 
-func (c *Transport) LLMObsEvalMetricsSend(
+func (c *Transport) PushEvalMetrics(
 	ctx context.Context,
-	metrics []*LLMObsEvaluationMetricEvent,
+	metrics []*LLMObsMetric,
 ) error {
 	if len(metrics) == 0 {
 		return nil
 	}
 	path := endpointEvalMetric
 	method := http.MethodPost
-	body := &RequestLLMObsEvaluationMetricsCreate{
-		Data: RequestLLMObsEvaluationMetricsCreateData{
+	body := &PushMetricsRequest{
+		Data: PushMetricsRequestData{
 			Type: "evaluation_metric",
-			Attributes: RequestLLMObsEvaluationMetricsCreateDataAttributes{
+			Attributes: PushMetricsRequestDataAttributes{
 				Metrics: metrics,
 			},
 		},

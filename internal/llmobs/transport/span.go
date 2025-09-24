@@ -14,18 +14,12 @@ import (
 )
 
 type SpanLink struct {
-	// TraceID represents the low 64 bits of the linked span's trace id. This field is required.
-	TraceID uint64 `msg:"trace_id" json:"trace_id"`
-	// TraceIDHigh represents the high 64 bits of the linked span's trace id. This field is only set if the linked span's trace id is 128 bits.
-	TraceIDHigh uint64 `msg:"trace_id_high,omitempty" json:"trace_id_high"`
-	// SpanID represents the linked span's span id.
-	SpanID uint64 `msg:"span_id" json:"span_id"`
-	// Attributes is a mapping of keys to string values. These values are used to add additional context to the span link.
-	Attributes map[string]string `msg:"attributes,omitempty" json:"attributes"`
-	// Tracestate is the tracestate of the linked span. This field is optional.
-	Tracestate string `msg:"tracestate,omitempty" json:"tracestate"`
-	// Flags represents the W3C trace flags of the linked span. This field is optional.
-	Flags uint32 `msg:"flags,omitempty" json:"flags"`
+	TraceID     uint64            `json:"trace_id"`
+	TraceIDHigh uint64            `json:"trace_id_high,omitempty"`
+	SpanID      uint64            `json:"span_id"`
+	Attributes  map[string]string `json:"attributes,omitempty"`
+	Tracestate  string            `json:"tracestate,omitempty"`
+	Flags       uint32            `json:"flags,omitempty"`
 }
 
 type LLMObsSpanEvent struct {
@@ -46,7 +40,7 @@ type LLMObsSpanEvent struct {
 	Scope            string             `json:"-"`
 }
 
-type RequestLLMObsSpanEventsCreate struct {
+type PushSpanEventsRequest struct {
 	Stage         string             `json:"_dd.stage,omitempty"`
 	TracerVersion string             `json:"_dd.tracer_version,omitempty"`
 	Scope         string             `json:"_dd.scope,omitempty"`
@@ -54,7 +48,7 @@ type RequestLLMObsSpanEventsCreate struct {
 	Spans         []*LLMObsSpanEvent `json:"spans,omitempty"`
 }
 
-func (c *Transport) LLMObsSpanSendEvents(
+func (c *Transport) PushSpanEvents(
 	ctx context.Context,
 	events []*LLMObsSpanEvent,
 ) error {
@@ -63,9 +57,9 @@ func (c *Transport) LLMObsSpanSendEvents(
 	}
 	path := endpointLLMSpan
 	method := http.MethodPost
-	body := make([]*RequestLLMObsSpanEventsCreate, 0, len(events))
+	body := make([]*PushSpanEventsRequest, 0, len(events))
 	for _, ev := range events {
-		req := &RequestLLMObsSpanEventsCreate{
+		req := &PushSpanEventsRequest{
 			Stage:         "raw",
 			TracerVersion: version.Tag,
 			EventType:     "span",

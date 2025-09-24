@@ -145,15 +145,15 @@ type ExperimentEvalMetricEvent struct {
 }
 
 type (
-	RequestDatasetCreate        = Request[DatasetCreate]
-	RequestDatasetDelete        = Request[RequestAttributesDatasetDelete]
-	RequestDatasetCreateRecords = Request[RequestAttributesDatasetCreateRecords]
-	RequestDatasetBatchUpdate   = Request[RequestAttributesDatasetBatchUpdate]
+	CreateDatasetRequest        = Request[DatasetCreate]
+	DeleteDatasetRequest        = Request[RequestAttributesDatasetDelete]
+	CreateDatasetRecordsRequest = Request[RequestAttributesDatasetCreateRecords]
+	BatchUpdateDatasetRequest   = Request[RequestAttributesDatasetBatchUpdate]
 
-	RequestProjectCreate = Request[RequestAttributesProjectCreate]
+	CreateProjectRequest = Request[RequestAttributesProjectCreate]
 
-	RequestExperimentCreate     = Request[RequestAttributesExperimentCreate]
-	RequestExperimentPushEvents = Request[RequestAttributesExperimentPushEvents]
+	CreateExperimentRequest     = Request[RequestAttributesExperimentCreate]
+	PushExperimentEventsRequest = Request[RequestAttributesExperimentPushEvents]
 )
 
 // ---------- Responses ----------
@@ -173,20 +173,21 @@ type ResponseData[T any] struct {
 }
 
 type (
-	ResponseDatasetGet           = ResponseList[DatasetView]
-	ResponseDatasetCreate        = Response[DatasetView]
-	ResponseDatasetUpdate        = Response[DatasetView]
-	ResponseDatasetGetRecords    = ResponseList[DatasetRecordView]
-	ResponseDatasetCreateRecords = ResponseList[DatasetRecordView]
-	ResponseDatasetUpdateRecords = ResponseList[DatasetRecordView]
-	ResponseDatasetBatchUpdate   = ResponseList[DatasetRecordView]
+	GetDatasetResponse    = ResponseList[DatasetView]
+	CreateDatasetResponse = Response[DatasetView]
+	UpdateDatasetResponse = Response[DatasetView]
 
-	ResponseProjectCreate = Response[ProjectView]
+	GetDatasetRecordsResponse    = ResponseList[DatasetRecordView]
+	CreateDatasetRecordsResponse = ResponseList[DatasetRecordView]
+	UpdateDatasetRecordsResponse = ResponseList[DatasetRecordView]
+	BatchUpdateDatasetResponse   = ResponseList[DatasetRecordView]
 
-	ResponseExperimentCreate = Response[ExperimentView]
+	CreateProjectResponse = Response[ProjectView]
+
+	CreateExperimentResponse = Response[ExperimentView]
 )
 
-func (c *Transport) DatasetGetByName(ctx context.Context, name string) (*DatasetView, error) {
+func (c *Transport) GetDatasetByName(ctx context.Context, name string) (*DatasetView, error) {
 	q := url.Values{}
 	q.Set("filter[name]", name)
 	datasetPath := endpointPrefixDNE + "/datasets" + "?" + q.Encode()
@@ -197,7 +198,7 @@ func (c *Transport) DatasetGetByName(ctx context.Context, name string) (*Dataset
 		return nil, fmt.Errorf("get dataset by name %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
 
-	var datasetResp ResponseDatasetGet
+	var datasetResp GetDatasetResponse
 	if err := json.Unmarshal(b, &datasetResp); err != nil {
 		return nil, fmt.Errorf("decode datasets list: %w", err)
 	}
@@ -209,9 +210,8 @@ func (c *Transport) DatasetGetByName(ctx context.Context, name string) (*Dataset
 	return &ds, nil
 }
 
-// DatasetCreate -> POST /datasets
-func (c *Transport) DatasetCreate(ctx context.Context, name, description string) (*DatasetView, error) {
-	_, err := c.DatasetGetByName(ctx, name)
+func (c *Transport) CreateDataset(ctx context.Context, name, description string) (*DatasetView, error) {
+	_, err := c.GetDatasetByName(ctx, name)
 	if err == nil {
 		return nil, errors.New("dataset already exists")
 	}
@@ -221,7 +221,7 @@ func (c *Transport) DatasetCreate(ctx context.Context, name, description string)
 
 	path := endpointPrefixDNE + "/datasets"
 	method := http.MethodPost
-	body := RequestDatasetCreate{
+	body := CreateDatasetRequest{
 		Data: RequestData[DatasetCreate]{
 			Type: resourceTypeDatasets,
 			Attributes: DatasetCreate{
@@ -238,7 +238,7 @@ func (c *Transport) DatasetCreate(ctx context.Context, name, description string)
 
 	log.Debug("llmobs/internal/transport.DatasetGetOrCreate: create dataset success (status code: %d)", status)
 
-	var resp ResponseDatasetCreate
+	var resp CreateDatasetResponse
 	if err := json.Unmarshal(b, &resp); err != nil {
 		return nil, fmt.Errorf("decode create dataset response: %w", err)
 	}
@@ -248,11 +248,10 @@ func (c *Transport) DatasetCreate(ctx context.Context, name, description string)
 	return &dataset, nil
 }
 
-// DatasetDelete -> POST /datasets/delete
-func (c *Transport) DatasetDelete(ctx context.Context, datasetIDs ...string) error {
+func (c *Transport) DeleteDataset(ctx context.Context, datasetIDs ...string) error {
 	path := endpointPrefixDNE + "/datasets/delete"
 	method := http.MethodPost
-	body := RequestDatasetDelete{
+	body := DeleteDatasetRequest{
 		Data: RequestData[RequestAttributesDatasetDelete]{
 			Type: resourceTypeDatasets,
 			Attributes: RequestAttributesDatasetDelete{
@@ -268,8 +267,7 @@ func (c *Transport) DatasetDelete(ctx context.Context, datasetIDs ...string) err
 	return nil
 }
 
-// DatasetBatchUpdateRecords -> POST /datasets/{id}/batch_update
-func (c *Transport) DatasetBatchUpdateRecords(
+func (c *Transport) BatchUpdateDataset(
 	ctx context.Context,
 	datasetID string,
 	insert []DatasetRecordCreate,
@@ -278,7 +276,7 @@ func (c *Transport) DatasetBatchUpdateRecords(
 ) (int, []string, error) {
 	path := fmt.Sprintf("%s/datasets/%s/batch_update", endpointPrefixDNE, url.PathEscape(datasetID))
 	method := http.MethodPost
-	body := RequestDatasetBatchUpdate{
+	body := BatchUpdateDatasetRequest{
 		Data: RequestData[RequestAttributesDatasetBatchUpdate]{
 			Type: resourceTypeDatasets,
 			Attributes: RequestAttributesDatasetBatchUpdate{
@@ -295,7 +293,7 @@ func (c *Transport) DatasetBatchUpdateRecords(
 		return -1, nil, fmt.Errorf("batch_update for dataset %q failed: %v (status=%d, body=%s)", datasetID, err, status, string(b))
 	}
 
-	var resp ResponseDatasetBatchUpdate
+	var resp BatchUpdateDatasetResponse
 	if err := json.Unmarshal(b, &resp); err != nil {
 		return -1, nil, fmt.Errorf("decode batch_update response: %w", err)
 	}
@@ -317,15 +315,14 @@ func (c *Transport) DatasetBatchUpdateRecords(
 			newRecordIDs = append(newRecordIDs, rec.ID)
 		}
 	} else {
-		log.Warn("llmobs/internal/transport: DatasetBatchUpdateRecords: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
+		log.Warn("llmobs/internal/transport: BatchUpdateDataset: expected %d records in response, got %d", len(insert)+len(update), len(resp.Data))
 	}
 	return newDatasetVersion, newRecordIDs, nil
 }
 
-// DatasetGetWithRecords -> GET /datasets?filter[name]=... , then GET /datasets/{id}/records
-func (c *Transport) DatasetGetWithRecords(ctx context.Context, name string) (*DatasetView, []DatasetRecordView, error) {
+func (c *Transport) GetDatasetWithRecords(ctx context.Context, name string) (*DatasetView, []DatasetRecordView, error) {
 	// 1) Fetch record by name
-	ds, err := c.DatasetGetByName(ctx, name)
+	ds, err := c.GetDatasetByName(ctx, name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -338,7 +335,7 @@ func (c *Transport) DatasetGetWithRecords(ctx context.Context, name string) (*Da
 		return nil, nil, fmt.Errorf("get dataset %q records failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
 
-	var recordsResp ResponseDatasetGetRecords
+	var recordsResp GetDatasetRecordsResponse
 	if err := json.Unmarshal(b, &recordsResp); err != nil {
 		return nil, nil, fmt.Errorf("decode dataset records: %w", err)
 	}
@@ -352,12 +349,11 @@ func (c *Transport) DatasetGetWithRecords(ctx context.Context, name string) (*Da
 	return ds, records, nil
 }
 
-// ProjectGetOrCreate -> POST /projects
-func (c *Transport) ProjectGetOrCreate(ctx context.Context, name string) (*ProjectView, error) {
+func (c *Transport) GetOrCreateProject(ctx context.Context, name string) (*ProjectView, error) {
 	path := endpointPrefixDNE + "/projects"
 	method := http.MethodPost
 
-	body := RequestProjectCreate{
+	body := CreateProjectRequest{
 		Data: RequestData[RequestAttributesProjectCreate]{
 			Type: resourceTypeProjects,
 			Attributes: RequestAttributesProjectCreate{
@@ -371,7 +367,7 @@ func (c *Transport) ProjectGetOrCreate(ctx context.Context, name string) (*Proje
 		return nil, fmt.Errorf("create project %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
 
-	var resp ResponseProjectCreate
+	var resp CreateProjectResponse
 	if err := json.Unmarshal(b, &resp); err != nil {
 		return nil, fmt.Errorf("decode project response: %w", err)
 	}
@@ -381,8 +377,7 @@ func (c *Transport) ProjectGetOrCreate(ctx context.Context, name string) (*Proje
 	return &project, nil
 }
 
-// ExperimentCreate -> POST /experiments
-func (c *Transport) ExperimentCreate(
+func (c *Transport) CreateExperiment(
 	ctx context.Context,
 	name, datasetID, projectID string,
 	datasetVersion int,
@@ -397,7 +392,7 @@ func (c *Transport) ExperimentCreate(
 		expConfig = map[string]interface{}{}
 	}
 	meta := map[string]interface{}{"tags": tags}
-	body := RequestExperimentCreate{
+	body := CreateExperimentRequest{
 		Data: RequestData[RequestAttributesExperimentCreate]{
 			Type: resourceTypeExperiments,
 			Attributes: RequestAttributesExperimentCreate{
@@ -418,7 +413,7 @@ func (c *Transport) ExperimentCreate(
 		return nil, fmt.Errorf("create experiment %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
 	}
 
-	var resp ResponseExperimentCreate
+	var resp CreateExperimentResponse
 	if err := json.Unmarshal(b, &resp); err != nil {
 		return nil, fmt.Errorf("decode experiment response: %w", err)
 	}
@@ -428,8 +423,7 @@ func (c *Transport) ExperimentCreate(
 	return &exp, nil
 }
 
-// ExperimentPushEvents -> POST /experiments/{id}/events  (accepts 200/202)
-func (c *Transport) ExperimentPushEvents(
+func (c *Transport) PushExperimentEvents(
 	ctx context.Context,
 	experimentID string,
 	metrics []ExperimentEvalMetricEvent,
@@ -438,7 +432,7 @@ func (c *Transport) ExperimentPushEvents(
 	path := fmt.Sprintf("%s/experiments/%s/events", endpointPrefixDNE, url.PathEscape(experimentID))
 	method := http.MethodPost
 
-	body := RequestExperimentPushEvents{
+	body := PushExperimentEventsRequest{
 		Data: RequestData[RequestAttributesExperimentPushEvents]{
 			Type: resourceTypeExperiments,
 			Attributes: RequestAttributesExperimentPushEvents{

@@ -169,13 +169,13 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 	}
 
 	// 1) Create or get the project
-	proj, err := ll.Transport.ProjectGetOrCreate(ctx, e.cfg.projectName)
+	proj, err := ll.Transport.GetOrCreateProject(ctx, e.cfg.projectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
 
 	// 2) Create the experiment
-	expResp, err := ll.Transport.ExperimentCreate(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description)
+	expResp, err := ll.Transport.CreateExperiment(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create experiment: %w", err)
 	}
@@ -197,7 +197,7 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 
 	// 4) Generate and publish metrics from the results
 	metrics := e.generateMetrics(results)
-	if err := ll.Transport.ExperimentPushEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
+	if err := ll.Transport.PushExperimentEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
 		return nil, fmt.Errorf("failed to push experiment events: %w", err)
 	}
 

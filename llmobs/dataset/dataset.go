@@ -106,7 +106,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 		opt(cfg)
 	}
 
-	resp, err := ll.Transport.DatasetCreate(ctx, name, cfg.description)
+	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -143,7 +143,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 		opt(cfg)
 	}
 	// 1) Create dataset
-	resp, err := ll.Transport.DatasetCreate(ctx, name, cfg.description)
+	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -249,7 +249,7 @@ func Pull(ctx context.Context, name string) (*Dataset, error) {
 	if err != nil {
 		return nil, err
 	}
-	dsResp, recordsResp, err := ll.Transport.DatasetGetWithRecords(ctx, name)
+	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
@@ -414,7 +414,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 	}
 
 	// newRecordIDs should go in the same order
-	newVersion, newRecordIDs, err := ll.Transport.DatasetBatchUpdateRecords(ctx, d.id, insert, update, del)
+	newVersion, newRecordIDs, err := ll.Transport.BatchUpdateDataset(ctx, d.id, insert, update, del)
 	if err != nil {
 		return fmt.Errorf("failed to batch update dataset: %w", err)
 	}

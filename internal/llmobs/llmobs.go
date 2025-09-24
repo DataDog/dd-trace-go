@@ -73,32 +73,34 @@ const (
 var ddSitesNeedingAppSubdomain = []string{"datadoghq.com", "datadoghq.eu", "ddog-gov.com"}
 
 type llmobsContext struct {
-	spanKind        SpanKind
-	sessionID       string
-	metadata        map[string]any
-	metrics         map[string]float64
-	tags            map[string]string
-	agentManifest   string
+	// apply to all spans
+	metadata map[string]any
+	metrics  map[string]float64
+	tags     map[string]string
+
+	// agent specific
+	agentManifest string
+
+	// llm specific
 	modelName       string
 	modelProvider   string
-	toolDefinitions string
+	prompt          *Prompt
+	toolDefinitions []ToolDefinition
 
+	// input
 	inputDocuments []EmbeddedDocument
 	inputMessages  []LLMMessage
 	inputText      string
-	inputPrompt    *Prompt
 
+	// output
 	outputDocuments []RetrievedDocument
 	outputMessages  []LLMMessage
 	outputText      string
 
+	// experiment specific
 	experimentInput          map[string]any
 	experimentExpectedOutput any
 	experimentOutput         any
-
-	inputTokens  int64
-	outputTokens int64
-	totalTokens  int64
 }
 
 type LLMObs struct {
@@ -106,12 +108,13 @@ type LLMObs struct {
 	Transport *transport.Transport
 	Tracer    Tracer
 
+	// channels used by producers
 	spanEventsCh  chan *transport.LLMObsSpanEvent
-	evalMetricsCh chan *transport.LLMObsEvaluationMetricEvent
+	evalMetricsCh chan *transport.LLMObsMetric
 
-	// runtime buffers
+	// runtime buffers, payloads are accumulated here and flushed periodically
 	bufSpanEvents  []*transport.LLMObsSpanEvent
-	bufEvalMetrics []*transport.LLMObsEvaluationMetricEvent
+	bufEvalMetrics []*transport.LLMObsMetric
 
 	// lifecycle
 	mu            sync.Mutex
@@ -146,7 +149,7 @@ func newLLMObs(cfg config.Config, tracer Tracer) (*LLMObs, error) {
 		Tracer:        tracer,
 		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
 		stopCh:        make(chan struct{}),
-		flushNowCh:    make(chan struct{}, 1), // small buffer so Flush() never blocks
+		flushNowCh:    make(chan struct{}, 1),
 		flushInterval: defaultFlushInterval,
 	}, nil
 }
@@ -323,7 +326,7 @@ func (l *LLMObs) drainChannels() {
 
 type batchSendParams struct {
 	spanEvents  []*transport.LLMObsSpanEvent
-	evalMetrics []*transport.LLMObsEvaluationMetricEvent
+	evalMetrics []*transport.LLMObsMetric
 }
 
 // batchSend sends the buffered payloads to the backend.
@@ -350,10 +353,10 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 					}
 				}
 			}
-			if err := l.Transport.LLMObsSpanSendEvents(ctx, events); err != nil {
-				log.Error("llmobs: LLMObsSpanSendEvents failed: %v", err)
+			if err := l.Transport.PushSpanEvents(ctx, events); err != nil {
+				log.Error("llmobs: PushSpanEvents failed: %v", err)
 			} else {
-				log.Debug("llmobs: LLMObsSpanSendEvents success")
+				log.Debug("llmobs: PushSpanEvents success")
 			}
 		}()
 	}
@@ -370,10 +373,10 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 					}
 				}
 			}
-			if err := l.Transport.LLMObsEvalMetricsSend(ctx, metrics); err != nil {
-				log.Error("llmobs: LLMObsEvalMetricsSend failed: %v", err)
+			if err := l.Transport.PushEvalMetrics(ctx, metrics); err != nil {
+				log.Error("llmobs: PushEvalMetrics failed: %v", err)
 			} else {
-				log.Debug("llmobs: LLMObsEvalMetricsSend success")
+				log.Debug("llmobs: PushEvalMetrics success")
 			}
 		}()
 	}
@@ -391,7 +394,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 
 	meta := make(map[string]any)
 
-	spanKind := span.llmCtx.spanKind
+	spanKind := span.spanKind
 	meta["span.kind"] = string(spanKind)
 
 	if (spanKind == SpanKindLLM || spanKind == SpanKindEmbedding) && span.llmCtx.modelName != "" || span.llmCtx.modelProvider != "" {
@@ -441,7 +444,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 			input = expInput
 		}
 		if out := span.llmCtx.experimentOutput; out != nil {
-			// FIXME: experimentOutput is any, but in python is treated as a map
 			meta["output"] = out
 		}
 	}
@@ -456,19 +458,19 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 			output["documents"] = outputDocs
 		}
 	}
-	if inputPrompt := span.llmCtx.inputPrompt; inputPrompt != nil {
+	if inputPrompt := span.llmCtx.prompt; inputPrompt != nil {
 		if spanKind != SpanKindLLM {
 			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prompts is only supported for LLM span kinds")
 		} else {
 			input["prompt"] = inputPrompt
 		}
 	} else if spanKind == SpanKindLLM {
-		if span.parent != nil && span.parent.llmCtx.inputPrompt != nil {
-			input["prompt"] = span.parent.llmCtx.inputPrompt
+		if span.parent != nil && span.parent.llmCtx.prompt != nil {
+			input["prompt"] = span.parent.llmCtx.prompt
 		}
 	}
 
-	if toolDefinitions := span.llmCtx.toolDefinitions; toolDefinitions != "" {
+	if toolDefinitions := span.llmCtx.toolDefinitions; len(toolDefinitions) > 0 {
 		meta["tool_definitions"] = toolDefinitions
 	}
 
@@ -536,7 +538,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		SpanID:           spanID,
 		TraceID:          span.llmTraceID,
 		ParentID:         parentID,
-		SessionID:        span.sessionID(),
+		SessionID:        span.propagatedSessionID(),
 		Tags:             tagsSlice,
 		Name:             span.name,
 		StartNS:          span.startTime.UnixNano(),
@@ -613,20 +615,21 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	}
 
 	span.mlApp = cfg.MLApp
+	span.spanKind = kind
+	span.sessionID = cfg.SessionID
+
 	span.llmCtx = llmobsContext{
-		spanKind:      kind,
 		modelName:     cfg.ModelName,
 		modelProvider: cfg.ModelProvider,
-		sessionID:     cfg.SessionID,
 	}
 
-	if span.llmCtx.sessionID == "" {
-		span.llmCtx.sessionID = span.sessionID()
+	if span.sessionID == "" {
+		span.sessionID = span.propagatedSessionID()
 	}
 	if span.mlApp == "" {
 		span.mlApp = span.propagatedMLApp()
 		if span.mlApp == "" {
-			// We should ensure there's always an ML App to fall back to during startup, so this should never happen.
+			// We should ensure there's always an ML App to fall back to during startup, so in theory this should never happen.
 			log.Warn("llmobs: ML App is required for sending LLM Observability data.")
 		}
 	}

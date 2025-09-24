@@ -329,7 +329,7 @@ func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) (resp *http.Res
 	buf, err := io.ReadAll(req.Body)
 	require.NoError(rt.T, err)
 
-	var payload []llmobstransport.RequestLLMObsSpanEventsCreate
+	var payload []llmobstransport.PushSpanEventsRequest
 	err = json.Unmarshal(buf, &payload)
 	require.NoError(rt.T, err)
 

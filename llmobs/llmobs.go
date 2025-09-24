@@ -97,6 +97,7 @@ type (
 	EmbeddedDocument  = illmobs.EmbeddedDocument
 	RetrievedDocument = illmobs.RetrievedDocument
 	Prompt            = illmobs.Prompt
+	ToolDefinition    = illmobs.ToolDefinition
 )
 
 type (
@@ -105,6 +106,7 @@ type (
 		span
 		AnnotateIO(input, output []LLMMessage, opts ...AnnotateOption)
 		AnnotatePrompt(prompt Prompt)
+		AnnotateToolDefinitions(toolDefinitions []ToolDefinition)
 	}
 	// WorkflowSpan represents a span of kind workflow
 	WorkflowSpan interface {
@@ -196,6 +198,11 @@ func (s *llmSpan) AnnotateIO(input, output []LLMMessage, opts ...AnnotateOption)
 
 func (s *llmSpan) AnnotatePrompt(prompt Prompt) {
 	a := illmobs.SpanAnnotations{Prompt: &prompt}
+	s.Span.Annotate(a)
+}
+
+func (s *llmSpan) AnnotateToolDefinitions(toolDefinitions []ToolDefinition) {
+	a := illmobs.SpanAnnotations{ToolDefinitions: toolDefinitions}
 	s.Span.Annotate(a)
 }
 
