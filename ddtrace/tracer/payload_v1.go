@@ -34,31 +34,31 @@ type payloadV1 struct {
 	strings stringTable `msgp:"strings"`
 
 	// the string ID of the container where the tracer is running
-	containerID uint32 `msgp:"containerID"`
+	containerID string `msgp:"containerID"`
 
 	// the string language name of the tracer
-	languageName uint32 `msgp:"languageName"`
+	languageName string `msgp:"languageName"`
 
 	// the string language version of the tracer
-	languageVersion uint32 `msgp:"languageVersion"`
+	languageVersion string `msgp:"languageVersion"`
 
 	// the string version of the tracer
-	tracerVersion uint32 `msgp:"tracerVersion"`
+	tracerVersion string `msgp:"tracerVersion"`
 
 	// the V4 string UUID representation of a tracer session
-	runtimeID uint32 `msgp:"runtimeID"`
+	runtimeID string `msgp:"runtimeID"`
 
 	// the optional `env` string tag that set with the tracer
-	env uint32 `msgp:"env,omitempty"`
+	env string `msgp:"env,omitempty"`
 
 	// the optional string hostname of where the tracer is running
-	hostname uint32 `msgp:"hostname,omitempty"`
+	hostname string `msgp:"hostname,omitempty"`
 
 	// the optional string `version` tag for the application set in the tracer
-	appVersion uint32 `msgp:"appVersion,omitempty"`
+	appVersion string `msgp:"appVersion,omitempty"`
 
 	// a collection of key to value pairs common in all `chunks`
-	attributes map[uint32]anyValue `msgp:"attributes,omitempty"`
+	attributes keyValueList `msgp:"attributes,omitempty"`
 
 	// a list of trace `chunks`
 	chunks []traceChunk `msgp:"chunks,omitempty"`
@@ -137,7 +137,7 @@ type keyValueList []keyValue
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
 		protocolVersion: traceProtocolV1,
-		attributes:      make(map[uint32]anyValue),
+		attributes:      keyValueList{},
 		chunks:          make([]traceChunk, 0),
 		strings: stringTable{
 			strings:   []string{""},
@@ -165,23 +165,39 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		}
 	}
 
+	kv := keyValueList{
+		{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: p.containerID}},     // containerID
+		{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: StringValueType, value: p.languageName}},    // languageName
+		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: StringValueType, value: p.languageVersion}}, // languageVersion
+		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: StringValueType, value: p.tracerVersion}},   // tracerVersion
+		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: StringValueType, value: p.runtimeID}},       // runtimeID
+		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: StringValueType, value: p.env}},             // env
+		{key: streamingKey{isString: false, idx: 8}, value: anyValue{valueType: StringValueType, value: p.hostname}},        // hostname
+		{key: streamingKey{isString: false, idx: 9}, value: anyValue{valueType: StringValueType, value: p.appVersion}},      // appVersion
+	}
+
 	p.chunks = append(p.chunks, traceChunk{
 		priority:   int32(priority),
 		origin:     origin,
-		attributes: make(map[uint32]anyValue),
+		attributes: keyValueList{},
 		spans:      t,
 		traceID:    t[0].Context().traceID,
 	})
 	wr := msgp.NewWriter(&p.buf)
 	err = EncodeSpanList(t, wr, p)
-	if err == nil {
-		err = wr.Flush()
-	}
 	if err != nil {
 		return payloadStats{}, err
 	}
+
+	// once we've encoded the spans, we can encode the attributes
+	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 10}, value: anyValue{valueType: keyValueListType, value: p.attributes}}) // attributes
+	err = kv.EncodeMsg(wr, p)
+	if err == nil {
+		err = wr.Flush()
+	}
+
 	p.recordItem()
-	return p.stats(), nil
+	return p.stats(), err
 }
 
 func (p *payloadV1) grow(n int) {
@@ -357,7 +373,7 @@ func (t *traceChunk) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 
 	attr := keyValueList{}
 	for k, v := range t.attributes {
-		attr = append(attr, keyValue{key: streamingKey{isString: false, idx: k}, value: anyValue{valueType: getAnyValueType(v), value: v}})
+		attr = append(attr, keyValue{key: streamingKey{isString: false, idx: uint32(k)}, value: anyValue{valueType: getAnyValueType(v), value: v}})
 	}
 	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
 
