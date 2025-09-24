@@ -39,7 +39,7 @@ func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiall
 
 		t.Run(name, func(t *testing.T) {
 			encoder := encodableFunc([]byte(tc.jsonInput), initiallyTruncated)
-			config := newTestMaxJsonEncoderConfig(pinner)
+			config := newTestMaxJSONEncoderConfig(pinner)
 
 			if tc.encoderSetup != nil {
 				tc.encoderSetup(&config)
@@ -630,8 +630,8 @@ func TestJSONEncode_TruncatedInvalidStructure(t *testing.T) {
 	})
 }
 
-// newTestMaxJsonEncoderConfig creates a new JSON encoder configuration for testing purposes with all configs set to max
-func newTestMaxJsonEncoderConfig(pinner *runtime.Pinner) libddwaf.EncoderConfig {
+// newTestMaxJSONEncoderConfig creates a new JSON encoder configuration for testing purposes with all configs set to max
+func newTestMaxJSONEncoderConfig(pinner *runtime.Pinner) libddwaf.EncoderConfig {
 	tm, err := timer.NewTimer(timer.WithUnlimitedBudget())
 	if err != nil {
 		panic(err)
