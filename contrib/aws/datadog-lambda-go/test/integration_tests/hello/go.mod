@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/tests/integration_tests/hello
+module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/test/integration_tests/hello
 
 go 1.24.0
 

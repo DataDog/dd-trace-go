@@ -46,6 +46,9 @@ func TestTelemetryEnabled(t *testing.T) {
 		if filepath.Base(path) != "go.mod" {
 			return nil
 		}
+		if strings.Contains(path, "datadog-lambda-go/test/integration_tests/") {
+			return nil
+		}
 		rErr := testTelemetryEnabled(t, filepath.Dir(path))
 		if rErr != nil {
 			return fmt.Errorf("path: %s, err: %w", path, rErr)
@@ -91,6 +94,10 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 		}
 		// Skip AWS SDK v2 subpackages
 		if strings.Contains(pkg.ImportPath, "aws-sdk-go-v2/") && !strings.HasSuffix(pkg.ImportPath, "/aws") {
+			continue
+		}
+		// Skip AWS SDK v2 subpackages
+		if strings.Contains(pkg.ImportPath, "datadog-lambda-go/") {
 			continue
 		}
 		// Skip command subpackages
