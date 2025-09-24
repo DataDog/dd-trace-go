@@ -73,10 +73,11 @@ const (
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "log/slog"
 
-	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
-	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
-	PackageOS                       Package = "os"
-	PackageRedisRueidis             Package = "redis/rueidis"
+	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
+	PackageEnvoyProxyGoControlPlane       Package = "envoyproxy/go-control-plane"
+	PackageHAProxyStreamProcessingOffload Package = "haproxy/stream-processing-offload"
+	PackageOS                             Package = "os"
+	PackageRedisRueidis                   Package = "redis/rueidis"
 )
 
 // These packages have been removed in v2, but they are kept here for the transitional version.
@@ -824,6 +825,9 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
+	},
+	PackageHAProxyStreamProcessingOffload: {
+		TracedPackage: "haproxy/stream-processing-offload",
 	},
 	PackageOS: {
 		TracedPackage: "os",
