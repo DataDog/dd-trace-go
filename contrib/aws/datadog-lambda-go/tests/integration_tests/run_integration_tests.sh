@@ -57,8 +57,7 @@ run_id=$(xxd -l 4 -c 4 -p < /dev/random)
 # Always remove the stack before exiting, no matter what
 function remove_stack() {
     echo "Removing functions"
-    echo $run_id
-#    serverless remove --stage $run_id
+    serverless remove --stage $run_id
 }
 trap remove_stack EXIT
 
@@ -152,7 +151,7 @@ for function_name in "${LAMBDA_HANDLERS[@]}"; do
             # Normalize Lambda runtime report logs
             perl -p -e 's/(RequestId|TraceId|init|SegmentId|Duration|Memory Used|"e"):( )?[a-z0-9\.\-]+/\1:\2XXXX/g' |
             # Normalize DD APM headers and AWS account ID
-            perl -p -e "s/(Current span ID:|Current trace ID:|account_id:) ?[0-9]+/\1XXXX/g" |
+            perl -p -e "s/(Current span ID:|Current trace ID:|account_id:) ?[0-9a-f]+/\1XXXX/g" |
             # Strip API key from logged requests
             perl -p -e "s/(api_key=|'api_key': ')[a-z0-9\.\-]+/\1XXXX/g" |
             # Normalize ISO combined date-time
@@ -166,7 +165,7 @@ for function_name in "${LAMBDA_HANDLERS[@]}"; do
             # Normalize layer version tag
             perl -p -e "s/(dd_lambda_layer:datadog-go)[0-9]+\.[0-9]+\.[0-9]+/\1X\.X\.X/g" |
             # Normalize package version tag
-            perl -p -e "s/(datadog_lambda:v)[0-9]+\.[0-9]+\.[0-9]+/\1X\.X\.X/g" |
+            perl -p -e "s/(datadog_lambda:v)[0-9]+\.[0-9]+\.[0-9]+(-dev)?/\1X\.X\.X/g" |
             # Normalize golang version tag
             perl -p -e "s/(go)[0-9]+\.[0-9]+\.[0-9]+/\1X\.X\.X/g" |
             # Normalize data in logged traces
