@@ -144,6 +144,8 @@ func newPayloadV1() *payloadV1 {
 			indices:   map[string]uint32{"": 0},
 			nextIndex: 1,
 		},
+		header: make([]byte, 8),
+		off:    8,
 	}
 }
 
@@ -251,7 +253,16 @@ func (p *payloadV1) Write(data []byte) (n int, err error) {
 
 // Read implements io.Reader. It reads from the msgpack-encoded stream.
 func (p *payloadV1) Read(b []byte) (n int, err error) {
-	panic("not implemented")
+	if p.off < len(p.header) {
+		// reading header
+		n = copy(b, p.header[p.off:])
+		p.off += n
+		return n, nil
+	}
+	if p.reader == nil {
+		p.reader = bytes.NewReader(p.buf.Bytes())
+	}
+	return p.reader.Read(b)
 }
 
 // Encode the anyValue
@@ -325,11 +336,7 @@ func (kv keyValueList) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	if err != nil {
 		return err
 	}
-	for i, k := range kv {
-		err := e.WriteUint32(uint32(i))
-		if err != nil {
-			return err
-		}
+	for _, k := range kv {
 		err = k.EncodeMsg(e, p)
 		if err != nil {
 			return err
@@ -340,12 +347,12 @@ func (kv keyValueList) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 
 func (t *traceChunk) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	kv := keyValueList{
-		{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: t.priority}},          // priority
-		{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: t.origin}},         // origin
-		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: keyValueListType, value: t.spans}},         // spans
-		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}},     // droppedTrace
-		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: BytesValueType, value: t.traceID}},         // traceID
-		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: IntValueType, value: t.samplingMechanism}}, // samplingMechanism
+		{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: int64(t.priority)}},      // priority
+		{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: t.origin}},            // origin
+		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: keyValueListType, value: t.spans}},            // spans
+		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}},        // droppedTrace
+		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: BytesValueType, value: t.traceID}},            // traceID
+		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: StringValueType, value: t.samplingMechanism}}, // samplingMechanism
 	}
 
 	attr := keyValueList{}
@@ -392,14 +399,12 @@ func encodeSpan(s *Span, e *msgp.Writer, p *payloadV1) error {
 		{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: StringValueType, value: s.service}},      // service
 		{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: s.name}},         // name
 		{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: StringValueType, value: s.resource}},     // resource
-		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: IntValueType, value: s.spanID}},          // spanID
-		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: IntValueType, value: s.parentID}},        // parentID
-		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: IntValueType, value: s.start}},           // start
-		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: IntValueType, value: s.duration}},        // duration
-		{key: streamingKey{isString: false, idx: 8}, value: anyValue{valueType: BoolValueType, value: s.error}},          // error
+		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: IntValueType, value: int64(s.spanID)}},   // spanID
+		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: IntValueType, value: int64(s.parentID)}}, // parentID
+		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: IntValueType, value: int64(s.start)}},    // start
+		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: IntValueType, value: int64(s.duration)}}, // duration
+		{key: streamingKey{isString: false, idx: 8}, value: anyValue{valueType: BoolValueType, value: (s.error != 0)}},   // error - true if span has error
 		{key: streamingKey{isString: false, idx: 10}, value: anyValue{valueType: StringValueType, value: s.spanType}},    // type
-		{key: streamingKey{isString: false, idx: 11}, value: anyValue{valueType: keyValueListType, value: s.spanLinks}},  // SpanLink
-		{key: streamingKey{isString: false, idx: 12}, value: anyValue{valueType: keyValueListType, value: s.spanEvents}}, // SpanEvent
 		{key: streamingKey{isString: false, idx: 15}, value: anyValue{valueType: StringValueType, value: s.integration}}, // component
 	}
 
@@ -431,7 +436,7 @@ func encodeSpan(s *Span, e *msgp.Writer, p *payloadV1) error {
 		attr = append(attr, keyValue{key: idx, value: anyValue{valueType: getAnyValueType(v), value: v}})
 	}
 
-	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 9}, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 9}, value: anyValue{valueType: keyValueListType, value: attr}}) // attributes
 
 	env, ok := s.meta["env"]
 	if ok {
@@ -442,7 +447,19 @@ func encodeSpan(s *Span, e *msgp.Writer, p *payloadV1) error {
 		kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 14}, value: anyValue{valueType: StringValueType, value: version}}) // version
 	}
 
-	return kv.EncodeMsg(e, p)
+	err := kv.EncodeMsg(e, p)
+	if err != nil {
+		return err
+	}
+
+	// spanLinks
+	err = encodeSpanLinks(s.spanLinks, e, p)
+	if err != nil {
+		return err
+	}
+
+	// spanEvents
+	return encodeSpanEvents(s.spanEvents, e, p)
 }
 
 // encodeString and decodeString handles encoding a string to the payload's string table.
@@ -469,8 +486,13 @@ func (p *payloadV1) encodeString(s string) (streamingKey, error) {
 // encodeSpanLinks encodes the span links into a msgp.Writer
 // Span links are represented as an array of fixmaps (keyValueList)
 func encodeSpanLinks(sl []SpanLink, e *msgp.Writer, p *payloadV1) error {
+	err := e.WriteInt32(11) // spanLinks
+	if err != nil {
+		return err
+	}
+
 	// write the number of span links
-	err := e.WriteArrayHeader(uint32(len(sl)))
+	err = e.WriteArrayHeader(uint32(len(sl)))
 	if err != nil {
 		return err
 	}
@@ -479,10 +501,10 @@ func encodeSpanLinks(sl []SpanLink, e *msgp.Writer, p *payloadV1) error {
 	kv := arrayValue{}
 	for _, s := range sl {
 		slKeyValues := keyValueList{
-			{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: s.TraceID}},       // traceID
-			{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: IntValueType, value: s.SpanID}},        // spanID
-			{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: StringValueType, value: s.Tracestate}}, // tracestate
-			{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: IntValueType, value: s.Flags}},         // flags
+			{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: int64(s.TraceID)}}, // traceID
+			{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: IntValueType, value: int64(s.SpanID)}},  // spanID
+			{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: StringValueType, value: s.Tracestate}},  // tracestate
+			{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: IntValueType, value: int64(s.Flags)}},   // flags
 		}
 
 		attr := keyValueList{}
@@ -510,8 +532,13 @@ func encodeSpanLinks(sl []SpanLink, e *msgp.Writer, p *payloadV1) error {
 // encodeSpanEvents encodes the span events into a msgp.Writer
 // Span events are represented as an array of fixmaps (keyValueList)
 func encodeSpanEvents(se []spanEvent, e *msgp.Writer, p *payloadV1) error {
+	err := e.WriteInt32(12) // spanEvents
+	if err != nil {
+		return err
+	}
+
 	// write the number of span events
-	err := e.WriteArrayHeader(uint32(len(se)))
+	err = e.WriteArrayHeader(uint32(len(se)))
 	if err != nil {
 		return err
 	}
@@ -520,8 +547,8 @@ func encodeSpanEvents(se []spanEvent, e *msgp.Writer, p *payloadV1) error {
 	kv := arrayValue{}
 	for _, s := range se {
 		slKeyValues := keyValueList{
-			{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: s.TimeUnixNano}}, // time
-			{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: s.Name}},      // name
+			{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: int64(s.TimeUnixNano)}}, // time
+			{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: s.Name}},             // name
 		}
 
 		attr := keyValueList{}
