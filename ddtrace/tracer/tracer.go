@@ -218,9 +218,6 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 	setGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -259,6 +256,9 @@ func Start(opts ...StartOption) error {
 		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
+	}
+	if t.config.logStartup {
+		logStartup(t)
 	}
 
 	// start instrumentation telemetry unless it is disabled through the
@@ -927,6 +927,12 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 			ctx.trace.priority = nil
 		}
 	}
+	if ctx != nil && ctx.trace != nil {
+		if _, ok := ctx.trace.samplingPriority(); ok {
+			// ensure that the trace isn't resampled
+			ctx.trace.setLocked(true)
+		}
+	}
 	return ctx, err
 }
 
@@ -999,10 +1005,10 @@ func (t *tracer) sample(span *Span) {
 	if sampler.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, sampler.Rate())
 	}
-	if t.rulesSampling.SampleTraceGlobalRate(span) {
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)

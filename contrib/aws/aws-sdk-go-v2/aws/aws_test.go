@@ -91,6 +91,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -167,6 +168,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -242,6 +244,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -288,7 +291,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	sendMessageInput := &sqs.SendMessageInput{
 		MessageBody: aws.String("test message"),
-		QueueUrl:    aws.String("https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName"),
+		QueueUrl:    aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueueName"),
 	}
 	_, err := sqsClient.SendMessage(context.Background(), sendMessageInput)
 	require.NoError(t, err)
@@ -301,6 +304,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	assert.Equal(t, "SendMessage", s.Tag("aws.operation"))
 	assert.Equal(t, "SQS", s.Tag("aws.service"))
 	assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+	assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
 	assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 	assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 
@@ -1216,6 +1220,74 @@ func TestStreamName(t *testing.T) {
 			}
 			val := streamName(req)
 			assert.Equal(t, tt.expected, val)
+		})
+	}
+}
+
+func TestExtractSQSMetadata(t *testing.T) {
+	tests := []struct {
+		name              string
+		queueURL          string
+		region            string
+		expectedQueueName string
+		expectedARN       string
+	}{
+		{
+			name:              "normal URL",
+			queueURL:          "https://sqs.us-east-1.amazonaws.com/123456789012/MyQueue",
+			region:            "us-east-1",
+			expectedQueueName: "MyQueue",
+			expectedARN:       "arn:aws:sqs:us-east-1:123456789012:MyQueue",
+		},
+		{
+			name:              "URL with trailing slash",
+			queueURL:          "https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueue/",
+			region:            "eu-west-1",
+			expectedQueueName: "MyQueue",
+			expectedARN:       "arn:aws:sqs:eu-west-1:123456789012:MyQueue",
+		},
+		{
+			name:              "China region",
+			queueURL:          "https://sqs.cn-north-1.amazonaws.com.cn/123456789012/ChinaQueue",
+			region:            "cn-north-1",
+			expectedQueueName: "ChinaQueue",
+			expectedARN:       "arn:aws-cn:sqs:cn-north-1:123456789012:ChinaQueue",
+		},
+		{
+			name:              "GovCloud region",
+			queueURL:          "https://sqs.us-gov-west-1.amazonaws.com/123456789012/GovQueue",
+			region:            "us-gov-west-1",
+			expectedQueueName: "GovQueue",
+			expectedARN:       "arn:aws-us-gov:sqs:us-gov-west-1:123456789012:GovQueue",
+		},
+		{
+			name:              "malformed URL - just slash",
+			queueURL:          "/",
+			region:            "us-east-1",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+		{
+			name:              "malformed URL - empty",
+			queueURL:          "",
+			region:            "us-east-1",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+		{
+			name:              "malformed URL - single part",
+			queueURL:          "invalidurl",
+			region:            "us-east-1",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region)
+			assert.Equal(t, tt.expectedQueueName, queueName)
+			assert.Equal(t, tt.expectedARN, arn)
 		})
 	}
 }

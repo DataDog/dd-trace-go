@@ -9,15 +9,15 @@ on:
         type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   pull_request:
-    branches:
-      - "**"
-  merge_group:
   workflow_dispatch:
     inputs:
       ref:
@@ -40,13 +40,13 @@ jobs:
       TEST_LIBRARY: golang
     steps:
       - name: Checkout system tests
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'

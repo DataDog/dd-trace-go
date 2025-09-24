@@ -20,6 +20,7 @@ const (
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
+	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
 	PackageDatabaseSQL          Package = "database/sql"
@@ -71,10 +72,11 @@ const (
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "log/slog"
 
-	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
-	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
-	PackageOS                       Package = "os"
-	PackageRedisRueidis             Package = "redis/rueidis"
+	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
+	PackageEnvoyProxyGoControlPlane       Package = "envoyproxy/go-control-plane"
+	PackageHAProxyStreamProcessingOffload Package = "haproxy/stream-processing-offload"
+	PackageOS                             Package = "os"
+	PackageRedisRueidis                   Package = "redis/rueidis"
 )
 
 // These packages have been removed in v2, but they are kept here for the transitional version.
@@ -180,6 +182,24 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageGCPPubsub: {
 		TracedPackage: "cloud.google.com/go/pubsub",
+		EnvVarPrefix:  "GCP_PUBSUB",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("pubsub.receive"),
+				buildOpNameV1:      staticName("gcp.pubsub.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("pubsub.publish"),
+				buildOpNameV1:      staticName("gcp.pubsub.send"),
+			},
+		},
+	},
+	PackageGCPPubsubV2: {
+		TracedPackage: "cloud.google.com/go/pubsub/v2",
 		EnvVarPrefix:  "GCP_PUBSUB",
 		naming: map[Component]componentNames{
 			ComponentConsumer: {
@@ -792,6 +812,9 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
+	},
+	PackageHAProxyStreamProcessingOffload: {
+		TracedPackage: "haproxy/stream-processing-offload",
 	},
 	PackageOS: {
 		TracedPackage: "os",

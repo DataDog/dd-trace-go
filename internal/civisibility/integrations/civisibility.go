@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -88,7 +89,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		// Check if DD_SERVICE has been set; otherwise default to the repo name (from the spec).
 		var opts []tracer.StartOption
-		serviceName := os.Getenv("DD_SERVICE")
+		serviceName := env.Get("DD_SERVICE")
 		if serviceName == "" {
 			if repoURL, ok := ciTags[constants.GitRepositoryURL]; ok {
 				// regex to sanitize the repository url to be used as a service name

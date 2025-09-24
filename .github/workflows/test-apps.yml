@@ -73,11 +73,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
@@ -99,11 +99,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
@@ -125,11 +125,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
@@ -151,11 +151,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
@@ -177,11 +177,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
@@ -203,11 +203,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
@@ -229,11 +229,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
@@ -255,11 +255,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com
@@ -281,11 +281,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
           datadog_site: datadoghq.com
@@ -307,11 +307,11 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
-        uses: datadog/agent-github-action@v1.3
+        uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
           api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
           datadog_site: datad0g.com

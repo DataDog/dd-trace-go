@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -1245,6 +1246,102 @@ func TestSamplingRuleUnmarshal(t *testing.T) {
 
 }
 
+func TestIncident41436(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "datadog")
+
+	extractAndStartChild := func(h http.Header) *Span {
+		ctx, err := Extract(HTTPHeadersCarrier(h))
+		assert.NoError(t, err)
+		return StartSpan("web.request", ChildOf(ctx))
+	}
+
+	t.Run("rules-to-keep", func(t *testing.T) {
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 1.0}]`)
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 1.0}]`)
+
+		_, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
+		defer stop()
+
+		s1 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678901"},
+			"x-datadog-parent-id":         {"98765432101"},
+			"x-datadog-sampling-priority": {"1"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s1.Finish()
+
+		s2 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678902"},
+			"x-datadog-parent-id":         {"98765432102"},
+			"x-datadog-sampling-priority": {"0"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s2.Finish()
+
+		stop()
+
+		assert.Equal(t, "rum", s1.meta[keyOrigin])
+		assert.Equal(t, float64(1), s1.metrics[keySamplingPriority])
+		assert.Empty(t, s1.metrics[keyDecisionMaker])
+		assert.Empty(t, s1.metrics[keyRulesSamplerAppliedRate])
+		assert.Empty(t, s1.metrics[keySpanSamplingMechanism])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingRuleRate])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingMPS])
+
+		assert.Equal(t, "rum", s2.meta[keyOrigin])
+		assert.Equal(t, float64(0), s2.metrics[keySamplingPriority])
+		assert.Empty(t, s2.metrics[keyDecisionMaker])
+		assert.Empty(t, s2.metrics[keyRulesSamplerAppliedRate])
+		assert.Equal(t, float64(8), s2.metrics[keySpanSamplingMechanism])
+		assert.Equal(t, float64(1), s2.metrics[keySingleSpanSamplingRuleRate])
+	})
+
+	t.Run("rules-to-drop", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "datadog")
+		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 0.0}]`)
+		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"name": "web.request", "sample_rate": 0.0}]`)
+
+		_, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
+		defer stop()
+
+		s1 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678901"},
+			"x-datadog-parent-id":         {"98765432101"},
+			"x-datadog-sampling-priority": {"1"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s1.Finish()
+
+		s2 := extractAndStartChild(http.Header{
+			"x-datadog-trace-id":          {"12345678902"},
+			"x-datadog-parent-id":         {"98765432102"},
+			"x-datadog-sampling-priority": {"0"},
+			"x-datadog-origin":            {"rum"},
+		})
+		s2.Finish()
+
+		stop()
+
+		assert.Equal(t, "rum", s1.meta[keyOrigin])
+		assert.Equal(t, float64(1), s1.metrics[keySamplingPriority])
+		assert.Empty(t, s1.metrics[keyDecisionMaker])
+		assert.Empty(t, s1.metrics[keyRulesSamplerAppliedRate])
+		assert.Empty(t, s1.metrics[keySpanSamplingMechanism])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingRuleRate])
+		assert.Empty(t, s1.metrics[keySingleSpanSamplingMPS])
+
+		assert.Equal(t, "rum", s2.meta[keyOrigin])
+		assert.Equal(t, float64(0), s2.metrics[keySamplingPriority])
+		assert.Empty(t, s2.metrics[keyDecisionMaker])
+		assert.Empty(t, s2.metrics[keyRulesSamplerAppliedRate])
+		assert.Empty(t, s2.metrics[keySpanSamplingMechanism])
+		assert.Empty(t, s2.metrics[keySingleSpanSamplingRuleRate])
+		assert.Empty(t, s2.metrics[keySingleSpanSamplingMPS])
+	})
+}
+
 func TestRulesSamplerConcurrency(t *testing.T) {
 	rules := TraceSamplingRules(
 		Rule{ServiceGlob: "test-service", Rate: 1.0},
@@ -1712,6 +1809,9 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
 		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should be set even when rate is 0
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("0", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
@@ -1728,11 +1828,16 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		root.Finish()
 		assert.Equal(1., root.metrics[keyRulesSamplerAppliedRate])
 		assert.Contains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should be set with rate 1.0
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("1", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+		// child span should not have Knuth sampling rate tag
+		assert.NotContains(child.meta, keyKnuthSamplingRate)
 	})
 
 	t.Run("with-ctx-propagation", func(t *testing.T) {
@@ -1753,11 +1858,16 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
 		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should be set even when rate is 0
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("0", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+		// child span should not have Knuth sampling rate tag
+		assert.NotContains(child.meta, keyKnuthSamplingRate)
 
 		// context propagation locks the span, so no re-sampling should occur
 		tr.Inject(root.Context(), TextMapCarrier(map[string]string{}))
@@ -1769,10 +1879,58 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		root.Finish()
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+		// Knuth sampling rate tag should still be "0" since no re-sampling occurred
+		assert.Contains(root.meta, keyKnuthSamplingRate)
+		assert.Equal("0", root.meta[keyKnuthSamplingRate])
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+		// child span should not have Knuth sampling rate tag
+		assert.NotContains(child.meta, keyKnuthSamplingRate)
 	})
+}
+
+func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
+	assert := assert.New(t)
+
+	testCases := []struct {
+		name     string
+		rate     float64
+		expected string
+	}{
+		{"half", 0.5, "0.5"},
+		{"precision_six_digits", 0.7654321, "0.765432"},
+		{"six_decimals", 0.123456, "0.123456"},
+		{"seven_decimals_rounded", 0.1234567, "0.123457"},
+		{"trailing_zeros", 0.100000, "0.1"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			Start(WithSamplingRules(TraceSamplingRules(
+				Rule{ServiceGlob: "test-service-" + tc.name, Rate: tc.rate},
+			)))
+			tr := getGlobalTracer()
+			defer tr.Stop()
+
+			root := tr.StartSpan("test.operation", ServiceName("test-service-"+tc.name))
+			child := tr.StartSpan("child.operation", ChildOf(root.Context()))
+			child.Finish()
+			root.Finish()
+
+			// Root span should have the sampling rule applied
+			assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
+			assert.Equal(tc.rate, root.metrics[keyRulesSamplerAppliedRate])
+
+			// Root span should have the Knuth sampling rate tag with correctly formatted value
+			assert.Contains(root.meta, keyKnuthSamplingRate)
+			assert.Equal(tc.expected, root.meta[keyKnuthSamplingRate])
+
+			// Child span should not have sampling tags
+			assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
+			assert.NotContains(child.meta, keyKnuthSamplingRate)
+		})
+	}
 }
