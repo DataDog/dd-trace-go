@@ -10,7 +10,6 @@ require (
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.69.0
 	github.com/DataDog/datadog-agent/pkg/trace v0.67.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/go-libddwaf/v4 v4.5.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633
 	github.com/DataDog/gostackparse v0.7.0
@@ -103,9 +102,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ./contrib/net/http
-
 retract (
 	[v2.0.0-rc.1, v2.0.0-rc.22]
 	[v2.0.0-beta.1, v2.0.0-beta.11]
 )
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ./contrib/net/http

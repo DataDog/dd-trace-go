@@ -10,16 +10,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
-	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -279,12 +280,55 @@ func testTracer(t testing.TB, opts ...testtracer.Option) *testtracer.TestTracer 
 }
 
 func testClientServer(t *testing.T, h http.Handler) (*httptest.Server, *http.Client) {
-	wh := httptrace.WrapHandler(h, mlApp, "GET /")
+	wh := traceHandler(h)
 	srv := httptest.NewServer(wh)
-	cl := httptrace.WrapClient(srv.Client())
+	cl := traceClient(srv.Client())
 	t.Cleanup(srv.Close)
 
 	return srv, cl
+}
+
+func traceHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+
+		opts := []tracer.StartSpanOption{
+			tracer.Tag("span.kind", "server"),
+		}
+		parentCtx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
+		if err == nil && parentCtx != nil {
+			opts = append(opts, tracer.ChildOf(parentCtx))
+		}
+
+		span, ctx := tracer.StartSpanFromContext(ctx, "http.request", opts...)
+		defer span.Finish()
+
+		h.ServeHTTP(w, req.WithContext(ctx))
+	})
+}
+
+func traceClient(c *http.Client) *http.Client {
+	c.Transport = &tracedRT{base: c.Transport}
+	return c
+}
+
+type tracedRT struct {
+	base http.RoundTripper
+}
+
+func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+	span, ctx := tracer.StartSpanFromContext(ctx, "http.request", tracer.Tag("span.kind", "client"))
+	defer span.Finish()
+
+	// Clone the request so we can modify it without causing visible side-effects to the caller...
+	req = req.Clone(ctx)
+	err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %s\n", err.Error())
+	}
+
+	return rt.base.RoundTrip(req)
 }
 
 func findTag(tags []string, name string) string {

@@ -183,6 +183,15 @@
     "DD_KEY": [
       "A"
     ],
+    "DD_LLMOBS_AGENTLESS_ENABLED": [
+      "A"
+    ],
+    "DD_LLMOBS_ENABLED": [
+      "A"
+    ],
+    "DD_LLMOBS_SAMPLE_RATE": [
+      "A"
+    ],
     "DD_LOGGING_RATE": [
       "A"
     ],
@@ -277,6 +286,9 @@
       "A"
     ],
     "DD_SITE": [
+      "A"
+    ],
+    "DD_SKIP_SSL_VALIDATION": [
       "A"
     ],
     "DD_SPAN_SAMPLING_RULES": [
