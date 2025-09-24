@@ -202,6 +202,7 @@ func TestSubmitEnhancedMetrics(t *testing.T) {
 	assert.False(t, called)
 	expected := "{\"m\":\"aws.lambda.enhanced.invocations\",\"v\":1,"
 	assert.True(t, strings.Contains(output, expected))
+	assert.True(t, strings.Contains(output, "dd_lambda_layer:datadog-go1."))
 }
 
 func TestDoNotSubmitEnhancedMetrics(t *testing.T) {
@@ -284,6 +285,26 @@ func TestListenerHandlerFinishedFlushes(t *testing.T) {
 			listener.config.LocalTest = localTest
 			listener.HandlerFinished(context.TODO(), nil)
 			assert.Equal(t, called, localTest)
+		})
+	}
+}
+
+func TestGetRuntimeTag(t *testing.T) {
+	testcases := []struct {
+		runtimeVersion string
+		expect         string
+	}{
+		{"", "dd_lambda_layer:datadog-"},
+		{"go1.25.1", "dd_lambda_layer:datadog-go1.25.1"},
+		// runtime.Version() will include any values from the GOEXPERIMENT env var
+		{"go1.25.1 X:jsonv2", "dd_lambda_layer:datadog-go1.25.1-X:jsonv2"},
+		{"go1.25.1 X:fieldtrace,jsonv2", "dd_lambda_layer:datadog-go1.25.1-X:fieldtrace-jsonv2"},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.runtimeVersion, func(t *testing.T) {
+			actual := getRuntimeTag(tc.runtimeVersion)
+			assert.Equal(t, actual, tc.expect)
 		})
 	}
 }

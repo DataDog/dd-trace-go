@@ -58,6 +58,12 @@ type (
 	}
 )
 
+var (
+	// runtimeTag is the metrics tag representing the go runtime version.  Use
+	// this rather than calling getRuntimeTag directly.
+	runtimeTag = getRuntimeTag(runtime.Version())
+)
+
 // MakeListener initializes a new metrics lambda listener
 func MakeListener(config Config, extensionManager *extension.ExtensionManager) Listener {
 
@@ -170,7 +176,7 @@ func (l *Listener) HandlerFinished(ctx context.Context, err error) {
 func (l *Listener) AddDistributionMetric(metric string, value float64, timestamp time.Time, forceLogForwarder bool, tags ...string) {
 
 	// We add our own runtime tag to the metric for version tracking
-	tags = append(tags, getRuntimeTag())
+	tags = append(tags, runtimeTag)
 
 	if l.isAgentRunning {
 		err := l.statsdClient.Distribution(metric, value, tags, 1)
@@ -214,8 +220,12 @@ func (l *Listener) AddDistributionMetric(metric string, value float64, timestamp
 	l.processor.AddMetric(&m)
 }
 
-func getRuntimeTag() string {
-	v := runtime.Version()
+// getRuntimeTag returns the runtime tag to be used when creating distribution
+// metrics.  It should not be called directly, instead use the global
+// runtimeTag var.
+func getRuntimeTag(v string) string {
+	v = strings.ReplaceAll(v, " ", "-")
+	v = strings.ReplaceAll(v, ",", "-")
 	return fmt.Sprintf("dd_lambda_layer:datadog-%s", v)
 }
 
