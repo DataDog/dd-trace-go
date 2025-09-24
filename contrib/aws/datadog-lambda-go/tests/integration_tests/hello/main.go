@@ -19,7 +19,7 @@ func handleRequest(ctx context.Context, ev events.APIGatewayProxyRequest) (event
 	currentSpan, _ := tracer.SpanFromContext(ctx)
 	currentSpanContext := currentSpan.Context()
 	fmt.Println("Current span ID: " + strconv.FormatUint(currentSpanContext.SpanID(), 10))
-	fmt.Println("Current trace ID: " + strconv.FormatUint(currentSpanContext.TraceID(), 10))
+	fmt.Println("Current trace ID: " + currentSpanContext.TraceID())
 
 	// HTTP request
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://www.datadoghq.com", nil)

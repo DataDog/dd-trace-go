@@ -248,7 +248,7 @@ func getEnhancedMetricsTags(ctx context.Context) []string {
 		memorySize := fmt.Sprintf("memorysize:%d", lambdacontext.MemoryLimitInMB)
 		coldStart := fmt.Sprintf("cold_start:%t", isColdStart.(bool))
 		resource := fmt.Sprintf("resource:%s", lambdacontext.FunctionName)
-		datadogLambda := fmt.Sprintf("datadog_lambda:v%s", instrumentation.Version())
+		datadogLambda := fmt.Sprintf("datadog_lambda:%s", instrumentation.Version())
 
 		tags := []string{functionName, region, accountId, memorySize, coldStart, datadogLambda}
 

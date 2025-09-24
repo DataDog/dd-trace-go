@@ -150,7 +150,7 @@ func TestGetEnhancedMetricsTags(t *testing.T) {
 	}
 	tags := getEnhancedMetricsTags(lambdacontext.NewContext(ctx, lc))
 
-	assert.ElementsMatch(t, tags, []string{"functionname:go-lambda-test", "region:us-east-1", "memorysize:256", "cold_start:false", "account_id:123497558138", "resource:go-lambda-test:Latest", "datadog_lambda:v" + instrumentation.Version()})
+	assert.ElementsMatch(t, tags, []string{"functionname:go-lambda-test", "region:us-east-1", "memorysize:256", "cold_start:false", "account_id:123497558138", "resource:go-lambda-test:Latest", "datadog_lambda:" + instrumentation.Version()})
 }
 
 func TestGetEnhancedMetricsTagsWithAlias(t *testing.T) {

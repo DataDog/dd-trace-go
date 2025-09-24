@@ -40,8 +40,14 @@ if [ -n "$UPDATE_SNAPSHOTS" ]; then
 fi
 
 echo "Building Go binaries"
-cd hello && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/hello/bootstrap && cd ..
-cd error && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/error/bootstrap && cd ..
+# Create build directories
+mkdir -p build/hello build/error
+
+# Build each function
+cd hello && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/hello/bootstrap && cd ..
+cd error && GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../build/error/bootstrap && cd ..
+
+# Create zip files
 zip -j build/hello.zip build/hello/bootstrap
 zip -j build/error.zip build/error/bootstrap
 
@@ -51,7 +57,8 @@ run_id=$(xxd -l 4 -c 4 -p < /dev/random)
 # Always remove the stack before exiting, no matter what
 function remove_stack() {
     echo "Removing functions"
-    serverless remove --stage $run_id
+    echo $run_id
+#    serverless remove --stage $run_id
 }
 trap remove_stack EXIT
 

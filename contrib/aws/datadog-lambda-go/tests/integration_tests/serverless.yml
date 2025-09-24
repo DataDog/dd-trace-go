@@ -30,11 +30,6 @@ functions:
     handler: bootstrap
     package:
       artifact: build/hello.zip
-  helloV2:
-    runtime: provided.al2
-    handler: bootstrap
-    package:
-      artifact: build/helloV2.zip
   error:
     runtime: provided.al2
     handler: bootstrap
