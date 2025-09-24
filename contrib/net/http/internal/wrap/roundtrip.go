@@ -174,7 +174,7 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 			span.SetTag(ext.HTTPCode, strconv.Itoa(resp.StatusCode))
 			if cfg.IsStatusError(resp.StatusCode) {
 				span.SetTag("http.errors", resp.Status)
-				span.SetTag(ext.Error, fmt.Errorf("%d: %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
+				span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", resp.StatusCode, http.StatusText(resp.StatusCode)))
 			}
 		}
 
