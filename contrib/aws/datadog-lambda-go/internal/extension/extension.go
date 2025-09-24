@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"reflect"
@@ -94,7 +95,14 @@ func (em *ExtensionManager) checkAgentRunning() {
 		// Tell the extension not to create an execution span if universal instrumentation is disabled
 		if !em.isUniversalInstrumentation {
 			req, _ := http.NewRequest(http.MethodGet, em.helloRoute, nil)
-			if response, err := em.httpClient.Do(req); err == nil && response.StatusCode == 200 {
+			response, err := em.httpClient.Do(req)
+			if response != nil && response.Body != nil {
+				defer func() {
+					_, _ = io.Copy(io.Discard, response.Body)
+					response.Body.Close()
+				}()
+			}
+			if err == nil && response.StatusCode == 200 {
 				logger.Debug("Hit the extension /hello route")
 			} else {
 				logger.Debug("Will use the API since the Serverless Agent was detected but the hello route was unreachable")
@@ -107,8 +115,14 @@ func (em *ExtensionManager) checkAgentRunning() {
 func (em *ExtensionManager) SendStartInvocationRequest(ctx context.Context, eventPayload json.RawMessage) context.Context {
 	body := bytes.NewBuffer(eventPayload)
 	req, _ := http.NewRequest(http.MethodPost, em.startInvocationUrl, body)
-
-	if response, err := em.httpClient.Do(req); err == nil && response.StatusCode == 200 {
+	response, err := em.httpClient.Do(req)
+	if response != nil && response.Body != nil {
+		defer func() {
+			_, _ = io.Copy(io.Discard, response.Body)
+			response.Body.Close()
+		}()
+	}
+	if err == nil && response.StatusCode == 200 {
 		// Propagate dd-trace context from the extension response if found in the response headers
 		traceId := response.Header.Get(string(DdTraceId))
 		if traceId != "" {
@@ -172,6 +186,12 @@ func (em *ExtensionManager) SendEndInvocationRequest(ctx context.Context, functi
 	}
 
 	resp, err := em.httpClient.Do(req)
+	if resp != nil && resp.Body != nil {
+		defer func() {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}()
+	}
 	if err != nil || resp.StatusCode != 200 {
 		logger.Error(fmt.Errorf("could not send end invocation payload to the extension: %v", err))
 	}
@@ -220,7 +240,14 @@ func (em *ExtensionManager) IsExtensionRunning() bool {
 
 func (em *ExtensionManager) Flush() error {
 	req, _ := http.NewRequest(http.MethodGet, em.flushRoute, nil)
-	if response, err := em.httpClient.Do(req); err != nil {
+	response, err := em.httpClient.Do(req)
+	if response != nil && response.Body != nil {
+		defer func() {
+			_, _ = io.Copy(io.Discard, response.Body)
+			response.Body.Close()
+		}()
+	}
+	if err != nil {
 		err := fmt.Errorf("was not able to reach the Agent to flush: %s", err)
 		logger.Error(err)
 		return err
