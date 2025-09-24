@@ -181,6 +181,428 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, llmTraceID, l0.TraceID)
 		assert.Equal(t, llmTraceID, l1.TraceID)
 	})
+
+	t.Run("custom-start-and-finish-times", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Define custom times
+		customStartTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+		customFinishTime := customStartTime.Add(5 * time.Second)
+
+		// Start span with custom start time
+		span, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{
+			StartTime: customStartTime,
+		})
+
+		// Finish span with custom finish time
+		span.Finish(llmobs.FinishSpanConfig{
+			FinishTime: customFinishTime,
+		})
+
+		// Validate APM span timing
+		apmSpans := tt.WaitForSpans(t, 1)
+		s0 := apmSpans[0]
+		assert.Equal(t, "llm", s0.Name)
+		assert.Equal(t, customStartTime.UnixNano(), s0.Start)
+		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), s0.Duration)
+
+		// Validate LLMObs span timing
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		l0 := llmSpans[0]
+		assert.Equal(t, "llm", l0.Name)
+		assert.Equal(t, customStartTime.UnixNano(), l0.StartNS)
+		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
+	})
+}
+
+func TestSpanAnnotate(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	ll, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name          string
+		kind          llmobs.SpanKind
+		annotations   llmobs.SpanAnnotations
+		config        llmobs.StartSpanConfig
+		wantMeta      map[string]any
+		wantMetrics   map[string]float64
+		wantTags      []string
+		wantSessionID string
+	}{
+		{
+			name: "basic-metadata-metrics-tags",
+			kind: llmobs.SpanKindAgent,
+			annotations: llmobs.SpanAnnotations{
+				Metadata: map[string]any{
+					"temperature": 0.7,
+					"max_tokens":  100,
+				},
+				Metrics: map[string]float64{
+					"input_tokens":  50,
+					"output_tokens": 25,
+					"total_tokens":  75,
+				},
+				Tags: map[string]string{
+					"model_version": "v1.0",
+					"custom_tag":    "custom_value",
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "agent",
+				"metadata": map[string]any{
+					"temperature": 0.7,
+					"max_tokens":  float64(100),
+				},
+			},
+			wantMetrics: map[string]float64{
+				"input_tokens":  50,
+				"output_tokens": 25,
+				"total_tokens":  75,
+			},
+			wantTags: []string{
+				"model_version:v1.0",
+				"custom_tag:custom_value",
+			},
+		},
+		{
+			name: "llm-span-with-text-io",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				InputText:  "input text content",
+				OutputText: "output text content",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"messages": []any{
+						map[string]any{
+							"content": "input text content",
+							"role":    "",
+						},
+					},
+				},
+				"output": map[string]any{
+					"messages": []any{
+						map[string]any{
+							"content": "output text content",
+							"role":    "",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "agent-span-with-manifest",
+			kind: llmobs.SpanKindAgent,
+			annotations: llmobs.SpanAnnotations{
+				AgentManifest: "agent-manifest-data",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "agent",
+				"metadata": map[string]any{
+					"agent_manifest": "agent-manifest-data",
+				},
+			},
+		},
+		{
+			name: "embedding-span-with-text-output",
+			kind: llmobs.SpanKindEmbedding,
+			annotations: llmobs.SpanAnnotations{
+				OutputText: "embedding-vector-representation",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "embedding",
+				"output": map[string]any{
+					"value": "embedding-vector-representation",
+				},
+			},
+		},
+		{
+			name: "retrieval-span-with-text-input",
+			kind: llmobs.SpanKindRetrieval,
+			annotations: llmobs.SpanAnnotations{
+				InputText: "search query",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "retrieval",
+				"input": map[string]any{
+					"value": "search query",
+				},
+			},
+		},
+		{
+			name: "experiment-span-with-experiment-data",
+			kind: llmobs.SpanKindExperiment,
+			annotations: llmobs.SpanAnnotations{
+				ExperimentInput: map[string]any{
+					"question": "What is AI?",
+					"context":  "Technology context",
+				},
+				ExperimentOutput:         "AI is artificial intelligence",
+				ExperimentExpectedOutput: "AI is artificial intelligence technology",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "experiment",
+				"input": map[string]any{
+					"question": "What is AI?",
+					"context":  "Technology context",
+				},
+				"output":          "AI is artificial intelligence",
+				"expected_output": "AI is artificial intelligence technology",
+			},
+		},
+		{
+			name: "model-name-and-provider",
+			kind: llmobs.SpanKindLLM,
+			config: llmobs.StartSpanConfig{
+				ModelName:     "gpt-4",
+				ModelProvider: "OpenAI",
+			},
+			wantMeta: map[string]any{
+				"span.kind":      "llm",
+				"model_name":     "gpt-4",
+				"model_provider": "openai",
+			},
+		},
+		{
+			name: "prompt-ignored-on-non-llm-span",
+			kind: llmobs.SpanKindAgent,
+			annotations: llmobs.SpanAnnotations{
+				Prompt: &llmobs.Prompt{Template: "test prompt"},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "agent",
+			},
+		},
+		{
+			name: "agent-manifest-ignored-on-non-agent-span",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				AgentManifest: "test manifest",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+			},
+		},
+		{
+			name: "llm-span-with-messages",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				InputMessages: []llmobs.LLMMessage{
+					{Role: "user", Content: "What is the capital of France?"},
+					{Role: "system", Content: "You are a helpful assistant."},
+				},
+				OutputMessages: []llmobs.LLMMessage{
+					{Role: "assistant", Content: "The capital of France is Paris."},
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"messages": []any{
+						map[string]any{
+							"role":    "user",
+							"content": "What is the capital of France?",
+						},
+						map[string]any{
+							"role":    "system",
+							"content": "You are a helpful assistant.",
+						},
+					},
+				},
+				"output": map[string]any{
+					"messages": []any{
+						map[string]any{
+							"role":    "assistant",
+							"content": "The capital of France is Paris.",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "embedding-span-with-input-documents",
+			kind: llmobs.SpanKindEmbedding,
+			annotations: llmobs.SpanAnnotations{
+				InputEmbeddedDocs: []llmobs.EmbeddedDocument{
+					{Text: "Document 1 content"},
+					{Text: "Document 2 content"},
+				},
+				OutputText: "embedding-vector-representation",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "embedding",
+				"input": map[string]any{
+					"documents": []any{
+						map[string]any{
+							"text": "Document 1 content",
+						},
+						map[string]any{
+							"text": "Document 2 content",
+						},
+					},
+				},
+				"output": map[string]any{
+					"value": "embedding-vector-representation",
+				},
+			},
+		},
+		{
+			name: "retrieval-span-with-output-documents",
+			kind: llmobs.SpanKindRetrieval,
+			annotations: llmobs.SpanAnnotations{
+				InputText: "search query",
+				OutputRetrievedDocs: []llmobs.RetrievedDocument{
+					{Text: "Retrieved doc 1", Name: "doc1.txt", Score: 0.95, ID: "doc-1"},
+					{Text: "Retrieved doc 2", Name: "doc2.txt", Score: 0.87, ID: "doc-2"},
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "retrieval",
+				"input": map[string]any{
+					"value": "search query",
+				},
+				"output": map[string]any{
+					"documents": []any{
+						map[string]any{
+							"text":  "Retrieved doc 1",
+							"name":  "doc1.txt",
+							"score": 0.95,
+							"id":    "doc-1",
+						},
+						map[string]any{
+							"text":  "Retrieved doc 2",
+							"name":  "doc2.txt",
+							"score": 0.87,
+							"id":    "doc-2",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "session-id-from-tags",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				Tags: map[string]string{
+					llmobs.TagKeySessionID: "custom-session-123",
+					"experiment_type":      "qa",
+					"custom_tag":           "custom_value",
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+			},
+			wantTags: []string{
+				"experiment_type:qa",
+				"custom_tag:custom_value",
+			},
+			wantSessionID: "custom-session-123",
+		},
+		{
+			name: "ml-app-from-config",
+			kind: llmobs.SpanKindAgent,
+			config: llmobs.StartSpanConfig{
+				MLApp: "custom-ml-app",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "agent",
+			},
+			wantTags: []string{
+				"ml_app:custom-ml-app",
+			},
+		},
+		{
+			name: "model-info-from-config",
+			kind: llmobs.SpanKindLLM,
+			config: llmobs.StartSpanConfig{
+				ModelName:     "gpt-4-turbo",
+				ModelProvider: "OpenAI",
+			},
+			wantMeta: map[string]any{
+				"span.kind":      "llm",
+				"model_name":     "gpt-4-turbo",
+				"model_provider": "openai", // should be lowercased
+			},
+		},
+		{
+			name: "embedding-model-info-from-config",
+			kind: llmobs.SpanKindEmbedding,
+			config: llmobs.StartSpanConfig{
+				ModelName:     "text-embedding-ada-002",
+				ModelProvider: "OpenAI",
+			},
+			wantMeta: map[string]any{
+				"span.kind":      "embedding",
+				"model_name":     "text-embedding-ada-002",
+				"model_provider": "openai", // should be lowercased
+			},
+		},
+		{
+			name: "session-id-and-ml-app-combined",
+			kind: llmobs.SpanKindWorkflow,
+			config: llmobs.StartSpanConfig{
+				MLApp:     "workflow-app",
+				SessionID: "config-session-456",
+			},
+			annotations: llmobs.SpanAnnotations{
+				Tags: map[string]string{
+					"workflow_type": "sequential",
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "workflow",
+			},
+			wantTags: []string{
+				"ml_app:workflow-app",
+				"workflow_type:sequential",
+			},
+			wantSessionID: "config-session-456",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			span, _ := ll.StartSpan(context.Background(), tc.kind, "", tc.config)
+			span.Annotate(tc.annotations)
+			span.Finish(llmobs.FinishSpanConfig{})
+
+			llmSpans := tt.WaitForLLMObsSpans(t, 1)
+			l0 := llmSpans[0]
+
+			if tc.wantMeta != nil {
+				for key, expectedValue := range tc.wantMeta {
+					assert.Contains(t, l0.Meta, key, "Missing key %q in meta", key)
+					assert.Equal(t, expectedValue, l0.Meta[key], "Mismatch for meta key %q", key)
+				}
+			}
+
+			if tc.wantMetrics != nil {
+				for key, expectedValue := range tc.wantMetrics {
+					assert.Contains(t, l0.Metrics, key, "Missing key %q in metrics", key)
+					assert.Equal(t, expectedValue, l0.Metrics[key], "Mismatch for metrics key %q", key)
+				}
+			}
+
+			if tc.wantTags != nil {
+				for _, expectedTag := range tc.wantTags {
+					parts := strings.Split(expectedTag, ":")
+					require.Len(t, parts, 2, "Expected tag format 'key:value', got %q", expectedTag)
+					expectedKey, expectedValue := parts[0], parts[1]
+
+					actualValue := findTag(l0.Tags, expectedKey)
+					assert.Equal(t, expectedValue, actualValue, "Tag %q: expected %q, got %q", expectedKey, expectedValue, actualValue)
+				}
+			}
+
+			if tc.wantSessionID != "" {
+				assert.Equal(t, tc.wantSessionID, l0.SessionID, "Session ID mismatch")
+			}
+		})
+	}
 }
 
 func BenchmarkStartSpan(b *testing.B) {

@@ -266,9 +266,13 @@ func (s *Span) annotateIO(a SpanAnnotations) {
 func (s *Span) annotateIOLLM(a SpanAnnotations) {
 	if a.InputMessages != nil {
 		s.llmCtx.inputMessages = a.InputMessages
+	} else if a.InputText != "" {
+		s.llmCtx.inputMessages = []LLMMessage{{Content: a.InputText}}
 	}
 	if a.OutputMessages != nil {
 		s.llmCtx.outputMessages = a.OutputMessages
+	} else if a.OutputText != "" {
+		s.llmCtx.outputMessages = []LLMMessage{{Content: a.OutputText}}
 	}
 }
 

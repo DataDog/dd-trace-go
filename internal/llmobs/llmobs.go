@@ -591,7 +591,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		SpanType:  ext.SpanTypeLLM,
 		StartTime: cfg.StartTime,
 	}
-	apmSpan, ctx := l.Tracer.StartSpan(ctx, name, startCfg)
+	apmSpan, ctx := l.Tracer.StartSpan(ctx, spanName, startCfg)
 	span := &Span{
 		name:      spanName,
 		apm:       apmSpan,
@@ -633,7 +633,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 			log.Warn("llmobs: ML App is required for sending LLM Observability data.")
 		}
 	}
-	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", name, kind, span.mlApp)
+	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", spanName, kind, span.mlApp)
 	return span, ContextWithActiveLLMSpan(ctx, span)
 }
 

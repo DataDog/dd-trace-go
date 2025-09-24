@@ -232,16 +232,16 @@ func drainAndClose(b io.ReadCloser) {
 
 func parseRetryAfter(h http.Header) time.Duration {
 	rateLimitReset := h.Get(headerRateLimitReset)
-	waitSeconds := 1
+	waitSeconds := int64(1)
 	if rateLimitReset != "" {
 		if resetTime, err := strconv.ParseInt(rateLimitReset, 10, 64); err == nil {
-			seconds := 0
+			seconds := int64(0)
 			if resetTime > time.Now().Unix() {
 				// Assume it's a Unix timestamp
-				seconds = int(time.Until(time.Unix(resetTime, 0)).Seconds())
+				seconds = int64(time.Until(time.Unix(resetTime, 0)).Seconds())
 			} else {
 				// Assume it's a duration in seconds
-				seconds = int(resetTime)
+				seconds = resetTime
 			}
 			if seconds > 0 {
 				waitSeconds = seconds
