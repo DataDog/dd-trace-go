@@ -127,10 +127,23 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	if err := msgp.Encode(&buf, p); err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", t.statsURL, &buf)
+	body := buf.Bytes()
+
+	req, err := http.NewRequest("POST", t.statsURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
+
+	// by providing GetBody and a zero length slice for the Idempotency-Key
+	// http header, we get free retries in the face of network errors, such as
+	// when datadog-agent is much more aggressive about closing idle connections
+	// than we are
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+	req.ContentLength = int64(len(body))
+	req.Header["Idempotency-Key"] = []string{}
+
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
