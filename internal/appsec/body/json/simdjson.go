@@ -20,40 +20,16 @@ import (
 type Encodable struct {
 	truncated  bool
 	data       []byte
-	parsedJson *json.ParsedJson
+	parsedJSON *json.ParsedJson
 }
 
 var (
-	parsedJsonPool sync.Pool
+	parsedJSONPool sync.Pool
 )
 
-func NewEncodable(reader io.ReadCloser, limit int64) (libddwaf.Encodable, error) {
-	if !json.SupportedCPU() {
-		return NewEncodable(reader, limit)
-	}
-
-	limitedReader := io.LimitedReader{
-		R: reader,
-		N: limit,
-	}
-
-	data, err := io.ReadAll(&limitedReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read data: %w", err)
-	}
-
-	truncated := false
-	if len(data) > int(limit) {
-		data = data[:limit]
-		truncated = true
-	}
-
-	return NewEncodableFromData(data, truncated), nil
-}
-
 func NewEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
-	parsedJson, _ := parsedJsonPool.Get().(*json.ParsedJson)
-	pj, err := json.Parse(data, parsedJson, json.WithCopyStrings(false))
+	parsedJSON, _ := parsedJSONPool.Get().(*json.ParsedJson)
+	pj, err := json.Parse(data, parsedJSON, json.WithCopyStrings(false))
 	if err != nil {
 		// This can happen if a trivial JSON type is found like a string or number, in this case simply return a
 		// simpler encoder where performance is not critical.
@@ -63,7 +39,7 @@ func NewEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
 	return &Encodable{
 		truncated:  truncated,
 		data:       data,
-		parsedJson: pj,
+		parsedJSON: pj,
 	}
 }
 
@@ -76,9 +52,9 @@ func (e *Encodable) ToEncoder(config libddwaf.EncoderConfig) *encoder {
 
 func (e *Encodable) Encode(config libddwaf.EncoderConfig, obj *libddwaf.WAFObject, depth int) (map[libddwaf.TruncationReason][]int, error) {
 	encoder := e.ToEncoder(config)
-	defer parsedJsonPool.Put(encoder.parsedJson)
+	defer parsedJSONPool.Put(encoder.parsedJSON)
 
-	iter := encoder.parsedJson.Iter()
+	iter := encoder.parsedJSON.Iter()
 	if err := encoder.Encode(obj, iter.Advance(), &iter, config.MaxObjectDepth-depth); err != nil && (errors.Is(err, waferrors.ErrTimeout) || !e.truncated) {
 		// Return an error if a waf timeout error occurred, or we are in normal parsing mode
 		return nil, err

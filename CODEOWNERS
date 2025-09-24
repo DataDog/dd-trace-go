@@ -13,9 +13,11 @@
 # appsec
 /appsec                         @DataDog/asm-go
 /internal/appsec                @DataDog/asm-go
+/instrumentation/appsec         @DataDog/asm-go
 /contrib/**/*appsec*.go         @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
 /contrib/envoyproxy             @DataDog/asm-go
+/contrib/haproxy                @DataDog/asm-go
 /contrib/k8s.io/gateway-api     @DataDog/asm-go
 
 # capabilities - config, dynamic config, remote config
