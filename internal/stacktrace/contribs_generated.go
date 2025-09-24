@@ -462,6 +462,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/jcmturner/goidentity/v6",
 		"github.com/jcmturner/gokrb5/v8",
 		"github.com/jcmturner/rpc/v2",
+		"github.com/jellydator/ttlcache/v3",
 		"github.com/jhump/gopoet",
 		"github.com/jhump/goprotoc",
 		"github.com/jhump/protoreflect",
