@@ -7,6 +7,9 @@
 
 package model
 
+type Query struct {
+}
+
 type TopLevel struct {
 	Nested string `json:"nested"`
 }
