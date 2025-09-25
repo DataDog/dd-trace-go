@@ -7,7 +7,6 @@ package config
 
 import (
 	"context"
-	"crypto/tls"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,16 +14,15 @@ import (
 )
 
 type TracerConfig struct {
-	DDTags        map[string]any
-	Env           string
-	Service       string
-	Version       string
-	AgentURL      *url.URL
-	APIKey        string
-	APPKey        string
-	HTTPClient    *http.Client
-	Site          string
-	SkipSSLVerify bool
+	DDTags     map[string]any
+	Env        string
+	Service    string
+	Version    string
+	AgentURL   *url.URL
+	APIKey     string
+	APPKey     string
+	HTTPClient *http.Client
+	Site       string
 }
 
 type AgentFeatures struct {
@@ -32,14 +30,12 @@ type AgentFeatures struct {
 }
 
 type Config struct {
-	Enabled               bool
-	SampleRate            float64
-	MLApp                 string
-	AgentlessEnabled      *bool
-	InstrumentedProxyURLs []string
-	ProjectName           string
-	TracerConfig          TracerConfig
-	AgentFeatures         AgentFeatures
+	Enabled          bool
+	MLApp            string
+	AgentlessEnabled *bool
+	ProjectName      string
+	TracerConfig     TracerConfig
+	AgentFeatures    AgentFeatures
 }
 
 // We copy the transport to avoid using the default one, as it might be
@@ -88,9 +84,6 @@ func (c *Config) DefaultHTTPClient(agentless bool) *http.Client {
 			},
 			Timeout: 10 * time.Second,
 		}
-	}
-	if c.TracerConfig.SkipSSLVerify {
-		cl.Transport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	return cl
 }

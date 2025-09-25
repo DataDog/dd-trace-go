@@ -49,12 +49,10 @@ import (
 )
 
 const (
-	envLLMObsEnabled               = "DD_LLMOBS_ENABLED"
-	envLLMObsSampleRate            = "DD_LLMOBS_SAMPLE_RATE"
-	envLLMObsMlApp                 = "DD_LLMOBS_ML_APP"
-	envLLMObsAgentlessEnabled      = "DD_LLMOBS_AGENTLESS_ENABLED"
-	envLLMObsInstrumentedProxyUrls = "DD_LLMOBS_INSTRUMENTED_PROXY_URLS"
-	envLLMObsProjectName           = "DD_LLMOBS_PROJECT_NAME"
+	envLLMObsEnabled          = "DD_LLMOBS_ENABLED"
+	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
+	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
+	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
 )
 
 var contribIntegrations = map[string]struct {
@@ -525,12 +523,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// LLM Observability config
 	c.llmobs = llmobsconfig.Config{
-		Enabled:               internal.BoolEnv(envLLMObsEnabled, false),
-		SampleRate:            internal.FloatEnv(envLLMObsSampleRate, 1.0),
-		MLApp:                 os.Getenv(envLLMObsMlApp),
-		AgentlessEnabled:      llmobsAgentlessEnabledFromEnv(),
-		InstrumentedProxyURLs: llmobsInstrumentedProxyURLsFromEnv(),
-		ProjectName:           os.Getenv(envLLMObsProjectName),
+		Enabled:          internal.BoolEnv(envLLMObsEnabled, false),
+		MLApp:            env.Get(envLLMObsMlApp),
+		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
+		ProjectName:      env.Get(envLLMObsProjectName),
 	}
 	for _, fn := range opts {
 		if fn == nil {
@@ -648,16 +644,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	// Update the llmobs config with stuff needed from the tracer.
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
-		DDTags:        c.globalTags.get(),
-		Env:           c.env,
-		Service:       c.serviceName,
-		Version:       c.version,
-		AgentURL:      c.agentURL,
-		APIKey:        os.Getenv("DD_API_KEY"),
-		APPKey:        os.Getenv("DD_APP_KEY"),
-		HTTPClient:    c.httpClient,
-		Site:          os.Getenv("DD_SITE"),
-		SkipSSLVerify: internal.BoolEnv("DD_SKIP_SSL_VALIDATION", false),
+		DDTags:     c.globalTags.get(),
+		Env:        c.env,
+		Service:    c.serviceName,
+		Version:    c.version,
+		AgentURL:   c.agentURL,
+		APIKey:     env.Get("DD_API_KEY"),
+		APPKey:     env.Get("DD_APP_KEY"),
+		HTTPClient: c.httpClient,
+		Site:       env.Get("DD_SITE"),
 	}
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
 		EVPProxyV2: c.agent.evpProxyV2,
@@ -672,30 +667,6 @@ func llmobsAgentlessEnabledFromEnv() *bool {
 		return nil
 	}
 	return &v
-}
-
-func llmobsInstrumentedProxyURLsFromEnv() []string {
-	v := os.Getenv(envLLMObsInstrumentedProxyUrls)
-	if v == "" {
-		return nil
-	}
-	seen := make(map[string]struct{})
-	out := make([]string, 0)
-	for _, part := range strings.Split(v, ",") {
-		s := strings.TrimSpace(part)
-		if s == "" {
-			continue
-		}
-		if _, ok := seen[s]; ok {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 func apmTracingDisabled(c *config) {
@@ -1545,39 +1516,39 @@ func WithTestDefaults(statsdClient any) StartOption {
 	}
 }
 
+// WithLLMObsEnabled allows to enable LLM Observability (it is disabled by default).
+// This is equivalent to the DD_LLMOBS_ENABLED environment variable.
 func WithLLMObsEnabled(enabled bool) StartOption {
 	return func(c *config) {
 		c.llmobs.Enabled = enabled
 	}
 }
 
+// WithLLMObsMLApp allows to configure the default ML App for LLM Observability.
+// It is required to have this configured to use any LLM Observability features.
+// This is equivalent to the DD_LLMOBS_ML_APP environment variable.
 func WithLLMObsMLApp(mlApp string) StartOption {
 	return func(c *config) {
 		c.llmobs.MLApp = mlApp
 	}
 }
 
+// WithLLMObsProjectName allows to configure the default LLM Observability project to use.
+// It is required when using the Experiments and Datasets feature.
+// This is equivalent to the DD_LLMOBS_PROJECT_NAME environment variable.
 func WithLLMObsProjectName(projectName string) StartOption {
 	return func(c *config) {
 		c.llmobs.ProjectName = projectName
 	}
 }
 
-func WithLLMObsSampleRate(sampleRate float64) StartOption {
-	return func(c *config) {
-		c.llmobs.SampleRate = sampleRate
-	}
-}
-
+// WithLLMObsAgentlessEnabled allows to configure LLM Observability to work in agent/agentless mode.
+// The default is using the agent if it is available and supports it, otherwise it will default to agentless mode.
+// Please note when using agentless mode, a valid DD_API_KEY must also be set.
+// This is equivalent to the DD_LLMOBS_AGENTLESS_ENABLED environment variable.
 func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 	return func(c *config) {
 		c.llmobs.AgentlessEnabled = &agentlessEnabled
-	}
-}
-
-func WithLLMObsInstrumentedProxyURLs(instrumentedProxyURLs []string) StartOption {
-	return func(c *config) {
-		c.llmobs.InstrumentedProxyURLs = instrumentedProxyURLs
 	}
 }
 
