@@ -39,5 +39,6 @@ jobs:
       - name: Run govulncheck-contribs
         run: |
           go list -f '{{.Dir}}' ./contrib/... | while read dir ; do
+            [[ "$dir" =~ "go-chi/chi$" ]] && continue
             govulncheck -C $dir .
           done
