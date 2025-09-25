@@ -176,8 +176,8 @@ var packages = map[Package]PackageInfo{
 			ComponentDefault: {
 				useDDServiceV0:     false,
 				buildServiceNameV0: staticName("aws.lambda"),
-				buildOpNameV0:      staticName("aws.lambda.invoke"),
-				buildOpNameV1:      staticName("aws.lambda.invoke"),
+				buildOpNameV0:      staticName("aws.lambda"),
+				buildOpNameV1:      staticName("aws.lambda"),
 			},
 		},
 	},
