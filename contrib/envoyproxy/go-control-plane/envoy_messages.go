@@ -37,7 +37,6 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 	var remoteAddr string
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
-		mergeMetadataHeaders(md, headers)
 		remoteAddr = getRemoteAddr(md)
 	}
 
