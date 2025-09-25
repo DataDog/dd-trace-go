@@ -46,7 +46,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		if filepath.Base(path) != "go.mod" {
 			return nil
 		}
-		if strings.Contains(path, "datadog-lambda-go/test/integration_tests/") {
+		if strings.Contains(path, "integration_tests") {
 			return nil
 		}
 		rErr := testTelemetryEnabled(t, filepath.Dir(path))
