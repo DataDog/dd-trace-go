@@ -69,7 +69,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				{
 					Tags: map[string]any{
 						"name":     "http.request",
-						"service":  "twirp.test",
+						"service":  "http.router",
 						"resource": "POST /twirp/twitch.twirp.example.Haberdasher/MakeHat",
 						"type":     "web",
 					},

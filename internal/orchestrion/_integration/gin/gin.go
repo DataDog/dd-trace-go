@@ -70,7 +70,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "GET /ping",
-						"service":  "gin.test",
+						"service":  "http.router",
 						"type":     "web",
 					},
 					Meta: map[string]string{
