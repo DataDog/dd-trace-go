@@ -557,24 +557,30 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
 				readableBytes(len(b)),
 			)
-			truncateLLMObsSpanEvent(ev, input, output)
+			dropSpanEventIO(ev)
 		}
 	}
 	return ev
 }
 
-func truncateLLMObsSpanEvent(ev *transport.LLMObsSpanEvent, input, output map[string]any) {
-	if _, ok := input["value"]; ok {
-		input["value"] = droppedValueText
+func dropSpanEventIO(ev *transport.LLMObsSpanEvent) {
+	if ev == nil {
+		return
 	}
-	ev.Meta["input"] = input
-
-	if _, ok := output["value"]; ok {
-		output["value"] = droppedValueText
+	droppedIO := false
+	if _, ok := ev.Meta["input"]; ok {
+		ev.Meta["input"] = map[string]any{"value": droppedValueText}
+		droppedIO = true
 	}
-	ev.Meta["output"] = output
-
-	ev.CollectionErrors = []string{collectionErrorDroppedIO}
+	if _, ok := ev.Meta["output"]; ok {
+		ev.Meta["output"] = map[string]any{"value": droppedValueText}
+		droppedIO = true
+	}
+	if droppedIO {
+		ev.CollectionErrors = []string{collectionErrorDroppedIO}
+	} else {
+		log.Debug("llmobs: attempted to drop span event IO but it was not present")
+	}
 }
 
 func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
@@ -634,7 +640,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		}
 	}
 	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", spanName, kind, span.mlApp)
-	return span, ContextWithActiveLLMSpan(ctx, span)
+	return span, contextWithActiveLLMSpan(ctx, span)
 }
 
 func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimentID string, cfg StartSpanConfig) (*Span, context.Context) {

@@ -36,6 +36,6 @@ func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
 	return nil, false
 }
 
-func ContextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
+func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
 }

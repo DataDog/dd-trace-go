@@ -322,7 +322,7 @@ func (s *Span) annotateIOText(a SpanAnnotations) {
 	if a.InputMessages != nil || a.InputEmbeddedDocs != nil {
 		log.Warn("llmobs: %s spans can only be annotated with input text, ignoring other inputs", s.spanKind)
 	}
-	if a.OutputText != "" || a.OutputMessages != nil {
+	if a.OutputMessages != nil || a.OutputRetrievedDocs != nil {
 		log.Warn("llmobs: %s spans can only be annotated with output text, ignoring other outputs", s.spanKind)
 	}
 	if a.InputText != "" {

@@ -28,14 +28,10 @@ const (
 )
 
 func TestStartSpan(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
-
-	ll, err := llmobs.ActiveLLMObs()
-	require.NoError(t, err)
-
 	t.Run("simple", func(t *testing.T) {
+		tt, ll := testTracer(t)
 		ctx := context.Background()
+
 		span, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{})
 		span.Finish(llmobs.FinishSpanConfig{})
 
@@ -49,6 +45,8 @@ func TestStartSpan(t *testing.T) {
 	})
 
 	t.Run("child-spans", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
 		ctx := context.Background()
 		ss0, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{})
 		ss1, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1", llmobs.StartSpanConfig{})
@@ -94,6 +92,8 @@ func TestStartSpan(t *testing.T) {
 	})
 
 	t.Run("distributed-context-propagation", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
 		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			ctx := req.Context()
 			ss3, ctx := tracer.StartSpanFromContext(ctx, "apm-2")
@@ -183,6 +183,8 @@ func TestStartSpan(t *testing.T) {
 	})
 
 	t.Run("custom-start-and-finish-times", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
 		ctx := context.Background()
 
 		// Define custom times
@@ -213,15 +215,10 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, customStartTime.UnixNano(), l0.StartNS)
 		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
 	})
+
 }
 
 func TestSpanAnnotate(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
-
-	ll, err := llmobs.ActiveLLMObs()
-	require.NoError(t, err)
-
 	testCases := []struct {
 		name          string
 		kind          llmobs.SpanKind
@@ -566,6 +563,7 @@ func TestSpanAnnotate(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			tt, ll := testTracer(t)
 			span, _ := ll.StartSpan(context.Background(), tc.kind, "", tc.config)
 			span.Annotate(tc.annotations)
 			span.Finish(llmobs.FinishSpanConfig{})
@@ -603,6 +601,425 @@ func TestSpanAnnotate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSpanTruncation(t *testing.T) {
+	t.Run("text-input", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, "", llmobs.StartSpanConfig{})
+
+		// Create very large strings that will exceed the 5MB size limit when JSON marshaled
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
+
+		span.Annotate(llmobs.SpanAnnotations{
+			InputText:  largeContent,
+			OutputText: largeContent,
+			Metadata: map[string]any{
+				"large_field1": strings.Repeat("a", 1_000_000), // 1MB
+				"large_field2": strings.Repeat("b", 1_000_000), // 1MB
+			},
+		})
+
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		l0 := llmSpans[0]
+
+		// Check that input and output were truncated
+		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
+			if inputValue, exists := inputMap["value"]; exists {
+				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputValue)
+			}
+		}
+
+		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
+			if outputValue, exists := outputMap["value"]; exists {
+				assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputValue)
+			}
+		}
+
+		// Check that collection errors were set
+		assert.Contains(t, l0.CollectionErrors, "dropped_io")
+
+		// Metadata should still be present (only input/output are truncated)
+		if metadata, ok := l0.Meta["metadata"].(map[string]any); ok {
+			assert.Contains(t, metadata, "large_field1")
+			assert.Contains(t, metadata, "large_field2")
+		}
+	})
+	t.Run("llm-messages", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+
+		// Create large messages
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
+
+		span.Annotate(llmobs.SpanAnnotations{
+			InputMessages: []llmobs.LLMMessage{
+				{Content: largeContent, Role: "user"},
+			},
+			OutputMessages: []llmobs.LLMMessage{
+				{Content: largeContent, Role: "assistant"},
+			},
+		})
+
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		l0 := llmSpans[0]
+
+		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
+		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.NotContains(t, inputMap, "messages", "Original messages should be replaced")
+		}
+
+		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.NotContains(t, outputMap, "messages", "Original messages should be replaced")
+		}
+
+		assert.Contains(t, l0.CollectionErrors, "dropped_io")
+	})
+	t.Run("embedded-docs", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindEmbedding, "", llmobs.StartSpanConfig{})
+
+		// Create large embedded documents
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
+
+		span.Annotate(llmobs.SpanAnnotations{
+			InputEmbeddedDocs: []llmobs.EmbeddedDocument{
+				{Text: largeContent},
+				{Text: largeContent},
+			},
+			OutputText: largeContent,
+		})
+
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		l0 := llmSpans[0]
+
+		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
+		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+			assert.NotContains(t, inputMap, "documents", "Original documents should be replaced")
+		}
+
+		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+		}
+
+		assert.Contains(t, l0.CollectionErrors, "dropped_io")
+	})
+	t.Run("retrieved-docs", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindRetrieval, "", llmobs.StartSpanConfig{})
+
+		// Create large retrieved documents
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
+
+		span.Annotate(llmobs.SpanAnnotations{
+			InputText: "search query",
+			OutputRetrievedDocs: []llmobs.RetrievedDocument{
+				{Text: largeContent, Name: "doc1.txt", Score: 0.95, ID: "doc-1"},
+				{Text: largeContent, Name: "doc2.txt", Score: 0.87, ID: "doc-2"},
+			},
+		})
+
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		l0 := llmSpans[0]
+
+		// Should be truncated to {"value": DROPPED_VALUE_TEXT} like Python
+		if inputMap, ok := l0.Meta["input"].(map[string]any); ok {
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", inputMap["value"])
+		}
+
+		if outputMap, ok := l0.Meta["output"].(map[string]any); ok {
+			assert.Equal(t, "[This value has been dropped because this span's size exceeds the 1MB size limit.]", outputMap["value"])
+			assert.NotContains(t, outputMap, "documents", "Original documents should be replaced")
+		}
+
+		assert.Contains(t, l0.CollectionErrors, "dropped_io")
+	})
+}
+
+func TestPropagatedInfo(t *testing.T) {
+	t.Run("trace-id-from-parent", func(t *testing.T) {
+		_, ll := testTracer(t)
+		ctx := context.Background()
+
+		// Create parent span
+		parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent", llmobs.StartSpanConfig{})
+		parentTraceID := parentSpan.TraceID()
+
+		// Create child span - should inherit trace ID
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child", llmobs.StartSpanConfig{})
+
+		assert.Equal(t, parentTraceID, childSpan.TraceID(), "Child should inherit parent's trace ID")
+
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+	})
+
+	t.Run("trace-id-from-propagated", func(t *testing.T) {
+		_, ll := testTracer(t)
+		ctx := context.Background()
+
+		// Create propagated span context
+		propagated := &llmobs.PropagatedLLMSpan{
+			TraceID: "propagated-trace-123",
+			SpanID:  "propagated-span-456",
+			MLApp:   "propagated-app",
+		}
+		ctx = llmobs.ContextWithPropagatedLLMSpan(ctx, propagated)
+
+		// Create span - should inherit propagated trace ID
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "span", llmobs.StartSpanConfig{})
+
+		assert.Equal(t, "propagated-trace-123", span.TraceID(), "Should inherit propagated trace ID")
+
+		span.Finish(llmobs.FinishSpanConfig{})
+	})
+
+	t.Run("ml-app-precedence", func(t *testing.T) {
+		// Test precedence: config > parent > propagated > global
+		t.Run("config-overrides-all", func(t *testing.T) {
+			_, ll := testTracer(t)
+			ctx := context.Background()
+
+			// Create parent with ML App
+			parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent", llmobs.StartSpanConfig{
+				MLApp: "parent-app",
+			})
+
+			// Add propagated span with different ML App
+			propagated := &llmobs.PropagatedLLMSpan{
+				MLApp:   "propagated-app",
+				TraceID: "trace-123",
+				SpanID:  "span-456",
+			}
+			ctx = llmobs.ContextWithPropagatedLLMSpan(ctx, propagated)
+
+			// Create child with explicit ML App - should use config value
+			childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child", llmobs.StartSpanConfig{
+				MLApp: "config-app",
+			})
+
+			assert.Equal(t, "config-app", childSpan.MLApp(), "Config ML App should take precedence")
+
+			parentSpan.Finish(llmobs.FinishSpanConfig{})
+			childSpan.Finish(llmobs.FinishSpanConfig{})
+		})
+
+		t.Run("parent-overrides-propagated", func(t *testing.T) {
+			_, ll := testTracer(t)
+			ctx := context.Background()
+
+			// Create parent with ML App
+			parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent", llmobs.StartSpanConfig{
+				MLApp: "parent-app",
+			})
+
+			// Add propagated span with different ML App
+			propagated := &llmobs.PropagatedLLMSpan{
+				MLApp:   "propagated-app",
+				TraceID: "trace-123",
+				SpanID:  "span-456",
+			}
+			ctx = llmobs.ContextWithPropagatedLLMSpan(ctx, propagated)
+
+			// Create child without explicit ML App - should use parent's
+			childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child", llmobs.StartSpanConfig{})
+
+			assert.Equal(t, "parent-app", childSpan.MLApp(), "Parent ML App should override propagated")
+
+			parentSpan.Finish(llmobs.FinishSpanConfig{})
+			childSpan.Finish(llmobs.FinishSpanConfig{})
+		})
+
+		t.Run("propagated-overrides-global", func(t *testing.T) {
+			_, ll := testTracer(t)
+			ctx := context.Background()
+
+			// Add propagated span with ML App
+			propagated := &llmobs.PropagatedLLMSpan{
+				MLApp:   "propagated-app",
+				TraceID: "trace-123",
+				SpanID:  "span-456",
+			}
+			ctx = llmobs.ContextWithPropagatedLLMSpan(ctx, propagated)
+
+			// Create span without explicit ML App - should use propagated
+			span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "span", llmobs.StartSpanConfig{})
+
+			assert.Equal(t, "propagated-app", span.MLApp(), "Propagated ML App should override global")
+
+			span.Finish(llmobs.FinishSpanConfig{})
+		})
+	})
+
+	t.Run("session-id-precedence", func(t *testing.T) {
+		t.Run("config-overrides-parent", func(t *testing.T) {
+			tt, ll := testTracer(t)
+			ctx := context.Background()
+
+			// Create parent with session ID
+			parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent", llmobs.StartSpanConfig{
+				SessionID: "parent-session",
+			})
+
+			// Create child with explicit session ID - should use config value
+			childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child", llmobs.StartSpanConfig{
+				SessionID: "config-session",
+			})
+
+			childSpan.Finish(llmobs.FinishSpanConfig{})
+			parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+			llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+			// Find the child span (should be first due to finish order)
+			var childLLMSpan *testtracer.LLMObsSpan
+			for i := range llmSpans {
+				if llmSpans[i].Name == "child" {
+					childLLMSpan = &llmSpans[i]
+					break
+				}
+			}
+			require.NotNil(t, childLLMSpan, "Child span should be found")
+			assert.Equal(t, "config-session", childLLMSpan.SessionID, "Config session ID should take precedence")
+		})
+		t.Run("parent-session-id-inherited", func(t *testing.T) {
+			tt, ll := testTracer(t)
+			ctx := context.Background()
+
+			// Create parent with session ID
+			parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent", llmobs.StartSpanConfig{
+				SessionID: "parent-session",
+			})
+
+			// Create child without explicit session ID - should inherit from parent
+			childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child", llmobs.StartSpanConfig{})
+
+			childSpan.Finish(llmobs.FinishSpanConfig{})
+			parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+			llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+			// Find the child span
+			var childLLMSpan *testtracer.LLMObsSpan
+			for i := range llmSpans {
+				if llmSpans[i].Name == "child" {
+					childLLMSpan = &llmSpans[i]
+					break
+				}
+			}
+			require.NotNil(t, childLLMSpan, "Child span should be found")
+			assert.Equal(t, "parent-session", childLLMSpan.SessionID, "Should inherit parent's session ID")
+		})
+
+		t.Run("session-id-from-tags", func(t *testing.T) {
+			tt, ll := testTracer(t)
+			ctx := context.Background()
+
+			// Create span and annotate with session ID via tags
+			span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "span", llmobs.StartSpanConfig{})
+
+			span.Annotate(llmobs.SpanAnnotations{
+				Tags: map[string]string{
+					llmobs.TagKeySessionID: "tags-session",
+				},
+			})
+
+			span.Finish(llmobs.FinishSpanConfig{})
+
+			llmSpans := tt.WaitForLLMObsSpans(t, 1)
+			assert.Equal(t, "tags-session", llmSpans[0].SessionID, "Session ID should be set from tags")
+		})
+	})
+	t.Run("multi-level-propagation", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		ctx := context.Background()
+
+		// Create grandparent span
+		grandparentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "grandparent", llmobs.StartSpanConfig{
+			MLApp:     "grandparent-app",
+			SessionID: "grandparent-session",
+		})
+
+		// Create parent span (no explicit values - should inherit)
+		parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "parent", llmobs.StartSpanConfig{})
+
+		// Create child span (no explicit values - should inherit from grandparent through parent)
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child", llmobs.StartSpanConfig{})
+
+		assert.Equal(t, "grandparent-app", childSpan.MLApp(), "Should inherit ML App through parent chain")
+
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+		grandparentSpan.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 3)
+
+		// Find child span and verify session ID propagation
+		var childLLMSpan *testtracer.LLMObsSpan
+		for i := range llmSpans {
+			if llmSpans[i].Name == "child" {
+				childLLMSpan = &llmSpans[i]
+				break
+			}
+		}
+		require.NotNil(t, childLLMSpan, "Child span should be found")
+		assert.Equal(t, "grandparent-session", childLLMSpan.SessionID, "Should inherit session ID through parent chain")
+	})
+	t.Run("mixed-propagation-sources", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		// Add propagated span context
+		propagated := &llmobs.PropagatedLLMSpan{
+			TraceID: "propagated-trace",
+			SpanID:  "propagated-span",
+			MLApp:   "propagated-app",
+		}
+		ctx = llmobs.ContextWithPropagatedLLMSpan(ctx, propagated)
+
+		// Create parent span with session ID but no ML App
+		parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent", llmobs.StartSpanConfig{
+			SessionID: "parent-session",
+		})
+
+		// Create child span - should get ML App from propagated and session ID from parent
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child", llmobs.StartSpanConfig{})
+
+		assert.Equal(t, "propagated-trace", childSpan.TraceID(), "Should use propagated trace ID")
+		assert.Equal(t, "propagated-app", childSpan.MLApp(), "Should use propagated ML App")
+
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+		// Find child span and verify session ID from parent
+		var childLLMSpan *testtracer.LLMObsSpan
+		for i := range llmSpans {
+			if llmSpans[i].Name == "child" {
+				childLLMSpan = &llmSpans[i]
+				break
+			}
+		}
+		require.NotNil(t, childLLMSpan, "Child span should be found")
+		assert.Equal(t, "parent-session", childLLMSpan.SessionID, "Should inherit session ID from parent")
+	})
 }
 
 func BenchmarkStartSpan(b *testing.B) {
@@ -648,22 +1065,12 @@ func BenchmarkStartSpan(b *testing.B) {
 	}
 
 	b.Run("basic", func(b *testing.B) {
-		tt := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
-		defer tt.Stop()
-
-		ll, err := llmobs.ActiveLLMObs()
-		require.NoError(b, err)
-
+		tt, ll := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
 		done := make(chan struct{})
-
 		run(b, ll, tt, done)
 	})
 	b.Run("periodic-flush", func(b *testing.B) {
-		tt := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
-		defer tt.Stop()
-
-		ll, err := llmobs.ActiveLLMObs()
-		require.NoError(b, err)
+		tt, ll := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
 
 		ticker := time.NewTicker(10 * time.Microsecond)
 		defer ticker.Stop()
@@ -687,18 +1094,38 @@ func BenchmarkStartSpan(b *testing.B) {
 	})
 }
 
-func testTracer(t testing.TB, opts ...testtracer.Option) *testtracer.TestTracer {
+func testTracer(t testing.TB, opts ...testtracer.Option) (*testtracer.TestTracer, *llmobs.LLMObs) {
 	tOpts := append([]testtracer.Option{
 		testtracer.WithTracerStartOpts(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp(mlApp),
+			tracer.WithLogStartup(false),
 		),
 		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
 			Endpoints: []string{"/evp_proxy/v2/"},
 		}),
 	}, opts...)
 
-	return testtracer.Start(t, tOpts...)
+	tt := testtracer.Start(t, tOpts...)
+	t.Cleanup(tt.Stop)
+
+	ll, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+
+	return tt, ll
+}
+
+func findTag(tags []string, name string) string {
+	for _, t := range tags {
+		parts := strings.Split(t, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		if parts[0] == name {
+			return parts[1]
+		}
+	}
+	return ""
 }
 
 func testClientServer(t *testing.T, h http.Handler) (*httptest.Server, *http.Client) {
@@ -751,17 +1178,4 @@ func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return rt.base.RoundTrip(req)
-}
-
-func findTag(tags []string, name string) string {
-	for _, t := range tags {
-		parts := strings.Split(t, ":")
-		if len(parts) != 2 {
-			continue
-		}
-		if parts[0] == name {
-			return parts[1]
-		}
-	}
-	return ""
 }
