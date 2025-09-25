@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
@@ -79,7 +80,7 @@ func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) cont
 	if !tracerInitialized {
 		serviceName := os.Getenv("DD_SERVICE")
 		if serviceName == "" {
-			serviceName = "aws.lambda"
+			serviceName = internal.Instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{})
 		}
 		extensionNotRunning := !l.extensionManager.IsExtensionRunning()
 		opts := append([]ddtracer.StartOption{
@@ -172,7 +173,7 @@ func startFunctionExecutionSpan(ctx context.Context, mergeXrayTraces bool, isDdS
 	}
 
 	span := ddtracer.StartSpan(
-		"aws.lambda", // This operation name will be replaced with the value of the service tag by the Forwarder
+		internal.Instr.OperationName(instrumentation.ComponentDefault, instrumentation.OperationContext{}), // This operation name will be replaced with the value of the service tag by the Forwarder
 		spanOptions...,
 	)
 
