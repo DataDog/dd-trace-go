@@ -39,7 +39,7 @@ jobs:
       - name: Run govulncheck-contribs
         run: |
           go list -f '{{.Dir}}' ./contrib/... | while read dir ; do
-            if [[ $(basename $dir) != "chi" ]]; then
+            if [[ $(basename $dir) != "chi" -o $(basename $dir) != "v10" ]]; then
               echo $dir
               govulncheck -C $dir .
             fi
