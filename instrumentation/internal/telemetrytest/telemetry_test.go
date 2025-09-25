@@ -96,10 +96,6 @@ func testTelemetryEnabled(t *testing.T, contribPath string) error {
 		if strings.Contains(pkg.ImportPath, "aws-sdk-go-v2/") && !strings.HasSuffix(pkg.ImportPath, "/aws") {
 			continue
 		}
-		// Skip AWS SDK v2 subpackages
-		if strings.Contains(pkg.ImportPath, "datadog-lambda-go/") {
-			continue
-		}
 		// Skip command subpackages
 		if strings.Contains(pkg.ImportPath, "/cmd/") {
 			continue
