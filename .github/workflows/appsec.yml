@@ -127,7 +127,7 @@ jobs:
           cgocheck="GOEXPERIMENT=cgocheck2"
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
-                for cgocheck_env in "" "$cgocheck"; do
+                for cgocheck_env in ""; do # skipping cgocheck because of https://github.com/golang/go/issues/75569
                   if ! env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS; then
                     echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env $cgocheck_env go test -v $TESTS"
                     exit 1
