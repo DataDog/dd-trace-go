@@ -14,6 +14,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestSyncProducer(t *testing.T) {
@@ -100,6 +101,63 @@ func TestSyncProducerSendMessages(t *testing.T) {
 
 	for _, msg := range []*sarama.ProducerMessage{msg1, msg2} {
 		assertDSMProducerPathway(t, topic, msg)
+	}
+}
+
+func TestSyncProducerWithCustomSpanOptions(t *testing.T) {
+	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
+	require.NoError(t, err)
+	producer = WrapSyncProducer(
+		cfg,
+		producer,
+		WithDataStreams(),
+		WithCustomProducerSpanOptions(
+			func(msg *sarama.ProducerMessage) []tracer.StartSpanOption {
+				key, err := msg.Key.Encode()
+				assert.NoError(t, err)
+
+				return []tracer.StartSpanOption{
+					tracer.Tag("kafka.messaging.key", key),
+				}
+			},
+		),
+	)
+	defer func() {
+		assert.NoError(t, producer.Close())
+	}()
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    topic,
+		Key:      sarama.StringEncoder("test key"),
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
+	_, _, err = producer.SendMessage(msg1)
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	{
+		s := spans[0]
+		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
+		assert.Equal(t, "queue", s.Tag(ext.SpanType))
+		assert.Equal(t, "Produce Topic "+topic, s.Tag(ext.ResourceName))
+		assert.Equal(t, "kafka.produce", s.OperationName())
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.NotNil(t, s.Tag("offset"))
+		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, topic, s.Tag("messaging.destination.name"))
+		assert.Equal(t, "test key", s.Tag("messaging.kafka.key"))
+
+		assertDSMProducerPathway(t, topic, msg1)
 	}
 }
 
