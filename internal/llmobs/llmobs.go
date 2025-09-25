@@ -46,17 +46,26 @@ const (
 	defaultParentID = "undefined"
 )
 
+// SpanKind represents the type of an LLMObs span.
 type SpanKind string
 
 const (
+	// SpanKindExperiment represents an experiment span for testing and evaluation.
 	SpanKindExperiment SpanKind = "experiment"
-	SpanKindWorkflow   SpanKind = "workflow"
-	SpanKindLLM        SpanKind = "llm"
-	SpanKindEmbedding  SpanKind = "embedding"
-	SpanKindAgent      SpanKind = "agent"
-	SpanKindRetrieval  SpanKind = "retrieval"
-	SpanKindTask       SpanKind = "task"
-	SpanKindTool       SpanKind = "tool"
+	// SpanKindWorkflow represents a workflow span that orchestrates multiple operations.
+	SpanKindWorkflow SpanKind = "workflow"
+	// SpanKindLLM represents a span for Large Language Model operations.
+	SpanKindLLM SpanKind = "llm"
+	// SpanKindEmbedding represents a span for embedding generation operations.
+	SpanKindEmbedding SpanKind = "embedding"
+	// SpanKindAgent represents a span for AI agent operations.
+	SpanKindAgent SpanKind = "agent"
+	// SpanKindRetrieval represents a span for document retrieval operations.
+	SpanKindRetrieval SpanKind = "retrieval"
+	// SpanKindTask represents a span for general task operations.
+	SpanKindTask SpanKind = "task"
+	// SpanKindTool represents a span for tool usage operations.
+	SpanKindTool SpanKind = "tool"
 )
 
 const (
@@ -103,10 +112,14 @@ type llmobsContext struct {
 	experimentOutput         any
 }
 
+// LLMObs represents the main LLMObs instance that handles span collection and transport.
 type LLMObs struct {
-	Config    config.Config
+	// Config contains the LLMObs configuration.
+	Config config.Config
+	// Transport handles sending data to the Datadog backend.
 	Transport *transport.Transport
-	Tracer    Tracer
+	// Tracer is the underlying APM tracer.
+	Tracer Tracer
 
 	// channels used by producers
 	spanEventsCh  chan *transport.LLMObsSpanEvent
@@ -154,7 +167,8 @@ func newLLMObs(cfg config.Config, tracer Tracer) (*LLMObs, error) {
 	}, nil
 }
 
-// Start starts the global LLMObs instance.
+// Start starts the global LLMObs instance with the given configuration and tracer.
+// Returns an error if LLMObs is already running or if configuration is invalid.
 func Start(cfg config.Config, tracer Tracer) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -174,7 +188,7 @@ func Start(cfg config.Config, tracer Tracer) error {
 	return nil
 }
 
-// Stop stops the active LLMObs instance.
+// Stop stops the active LLMObs instance and cleans up resources.
 func Stop() {
 	mu.Lock()
 	defer mu.Unlock()
@@ -185,7 +199,7 @@ func Stop() {
 	}
 }
 
-// ActiveLLMObs returns the current active llmobs instance, or an error if there isn't one.
+// ActiveLLMObs returns the current active LLMObs instance, or an error if LLMObs is not enabled or started.
 func ActiveLLMObs() (*LLMObs, error) {
 	if activeLLMObs == nil || !activeLLMObs.Config.Enabled {
 		return nil, errLLMObsNotEnabled
@@ -193,13 +207,14 @@ func ActiveLLMObs() (*LLMObs, error) {
 	return activeLLMObs, nil
 }
 
+// Flush forces a flush of all buffered LLMObs data to the transport.
 func Flush() {
 	if activeLLMObs != nil {
 		activeLLMObs.Flush()
 	}
 }
 
-// Run starts the worker loop.
+// Run starts the worker loop that processes span events and metrics.
 func (l *LLMObs) Run() {
 	l.mu.Lock()
 	if l.running {
@@ -583,6 +598,8 @@ func dropSpanEventIO(ev *transport.LLMObsSpanEvent) {
 	}
 }
 
+// StartSpan starts a new LLMObs span with the given kind, name, and configuration.
+// Returns the created span and a context containing the span.
 func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
 	spanName := name
 	if spanName == "" {
@@ -643,6 +660,8 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	return span, contextWithActiveLLMSpan(ctx, span)
 }
 
+// StartExperimentSpan starts a new experiment span with the given name, experiment ID, and configuration.
+// Returns the created span and a context containing the span.
 func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimentID string, cfg StartSpanConfig) (*Span, context.Context) {
 	span, ctx := l.StartSpan(ctx, SpanKindExperiment, name, cfg)
 

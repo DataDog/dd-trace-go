@@ -14,85 +14,152 @@ import (
 )
 
 const (
+	// TagKeySessionID is the tag key used to set the session ID for LLMObs spans.
 	TagKeySessionID = "session_id"
 )
 
+// StartSpanConfig contains configuration options for starting an LLMObs span.
+type StartSpanConfig struct {
+	// SessionID sets the session ID for the span.
+	SessionID string
+	// ModelName sets the model name for LLM and embedding spans.
+	ModelName string
+	// ModelProvider sets the model provider for LLM and embedding spans.
+	ModelProvider string
+	// MLApp sets the ML application name for the span.
+	MLApp string
+	// StartTime sets a custom start time for the span. If zero, uses current time.
+	StartTime time.Time
+}
+
+// FinishSpanConfig contains configuration options for finishing an LLMObs span.
+type FinishSpanConfig struct {
+	// FinishTime sets a custom finish time for the span. If zero, uses current time.
+	FinishTime time.Time
+	// Error sets an error on the span when finishing.
+	Error error
+}
+
+// Prompt represents a prompt template used with LLM spans.
 type Prompt struct {
-	Template            string            `json:"template,omitempty"`
-	ID                  string            `json:"id,omitempty"`
-	Version             string            `json:"version,omitempty"`
-	Variables           map[string]string `json:"variables,omitempty"`
-	RAGContextVariables []string          `json:"rag_context_variables,omitempty"`
-	RAGQueryVariables   []string          `json:"rag_query_variables,omitempty"`
+	// Template is the prompt template string.
+	Template string `json:"template,omitempty"`
+	// ID is the unique identifier for the prompt.
+	ID string `json:"id,omitempty"`
+	// Version is the version of the prompt.
+	Version string `json:"version,omitempty"`
+	// Variables contains the variables used in the prompt template.
+	Variables map[string]string `json:"variables,omitempty"`
+	// RAGContextVariables specifies which variables contain RAG context.
+	RAGContextVariables []string `json:"rag_context_variables,omitempty"`
+	// RAGQueryVariables specifies which variables contain RAG queries.
+	RAGQueryVariables []string `json:"rag_query_variables,omitempty"`
 }
 
+// ToolDefinition represents a tool definition for LLM spans.
 type ToolDefinition struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Schema      json.RawMessage `json:"schema,omitempty"`
+	// Name is the name of the tool.
+	Name string `json:"name"`
+	// Description is the description of what the tool does.
+	Description string `json:"description,omitempty"`
+	// Schema is the JSON schema defining the tool's parameters.
+	Schema json.RawMessage `json:"schema,omitempty"`
 }
 
+// ToolCall represents a call to a tool within an LLM message.
 type ToolCall struct {
-	Name      string          `json:"name"`
+	// Name is the name of the tool being called.
+	Name string `json:"name"`
+	// Arguments are the JSON-encoded arguments passed to the tool.
 	Arguments json.RawMessage `json:"arguments"`
-	ToolID    string          `json:"tool_id,omitempty"`
-	Type      string          `json:"type,omitempty"`
-}
-
-type ToolResult struct {
-	Result any    `json:"result"`
-	Name   string `json:"name,omitempty"`
+	// ToolID is the unique identifier for this tool call.
 	ToolID string `json:"tool_id,omitempty"`
-	Type   string `json:"type,omitempty"`
+	// Type is the type of the tool call.
+	Type string `json:"type,omitempty"`
 }
 
+// ToolResult represents the result of a tool call within an LLM message.
+type ToolResult struct {
+	// Result is the result returned by the tool.
+	Result any `json:"result"`
+	// Name is the name of the tool that was called.
+	Name string `json:"name,omitempty"`
+	// ToolID is the unique identifier for the tool call this result corresponds to.
+	ToolID string `json:"tool_id,omitempty"`
+	// Type is the type of the tool result.
+	Type string `json:"type,omitempty"`
+}
+
+// LLMMessage represents a message in an LLM conversation.
 type LLMMessage struct {
-	Role        string       `json:"role"`
-	Content     string       `json:"content"`
-	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
+	// Role is the role of the message sender (e.g., "user", "assistant", "system").
+	Role string `json:"role"`
+	// Content is the text content of the message.
+	Content string `json:"content"`
+	// ToolCalls are the tool calls made in this message.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// ToolResults are the results of tool calls in this message.
 	ToolResults []ToolResult `json:"tool_results,omitempty"`
 }
 
+// EmbeddedDocument represents a document used for embedding operations.
 type EmbeddedDocument struct {
+	// Text is the text content of the document.
 	Text string `json:"text"`
 }
 
+// RetrievedDocument represents a document retrieved from a search operation.
 type RetrievedDocument struct {
-	Text  string  `json:"text"`
-	Name  string  `json:"name,omitempty"`
+	// Text is the text content of the retrieved document.
+	Text string `json:"text"`
+	// Name is the name or title of the document.
+	Name string `json:"name,omitempty"`
+	// Score is the relevance score of the document (typically 0.0-1.0).
 	Score float64 `json:"score,omitempty"`
-	ID    string  `json:"id,omitempty"`
+	// ID is the unique identifier of the document.
+	ID string `json:"id,omitempty"`
 }
 
+// SpanAnnotations contains data to annotate an LLMObs span with.
 type SpanAnnotations struct {
-	// input
-	InputText         string
-	InputMessages     []LLMMessage
+	// InputText is the text input for the span.
+	InputText string
+	// InputMessages are the input messages for LLM spans.
+	InputMessages []LLMMessage
+	// InputEmbeddedDocs are the input documents for embedding spans.
 	InputEmbeddedDocs []EmbeddedDocument
 
-	// output
-	OutputText          string
-	OutputMessages      []LLMMessage
+	// OutputText is the text output for the span.
+	OutputText string
+	// OutputMessages are the output messages for LLM spans.
+	OutputMessages []LLMMessage
+	// OutputRetrievedDocs are the output documents for retrieval spans.
 	OutputRetrievedDocs []RetrievedDocument
 
-	// experiment specific
-	ExperimentInput          map[string]any
-	ExperimentOutput         any
+	// ExperimentInput is the input data for experiment spans.
+	ExperimentInput map[string]any
+	// ExperimentOutput is the output data for experiment spans.
+	ExperimentOutput any
+	// ExperimentExpectedOutput is the expected output for experiment spans.
 	ExperimentExpectedOutput any
 
-	// llm specific
-	Prompt          *Prompt
+	// Prompt is the prompt information for LLM spans.
+	Prompt *Prompt
+	// ToolDefinitions are the tool definitions for LLM spans.
 	ToolDefinitions []ToolDefinition
 
-	// agent specific
+	// AgentManifest is the agent manifest for agent spans.
 	AgentManifest string
 
-	// generic
+	// Metadata contains arbitrary metadata key-value pairs.
 	Metadata map[string]any
-	Metrics  map[string]float64
-	Tags     map[string]string
+	// Metrics contains numeric metrics key-value pairs.
+	Metrics map[string]float64
+	// Tags contains string tags key-value pairs.
+	Tags map[string]string
 }
 
+// Span represents an LLMObs span with its associated metadata and context.
 type Span struct {
 	mu sync.RWMutex
 
@@ -108,11 +175,10 @@ type Span struct {
 	spanKind   SpanKind
 	sessionID  string
 
-	integration  string
-	scope        string
-	isEvaluation bool
-	error        error
-	finished     bool
+	integration string
+	scope       string
+	error       error
+	finished    bool
 
 	startTime  time.Time
 	finishTime time.Time
@@ -120,22 +186,27 @@ type Span struct {
 	spanLinks []SpanLink
 }
 
+// SpanID returns the span ID of the underlying APM span.
 func (s *Span) SpanID() string {
 	return s.apm.SpanID()
 }
 
+// APMTraceID returns the trace ID of the underlying APM span.
 func (s *Span) APMTraceID() string {
 	return s.apm.TraceID()
 }
 
+// TraceID returns the LLMObs trace ID for this span.
 func (s *Span) TraceID() string {
 	return s.llmTraceID
 }
 
+// MLApp returns the ML application name for this span.
 func (s *Span) MLApp() string {
 	return s.mlApp
 }
 
+// AddLink adds a span link to this span.
 func (s *Span) AddLink(link SpanLink) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -144,14 +215,17 @@ func (s *Span) AddLink(link SpanLink) {
 	s.spanLinks = append(s.spanLinks, link)
 }
 
+// StartTime returns the start time of this span.
 func (s *Span) StartTime() time.Time {
 	return s.startTime
 }
 
+// FinishTime returns the finish time of this span.
 func (s *Span) FinishTime() time.Time {
 	return s.finishTime
 }
 
+// Finish finishes the span with the provided configuration.
 func (s *Span) Finish(cfg FinishSpanConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -184,6 +258,7 @@ func (s *Span) Finish(cfg FinishSpanConfig) {
 	//TODO: telemetry.record_span_created(span)
 }
 
+// Annotate adds annotations to the span using the provided SpanAnnotations.
 func (s *Span) Annotate(a SpanAnnotations) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -377,18 +452,6 @@ func (s *Span) propagatedMLApp() string {
 		return activeLLMObs.Config.MLApp
 	}
 	return ""
-}
-
-// isEvaluationSpan returns whether the current span or any of the parents is an evaluation span.
-func (s *Span) isEvaluationSpan() bool {
-	curSpan := s
-	for curSpan != nil {
-		if curSpan.isEvaluation {
-			return true
-		}
-		curSpan = curSpan.parent
-	}
-	return false
 }
 
 // updateMapKeys adds key/values from updates into src, overriding existing keys.
