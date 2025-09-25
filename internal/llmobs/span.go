@@ -40,6 +40,41 @@ type FinishSpanConfig struct {
 	Error error
 }
 
+// EvaluationConfig contains configuration for submitting evaluation metrics.
+type EvaluationConfig struct {
+	// Method 1: Direct span/trace ID join
+	// SpanID is the span ID to evaluate.
+	SpanID string
+	// TraceID is the trace ID to evaluate.
+	TraceID string
+
+	// Method 2: Tag-based join
+	// TagKey is the tag key to search for spans.
+	TagKey string
+	// TagValue is the tag value to match for spans.
+	TagValue string
+
+	// Required fields
+	// Label is the name of the evaluation metric.
+	Label string
+
+	// Value fields (exactly one must be provided)
+	// CategoricalValue is the categorical value of the evaluation metric.
+	CategoricalValue *string
+	// ScoreValue is the score value of the evaluation metric.
+	ScoreValue *float64
+	// BooleanValue is the boolean value of the evaluation metric.
+	BooleanValue *bool
+
+	// Optional fields
+	// Tags are optional string key-value pairs to tag the evaluation metric.
+	Tags []string
+	// MLApp is the ML application name. If empty, uses the global config.
+	MLApp string
+	// TimestampMS is the timestamp in milliseconds. If zero, uses current time.
+	TimestampMS int64
+}
+
 // Prompt represents a prompt template used with LLM spans.
 type Prompt struct {
 	// Template is the prompt template string.
@@ -189,6 +224,10 @@ type Span struct {
 // SpanID returns the span ID of the underlying APM span.
 func (s *Span) SpanID() string {
 	return s.apm.SpanID()
+}
+
+func (s *Span) Kind() string {
+	return string(s.spanKind)
 }
 
 // APMTraceID returns the trace ID of the underlying APM span.

@@ -17,6 +17,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+func SpanFromContext(ctx context.Context) (Span, bool) {
+	if span, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
+		return &baseSpan{Span: span}, true
+	}
+	return nil, false
+}
+
 // StartLLMSpan starts an LLMObs span of kind LLM.
 // Pass the returned context to subsequent start span calls to create child spans of this one.
 func StartLLMSpan(ctx context.Context, name string, opts ...StartSpanOption) (LLMSpan, context.Context) {
@@ -103,48 +110,49 @@ type (
 type (
 	// LLMSpan represents a span of kind llm
 	LLMSpan interface {
-		span
+		Span
 		AnnotateIO(input, output []LLMMessage, opts ...AnnotateOption)
 		AnnotatePrompt(prompt Prompt)
 		AnnotateToolDefinitions(toolDefinitions []ToolDefinition)
 	}
 	// WorkflowSpan represents a span of kind workflow
 	WorkflowSpan interface {
-		span
+		Span
 		AnnotateIO(input, output string, opts ...AnnotateOption)
 	}
 	// AgentSpan represents a span of kind agent
 	AgentSpan interface {
-		span
+		Span
 		AnnotateIO(input, output string, opts ...AnnotateOption)
 		AnnotateAgentManifest(manifest string)
 	}
 	// ToolSpan represents a span of kind tool
 	ToolSpan interface {
-		span
+		Span
 		AnnotateIO(input, output string, opts ...AnnotateOption)
 	}
 	// TaskSpan represents a span of kind task
 	TaskSpan interface {
-		span
+		Span
 		AnnotateIO(input, output string, opts ...AnnotateOption)
 	}
 	// EmbeddingSpan represents a span of kind embedding
 	EmbeddingSpan interface {
-		span
+		Span
 		AnnotateIO(input []EmbeddedDocument, output string, opts ...AnnotateOption)
 	}
 	// RetrievalSpan represents a span of kind retrieval
 	RetrievalSpan interface {
-		span
+		Span
 		AnnotateIO(input string, output []RetrievedDocument, opts ...AnnotateOption)
 	}
 )
 
-type span interface {
+type Span interface {
 	sealed()
 
 	SpanID() string
+	Kind() string
 	TraceID() string
 	APMTraceID() string
 	AddLink(link SpanLink)

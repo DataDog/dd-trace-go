@@ -254,7 +254,7 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 		return rt.handleTraces(r)
 	case "/info":
 		return rt.handleInfo(r)
-	case "/evp_proxy/v2/api/v2/llmobs", "api/v2/llmobs":
+	case "/evp_proxy/v2/api/v2/llmobs", "/api/v2/llmobs":
 		return rt.handleLLMObsSpanEvents(r)
 	case "/v0.7/config", "/telemetry/proxy/api/v2/apmtelemetry":
 		// known cases, no need to log these

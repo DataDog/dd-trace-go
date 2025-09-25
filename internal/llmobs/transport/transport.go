@@ -62,8 +62,8 @@ type Transport struct {
 	agentless      bool
 }
 
-// NewClient builds a new Datasets and Experiments client.
-func New(cfg config.Config, agentless bool) *Transport {
+// New builds a new Transport for LLM Observability endpoints.
+func New(cfg *config.Config) *Transport {
 	site := defaultSite
 	if cfg.TracerConfig.Site != "" {
 		site = cfg.TracerConfig.Site
@@ -72,7 +72,7 @@ func New(cfg config.Config, agentless bool) *Transport {
 	defaultHeaders := map[string]string{
 		"Content-Type": "application/json",
 	}
-	if agentless {
+	if cfg.ResolvedAgentlessEnabled {
 		defaultHeaders["DD-API-KEY"] = cfg.TracerConfig.APIKey
 		if cfg.TracerConfig.APPKey != "" {
 			defaultHeaders["DD-APPLICATION-KEY"] = cfg.TracerConfig.APPKey
@@ -83,7 +83,7 @@ func New(cfg config.Config, agentless bool) *Transport {
 		defaultHeaders: defaultHeaders,
 		site:           site,
 		agentURL:       cfg.TracerConfig.AgentURL,
-		agentless:      agentless,
+		agentless:      cfg.ResolvedAgentlessEnabled,
 	}
 }
 

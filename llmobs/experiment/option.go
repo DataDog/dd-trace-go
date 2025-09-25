@@ -15,7 +15,7 @@ type newCfg struct {
 	experimentCfg map[string]any
 }
 
-func defaultNewCfg(globalCfg config.Config) *newCfg {
+func defaultNewCfg(globalCfg *config.Config) *newCfg {
 	return &newCfg{
 		projectName:   globalCfg.ProjectName,
 		tags:          nil,

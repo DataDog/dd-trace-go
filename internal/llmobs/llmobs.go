@@ -115,7 +115,7 @@ type llmobsContext struct {
 // LLMObs represents the main LLMObs instance that handles span collection and transport.
 type LLMObs struct {
 	// Config contains the LLMObs configuration.
-	Config config.Config
+	Config *config.Config
 	// Transport handles sending data to the Datadog backend.
 	Transport *transport.Transport
 	// Tracer is the underlying APM tracer.
@@ -138,27 +138,31 @@ type LLMObs struct {
 	flushInterval time.Duration
 }
 
-func newLLMObs(cfg config.Config, tracer Tracer) (*LLMObs, error) {
-	var agentless bool
+func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 	if cfg.AgentlessEnabled != nil {
-		agentless = *cfg.AgentlessEnabled
+		cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
 	} else {
 		// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
-		agentless = !cfg.AgentFeatures.EVPProxyV2
+		cfg.ResolvedAgentlessEnabled = !cfg.AgentFeatures.EVPProxyV2
+		if cfg.ResolvedAgentlessEnabled {
+			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to true since agent mode is supported")
+		} else {
+			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to false since agent mode is not supported")
+		}
 	}
 
-	if agentless && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
+	if cfg.ResolvedAgentlessEnabled && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
 		return nil, errAgentlessRequiresAPIKey
 	}
 	if cfg.MLApp == "" {
 		return nil, errMLAppRequired
 	}
 	if cfg.TracerConfig.HTTPClient == nil {
-		cfg.TracerConfig.HTTPClient = cfg.DefaultHTTPClient(agentless)
+		cfg.TracerConfig.HTTPClient = cfg.DefaultHTTPClient()
 	}
 	return &LLMObs{
 		Config:        cfg,
-		Transport:     transport.New(cfg, agentless),
+		Transport:     transport.New(cfg),
 		Tracer:        tracer,
 		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
 		stopCh:        make(chan struct{}),
@@ -179,7 +183,7 @@ func Start(cfg config.Config, tracer Tracer) error {
 	if !cfg.Enabled {
 		return nil
 	}
-	l, err := newLLMObs(cfg, tracer)
+	l, err := newLLMObs(&cfg, tracer)
 	if err != nil {
 		return err
 	}
@@ -670,6 +674,73 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimen
 		span.scope = "experiments"
 	}
 	return span, ctx
+}
+
+// SubmitEvaluation submits an evaluation metric for a span.
+// The span can be identified either by span/trace IDs or by tag key-value pairs.
+func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
+	// Validate exactly one join method is provided
+	hasSpanJoin := cfg.SpanID != "" && cfg.TraceID != ""
+	hasTagJoin := cfg.TagKey != "" && cfg.TagValue != ""
+
+	if hasSpanJoin && hasTagJoin {
+		return errors.New("provide either span/trace IDs or tag key/value, not both")
+	}
+	if !hasSpanJoin && !hasTagJoin {
+		return errors.New("must provide either span/trace IDs or tag key/value for joining")
+	}
+
+	if cfg.Label == "" {
+		return errors.New("label is required for evaluation metrics")
+	}
+
+	mlApp := cfg.MLApp
+	if mlApp == "" {
+		mlApp = l.Config.MLApp
+	}
+
+	timestampMS := cfg.TimestampMS
+	if timestampMS == 0 {
+		timestampMS = time.Now().UnixMilli()
+	}
+
+	// Build the appropriate join condition
+	var joinOn transport.EvaluationJoinOn
+	if hasSpanJoin {
+		joinOn.Span = &transport.EvaluationSpanJoin{
+			SpanID:  cfg.SpanID,
+			TraceID: cfg.TraceID,
+		}
+	} else {
+		joinOn.Tag = &transport.EvaluationTagJoin{
+			Key:   cfg.TagKey,
+			Value: cfg.TagValue,
+		}
+	}
+
+	metric := &transport.LLMObsMetric{
+		JoinOn:      joinOn,
+		Label:       cfg.Label,
+		MLApp:       mlApp,
+		TimestampMS: timestampMS,
+		Tags:        cfg.Tags,
+	}
+
+	if cfg.CategoricalValue != nil {
+		metric.CategoricalValue = cfg.CategoricalValue
+		metric.MetricType = "categorical"
+	} else if cfg.ScoreValue != nil {
+		metric.ScoreValue = cfg.ScoreValue
+		metric.MetricType = "score"
+	} else if cfg.BooleanValue != nil {
+		metric.BooleanValue = cfg.BooleanValue
+		metric.MetricType = "boolean"
+	} else {
+		return errors.New("a metric value (categorical, score, or boolean) is required for evaluation metrics")
+	}
+
+	l.evalMetricsCh <- metric
+	return nil
 }
 
 // PublicResourceBaseURL returns the base URL to access a resource (experiments, projects, etc.)

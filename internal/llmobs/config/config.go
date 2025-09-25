@@ -30,12 +30,13 @@ type AgentFeatures struct {
 }
 
 type Config struct {
-	Enabled          bool
-	MLApp            string
-	AgentlessEnabled *bool
-	ProjectName      string
-	TracerConfig     TracerConfig
-	AgentFeatures    AgentFeatures
+	Enabled                  bool
+	MLApp                    string
+	AgentlessEnabled         *bool
+	ResolvedAgentlessEnabled bool
+	ProjectName              string
+	TracerConfig             TracerConfig
+	AgentFeatures            AgentFeatures
 }
 
 // We copy the transport to avoid using the default one, as it might be
@@ -59,9 +60,9 @@ func newHTTPClient() *http.Client {
 	}
 }
 
-func (c *Config) DefaultHTTPClient(agentless bool) *http.Client {
+func (c *Config) DefaultHTTPClient() *http.Client {
 	var cl *http.Client
-	if agentless || c.TracerConfig.AgentURL.Scheme != "unix" {
+	if c.ResolvedAgentlessEnabled || c.TracerConfig.AgentURL.Scheme != "unix" {
 		cl = newHTTPClient()
 	} else {
 		dialer := &net.Dialer{

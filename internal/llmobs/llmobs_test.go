@@ -32,7 +32,7 @@ func TestStartSpan(t *testing.T) {
 		tt, ll := testTracer(t)
 		ctx := context.Background()
 
-		span, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{})
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{})
 		span.Finish(llmobs.FinishSpanConfig{})
 
 		apmSpans := tt.WaitForSpans(t, 1)
@@ -51,7 +51,7 @@ func TestStartSpan(t *testing.T) {
 		ss0, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-1", llmobs.StartSpanConfig{})
 		ss1, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1", llmobs.StartSpanConfig{})
 		ss2, ctx := tracer.StartSpanFromContext(ctx, "apm-1")
-		ss3, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-2", llmobs.StartSpanConfig{})
+		ss3, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-2", llmobs.StartSpanConfig{})
 
 		ss3.Finish(llmobs.FinishSpanConfig{})
 		ss2.Finish()
@@ -99,7 +99,7 @@ func TestStartSpan(t *testing.T) {
 			ss3, ctx := tracer.StartSpanFromContext(ctx, "apm-2")
 			defer ss3.Finish()
 
-			ss4, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1", llmobs.StartSpanConfig{})
+			ss4, _ := ll.StartSpan(ctx, llmobs.SpanKindAgent, "agent-1", llmobs.StartSpanConfig{})
 			defer ss4.Finish(llmobs.FinishSpanConfig{})
 
 			w.Write([]byte("ok"))
@@ -192,7 +192,7 @@ func TestStartSpan(t *testing.T) {
 		customFinishTime := customStartTime.Add(5 * time.Second)
 
 		// Start span with custom start time
-		span, ctx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{
 			StartTime: customStartTime,
 		})
 
@@ -1178,4 +1178,347 @@ func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return rt.base.RoundTrip(req)
+}
+
+func TestLLMObsLifecycle(t *testing.T) {
+	t.Run("start-stop", func(t *testing.T) {
+		// Ensure no active LLMObs initially
+		_, err := llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+
+		// Start LLMObs
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt.Stop()
+
+		// Now should have active LLMObs
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.NotNil(t, ll)
+		assert.Equal(t, "test-app", ll.Config.MLApp)
+
+		// Stop LLMObs
+		llmobs.Stop()
+
+		// Should no longer have active LLMObs
+		_, err = llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+	})
+	t.Run("multiple-start-stop", func(t *testing.T) {
+		// Start first instance
+		tt1 := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("app1"),
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt1.Stop()
+
+		ll1, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.Equal(t, "app1", ll1.Config.MLApp)
+
+		// Start second instance (should replace first)
+		tt2 := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("app2"),
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt2.Stop()
+
+		ll2, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.Equal(t, "app2", ll2.Config.MLApp)
+		assert.NotEqual(t, ll1, ll2) // Should be different instances
+
+		// Stop and verify
+		llmobs.Stop()
+		_, err = llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+	})
+	t.Run("flush", func(t *testing.T) {
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("flush-test"),
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt.Stop()
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+
+		// Create a span but don't wait for automatic flush
+		ctx := context.Background()
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, "flush-test-span", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		// Use tracer.Flush instead of llmobs.Flush to test the integration:
+		// This ensures that the main tracer's Flush() properly calls llmobs.Flush()
+		// when LLMObs is enabled, which is the expected behavior in real usage.
+		tracer.Flush()
+
+		// Verify span was flushed immediately using the channel
+		select {
+		case span := <-tt.LLMSpans:
+			assert.Equal(t, "flush-test-span", span.Name)
+			break
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("Expected LLMObs span to be flushed immediately, but timed out")
+		}
+	})
+	t.Run("flush-without-active-llmobs", func(t *testing.T) {
+		// Ensure no active LLMObs
+		llmobs.Stop()
+
+		// Should not panic when calling Flush with no active LLMObs
+		assert.NotPanics(t, func() {
+			llmobs.Flush()
+		})
+	})
+	t.Run("stop-without-active-llmobs", func(t *testing.T) {
+		// Ensure no active LLMObs
+		llmobs.Stop()
+
+		// Should not panic when calling Stop with no active LLMObs
+		assert.NotPanics(t, func() {
+			llmobs.Stop()
+		})
+	})
+	t.Run("tracer-stop-integration", func(t *testing.T) {
+		_ = testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("stop-test"),
+				tracer.WithLogStartup(false),
+			),
+		)
+
+		// Verify LLMObs is active
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.Equal(t, "stop-test", ll.Config.MLApp)
+
+		// Use tracer.Stop instead of tt.Stop to test the integration:
+		// This ensures that the main tracer's Stop() properly calls llmobs.Stop()
+		// when LLMObs is enabled, which is the expected behavior in real usage.
+		tracer.Stop()
+
+		// Verify LLMObs was stopped
+		_, err = llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+	})
+	t.Run("llmobs-disabled", func(t *testing.T) {
+		// Start tracer without LLMObs enabled
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(false),
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt.Stop()
+
+		// Should not have active LLMObs
+		_, err := llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+
+		// Flush should not panic when LLMObs is disabled
+		assert.NotPanics(t, func() {
+			tracer.Flush()
+		})
+
+		// Stop should not panic when LLMObs is disabled
+		assert.NotPanics(t, func() {
+			llmobs.Stop()
+		})
+	})
+	t.Run("llmobs-enabled-without-ml-app", func(t *testing.T) {
+		// Start tracer directly with LLMObs enabled but no ML app - should return error
+		err := tracer.Start(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLogStartup(false),
+		)
+		defer tracer.Stop()
+
+		// Should get error from tracer.Start due to missing ML app
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "ML App is required")
+
+		// Should not have active LLMObs due to startup failure
+		_, err = llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+	})
+	t.Run("env-vars-config", func(t *testing.T) {
+		t.Setenv("DD_LLMOBS_ENABLED", "true")
+		t.Setenv("DD_LLMOBS_ML_APP", "env-test-app")
+		t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "false")
+
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt.Stop()
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.Equal(t, "env-test-app", ll.Config.MLApp)
+		assert.True(t, ll.Config.Enabled)
+		require.NotNil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should not be nil when set via env var")
+		assert.False(t, *ll.Config.AgentlessEnabled, "Should respect DD_LLMOBS_AGENTLESS_ENABLED=false")
+		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Should resolve to agentless=false")
+
+		ctx := context.Background()
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, "env-test-span", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, llmSpans, 1)
+		assert.Equal(t, "env-test-span", llmSpans[0].Name)
+	})
+	t.Run("env-vars-disabled", func(t *testing.T) {
+		t.Setenv("DD_LLMOBS_ENABLED", "false")
+		t.Setenv("DD_LLMOBS_ML_APP", "should-be-ignored")
+
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt.Stop()
+
+		_, err := llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+	})
+	t.Run("code-config-overrides-env-vars", func(t *testing.T) {
+		t.Setenv("DD_LLMOBS_ENABLED", "false")
+		t.Setenv("DD_LLMOBS_ML_APP", "env-app")
+
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("code-app"),
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt.Stop()
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.Equal(t, "code-app", ll.Config.MLApp)
+		assert.True(t, ll.Config.Enabled)
+	})
+	t.Run("agentless-defaults-false-when-evp-proxy-available", func(t *testing.T) {
+		// When agent supports evp_proxy/v2, should default to agentless=false
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("agentless-test"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"}, // Agent supports evp_proxy
+			}),
+		)
+		defer tt.Stop()
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.Nil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should be nil when not explicitly set")
+		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Should default to agentless=false when agent supports evp_proxy")
+	})
+	t.Run("agentless-defaults-true-when-evp-proxy-unavailable", func(t *testing.T) {
+		// Set valid API key (32 chars, lowercase + numbers only)
+		t.Setenv("DD_API_KEY", "abcd1234efgh5678ijkl9012mnop3456")
+
+		// When agent doesn't support evp_proxy/v2, should default to agentless=true
+		err := tracer.Start(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("agentless-test"),
+			tracer.WithLogStartup(false),
+		)
+		defer tracer.Stop()
+
+		require.NoError(t, err)
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		assert.Nil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should be nil when not explicitly set")
+		assert.True(t, ll.Config.ResolvedAgentlessEnabled, "Should default to agentless=true when agent doesn't support evp_proxy")
+	})
+	t.Run("agentless-fails-with-invalid-api-key", func(t *testing.T) {
+		// Set invalid API key (wrong length)
+		t.Setenv("DD_API_KEY", "invalid-key")
+
+		// When defaulting to agentless with invalid API key, should fail
+		err := tracer.Start(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("agentless-test"),
+			tracer.WithLogStartup(false),
+		)
+		defer tracer.Stop()
+
+		// Should get error due to invalid API key in agentless mode
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "agentless mode requires a valid API key")
+
+		// Should not have active LLMObs due to startup failure
+		_, err = llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+	})
+	t.Run("agentless-fails-without-api-key", func(t *testing.T) {
+		// enforce an empty DD_API_KEY
+		t.Setenv("DD_API_KEY", "")
+
+		// When defaulting to agentless but no API key is provided, should fail
+		err := tracer.Start(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("agentless-test"),
+			tracer.WithLogStartup(false),
+			// Intentionally not setting API key
+		)
+		defer tracer.Stop()
+
+		// Should get error due to missing API key in agentless mode
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "agentless mode requires a valid API key")
+
+		// Should not have active LLMObs due to startup failure
+		_, err = llmobs.ActiveLLMObs()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "LLMObs is not enabled")
+	})
+	t.Run("explicit-agentless-overrides-default", func(t *testing.T) {
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("agentless-test"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithLogStartup(false),
+			),
+		)
+		defer tt.Stop()
+
+		ll, err := llmobs.ActiveLLMObs()
+		require.NoError(t, err)
+		require.NotNil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should not be nil when explicitly set")
+		assert.False(t, *ll.Config.AgentlessEnabled, "Explicit agentless=false should override default")
+		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Explicit agentless=false should override default")
+	})
 }
