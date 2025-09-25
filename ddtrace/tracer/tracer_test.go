@@ -2447,7 +2447,10 @@ func (w *testTraceWriter) add(spans []*Span) {
 	w.mu.Unlock()
 }
 
-func (w *testTraceWriter) flush() {
+func (w *testTraceWriter) flush(done ...chan<- struct{}) {
+	if len(done) > 0 && done[0] != nil {
+		defer close(done[0])
+	}
 	w.mu.Lock()
 	w.flushed = append(w.flushed, w.buf...)
 	w.buf = w.buf[:0]
@@ -2479,7 +2482,7 @@ func TestFlush(t *testing.T) {
 	tr.traceWriter = tw
 
 	ts := &statsdtest.TestStatsdClient{}
-	tr.statsd.Close()
+	// tr.statsd.Close()
 	tr.statsd = ts
 
 	transport := newDummyTransport()

@@ -51,6 +51,7 @@ type TracerConf struct { //nolint:revive
 	VersionTag           string
 	ServiceTag           string
 	TracingAsTransport   bool
+	SyncFlushing         bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -163,6 +164,11 @@ type tracer struct {
 
 	// telemetry is the telemetry client for the tracer.
 	telemetry telemetry.Client
+
+	// lastFlushedAt tracks when the tracer last performed a flush to prevent
+	// thundering herd issues when multiple timers fire simultaneously after
+	// process suspension (e.g., process sleep).
+	lastFlushedAt time.Time
 }
 
 const (
@@ -415,9 +421,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
 			},
 		}),
-		statsd:      statsd,
-		dataStreams: dataStreamsProcessor,
-		logFile:     logFile,
+		statsd:        statsd,
+		dataStreams:   dataStreamsProcessor,
+		logFile:       logFile,
+		lastFlushedAt: time.Now(), // Initialize to prevent immediate flush throttling
 	}
 	return t, nil
 }
@@ -497,6 +504,7 @@ func (t *tracer) Flush() {
 	done := make(chan struct{})
 	t.flush <- done
 	<-done
+	t.lastFlushedAt = time.Now()
 	if t.dataStreams != nil {
 		t.dataStreams.Flush()
 	}
@@ -513,20 +521,34 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				t.traceWriter.add(trace.spans)
 			}
 		case <-tick:
+			// Skip flush if we've flushed too recently to prevent thundering herd after process suspension
+			// Only apply throttling to real timers (not test-controlled ticks).
+			if t.config.tickChan == nil && time.Since(t.lastFlushedAt) <= flushInterval {
+				continue
+			}
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
+			// This is not actual flush completion time, because traceWriter.flush()
+			// is non-blocking. However, it's the best we can do.
+			t.lastFlushedAt = time.Now()
 
 		case done := <-t.flush:
+			// Manual flush requests should always proceed to respect user intent.
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
-			t.traceWriter.flush()
+			if t.config.syncFlushEnabled {
+				// If sync flushing is enabled, we want to wait until the flush is fully done.
+				t.traceWriter.flush(done)
+			} else {
+				t.traceWriter.flush()
+			}
 			t.statsd.Flush()
 			if !t.config.tracingAsTransport {
 				t.stats.flushAndSend(time.Now(), withCurrentBucket)
 			}
-			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
-			// when using the agent traceWriter. However, this functionality is used
-			// in Lambda so for that purpose this mechanism should suffice.
-			done <- struct{}{}
+			if !t.config.syncFlushEnabled {
+				// If sync flushing is disabled, we can close the channel immediately.
+				done <- struct{}{}
+			}
 
 		case <-t.stop:
 		loop:
@@ -939,6 +961,7 @@ func (t *tracer) TracerConf() TracerConf {
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
+		SyncFlushing:         t.config.syncFlushEnabled,
 	}
 }
 
