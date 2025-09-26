@@ -165,6 +165,9 @@
     "DD_GIT_TAG": [
       "A"
     ],
+    "DD_HEALTH_METRICS_ENABLED": [
+      "A"
+    ],
     "DD_HOSTNAME": [
       "A"
     ],

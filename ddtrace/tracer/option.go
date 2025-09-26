@@ -322,6 +322,8 @@ type config struct {
 
 	// traceProtocol specifies the trace protocol to use.
 	traceProtocol float64
+
+	healthMetricsEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -509,6 +511,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
+	c.healthMetricsEnabled = internal.BoolEnv("DD_HEALTH_METRICS_ENABLED", true)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -1466,6 +1469,12 @@ func WithTestDefaults(statsdClient any) StartOption {
 		}
 		c.statsdClient = statsdClient.(internal.StatsdClient)
 		c.transport = newDummyTransport()
+	}
+}
+
+func WithHealthMetrics(enabled bool) StartOption {
+	return func(c *config) {
+		c.healthMetricsEnabled = enabled
 	}
 }
 
