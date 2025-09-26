@@ -412,14 +412,11 @@ func (h *logTraceWriter) writeTrace(trace []*Span) (n int, err *encodingError) {
 
 // add adds a trace to the writer's buffer.
 func (h *logTraceWriter) add(trace []*Span) {
-	// Log span details for debugging before encoding
-	logSpanDetails(trace, "logTraceWriter.add")
-
 	// Try adding traces to the buffer until we flush them all or encounter an error.
 	for len(trace) > 0 {
 		n, err := h.writeTrace(trace)
 		if err != nil {
-			log.Error("logTraceWriter.add: Lost a trace: %s", err.cause)
+			log.Error("Lost a trace: %s", err.cause)
 			h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:" + err.dropReason}, 1)
 			return
 		}
@@ -427,7 +424,6 @@ func (h *logTraceWriter) add(trace []*Span) {
 		// If there are traces left that didn't fit into the buffer, flush the buffer and loop to
 		// write the remaining spans.
 		if len(trace) > 0 {
-			log.Debug("logTraceWriter.add: Buffer full, flushing and continuing with %d remaining spans", len(trace))
 			h.flush()
 		}
 	}
@@ -441,13 +437,8 @@ func (h *logTraceWriter) stop() {
 // flush will write any buffered traces to standard output.
 func (h *logTraceWriter) flush() {
 	if !h.hasTraces {
-		log.Debug("logTraceWriter.flush: No traces to flush")
 		return
 	}
-
-	bufferSize := h.buf.Len() + len(logBufferSuffix)
-	log.Debug("logTraceWriter.flush: Flushing %d bytes to stdout", bufferSize)
-
 	h.buf.WriteString(logBufferSuffix)
 	h.w.Write(h.buf.Bytes())
 	h.resetBuffer()
