@@ -26,6 +26,7 @@ import (
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -251,6 +252,11 @@ func Start(opts ...StartOption) error {
 
 	appsec.Start(appsecopts...)
 
+	if t.config.llmobs.Enabled {
+		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+			return fmt.Errorf("failed to start llmobs: %w", err)
+		}
+	}
 	if t.config.logStartup {
 		logStartup(t)
 	}
@@ -295,6 +301,7 @@ func Stop() {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
+	llmobs.Stop()
 	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
@@ -490,6 +497,7 @@ func Flush() {
 	if t := getGlobalTracer(); t != nil {
 		t.Flush()
 	}
+	llmobs.Flush()
 }
 
 // Flush triggers a flush and waits for it to complete.
@@ -692,6 +700,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	}
 	span.context = newSpanContext(span, context)
+	if pprofContext != nil {
+		setLLMObsPropagatingTags(pprofContext, span.context)
+	}
 	span.setMeta("language", "go")
 	// add tags from options
 	for k, v := range opts.Tags {

@@ -18,12 +18,16 @@ import (
 	"testing"
 	"time"
 
+	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+// chanSize is a big enough channel size so we never block sending while the test is running.
+const chanSize = 10_0000
 
 // AgentInfo defines the response from the agent /info endpoint.
 type AgentInfo struct {
@@ -69,30 +73,39 @@ type SpanLink struct {
 	Flags       uint32            `json:"flags"`
 }
 
+type LLMObsSpan = llmobstransport.LLMObsSpanEvent
+
 // TestTracer is an inspectable tracer useful for tests.
 type TestTracer struct {
 	Spans        <-chan Span
+	LLMSpans     <-chan LLMObsSpan
 	roundTripper *mockTransport
 }
 
 // Start calls [tracer.Start] with a mocked transport and provides a new [TestTracer] that allows to inspect
 // the spans produced by this application.
-func Start(t *testing.T, opts ...Option) *TestTracer {
+func Start(t testing.TB, opts ...Option) *TestTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	spansChan := make(chan Span)
+	spansChan := make(chan Span, chanSize)
+	llmobsSpansChan := make(chan LLMObsSpan, chanSize)
 	rt := &mockTransport{
-		T:         t,
-		spansChan: spansChan,
-		agentInfo: cfg.AgentInfoResponse,
+		T:               t,
+		spansChan:       spansChan,
+		llmobsSpansChan: llmobsSpansChan,
+		agentInfo:       cfg.AgentInfoResponse,
 	}
 	httpClient := &http.Client{
 		Transport: rt,
 	}
-	tt := &TestTracer{Spans: spansChan, roundTripper: rt}
+	tt := &TestTracer{
+		Spans:        spansChan,
+		LLMSpans:     llmobsSpansChan,
+		roundTripper: rt,
+	}
 	t.Cleanup(tt.Stop)
 
 	startOpts := append([]tracer.StartOption{
@@ -112,12 +125,14 @@ func Start(t *testing.T, opts ...Option) *TestTracer {
 type config struct {
 	TracerStartOpts   []tracer.StartOption
 	AgentInfoResponse AgentInfo
+	RequestDelay      time.Duration
 }
 
 func defaultConfig() *config {
 	return &config{
 		TracerStartOpts:   nil,
 		AgentInfoResponse: AgentInfo{},
+		RequestDelay:      0,
 	}
 }
 
@@ -135,6 +150,13 @@ func WithTracerStartOpts(opts ...tracer.StartOption) Option {
 func WithAgentInfoResponse(response AgentInfo) Option {
 	return func(cfg *config) {
 		cfg.AgentInfoResponse = response
+	}
+}
+
+// WithRequestDelay introduces a fake delay in all requests.
+func WithRequestDelay(delay time.Duration) Option {
+	return func(cfg *config) {
+		cfg.RequestDelay = delay
 	}
 }
 
@@ -169,15 +191,43 @@ func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 	}
 }
 
+// WaitForLLMObsSpans returns when receiving a number of LLMSpan equal to count. It fails the test if it did not receive
+// that number of spans after 5 seconds.
+func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
+	if count == 0 {
+		return nil
+	}
+	// force a flush so we don't need to wait for the default flush interval.
+	tracer.Flush()
+
+	timeoutChan := time.After(5 * time.Second)
+	spans := make([]LLMObsSpan, 0)
+
+	for {
+		select {
+		case span := <-tt.LLMSpans:
+			spans = append(spans, span)
+			if len(spans) == count {
+				return spans
+			}
+		case <-timeoutChan:
+			assert.FailNowf(t, "timeout waiting for LLMObs spans", "got: %d, want: %d", len(spans), count)
+		}
+	}
+}
+
 type mockTransport struct {
-	*testing.T
-	spansChan chan Span
-	mu        sync.RWMutex
-	finished  bool
-	agentInfo AgentInfo
+	T               testing.TB
+	spansChan       chan Span
+	llmobsSpansChan chan LLMObsSpan
+	mu              sync.RWMutex
+	finished        bool
+	agentInfo       AgentInfo
+	requestDelay    time.Duration
 }
 
 func (rt *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	time.Sleep(rt.requestDelay)
 	return rt.handleRequest(r), nil
 }
 
@@ -189,6 +239,7 @@ func (rt *mockTransport) Stop() {
 	}
 	rt.finished = true
 	close(rt.spansChan)
+	close(rt.llmobsSpansChan)
 }
 
 func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
@@ -203,7 +254,13 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 		return rt.handleTraces(r)
 	case "/info":
 		return rt.handleInfo(r)
+	case "/evp_proxy/v2/api/v2/llmobs", "/api/v2/llmobs":
+		return rt.handleLLMObsSpanEvents(r)
+	case "/v0.7/config", "/telemetry/proxy/api/v2/apmtelemetry":
+		// known cases, no need to log these
+		return rt.emptyResponse(r)
 	default:
+		rt.T.Logf("testtracer: received request to a non-implemented path: %s", r.URL.Path)
 		return rt.emptyResponse(r)
 	}
 }
@@ -263,8 +320,29 @@ func (rt *mockTransport) handleTraces(r *http.Request) (resp *http.Response) {
 	return
 }
 
+func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) (resp *http.Response) {
+	resp = rt.emptyResponse(r)
+
+	req := r.Clone(context.Background())
+	defer req.Body.Close()
+
+	buf, err := io.ReadAll(req.Body)
+	require.NoError(rt.T, err)
+
+	var payload []llmobstransport.PushSpanEventsRequest
+	err = json.Unmarshal(buf, &payload)
+	require.NoError(rt.T, err)
+
+	for _, p := range payload {
+		for _, span := range p.Spans {
+			rt.llmobsSpansChan <- *span
+		}
+	}
+	return
+}
+
 type testLogger struct {
-	*testing.T
+	T testing.TB
 }
 
 func (l *testLogger) Log(msg string) {

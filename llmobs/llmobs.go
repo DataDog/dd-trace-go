@@ -1,0 +1,279 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+// Package llmobs contains the Go SDK to use DataDog's LLM Observability product.
+// You can read more at https://docs.datadoghq.com/llm_observability
+//
+// EXPERIMENTAL: This package is experimental and may change or be removed at any time
+// without notice. It is not subject to the Go module's compatibility promise.
+package llmobs
+
+import (
+	"context"
+
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+)
+
+func SpanFromContext(ctx context.Context) (Span, bool) {
+	if span, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
+		return &baseSpan{Span: span}, true
+	}
+	return nil, false
+}
+
+// StartLLMSpan starts an LLMObs span of kind LLM.
+// Pass the returned context to subsequent start span calls to create child spans of this one.
+func StartLLMSpan(ctx context.Context, name string, opts ...StartSpanOption) (LLMSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindLLM, name, opts...)
+	if !ok {
+		return nil, ctx
+	}
+	return &llmSpan{s}, ctx
+}
+
+// StartWorkflowSpan starts an LLMObs span of kind Workflow.
+// Pass the returned context to subsequent start span calls to create child spans of this one.
+func StartWorkflowSpan(ctx context.Context, name string, opts ...StartSpanOption) (WorkflowSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindWorkflow, name, opts...)
+	if !ok {
+		return nil, ctx
+	}
+	return &workflowSpan{s}, ctx
+}
+
+// StartAgentSpan starts an LLMObs span of kind Agent.
+// Pass the returned context to subsequent start span calls to create child spans of this one.
+func StartAgentSpan(ctx context.Context, name string, opts ...StartSpanOption) (AgentSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindAgent, name, opts...)
+	if !ok {
+		return nil, ctx
+	}
+	return &agentSpan{s}, ctx
+}
+
+// StartToolSpan starts an LLMObs span of kind Tool.
+// Pass the returned context to subsequent start span calls to create child spans of this one.
+func StartToolSpan(ctx context.Context, name string, opts ...StartSpanOption) (ToolSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindTool, name, opts...)
+	if !ok {
+		return nil, ctx
+	}
+	return &toolSpan{s}, ctx
+}
+
+// StartTaskSpan starts an LLMObs span of kind Task.
+// Pass the returned context to subsequent start span calls to create child spans of this one.
+func StartTaskSpan(ctx context.Context, name string, opts ...StartSpanOption) (TaskSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindTask, name, opts...)
+	if !ok {
+		return nil, ctx
+	}
+	return &taskSpan{s}, ctx
+}
+
+// StartEmbeddingSpan starts an LLMObs span of kind Embedding.
+// Pass the returned context to subsequent start span calls to create child spans of this one.
+//
+// Note: when annotating an embedding span’s input you should use the WithEmbeddingInput option instead of the generic one.
+func StartEmbeddingSpan(ctx context.Context, name string, opts ...StartSpanOption) (EmbeddingSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindEmbedding, name, opts...)
+	if !ok {
+		return nil, ctx
+	}
+	return &embeddingSpan{s}, ctx
+}
+
+// StartRetrievalSpan starts an LLMObs span of kind Retrieval.
+// Pass the returned context to subsequent start span calls to create child spans of this one.
+//
+// Note: when annotating a retrieval span’s output you should use the WithAnnotatedRetrievedDocumentOutput option.
+func StartRetrievalSpan(ctx context.Context, name string, opts ...StartSpanOption) (RetrievalSpan, context.Context) {
+	s, ctx, ok := startSpan(ctx, illmobs.SpanKindRetrieval, name, opts...)
+	if !ok {
+		return nil, ctx
+	}
+	return &retrievalSpan{s}, ctx
+}
+
+type (
+	SpanLink          = illmobs.SpanLink
+	LLMMessage        = illmobs.LLMMessage
+	EmbeddedDocument  = illmobs.EmbeddedDocument
+	RetrievedDocument = illmobs.RetrievedDocument
+	Prompt            = illmobs.Prompt
+	ToolDefinition    = illmobs.ToolDefinition
+)
+
+type (
+	// LLMSpan represents a span of kind llm
+	LLMSpan interface {
+		Span
+		AnnotateIO(input, output []LLMMessage, opts ...AnnotateOption)
+		AnnotatePrompt(prompt Prompt)
+		AnnotateToolDefinitions(toolDefinitions []ToolDefinition)
+	}
+	// WorkflowSpan represents a span of kind workflow
+	WorkflowSpan interface {
+		Span
+		AnnotateIO(input, output string, opts ...AnnotateOption)
+	}
+	// AgentSpan represents a span of kind agent
+	AgentSpan interface {
+		Span
+		AnnotateIO(input, output string, opts ...AnnotateOption)
+		AnnotateAgentManifest(manifest string)
+	}
+	// ToolSpan represents a span of kind tool
+	ToolSpan interface {
+		Span
+		AnnotateIO(input, output string, opts ...AnnotateOption)
+	}
+	// TaskSpan represents a span of kind task
+	TaskSpan interface {
+		Span
+		AnnotateIO(input, output string, opts ...AnnotateOption)
+	}
+	// EmbeddingSpan represents a span of kind embedding
+	EmbeddingSpan interface {
+		Span
+		AnnotateIO(input []EmbeddedDocument, output string, opts ...AnnotateOption)
+	}
+	// RetrievalSpan represents a span of kind retrieval
+	RetrievalSpan interface {
+		Span
+		AnnotateIO(input string, output []RetrievedDocument, opts ...AnnotateOption)
+	}
+)
+
+type Span interface {
+	sealed()
+
+	SpanID() string
+	Kind() string
+	TraceID() string
+	APMTraceID() string
+	AddLink(link SpanLink)
+	Finish(opts ...FinishSpanOption)
+}
+
+type baseSpan struct {
+	*illmobs.Span
+}
+
+func (*baseSpan) sealed() {}
+
+func (s *baseSpan) Finish(opts ...FinishSpanOption) {
+	cfg := illmobs.FinishSpanConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	s.Span.Finish(cfg)
+}
+
+type (
+	llmSpan struct {
+		baseSpan
+	}
+	workflowSpan struct {
+		baseSpan
+	}
+	agentSpan struct {
+		baseSpan
+	}
+	toolSpan struct {
+		baseSpan
+	}
+	taskSpan struct {
+		baseSpan
+	}
+	embeddingSpan struct {
+		baseSpan
+	}
+	retrievalSpan struct {
+		baseSpan
+	}
+)
+
+func (s *llmSpan) AnnotateIO(input, output []LLMMessage, opts ...AnnotateOption) {
+	a := parseAnnotateOptions(opts...)
+	a.InputMessages = input
+	a.OutputMessages = output
+	s.Span.Annotate(a)
+}
+
+func (s *llmSpan) AnnotatePrompt(prompt Prompt) {
+	a := illmobs.SpanAnnotations{Prompt: &prompt}
+	s.Span.Annotate(a)
+}
+
+func (s *llmSpan) AnnotateToolDefinitions(toolDefinitions []ToolDefinition) {
+	a := illmobs.SpanAnnotations{ToolDefinitions: toolDefinitions}
+	s.Span.Annotate(a)
+}
+
+func (s *retrievalSpan) AnnotateIO(input string, output []RetrievedDocument, opts ...AnnotateOption) {
+	a := parseAnnotateOptions(opts...)
+	a.InputText = input
+	a.OutputRetrievedDocs = output
+	s.Span.Annotate(a)
+}
+
+func (s *embeddingSpan) AnnotateIO(input []EmbeddedDocument, output string, opts ...AnnotateOption) {
+	a := parseAnnotateOptions(opts...)
+	a.InputEmbeddedDocs = input
+	a.OutputText = output
+	s.Span.Annotate(a)
+}
+
+func (s *taskSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
+	annotateIOText(s.Span, input, output, opts...)
+}
+
+func (s *toolSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
+	annotateIOText(s.Span, input, output, opts...)
+}
+
+func (s *agentSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
+	annotateIOText(s.Span, input, output, opts...)
+}
+
+func (s *agentSpan) AnnotateAgentManifest(manifest string) {
+	a := illmobs.SpanAnnotations{AgentManifest: manifest}
+	s.Span.Annotate(a)
+}
+
+func (s *workflowSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
+	annotateIOText(s.Span, input, output, opts...)
+}
+
+func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (baseSpan, context.Context, bool) {
+	ll, err := illmobs.ActiveLLMObs()
+	if err != nil {
+		log.Warn("llmobs: failed to start llmobs span: %v", err)
+		return baseSpan{}, ctx, false
+	}
+	cfg := illmobs.StartSpanConfig{}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	s, ctx := ll.StartSpan(ctx, kind, name, cfg)
+	return baseSpan{s}, ctx, true
+}
+
+func parseAnnotateOptions(opts ...AnnotateOption) illmobs.SpanAnnotations {
+	a := illmobs.SpanAnnotations{}
+	for _, opt := range opts {
+		opt(&a)
+	}
+	return a
+}
+
+func annotateIOText(s *illmobs.Span, input, output string, opts ...AnnotateOption) {
+	a := parseAnnotateOptions(opts...)
+	a.InputText = input
+	a.OutputText = output
+	s.Annotate(a)
+}

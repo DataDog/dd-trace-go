@@ -489,7 +489,7 @@ func (p *propagator) marshalPropagatingTags(ctx *SpanContext) string {
 		}
 		if tagLen := sb.Len() + len(k) + len(v); tagLen > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
-			log.Warn("Won't propagate tag: length is (%d) which exceeds the maximum len of (%d).", tagLen, p.cfg.MaxTagsHeaderLen)
+			log.Warn("Won't propagate tag %q: %q length is (%d) which exceeds the maximum len of (%d).", k, v, tagLen, p.cfg.MaxTagsHeaderLen)
 			properr = "inject_max_size"
 			return false
 		}
