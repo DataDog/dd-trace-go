@@ -19,6 +19,7 @@ type config struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	groupID             string
+	keyTagEnabled       bool
 }
 
 func defaults(cfg *config) {
@@ -87,5 +88,12 @@ func WithAnalyticsRate(rate float64) OptionFn {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithKeyTag enables tagging spans with the message key (if present).
+func WithKeyTag() OptionFn {
+	return func(cfg *config) {
+		cfg.keyTagEnabled = true
 	}
 }
