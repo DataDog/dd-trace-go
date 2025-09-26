@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -20,6 +21,46 @@ import (
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+// logSpanDetails logs detailed information about spans for debugging purposes
+func logSpanDetails(trace []*Span, prefix string) {
+	if !log.DebugEnabled() {
+		return
+	}
+
+	log.Debug("%s: Processing trace with %d spans:", prefix, len(trace))
+	for i, span := range trace {
+		if span == nil {
+			log.Debug("  [%d] <nil span>", i)
+			continue
+		}
+
+		span.mu.RLock()
+
+		// Get sampling priority from metrics
+		samplingPriority := "not_set"
+		if span.metrics != nil {
+			if priority, ok := span.metrics[keySamplingPriority]; ok {
+				samplingPriority = fmt.Sprintf("%.0f", priority)
+			}
+		}
+
+		// Get decision maker from context if available
+		decisionMaker := "unknown"
+		if span.context != nil && span.context.trace != nil {
+			span.context.trace.mu.RLock()
+			if dm, exists := span.context.trace.propagatingTags[keyDecisionMaker]; exists {
+				decisionMaker = dm
+			}
+			span.context.trace.mu.RUnlock()
+		}
+
+		log.Debug("  [%d] Span: name=%q, resource=%q, service=%q, traceID=%016x, spanID=%016x, sampling_priority=%s, decision_maker=%s",
+			i, span.name, span.resource, span.service, span.traceID, span.spanID, samplingPriority, decisionMaker)
+
+		span.mu.RUnlock()
+	}
+}
 
 type traceWriter interface {
 	// add adds traces to be sent by the writer.
@@ -70,6 +111,9 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 }
 
 func (h *agentTraceWriter) add(trace []*Span) {
+	// Log span details for debugging before encoding
+	logSpanDetails(trace, "agentTraceWriter.add")
+
 	h.mu.Lock()
 	stats, err := h.payload.push(trace)
 	if err != nil {
@@ -83,6 +127,9 @@ func (h *agentTraceWriter) add(trace []*Span) {
 
 	needsFlush := stats.size > payloadSizeLimit
 	h.mu.Unlock()
+
+	log.Debug("agentTraceWriter.add: Added trace, payload stats: size=%d bytes, traces=%d, needsFlush=%t",
+		stats.size, stats.itemCount, needsFlush)
 
 	if needsFlush {
 		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
@@ -108,8 +155,15 @@ func (h *agentTraceWriter) flush() {
 	// Check after acquiring lock
 	if oldp.itemCount() == 0 {
 		h.mu.Unlock()
+		log.Debug("agentTraceWriter.flush: No traces to flush")
 		return
 	}
+
+	// Log payload details before sending
+	stats := oldp.stats()
+	log.Debug("agentTraceWriter.flush: Flushing payload with %d traces, %d bytes, protocol=%.1f",
+		stats.itemCount, stats.size, oldp.protocol())
+
 	h.payload = h.newPayload()
 	h.mu.Unlock()
 
@@ -132,11 +186,13 @@ func (h *agentTraceWriter) flush() {
 		stats := p.stats()
 		var err error
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
-			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
+			log.Debug("agentTraceWriter.flush: Attempt %d to send payload: size=%d bytes, traces=%d",
+				attempt+1, stats.size, stats.itemCount)
 			var rc io.ReadCloser
 			rc, err = h.config.transport.send(p)
 			if err == nil {
-				log.Debug("sent traces after %d attempts", attempt+1)
+				log.Debug("agentTraceWriter.flush: Successfully sent %d traces (%d bytes) after %d attempts",
+					stats.itemCount, stats.size, attempt+1)
 				h.statsd.Count("datadog.tracer.flush_bytes", int64(stats.size), nil, 1)
 				h.statsd.Count("datadog.tracer.flush_traces", int64(stats.itemCount), nil, 1)
 				if err := h.prioritySampling.readRatesJSON(rc); err != nil {
@@ -146,13 +202,15 @@ func (h *agentTraceWriter) flush() {
 			}
 
 			if attempt+1%5 == 0 {
-				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+				log.Error("agentTraceWriter.flush: failure sending traces (attempt %d of %d): %v",
+					attempt+1, h.config.sendRetries+1, err.Error())
 			}
 			p.reset()
 			time.Sleep(h.config.retryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:send_failed"}, 1)
-		log.Error("lost %d traces: %v", stats.itemCount, err.Error())
+		log.Error("agentTraceWriter.flush: DROPPED %d traces after all retry attempts failed: %v",
+			stats.itemCount, err.Error())
 	}(oldp)
 }
 
@@ -354,11 +412,14 @@ func (h *logTraceWriter) writeTrace(trace []*Span) (n int, err *encodingError) {
 
 // add adds a trace to the writer's buffer.
 func (h *logTraceWriter) add(trace []*Span) {
+	// Log span details for debugging before encoding
+	logSpanDetails(trace, "logTraceWriter.add")
+
 	// Try adding traces to the buffer until we flush them all or encounter an error.
 	for len(trace) > 0 {
 		n, err := h.writeTrace(trace)
 		if err != nil {
-			log.Error("Lost a trace: %s", err.cause)
+			log.Error("logTraceWriter.add: Lost a trace: %s", err.cause)
 			h.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:" + err.dropReason}, 1)
 			return
 		}
@@ -366,6 +427,7 @@ func (h *logTraceWriter) add(trace []*Span) {
 		// If there are traces left that didn't fit into the buffer, flush the buffer and loop to
 		// write the remaining spans.
 		if len(trace) > 0 {
+			log.Debug("logTraceWriter.add: Buffer full, flushing and continuing with %d remaining spans", len(trace))
 			h.flush()
 		}
 	}
@@ -379,8 +441,13 @@ func (h *logTraceWriter) stop() {
 // flush will write any buffered traces to standard output.
 func (h *logTraceWriter) flush() {
 	if !h.hasTraces {
+		log.Debug("logTraceWriter.flush: No traces to flush")
 		return
 	}
+
+	bufferSize := h.buf.Len() + len(logBufferSuffix)
+	log.Debug("logTraceWriter.flush: Flushing %d bytes to stdout", bufferSize)
+
 	h.buf.WriteString(logBufferSuffix)
 	h.w.Write(h.buf.Bytes())
 	h.resetBuffer()
