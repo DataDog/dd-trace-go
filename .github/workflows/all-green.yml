@@ -20,7 +20,9 @@ jobs:
           # polling-interval-seconds: "60" # Default
           ignored-name-patterns: |
             devflow/merge
+            check-title
 
 # Reason for ignored-name-patterns:
 #
 # * devflow/merge: technical job used by the merge queue, do not remove it.
+# * check-title: CI job used to validate the PR title, enforced by branch protection rules, do not remove it.
