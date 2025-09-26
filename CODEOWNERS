@@ -62,6 +62,9 @@
 /internal/orchestrion           @DataDog/apm-orchestrion
 /**/orchestrion.yml             @DataDog/apm-orchestrion
 
+# Serverless
+/contrib/aws/datadog-lambda-go  @DataDog/apm-serverless @DataDog/serverless-aws
+
 # no owner: changes to these files will not automatically ping any particular
 # team and can be reviewed by anybody with the appropriate permissions. This is
 # meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
