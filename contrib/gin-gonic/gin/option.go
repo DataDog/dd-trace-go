@@ -15,11 +15,13 @@ import (
 )
 
 type config struct {
-	analyticsRate float64
-	resourceNamer func(c *gin.Context) string
-	serviceName   string
-	ignoreRequest func(c *gin.Context) bool
-	headerTags    instrumentation.HeaderTags
+	analyticsRate  float64
+	resourceNamer  func(c *gin.Context) string
+	serviceName    string
+	ignoreRequest  func(c *gin.Context) bool
+	isStatusError  func(statusCode int) bool
+	propagateError bool
+	headerTags     instrumentation.HeaderTags
 }
 
 func newConfig(serviceName string) *config {
@@ -28,11 +30,13 @@ func newConfig(serviceName string) *config {
 	}
 	rate := instr.AnalyticsRate(true)
 	return &config{
-		analyticsRate: rate,
-		resourceNamer: defaultResourceNamer,
-		serviceName:   serviceName,
-		ignoreRequest: func(_ *gin.Context) bool { return false },
-		headerTags:    instr.HTTPHeadersAsTags(),
+		analyticsRate:  rate,
+		resourceNamer:  defaultResourceNamer,
+		serviceName:    serviceName,
+		ignoreRequest:  func(_ *gin.Context) bool { return false },
+		isStatusError:  isServerError,
+		propagateError: false,
+		headerTags:     instr.HTTPHeadersAsTags(),
 	}
 }
 
@@ -76,6 +80,25 @@ func WithAnalyticsRate(rate float64) OptionFn {
 func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
+	return func(cfg *config) {
+		cfg.isStatusError = fn
+	}
+}
+
+func isServerError(statusCode int) bool {
+	return statusCode >= 500 && statusCode < 600
+}
+
+// WithErrorPropagation enables the propagation of gin's error to the span.
+func WithErrorPropagation() OptionFn {
+	return func(cfg *config) {
+		cfg.propagateError = true
 	}
 }
 
