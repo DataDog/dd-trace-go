@@ -6,14 +6,12 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
-
-	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -287,10 +285,11 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
-			if extractedCtx != nil && len(extractedCtx.baggage) > 0 {
-				for k, v := range extractedCtx.baggage {
+			if extractedCtx != nil && extractedCtx.baggage != nil {
+				extractedCtx.baggage.ForeachBaggage(func(k, v string) bool {
 					pendingBaggage[k] = v
-				}
+					return true
+				})
 			}
 			continue
 		}
@@ -345,25 +344,26 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
+			// Create baggage-only context with clean interface
+			baggageCtx := NewBaggageContextWithItems(context.Background(), pendingBaggage, nil)
 			ctx := &SpanContext{
-				baggage:     make(map[string]string, len(pendingBaggage)),
-				baggageOnly: true,
+				baggage: baggageCtx,
+				// traceID and spanID remain zero - indicates baggage-only context
 			}
-			maps.Copy(ctx.baggage, pendingBaggage)
-			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
 		}
-		// 0 successful extractions
 		return nil, ErrSpanContextNotFound
 	}
 	if len(pendingBaggage) > 0 {
+		// Add W3C baggage to existing context
 		if ctx.baggage == nil {
-			ctx.baggage = make(map[string]string, len(pendingBaggage))
+			ctx.baggage = NewBaggageContextWithItems(context.Background(), pendingBaggage, nil)
+		} else {
+			// Merge with existing baggage
+			for k, v := range pendingBaggage {
+				ctx.baggage = ctx.baggage.SetBaggage(k, v)
+			}
 		}
-		for k, v := range pendingBaggage {
-			ctx.baggage[k] = v
-		}
-		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
 	if len(links) > 0 {
@@ -1391,9 +1391,29 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 
 	ctr := 0
 	var baggageBuilder strings.Builder
-	ctx.ForeachBaggageItem(func(k, v string) bool {
+
+	// Inject both W3C baggage and OpenTracing baggage for interoperability
+	// This maintains backward compatibility where OpenTracing baggage appears in both headers
+	allBaggage := make(map[string]string)
+
+	// Add all baggage from the unified baggage context
+	if ctx.baggage != nil {
+		// Add W3C baggage
+		if w3cBaggage := ctx.baggage.AllBaggage(); w3cBaggage != nil {
+			for k, v := range w3cBaggage {
+				allBaggage[k] = v
+			}
+		}
+		// Add OpenTracing baggage for interoperability
+		ctx.baggage.ForeachOTBaggage(func(k, v string) bool {
+			allBaggage[k] = v
+			return true
+		})
+	}
+
+	for k, v := range allBaggage {
 		if ctr >= baggageMaxItems {
-			return false
+			break
 		}
 
 		var itemBuilder strings.Builder
@@ -1405,12 +1425,12 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		itemBuilder.WriteRune('=')
 		itemBuilder.WriteString(encodeValue(v))
 		if itemBuilder.Len()+baggageBuilder.Len() > baggageMaxBytes {
-			return false
+			break
 		}
 		baggageBuilder.WriteString(itemBuilder.String())
 		ctr++
-		return true
-	})
+	}
+
 	if baggageBuilder.Len() > 0 {
 		writer.Set("baggage", baggageBuilder.String())
 	}
@@ -1428,7 +1448,7 @@ func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
 
 func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, error) {
 	var baggageHeader string
-	var ctx SpanContext
+	ctx := &SpanContext{}
 	err := reader.ForeachKey(func(k, v string) error {
 		if strings.ToLower(k) == "baggage" {
 			// Expect only one baggage header, return early
@@ -1442,7 +1462,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	}
 
 	if baggageHeader == "" {
-		return &ctx, nil
+		return ctx, nil
 	}
 
 	parts := strings.Split(baggageHeader, ",")
@@ -1454,7 +1474,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		trimmedV := strings.TrimSpace(v)
 		if !ok || trimmedK == "" || trimmedV == "" {
 			log.Warn("invalid baggage item: %q, dropping entire header", kv)
-			return &ctx, nil
+			return ctx, nil
 		}
 		// store back the trimmed pair so we don't re-trim below
 		parts[i] = trimmedK + "=" + trimmedV
@@ -1465,8 +1485,12 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		rawK, rawV, _ := strings.Cut(kv, "=")
 		key, _ := url.QueryUnescape(rawK)
 		val, _ := url.QueryUnescape(rawV)
-		ctx.setBaggageItem(key, val)
+		// Set W3C baggage using unified interface
+		if ctx.baggage == nil {
+			ctx.baggage = NewBaggageContext(context.Background())
+		}
+		ctx.baggage = ctx.baggage.SetBaggage(key, val)
 	}
 
-	return &ctx, nil
+	return ctx, nil
 }

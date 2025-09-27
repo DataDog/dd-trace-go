@@ -36,7 +36,6 @@ func withBaggage(ctx context.Context, baggage map[string]string) context.Context
 func Set(ctx context.Context, key, value string) context.Context {
 	bm, ok := baggageMap(ctx)
 	if !ok || bm == nil {
-		// If there's no baggage map yet, or it's nil, create one
 		bm = make(map[string]string)
 	} else {
 		bm = maps.Clone(bm)
@@ -60,7 +59,6 @@ func Get(ctx context.Context, key string) (string, bool) {
 func Remove(ctx context.Context, key string) context.Context {
 	bm, ok := baggageMap(ctx)
 	if !ok || bm == nil {
-		// nothing to remove
 		return ctx
 	}
 	bmCopy := maps.Clone(bm)
@@ -68,7 +66,7 @@ func Remove(ctx context.Context, key string) context.Context {
 	return withBaggage(ctx, bmCopy)
 }
 
-// All returns a **copy** of all baggage items in the context,
+// All returns a **copy** of all baggage items in the context.
 func All(ctx context.Context) map[string]string {
 	bm, ok := baggageMap(ctx)
 	if !ok {
@@ -80,4 +78,15 @@ func All(ctx context.Context) map[string]string {
 // Clear completely removes all baggage items from the context.
 func Clear(ctx context.Context) context.Context {
 	return withBaggage(ctx, nil)
+}
+
+// ForeachBaggageItem iterates over W3C baggage items from a context.
+func ForeachBaggageItem(ctx context.Context, handler func(k, v string) bool) {
+	if bm, ok := baggageMap(ctx); ok && bm != nil {
+		for k, v := range bm {
+			if !handler(k, v) {
+				break
+			}
+		}
+	}
 }

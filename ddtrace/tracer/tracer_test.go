@@ -904,7 +904,7 @@ func TestTracerBaggagePropagation(t *testing.T) {
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
 	context := child.Context()
 
-	assert.Equal("value", context.baggage["key"])
+	assert.Equal("value", context.baggageItem("key"))
 }
 
 func TestStartSpanOrigin(t *testing.T) {
@@ -1118,8 +1118,8 @@ func TestTracerBaggageImmutability(t *testing.T) {
 	child.SetBaggageItem("key", "changed!")
 	parentContext := root.Context()
 	childContext := child.Context()
-	assert.Equal("value", parentContext.baggage["key"])
-	assert.Equal("changed!", childContext.baggage["key"])
+	assert.Equal("value", parentContext.baggageItem("key"))
+	assert.Equal("changed!", childContext.baggageItem("key"))
 }
 
 func TestTracerInjectConcurrency(t *testing.T) {

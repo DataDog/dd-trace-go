@@ -441,9 +441,8 @@ func TestBaggageSpanTagsOpentracer(t *testing.T) {
 	assert.Equal(t, "789", m["baggage.session.id"], "should contain session.id value")
 
 	// Keys that should NOT be present (user.id is ot-baggage header)
-	// This assertion WILL FAIL until baggage revamp is complete; therefore, commented out
-	// Baggage revamp Jira card: APMAPI-1442
-	// assert.NotContains(t, m, "baggage.user.id", "baggage.user.id should not be included in span tags")
+	// Baggage revamp complete - this should now pass
+	assert.NotContains(t, m, "baggage.user.id", "baggage.user.id should not be included in span tags")
 
 	reqSpan.Finish()
 }

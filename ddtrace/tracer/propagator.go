@@ -19,6 +19,17 @@ type Propagator interface {
 	Extract(carrier interface{}) (*SpanContext, error)
 }
 
+// PropagationContextPropagator is the new interface for clean baggage/trace separation.
+// This eliminates the need for special cases and convoluted control flow.
+type PropagationContextPropagator interface {
+	// Inject takes a PropagationContext and injects it into the carrier.
+	Inject(context PropagationContext, carrier interface{}) error
+
+	// Extract returns a PropagationContext from the given carrier.
+	// Returns nil, nil if nothing to extract (no special cases needed).
+	Extract(carrier interface{}) (PropagationContext, error)
+}
+
 // TextMapWriter allows setting key/value pairs of strings on the underlying
 // data structure. Carriers implementing TextMapWriter are compatible to be
 // used with Datadog's TextMapPropagator.
