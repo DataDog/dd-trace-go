@@ -322,6 +322,9 @@ type config struct {
 
 	// traceProtocol specifies the trace protocol to use.
 	traceProtocol float64
+
+	// v1Test enables the v1 payload format when set to true.
+	v1Test bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -479,6 +482,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.debugAbandonedSpans {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
+	c.v1Test = internal.BoolEnv("DD_V1_TEST", false)
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
@@ -567,7 +571,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
+		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient, c.v1Test)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
