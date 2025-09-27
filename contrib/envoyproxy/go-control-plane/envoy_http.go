@@ -6,6 +6,7 @@
 package gocontrolplane
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -22,11 +23,20 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func continueActionFunc(options proxy.ContinueActionOptions) (envoyextproc.ProcessingResponse, error) {
+func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions) error {
 	if len(options.HeaderMutations) > 0 || options.Body {
-		return buildHeadersResponse(options), nil
+		return buildHeadersResponse(ctx, options)
 	}
 
+	emptyResp, err := buildEmptyContinueResponse(options)
+	if err != nil {
+		return err
+	}
+
+	return sendResponse(ctx, &emptyResp)
+}
+
+func buildEmptyContinueResponse(options proxy.ContinueActionOptions) (envoyextproc.ProcessingResponse, error) {
 	common := &envoyextproc.CommonResponse{
 		Status: envoyextproc.CommonResponse_CONTINUE,
 	}
@@ -49,7 +59,7 @@ func continueActionFunc(options proxy.ContinueActionOptions) (envoyextproc.Proce
 	}
 }
 
-func blockActionFunc(data proxy.BlockActionOptions) (envoyextproc.ProcessingResponse, error) {
+func blockActionFunc(ctx context.Context, data proxy.BlockActionOptions) error {
 	blockedHeaders := convertHeadersToEnvoy(data.Headers)
 
 	var statusCode int32
@@ -57,7 +67,7 @@ func blockActionFunc(data proxy.BlockActionOptions) (envoyextproc.ProcessingResp
 		statusCode = int32(data.StatusCode)
 	}
 
-	return envoyextproc.ProcessingResponse{
+	resp := envoyextproc.ProcessingResponse{
 		Response: &envoyextproc.ProcessingResponse_ImmediateResponse{
 			ImmediateResponse: &envoyextproc.ImmediateResponse{
 				Status: &envoytypes.HttpStatus{
@@ -72,11 +82,13 @@ func blockActionFunc(data proxy.BlockActionOptions) (envoyextproc.ProcessingResp
 				},
 			},
 		},
-	}, nil
+	}
+
+	return sendResponse(ctx, &resp)
 }
 
 // buildHeadersResponse creates an Envoy HeadersResponse from provided data answering a RequestHeaders or ResponseHeaders message
-func buildHeadersResponse(data proxy.ContinueActionOptions) envoyextproc.ProcessingResponse {
+func buildHeadersResponse(ctx context.Context, data proxy.ContinueActionOptions) error {
 	var modeOverride *envoyextprocfilter.ProcessingMode
 	if data.Body {
 		modeOverride = &envoyextprocfilter.ProcessingMode{RequestBodyMode: envoyextprocfilter.ProcessingMode_STREAMED}
@@ -102,7 +114,24 @@ func buildHeadersResponse(data proxy.ContinueActionOptions) envoyextproc.Process
 		}
 	}
 
-	return processingResponse
+	return sendResponse(ctx, &processingResponse)
+}
+
+// sendResponse sends a processing response back to Envoy
+func sendResponse(ctx context.Context, response *envoyextproc.ProcessingResponse) error {
+	instr.Logger().Debug("external_processing: sending response: %v\n", response)
+
+	processServer, _ := ctx.Value(processServerKey).(envoyextproc.ExternalProcessor_ProcessServer)
+	if processServer == nil {
+		return status.Errorf(codes.Unknown, "No gRPC stream available to send the response")
+	}
+
+	if err := processServer.SendMsg(response); err != nil {
+		instr.Logger().Error("external_processing: error sending response (probably because of an Envoy timeout): %s", err.Error())
+		return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %s", err.Error())
+	}
+
+	return nil
 }
 
 // convertHeadersToEnvoy converts standard HTTP headers to Envoy HeaderValueOption format

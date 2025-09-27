@@ -48,7 +48,7 @@ type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
 	config           AppsecEnvoyConfig
 	requestCounter   atomic.Uint32
-	messageProcessor proxy.Processor[envoyextproc.ProcessingResponse]
+	messageProcessor proxy.Processor
 }
 
 // AppsecEnvoyExternalProcessorServer creates a new external processor server with AAP enabled
@@ -56,7 +56,7 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 	processor := &appsecEnvoyExternalProcessorServer{
 		ExternalProcessorServer: userImplementation,
 		config:                  config,
-		messageProcessor: proxy.NewProcessor[envoyextproc.ProcessingResponse](proxy.ProcessorConfig[envoyextproc.ProcessingResponse]{
+		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
 			BlockingUnavailable:  config.BlockingUnavailable,
 			BodyParsingSizeLimit: config.BodyParsingSizeLimit,
 			Framework:            "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3",
@@ -76,10 +76,14 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 	return processor
 }
 
+type processServerKeyType struct{}
+
+var processServerKey processServerKeyType
+
 // Process handles the bidirectional stream that Envoy uses to control the filter
 func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.ExternalProcessor_ProcessServer) error {
 	var (
-		ctx            = processServer.Context()
+		ctx            = context.WithValue(processServer.Context(), processServerKey, processServer)
 		currentRequest proxy.RequestState
 	)
 
@@ -92,7 +96,7 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 	}()
 
 	for {
-		if err := s.checkContext(ctx); err != nil {
+		if err := s.checkContext(processServer.Context()); err != nil {
 			return err
 		}
 
@@ -102,16 +106,10 @@ func (s *appsecEnvoyExternalProcessorServer) Process(processServer envoyextproc.
 		}
 
 		// Process the message
-		processingResponse, err := s.processMessage(ctx, &processingRequest, &currentRequest)
+		err := s.processMessage(ctx, &processingRequest, &currentRequest)
 		if err != nil && err != io.EOF {
 			instr.Logger().Error("external_processing: error processing request: %s\n", err.Error())
 			return err
-		}
-
-		if processingResponse != nil {
-			if err := s.sendResponse(processServer, processingResponse); err != nil {
-				return err
-			}
 		}
 
 		if err == io.EOF {
@@ -144,11 +142,11 @@ func (s *appsecEnvoyExternalProcessorServer) handleReceiveError(err error) error
 }
 
 // processMessage processes a single message based on its type
-func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest *proxy.RequestState) (action *envoyextproc.ProcessingResponse, err error) {
+func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context, req *envoyextproc.ProcessingRequest, currentRequest *proxy.RequestState) (err error) {
 	switch v := req.Request.(type) {
 	case *envoyextproc.ProcessingRequest_RequestHeaders:
-		*currentRequest, action, err = s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{ProcessingRequest: req, HttpHeaders: req.GetRequestHeaders(), integration: s.config.Integration})
-		return action, err
+		*currentRequest, err = s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{ProcessingRequest: req, HttpHeaders: req.GetRequestHeaders(), integration: s.config.Integration})
+		return err
 
 	case *envoyextproc.ProcessingRequest_RequestBody:
 		return s.messageProcessor.OnRequestBody(&messageBody{ProcessingRequest: req, HttpBody: req.GetRequestBody()}, currentRequest)
@@ -158,7 +156,7 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 			// Handle case where request headers were never sent
 			instr.Logger().Warn("external_processing: can't process the response: envoy never sent the beginning of the request, this is a known issue" +
 				" and can happen when a malformed request is sent to Envoy where the header Host is missing. See link to issue https://github.com/envoyproxy/envoy/issues/38022")
-			return nil, status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
+			return status.Errorf(codes.InvalidArgument, "Error processing response headers from ext_proc: can't process the response")
 		}
 		return s.messageProcessor.OnResponseHeaders(&responseHeadersEnvoy{ProcessingRequest: req, HttpHeaders: req.GetResponseHeaders()}, currentRequest)
 
@@ -172,18 +170,6 @@ func (s *appsecEnvoyExternalProcessorServer) processMessage(ctx context.Context,
 		return s.messageProcessor.OnResponseTrailers(currentRequest)
 
 	default:
-		return nil, status.Errorf(codes.Unknown, "Unknown request type: %T", v)
+		return status.Errorf(codes.Unknown, "Unknown request type: %T", v)
 	}
-}
-
-// sendResponse sends a processing response back to Envoy
-func (s *appsecEnvoyExternalProcessorServer) sendResponse(processServer envoyextproc.ExternalProcessor_ProcessServer, response *envoyextproc.ProcessingResponse) error {
-	instr.Logger().Debug("external_processing: sending response: %v\n", response)
-
-	if err := processServer.SendMsg(response); err != nil {
-		instr.Logger().Error("external_processing: error sending response (probably because of an Envoy timeout): %s", err.Error())
-		return status.Errorf(codes.Unknown, "Error sending response (probably because of an Envoy timeout): %s", err.Error())
-	}
-
-	return nil
 }
