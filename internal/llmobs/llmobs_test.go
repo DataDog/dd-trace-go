@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
 const (
@@ -1094,90 +1095,179 @@ func BenchmarkStartSpan(b *testing.B) {
 	})
 }
 
-func testTracer(t testing.TB, opts ...testtracer.Option) (*testtracer.TestTracer, *llmobs.LLMObs) {
-	tOpts := append([]testtracer.Option{
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp(mlApp),
-			tracer.WithLogStartup(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-	}, opts...)
-
-	tt := testtracer.Start(t, tOpts...)
-	t.Cleanup(tt.Stop)
-
-	ll, err := llmobs.ActiveLLMObs()
-	require.NoError(t, err)
-
-	return tt, ll
-}
-
-func findTag(tags []string, name string) string {
-	for _, t := range tags {
-		parts := strings.Split(t, ":")
-		if len(parts) != 2 {
-			continue
-		}
-		if parts[0] == name {
-			return parts[1]
-		}
+func TestSubmitEvaluation(t *testing.T) {
+	testCases := []struct {
+		name       string
+		config     llmobs.EvaluationConfig
+		wantError  string
+		wantMetric func() llmobstransport.LLMObsMetric
+	}{
+		{
+			name: "span-join-categorical",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TraceID:          "test-trace-id",
+				Label:            "accuracy",
+				CategoricalValue: ptrFromVal("correct"),
+				MLApp:            "test-app",
+				TimestampMS:      1234567890,
+				Tags:             []string{"env:test"},
+			},
+			wantMetric: func() llmobstransport.LLMObsMetric {
+				return llmobstransport.LLMObsMetric{
+					JoinOn: llmobstransport.EvaluationJoinOn{
+						Span: &llmobstransport.EvaluationSpanJoin{
+							SpanID:  "test-span-id",
+							TraceID: "test-trace-id",
+						},
+					},
+					MetricType:       "categorical",
+					Label:            "accuracy",
+					CategoricalValue: ptrFromVal("correct"),
+					MLApp:            "test-app",
+					TimestampMS:      1234567890,
+					Tags:             []string{"env:test"},
+				}
+			},
+		},
+		{
+			name: "span-join-score",
+			config: llmobs.EvaluationConfig{
+				SpanID:      "test-span-id",
+				TraceID:     "test-trace-id",
+				Label:       "rating",
+				ScoreValue:  ptrFromVal(0.85),
+				MLApp:       "test-app",
+				TimestampMS: 1234567890,
+			},
+			wantMetric: func() llmobstransport.LLMObsMetric {
+				return llmobstransport.LLMObsMetric{
+					JoinOn: llmobstransport.EvaluationJoinOn{
+						Span: &llmobstransport.EvaluationSpanJoin{
+							SpanID:  "test-span-id",
+							TraceID: "test-trace-id",
+						},
+					},
+					MetricType:  "score",
+					Label:       "rating",
+					ScoreValue:  ptrFromVal(0.85),
+					MLApp:       "test-app",
+					TimestampMS: 1234567890,
+				}
+			},
+		},
+		{
+			name: "span-join-boolean",
+			config: llmobs.EvaluationConfig{
+				SpanID:       "test-span-id",
+				TraceID:      "test-trace-id",
+				Label:        "is_valid",
+				BooleanValue: ptrFromVal(true),
+				MLApp:        "test-app",
+				TimestampMS:  1234567890,
+			},
+			wantMetric: func() llmobstransport.LLMObsMetric {
+				return llmobstransport.LLMObsMetric{
+					JoinOn: llmobstransport.EvaluationJoinOn{
+						Span: &llmobstransport.EvaluationSpanJoin{
+							SpanID:  "test-span-id",
+							TraceID: "test-trace-id",
+						},
+					},
+					MetricType:   "boolean",
+					Label:        "is_valid",
+					BooleanValue: ptrFromVal(true),
+					MLApp:        "test-app",
+					TimestampMS:  1234567890,
+				}
+			},
+		},
+		{
+			name: "tag-join-categorical",
+			config: llmobs.EvaluationConfig{
+				TagKey:           "session_id",
+				TagValue:         "session-123",
+				Label:            "quality",
+				CategoricalValue: ptrFromVal("high"),
+				MLApp:            "test-app",
+				TimestampMS:      1234567890,
+			},
+			wantMetric: func() llmobstransport.LLMObsMetric {
+				return llmobstransport.LLMObsMetric{
+					JoinOn: llmobstransport.EvaluationJoinOn{
+						Tag: &llmobstransport.EvaluationTagJoin{
+							Key:   "session_id",
+							Value: "session-123",
+						},
+					},
+					MetricType:       "categorical",
+					Label:            "quality",
+					CategoricalValue: ptrFromVal("high"),
+					MLApp:            "test-app",
+					TimestampMS:      1234567890,
+				}
+			},
+		},
+		{
+			name: "missing-join-info",
+			config: llmobs.EvaluationConfig{
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "must provide either span/trace IDs or tag key/value for joining",
+		},
+		{
+			name: "both-join-methods",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TraceID:          "test-trace-id",
+				TagKey:           "session_id",
+				TagValue:         "session-123",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+			},
+			wantError: "provide either span/trace IDs or tag key/value, not both",
+		},
+		{
+			name: "no-value-provided",
+			config: llmobs.EvaluationConfig{
+				SpanID:  "test-span-id",
+				TraceID: "test-trace-id",
+				Label:   "test",
+			},
+			wantError: "exactly one metric value (categorical, score, or boolean) must be provided",
+		},
+		{
+			name: "multiple-values-provided",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TraceID:          "test-trace-id",
+				Label:            "test",
+				CategoricalValue: ptrFromVal("value"),
+				ScoreValue:       ptrFromVal(0.5),
+			},
+			wantError: "exactly one metric value (categorical, score, or boolean) must be provided",
+		},
 	}
-	return ""
-}
 
-func testClientServer(t *testing.T, h http.Handler) (*httptest.Server, *http.Client) {
-	wh := traceHandler(h)
-	srv := httptest.NewServer(wh)
-	cl := traceClient(srv.Client())
-	t.Cleanup(srv.Close)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tt, ll := testTracer(t)
 
-	return srv, cl
-}
+			err := ll.SubmitEvaluation(tc.config)
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantError)
+				return
+			}
+			require.NoError(t, err)
 
-func traceHandler(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ctx := req.Context()
+			got := tt.WaitForLLMObsMetrics(t, 1)
+			require.Len(t, got, 1)
 
-		opts := []tracer.StartSpanOption{
-			tracer.Tag("span.kind", "server"),
-		}
-		parentCtx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
-		if err == nil && parentCtx != nil {
-			opts = append(opts, tracer.ChildOf(parentCtx))
-		}
-
-		span, ctx := tracer.StartSpanFromContext(ctx, "http.request", opts...)
-		defer span.Finish()
-
-		h.ServeHTTP(w, req.WithContext(ctx))
-	})
-}
-
-func traceClient(c *http.Client) *http.Client {
-	c.Transport = &tracedRT{base: c.Transport}
-	return c
-}
-
-type tracedRT struct {
-	base http.RoundTripper
-}
-
-func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
-	ctx := req.Context()
-	span, ctx := tracer.StartSpanFromContext(ctx, "http.request", tracer.Tag("span.kind", "client"))
-	defer span.Finish()
-
-	// Clone the request so we can modify it without causing visible side-effects to the caller...
-	req = req.Clone(ctx)
-	err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %s\n", err.Error())
+			assert.Equal(t, tc.wantMetric(), got[0])
+		})
 	}
-
-	return rt.base.RoundTrip(req)
 }
 
 func TestLLMObsLifecycle(t *testing.T) {
@@ -1521,4 +1611,94 @@ func TestLLMObsLifecycle(t *testing.T) {
 		assert.False(t, *ll.Config.AgentlessEnabled, "Explicit agentless=false should override default")
 		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Explicit agentless=false should override default")
 	})
+}
+
+func testTracer(t testing.TB, opts ...testtracer.Option) (*testtracer.TestTracer, *llmobs.LLMObs) {
+	tOpts := append([]testtracer.Option{
+		testtracer.WithTracerStartOpts(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp(mlApp),
+			tracer.WithLogStartup(false),
+		),
+		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+			Endpoints: []string{"/evp_proxy/v2/"},
+		}),
+	}, opts...)
+
+	tt := testtracer.Start(t, tOpts...)
+	t.Cleanup(tt.Stop)
+
+	ll, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+
+	return tt, ll
+}
+
+func findTag(tags []string, name string) string {
+	for _, t := range tags {
+		parts := strings.Split(t, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		if parts[0] == name {
+			return parts[1]
+		}
+	}
+	return ""
+}
+
+func testClientServer(t *testing.T, h http.Handler) (*httptest.Server, *http.Client) {
+	wh := traceHandler(h)
+	srv := httptest.NewServer(wh)
+	cl := traceClient(srv.Client())
+	t.Cleanup(srv.Close)
+
+	return srv, cl
+}
+
+func traceHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+
+		opts := []tracer.StartSpanOption{
+			tracer.Tag("span.kind", "server"),
+		}
+		parentCtx, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
+		if err == nil && parentCtx != nil {
+			opts = append(opts, tracer.ChildOf(parentCtx))
+		}
+
+		span, ctx := tracer.StartSpanFromContext(ctx, "http.request", opts...)
+		defer span.Finish()
+
+		h.ServeHTTP(w, req.WithContext(ctx))
+	})
+}
+
+func traceClient(c *http.Client) *http.Client {
+	c.Transport = &tracedRT{base: c.Transport}
+	return c
+}
+
+type tracedRT struct {
+	base http.RoundTripper
+}
+
+func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx := req.Context()
+	span, ctx := tracer.StartSpanFromContext(ctx, "http.request", tracer.Tag("span.kind", "client"))
+	defer span.Finish()
+
+	// Clone the request so we can modify it without causing visible side-effects to the caller...
+	req = req.Clone(ctx)
+	err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %s\n", err.Error())
+	}
+
+	return rt.base.RoundTrip(req)
+}
+
+func ptrFromVal[T any](v T) *T {
+	return &v
 }

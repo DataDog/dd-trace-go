@@ -165,6 +165,7 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 		Transport:     transport.New(cfg),
 		Tracer:        tracer,
 		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
+		evalMetricsCh: make(chan *transport.LLMObsMetric),
 		stopCh:        make(chan struct{}),
 		flushNowCh:    make(chan struct{}, 1),
 		flushInterval: defaultFlushInterval,
@@ -689,9 +690,21 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
 	if !hasSpanJoin && !hasTagJoin {
 		return errors.New("must provide either span/trace IDs or tag key/value for joining")
 	}
-
 	if cfg.Label == "" {
 		return errors.New("label is required for evaluation metrics")
+	}
+	numValues := 0
+	if cfg.CategoricalValue != nil {
+		numValues++
+	}
+	if cfg.ScoreValue != nil {
+		numValues++
+	}
+	if cfg.BooleanValue != nil {
+		numValues++
+	}
+	if numValues != 1 {
+		return errors.New("exactly one metric value (categorical, score, or boolean) must be provided")
 	}
 
 	mlApp := cfg.MLApp

@@ -74,11 +74,13 @@ type SpanLink struct {
 }
 
 type LLMObsSpan = llmobstransport.LLMObsSpanEvent
+type LLMObsMetric = llmobstransport.LLMObsMetric
 
 // TestTracer is an inspectable tracer useful for tests.
 type TestTracer struct {
 	Spans        <-chan Span
 	LLMSpans     <-chan LLMObsSpan
+	LLMMetrics   <-chan LLMObsMetric
 	roundTripper *mockTransport
 }
 
@@ -92,11 +94,13 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 
 	spansChan := make(chan Span, chanSize)
 	llmobsSpansChan := make(chan LLMObsSpan, chanSize)
+	llmobsMetricsChan := make(chan LLMObsMetric, chanSize)
 	rt := &mockTransport{
-		T:               t,
-		spansChan:       spansChan,
-		llmobsSpansChan: llmobsSpansChan,
-		agentInfo:       cfg.AgentInfoResponse,
+		T:                 t,
+		spansChan:         spansChan,
+		llmobsSpansChan:   llmobsSpansChan,
+		llmobsMetricsChan: llmobsMetricsChan,
+		agentInfo:         cfg.AgentInfoResponse,
 	}
 	httpClient := &http.Client{
 		Transport: rt,
@@ -104,6 +108,7 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 	tt := &TestTracer{
 		Spans:        spansChan,
 		LLMSpans:     llmobsSpansChan,
+		LLMMetrics:   llmobsMetricsChan,
 		roundTripper: rt,
 	}
 	t.Cleanup(tt.Stop)
@@ -216,14 +221,40 @@ func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
 	}
 }
 
+// WaitForLLMObsMetrics returns when receiving a number of LLMObsMetric equal to count. It fails the test if it did not receive
+// that number of metrics after 5 seconds.
+func (tt *TestTracer) WaitForLLMObsMetrics(t *testing.T, count int) []LLMObsMetric {
+	if count == 0 {
+		return nil
+	}
+	// force a flush so we don't need to wait for the default flush interval.
+	tracer.Flush()
+
+	timeoutChan := time.After(5 * time.Second)
+	metrics := make([]LLMObsMetric, 0)
+
+	for {
+		select {
+		case metric := <-tt.LLMMetrics:
+			metrics = append(metrics, metric)
+			if len(metrics) == count {
+				return metrics
+			}
+		case <-timeoutChan:
+			assert.FailNowf(t, "timeout waiting for LLMObs metrics", "got: %d, want: %d", len(metrics), count)
+		}
+	}
+}
+
 type mockTransport struct {
-	T               testing.TB
-	spansChan       chan Span
-	llmobsSpansChan chan LLMObsSpan
-	mu              sync.RWMutex
-	finished        bool
-	agentInfo       AgentInfo
-	requestDelay    time.Duration
+	T                 testing.TB
+	spansChan         chan Span
+	llmobsSpansChan   chan LLMObsSpan
+	llmobsMetricsChan chan LLMObsMetric
+	mu                sync.RWMutex
+	finished          bool
+	agentInfo         AgentInfo
+	requestDelay      time.Duration
 }
 
 func (rt *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -240,6 +271,7 @@ func (rt *mockTransport) Stop() {
 	rt.finished = true
 	close(rt.spansChan)
 	close(rt.llmobsSpansChan)
+	close(rt.llmobsMetricsChan)
 }
 
 func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
@@ -256,6 +288,8 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 		return rt.handleInfo(r)
 	case "/evp_proxy/v2/api/v2/llmobs", "/api/v2/llmobs":
 		return rt.handleLLMObsSpanEvents(r)
+	case "/evp_proxy/v2/api/intake/llm-obs/v2/eval-metric", "/api/intake/llm-obs/v2/eval-metric":
+		return rt.handleLLMObsEvalMetrics(r)
 	case "/v0.7/config", "/telemetry/proxy/api/v2/apmtelemetry":
 		// known cases, no need to log these
 		return rt.emptyResponse(r)
@@ -337,6 +371,25 @@ func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) (resp *http.Res
 		for _, span := range p.Spans {
 			rt.llmobsSpansChan <- *span
 		}
+	}
+	return
+}
+
+func (rt *mockTransport) handleLLMObsEvalMetrics(r *http.Request) (resp *http.Response) {
+	resp = rt.emptyResponse(r)
+
+	req := r.Clone(context.Background())
+	defer req.Body.Close()
+
+	buf, err := io.ReadAll(req.Body)
+	require.NoError(rt.T, err)
+
+	var payload llmobstransport.PushMetricsRequest
+	err = json.Unmarshal(buf, &payload)
+	require.NoError(rt.T, err)
+
+	for _, metric := range payload.Data.Attributes.Metrics {
+		rt.llmobsMetricsChan <- *metric
 	}
 	return
 }

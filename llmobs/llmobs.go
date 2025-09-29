@@ -19,7 +19,7 @@ import (
 
 func SpanFromContext(ctx context.Context) (Span, bool) {
 	if span, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
-		return &baseSpan{Span: span}, true
+		return &llmobsBaseSpan{Span: span}, true
 	}
 	return nil, false
 }
@@ -29,7 +29,7 @@ func SpanFromContext(ctx context.Context) (Span, bool) {
 func StartLLMSpan(ctx context.Context, name string, opts ...StartSpanOption) (LLMSpan, context.Context) {
 	s, ctx, ok := startSpan(ctx, illmobs.SpanKindLLM, name, opts...)
 	if !ok {
-		return nil, ctx
+		return &noopSpan{}, ctx
 	}
 	return &llmSpan{s}, ctx
 }
@@ -39,9 +39,9 @@ func StartLLMSpan(ctx context.Context, name string, opts ...StartSpanOption) (LL
 func StartWorkflowSpan(ctx context.Context, name string, opts ...StartSpanOption) (WorkflowSpan, context.Context) {
 	s, ctx, ok := startSpan(ctx, illmobs.SpanKindWorkflow, name, opts...)
 	if !ok {
-		return nil, ctx
+		return &noopSpan{}, ctx
 	}
-	return &workflowSpan{s}, ctx
+	return &textIOSpan{s}, ctx
 }
 
 // StartAgentSpan starts an LLMObs span of kind Agent.
@@ -49,9 +49,9 @@ func StartWorkflowSpan(ctx context.Context, name string, opts ...StartSpanOption
 func StartAgentSpan(ctx context.Context, name string, opts ...StartSpanOption) (AgentSpan, context.Context) {
 	s, ctx, ok := startSpan(ctx, illmobs.SpanKindAgent, name, opts...)
 	if !ok {
-		return nil, ctx
+		return &noopSpan{}, ctx
 	}
-	return &agentSpan{s}, ctx
+	return &textIOSpan{s}, ctx
 }
 
 // StartToolSpan starts an LLMObs span of kind Tool.
@@ -59,9 +59,9 @@ func StartAgentSpan(ctx context.Context, name string, opts ...StartSpanOption) (
 func StartToolSpan(ctx context.Context, name string, opts ...StartSpanOption) (ToolSpan, context.Context) {
 	s, ctx, ok := startSpan(ctx, illmobs.SpanKindTool, name, opts...)
 	if !ok {
-		return nil, ctx
+		return &noopSpan{}, ctx
 	}
-	return &toolSpan{s}, ctx
+	return &textIOSpan{s}, ctx
 }
 
 // StartTaskSpan starts an LLMObs span of kind Task.
@@ -69,9 +69,9 @@ func StartToolSpan(ctx context.Context, name string, opts ...StartSpanOption) (T
 func StartTaskSpan(ctx context.Context, name string, opts ...StartSpanOption) (TaskSpan, context.Context) {
 	s, ctx, ok := startSpan(ctx, illmobs.SpanKindTask, name, opts...)
 	if !ok {
-		return nil, ctx
+		return &noopSpan{}, ctx
 	}
-	return &taskSpan{s}, ctx
+	return &textIOSpan{s}, ctx
 }
 
 // StartEmbeddingSpan starts an LLMObs span of kind Embedding.
@@ -81,7 +81,7 @@ func StartTaskSpan(ctx context.Context, name string, opts ...StartSpanOption) (T
 func StartEmbeddingSpan(ctx context.Context, name string, opts ...StartSpanOption) (EmbeddingSpan, context.Context) {
 	s, ctx, ok := startSpan(ctx, illmobs.SpanKindEmbedding, name, opts...)
 	if !ok {
-		return nil, ctx
+		return &noopSpan{}, ctx
 	}
 	return &embeddingSpan{s}, ctx
 }
@@ -93,7 +93,7 @@ func StartEmbeddingSpan(ctx context.Context, name string, opts ...StartSpanOptio
 func StartRetrievalSpan(ctx context.Context, name string, opts ...StartSpanOption) (RetrievalSpan, context.Context) {
 	s, ctx, ok := startSpan(ctx, illmobs.SpanKindRetrieval, name, opts...)
 	if !ok {
-		return nil, ctx
+		return &noopSpan{}, ctx
 	}
 	return &retrievalSpan{s}, ctx
 }
@@ -108,49 +108,49 @@ type (
 )
 
 type (
+	Span interface {
+		baseSpan
+		spanConverter
+	}
 	// LLMSpan represents a span of kind llm
 	LLMSpan interface {
-		Span
-		AnnotateIO(input, output []LLMMessage, opts ...AnnotateOption)
-		AnnotatePrompt(prompt Prompt)
-		AnnotateToolDefinitions(toolDefinitions []ToolDefinition)
+		baseSpan
+		llmIOAnnotator
 	}
 	// WorkflowSpan represents a span of kind workflow
 	WorkflowSpan interface {
-		Span
-		AnnotateIO(input, output string, opts ...AnnotateOption)
+		baseSpan
+		textIOAnnotator
 	}
 	// AgentSpan represents a span of kind agent
 	AgentSpan interface {
-		Span
-		AnnotateIO(input, output string, opts ...AnnotateOption)
-		AnnotateAgentManifest(manifest string)
+		baseSpan
+		textIOAnnotator
 	}
 	// ToolSpan represents a span of kind tool
 	ToolSpan interface {
-		Span
-		AnnotateIO(input, output string, opts ...AnnotateOption)
+		baseSpan
+		textIOAnnotator
 	}
 	// TaskSpan represents a span of kind task
 	TaskSpan interface {
-		Span
-		AnnotateIO(input, output string, opts ...AnnotateOption)
+		baseSpan
+		textIOAnnotator
 	}
 	// EmbeddingSpan represents a span of kind embedding
 	EmbeddingSpan interface {
-		Span
-		AnnotateIO(input []EmbeddedDocument, output string, opts ...AnnotateOption)
+		baseSpan
+		embeddingIOAnnotator
 	}
 	// RetrievalSpan represents a span of kind retrieval
 	RetrievalSpan interface {
-		Span
-		AnnotateIO(input string, output []RetrievedDocument, opts ...AnnotateOption)
+		baseSpan
+		retrievalIOAnnotator
 	}
 )
 
-type Span interface {
+type baseSpan interface {
 	sealed()
-
 	SpanID() string
 	Kind() string
 	TraceID() string
@@ -159,13 +159,83 @@ type Span interface {
 	Finish(opts ...FinishSpanOption)
 }
 
-type baseSpan struct {
+type spanConverter interface {
+	AsLLM() (LLMSpan, bool)
+	AsWorkflow() (WorkflowSpan, bool)
+	AsAgent() (AgentSpan, bool)
+	AsTool() (ToolSpan, bool)
+	AsTask() (TaskSpan, bool)
+	AsEmbedding() (EmbeddingSpan, bool)
+	AsRetrieval() (RetrievalSpan, bool)
+}
+
+type textIOAnnotator interface {
+	AnnotateTextIO(input, output string, opts ...AnnotateOption)
+}
+
+type llmIOAnnotator interface {
+	AnnotateLLMIO(input, output []LLMMessage, opts ...AnnotateOption)
+}
+
+type embeddingIOAnnotator interface {
+	AnnotateEmbeddingIO(input []EmbeddedDocument, output string, opts ...AnnotateOption)
+}
+
+type retrievalIOAnnotator interface {
+	AnnotateRetrievalIO(input string, output []RetrievedDocument, opts ...AnnotateOption)
+}
+
+type llmobsBaseSpan struct {
 	*illmobs.Span
 }
 
-func (*baseSpan) sealed() {}
+func (s *llmobsBaseSpan) AsLLM() (LLMSpan, bool) {
+	if illmobs.SpanKind(s.Kind()) == illmobs.SpanKindLLM {
+		return &llmSpan{s}, true
+	}
+	return nil, false
+}
 
-func (s *baseSpan) Finish(opts ...FinishSpanOption) {
+func (s *llmobsBaseSpan) AsWorkflow() (WorkflowSpan, bool) {
+	return s.asTextIO(illmobs.SpanKindWorkflow)
+}
+
+func (s *llmobsBaseSpan) AsAgent() (AgentSpan, bool) {
+	return s.asTextIO(illmobs.SpanKindWorkflow)
+}
+
+func (s *llmobsBaseSpan) AsTool() (ToolSpan, bool) {
+	return s.asTextIO(illmobs.SpanKindWorkflow)
+}
+
+func (s *llmobsBaseSpan) AsTask() (TaskSpan, bool) {
+	return s.asTextIO(illmobs.SpanKindWorkflow)
+}
+
+func (s *llmobsBaseSpan) AsEmbedding() (EmbeddingSpan, bool) {
+	if illmobs.SpanKind(s.Kind()) == illmobs.SpanKindEmbedding {
+		return &embeddingSpan{s}, true
+	}
+	return nil, false
+}
+
+func (s *llmobsBaseSpan) AsRetrieval() (RetrievalSpan, bool) {
+	if illmobs.SpanKind(s.Kind()) == illmobs.SpanKindRetrieval {
+		return &retrievalSpan{s}, true
+	}
+	return nil, false
+}
+
+func (s *llmobsBaseSpan) asTextIO(target illmobs.SpanKind) (*textIOSpan, bool) {
+	if illmobs.SpanKind(s.Kind()) == target {
+		return &textIOSpan{s}, true
+	}
+	return nil, false
+}
+
+func (*llmobsBaseSpan) sealed() {}
+
+func (s *llmobsBaseSpan) Finish(opts ...FinishSpanOption) {
 	cfg := illmobs.FinishSpanConfig{}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -173,94 +243,76 @@ func (s *baseSpan) Finish(opts ...FinishSpanOption) {
 	s.Span.Finish(cfg)
 }
 
-type (
-	llmSpan struct {
-		baseSpan
-	}
-	workflowSpan struct {
-		baseSpan
-	}
-	agentSpan struct {
-		baseSpan
-	}
-	toolSpan struct {
-		baseSpan
-	}
-	taskSpan struct {
-		baseSpan
-	}
-	embeddingSpan struct {
-		baseSpan
-	}
-	retrievalSpan struct {
-		baseSpan
-	}
-)
+type textIOSpan struct {
+	*llmobsBaseSpan
+}
 
-func (s *llmSpan) AnnotateIO(input, output []LLMMessage, opts ...AnnotateOption) {
+func (s *textIOSpan) AnnotateTextIO(input, output string, opts ...AnnotateOption) {
+	a := parseAnnotateOptions(opts...)
+	a.InputText = input
+	a.OutputText = output
+	s.Span.Annotate(a)
+}
+
+type llmSpan struct {
+	*llmobsBaseSpan
+}
+
+func (s *llmSpan) AnnotateLLMIO(input, output []LLMMessage, opts ...AnnotateOption) {
 	a := parseAnnotateOptions(opts...)
 	a.InputMessages = input
 	a.OutputMessages = output
 	s.Span.Annotate(a)
 }
 
-func (s *llmSpan) AnnotatePrompt(prompt Prompt) {
-	a := illmobs.SpanAnnotations{Prompt: &prompt}
-	s.Span.Annotate(a)
+type embeddingSpan struct {
+	*llmobsBaseSpan
 }
 
-func (s *llmSpan) AnnotateToolDefinitions(toolDefinitions []ToolDefinition) {
-	a := illmobs.SpanAnnotations{ToolDefinitions: toolDefinitions}
-	s.Span.Annotate(a)
-}
-
-func (s *retrievalSpan) AnnotateIO(input string, output []RetrievedDocument, opts ...AnnotateOption) {
-	a := parseAnnotateOptions(opts...)
-	a.InputText = input
-	a.OutputRetrievedDocs = output
-	s.Span.Annotate(a)
-}
-
-func (s *embeddingSpan) AnnotateIO(input []EmbeddedDocument, output string, opts ...AnnotateOption) {
+func (s *embeddingSpan) AnnotateEmbeddingIO(input []EmbeddedDocument, output string, opts ...AnnotateOption) {
 	a := parseAnnotateOptions(opts...)
 	a.InputEmbeddedDocs = input
 	a.OutputText = output
 	s.Span.Annotate(a)
 }
 
-func (s *taskSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
-	annotateIOText(s.Span, input, output, opts...)
+type retrievalSpan struct {
+	*llmobsBaseSpan
 }
 
-func (s *toolSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
-	annotateIOText(s.Span, input, output, opts...)
-}
-
-func (s *agentSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
-	annotateIOText(s.Span, input, output, opts...)
-}
-
-func (s *agentSpan) AnnotateAgentManifest(manifest string) {
-	a := illmobs.SpanAnnotations{AgentManifest: manifest}
+func (s *retrievalSpan) AnnotateRetrievalIO(input string, output []RetrievedDocument, opts ...AnnotateOption) {
+	a := parseAnnotateOptions(opts...)
+	a.InputText = input
+	a.OutputRetrievedDocs = output
 	s.Span.Annotate(a)
 }
 
-func (s *workflowSpan) AnnotateIO(input, output string, opts ...AnnotateOption) {
-	annotateIOText(s.Span, input, output, opts...)
-}
+type noopSpan struct{}
 
-func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (baseSpan, context.Context, bool) {
+func (s *noopSpan) sealed()                                                                  {}
+func (s *noopSpan) SpanID() string                                                           { return "" }
+func (s *noopSpan) Kind() string                                                             { return "" }
+func (s *noopSpan) TraceID() string                                                          { return "" }
+func (s *noopSpan) APMTraceID() string                                                       { return "" }
+func (s *noopSpan) AddLink(_ SpanLink)                                                       {}
+func (s *noopSpan) Finish(_ ...FinishSpanOption)                                             {}
+func (s *noopSpan) AnnotateTextIO(_, _ string, _ ...AnnotateOption)                          {}
+func (s *noopSpan) AnnotateLLMIO(_, _ []LLMMessage, _ ...AnnotateOption)                     {}
+func (s *noopSpan) AnnotateEmbeddingIO(_ []EmbeddedDocument, _ string, _ ...AnnotateOption)  {}
+func (s *noopSpan) AnnotateRetrievalIO(_ string, _ []RetrievedDocument, _ ...AnnotateOption) {}
+
+func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (*llmobsBaseSpan, context.Context, bool) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		log.Warn("llmobs: failed to start llmobs span: %v", err)
-		return baseSpan{}, ctx, false
+		return nil, ctx, false
 	}
 	cfg := illmobs.StartSpanConfig{}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	s, ctx := ll.StartSpan(ctx, kind, name, cfg)
-	return baseSpan{s}, ctx, true
+	return &llmobsBaseSpan{s}, ctx, true
 }
 
 func parseAnnotateOptions(opts ...AnnotateOption) illmobs.SpanAnnotations {
@@ -269,11 +321,4 @@ func parseAnnotateOptions(opts ...AnnotateOption) illmobs.SpanAnnotations {
 		opt(&a)
 	}
 	return a
-}
-
-func annotateIOText(s *illmobs.Span, input, output string, opts ...AnnotateOption) {
-	a := parseAnnotateOptions(opts...)
-	a.InputText = input
-	a.OutputText = output
-	s.Annotate(a)
 }
