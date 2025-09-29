@@ -232,17 +232,17 @@ func (mp *Processor[O]) OnResponseBody(resp HTTPBody, reqState *RequestState) (*
 	}
 
 	blocked := processBody(reqState.ctx, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody)
-	if (blocked != nil && !mp.BlockingUnavailable) || resp.GetEndOfStream() || reqState.responseBuffer.truncated {
-		blockOpts := reqState.BlockAction()
-		mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
-		blockAction, err := mp.BlockMessageFunc(blockOpts)
-		if err != nil {
-			return nil, fmt.Errorf("error creating block message: %w", err)
-		}
-		return &blockAction, io.EOF
-	}
+	if reqState.responseBuffer.analyzed {
+		reqState.Close() // Call Close to ensure the response headers are analyzed
 
-	if resp.GetEndOfStream() {
+		if (reqState.State == MessageTypeBlocked || blocked != nil) && !mp.BlockingUnavailable {
+			mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
+			action, err := mp.BlockMessageFunc(reqState.BlockAction())
+			if err != nil {
+				return nil, fmt.Errorf("error creating block message: %w", err)
+			}
+			return &action, io.EOF
+		}
 		return nil, io.EOF
 	}
 
