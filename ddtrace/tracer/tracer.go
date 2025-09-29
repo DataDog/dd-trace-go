@@ -275,7 +275,7 @@ func storeConfig(c *config) {
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
 	metadata := Metadata{
-		SchemaVersion:      1,
+		SchemaVersion:      2,
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
