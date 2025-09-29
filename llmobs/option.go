@@ -6,8 +6,10 @@
 package llmobs
 
 import (
+	"errors"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
@@ -58,7 +60,11 @@ type FinishSpanOption = func(cfg *illmobs.FinishSpanConfig)
 // WithError marks the finished span with the given error.
 func WithError(err error) FinishSpanOption {
 	return func(cfg *illmobs.FinishSpanConfig) {
-		cfg.Error = err
+		var tErr *errortrace.TracerError
+		if !errors.As(err, &tErr) {
+			tErr = errortrace.WrapN(err, 0, 2)
+		}
+		cfg.Error = tErr
 	}
 }
 

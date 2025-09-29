@@ -18,7 +18,7 @@ type EvaluationValue interface {
 }
 
 // SubmitEvaluationFromSpan submits an evaluation metric for the given span.
-func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span Span, opts ...EvaluationOption) {
+func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span BaseSpan, opts ...EvaluationOption) {
 	cfg := illmobs.EvaluationConfig{
 		Label:   label,
 		SpanID:  span.SpanID(),
