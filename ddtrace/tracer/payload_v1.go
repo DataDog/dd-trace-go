@@ -833,37 +833,89 @@ func DecodeKeyValueList(b []byte, strings *stringTable) (keyValueList, []byte, e
 }
 
 func DecodeTraceChunks(b []byte, strings *stringTable) ([]traceChunk, []byte, error) {
-	tc := []traceChunk{}
-	fields, o, err := msgp.ReadMapHeaderBytes(b)
+	len, o, err := msgp.ReadArrayHeaderBytes(b)
 	if err != nil {
-		return tc, o, err
+		return nil, o, err
 	}
 
-	for fields > 0 {
-		fields--
-
-		f, o, err := msgp.ReadUint32Bytes(b)
+	ret := make([]traceChunk, len)
+	for i := range len {
+		fields, o, err := msgp.ReadMapHeaderBytes(o)
 		if err != nil {
-			return tc, o, err
+			return nil, o, err
 		}
+		tc := traceChunk{}
+		for fields > 0 {
+			fields--
 
-		switch f {
-		case 1: // priority
+			f, o, err := msgp.ReadUint32Bytes(b)
+			if err != nil {
+				return ret, o, err
+			}
 
-		case 2: // origin
+			switch f {
+			case 1: // priority
+				s, o, err := msgp.ReadInt32Bytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				tc.priority = s
+			case 2: // origin
+				s, o, err := msgp.ReadStringBytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				tc.origin = s
+			case 3: // attributes
+				kv, o, err := DecodeKeyValueList(o, strings)
+				if err != nil {
+					return ret, o, err
+				}
+				tc.attributes = kv
+			case 4: // spans
+				s, o, err := DecodeSpanList(o, strings)
+				if err != nil {
+					return ret, o, err
+				}
+				tc.spans = s
+			case 5: // droppedTrace
+				s, o, err := msgp.ReadBoolBytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				tc.droppedTrace = s
+			case 6: // traceID
+				s, o, err := msgp.ReadBytesBytes(o, nil)
+				if err != nil {
+					return ret, o, err
+				}
+				tc.traceID = [16]byte(s)
+			case 7: // samplingMechanism
+				s, o, err := msgp.ReadStringBytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				tc.samplingMechanism = s
+			}
+		}
+		ret[i] = tc
+	}
+	return ret, o, nil
+}
 
-		case 3: // attributes
-
-		case 4: // spans
-
-		case 5: // droppedTrace
-
-		case 6: // traceID
-
-		case 7: // samplingMechanism
+func DecodeSpanList(b []byte, strings *stringTable) (spanList, []byte, error) {
+	len, o, err := msgp.ReadArrayHeaderBytes(b)
+	if err != nil {
+		return nil, o, err
+	}
+	ret := make([]*Span, len)
+	for i := range len {
+		ret[i], o, err = DecodeSpan(o, strings)
+		if err != nil {
+			return nil, o, err
 		}
 	}
-	return tc, o, nil
+	return ret, o, nil
 }
 
 func DecodeSpan(b []byte, strings *stringTable) (*Span, []byte, error) {
