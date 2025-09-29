@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -31,7 +32,7 @@ type payloadV1 struct {
 	// array of strings referenced in this tracer payload, its chunks and spans
 	// stringTable holds references from a string value to an index.
 	// the 0th position in the stringTable should always be the empty string.
-	strings stringTable `msgp:"strings"`
+	strings *stringTable `msgp:"strings"`
 
 	// the string ID of the container where the tracer is running
 	containerID string `msgp:"containerID"`
@@ -139,14 +140,27 @@ func newPayloadV1() *payloadV1 {
 		protocolVersion: traceProtocolV1,
 		attributes:      keyValueList{},
 		chunks:          make([]traceChunk, 0),
-		strings: stringTable{
-			strings:   []string{""},
-			indices:   map[string]uint32{"": 0},
-			nextIndex: 1,
-		},
-		header: make([]byte, 8),
-		off:    8,
+		strings:         newStringTable(),
+		header:          make([]byte, 8),
+		off:             8,
 	}
+}
+
+func newStringTable() *stringTable {
+	return &stringTable{
+		strings:   []string{""},
+		indices:   map[string]uint32{"": 0},
+		nextIndex: 1,
+	}
+}
+
+func (s *stringTable) Add(str string) {
+	if _, ok := s.indices[str]; ok {
+		return
+	}
+	s.indices[str] = s.nextIndex
+	s.strings = append(s.strings, str)
+	s.nextIndex += 1
 }
 
 // push pushes a new item into the stream.
@@ -484,7 +498,7 @@ func encodeSpan(s *Span, e *msgp.Writer, p *payloadV1) error {
 // - otherwise, write the string into the message, then add the string at the next index
 // Returns the index of the string in the string table, and an error if there is one
 func (p *payloadV1) encodeString(s string) (streamingKey, error) {
-	sTable := &p.strings
+	sTable := p.strings
 	idx, ok := sTable.indices[s]
 	// if the string already exists in the table, use its index
 	if ok {
@@ -493,9 +507,7 @@ func (p *payloadV1) encodeString(s string) (streamingKey, error) {
 
 	// else, write the string into the table at the next index
 	// return an error to indicate that the string should be written to the msgp message
-	sTable.indices[s] = sTable.nextIndex
-	sTable.strings = append(sTable.strings, s)
-	sTable.nextIndex += 1
+	sTable.Add(s)
 	return streamingKey{isString: true, stringValue: s}, nil
 }
 
@@ -603,4 +615,516 @@ func getAnyValueType(v any) int {
 		return BytesValueType
 	}
 	return IntValueType
+}
+
+func (p *payloadV1) Decode(b []byte) ([]byte, error) {
+	if p.strings == nil {
+		p.strings = newStringTable()
+	}
+
+	fields, o, err := msgp.ReadMapHeaderBytes(b)
+	if err != nil {
+		return o, err
+	}
+
+	for fields > 0 {
+		fields--
+
+		f, o, err := msgp.ReadUint32Bytes(b)
+		if err != nil {
+			return o, err
+		}
+
+		switch f {
+		case 1: // stringTable
+			o, err = DecodeStringTable(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 2: // containerID
+			p.containerID, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 3: // languageName
+			p.languageName, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 4: // languageVersion
+			p.languageVersion, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 5: // tracerVersion
+			p.tracerVersion, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 6: // runtimeID
+			p.runtimeID, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 7: // env
+			p.env, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 8: // hostname
+			p.hostname, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+
+		case 9: // appVersion
+			p.appVersion, o, err = DecodeStreamingString(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+		case 10: // attributes
+			p.attributes, o, err = DecodeKeyValueList(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+		case 11: // chunks
+			p.chunks, o, err = DecodeTraceChunks(o, p.strings)
+			if err != nil {
+				return o, err
+			}
+		}
+	}
+	return o, nil
+}
+
+func DecodeStringTable(b []byte, strings *stringTable) ([]byte, error) {
+	len, o, err := msgp.ReadBytesHeader(b)
+	if err != nil {
+		return nil, err
+	}
+
+	for len > 0 {
+		len--
+		str, o, err := msgp.ReadStringBytes(o)
+		if err != nil {
+			return o, err
+		}
+
+		// if we've seen the string before, skip
+		if _, ok := strings.indices[str]; ok {
+			continue
+		}
+
+		strings.Add(str)
+	}
+	return o, nil
+}
+
+func DecodeStreamingString(b []byte, strings *stringTable) (string, []byte, error) {
+	if len(b) == 0 {
+		return "", nil, msgp.WrapError(nil, "expected streaming string, got EOF")
+	}
+	// try reading as a uint32 index
+	idx, o, err := msgp.ReadUint32Bytes(b)
+	if err == nil {
+		return strings.strings[idx], o, nil
+	}
+
+	// else, try reading as a string, then add to the string table
+	str, o, err := msgp.ReadStringBytes(b)
+	if err != nil {
+		return "", nil, msgp.WrapError(err, "unable to read streaming string")
+	}
+	strings.Add(str)
+	return str, o, nil
+}
+
+func DecodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
+	vType, o, err := msgp.ReadInt32Bytes(b)
+	if err != nil {
+		return anyValue{}, o, err
+	}
+	switch vType {
+	case StringValueType:
+		str, o, err := msgp.ReadStringBytes(o)
+		if err != nil {
+			return anyValue{}, o, err
+		}
+		return anyValue{valueType: StringValueType, value: str}, o, nil
+	case BoolValueType:
+		b, o, err := msgp.ReadBoolBytes(o)
+		if err != nil {
+			return anyValue{}, o, err
+		}
+		return anyValue{valueType: BoolValueType, value: b}, o, nil
+	case FloatValueType:
+		f, o, err := msgp.ReadFloat64Bytes(o)
+		if err != nil {
+			return anyValue{}, o, err
+		}
+		return anyValue{valueType: FloatValueType, value: f}, o, nil
+	case IntValueType:
+		i, o, err := msgp.ReadInt64Bytes(o)
+		if err != nil {
+			return anyValue{}, o, err
+		}
+		return anyValue{valueType: IntValueType, value: i}, o, nil
+	case BytesValueType:
+		b, o, err := msgp.ReadBytesBytes(o, nil)
+		if err != nil {
+			return anyValue{}, o, err
+		}
+		return anyValue{valueType: BytesValueType, value: b}, o, nil
+	case ArrayValueType:
+		len, o, err := msgp.ReadBytesHeader(o)
+		if err != nil {
+			return anyValue{}, o, err
+		}
+		arrayValue := make(arrayValue, len/2)
+		for i := range len / 2 {
+			arrayValue[i], o, err = DecodeAnyValue(o, strings)
+			if err != nil {
+				return anyValue{}, o, err
+			}
+		}
+		return anyValue{valueType: ArrayValueType, value: arrayValue}, o, nil
+	case keyValueListType:
+		kv, o, err := DecodeKeyValueList(o, strings)
+		if err != nil {
+			return anyValue{}, o, err
+		}
+		return anyValue{valueType: keyValueListType, value: kv}, o, nil
+	default:
+		return anyValue{}, o, fmt.Errorf("invalid value type: %d", vType)
+	}
+}
+
+func DecodeKeyValueList(b []byte, strings *stringTable) (keyValueList, []byte, error) {
+	len, o, err := msgp.ReadBytesHeader(b)
+	if err != nil {
+		return nil, o, err
+	}
+
+	if len == 0 || len%3 != 0 {
+		return nil, o, msgp.WrapError(fmt.Errorf("invalid number of items in keyValueList encoding, expected multiple of 3, got %d", len))
+	}
+
+	kv := make(keyValueList, len/3)
+	for i := range len / 3 {
+		len--
+		key, o, err := DecodeStreamingString(o, strings)
+		if err != nil {
+			return nil, o, err
+		}
+		v, o, err := DecodeAnyValue(o, strings)
+		if err != nil {
+			return nil, o, err
+		}
+		kv[i] = keyValue{key: streamingKey{isString: true, stringValue: key}, value: anyValue{valueType: v.valueType, value: v.value}}
+	}
+	return kv, o, nil
+}
+
+func DecodeTraceChunks(b []byte, strings *stringTable) ([]traceChunk, []byte, error) {
+	tc := []traceChunk{}
+	fields, o, err := msgp.ReadMapHeaderBytes(b)
+	if err != nil {
+		return tc, o, err
+	}
+
+	for fields > 0 {
+		fields--
+
+		f, o, err := msgp.ReadUint32Bytes(b)
+		if err != nil {
+			return tc, o, err
+		}
+
+		switch f {
+		case 1: // priority
+
+		case 2: // origin
+
+		case 3: // attributes
+
+		case 4: // spans
+
+		case 5: // droppedTrace
+
+		case 6: // traceID
+
+		case 7: // samplingMechanism
+		}
+	}
+	return tc, o, nil
+}
+
+func DecodeSpan(b []byte, strings *stringTable) (*Span, []byte, error) {
+	sp := Span{}
+	fields, o, err := msgp.ReadMapHeaderBytes(b)
+	if err != nil {
+		return &sp, o, err
+	}
+
+	for fields > 0 {
+		fields--
+
+		f, o, err := msgp.ReadUint32Bytes(b)
+		if err != nil {
+			return &sp, o, err
+		}
+
+		switch f {
+		case 1: // service
+			st, o, err := msgp.ReadStringBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.service = st
+		case 2: // name
+			st, o, err := msgp.ReadStringBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.name = st
+		case 3: // resource
+			st, o, err := msgp.ReadStringBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.resource = st
+		case 4: // spanID
+			i, o, err := msgp.ReadInt64Bytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.spanID = uint64(i)
+		case 5: // parentID
+			i, o, err := msgp.ReadInt64Bytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.parentID = uint64(i)
+		case 6: // start
+			i, o, err := msgp.ReadInt64Bytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.start = i
+		case 7: // duration
+			i, o, err := msgp.ReadInt64Bytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.duration = i
+		case 8: // error
+			i, o, err := msgp.ReadBoolBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			if i {
+				sp.error = 1
+			} else {
+				sp.error = 0
+			}
+		case 9: // attributes
+			kv, o, err := DecodeKeyValueList(o, strings)
+			if err != nil {
+				return &sp, o, err
+			}
+			for k, v := range kv {
+				key := strings.strings[k]
+				sp.SetTag(key, v.value.value)
+			}
+		case 10: // type
+			st, o, err := msgp.ReadStringBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.spanType = st
+		case 11: // spanLinks
+			sl, o, err := DecodeSpanLinks(o, strings)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.spanLinks = sl
+		case 12: // spanEvents
+			se, o, err := DecodeSpanEvents(o, strings)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.spanEvents = se
+		case 13: // env
+			s, o, err := msgp.ReadStringBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.SetTag(ext.Environment, s)
+		case 14: // version
+			s, o, err := msgp.ReadStringBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.setMeta(ext.Version, s)
+		case 15: // component
+			s, o, err := msgp.ReadStringBytes(o)
+			if err != nil {
+				return &sp, o, err
+			}
+			sp.integration = s
+		}
+	}
+	return &sp, nil, nil
+}
+
+func DecodeSpanLinks(b []byte, strings *stringTable) ([]SpanLink, []byte, error) {
+	numSpanLinks, o, err := msgp.ReadArrayHeaderBytes(b)
+	if err != nil {
+		return nil, o, err
+	}
+
+	ret := make([]SpanLink, numSpanLinks)
+	for i := range numSpanLinks {
+		sl := SpanLink{}
+		fields, o, err := msgp.ReadMapHeaderBytes(o)
+		if err != nil {
+			return ret, o, err
+		}
+		for fields > 0 {
+			fields--
+
+			f, o, err := msgp.ReadUint32Bytes(o)
+			if err != nil {
+				return ret, o, err
+			}
+
+			switch f {
+			case 1: // traceID
+				s, o, err := msgp.ReadInt64Bytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				sl.TraceID = uint64(s)
+			case 2: // spanID
+				s, o, err := msgp.ReadInt64Bytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				sl.SpanID = uint64(s)
+			case 3: // attributes
+				kv, o, err := DecodeKeyValueList(o, strings)
+				if err != nil {
+					return ret, o, err
+				}
+				for k, v := range kv {
+					key := strings.strings[k]
+					s, ok := v.value.value.(string)
+					if !ok {
+						err := msgp.WrapError(fmt.Errorf("expected string value type for span link attributes, got %T", v.value.value))
+						return ret, o, err
+					}
+					sl.Attributes[key] = s
+				}
+			case 4: // tracestate
+				s, o, err := msgp.ReadStringBytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				sl.Tracestate = s
+			case 5: // flags
+				s, o, err := msgp.ReadInt32Bytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				sl.Flags = uint32(s)
+			}
+		}
+		ret[i] = sl
+	}
+	return ret, o, nil
+}
+
+func DecodeSpanEvents(b []byte, strings *stringTable) ([]spanEvent, []byte, error) {
+	numSpanEvents, o, err := msgp.ReadArrayHeaderBytes(b)
+	if err != nil {
+		return nil, o, err
+	}
+	ret := make([]spanEvent, numSpanEvents)
+	for i := range numSpanEvents {
+		se := spanEvent{}
+		fields, o, err := msgp.ReadMapHeaderBytes(o)
+		if err != nil {
+			return ret, o, err
+		}
+		for fields > 0 {
+			fields--
+
+			f, o, err := msgp.ReadUint32Bytes(b)
+			if err != nil {
+				return ret, o, err
+			}
+
+			switch f {
+			case 1: // time
+				s, o, err := msgp.ReadInt64Bytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				se.TimeUnixNano = uint64(s)
+			case 2: // name
+				s, o, err := msgp.ReadStringBytes(o)
+				if err != nil {
+					return ret, o, err
+				}
+				se.Name = s
+			case 4: // attributes
+				kv, o, err := DecodeKeyValueList(o, strings)
+				if err != nil {
+					return ret, o, err
+				}
+				for k, v := range kv {
+					key := strings.strings[k]
+					switch v.value.valueType {
+					case StringValueType:
+						se.Attributes[key] = &spanEventAttribute{
+							Type:        spanEventAttributeTypeString,
+							StringValue: v.value.value.(string),
+						}
+					case BoolValueType:
+						se.Attributes[key] = &spanEventAttribute{
+							Type:      spanEventAttributeTypeBool,
+							BoolValue: v.value.value.(bool),
+						}
+					case IntValueType:
+						se.Attributes[key] = &spanEventAttribute{
+							Type:     spanEventAttributeTypeInt,
+							IntValue: v.value.value.(int64),
+						}
+					case FloatValueType:
+						se.Attributes[key] = &spanEventAttribute{
+							Type:        spanEventAttributeTypeDouble,
+							DoubleValue: v.value.value.(float64),
+						}
+					case ArrayValueType:
+						se.Attributes[key] = &spanEventAttribute{
+							Type:       spanEventAttributeTypeArray,
+							ArrayValue: v.value.value.(*spanEventArrayAttribute),
+						}
+					default:
+						err := msgp.WrapError(fmt.Errorf("unexpected value type not supported by span events: %T", v.value.value))
+						return ret, o, err
+					}
+				}
+			}
+		}
+		ret[i] = se
+	}
+	return ret, nil, nil
 }
