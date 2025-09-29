@@ -13,11 +13,13 @@ import (
 )
 
 // EvaluationValue represents the allowed types for evaluation metric values.
+// Supports boolean values (true/false), string values (categorical), and numeric values (scores).
 type EvaluationValue interface {
 	~bool | ~string | ~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64
 }
 
 // SubmitEvaluationFromSpan submits an evaluation metric for the given span.
+// The metric will be associated with the span using its span ID and trace ID.
 func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span BaseSpan, opts ...EvaluationOption) {
 	cfg := illmobs.EvaluationConfig{
 		Label:   label,
@@ -39,8 +41,14 @@ func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span Bas
 	}
 }
 
+// JoinTag represents a tag key-value pair used to identify spans for evaluation metrics.
+// When using SubmitEvaluationFromTag, the metric will be associated with all spans
+// that have a tag matching this key-value pair.
 type JoinTag struct {
-	Key   string
+	// Key is the tag key to match against.
+	Key string
+
+	// Value is the tag value to match against.
 	Value string
 }
 
