@@ -82,7 +82,7 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 		op.SetAnalyseBody()
 	}
 
-	if op.AnalyseBody() && args.Body != nil && *args.Body != nil {
+	if op.AnalyseBody() && args.Body != nil && *args.Body != nil && *args.Body != http.NoBody {
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
 			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())
@@ -97,9 +97,9 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationRes) {
 	builder := addresses.NewAddressesBuilder().
 		WithDownwardResponseStatus(args.StatusCode).
-		WithDownwardResponseHeaders(args.Headers)
+		WithDownwardResponseHeaders(headersToLower(args.Headers))
 
-	if op.AnalyseBody() && args.Body != nil && *args.Body != nil {
+	if op.AnalyseBody() && args.Body != nil && *args.Body != nil && *args.Body != http.NoBody {
 		encodable, err := body.NewEncodable(http.Header(args.Headers).Get("Content-Type"), args.Body, maxBodyParseSize)
 		if err != nil {
 			log.Debug("Unsupported response body content type or error reading body: %s", err.Error())

@@ -299,7 +299,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "payload": {"name": "<script>alert(1)</script>" } }`, "")
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
