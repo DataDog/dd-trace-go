@@ -348,7 +348,8 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
-		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
+		// We are not failing here because the error could be cause by
+		// a transitory issue.
 	}
 	defer func() {
 		if err != nil {
