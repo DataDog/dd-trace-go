@@ -219,6 +219,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/bytedance/sonic/loader",
 		"github.com/cenkalti/backoff/v3",
 		"github.com/cenkalti/backoff/v4",
+		"github.com/cenkalti/backoff/v5",
 		"github.com/census-instrumentation/opencensus-proto",
 		"github.com/cespare/xxhash/v2",
 		"github.com/chzyer/logex",
