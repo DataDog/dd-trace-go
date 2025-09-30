@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -712,12 +713,119 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
+func TestDynamicInstrumentationRC(t *testing.T) {
+	getDiRCState := func() map[string]dynamicInstrumentationRCProbeConfig {
+		diRCState.Lock()
+		defer diRCState.Unlock()
+		return maps.Clone(diRCState.state)
+	}
+	getDiSymDBEnabled := func() bool {
+		diRCState.Lock()
+		defer diRCState.Unlock()
+		return diRCState.symdbExport
+	}
+	resetDiRCState := func() {
+		diRCState.Lock()
+		defer diRCState.Unlock()
+		diRCState.state = map[string]dynamicInstrumentationRCProbeConfig{}
+		diRCState.symdbExport = false
+	}
+
+	startTracer := func(t *testing.T) *tracer {
+		telemetryClient := new(telemetrytest.RecordClient)
+		t.Cleanup(telemetry.MockClient(telemetryClient))
+		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		require.Nil(t, err)
+		t.Cleanup(resetDiRCState)
+		t.Cleanup(stop)
+		return tracer
+	}
+
+	startRemoteConfig := func(t *testing.T, tracer *tracer) {
+		t.Cleanup(remoteconfig.Reset)
+		t.Cleanup(remoteconfig.Stop)
+		err := tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+		require.NoError(t, err)
+	}
+
+	checkRemoteConfigProductState := func(t *testing.T, product string, enabled bool) {
+		found, err := remoteconfig.HasProduct(product)
+		require.NoError(t, err)
+		require.Equal(t, enabled, found)
+	}
+
+	t.Run("Subscribes to LIVE_DEBUGGING product when enabled", func(t *testing.T) {
+		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
+		tracer := startTracer(t)
+		startRemoteConfig(t, tracer)
+		checkRemoteConfigProductState(t, state.ProductLiveDebugging, true)
+		checkRemoteConfigProductState(t, "LIVE_DEBUGGING_SYMBOL_DB", true)
+	})
+
+	t.Run("Does not subscribe to LIVE_DEBUGGING product when disabled", func(t *testing.T) {
+		tracer := startTracer(t)
+		startRemoteConfig(t, tracer)
+		checkRemoteConfigProductState(t, state.ProductLiveDebugging, false)
+		checkRemoteConfigProductState(t, "LIVE_DEBUGGING_SYMBOL_DB", false)
+	})
+
+	t.Run("Deleted config removes from map", func(t *testing.T) {
+		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
+		tracer := startTracer(t)
+		startRemoteConfig(t, tracer)
+
+		require.Empty(t, getDiRCState())
+		status := tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
+			"key": []byte(`"value"`),
+		})
+		require.Equal(t, map[string]state.ApplyStatus{
+			"key": {State: state.ApplyStateUnknown},
+		}, status)
+		require.Equal(t, map[string]dynamicInstrumentationRCProbeConfig{
+			"key": {
+				configPath:    "key",
+				configContent: `"value"`,
+			},
+		}, getDiRCState())
+		status = tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
+			"key": nil,
+		})
+		require.Equal(t, map[string]state.ApplyStatus{
+			"key": {State: state.ApplyStateAcknowledged},
+		}, status)
+		require.Empty(t, getDiRCState())
+	})
+
+	t.Run("symdb updates", func(t *testing.T) {
+		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
+		tracer := startTracer(t)
+		startRemoteConfig(t, tracer)
+		status := tracer.dynamicInstrumentationSymDBRCUpdate(remoteconfig.ProductUpdate{
+			"key": []byte(`"value"`),
+		})
+		require.Equal(t, map[string]state.ApplyStatus{
+			"key": {State: state.ApplyStateUnknown},
+		}, status)
+		require.Equal(t, true, getDiSymDBEnabled())
+		status = tracer.dynamicInstrumentationSymDBRCUpdate(remoteconfig.ProductUpdate{
+			"key": nil,
+		})
+		require.Equal(t, map[string]state.ApplyStatus{
+			"key": {State: state.ApplyStateAcknowledged},
+		}, status)
+		require.Equal(t, false, getDiSymDBEnabled())
+	})
+}
+
 func TestStartRemoteConfig(t *testing.T) {
 	tracer, _, _, stop, err := startTestTracer(t)
 	require.Nil(t, err)
 	defer stop()
 
 	tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+	defer remoteconfig.Reset()
+	defer remoteconfig.Stop()
+
 	found, err := remoteconfig.HasProduct(state.ProductAPMTracing)
 	require.NoError(t, err)
 	require.True(t, found)

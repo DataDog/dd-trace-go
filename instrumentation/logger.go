@@ -28,19 +28,19 @@ func newLogger(pkg Package) *logger {
 }
 
 func (l logger) Debug(msg string, args ...any) {
-	log.Debug(msg, args...)
+	log.Debug(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func (l logger) Info(msg string, args ...any) {
-	log.Info(msg, args...)
+	log.Info(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func (l logger) Warn(msg string, args ...any) {
-	log.Warn(msg, args...)
+	log.Warn(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func (l logger) Error(msg string, args ...any) {
-	log.Error(msg, args...)
+	log.Error(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func hasErrors(args ...any) bool {

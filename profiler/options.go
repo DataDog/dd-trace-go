@@ -6,6 +6,7 @@
 package profiler
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
@@ -132,13 +134,14 @@ func logStartup(c *config) {
 		"target_url":                 c.targetURL,
 		"tags":                       c.tags.Slice(),
 		"custom_profiler_label_keys": c.customProfilerLabels,
+		"enabled":                    c.enabled,
 	}
 	for _, tc := range telemetryConfiguration(c) {
 		info[tc.Name] = tc.Value
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err)
+		log.Error("Marshaling profiler configuration: %s", err.Error())
 		return
 	}
 	log.Info("Profiler configuration: %s\n", b)
@@ -185,7 +188,7 @@ func defaultConfig() (*config, error) {
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
-		compressionConfig:    os.Getenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"),
+		compressionConfig:    cmp.Or(env.Get("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS"), "zstd"),
 		traceConfig: executionTraceConfig{
 			Enabled: internal.BoolEnv("DD_PROFILING_EXECUTION_TRACE_ENABLED", executionTraceEnabledDefault),
 			Period:  internal.DurationEnv("DD_PROFILING_EXECUTION_TRACE_PERIOD", 15*time.Minute),
@@ -205,40 +208,38 @@ func defaultConfig() (*config, error) {
 	}
 	// If DD_PROFILING_ENABLED is set to "auto", the profiler's activation will be determined by
 	// the Datadog admission controller, so we set it to true.
-	// TODO: APMAPI-1358
 	if v, _ := stableconfig.String("DD_PROFILING_ENABLED", ""); v == "auto" {
 		c.enabled = true
 	} else {
-		// TODO: APMAPI-1358
 		c.enabled, _, _ = stableconfig.Bool("DD_PROFILING_ENABLED", true)
 	}
-	if v := os.Getenv("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
+	if v := env.Get("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
+			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err.Error())
 		}
 		WithUploadTimeout(d)(&c)
 	}
-	if v := os.Getenv("DD_API_KEY"); v != "" {
+	if v := env.Get("DD_API_KEY"); v != "" {
 		c.apiKey = v
 	}
 	c.agentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
-	if v := os.Getenv("DD_SITE"); v != "" {
+	if v := env.Get("DD_SITE"); v != "" {
 		WithSite(v)(&c)
 	}
-	if v := os.Getenv("DD_ENV"); v != "" {
+	if v := env.Get("DD_ENV"); v != "" {
 		WithEnv(v)(&c)
 	}
-	if v := os.Getenv("DD_SERVICE"); v != "" {
+	if v := env.Get("DD_SERVICE"); v != "" {
 		WithService(v)(&c)
 	}
-	if v := os.Getenv("DD_VERSION"); v != "" {
+	if v := env.Get("DD_VERSION"); v != "" {
 		WithVersion(v)(&c)
 	}
 	c.flushOnExit = internal.BoolEnv("DD_PROFILING_FLUSH_ON_EXIT", false)
 
 	tags := make(map[string]string)
-	if v := os.Getenv("DD_TAGS"); v != "" {
+	if v := env.Get("DD_TAGS"); v != "" {
 		tags = internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 	}
@@ -262,17 +263,17 @@ func defaultConfig() (*config, error) {
 		"runtime-id:"+globalconfig.RuntimeID(),
 	)(&c)
 	// not for public use
-	if v := os.Getenv("DD_PROFILING_URL"); v != "" {
+	if v := env.Get("DD_PROFILING_URL"); v != "" {
 		WithURL(v)(&c)
 	}
 	// not for public use
-	if v := os.Getenv("DD_PROFILING_OUTPUT_DIR"); v != "" {
+	if v := env.Get("DD_PROFILING_OUTPUT_DIR"); v != "" {
 		withOutputDir(v)(&c)
 	}
-	if v := os.Getenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
+	if v := env.Get("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
+			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err.Error())
 		}
 		c.maxGoroutinesWait = n
 	}

@@ -346,7 +346,9 @@
       "APPVEYOR_BUILD_FOLDER": "/foo/bar",
       "APPVEYOR_BUILD_ID": "appveyor-build-id",
       "APPVEYOR_BUILD_NUMBER": "appveyor-pipeline-number",
+      "APPVEYOR_PULL_REQUEST_HEAD_COMMIT": "724faca55efebf66fc15bfccc34577c64c5480bd",
       "APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH": "origin/pr",
+      "APPVEYOR_PULL_REQUEST_NUMBER": 42,
       "APPVEYOR_REPO_BRANCH": "origin/master",
       "APPVEYOR_REPO_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "APPVEYOR_REPO_COMMIT_AUTHOR": "appveyor-commit-author-name",
@@ -367,9 +369,12 @@
       "git.branch": "pr",
       "git.commit.author.email": "appveyor-commit-author-email@datadoghq.com",
       "git.commit.author.name": "appveyor-commit-author-name",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
       "git.commit.message": "appveyor-commit-message\nappveyor-commit-message-extended",
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
-      "git.repository_url": "https://github.com/appveyor-repo-name.git"
+      "git.pull_request.base_branch": "master",
+      "git.repository_url": "https://github.com/appveyor-repo-name.git",
+      "pr.number": "42"
     }
   ],
   [
@@ -378,6 +383,7 @@
       "APPVEYOR_BUILD_FOLDER": "/foo/bar",
       "APPVEYOR_BUILD_ID": "appveyor-build-id",
       "APPVEYOR_BUILD_NUMBER": "appveyor-pipeline-number",
+      "APPVEYOR_PULL_REQUEST_HEAD_COMMIT": "724faca55efebf66fc15bfccc34577c64c5480bd",
       "APPVEYOR_PULL_REQUEST_HEAD_REPO_BRANCH": "refs/heads/pr",
       "APPVEYOR_REPO_BRANCH": "refs/heads/master",
       "APPVEYOR_REPO_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
@@ -399,8 +405,10 @@
       "git.branch": "pr",
       "git.commit.author.email": "appveyor-commit-author-email@datadoghq.com",
       "git.commit.author.name": "appveyor-commit-author-name",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
       "git.commit.message": "appveyor-commit-message\nappveyor-commit-message-extended",
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.pull_request.base_branch": "master",
       "git.repository_url": "https://github.com/appveyor-repo-name.git"
     }
   ],

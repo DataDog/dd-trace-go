@@ -65,10 +65,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
 		},
-		logger: logger{
-			store:           xsync.NewMapOf[loggerKey, *loggerValue](),
-			maxDistinctLogs: config.MaxDistinctLogs,
-		},
+		backend: newLoggerBackend(config.MaxDistinctLogs),
 	}
 
 	client.dataSources = append(client.dataSources,
@@ -79,7 +76,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 	)
 
 	if config.LogsEnabled {
-		client.dataSources = append(client.dataSources, &client.logger)
+		client.dataSources = append(client.dataSources, client.backend)
 	}
 
 	if config.MetricsEnabled {
@@ -106,7 +103,7 @@ type client struct {
 	products      products
 	configuration configuration
 	dependencies  dependencies
-	logger        logger
+	backend       *loggerBackend
 	metrics       metrics
 	distributions distributions
 
@@ -116,6 +113,8 @@ type client struct {
 
 	// flushTicker is the ticker that triggers a call to client.Flush every flush interval
 	flushTicker *internal.Ticker
+	// flushMu is used to ensure that only one flush is happening at a time
+	flushMu sync.Mutex
 
 	// writer is the writer to use to send the payloads to the backend or the agent
 	writer internal.Writer
@@ -128,12 +127,12 @@ type client struct {
 	flushTickerFuncsMu sync.Mutex
 }
 
-func (c *client) Log(level LogLevel, text string, options ...LogOption) {
+func (c *client) Log(record Record, options ...LogOption) {
 	if !c.clientConfig.LogsEnabled {
 		return
 	}
 
-	c.logger.Add(level, text, options...)
+	c.backend.Add(record, options...)
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {
@@ -181,7 +180,7 @@ func (c *client) ProductStartError(product Namespace, err error) {
 }
 
 func (c *client) RegisterAppConfig(key string, value any, origin Origin) {
-	c.configuration.Add(Configuration{key, value, origin})
+	c.configuration.Add(Configuration{Name: key, Value: value, Origin: origin})
 }
 
 func (c *client) RegisterAppConfigs(kvs ...Configuration) {
@@ -209,7 +208,11 @@ func (c *client) Flush() {
 		if r == nil {
 			return
 		}
-		log.Warn("panic while flushing telemetry data, stopping telemetry: %v", r)
+		if err, ok := r.(error); ok {
+			log.Warn("panic while flushing telemetry data, stopping telemetry: %s", err.Error())
+		} else {
+			log.Warn("panic while flushing telemetry data, stopping telemetry!")
+		}
 		telemetryClientDisabled = true
 		if gc, ok := GlobalClient().(*client); ok && gc == c {
 			SwapClient(nil)
@@ -244,9 +247,9 @@ func (c *client) Flush() {
 			}
 		}
 		if dependenciesFound {
-			log.Warn("appsec: error while flushing SCA Security Data: %v", err)
+			log.Warn("appsec: error while flushing SCA Security Data: %s", err.Error())
 		} else {
-			log.Debug("telemetry: error while flushing telemetry data: %v", err)
+			log.Debug("telemetry: error while flushing telemetry data: %s", err.Error())
 		}
 
 		return
@@ -267,6 +270,8 @@ func (c *client) transform(payloads []transport.Payload) []transport.Payload {
 // flush sends all the data sources to the writer after having sent them through the [transform] function.
 // It returns the amount of bytes sent to the writer.
 func (c *client) flush(payloads []transport.Payload) (int, error) {
+	c.flushMu.Lock()
+	defer c.flushMu.Unlock()
 	payloads = c.transform(payloads)
 
 	if c.payloadQueue.IsEmpty() && len(payloads) == 0 {
@@ -318,7 +323,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		for _, call := range failedCalls {
 			errs = append(errs, call.Error)
 		}
-		log.Debug("non-fatal error(s) while flushing telemetry data: %v", errors.Join(errs...))
+		log.Debug("non-fatal error(s) while flushing telemetry data: %v", errors.Join(errs...).Error())
 	}
 
 	return nbBytes, nil

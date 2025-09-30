@@ -1,44 +1,50 @@
-name: Publish Docker images packages
+name: Docker image Build and Push
 
 on:
-  push:
-    tags:
-      - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+'
-      - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+'
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      tag_name:
-        description: 'Docker image tag to use for the package (default to selected branch name)'
-        required: false
+      image:
+        description: 'Docker image name'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Path to the Dockerfile'
+        required: true
+        type: string
+      artifact_prefix:
+        description: 'Prefix for the artifact name'
+        required: true
+        type: string
       commit_sha:
-        description: 'Commit SHA to checkout (default to latest commit on selected branch)'
+        description: 'Commit SHA to checkout'
+        required: true
+        type: string
+      tags:
+        description: 'Space-separated list of tags to apply to the image (e.g., "latest v2.0.0")'
+        required: true
+        type: string
+      push:
+        description: 'Push image to ghcr.io'
         required: false
-      set_as_latest:
-        description: 'Set the tag as latest'
+        type: boolean
+        default: true
+      platforms:
+        description: 'A JSON array of platforms to build for.'
         required: false
-        default: 'false'
-
-permissions:
-  contents: read
-  packages: write
-
-env:
-  TAG_NAME: ${{ github.event.inputs.tag_name || github.ref_name }}
-  COMMIT_SHA: ${{ github.event.inputs.commit_sha || github.sha }}
-  PUSH_LATEST: ${{ github.event.inputs.set_as_latest || 'true' }}
+        type: string
+        default: '["linux/amd64", "linux/arm64"]'
+      version:
+        description: 'DD_VERSION to pass as build argument to Dockerfile'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   build-images:
-    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'arm-4core-linux' }}
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
     strategy:
       matrix:
-        platform: [ linux/amd64, linux/arm64 ]
-        include:
-          - dockerfile: ./contrib/envoyproxy/go-control-plane/cmd/serviceextensions/Dockerfile
-            image: "ghcr.io/datadog/dd-trace-go/service-extensions-callout"
-          - dockerfile: ./contrib/k8s.io/cmd/request-mirror/Dockerfile
-            image: "ghcr.io/datadog/dd-trace-go/request-mirror"
-
+        platform: ${{ fromJSON(inputs.platforms) }}
     steps:
       - name: Prepare
         run: |
@@ -46,98 +52,121 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
 
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          ref: ${{ env.COMMIT_SHA }}
-
-      - name: Install Docker (only arm64)
-        if: matrix.platform == 'linux/arm64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-          sudo systemctl start docker
-          sudo systemctl enable docker
-          sudo usermod -aG docker $USER
-          newgrp docker
-          sudo chmod 666 /var/run/docker.sock
+          ref: ${{ inputs.commit_sha }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Login to Docker
         shell: bash
+        # It's not possible to use a `dd-octo-sts` token here because GitHub Packages
+        # only supports PATs for authentication.
+        # https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
         run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@369eb591f429131d6889c46b94e711f089e6ca96 # v5.6.1
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{ matrix.image }}
+          images: ${{ inputs.image }}
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@ca877d9245402d1537745e0e356eab47c3520991 # v6.13.0
+        if: inputs.push == true
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: ${{ inputs.dockerfile }}
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            DD_VERSION=${{ inputs.version }}
+            COMMIT_SHA=${{ inputs.commit_sha }}
+          # This builds a Docker image and uploads it using a unique fingerprint, without a name
+          outputs: type=image,name=${{ inputs.image }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Generate tags
+        if: inputs.push == false
+        id: tags
+        run: |
+          TAGS=""
+          for tag in ${{ inputs.tags }}; do
+            if [ -n "$tag" ]; then
+              TAGS="$TAGS,${{ inputs.image }}:$tag"
+            fi
+          done
+          echo "list=${TAGS:1}" >> $GITHUB_OUTPUT
+
+      - name: Build and export
+        id: build-export
+        if: inputs.push == false
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: |
+            DD_VERSION=${{ inputs.version }}
+            COMMIT_SHA=${{ inputs.commit_sha }}
+          outputs: type=docker,dest=/tmp/${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}.tar
+          push: false
 
       - name: Export digest
+        if: inputs.push == true
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        if: inputs.push == true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
+      - name: Upload image artifact
+        if: inputs.push == false
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}
+          path: /tmp/${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}.tar
+          if-no-files-found: error
+          retention-days: 1
+
   publish-images:
+    if: inputs.push == true
     runs-on: ubuntu-latest
-    needs:
-      - build-images
-
-    strategy:
-      matrix:
-        image:
-          - ghcr.io/datadog/dd-trace-go/service-extensions-callout
-          - ghcr.io/datadog/dd-trace-go/request-mirror
-
+    needs: [build-images]
     steps:
       - name: Download digests
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ inputs.artifact_prefix }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Login to Docker
         shell: bash
         run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
 
-      - name: Create tags
-        id: tags
-        run: |
-          tagname=${TAG_NAME//\//-} # remove slashes from tag name
-          tags="tags=-t ${{ matrix.image }}:${tagname} \
-          -t ${{ matrix.image }}:${{ env.COMMIT_SHA }}"
-          if [ "${PUSH_LATEST}" == "true" ]; then
-            tags="$tags -t ${{ matrix.image }}:latest"
-          fi
-
-          echo $tags >> $GITHUB_OUTPUT
-
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create ${{ steps.tags.outputs.tags }} \
-            $(printf '${{ matrix.image }}@sha256:%s ' *)
+          TAG_FLAGS=""
+          for tag in ${{ inputs.tags }}; do
+            if [ -n "$tag" ]; then
+              TAG_FLAGS="$TAG_FLAGS -t ${{ inputs.image }}:$tag"
+            fi
+          done
+          docker buildx imagetools create $TAG_FLAGS \
+            $(printf '${{ inputs.image }}@sha256:%s ' *) 

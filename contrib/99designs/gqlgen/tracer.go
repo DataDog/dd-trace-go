@@ -92,7 +92,7 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 		response := responseHandler(ctx)
 		if span != nil {
 			var spanErr error
-			if len(response.Errors) > 0 {
+			if response != nil && len(response.Errors) > 0 {
 				spanErr = response.Errors
 				instrgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(response.Errors), t.cfg.errExtensions)
 			}

@@ -1,0 +1,13 @@
+issuer: https://token.actions.githubusercontent.com
+
+subject: repo:DataDog/dd-trace-go:ref:refs/heads/main
+
+claim_pattern:
+  event_name: workflow_run
+  ref: refs/heads/main
+  ref_protected: "true"
+  job_workflow_ref: DataDog/dd-trace-go/.github/workflows/update-supported-versions-doc.yml@refs/heads/main
+
+permissions:
+  contents: write
+  pull_requests: write 

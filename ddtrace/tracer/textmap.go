@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -172,8 +172,8 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := os.Getenv(headerPropagationStyleInject)
-	extractorsPs := os.Getenv(headerPropagationStyleExtract)
+	injectorsPs := env.Get(headerPropagationStyleInject)
+	extractorsPs := env.Get(headerPropagationStyleExtract)
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp
@@ -369,7 +369,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	if len(links) > 0 {
 		ctx.spanLinks = links
 	}
-	log.Debug("Extracted span context: %#v", ctx)
+	log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	return ctx, nil
 }
 
@@ -483,7 +483,7 @@ func (p *propagator) marshalPropagatingTags(ctx *SpanContext) string {
 			return true // don't propagate W3C headers with the DD propagator
 		}
 		if err := isValidPropagatableTag(k, v); err != nil {
-			log.Warn("Won't propagate tag '%s': %v", k, err.Error())
+			log.Warn("Won't propagate tag %q: %s", k, err.Error())
 			properr = "encoding_error"
 			return true
 		}
@@ -557,10 +557,10 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	if ctx.trace != nil {
 		tid := ctx.trace.propagatingTag(keyTraceID128)
 		if err := validateTID(tid); err != nil {
-			log.Debug("Invalid hex traceID: %s", err)
+			log.Debug("Invalid hex traceID: %s", err.Error())
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		} else if err := ctx.traceID.SetUpperFromHex(tid); err != nil {
-			log.Debug("Attempted to set an invalid hex traceID: %s", err)
+			log.Debug("Attempted to set an invalid hex traceID: %s", err.Error())
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
 	}
@@ -619,7 +619,7 @@ func unmarshalPropagatingTags(ctx *SpanContext, v string) {
 	}
 	tags, err := parsePropagatableTraceTags(v)
 	if err != nil {
-		log.Warn("Did not extract %s: %v. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
+		log.Warn("Did not extract %q: %s. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
 		ctx.trace.setTag(keyPropagationError, "decoding_error")
 	}
 	ctx.trace.replacePropagatingTags(tags)

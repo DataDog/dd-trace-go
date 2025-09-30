@@ -44,3 +44,22 @@ $ go run github.com/DataDog/orchestrion go test ./...
 [4]: https://github.com/abiosoft/colima
 [5]: https://pypi.org/project/ddapm-test-agent/
 [6]: ../../../.github/workflows/orchestrion.yml
+
+### Adding new tests
+
+To add a new integration test, follow these steps:
+
+1. **Create a test case structure**: Implement a new struct that satisfies the [`harness.TestCase`](./internal/harness/harness.go) interface. If adding to an existing package that already has a `TestCase`, use a descriptive name like `TestCaseSomething` to avoid naming conflicts.
+
+2. **Implement the required methods**: Ensure your test case implements all three methods defined by the `harness.TestCase` interface:
+   - **`Setup`**: Prepare everything needed for the test, such as starting services (e.g., database servers) or setting up test data. The tracer is not yet started during setup.
+   - **`Run`**: Perform the actions that should generate trace data from the instrumented code. This executes after the tracer is started and should assert on expected post-conditions.
+   - **`ExpectedTraces`**: Return the set of traces that the test expects to be produced. Each trace returned will be matched against the actual traces received by the mock agent.
+
+3. **Generate test files**: After creating your test case, regenerate the `generated_test.go` files to include your new test in the suite:
+
+```console
+$ go generate ./...
+```
+
+This command will automatically discover and register your new test case with the integration test suite.

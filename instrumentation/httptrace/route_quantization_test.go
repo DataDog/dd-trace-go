@@ -190,8 +190,6 @@ func TestURLQuantizer(t *testing.T) {
 
 // The purpose of this benchmark is to ensure that the whole quantization process doesn't allocate
 func BenchmarkQuantization(b *testing.B) {
-	var quantizer urlQuantizer
-
 	// This should trigger the quantization since `/users/1/view` becomes
 	// `/users/*/view` post-quantization (see test case above)
 	path := "/users/1/view"
@@ -199,7 +197,7 @@ func BenchmarkQuantization(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		runtime.KeepAlive(quantizer.Quantize(path))
+		runtime.KeepAlive(QuantizeURL(path))
 	}
 }
 

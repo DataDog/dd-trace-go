@@ -6,10 +6,6 @@ on:
       go-version:
         required: true
         type: string
-      ref:
-        description: 'The branch to run the workflow on'
-        required: true
-        type: string
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
@@ -20,111 +16,41 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
   contents: read
 
 jobs:
-  copyright:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup go
-        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
-        with:
-          go-version: ${{ inputs.go-version }}
-      - name: Copyright
-        run: |
-          go run ./scripts/checkcopyright.go
-
-  generate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-      - name: Run generator
-        run: |-
-          ./scripts/generate.sh
-      - name: Check for changes
-        run: git diff --exit-code
-
-  check-modules:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version }}
-      - name: Run fixmodules
-        run: |-
-          ./scripts/fix_modules.sh
-      - name: Check for changes
-        run: git diff --exit-code
-
-  lint:
-    runs-on:
-      group: "APM Larger Runners"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
-        with:
-          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
-          go_version: ${{ inputs.go-version }}
-          golangci_lint_version: v2.1.2
-          fail_level: error
-          reporter: github-pr-review
-
-      - name: golangci-lint (internal/orchestrion/_integration)
-        uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
-        with:
-          golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
-          go_version: ${{ inputs.go-version }}
-          golangci_lint_version: v2.1.2
-          fail_level: error
-          reporter: github-pr-review
-          workdir: internal/orchestrion/_integration
-
   set-up:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - name: Restore repo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          clean: false
 
       - name: Compute Matrix
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
 
   test-contrib-matrix:
     needs: set-up
     runs-on:
       group: "APM Larger Runners"
     env:
-        INTEGRATION: true
+      INTEGRATION: true
     strategy:
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
@@ -270,28 +196,39 @@ jobs:
           KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
         ports:
           - 9092:9092
+          - 9093:9093
+        options: >-
+          --name "kafka"
       localstack:
         image: localstack/localstack:latest
         ports:
           - 4566:4566
     steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - name: Restore repo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          clean: false
 
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Test Contrib
         if: always()
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
-          ./scripts/ci-test-contrib.sh default ${{ toJson(matrix.chunk) }}
-      
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -306,6 +243,11 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
 
   test-contrib:
     needs:
@@ -344,23 +286,30 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
     steps:
-      - name: Checkout
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - name: Restore repo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: Setup Go
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          clean: false
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Test Core
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
-            ./scripts/ci-test-core.sh
-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ls -al "${{ github.workspace }}/bin"
+          ./scripts/ci_test_core.sh
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -375,6 +324,11 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
 
   upload-test-results:
     needs:

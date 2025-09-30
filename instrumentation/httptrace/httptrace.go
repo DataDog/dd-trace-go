@@ -50,7 +50,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	// is not initialized yet
 	reportTelemetryConfigOnce.Do(func() {
 		telemetry.RegisterAppConfig("inferred_proxy_services_enabled", cfg.inferredProxyServicesEnabled, telemetry.OriginEnvVar)
-		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %v", cfg)
+		log.Debug("internal/httptrace: telemetry.RegisterAppConfig called with cfg: %s", cfg)
 	})
 
 	var ipTags map[string]string
@@ -120,11 +120,17 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				tracer.ChildOf(parentCtx)(ssCfg)
 			}
 
+			parentCtx.ForeachBaggageItem(func(k, v string) bool {
+				if cfg.tagBaggageKey(k) {
+					ssCfg.Tags["baggage."+k] = v
+				}
+				return true
+			})
+
 			for k, v := range ipTags {
 				ssCfg.Tags[k] = v
 			}
 		})
-
 	nopts = append(nopts, opts...)
 
 	requestContext := r.Context()
@@ -155,14 +161,14 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 	if status == 0 {
 		if fn(status) {
 			statusStr = "0"
-			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		} else {
 			statusStr = "200"
 		}
 	} else {
 		statusStr = strconv.Itoa(status)
 		if fn(status) {
-			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		}
 	}
 	fc := &tracer.FinishConfig{}

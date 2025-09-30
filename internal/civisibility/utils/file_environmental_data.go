@@ -13,6 +13,7 @@ import (
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -84,13 +85,13 @@ func getEnvironmentalData() *fileEnvironmentalData {
 	}
 	file, err := os.Open(envDataFileName)
 	if err != nil {
-		logger.Error("civisibility: error reading environmental data from %s: %v", envDataFileName, err)
+		logger.Error("civisibility: error reading environmental data from %s: %v", envDataFileName, err.Error())
 		return nil
 	}
 	defer file.Close()
 	var envData fileEnvironmentalData
 	if err := json.NewDecoder(file).Decode(&envData); err != nil {
-		logger.Error("civisibility: error decoding environmental data from %s: %v", envDataFileName, err)
+		logger.Error("civisibility: error decoding environmental data from %s: %v", envDataFileName, err.Error())
 		return nil
 	}
 	logger.Debug("civisibility: loaded environmental data from %s", envDataFileName)
@@ -101,7 +102,7 @@ func getEnvironmentalData() *fileEnvironmentalData {
 //
 //go:linkname getEnvDataFileName
 func getEnvDataFileName() string {
-	envDataFileName := strings.TrimSpace(os.Getenv(constants.CIVisibilityEnvironmentDataFilePath))
+	envDataFileName := strings.TrimSpace(env.Get(constants.CIVisibilityEnvironmentDataFilePath))
 	if envDataFileName != "" {
 		return envDataFileName
 	}

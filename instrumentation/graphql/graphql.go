@@ -8,7 +8,6 @@ package graphql
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"slices"
@@ -18,12 +17,13 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // ErrorExtensionsFromEnv returns the configured error extensions from an environment variable.
 func ErrorExtensionsFromEnv() []string {
-	s := os.Getenv("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
+	s := env.Get("DD_TRACE_GRAPHQL_ERROR_EXTENSIONS")
 	if s == "" {
 		return nil
 	}
@@ -113,7 +113,7 @@ func setErrExtensions(result map[string]any, extensions map[string]any, whitelis
 		key := fmt.Sprintf("extensions.%s", errExt)
 		mapVal, err := errExtensionMapValue(val)
 		if err != nil {
-			log.Debug("failed to set error extension as span event attribute %s: %v", errExt, err)
+			log.Debug("failed to set error extension as span event attribute %q: %v", errExt, err.Error())
 			continue
 		}
 		result[key] = mapVal

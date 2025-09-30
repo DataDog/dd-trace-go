@@ -10,13 +10,14 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -35,9 +36,11 @@ func Load(pkg Package) *Instrumentation {
 	tracer.MarkIntegrationImported(info.TracedPackage)
 
 	return &Instrumentation{
-		pkg:    pkg,
-		logger: newLogger(pkg),
-		info:   info,
+		logger:       newLogger(pkg),
+		telemetrylog: telemetrylog.With(telemetry.WithTags([]string{"integration:" + string(pkg)})),
+
+		pkg:  pkg,
+		info: info,
 	}
 }
 
@@ -53,9 +56,11 @@ func Version() string {
 
 // Instrumentation represents instrumentation for a package.
 type Instrumentation struct {
-	pkg    Package
-	logger Logger
-	info   PackageInfo
+	logger       Logger
+	telemetrylog *telemetrylog.Logger
+
+	pkg  Package
+	info PackageInfo
 }
 
 // ServiceName returns the default service name to be set for the given instrumentation component.
@@ -67,7 +72,7 @@ func (i *Instrumentation) ServiceName(component Component, opCtx OperationContex
 		return cfg.DDService
 	}
 
-	useDDService := cfg.NamingSchemaVersion == namingschema.VersionV1 || cfg.RemoveFakeServiceNames || n.useDDServiceV0 || n.buildServiceNameV0 == nil
+	useDDService := cfg.NamingSchemaVersion == namingschema.SchemaV1 || cfg.RemoveIntegrationServiceNames || n.useDDServiceV0 || n.buildServiceNameV0 == nil
 	if useDDService && cfg.DDService != "" {
 		return cfg.DDService
 	}
@@ -82,7 +87,7 @@ func (i *Instrumentation) OperationName(component Component, opCtx OperationCont
 	}
 
 	switch namingschema.GetVersion() {
-	case namingschema.VersionV1:
+	case namingschema.SchemaV1:
 		return op.buildOpNameV1(opCtx)
 	default:
 		return op.buildOpNameV0(opCtx)
@@ -91,6 +96,10 @@ func (i *Instrumentation) OperationName(component Component, opCtx OperationCont
 
 func (i *Instrumentation) Logger() Logger {
 	return i.logger
+}
+
+func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
+	return i.telemetrylog
 }
 
 func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
@@ -116,7 +125,6 @@ func (i *Instrumentation) AppSecRASPEnabled() bool {
 }
 
 func (i *Instrumentation) DataStreamsEnabled() bool {
-	// TODO: APMAPI-1358
 	v, _, _ := stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	return v
 }
@@ -146,9 +154,7 @@ type StatsdClient = internal.StatsdClient
 func (i *Instrumentation) StatsdClient(extraTags []string) (StatsdClient, error) {
 	addr := globalconfig.DogstatsdAddr()
 	tags := globalconfig.StatsTags()
-	for _, tag := range extraTags {
-		tags = append(tags, tag)
-	}
+	tags = append(tags, extraTags...)
 	return internal.NewStatsdClient(addr, tags)
 }
 

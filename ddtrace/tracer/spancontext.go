@@ -304,6 +304,25 @@ func (c *SpanContext) baggageItem(key string) string {
 // finish marks this span as finished in the trace.
 func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
 
+// safeDebugString returns a safe string representation of the SpanContext for debug logging.
+// It excludes potentially sensitive data like baggage contents while preserving useful debugging information.
+func (c *SpanContext) safeDebugString() string {
+	if c == nil {
+		return "<nil>"
+	}
+
+	hasBaggage := atomic.LoadUint32(&c.hasBaggage) != 0
+	var baggageCount int
+	if hasBaggage {
+		c.mu.RLock()
+		baggageCount = len(c.baggage)
+		c.mu.RUnlock()
+	}
+
+	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
+		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, c.origin, c.updated, c.isRemote, c.baggageOnly)
+}
+
 // samplingDecision is the decision to send a trace to the agent or not.
 type samplingDecision uint32
 

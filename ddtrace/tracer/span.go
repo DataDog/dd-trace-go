@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
@@ -23,14 +22,18 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/tinylib/msgp/msgp"
+
 	"golang.org/x/xerrors"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
@@ -102,7 +105,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %v", err)
+		log.Error("failed to marshal span events: %s", err.Error())
 		return ""
 	}
 	return string(events)
@@ -192,6 +195,11 @@ func (s *Span) SetTag(key string, value interface{}) {
 	case ext.Error:
 		s.setTagError(value, errorConfig{
 			noDebugStack: s.noDebugStack,
+		})
+		return
+	case ext.ErrorNoStackTrace:
+		s.setTagError(value, errorConfig{
+			noDebugStack: true,
 		})
 		return
 	case ext.Component:
@@ -427,16 +435,23 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
-		if !cfg.noDebugStack {
-			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
+		if cfg.noDebugStack {
+			return
 		}
-		switch v.(type) {
+		switch err := v.(type) {
 		case xerrors.Formatter:
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+		case *errortrace.TracerError:
+			// instrumentation/errortrace approach
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorHandlingStack, err.Format())
+			return
 		}
+		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+		s.setMeta(ext.ErrorHandlingStack, stack)
 	case nil:
 		// no error
 		setError(false)
@@ -453,6 +468,12 @@ const defaultStackLength = 32
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
 // If n is 0, up to 20 entries are retrieved.
 func takeStacktrace(n, skip uint) string {
+	telemetry.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Submit(1)
+	now := time.Now()
+	defer func() {
+		dur := float64(time.Since(now))
+		telemetry.Distribution(telemetry.NamespaceTracers, "errorstack.duration", []string{"source:takeStacktrace"}).Submit(dur)
+	}()
 	if n == 0 {
 		n = defaultStackLength
 	}
@@ -606,7 +627,7 @@ func (s *Span) serializeSpanEvents() {
 	b, err := json.Marshal(s.spanEvents)
 	s.spanEvents = nil
 	if err != nil {
-		log.Debug("Unable to marshal span events; events dropped from span meta\n%v", err)
+		log.Debug("Unable to marshal span events; events dropped from span meta\n%s", err.Error())
 		return
 	}
 	s.meta["events"] = string(b)
@@ -738,7 +759,7 @@ func (s *Span) finish(finishTime int64) {
 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
-		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v",
+		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			s, s.name, s.resource, s.meta, s.metrics)
 	}
 	s.context.finish()
@@ -769,7 +790,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err)
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error())
 			return textNonParsable
 		}
 		return oq.Query
@@ -856,12 +877,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := os.Getenv("DD_ENV"); env != "" {
+			} else if env := env.Get("DD_ENV"); env != "" {
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := os.Getenv("DD_VERSION"); v != "" {
+			} else if v := env.Get("DD_VERSION"); v != "" {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
@@ -968,8 +989,11 @@ const (
 	keyPeerServiceRemappedFrom = "_dd.peer.service.remapped_from"
 	// keyBaseService contains the globally configured tracer service name. It is only set for spans that override it.
 	keyBaseService = "_dd.base_service"
-	// keyProcessTags contains a list of process tags to indentify the service.
+	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
+	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
+	keyKnuthSamplingRate = "_dd.p.ksr"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

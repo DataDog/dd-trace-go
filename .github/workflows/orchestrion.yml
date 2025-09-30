@@ -15,13 +15,15 @@ on:
       DD_API_KEY:
         required: false
   pull_request:
-  merge_group:
   push:
     branches:
       - release-v*
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
 
 permissions: read-all
 
@@ -38,15 +40,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Setup Go
-        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
           go-version: stable
-          cache: true
-          cache-dependency-path: '**/go.mod'
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run generator
         run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/generate.sh
       - name: Check for changes
         run: git diff --exit-code
@@ -58,12 +61,12 @@ jobs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
       - name: Setup Go
-        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: stable
           cache: true
@@ -81,7 +84,7 @@ jobs:
       services_json: ${{ steps.set-services.outputs.services_json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
@@ -93,7 +96,12 @@ jobs:
   integration-test:
     services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
     env:
-      REPORT: orchestrion-gotestsum-report.xml # path to where test results will be saved
+      # Path to where test results will be saved
+      REPORT: orchestrion-gotestsum-report.xml
+      # Disable go workspace as they complicate everything when orchestrion
+      # updates its `go` directive in `go.mod` before `dd-trace-go` does;
+      # ESPECIALLY on Windows.
+      GOWORK: 'off'
     needs:
       - go-versions-matrix
       - service-containers
@@ -115,10 +123,10 @@ jobs:
             go-version: oldstable
             mode: GOFLAGS
     name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }} | ${{ matrix.mode }})
-    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-16-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
+    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
@@ -127,7 +135,7 @@ jobs:
       - name: Check out orchestrion
         if: inputs.orchestrion-version != ''
         id: checkout-orchestrion
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           path: ${{ github.workspace }}/orchestrion
           repository: DataDog/orchestrion
@@ -135,7 +143,7 @@ jobs:
 
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
@@ -143,11 +151,20 @@ jobs:
             ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
             ${{ github.workspace }}/orchestrion/all/go.mod
 
+      - name: Install development tools
+        run: make -C ${{ github.workspace }}/dd-trace-go tools-install
+
       - name: Set up orchestrion
         if: inputs.orchestrion-version != ''
+        # This does not pass `-go` so that it transparently uses the correct go
+        # version, which is the highest one between that of dd-trace-go and
+        # orchestrion. This way each can change their own minimum supported go
+        # release without requiring coordination with the other. It also adds
+        # the local checkout of orchestrion to the `go.work` so that its own
+        # `go` directive is correctly managed.
         run: |-
-          go mod edit -go="$(go mod edit -json | jq -r '.Go')" -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
-          go mod tidy -go="$(go mod edit -json | jq -r '.Go')"
+          go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
+          go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           VERSION: ${{ inputs.orchestrion-version }}
@@ -167,9 +184,6 @@ jobs:
           mkdir -p "$(dirname "${bin}")"
           go build -cover -covermode=atomic -coverpkg="github.com/DataDog/orchestrion/..." "-o=${bin}" "github.com/DataDog/orchestrion"
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
-        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
-      - name: Install gotestsum
-        run: go -C ${{ github.workspace }}/dd-trace-go/_tools install gotest.tools/gotestsum
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
@@ -207,6 +221,8 @@ jobs:
       - name: Run Tests
         shell: bash
         run: |-
+          export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
+          echo "PATH: ${PATH}"
           echo "Working directory: ${PWD}"
           orchestrion version
           PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
@@ -244,6 +260,14 @@ jobs:
           # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
           XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
 
+        # Check for changes in the supported_configurations.json file
+      - name: Run Config Inverter Check
+        if: always()
+        run: |
+          git diff internal/env/supported_configurations.json
+          cd scripts/configinverter && go run main.go -input ../../internal/env/supported_configurations.json check
+        working-directory: ${{ github.workspace }}/dd-trace-go
+
       # If in workflow_call, we collected coverage data we need to upload
       - name: Consolidate coverage report
         if: inputs.collect-coverage
@@ -262,17 +286,17 @@ jobs:
           echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
       - name: Upload coverage report
         if: inputs.collect-coverage
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
 
       # Checkout and prepare for uploading to Datadog CI
       - name: Checkout
-        uses: actions/checkout@ee0669bd1cc54295c223e0bb666b733df41de1c5 # v2.7.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: 'DataDog/dd-trace-go'
-          ref: ${{ github.ref }}
+          ref:  ${{ inputs.orchestrion-version != '' && 'main' || github.ref }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -281,7 +305,6 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
-
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests

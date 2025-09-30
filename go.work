@@ -1,16 +1,17 @@
-go 1.23.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.24.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
 	./.github/workflows/apps
-	./_tools
 	./contrib/99designs/gqlgen
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
+	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
+	./contrib/cloud.google.com/go/pubsub.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
@@ -38,6 +39,7 @@ use (
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
+	./contrib/haproxy/stream-processing-offload
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault
 	./contrib/jackc/pgx.v5
@@ -63,6 +65,7 @@ use (
 	./contrib/valyala/fasthttp
 	./instrumentation/internal/namingschematest
 	./instrumentation/internal/validationtest
+	./instrumentation/testutils/containers
 	./instrumentation/testutils/grpc
 	./internal/apps
 	./internal/exectracetest
@@ -70,11 +73,6 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
-	./scripts/apiextractor
-	./scripts/autoreleasetagger
-	./scripts/autoreleasetagger/testdata/root
-	./scripts/autoreleasetagger/testdata/root/moduleA
-	./scripts/autoreleasetagger/testdata/root/moduleB
 	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage

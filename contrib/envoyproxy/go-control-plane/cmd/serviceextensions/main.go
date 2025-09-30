@@ -24,9 +24,9 @@ import (
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
-	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
 )
 
@@ -43,6 +43,44 @@ type serviceExtensionConfig struct {
 	bodyParsingSizeLimit int
 }
 
+var log = NewLogger()
+
+func getDefaultEnvVars() map[string]string {
+	return map[string]string{
+		"DD_VERSION":                   instrumentation.Version(), // Version of the tracer
+		"DD_APM_TRACING_ENABLED":       "false",                   // Appsec Standalone
+		"DD_APPSEC_WAF_TIMEOUT":        "10ms",                    // Proxy specific WAF timeout
+		"_DD_APPSEC_PROXY_ENVIRONMENT": "true",                    // Internal config: Enable API Security proxy sampler
+	}
+}
+
+// initializeEnvironment sets up required environment variables with their defaults
+func initializeEnvironment() {
+	for k, v := range getDefaultEnvVars() {
+		if env.Get(k) == "" {
+			if err := os.Setenv(k, v); err != nil {
+				log.Error("service_extension: failed to set %s environment variable: %s\n", k, err.Error())
+			}
+		}
+	}
+}
+
+// configureObservabilityMode disables blocking when observability mode is enabled.
+// Note: This requires the Envoy configuration option "observability_mode: true" to be set.
+// This option is only supported when configuring Envoy directly, and is not available when using GCP Service Extension.
+func configureObservabilityMode(mode bool) error {
+	if !mode {
+		return nil
+	}
+	const internalBlockingUnavailableKey = "_DD_APPSEC_BLOCKING_UNAVAILABLE"
+	if err := os.Setenv(internalBlockingUnavailableKey, "true"); err != nil {
+		return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err.Error())
+	}
+	log.Debug("service_extension: observability mode enabled, disabling blocking\n")
+	return nil
+}
+
+// loadConfig loads the configuration from the environment variables
 func loadConfig() serviceExtensionConfig {
 	extensionPortInt := intEnv("DD_SERVICE_EXTENSION_PORT", 443)
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
@@ -62,26 +100,17 @@ func loadConfig() serviceExtensionConfig {
 	}
 }
 
-var log = NewLogger()
-
 func main() {
-	// Set the DD_VERSION to the current tracer version if not set
-	if os.Getenv("DD_VERSION") == "" {
-		if err := os.Setenv("DD_VERSION", instrumentation.Version()); err != nil {
-			log.Error("service_extension: failed to set DD_VERSION environment variable: %v\n", err)
-		}
-	}
+	initializeEnvironment()
 
 	config := loadConfig()
 
-	// If the observability mode is enabled, disable blocking
-	if config.observabilityMode {
-		_ = os.Setenv("_DD_APPSEC_BLOCKING_UNAVAILABLE", "true")
-		log.Debug("service_extension: observability mode enabled, disabling blocking\n")
+	if err := configureObservabilityMode(config.observabilityMode); err != nil {
+		log.Error("service_extension: %s\n", err.Error())
 	}
 
 	if err := startService(config); err != nil {
-		log.Error("service_extension: %v\n", err)
+		log.Error("service_extension: %s\n", err.Error())
 		os.Exit(1)
 	}
 
@@ -93,7 +122,6 @@ func startService(config serviceExtensionConfig) error {
 
 	tracer.Start(tracer.WithAppSecEnabled(true))
 	defer tracer.Stop()
-	// TODO: Enable ASM standalone mode when it is developed (should be done for Q4 2024)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -115,7 +143,7 @@ func startService(config serviceExtensionConfig) error {
 }
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
-	muxServer := mux.NewRouter()
+	muxServer := http.NewServeMux()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -132,13 +160,13 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Error("service_extension: health check server shutdown: %v\n", err)
+			log.Error("service_extension: health check server shutdown: %s\n", err.Error())
 		}
 	}()
 
 	log.Info("service_extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("health check http server: %v", err)
+		return fmt.Errorf("health check http server: %s", err.Error())
 	}
 
 	return nil
@@ -147,22 +175,22 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
-		return fmt.Errorf("gRPC server: %v", err)
+		return fmt.Errorf("gRPC server: %s", err.Error())
 	}
 
 	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
 	if err != nil {
-		return fmt.Errorf("failed to load key pair: %v", err)
+		return fmt.Errorf("failed to load key pair: %s", err.Error())
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
 		gocontrolplane.AppsecEnvoyConfig{
-			IsGCPServiceExtension: true,
-			BlockingUnavailable:   config.observabilityMode,
-			Context:               ctx,
-			BodyParsingSizeLimit:  config.bodyParsingSizeLimit,
+			Integration:          gocontrolplane.GCPServiceExtensionIntegration,
+			BlockingUnavailable:  config.observabilityMode,
+			Context:              ctx,
+			BodyParsingSizeLimit: config.bodyParsingSizeLimit,
 		})
 
 	go func() {
@@ -173,7 +201,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	extproc.RegisterExternalProcessorServer(grpcServer, appsecEnvoyExternalProcessorServer)
 	log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 	if err := grpcServer.Serve(lis); err != nil {
-		return fmt.Errorf("error starting gRPC server: %v", err)
+		return fmt.Errorf("error starting gRPC server: %s", err.Error())
 	}
 
 	return nil
