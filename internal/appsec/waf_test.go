@@ -7,12 +7,15 @@ package appsec_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,10 +32,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/assert"
@@ -1079,6 +1082,53 @@ func TestAttackerFingerprinting(t *testing.T) {
 		})
 
 	}
+}
+
+func TestAPI10ResponseBody(t *testing.T) {
+	if ok, err := libddwaf.Usable(); !ok {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+
+	builder, err := libddwaf.NewBuilder("", "")
+	require.NoError(t, err)
+
+	var ruleset any
+
+	_, thisFile, _, _ := runtime.Caller(0)
+
+	fp, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "testdata", "api10.json"))
+	require.NoError(t, err)
+
+	err = json.Unmarshal(fp, &ruleset)
+	require.NoError(t, err)
+
+	builder.AddOrUpdateConfig("/custom", ruleset)
+	defer builder.Close()
+
+	handle := builder.Build()
+	require.NotNil(t, handle)
+
+	defer handle.Close()
+
+	ctx, err := handle.NewContext(timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
+	require.NoError(t, err)
+
+	defer ctx.Close()
+
+	reader := io.NopCloser(strings.NewReader(`{"payload":{"payload_out":"kqehf09123r4lnksef"},"status":"OK"}`))
+
+	encodable, err := body.NewEncodable("application/json", &reader, 999999)
+	require.NoError(t, err)
+
+	result, err := ctx.Run(libddwaf.RunAddressData{
+		Ephemeral: map[string]any{
+			addresses.ServerIONetResponseBodyAddr: encodable,
+		},
+	})
+
+	require.NoError(t, err)
+
+	require.Contains(t, result.Derivatives, "_dd.appsec.trace.res_body")
 }
 
 type mockSampler struct {
