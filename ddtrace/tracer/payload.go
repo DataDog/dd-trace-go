@@ -173,7 +173,7 @@ type traceChunk struct {
 	droppedTrace bool `msg:"droppedTrace"`
 
 	// the ID of the trace to which all spans in this chunk belong
-	traceID [16]byte `msg:"traceID"`
+	traceID []byte `msg:"traceID"`
 
 	// the optional string decision maker (previously span tag _dd.p.dm)
 	samplingMechanism string `msg:"samplingMechanism,omitempty"`

@@ -190,15 +190,17 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		{key: streamingKey{isString: false, idx: 9}, value: anyValue{valueType: StringValueType, value: p.appVersion}},      // appVersion
 	}
 
-	p.chunks = append(p.chunks, traceChunk{
+	tc := traceChunk{
 		priority:   int32(priority),
 		origin:     origin,
 		attributes: keyValueList{},
 		spans:      t,
-		traceID:    t[0].Context().traceID,
-	})
+		traceID:    t[0].Context().traceID[:],
+	}
+	p.chunks = append(p.chunks, tc)
 	wr := msgp.NewWriter(&p.buf)
-	err = EncodeSpanList(t, wr, p)
+
+	err = tc.EncodeMsg(wr, p)
 	if err != nil {
 		return payloadStats{}, err
 	}
@@ -376,10 +378,11 @@ func (kv keyValueList) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 }
 
 func (t *traceChunk) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
+	e.WriteInt32(11) // write msgp index for `chunks`
+
 	kv := keyValueList{
 		{key: streamingKey{isString: false, idx: 1}, value: anyValue{valueType: IntValueType, value: int64(t.priority)}},      // priority
 		{key: streamingKey{isString: false, idx: 2}, value: anyValue{valueType: StringValueType, value: t.origin}},            // origin
-		{key: streamingKey{isString: false, idx: 4}, value: anyValue{valueType: keyValueListType, value: t.spans}},            // spans
 		{key: streamingKey{isString: false, idx: 5}, value: anyValue{valueType: BoolValueType, value: t.droppedTrace}},        // droppedTrace
 		{key: streamingKey{isString: false, idx: 6}, value: anyValue{valueType: BytesValueType, value: t.traceID}},            // traceID
 		{key: streamingKey{isString: false, idx: 7}, value: anyValue{valueType: StringValueType, value: t.samplingMechanism}}, // samplingMechanism
@@ -389,22 +392,24 @@ func (t *traceChunk) EncodeMsg(e *msgp.Writer, p *payloadV1) error {
 	for k, v := range t.attributes {
 		attr = append(attr, keyValue{key: streamingKey{isString: false, idx: uint32(k)}, value: anyValue{valueType: getAnyValueType(v), value: v}})
 	}
-	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: ArrayValueType, value: attr}}) // attributes
+	kv = append(kv, keyValue{key: streamingKey{isString: false, idx: 3}, value: anyValue{valueType: keyValueListType, value: attr}}) // attributes
 
-	return kv.EncodeMsg(e, p)
+	err := kv.EncodeMsg(e, p)
+	if err != nil {
+		return err
+	}
+
+	return EncodeSpanList(t.spans, e, p)
 }
 
-// EncodeMsg writes the contents of a list of spans into `p.buf`
-// Span, SpanLink, and SpanEvent structs are different for v0.4 and v1.0.
-// For v1 we need to manually encode the spans, span links, and span events
-// if we don't want to do extra allocations.
 func EncodeSpanList(s spanList, e *msgp.Writer, p *payloadV1) error {
+	e.WriteInt32(4) // write msgp index for `spans`
+
 	err := e.WriteArrayHeader(uint32(len(s)))
 	if err != nil {
 		return msgp.WrapError(err)
 	}
 
-	e.WriteInt32(4)
 	for _, span := range s {
 		if span == nil {
 			err := e.WriteNil()
@@ -622,7 +627,7 @@ func (p *payloadV1) Decode(b []byte) ([]byte, error) {
 		p.strings = newStringTable()
 	}
 
-	fields, o, err := msgp.ReadMapHeaderBytes(b)
+	fields, o, err := msgp.ReadArrayHeaderBytes(b)
 	if err != nil {
 		return o, err
 	}
@@ -630,18 +635,13 @@ func (p *payloadV1) Decode(b []byte) ([]byte, error) {
 	for fields > 0 {
 		fields--
 
-		f, o, err := msgp.ReadUint32Bytes(b)
+		f, o, err := msgp.ReadInt32Bytes(o)
 		if err != nil {
 			return o, err
 		}
 
 		switch f {
-		case 1: // stringTable
-			o, err = DecodeStringTable(o, p.strings)
-			if err != nil {
-				return o, err
-			}
-
+		// we don't care for the string table, so we don't decode it
 		case 2: // containerID
 			p.containerID, o, err = DecodeStreamingString(o, p.strings)
 			if err != nil {
@@ -738,7 +738,7 @@ func DecodeStreamingString(b []byte, strings *stringTable) (string, []byte, erro
 	}
 
 	// else, try reading as a string, then add to the string table
-	str, o, err := msgp.ReadStringBytes(b)
+	str, o, err := msgp.ReadStringBytes(o)
 	if err != nil {
 		return "", nil, msgp.WrapError(err, "unable to read streaming string")
 	}
@@ -783,7 +783,7 @@ func DecodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 		}
 		return anyValue{valueType: BytesValueType, value: b}, o, nil
 	case ArrayValueType:
-		len, o, err := msgp.ReadBytesHeader(o)
+		len, o, err := msgp.ReadArrayHeaderBytes(o)
 		if err != nil {
 			return anyValue{}, o, err
 		}
@@ -807,7 +807,7 @@ func DecodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 }
 
 func DecodeKeyValueList(b []byte, strings *stringTable) (keyValueList, []byte, error) {
-	len, o, err := msgp.ReadBytesHeader(b)
+	len, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {
 		return nil, o, err
 	}
@@ -833,14 +833,14 @@ func DecodeKeyValueList(b []byte, strings *stringTable) (keyValueList, []byte, e
 }
 
 func DecodeTraceChunks(b []byte, strings *stringTable) ([]traceChunk, []byte, error) {
-	len, o, err := msgp.ReadArrayHeaderBytes(b)
+	len, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {
 		return nil, o, err
 	}
 
 	ret := make([]traceChunk, len)
 	for i := range len {
-		fields, o, err := msgp.ReadMapHeaderBytes(o)
+		fields, o, err := msgp.ReadArrayHeaderBytes(o)
 		if err != nil {
 			return nil, o, err
 		}
@@ -848,7 +848,7 @@ func DecodeTraceChunks(b []byte, strings *stringTable) ([]traceChunk, []byte, er
 		for fields > 0 {
 			fields--
 
-			f, o, err := msgp.ReadUint32Bytes(b)
+			f, o, err := msgp.ReadUint32Bytes(o)
 			if err != nil {
 				return ret, o, err
 			}
@@ -889,7 +889,7 @@ func DecodeTraceChunks(b []byte, strings *stringTable) ([]traceChunk, []byte, er
 				if err != nil {
 					return ret, o, err
 				}
-				tc.traceID = [16]byte(s)
+				tc.traceID = []byte(s)
 			case 7: // samplingMechanism
 				s, o, err := msgp.ReadStringBytes(o)
 				if err != nil {
@@ -928,7 +928,7 @@ func DecodeSpan(b []byte, strings *stringTable) (*Span, []byte, error) {
 	for fields > 0 {
 		fields--
 
-		f, o, err := msgp.ReadUint32Bytes(b)
+		f, o, err := msgp.ReadUint32Bytes(o)
 		if err != nil {
 			return &sp, o, err
 		}
@@ -1091,11 +1091,11 @@ func DecodeSpanLinks(b []byte, strings *stringTable) ([]SpanLink, []byte, error)
 				}
 				sl.Tracestate = s
 			case 5: // flags
-				s, o, err := msgp.ReadInt32Bytes(o)
+				s, o, err := msgp.ReadUint32Bytes(o)
 				if err != nil {
 					return ret, o, err
 				}
-				sl.Flags = uint32(s)
+				sl.Flags = s
 			}
 		}
 		ret[i] = sl
@@ -1118,7 +1118,7 @@ func DecodeSpanEvents(b []byte, strings *stringTable) ([]spanEvent, []byte, erro
 		for fields > 0 {
 			fields--
 
-			f, o, err := msgp.ReadUint32Bytes(b)
+			f, o, err := msgp.ReadUint32Bytes(o)
 			if err != nil {
 				return ret, o, err
 			}
