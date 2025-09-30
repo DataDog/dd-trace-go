@@ -36,7 +36,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/assert"
@@ -1086,6 +1085,10 @@ func TestAttackerFingerprinting(t *testing.T) {
 }
 
 func TestAPI10ResponseBody(t *testing.T) {
+	if ok, err := libddwaf.Usable(); !ok {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+
 	builder, err := libddwaf.NewBuilder("", "")
 	require.NoError(t, err)
 
