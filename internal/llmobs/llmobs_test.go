@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	mlApp = "gotest"
+	mlApp      = "gotest"
+	testApiKey = "abcd1234efgh5678ijkl9012mnop3456"
 )
 
 func TestStartSpan(t *testing.T) {
@@ -1283,6 +1284,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsEnabled(true),
 				tracer.WithLLMObsMLApp("test-app"),
 				tracer.WithLogStartup(false),
+				tracer.WithLLMObsAgentlessEnabled(false),
 			),
 		)
 		defer tt.Stop()
@@ -1308,6 +1310,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsEnabled(true),
 				tracer.WithLLMObsMLApp("app1"),
 				tracer.WithLogStartup(false),
+				tracer.WithLLMObsAgentlessEnabled(false),
 			),
 		)
 		defer tt1.Stop()
@@ -1342,6 +1345,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsEnabled(true),
 				tracer.WithLLMObsMLApp("flush-test"),
 				tracer.WithLogStartup(false),
+				tracer.WithLLMObsAgentlessEnabled(false),
 			),
 		)
 		defer tt.Stop()
@@ -1392,6 +1396,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsEnabled(true),
 				tracer.WithLLMObsMLApp("stop-test"),
 				tracer.WithLogStartup(false),
+				tracer.WithLLMObsAgentlessEnabled(false),
 			),
 		)
 
@@ -1440,16 +1445,17 @@ func TestLLMObsLifecycle(t *testing.T) {
 		err := tracer.Start(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLogStartup(false),
+			tracer.WithLLMObsAgentlessEnabled(false),
 		)
 		defer tracer.Stop()
 
 		// Should get error from tracer.Start due to missing ML app
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "ML App is required")
 
 		// Should not have active LLMObs due to startup failure
 		_, err = llmobs.ActiveLLMObs()
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "LLMObs is not enabled")
 	})
 	t.Run("env-vars-config", func(t *testing.T) {
@@ -1503,6 +1509,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 			testtracer.WithTracerStartOpts(
 				tracer.WithLLMObsEnabled(true),
 				tracer.WithLLMObsMLApp("code-app"),
+				tracer.WithLLMObsAgentlessEnabled(false),
 				tracer.WithLogStartup(false),
 			),
 		)
@@ -1534,7 +1541,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 	})
 	t.Run("agentless-defaults-true-when-evp-proxy-unavailable", func(t *testing.T) {
 		// Set valid API key (32 chars, lowercase + numbers only)
-		t.Setenv("DD_API_KEY", "abcd1234efgh5678ijkl9012mnop3456")
+		t.Setenv("DD_API_KEY", testApiKey)
 
 		// When agent doesn't support evp_proxy/v2, should default to agentless=true
 		err := tracer.Start(
