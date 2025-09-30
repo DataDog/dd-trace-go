@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -1089,7 +1091,9 @@ func TestAPI10ResponseBody(t *testing.T) {
 
 	var ruleset any
 
-	fp, err := os.ReadFile("/home/eliott/dd/system-tests/tests/appsec/rasp/rasp_ruleset.json")
+	_, thisFile, _, _ := runtime.Caller(0)
+
+	fp, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "testdata", "api10.json"))
 	require.NoError(t, err)
 
 	err = json.Unmarshal(fp, &ruleset)
