@@ -2918,3 +2918,9 @@ func TestTracerStartMultipleTimesGlobalService(t *testing.T) {
 
 	assert.Equal(t, "global_service", globalconfig.ServiceName())
 }
+
+func TestNewUnstartedTracerDDAgentHostNotFound(t *testing.T) {
+	t.Setenv("DD_AGENT_HOST", "ddapm-test-agent-c07208")
+	_, err := newUnstartedTracer()
+	assert.NoError(t, err)
+}
