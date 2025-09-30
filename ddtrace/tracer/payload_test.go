@@ -60,9 +60,9 @@ func TestPayloadIntegrity(t *testing.T) {
 	}
 }
 
-// TestPayloadDecode ensures that whatever we push into the payload can
+// TestPayloadV04Decode ensures that whatever we push into a v0.4 payload can
 // be decoded by the codec.
-func TestPayloadDecode(t *testing.T) {
+func TestPayloadV04Decode(t *testing.T) {
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
@@ -73,6 +73,46 @@ func TestPayloadDecode(t *testing.T) {
 			var got spanLists
 			err := msgp.Decode(p, &got)
 			assert.NoError(err)
+		})
+	}
+}
+
+// TestPayloadV1Decode ensures that whatever we push into a v1 payload can
+// be decoded by the codec, and that it matches the original payload.
+func TestPayloadV1Decode(t *testing.T) {
+	for _, n := range []int{10, 1 << 10} {
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
+			p := newPayloadV1()
+
+			p.containerID = "containerID"
+			p.languageName = "languageName"
+			p.languageVersion = "languageVersion"
+			p.tracerVersion = "tracerVersion"
+			p.runtimeID = "runtimeID"
+			p.env = "env"
+			p.hostname = "hostname"
+			p.appVersion = "appVersion"
+
+			for i := 0; i < n; i++ {
+				_, _ = p.push(newSpanList(i%5 + 1))
+			}
+
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			_, err = got.Decode(encoded)
+			assert.NoError(err)
+
+			assert.Equal(p.containerID, got.containerID)
+			assert.Equal(p.languageName, got.languageName)
+			assert.Equal(p.languageVersion, got.languageVersion)
+			assert.Equal(p.tracerVersion, got.tracerVersion)
+			assert.Equal(p.runtimeID, got.runtimeID)
+			assert.Equal(p.env, got.env)
+			assert.Equal(p.hostname, got.hostname)
+			assert.Equal(p.appVersion, got.appVersion)
 		})
 	}
 }
