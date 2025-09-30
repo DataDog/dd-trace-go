@@ -21,7 +21,7 @@ func ExampleNew() {
 		log.Fatal(err)
 	}
 	defer tracer.Stop()
-	
+
 	ds, err := dataset.Pull(context.TODO(), "capitals-of-the-world")
 	if err != nil {
 		log.Fatal(err)
@@ -89,7 +89,7 @@ func ExampleNew() {
 		task,
 		ds,
 		evs,
-		"Testing capital cities knowledge",
+		experiment.WithDescription("Testing capital cities knowledge"),
 		experiment.WithExperimentConfig(
 			map[string]any{
 				"model_name": "gpt-4",

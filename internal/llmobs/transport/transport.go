@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
@@ -53,13 +54,13 @@ var (
 	ErrDatasetNotFound = errors.New("dataset not found")
 )
 
-// Transport sends requests to the LLMObs “experiments” API set like the Python client.
 type Transport struct {
 	httpClient     *http.Client
 	defaultHeaders map[string]string
 	site           string
 	agentURL       *url.URL
 	agentless      bool
+	appKey         string
 }
 
 // New builds a new Transport for LLM Observability endpoints.
@@ -74,9 +75,6 @@ func New(cfg *config.Config) *Transport {
 	}
 	if cfg.ResolvedAgentlessEnabled {
 		defaultHeaders["DD-API-KEY"] = cfg.TracerConfig.APIKey
-		if cfg.TracerConfig.APPKey != "" {
-			defaultHeaders["DD-APPLICATION-KEY"] = cfg.TracerConfig.APPKey
-		}
 	}
 	return &Transport{
 		httpClient:     cfg.TracerConfig.HTTPClient,
@@ -84,6 +82,7 @@ func New(cfg *config.Config) *Transport {
 		site:           site,
 		agentURL:       cfg.TracerConfig.AgentURL,
 		agentless:      cfg.ResolvedAgentlessEnabled,
+		appKey:         cfg.TracerConfig.APPKey,
 	}
 }
 
@@ -163,7 +162,10 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		req.Header.Set(headerEVPSubdomain, subdomain)
 	}
 
-	// TODO: review this makes sense
+	// Set DD-APPLICATION-KEY header for datasets and experiments endpoints
+	if c.appKey != "" && strings.HasPrefix(path, endpointPrefixDNE) {
+		req.Header.Set("DD-APPLICATION-KEY", c.appKey)
+	}
 	backoffStrat := &backoff.ExponentialBackOff{
 		InitialInterval:     defaultBackoff,
 		RandomizationFactor: 0.5,

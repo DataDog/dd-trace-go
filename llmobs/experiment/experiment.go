@@ -23,7 +23,8 @@ import (
 
 var (
 	errRequiresProjectName = errors.New(`a project name must be provided for the experiment, either configured via the DD_LLMOBS_PROJECT_NAME
-environment variable, using the global llmobs.WithProjectName option, or experiment.WithProjectName option.`)
+environment variable, using the global tracer.WithLLMObsProjectName option, or experiment.WithProjectName option`)
+	errRequiresAppKey = errors.New(`an app key must be provided for the experiment configured via the DD_APP_KEY environment variable`)
 )
 
 // Experiment represents a DataDog LLM Observability experiment.
@@ -123,7 +124,7 @@ type Evaluation struct {
 	Error error
 }
 
-func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, description string, opts ...Option) (*Experiment, error) {
+func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, opts ...Option) (*Experiment, error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
@@ -135,6 +136,9 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, de
 	}
 	if cfg.projectName == "" {
 		return nil, errRequiresProjectName
+	}
+	if ll.Config.TracerConfig.APPKey == "" {
+		return nil, errRequiresAppKey
 	}
 
 	if cfg.tags == nil {
@@ -152,7 +156,7 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, de
 		task:        task,
 		dataset:     ds,
 		evaluators:  evaluators,
-		description: description,
+		description: cfg.description,
 		cfg:         cfg,
 		tagsSlice:   tagsSlice,
 	}, nil
@@ -228,7 +232,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 		eg.Go(func() error {
 			res := e.runTaskForRecord(ctx, llmobs, i, rec)
 			if res.Error != nil {
-				retErr := fmt.Errorf("failed to process record %d: %w", i, res.Error.Error)
+				retErr := fmt.Errorf("failed to process record %d: %w", i, res.Error)
 				if cfg.abortOnError {
 					return retErr
 				} else {
@@ -264,7 +268,6 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 	tags["dataset_record_id"] = rec.ID()
 	tags["experiment_id"] = e.id
 
-	// TODO: context cancelation
 	out, err := e.task.Run(ctx, rec.Input, e.cfg.experimentCfg)
 	if err != nil {
 		err = errortrace.Wrap(err)

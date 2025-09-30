@@ -11,6 +11,7 @@ import (
 
 type newCfg struct {
 	projectName   string
+	description   string
 	tags          map[string]string
 	experimentCfg map[string]any
 }
@@ -18,6 +19,7 @@ type newCfg struct {
 func defaultNewCfg(globalCfg *config.Config) *newCfg {
 	return &newCfg{
 		projectName:   globalCfg.ProjectName,
+		description:   "",
 		tags:          nil,
 		experimentCfg: nil,
 	}
@@ -34,6 +36,12 @@ func WithProjectName(name string) Option {
 func WithTags(tags map[string]string) Option {
 	return func(cfg *newCfg) {
 		cfg.tags = tags
+	}
+}
+
+func WithDescription(description string) Option {
+	return func(cfg *newCfg) {
+		cfg.description = description
 	}
 }
 

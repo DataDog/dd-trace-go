@@ -26,9 +26,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-// chanSize is a big enough channel size so we never block sending while the test is running.
-const chanSize = 10_0000
-
 // AgentInfo defines the response from the agent /info endpoint.
 type AgentInfo struct {
 	Endpoints          []string    `json:"endpoints"`
@@ -73,14 +70,30 @@ type SpanLink struct {
 	Flags       uint32            `json:"flags"`
 }
 
+// LLMObsSpan is an alias for the LLMObs span event type.
 type LLMObsSpan = llmobstransport.LLMObsSpanEvent
+
+// LLMObsMetric is an alias for the LLMObs metric type.
 type LLMObsMetric = llmobstransport.LLMObsMetric
+
+// MockResponseFunc is a function to return mock responses.
+type MockResponseFunc func(*http.Request) *http.Response
+
+// Payloads contains all captured payloads organized by type.
+type Payloads struct {
+	mu         sync.RWMutex
+	Spans      []Span
+	LLMSpans   []LLMObsSpan
+	LLMMetrics []LLMObsMetric
+}
+
+// WaitCondition is a function that checks if the wait condition is met.
+// It receives the current payloads and returns true if waiting should stop.
+type WaitCondition func(*Payloads) bool
 
 // TestTracer is an inspectable tracer useful for tests.
 type TestTracer struct {
-	Spans        <-chan Span
-	LLMSpans     <-chan LLMObsSpan
-	LLMMetrics   <-chan LLMObsMetric
+	Payloads     *Payloads
 	roundTripper *mockTransport
 }
 
@@ -92,25 +105,26 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 		opt(cfg)
 	}
 
-	spansChan := make(chan Span, chanSize)
-	llmobsSpansChan := make(chan LLMObsSpan, chanSize)
-	llmobsMetricsChan := make(chan LLMObsMetric, chanSize)
+	payloadChan := make(chan any)
+	payloads := &Payloads{}
+
 	rt := &mockTransport{
-		T:                 t,
-		spansChan:         spansChan,
-		llmobsSpansChan:   llmobsSpansChan,
-		llmobsMetricsChan: llmobsMetricsChan,
-		agentInfo:         cfg.AgentInfoResponse,
+		T:            t,
+		payloadChan:  payloadChan,
+		agentInfo:    cfg.AgentInfoResponse,
+		mockResponse: cfg.MockResponse,
+		requestDelay: cfg.RequestDelay,
 	}
 	httpClient := &http.Client{
 		Transport: rt,
 	}
 	tt := &TestTracer{
-		Spans:        spansChan,
-		LLMSpans:     llmobsSpansChan,
-		LLMMetrics:   llmobsMetricsChan,
+		Payloads:     payloads,
 		roundTripper: rt,
 	}
+
+	// Start payload collector goroutine
+	go tt.collectPayloads(payloadChan)
 	t.Cleanup(tt.Stop)
 
 	startOpts := append([]tracer.StartOption{
@@ -131,6 +145,7 @@ type config struct {
 	TracerStartOpts   []tracer.StartOption
 	AgentInfoResponse AgentInfo
 	RequestDelay      time.Duration
+	MockResponse      MockResponseFunc
 }
 
 func defaultConfig() *config {
@@ -138,15 +153,17 @@ func defaultConfig() *config {
 		TracerStartOpts:   nil,
 		AgentInfoResponse: AgentInfo{},
 		RequestDelay:      0,
+		MockResponse:      nil,
 	}
 }
 
+// Option configures the TestTracer.
 type Option func(*config)
 
 // WithTracerStartOpts allows to set [tracer.StartOption] on the tracer.
 func WithTracerStartOpts(opts ...tracer.StartOption) Option {
 	return func(cfg *config) {
-		cfg.TracerStartOpts = opts
+		cfg.TracerStartOpts = append(cfg.TracerStartOpts, opts...)
 	}
 }
 
@@ -165,96 +182,110 @@ func WithRequestDelay(delay time.Duration) Option {
 	}
 }
 
+// WithMockResponses allows setting a custom request handler for mocking HTTP responses.
+// If the provided function returns nil, it fallbacks to the default behavior of returning empty 200 responses.
+func WithMockResponses(mr MockResponseFunc) Option {
+	return func(cfg *config) {
+		cfg.MockResponse = mr
+	}
+}
+
+// collectPayloads runs in a goroutine and collects payloads from the channel
+func (tt *TestTracer) collectPayloads(payloadChan <-chan any) {
+	for payload := range payloadChan {
+		tt.Payloads.mu.Lock()
+		switch p := payload.(type) {
+		case Span:
+			tt.Payloads.Spans = append(tt.Payloads.Spans, p)
+		case LLMObsSpan:
+			tt.Payloads.LLMSpans = append(tt.Payloads.LLMSpans, p)
+		case LLMObsMetric:
+			tt.Payloads.LLMMetrics = append(tt.Payloads.LLMMetrics, p)
+		}
+		tt.Payloads.mu.Unlock()
+	}
+}
+
 // Stop stops the tracer. It should be called after the test finishes.
 func (tt *TestTracer) Stop() {
 	tt.roundTripper.Stop()
 	tracer.Stop()
 }
 
-// WaitForSpans returns when receiving a number of Span equal to count. It fails the test if it did not receive
-// that number of spans after 5 seconds.
+// WaitFor waits for a condition to be met within the specified timeout.
+// The condition function receives the current payloads and should return true when the wait should stop.
+// It fails the test if the condition is not met within the timeout.
+func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCondition) *Payloads {
+	// Force a flush so we don't need to wait for the default flush interval
+	tracer.Flush()
+
+	timeoutChan := time.After(timeout)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			tt.Payloads.mu.RLock()
+			if cond(tt.Payloads) {
+				tt.Payloads.mu.RUnlock()
+				return tt.Payloads
+			}
+			tt.Payloads.mu.RUnlock()
+		case <-timeoutChan:
+			tt.Payloads.mu.RLock()
+			assert.FailNowf(t, "timeout waiting for condition",
+				"Current payloads: %d spans, %d LLM spans, %d LLM metrics",
+				len(tt.Payloads.Spans), len(tt.Payloads.LLMSpans), len(tt.Payloads.LLMMetrics))
+			tt.Payloads.mu.RUnlock()
+		}
+	}
+}
+
+// WaitForSpans waits for the specified number of spans to be captured.
+// It returns the captured spans or fails the test if the timeout is reached.
 func (tt *TestTracer) WaitForSpans(t *testing.T, count int) []Span {
 	if count == 0 {
 		return nil
 	}
-	// force a flush so we don't need to wait for the default flush interval.
-	tracer.Flush()
-
-	timeoutChan := time.After(5 * time.Second)
-	spans := make([]Span, 0)
-
-	for {
-		select {
-		case span := <-tt.Spans:
-			spans = append(spans, span)
-			if len(spans) == count {
-				return spans
-			}
-		case <-timeoutChan:
-			assert.FailNowf(t, "timeout waiting for spans", "got: %d, want: %d", len(spans), count)
-		}
-	}
+	p := tt.WaitFor(t, 5*time.Second, func(p *Payloads) bool {
+		return len(p.Spans) >= count
+	})
+	return p.Spans
 }
 
-// WaitForLLMObsSpans returns when receiving a number of LLMSpan equal to count. It fails the test if it did not receive
-// that number of spans after 5 seconds.
+// WaitForLLMObsSpans waits for the specified number of LLMObs spans to be captured.
+// It returns the captured LLMObs spans or fails the test if the timeout is reached.
 func (tt *TestTracer) WaitForLLMObsSpans(t *testing.T, count int) []LLMObsSpan {
 	if count == 0 {
 		return nil
 	}
-	// force a flush so we don't need to wait for the default flush interval.
-	tracer.Flush()
-
-	timeoutChan := time.After(5 * time.Second)
-	spans := make([]LLMObsSpan, 0)
-
-	for {
-		select {
-		case span := <-tt.LLMSpans:
-			spans = append(spans, span)
-			if len(spans) == count {
-				return spans
-			}
-		case <-timeoutChan:
-			assert.FailNowf(t, "timeout waiting for LLMObs spans", "got: %d, want: %d", len(spans), count)
-		}
-	}
+	p := tt.WaitFor(t, 5*time.Second, func(p *Payloads) bool {
+		return len(p.LLMSpans) >= count
+	})
+	return p.LLMSpans
 }
 
-// WaitForLLMObsMetrics returns when receiving a number of LLMObsMetric equal to count. It fails the test if it did not receive
-// that number of metrics after 5 seconds.
+// WaitForLLMObsMetrics waits for the specified number of LLMObs metrics to be captured.
+// It returns the captured LLMObs metrics or fails the test if the timeout is reached.
 func (tt *TestTracer) WaitForLLMObsMetrics(t *testing.T, count int) []LLMObsMetric {
 	if count == 0 {
 		return nil
 	}
-	// force a flush so we don't need to wait for the default flush interval.
-	tracer.Flush()
-
-	timeoutChan := time.After(5 * time.Second)
-	metrics := make([]LLMObsMetric, 0)
-
-	for {
-		select {
-		case metric := <-tt.LLMMetrics:
-			metrics = append(metrics, metric)
-			if len(metrics) == count {
-				return metrics
-			}
-		case <-timeoutChan:
-			assert.FailNowf(t, "timeout waiting for LLMObs metrics", "got: %d, want: %d", len(metrics), count)
-		}
-	}
+	p := tt.WaitFor(t, 5*time.Second, func(p *Payloads) bool {
+		return len(p.LLMMetrics) >= count
+	})
+	return p.LLMMetrics
 }
 
 type mockTransport struct {
-	T                 testing.TB
-	spansChan         chan Span
-	llmobsSpansChan   chan LLMObsSpan
-	llmobsMetricsChan chan LLMObsMetric
-	mu                sync.RWMutex
-	finished          bool
-	agentInfo         AgentInfo
-	requestDelay      time.Duration
+	T            testing.TB
+	payloadChan  chan<- any
+	mu           sync.RWMutex
+	finished     bool
+	agentInfo    AgentInfo
+	requestDelay time.Duration
+	mockResponse MockResponseFunc
 }
 
 func (rt *mockTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -269,9 +300,13 @@ func (rt *mockTransport) Stop() {
 		return
 	}
 	rt.finished = true
-	close(rt.spansChan)
-	close(rt.llmobsSpansChan)
-	close(rt.llmobsMetricsChan)
+	close(rt.payloadChan)
+}
+
+var noLogPaths = []string{
+	"/v0.7/config",
+	"/telemetry/proxy/api/v2/apmtelemetry",
+	"/api/unstable/llm-obs/v1/",
 }
 
 func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
@@ -281,22 +316,38 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 		return rt.emptyResponse(r)
 	}
 
+	var resp *http.Response
+	if rt.mockResponse != nil {
+		resp = rt.mockResponse(r)
+	}
+	if resp == nil {
+		resp = rt.emptyResponse(r)
+	}
+
 	switch r.URL.Path {
 	case "/v0.4/traces":
-		return rt.handleTraces(r)
+		rt.handleTraces(r)
 	case "/info":
-		return rt.handleInfo(r)
+		rt.handleInfo(r)
 	case "/evp_proxy/v2/api/v2/llmobs", "/api/v2/llmobs":
-		return rt.handleLLMObsSpanEvents(r)
+		rt.handleLLMObsSpanEvents(r)
 	case "/evp_proxy/v2/api/intake/llm-obs/v2/eval-metric", "/api/intake/llm-obs/v2/eval-metric":
-		return rt.handleLLMObsEvalMetrics(r)
+		rt.handleLLMObsEvalMetrics(r)
 	case "/v0.7/config", "/telemetry/proxy/api/v2/apmtelemetry":
 		// known cases, no need to log these
-		return rt.emptyResponse(r)
 	default:
-		rt.T.Logf("testtracer: received request to a non-implemented path: %s", r.URL.Path)
-		return rt.emptyResponse(r)
+		logWarn := true
+		for _, p := range noLogPaths {
+			if r.URL.Path == p || strings.Contains(r.URL.Path, p) {
+				logWarn = false
+				break
+			}
+		}
+		if logWarn {
+			rt.T.Logf("testtracer: received request to a non-implemented path: %s", r.URL.Path)
+		}
 	}
+	return resp
 }
 
 func (rt *mockTransport) emptyResponse(r *http.Request) *http.Response {
@@ -326,9 +377,7 @@ func (rt *mockTransport) handleInfo(r *http.Request) *http.Response {
 	return resp
 }
 
-func (rt *mockTransport) handleTraces(r *http.Request) (resp *http.Response) {
-	resp = rt.emptyResponse(r)
-
+func (rt *mockTransport) handleTraces(r *http.Request) {
 	req := r.Clone(context.Background())
 	defer req.Body.Close()
 
@@ -348,15 +397,12 @@ func (rt *mockTransport) handleTraces(r *http.Request) (resp *http.Response) {
 	}
 	for _, spans := range traces {
 		for _, span := range spans {
-			rt.spansChan <- span
+			rt.payloadChan <- span
 		}
 	}
-	return
 }
 
-func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) (resp *http.Response) {
-	resp = rt.emptyResponse(r)
-
+func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) {
 	req := r.Clone(context.Background())
 	defer req.Body.Close()
 
@@ -369,15 +415,12 @@ func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) (resp *http.Res
 
 	for _, p := range payload {
 		for _, span := range p.Spans {
-			rt.llmobsSpansChan <- *span
+			rt.payloadChan <- *span
 		}
 	}
-	return
 }
 
-func (rt *mockTransport) handleLLMObsEvalMetrics(r *http.Request) (resp *http.Response) {
-	resp = rt.emptyResponse(r)
-
+func (rt *mockTransport) handleLLMObsEvalMetrics(r *http.Request) {
 	req := r.Clone(context.Background())
 	defer req.Body.Close()
 
@@ -389,9 +432,8 @@ func (rt *mockTransport) handleLLMObsEvalMetrics(r *http.Request) (resp *http.Re
 	require.NoError(rt.T, err)
 
 	for _, metric := range payload.Data.Attributes.Metrics {
-		rt.llmobsMetricsChan <- *metric
+		rt.payloadChan <- *metric
 	}
-	return
 }
 
 type testLogger struct {

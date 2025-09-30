@@ -203,14 +203,14 @@ func TestStartSpan(t *testing.T) {
 			FinishTime: customFinishTime,
 		})
 
-		// Validate APM span timing
+		// Validate APM span
 		apmSpans := tt.WaitForSpans(t, 1)
 		s0 := apmSpans[0]
 		assert.Equal(t, "llm", s0.Name)
 		assert.Equal(t, customStartTime.UnixNano(), s0.Start)
 		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), s0.Duration)
 
-		// Validate LLMObs span timing
+		// Validate LLMObs span
 		llmSpans := tt.WaitForLLMObsSpans(t, 1)
 		l0 := llmSpans[0]
 		assert.Equal(t, "llm", l0.Name)
@@ -1024,78 +1024,6 @@ func TestPropagatedInfo(t *testing.T) {
 	})
 }
 
-func BenchmarkStartSpan(b *testing.B) {
-	run := func(b *testing.B, ll *llmobs.LLMObs, tt *testtracer.TestTracer, done chan struct{}) {
-		llmSpans := make([]testtracer.LLMObsSpan, 0, b.N)
-		apmSpans := make([]testtracer.Span, 0, b.N)
-
-		go func(n int) {
-			llCnt, apmCnt := 0, 0
-			for llCnt < n || apmCnt < n {
-				select {
-				case llmSpan := <-tt.LLMSpans:
-					llmSpans = append(llmSpans, llmSpan)
-					llCnt++
-				case apmSpan := <-tt.Spans:
-					apmSpans = append(apmSpans, apmSpan)
-					apmCnt++
-				}
-			}
-			close(done)
-		}(b.N)
-
-		b.Log("starting benchmark")
-
-		b.ResetTimer()
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
-			span.Finish(llmobs.FinishSpanConfig{})
-		}
-		b.StopTimer()
-
-		b.Log("finished benchmark")
-
-		b.Log("waiting for spans")
-
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			b.Logf("timeout waiting for spans: got llm=%d apm=%d want=%d",
-				len(llmSpans), len(apmSpans), b.N)
-		}
-	}
-
-	b.Run("basic", func(b *testing.B) {
-		tt, ll := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
-		done := make(chan struct{})
-		run(b, ll, tt, done)
-	})
-	b.Run("periodic-flush", func(b *testing.B) {
-		tt, ll := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
-
-		ticker := time.NewTicker(10 * time.Microsecond)
-		defer ticker.Stop()
-
-		done := make(chan struct{})
-
-		// force flushes to test if StartSpan gets blocked while the tracer is sending payloads
-		go func() {
-			for {
-				select {
-				case <-ticker.C:
-					ll.Flush()
-
-				case <-done:
-					return
-				}
-			}
-		}()
-
-		run(b, ll, tt, done)
-	})
-}
-
 func TestSubmitEvaluation(t *testing.T) {
 	testCases := []struct {
 		name       string
@@ -1363,14 +1291,11 @@ func TestLLMObsLifecycle(t *testing.T) {
 		// when LLMObs is enabled, which is the expected behavior in real usage.
 		tracer.Flush()
 
-		// Verify span was flushed immediately using the channel
-		select {
-		case span := <-tt.LLMSpans:
-			assert.Equal(t, "flush-test-span", span.Name)
-			break
-		case <-time.After(100 * time.Millisecond):
-			t.Fatal("Expected LLMObs span to be flushed immediately, but timed out")
-		}
+		// Verify span was flushed immediately
+		assert.Eventually(t, func() bool {
+			return len(tt.Payloads.LLMSpans) == 1
+		}, 100*time.Millisecond, 10*time.Millisecond, "Expected LLMObs span to be flushed immediately")
+		assert.Equal(t, "flush-test-span", tt.Payloads.LLMSpans[0])
 	})
 	t.Run("flush-without-active-llmobs", func(t *testing.T) {
 		// Ensure no active LLMObs
@@ -1617,6 +1542,57 @@ func TestLLMObsLifecycle(t *testing.T) {
 		require.NotNil(t, ll.Config.AgentlessEnabled, "AgentlessEnabled should not be nil when explicitly set")
 		assert.False(t, *ll.Config.AgentlessEnabled, "Explicit agentless=false should override default")
 		assert.False(t, ll.Config.ResolvedAgentlessEnabled, "Explicit agentless=false should override default")
+	})
+}
+
+func BenchmarkStartSpan(b *testing.B) {
+	run := func(b *testing.B, ll *llmobs.LLMObs, tt *testtracer.TestTracer, done chan struct{}) {
+		b.Log("starting benchmark")
+
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
+			span.Finish(llmobs.FinishSpanConfig{})
+		}
+		b.StopTimer()
+
+		b.Log("finished benchmark")
+
+		b.Log("waiting for spans")
+
+		tt.WaitFor(b, 10*time.Second, func(payloads *testtracer.Payloads) bool {
+			return len(payloads.Spans) > 0 && len(payloads.LLMSpans) > 0
+		})
+	}
+
+	b.Run("basic", func(b *testing.B) {
+		tt, ll := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
+		done := make(chan struct{})
+		run(b, ll, tt, done)
+	})
+	b.Run("periodic-flush", func(b *testing.B) {
+		tt, ll := testTracer(b, testtracer.WithRequestDelay(500*time.Millisecond))
+
+		ticker := time.NewTicker(10 * time.Microsecond)
+		defer ticker.Stop()
+
+		done := make(chan struct{})
+
+		// force flushes to test if StartSpan gets blocked while the tracer is sending payloads
+		go func() {
+			for {
+				select {
+				case <-ticker.C:
+					ll.Flush()
+
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		run(b, ll, tt, done)
 	})
 }
 
