@@ -77,6 +77,6 @@ const (
 	// SpanTypeGraphQL marks a span as a graphql operation.
 	SpanTypeGraphQL = "graphql"
 
-	// SpanTypeLLM mas a span as an LLM operation.
+	// SpanTypeLLM marks a span as an LLM operation.
 	SpanTypeLLM = "llm"
 )
