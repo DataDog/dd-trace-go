@@ -847,7 +847,7 @@ func TestSpanError(t *testing.T) {
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.error)
 
-	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`, `_dd.tags.processes`
+	// '+4' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`, `_dd.tags.processes`
 	t.Logf("%q\n", span.meta)
 	assert.Equal(nMeta+4, len(span.meta))
 	assert.Equal("", span.meta[ext.ErrorMsg])
