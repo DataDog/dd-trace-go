@@ -1,0 +1,42 @@
+stages:
+  - setup-benchmark
+  - benchmark
+
+variables:
+  BENCHMARK_URL: "https://github.com/DataDog/apm-sdks-benchmarks.git"
+  BRANCH: "dario.castane/go"
+  DIR: "apm-sdks-benchmarks"
+
+setup-benchmark:
+  image: docker:latest
+  stage: setup
+  run: |-
+    git clone --branch $BRANCH $BENCHMARK_URL $DIR
+    cd $DIR
+    cp flow/webserver/env.template .env
+    cat >> .env << EOF
+    LANGUAGE=go
+    FLOW=webserver
+    APP=go-prof-app
+    BP_BENCHMARKS_CONFIGURATION=${CONFIG}
+    EOF
+    chmod +x run-full-benchmarks.sh
+  artifacts:
+    paths:
+      - $DIR/
+    expire_in: 1d
+  timeout: 1h
+
+run_benchmark:
+  image: docker:latest
+  stage: apm-sdks-benchmarks
+  needs: setup-benchmark
+  parallel: 
+    matrix:
+      CONFIG:
+        - "datadog-latest"
+        - "baseline"
+  script: |-
+    cd $DIR
+    ./run-full-benchmarks.sh
+  timeout: 1h
