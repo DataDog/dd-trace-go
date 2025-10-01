@@ -168,7 +168,7 @@ type ResponseList[T any] struct {
 
 type ResponseData[T any] struct {
 	ID         string `json:"id"`
-	Type       string `json:"string"`
+	Type       string `json:"type"`
 	Attributes T      `json:"attributes"`
 }
 
@@ -187,10 +187,10 @@ type (
 	CreateExperimentResponse = Response[ExperimentView]
 )
 
-func (c *Transport) GetDatasetByName(ctx context.Context, name string) (*DatasetView, error) {
+func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string) (*DatasetView, error) {
 	q := url.Values{}
 	q.Set("filter[name]", name)
-	datasetPath := endpointPrefixDNE + "/datasets" + "?" + q.Encode()
+	datasetPath := fmt.Sprintf("%s/%s/datasets?%s", endpointPrefixDNE, url.PathEscape(projectID), q.Encode())
 	method := http.MethodGet
 
 	status, b, err := c.request(ctx, method, datasetPath, subdomainDNE, nil)
@@ -210,8 +210,8 @@ func (c *Transport) GetDatasetByName(ctx context.Context, name string) (*Dataset
 	return &ds, nil
 }
 
-func (c *Transport) CreateDataset(ctx context.Context, name, description string) (*DatasetView, error) {
-	_, err := c.GetDatasetByName(ctx, name)
+func (c *Transport) CreateDataset(ctx context.Context, name, description, projectID string) (*DatasetView, error) {
+	_, err := c.GetDatasetByName(ctx, name, projectID)
 	if err == nil {
 		return nil, errors.New("dataset already exists")
 	}
@@ -219,7 +219,7 @@ func (c *Transport) CreateDataset(ctx context.Context, name, description string)
 		return nil, err
 	}
 
-	path := endpointPrefixDNE + "/datasets"
+	path := fmt.Sprintf("%s/%s/datasets", endpointPrefixDNE, url.PathEscape(projectID))
 	method := http.MethodPost
 	body := CreateDatasetRequest{
 		Data: RequestData[DatasetCreate]{
@@ -320,9 +320,9 @@ func (c *Transport) BatchUpdateDataset(
 	return newDatasetVersion, newRecordIDs, nil
 }
 
-func (c *Transport) GetDatasetWithRecords(ctx context.Context, name string) (*DatasetView, []DatasetRecordView, error) {
+func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID string) (*DatasetView, []DatasetRecordView, error) {
 	// 1) Fetch record by name
-	ds, err := c.GetDatasetByName(ctx, name)
+	ds, err := c.GetDatasetByName(ctx, name, projectID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -332,7 +332,7 @@ func (c *Transport) GetDatasetWithRecords(ctx context.Context, name string) (*Da
 	recordsPath := fmt.Sprintf("%s/datasets/%s/records", endpointPrefixDNE, url.PathEscape(ds.ID))
 	status, b, err := c.request(ctx, method, recordsPath, subdomainDNE, nil)
 	if err != nil || status != http.StatusOK {
-		return nil, nil, fmt.Errorf("get dataset %q records failed: %v (status=%d, body=%s)", name, err, status, string(b))
+		return nil, nil, fmt.Errorf("get dataset records failed: %v (name=%q, status=%d)", err, name, status)
 	}
 
 	var recordsResp GetDatasetRecordsResponse

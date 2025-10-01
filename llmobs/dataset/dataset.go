@@ -25,7 +25,8 @@ import (
 )
 
 var (
-	errRequiresAppKey = errors.New(`an app key must be provided for the dataset configured via the DD_APP_KEY environment variable`)
+	errRequiresAppKey      = errors.New(`an app key must be provided for the dataset configured via the DD_APP_KEY environment variable`)
+	errRequiresProjectName = errors.New(`a project name must be provided for the dataset configured via the DD_LLM_OBS_ML_APP environment variable or tracer.WithLLMObsMLApp()`)
 )
 
 const experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
@@ -113,8 +114,17 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 	if ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
+	if ll.Config.ProjectName == "" {
+		return nil, errRequiresProjectName
+	}
 
-	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description)
+	// Get or create project
+	project, err := ll.Transport.GetOrCreateProject(ctx, ll.Config.ProjectName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create project: %w", err)
+	}
+
+	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description, project.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -154,9 +164,18 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	if ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
+	if ll.Config.ProjectName == "" {
+		return nil, errRequiresProjectName
+	}
+
+	// Get or create project
+	project, err := ll.Transport.GetOrCreateProject(ctx, ll.Config.ProjectName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create project: %w", err)
+	}
 
 	// 1) Create dataset
-	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description)
+	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description, project.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -262,7 +281,19 @@ func Pull(ctx context.Context, name string) (*Dataset, error) {
 	if err != nil {
 		return nil, err
 	}
-	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name)
+
+	// Validate required fields
+	if ll.Config.ProjectName == "" {
+		return nil, errRequiresProjectName
+	}
+
+	// Get or create project
+	project, err := ll.Transport.GetOrCreateProject(ctx, ll.Config.ProjectName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get or create project: %w", err)
+	}
+
+	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name, project.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}

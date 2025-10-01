@@ -109,6 +109,23 @@ func TestDatasetCreation(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "an app key must be provided")
 	})
+	t.Run("missing-project-name", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "test"},
+				ExpectedOutput: "answer",
+			},
+		}
+
+		_, err := Create(context.Background(), "test-dataset", records)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "project name must be provided")
+	})
 	t.Run("empty-records", func(t *testing.T) {
 		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
@@ -363,6 +380,25 @@ What is the capital of Italy?,Rome`
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to open csv")
 	})
+	t.Run("csv-missing-project-name", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
+		defer tt.Stop()
+
+		csvFile := createTempCSV(t, "question,answer\nWhat is 2+2?,4\n")
+		defer os.Remove(csvFile)
+
+		_, err := CreateFromCSV(
+			context.Background(),
+			"test-dataset",
+			csvFile,
+			[]string{"question"},
+		)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "project name must be provided")
+	})
 }
 
 func TestDatasetPull(t *testing.T) {
@@ -388,6 +424,16 @@ func TestDatasetPull(t *testing.T) {
 		_, err := Pull(context.Background(), "nonexistent-dataset")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get dataset")
+	})
+	t.Run("pull-missing-project-name", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
+		defer tt.Stop()
+
+		_, err := Pull(context.Background(), "existing-dataset")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "project name must be provided")
 	})
 }
 
@@ -620,13 +666,15 @@ func generateRandomRecords(n int) []*Record {
 }
 
 func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
+	tracerOpts := []tracer.StartOption{
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-app"),
+		tracer.WithLLMObsProjectName("test-project"),
+		tracer.WithService("test-service"),
+		tracer.WithLogStartup(false),
+	}
 	defaultOpts := []testtracer.Option{
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-app"),
-			tracer.WithService("test-service"),
-			tracer.WithLogStartup(false),
-		),
+		testtracer.WithTracerStartOpts(tracerOpts...),
 		testtracer.WithMockResponses(createMockHandler()),
 	}
 	allOpts := append(defaultOpts, opts...)
@@ -641,19 +689,52 @@ func createMockHandler() testtracer.MockResponseFunc {
 
 	return func(r *http.Request) *http.Response {
 		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+		if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
+			return nil
+		}
+		path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
 
 		switch {
-		case path == "/api/unstable/llm-obs/v1/datasets" && r.Method == http.MethodPost:
-			return handleMockDatasetCreate(r, state)
-		case path == "/api/unstable/llm-obs/v1/datasets" && r.Method == http.MethodGet:
-			return handleMockDatasetGet(r, state)
-		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-			return handleMockDatasetGet(r, state)
-		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/datasets/") && strings.HasSuffix(path, "/batch_update"):
+		case path == "/projects" && r.Method == http.MethodPost:
+			return handleMockProjectCreate(r)
+
+		case strings.HasPrefix(path, "/datasets") && strings.HasSuffix(path, "/batch_update"):
 			return handleMockDatasetBatchUpdate(r)
+
+		case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
+			return handleMockDatasetGet(r, state)
+
+		case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
+			return handleMockDatasetGet(r, state)
+
+		case strings.Contains(path, "/datasets") && r.Method == http.MethodPost:
+			return handleMockDatasetCreate(r, state)
+
 		default:
 			return nil
 		}
+	}
+}
+
+func handleMockProjectCreate(r *http.Request) *http.Response {
+	// Mock project creation - always return the same project
+	response := llmobstransport.CreateProjectResponse{
+		Data: llmobstransport.ResponseData[llmobstransport.ProjectView]{
+			ID:   "test-project-id",
+			Type: "projects",
+			Attributes: llmobstransport.ProjectView{
+				ID:   "test-project-id",
+				Name: "test-project",
+			},
+		},
+	}
+	respData, _ := json.Marshal(response)
+	return &http.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader(respData)),
+		Request:    r,
 	}
 }
 
@@ -848,11 +929,11 @@ func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
 	attrs := batchReq.Data.Attributes
 
 	// Create response data for updated records first, then inserted records
-	var responseData []llmobstransport.ResponseData[llmobstransport.DatasetRecordView]
+	var response llmobstransport.BatchUpdateDatasetResponse
 
 	// Add updated records (these keep their existing IDs)
 	for _, updateRec := range attrs.UpdateRecords {
-		responseData = append(responseData, llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
+		response.Data = append(response.Data, llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
 			ID:   updateRec.ID, // Keep the existing ID for updates
 			Type: "dataset_records",
 			Attributes: llmobstransport.DatasetRecordView{
@@ -867,7 +948,7 @@ func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
 	// Add inserted records (these get new IDs)
 	for i, insertRec := range attrs.InsertRecords {
 		newID := fmt.Sprintf("new-record-id-%d", i+1)
-		responseData = append(responseData, llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
+		response.Data = append(response.Data, llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
 			ID:   newID,
 			Type: "dataset_records",
 			Attributes: llmobstransport.DatasetRecordView{
@@ -879,9 +960,6 @@ func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
 		})
 	}
 
-	response := llmobstransport.BatchUpdateDatasetResponse{
-		Data: responseData,
-	}
 	respData, _ := json.Marshal(response)
 	return &http.Response{
 		Status:     "200 OK",
