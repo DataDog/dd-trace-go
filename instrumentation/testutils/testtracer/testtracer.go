@@ -316,9 +316,13 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 		return rt.emptyResponse(r)
 	}
 
-	var resp *http.Response
+	var (
+		resp            *http.Response
+		respOverwritten = false
+	)
 	if rt.mockResponse != nil {
 		resp = rt.mockResponse(r)
+		respOverwritten = true
 	}
 	if resp == nil {
 		resp = rt.emptyResponse(r)
@@ -328,7 +332,9 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 	case "/v0.4/traces":
 		rt.handleTraces(r)
 	case "/info":
-		rt.handleInfo(r)
+		if !respOverwritten {
+			resp = rt.handleInfo(r)
+		}
 	case "/evp_proxy/v2/api/v2/llmobs", "/api/v2/llmobs":
 		rt.handleLLMObsSpanEvents(r)
 	case "/evp_proxy/v2/api/intake/llm-obs/v2/eval-metric", "/api/intake/llm-obs/v2/eval-metric":

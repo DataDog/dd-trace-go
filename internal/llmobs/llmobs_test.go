@@ -1295,7 +1295,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 		assert.Eventually(t, func() bool {
 			return len(tt.Payloads.LLMSpans) == 1
 		}, 100*time.Millisecond, 10*time.Millisecond, "Expected LLMObs span to be flushed immediately")
-		assert.Equal(t, "flush-test-span", tt.Payloads.LLMSpans[0])
+		assert.Equal(t, "flush-test-span", tt.Payloads.LLMSpans[0].Name)
 	})
 	t.Run("flush-without-active-llmobs", func(t *testing.T) {
 		// Ensure no active LLMObs

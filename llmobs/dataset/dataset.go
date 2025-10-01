@@ -24,6 +24,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+var (
+	errRequiresAppKey = errors.New(`an app key must be provided for the dataset configured via the DD_APP_KEY environment variable`)
+)
+
 const experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
 
 // Dataset represents a dataset for DataDog LLM Observability experiments.
@@ -95,7 +99,6 @@ func (u *RecordUpdate) merge(new RecordUpdate) {
 }
 
 // Create initializes a Dataset and pushes it to DataDog.
-// FIXME(rarguelloF): this will likely timeout if the dataset is big
 func Create(ctx context.Context, name string, records []Record, opts ...CreateOption) (*Dataset, error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
@@ -106,6 +109,11 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 		opt(cfg)
 	}
 
+	// Validate required fields
+	if ll.Config.TracerConfig.APPKey == "" {
+		return nil, errRequiresAppKey
+	}
+
 	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dataset: %w", err)
@@ -114,6 +122,7 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 		id:          resp.ID,
 		name:        resp.Name,
 		description: resp.Description,
+		version:     resp.CurrentVersion,
 	}
 	ds.Append(records...)
 	if len(ds.records) > 0 {
@@ -131,8 +140,6 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 //   - Maximum field size is 10MB
 //   - All columns not specified in input_data_columns or expected_output_columns are automatically treated as metadata
 //   - The dataset is automatically pushed to Datadog after creation
-//
-// FIXME(rarguelloF): this will likely timeout if the dataset is big
 func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string, opts ...CreateOption) (*Dataset, error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
@@ -142,6 +149,12 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	for _, opt := range opts {
 		opt(cfg)
 	}
+
+	// Validate required fields
+	if ll.Config.TracerConfig.APPKey == "" {
+		return nil, errRequiresAppKey
+	}
+
 	// 1) Create dataset
 	resp, err := ll.Transport.CreateDataset(ctx, name, cfg.description)
 	if err != nil {
@@ -151,6 +164,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 		id:          resp.ID,
 		name:        resp.Name,
 		description: resp.Description,
+		version:     resp.CurrentVersion,
 	}
 
 	// 2) Open CSV with a large buffer so big fields are supported
@@ -243,7 +257,6 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 }
 
 // Pull fetches the given Dataset from DataDog.
-// FIXME(rarguelloF): this will likely timeout if the dataset is big
 func Pull(ctx context.Context, name string) (*Dataset, error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
@@ -340,7 +353,6 @@ func (d *Dataset) Update(index int, update RecordUpdate) {
 		return
 	}
 	d.updateRecords[rec.id] = &update
-	return
 }
 
 // Delete deletes the record at the given index.
@@ -362,17 +374,10 @@ func (d *Dataset) Delete(index int) {
 	}
 
 	// additionally, remove it from append/update in case it was one
-	if _, ok := d.appendRecords[rec.id]; ok {
-		delete(d.appendRecords, rec.id)
-	}
-	// TODO(rarguelloF): should this be done? or should I just keep/not remove the updates?
-	if _, ok := d.updateRecords[rec.id]; ok {
-		delete(d.updateRecords, rec.id)
-	}
+	delete(d.appendRecords, rec.id)
+	delete(d.updateRecords, rec.id)
 	d.deleteRecords[rec.id] = struct{}{}
 	d.records = slices.Delete(d.records, index, index+1)
-
-	return
 }
 
 // Push pushes the Dataset changes to DataDog.
@@ -409,7 +414,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 		})
 	}
 	del := make([]string, 0, len(d.deleteRecords))
-	for id, _ := range d.deleteRecords {
+	for id := range d.deleteRecords {
 		del = append(del, id)
 	}
 
@@ -419,7 +424,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 		return fmt.Errorf("failed to batch update dataset: %w", err)
 	}
 
-	// TODO(rarguelloF): can this actually happen? it seems this situation is pretty hard to handle gracefully
+	// TODO(rarguelloF): migrate to new backend response format so this is not necessary
 	if len(insertOldIDs) != len(newRecordIDs) {
 		return fmt.Errorf("received a different number of new records than what it was sent (want: %d, got :%d)", len(insertOldIDs), len(newRecordIDs))
 	}

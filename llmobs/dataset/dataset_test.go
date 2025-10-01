@@ -6,9 +6,548 @@
 package dataset
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
+
+const testAppKey = "test-app-key"
+
+func TestDatasetCreation(t *testing.T) {
+	t.Run("successful-creation", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "What is the capital of France?"},
+				ExpectedOutput: "Paris",
+				Metadata:       map[string]any{"category": "geography"},
+			},
+			{
+				Input:          map[string]any{"question": "What is the capital of Germany?"},
+				ExpectedOutput: "Berlin",
+				Metadata:       map[string]any{"category": "geography"},
+			},
+		}
+
+		ds, err := Create(
+			context.Background(),
+			"test-dataset",
+			records,
+			WithDescription("Test dataset for integration tests"),
+		)
+
+		require.NoError(t, err)
+		require.NotNil(t, ds)
+		assert.Equal(t, "test-dataset", ds.Name())
+		assert.Equal(t, "test-dataset-id", ds.ID())
+		assert.Equal(t, 2, ds.Version())
+		assert.Equal(t, 2, ds.Len())
+	})
+	t.Run("creation-with-options", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"text": "Hello world"},
+				ExpectedOutput: "greeting",
+			},
+		}
+
+		ds, err := Create(
+			context.Background(),
+			"test-dataset-with-options",
+			records,
+			WithDescription("Dataset with custom description"),
+		)
+
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "test-dataset-with-options", ds.Name())
+		assert.Equal(t, 1, ds.Len())
+	})
+	t.Run("missing-dd-app-key", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", "")
+
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "test"},
+				ExpectedOutput: "answer",
+			},
+		}
+
+		_, err := Create(
+			context.Background(),
+			"test-dataset",
+			records,
+		)
+
+		// Should fail - datasets now require DD_APP_KEY like experiments do
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an app key must be provided")
+	})
+	t.Run("empty-records", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds, err := Create(
+			context.Background(),
+			"test-dataset",
+			[]Record{},
+		)
+
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, 0, ds.Len())
+	})
+}
+
+func TestDatasetCRUDOperations(t *testing.T) {
+	t.Run("append-records", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// Create initial dataset
+		initialRecords := []Record{
+			{
+				Input:          map[string]any{"question": "What is 2+2?"},
+				ExpectedOutput: "4",
+			},
+		}
+
+		ds, err := Create(context.Background(), "test-dataset", initialRecords)
+		require.NoError(t, err)
+		assert.Equal(t, 1, ds.Len())
+
+		// Append new records
+		ds.Append(Record{
+			Input:          map[string]any{"question": "What is 3+3?"},
+			ExpectedOutput: "6",
+		})
+		ds.Append(Record{
+			Input:          map[string]any{"question": "What is 4+4?"},
+			ExpectedOutput: "8",
+		})
+
+		// Push changes
+		err = ds.Push(context.Background())
+		require.NoError(t, err)
+
+		// Verify length increased
+		assert.Equal(t, 3, ds.Len())
+	})
+	t.Run("update-records", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// Create dataset with records
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "Original question"},
+				ExpectedOutput: "Original answer",
+				Metadata:       map[string]any{"version": "v1"},
+			},
+		}
+
+		ds, err := Create(context.Background(), "test-dataset", records)
+		require.NoError(t, err)
+
+		// Update the record at index 0
+		ds.Update(0, RecordUpdate{
+			Input:          map[string]any{"question": "Updated question"},
+			ExpectedOutput: "Updated answer",
+			Metadata:       map[string]any{"version": "v2"},
+		})
+
+		// Push changes
+		err = ds.Push(context.Background())
+		require.NoError(t, err)
+
+		// Verify record was updated (we can't directly verify the content
+		// since the mock doesn't return updated data, but we can verify no errors)
+		assert.Equal(t, 1, ds.Len())
+	})
+	t.Run("delete-records", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// Create dataset with multiple records
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "Keep this"},
+				ExpectedOutput: "answer1",
+			},
+			{
+				Input:          map[string]any{"question": "Delete this"},
+				ExpectedOutput: "answer2",
+			},
+		}
+
+		ds, err := Create(context.Background(), "test-dataset", records)
+		require.NoError(t, err)
+		assert.Equal(t, 2, ds.Len())
+
+		// Delete the record at index 1
+		ds.Delete(1)
+
+		// Push changes
+		err = ds.Push(context.Background())
+		require.NoError(t, err)
+
+		// After deleting 1 record from 2, we should have 1 record left
+		assert.Equal(t, 1, ds.Len())
+	})
+	t.Run("push-without-id-fails", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// Create a dataset manually without going through Create()
+		ds := &Dataset{}
+		ds.Append(Record{
+			Input:          map[string]any{"test": "data"},
+			ExpectedOutput: "result",
+		})
+
+		// Push should fail because dataset has no ID
+		err := ds.Push(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "dataset has no ID")
+	})
+}
+
+func TestDatasetCSVImport(t *testing.T) {
+	t.Run("successful-csv-import", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// Create a temporary CSV file
+		csvContent := `question,answer,category
+What is the capital of France?,Paris,geography
+What is 2+2?,4,math
+What is the largest planet?,Jupiter,astronomy`
+
+		csvFile := createTempCSV(t, csvContent)
+		defer os.Remove(csvFile)
+
+		// Import from CSV
+		ds, err := CreateFromCSV(
+			context.Background(),
+			"csv-dataset",
+			csvFile,
+			[]string{"question"}, // input columns
+			WithDescription("Dataset imported from CSV"),
+			WithCSVExpectedOutputColumns([]string{"answer"}),
+			WithCSVMetadataColumns([]string{"category"}),
+		)
+
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "csv-dataset", ds.Name())
+		assert.Equal(t, 3, ds.Len())
+
+		// Verify records were imported correctly
+		rec, ok := ds.Record(0)
+		require.True(t, ok)
+		assert.Equal(t, "What is the capital of France?", rec.Input["question"])
+		assert.Equal(t, map[string]any{"answer": "Paris"}, rec.ExpectedOutput)
+		assert.Equal(t, map[string]any{"category": "geography"}, rec.Metadata)
+	})
+	t.Run("csv-with-custom-delimiter", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// Create CSV with semicolon delimiter
+		csvContent := `question;answer;category
+What is the capital of Spain?;Madrid;geography
+What is 5+5?;10;math`
+
+		csvFile := createTempCSV(t, csvContent)
+		defer os.Remove(csvFile)
+
+		ds, err := CreateFromCSV(
+			context.Background(),
+			"test-dataset",
+			csvFile,
+			[]string{"question"},
+			WithCSVDelimiter(';'),
+			WithCSVExpectedOutputColumns([]string{"answer"}),
+			WithCSVMetadataColumns([]string{"category"}),
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, 2, ds.Len())
+	})
+	t.Run("csv-missing-columns", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		csvContent := `question,answer
+What is the capital of Italy?,Rome`
+
+		csvFile := createTempCSV(t, csvContent)
+		defer os.Remove(csvFile)
+
+		// Try to import with missing metadata column
+		_, err := CreateFromCSV(
+			context.Background(),
+			"test-dataset",
+			csvFile,
+			[]string{"question"},
+			WithCSVMetadataColumns([]string{"category"}), // This column doesn't exist
+		)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "metadata columns not found in CSV header")
+	})
+	t.Run("csv-empty-file", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		csvFile := createTempCSV(t, "")
+		defer os.Remove(csvFile)
+
+		_, err := CreateFromCSV(
+			context.Background(),
+			"test-dataset",
+			csvFile,
+			[]string{"question"},
+		)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CSV file appears to be empty")
+	})
+	t.Run("csv-nonexistent-file", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		_, err := CreateFromCSV(
+			context.Background(),
+			"test-dataset",
+			"/nonexistent/file.csv",
+			[]string{"question"},
+		)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to open csv")
+	})
+}
+
+func TestDatasetPull(t *testing.T) {
+	t.Run("successful-pull", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds, err := Pull(context.Background(), "existing-dataset")
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "existing-dataset", ds.Name())
+		assert.Equal(t, "existing-dataset-id", ds.ID())
+		// Mock returns 2 records
+		assert.Equal(t, 2, ds.Len())
+	})
+	t.Run("pull-nonexistent-dataset", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// The mock handler will return an error for unknown datasets
+		_, err := Pull(context.Background(), "nonexistent-dataset")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get dataset")
+	})
+}
+
+func TestDatasetRecordIteration(t *testing.T) {
+	t.Run("records-iterator", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "Q1"},
+				ExpectedOutput: "A1",
+			},
+			{
+				Input:          map[string]any{"question": "Q2"},
+				ExpectedOutput: "A2",
+			},
+			{
+				Input:          map[string]any{"question": "Q3"},
+				ExpectedOutput: "A3",
+			},
+		}
+
+		ds, err := Create(context.Background(), "test-dataset", records)
+		require.NoError(t, err)
+
+		// Test iterator
+		count := 0
+		for i, rec := range ds.Records() {
+			assert.Equal(t, count, i)
+			assert.NotEmpty(t, rec.Input["question"])
+			count++
+		}
+		assert.Equal(t, 3, count)
+	})
+	t.Run("record-by-index", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "Test question"},
+				ExpectedOutput: "Test answer",
+			},
+		}
+
+		ds, err := Create(context.Background(), "test-dataset", records)
+		require.NoError(t, err)
+
+		// Test valid index
+		rec, ok := ds.Record(0)
+		require.True(t, ok)
+		assert.Equal(t, "Test question", rec.Input["question"])
+
+		// Test invalid indices
+		_, ok = ds.Record(-1)
+		assert.False(t, ok)
+
+		_, ok = ds.Record(1)
+		assert.False(t, ok)
+	})
+}
+
+func TestDatasetURL(t *testing.T) {
+	t.Setenv("DD_SITE", "my-dd-site")
+	t.Setenv("DD_APP_KEY", testAppKey)
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	ds, err := Create(context.Background(), "test-dataset", []Record{})
+	require.NoError(t, err)
+
+	url := ds.URL()
+	assert.Equal(t, url, "https://my-dd-site/llm/datasets/test-dataset-id")
+}
+
+func TestDDAppKeyHeader(t *testing.T) {
+	t.Run("dd-app-key-header-agentless", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+
+		var capturedHeaders http.Header
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
+				capturedHeaders = r.Header.Clone()
+			}
+			// Let the default dataset mock handler handle the response
+			return createMockHandler()(r)
+		}
+
+		// Force agentless mode explicitly
+		tt := testTracer(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsAgentlessEnabled(true),
+			),
+			testtracer.WithMockResponses(h),
+		)
+		defer tt.Stop()
+
+		_, err := Create(
+			context.Background(),
+			"test-dataset",
+			[]Record{
+				{
+					Input:          map[string]any{"question": "test"},
+					ExpectedOutput: "answer",
+				},
+			},
+			WithDescription("Test DD_APP_KEY header in agentless mode"),
+		)
+		require.NoError(t, err)
+
+		require.NotNil(t, capturedHeaders, "No headers were captured")
+		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agentless mode")
+	})
+	t.Run("dd-app-key-header-agent-mode", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
+
+		var capturedHeaders http.Header
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
+				capturedHeaders = r.Header.Clone()
+			}
+			// Let the default dataset mock handler handle the response
+			return createMockHandler()(r)
+		}
+
+		// Force agent mode explicitly
+		tt := testTracer(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsAgentlessEnabled(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"}, // Agent supports evp_proxy
+			}),
+			testtracer.WithMockResponses(h),
+		)
+		defer tt.Stop()
+
+		_, err := Create(
+			context.Background(),
+			"test-dataset",
+			[]Record{
+				{
+					Input:          map[string]any{"question": "test"},
+					ExpectedOutput: "answer",
+				},
+			},
+			WithDescription("Test DD_APP_KEY header in agent mode"),
+		)
+		require.NoError(t, err)
+
+		require.NotNil(t, capturedHeaders, "No headers were captured")
+		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agent mode too")
+	})
+}
 
 func BenchmarkDatasetIterator(b *testing.B) {
 	b.ReportAllocs()
@@ -37,7 +576,8 @@ func BenchmarkDatasetLoop(b *testing.B) {
 	b.StopTimer()
 }
 
-// randomString makes a random alphanumeric string of length n.
+// Helper functions
+
 func randomString(n int) string {
 	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	b := make([]rune, n)
@@ -47,7 +587,6 @@ func randomString(n int) string {
 	return string(b)
 }
 
-// randomMap makes a map[string]any with k entries of random strings/ints.
 func randomMap(k int) map[string]any {
 	m := make(map[string]any, k)
 	for i := 0; i < k; i++ {
@@ -62,7 +601,6 @@ func randomMap(k int) map[string]any {
 	return m
 }
 
-// randomRecord makes a single Record with randomized fields.
 func randomRecord() *Record {
 	return &Record{
 		id:             randomString(10),
@@ -73,11 +611,315 @@ func randomRecord() *Record {
 	}
 }
 
-// GenerateRandomRecords makes a slice of n random Records.
 func generateRandomRecords(n int) []*Record {
 	records := make([]*Record, n)
 	for i := 0; i < n; i++ {
 		records[i] = randomRecord()
 	}
 	return records
+}
+
+func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
+	defaultOpts := []testtracer.Option{
+		testtracer.WithTracerStartOpts(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+		),
+		testtracer.WithMockResponses(createMockHandler()),
+	}
+	allOpts := append(defaultOpts, opts...)
+	tt := testtracer.Start(t, allOpts...)
+	t.Cleanup(tt.Stop)
+	return tt
+}
+
+// createMockHandler creates a mock handler for dataset-related requests
+func createMockHandler() testtracer.MockResponseFunc {
+	state := newMockDatasetState()
+
+	return func(r *http.Request) *http.Response {
+		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+		switch {
+		case path == "/api/unstable/llm-obs/v1/datasets" && r.Method == http.MethodPost:
+			return handleMockDatasetCreate(r, state)
+		case path == "/api/unstable/llm-obs/v1/datasets" && r.Method == http.MethodGet:
+			return handleMockDatasetGet(r, state)
+		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
+			return handleMockDatasetGet(r, state)
+		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/datasets/") && strings.HasSuffix(path, "/batch_update"):
+			return handleMockDatasetBatchUpdate(r)
+		default:
+			return nil
+		}
+	}
+}
+
+func handleMockDatasetCreate(r *http.Request, state *mockDatasetState) *http.Response {
+	// Parse the request body to get the dataset name
+	body, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body)) // Reset body for potential re-reading
+
+	// The actual request structure matches CreateDatasetRequest
+	var createReq llmobstransport.CreateDatasetRequest
+	if err := json.Unmarshal(body, &createReq); err != nil {
+		return &http.Response{
+			Status:     "400 Bad Request",
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error": "invalid request body"}`)),
+			Request:    r,
+		}
+	}
+
+	name := createReq.Data.Attributes.Name
+	description := createReq.Data.Attributes.Description
+
+	// Check if dataset already exists
+	if _, exists := state.getDataset(name); exists {
+		return &http.Response{
+			Status:     "400 Bad Request",
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error": "dataset already exists"}`)),
+			Request:    r,
+		}
+	}
+
+	// Create the dataset
+	dataset := &llmobstransport.DatasetView{
+		ID:             "test-dataset-id",
+		Name:           name,
+		Description:    description,
+		CurrentVersion: 1,
+	}
+	state.addDataset(name, dataset)
+
+	response := llmobstransport.CreateDatasetResponse{
+		Data: llmobstransport.ResponseData[llmobstransport.DatasetView]{
+			ID:         "test-dataset-id",
+			Type:       "datasets",
+			Attributes: *dataset,
+		},
+	}
+	respData, _ := json.Marshal(response)
+	return &http.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader(respData)),
+		Request:    r,
+	}
+}
+
+func handleMockDatasetGet(r *http.Request, state *mockDatasetState) *http.Response {
+	// Parse query parameters to determine if this is a specific dataset request
+	name := r.URL.Query().Get("filter[name]")
+
+	if name != "" {
+		// Check if dataset exists in our state
+		dataset, exists := state.getDataset(name)
+
+		var response llmobstransport.GetDatasetResponse
+		if exists && name != "nonexistent-dataset" {
+			// Return the dataset if it exists
+			response = llmobstransport.GetDatasetResponse{
+				Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+					{
+						ID:         dataset.ID,
+						Type:       "datasets",
+						Attributes: *dataset,
+					},
+				},
+			}
+		} else if name == "existing-dataset" {
+			// Special case for pull tests - simulate an existing dataset
+			response = llmobstransport.GetDatasetResponse{
+				Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+					{
+						ID:   "existing-dataset-id",
+						Type: "datasets",
+						Attributes: llmobstransport.DatasetView{
+							ID:             "existing-dataset-id",
+							Name:           "existing-dataset",
+							Description:    "Existing dataset for pull tests",
+							CurrentVersion: 1,
+						},
+					},
+				},
+			}
+		} else {
+			// Return empty list if dataset doesn't exist (not a 404)
+			response = llmobstransport.GetDatasetResponse{
+				Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{},
+			}
+		}
+
+		respData, _ := json.Marshal(response)
+		return &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(respData)),
+			Request:    r,
+		}
+	}
+
+	// Check if this is a request for dataset records
+	if strings.Contains(r.URL.Path, "/records") {
+		recordsResponse := llmobstransport.GetDatasetRecordsResponse{
+			Data: []llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
+				{
+					ID:   "record-1",
+					Type: "dataset_records",
+					Attributes: llmobstransport.DatasetRecordView{
+						ID:             "record-1",
+						Input:          map[string]any{"question": "What is AI?"},
+						ExpectedOutput: "Artificial Intelligence",
+						Version:        1,
+					},
+				},
+				{
+					ID:   "record-2",
+					Type: "dataset_records",
+					Attributes: llmobstransport.DatasetRecordView{
+						ID:             "record-2",
+						Input:          map[string]any{"question": "What is ML?"},
+						ExpectedOutput: "Machine Learning",
+						Version:        1,
+					},
+				},
+			},
+		}
+		respData, _ := json.Marshal(recordsResponse)
+		return &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(respData)),
+			Request:    r,
+		}
+	}
+
+	// Return mock dataset
+	datasetResponse := llmobstransport.GetDatasetResponse{
+		Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+			{
+				ID:   "existing-dataset-id",
+				Type: "datasets",
+				Attributes: llmobstransport.DatasetView{
+					ID:             "existing-dataset-id",
+					Name:           "existing-dataset",
+					Description:    "Existing dataset from backend",
+					CurrentVersion: 1,
+				},
+			},
+		},
+	}
+
+	respData, _ := json.Marshal(datasetResponse)
+	return &http.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader(respData)),
+		Request:    r,
+	}
+}
+
+func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
+	// Parse the request body to understand what operations are being performed
+	body, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body)) // Reset body for potential re-reading
+
+	var batchReq llmobstransport.BatchUpdateDatasetRequest
+	if err := json.Unmarshal(body, &batchReq); err != nil {
+		return &http.Response{
+			Status:     "400 Bad Request",
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error": "invalid request body"}`)),
+			Request:    r,
+		}
+	}
+
+	attrs := batchReq.Data.Attributes
+
+	// Create response data for updated records first, then inserted records
+	var responseData []llmobstransport.ResponseData[llmobstransport.DatasetRecordView]
+
+	// Add updated records (these keep their existing IDs)
+	for _, updateRec := range attrs.UpdateRecords {
+		responseData = append(responseData, llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
+			ID:   updateRec.ID, // Keep the existing ID for updates
+			Type: "dataset_records",
+			Attributes: llmobstransport.DatasetRecordView{
+				ID:             updateRec.ID,
+				Input:          updateRec.Input,
+				ExpectedOutput: *updateRec.ExpectedOutput,
+				Version:        2,
+			},
+		})
+	}
+
+	// Add inserted records (these get new IDs)
+	for i, insertRec := range attrs.InsertRecords {
+		newID := fmt.Sprintf("new-record-id-%d", i+1)
+		responseData = append(responseData, llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
+			ID:   newID,
+			Type: "dataset_records",
+			Attributes: llmobstransport.DatasetRecordView{
+				ID:             newID,
+				Input:          insertRec.Input,
+				ExpectedOutput: insertRec.ExpectedOutput,
+				Version:        2,
+			},
+		})
+	}
+
+	response := llmobstransport.BatchUpdateDatasetResponse{
+		Data: responseData,
+	}
+	respData, _ := json.Marshal(response)
+	return &http.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader(respData)),
+		Request:    r,
+	}
+}
+
+func createTempCSV(t *testing.T, content string) string {
+	tmpDir := t.TempDir()
+	csvFile := filepath.Join(tmpDir, "test.csv")
+	err := os.WriteFile(csvFile, []byte(content), 0644)
+	require.NoError(t, err)
+	return csvFile
+}
+
+type mockDatasetState struct {
+	datasets map[string]*llmobstransport.DatasetView
+	mu       sync.RWMutex
+}
+
+func newMockDatasetState() *mockDatasetState {
+	return &mockDatasetState{
+		datasets: make(map[string]*llmobstransport.DatasetView),
+	}
+}
+
+func (s *mockDatasetState) addDataset(name string, dataset *llmobstransport.DatasetView) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.datasets[name] = dataset
+}
+
+func (s *mockDatasetState) getDataset(name string) (*llmobstransport.DatasetView, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	dataset, exists := s.datasets[name]
+	return dataset, exists
 }
