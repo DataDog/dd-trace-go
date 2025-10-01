@@ -85,7 +85,7 @@ func (m *haproxyMessage) IP(key string) net.IP {
 
 // SpanID extracts the `span_id` from the message and returns it as uint64.
 func (m *haproxyMessage) SpanID() (uint64, error) {
-	spanIdStr := m.String("span_id")
+	spanIdStr := m.String(VarSpanId)
 	if spanIdStr == "" {
 		return 0, fmt.Errorf("span_id not found in message")
 	}
@@ -117,18 +117,18 @@ func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions
 			return fmt.Errorf("failed to retreive the span from the context of the request")
 		}
 
-		timeout := requestContextData.msg.String("timeout")
+		timeout := requestContextData.msg.String(VarTimeout)
 		requestContextData.timeout = timeout
 
 		spanId := s.Context().SpanID()
 		spanIdStr := strconv.FormatUint(spanId, 10)
-		requestContextData.req.Actions.SetVar(action.ScopeTransaction, "span_id", spanIdStr)
+		requestContextData.req.Actions.SetVar(action.ScopeTransaction, VarSpanId, spanIdStr)
 
 		injectTracingHeaders(options.HeaderMutations, &requestContextData.req.Actions)
 	}
 
 	if options.Body {
-		requestContextData.req.Actions.SetVar(action.ScopeTransaction, "request_body", true)
+		requestContextData.req.Actions.SetVar(action.ScopeTransaction, VarRequestBody, true)
 	}
 
 	return nil
@@ -139,11 +139,11 @@ const headerCount = 5
 // haproxyTracingHeaderActions defines the names of the actions to set tracing headers for HAProxy.
 // These action names are used inside the HAProxy configuration to correctly set the tracing headers.
 var haproxyTracingHeaderActions = [headerCount]string{
-	"tracing_x_datadog_trace_id",
-	"tracing_x_datadog_parent_id",
-	"tracing_x_datadog_origin",
-	"tracing_x_datadog_sampling_priority",
-	"tracing_x_datadog_tags",
+	VarTracingHeaderTraceId,
+	VarTracingHeaderParentId,
+	VarTracingHeaderOrigin,
+	VarTracingHeaderSamplingPriority,
+	VarTracingHeaderTags,
 }
 
 // datadogTracingHeaders defines the names of tracing headers supported with the Datadog tracing format.
@@ -181,10 +181,10 @@ func blockActionFunc(ctx context.Context, data proxy.BlockActionOptions) error {
 		return fmt.Errorf("the haproxy context data have not been correctly initialized")
 	}
 
-	requestContext.req.Actions.SetVar(action.ScopeTransaction, "blocked", true)
-	requestContext.req.Actions.SetVar(action.ScopeTransaction, "headers", convertHeadersToString(data.Headers))
-	requestContext.req.Actions.SetVar(action.ScopeTransaction, "body", data.Body)
-	requestContext.req.Actions.SetVar(action.ScopeTransaction, "status_code", data.StatusCode)
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, VarBlocked, true)
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, VarHeaders, convertHeadersToString(data.Headers))
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, VarBody, data.Body)
+	requestContext.req.Actions.SetVar(action.ScopeTransaction, VarStatus, data.StatusCode)
 
 	return nil
 }

@@ -588,19 +588,19 @@ func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), 
 	}
 
 	mKv := kv.NewKV()
-	mKv.Add("method", method)
-	mKv.Add("path", path)
-	mKv.Add("headers", convertBinaryHeaders(headers))
-	mKv.Add("https", true)
-	mKv.Add("timeout", "1s")
+	mKv.Add(VarMethod, method)
+	mKv.Add(VarPath, path)
+	mKv.Add(VarHeaders, convertBinaryHeaders(headers))
+	mKv.Add(VarHttps, true)
+	mKv.Add(VarTimeout, "1s")
 
 	if ip, ok := headers["X-Forwarded-For"]; ok {
-		mKv.Add("ip", net.ParseIP(ip))
+		mKv.Add(VarIp, net.ParseIP(ip))
 	} else {
-		mKv.Add("ip", net.ParseIP("123.123.123.123"))
+		mKv.Add(VarIp, net.ParseIP("123.123.123.123"))
 	}
 
-	mKv.Add("ip_port", 12345)
+	mKv.Add(VarIpPort, 12345)
 
 	messages := message.Messages{
 		&message.Message{Name: "http-request-headers-msg", KV: mKv},
@@ -625,12 +625,12 @@ func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), 
 		return "", false, nil, blockedAct
 	}
 
-	spanId, err := findVar(pRequest.Actions, "span_id")
+	spanId, err := findVar(pRequest.Actions, VarSpanId)
 	if err != nil {
 		return "", false, nil, nil
 	}
 
-	requestedBody, err := findVar(pRequest.Actions, "request_body")
+	requestedBody, err := findVar(pRequest.Actions, VarRequestBody)
 	if err != nil {
 		requestedBody = false
 	}
@@ -651,8 +651,8 @@ func sendProcessingRequestBody(t *testing.T, handler func(*request.Request), bod
 	t.Helper()
 
 	mKv := kv.NewKV()
-	mKv.Add("body", body)
-	mKv.Add("span_id", spanId)
+	mKv.Add(VarBody, body)
+	mKv.Add(VarSpanId, spanId)
 
 	messages := message.Messages{
 		&message.Message{Name: "http-request-body-msg", KV: mKv},
@@ -689,9 +689,9 @@ func sendProcessingResponseHeaders(t *testing.T, handler func(*request.Request),
 	}
 
 	mKv := kv.NewKV()
-	mKv.Add("headers", convertBinaryHeaders(headers))
-	mKv.Add("status", status)
-	mKv.Add("span_id", spanId)
+	mKv.Add(VarHeaders, convertBinaryHeaders(headers))
+	mKv.Add(VarStatus, status)
+	mKv.Add(VarSpanId, spanId)
 
 	messages := message.Messages{
 		&message.Message{Name: "http-response-headers-msg", KV: mKv},
@@ -716,7 +716,7 @@ func sendProcessingResponseHeaders(t *testing.T, handler func(*request.Request),
 		return false, blockedAct
 	}
 
-	requestedBody, err := findVar(pRequest.Actions, "request_body")
+	requestedBody, err := findVar(pRequest.Actions, VarRequestBody)
 	if err != nil {
 		requestedBody = false
 	}
@@ -730,9 +730,8 @@ func sendProcessingResponseBody(t *testing.T, handler func(*request.Request), bo
 	t.Helper()
 
 	mKv := kv.NewKV()
-	mKv.Add("body_size", len(body))
-	mKv.Add("body", body)
-	mKv.Add("span_id", spanId)
+	mKv.Add(VarBody, body)
+	mKv.Add(VarSpanId, spanId)
 
 	messages := message.Messages{
 		&message.Message{Name: "http-response-body-msg", KV: mKv},
@@ -775,12 +774,12 @@ type blockedAction struct {
 }
 
 func createBlockedAction(actions action.Actions) (*blockedAction, error) {
-	blocked, err := findVar(actions, "blocked")
+	blocked, err := findVar(actions, VarBlocked)
 	if err != nil || !blocked.(bool) {
 		return nil, nil
 	}
 
-	headers, err := findVar(actions, "headers")
+	headers, err := findVar(actions, VarHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("blocked action without headers: %v", err)
 	}
@@ -790,12 +789,12 @@ func createBlockedAction(actions action.Actions) (*blockedAction, error) {
 		return nil, fmt.Errorf("blocked action with invalid headers: %v", err)
 	}
 
-	body, err := findVar(actions, "body")
+	body, err := findVar(actions, VarBody)
 	if err != nil {
 		return nil, fmt.Errorf("blocked action without body: %v", err)
 	}
 
-	statusCode, err := findVar(actions, "status_code")
+	statusCode, err := findVar(actions, VarStatus)
 	if err != nil {
 		return nil, fmt.Errorf("blocked action without status code: %v", err)
 	}
