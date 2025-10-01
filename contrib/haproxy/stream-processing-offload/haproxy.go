@@ -39,25 +39,22 @@ type AppsecHAProxyConfig struct {
 
 // NewHAProxySPOA creates a new AppSec HAProxy Stream Processing Offload Agent
 func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
-	spoa := &HAProxySPOA{
+	return &HAProxySPOA{
 		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
 			BlockingUnavailable:  config.BlockingUnavailable,
 			BodyParsingSizeLimit: config.BodyParsingSizeLimit,
-			Framework:            "github.com/haproxy/haproxy",
+			Framework:            "haproxy/haproxy",
 			Context:              config.Context,
 			ContinueMessageFunc:  continueActionFunc,
 			BlockMessageFunc:     blockActionFunc,
 		}, instr),
+		requestStateCache: initRequestStateCache(func(rs *proxy.RequestState) {
+			if rs.State.Ongoing() {
+				instr.Logger().Warn("haproxy_spoa: backend server timeout reached, closing the span for the request.\n")
+				_ = rs.Close()
+			}
+		}),
 	}
-
-	spoa.requestStateCache = initRequestStateCache(func(rs *proxy.RequestState) {
-		if rs.State.Ongoing() {
-			instr.Logger().Warn("haproxy_spoa: backend server timeout reached, closing the span for the request.\n")
-			_ = rs.Close()
-		}
-	})
-
-	return spoa
 }
 
 type haproxyRequestContextKey struct{}

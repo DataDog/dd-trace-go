@@ -50,8 +50,7 @@ func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoR
 	}
 
 	// Define if a body is present, based on Content-Length header
-	contentLength := headers.Get("Content-Length")
-	if contentLength != "" {
+	if contentLength := headers.Get("Content-Length"); contentLength != "" {
 		length, err := strconv.Atoi(contentLength)
 		if err != nil {
 			return proxy.PseudoRequest{}, fmt.Errorf("invalid Content-Length header: %v", err)
@@ -104,8 +103,7 @@ func (m *responseHeadersHAProxy) ExtractResponse() (proxy.PseudoResponse, error)
 	status := getIntValue(m.msg, "status_code")
 
 	// Set has body based on Content-Length header
-	contentLength := headers.Get("Content-Length")
-	if contentLength != "" {
+	if contentLength := headers.Get("Content-Length"); contentLength != "" {
 		length, err := strconv.Atoi(contentLength)
 		if err != nil {
 			return proxy.PseudoResponse{}, fmt.Errorf("invalid Content-Length header: %v", err)

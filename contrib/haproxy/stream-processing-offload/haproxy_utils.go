@@ -89,8 +89,8 @@ func spanIDFromMessage(msg *message.Message) (uint64, error) {
 
 // continueActionFunc sets HeadersResponseData data into the request variables answering a Request Headers message
 func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions) error {
-	requestContextData, _ := ctx.Value(haproxyRequestContextKey{}).(*haproxyRequestContextData)
-	if requestContextData == nil {
+	requestContextData, found := ctx.Value(haproxyRequestContextKey{}).(*haproxyRequestContextData)
+	if !found {
 		return fmt.Errorf("no haproxy request data found in context")
 	}
 
@@ -99,7 +99,7 @@ func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions
 	}
 
 	// Only set the span id from a request headers message
-	if options.MessageType == proxy.MessageTypeRequestHeaders {
+	if options.HeaderMutations != nil {
 		s, ok := tracer.SpanFromContext(ctx)
 		if !ok {
 			return fmt.Errorf("failed to retreive the span from the context of the request")
@@ -160,8 +160,8 @@ func injectTracingHeaders(headerMutations map[string][]string, actions *action.A
 
 // blockActionFunc sets blocked data into the request variables when the request is blocked
 func blockActionFunc(ctx context.Context, data proxy.BlockActionOptions) error {
-	requestContext, _ := ctx.Value(haproxyRequestContextKey{}).(*haproxyRequestContextData)
-	if requestContext == nil {
+	requestContext, found := ctx.Value(haproxyRequestContextKey{}).(*haproxyRequestContextData)
+	if !found {
 		return fmt.Errorf("no haproxy request data found in context")
 	}
 

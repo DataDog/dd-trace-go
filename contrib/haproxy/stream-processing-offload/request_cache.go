@@ -60,6 +60,5 @@ func storeRequestState(cache *ttlcache.Cache[uint64, *proxy.RequestState], spanI
 		timeoutValue = time.Minute // Fallback to a TTL of 1 minute
 	}
 
-	local := rs
-	cache.Set(spanId, &local, timeoutValue)
+	cache.Set(spanId, &rs, timeoutValue)
 }
