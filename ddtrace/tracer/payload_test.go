@@ -92,11 +92,11 @@ func assertProcessTags(t *testing.T, payload spanLists) {
 		for j, span := range spanList {
 			processTags, ok := span.meta[keyProcessTags]
 			if i+j == 0 {
-				assert.True(ok)
-				assert.True(strings.Contains(processTags, "entrypoint.name"))
+				assert.True(ok, "process tags should be present on the first span of each chunk only")
+				assert.Contains(processTags, "entrypoint.name", "process tags should have entrypoint.name")
 				break
 			}
-			require.False(t, ok, "chunk %d span %d", i, j)
+			require.False(t, ok, "process tags should be present on the first span of each chunk only (chunk: %d span: %d)", i, j)
 		}
 	}
 }
