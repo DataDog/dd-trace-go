@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"strconv"
 	"testing"
 	"time"
 
@@ -69,7 +68,7 @@ func TestAppSec(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/", 0)
+		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "dd-test-scanner-log-block"}, "GET", "/")
 
 		require.Equal(t, 403, blockedAct.statusCode)
 		require.Equal(t, "application/json", blockedAct.headers["Content-Type"])
@@ -87,7 +86,7 @@ func TestAppSec(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query", 0)
+		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Mistake Not..."}, "GET", "/hello?match=match-request-query")
 
 		require.Equal(t, 418, blockedAct.statusCode)
 		require.Equal(t, "application/json", blockedAct.headers["Content-Type"])
@@ -105,7 +104,7 @@ func TestAppSec(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/", 0)
+		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"Cookie": "foo=jdfoSDGFkivRG_234"}, "OPTIONS", "/")
 
 		require.Equal(t, 418, blockedAct.statusCode)
 		require.Equal(t, "application/json", blockedAct.headers["Content-Type"])
@@ -144,7 +143,7 @@ func TestAppSec(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222"}, "GET", "/", 0)
+		_, _, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Mistake not...", "X-Forwarded-For": "111.222.111.222"}, "GET", "/")
 
 		// Handle the immediate response
 		require.Equal(t, 403, blockedAct.statusCode)
@@ -230,13 +229,13 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		spanId, requestedRequestBody, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/", 0)
+		spanId, requestedRequestBody, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json", "Content-Length": "0"}, "GET", "/")
 		require.False(t, requestedRequestBody)
 		require.Nil(t, blockedAct)
 
 		// Send a processing response headers with the information that it would be followed by a body, but don't send the body
 		// It is mimicking a scenario where the response headers are sent and a body is present, but response body processing is disabled in the HAProxy configuration
-		requestedResponseBody, blockedAct := sendProcessingResponseHeaders(t, handler, map[string]string{"test": "match-no-block-response-header", "Content-Type": "application/json"}, "200", spanId, 100)
+		requestedResponseBody, blockedAct := sendProcessingResponseHeaders(t, handler, map[string]string{"test": "match-no-block-response-header", "Content-Type": "application/json"}, "200", spanId)
 		require.True(t, requestedResponseBody)
 		require.Nil(t, blockedAct)
 
@@ -258,7 +257,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		defer cleanup()
 
 		body := []byte(`{ "name": "$globals" }`)
-		spanId, requestedRequestBody, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/", len(body))
+		spanId, requestedRequestBody, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/")
 		require.True(t, requestedRequestBody)
 		require.Nil(t, blockedAct)
 
@@ -335,7 +334,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		}
 		requestBody := fmt.Sprintf(`{ "name": "$globals", "text": "%s" }`, largeText)
 
-		spanId, bodyRequested, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/", len(requestBody))
+		spanId, bodyRequested, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/")
 		require.True(t, bodyRequested)
 		require.Nil(t, blockedAct)
 
@@ -404,6 +403,93 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	})*/
 }
 
+func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	t.Setenv("_DD_APPSEC_PROXY_ENVIRONMENT", "true") // Enable API Security proxy sampler
+
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
+		rig := newHAProxyAppsecRig(t, false, 256)
+		mt := mocktracer.Start()
+
+		return rig.handler, mt, func() {
+			mt.Stop()
+		}
+	}
+
+	t.Run("only-headers-schema-returned", func(t *testing.T) {
+		handler, mt, cleanup := setup()
+		defer cleanup()
+
+		end2EndStreamRequest(t, handler, "/", "GET", map[string]string{"User-Agent": "Chromium"}, map[string]string{"Content-Type": "text/html"}, false, false, "", "")
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.res.body"))
+	})
+
+	t.Run("headers-and-req-body-schema-returned", func(t *testing.T) {
+		handler, mt, cleanup := setup()
+		defer cleanup()
+
+		end2EndStreamRequest(t, handler, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{"Content-Type": "text/html"}, false, false, `{"hello_request_body":"world"}`, "")
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}],"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Equal(t, `[{"hello_request_body":[8]}]`, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.res.body"))
+	})
+
+	t.Run("headers-and-res-body-schema-returned", func(t *testing.T) {
+		handler, mt, cleanup := setup()
+		defer cleanup()
+
+		end2EndStreamRequest(t, handler, "/", "GET", map[string]string{"User-Agent": "Chromium"}, map[string]string{"Content-Type": "application/json"}, false, false, "", `{"hello_response_body": "world"}`)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Equal(t, `[{"hello_response_body":[8]}]`, span.Tag("_dd.appsec.s.res.body"))
+	})
+
+	t.Run("all-schema-returned", func(t *testing.T) {
+		handler, mt, cleanup := setup()
+		defer cleanup()
+
+		end2EndStreamRequest(t, handler, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{"Content-Type": "application/json"}, false, false, `{"hello_request_body":"world"}`, `{"hello_response_body": "world"}`)
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}],"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Equal(t, `[{"hello_request_body":[8]}]`, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Equal(t, `[{"hello_response_body":[8]}]`, span.Tag("_dd.appsec.s.res.body"))
+	})
+}
+
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 0)
@@ -470,14 +556,14 @@ func TestGeneratedSpan(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		spanId, _, injectedHeaders, _ := sendProcessingRequestHeaders(t, handler, map[string]string{}, "GET", "/../../../resource-span/.?id=test", 0)
+		spanId, _, injectedHeaders, _ := sendProcessingRequestHeaders(t, handler, map[string]string{}, "GET", "/../../../resource-span/.?id=test")
 
 		// Check for trace propagation headers injected
 		require.Contains(t, injectedHeaders, "tracing_x_datadog_trace_id")
 		require.Contains(t, injectedHeaders, "tracing_x_datadog_parent_id")
 		require.Contains(t, injectedHeaders, "tracing_x_datadog_tags")
 
-		sendProcessingResponseHeaders(t, handler, nil, "200", spanId, 0)
+		sendProcessingResponseHeaders(t, handler, nil, "200", spanId)
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -513,7 +599,7 @@ func TestMalformedHAProxyProcessing(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		requestedBody, blockedAct := sendProcessingResponseHeaders(t, handler, map[string]string{}, "400", "0", 0)
+		requestedBody, blockedAct := sendProcessingResponseHeaders(t, handler, map[string]string{}, "400", "0")
 		require.False(t, requestedBody)
 		require.Nil(t, blockedAct)
 
@@ -535,7 +621,7 @@ func TestMalformedHAProxyProcessing(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		spanId, requestBody, _, blockedAct := sendProcessingRequestHeaders(t, handler, nil, "GET", "/%u002e/%ZZ/%tt/%uuuu/%uwu/%%", 0)
+		spanId, requestBody, _, blockedAct := sendProcessingRequestHeaders(t, handler, nil, "GET", "/%u002e/%ZZ/%tt/%uuuu/%uwu/%%")
 		require.False(t, requestBody)
 		require.Nil(t, blockedAct)
 		require.Empty(t, spanId)
@@ -570,7 +656,7 @@ type haproxyAppsecRig struct {
 
 // Helper functions
 
-func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), headers map[string]string, method string, path string, bodyLength int) (string, bool, map[string]string, *blockedAction) {
+func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), headers map[string]string, method string, path string) (string, bool, map[string]string, *blockedAction) {
 	t.Helper()
 
 	if headers == nil {
@@ -580,11 +666,6 @@ func sendProcessingRequestHeaders(t *testing.T, handler func(*request.Request), 
 	// Only for the test: specify the Host header
 	if _, ok := headers["Host"]; !ok {
 		headers["Host"] = "datadoghq.com"
-	}
-
-	// Define a content length when needed
-	if _, ok := headers["Content-Length"]; !ok && bodyLength > 0 {
-		headers["Content-Length"] = strconv.Itoa(bodyLength)
 	}
 
 	mKv := kv.NewKV()
@@ -680,13 +761,8 @@ func sendProcessingRequestBody(t *testing.T, handler func(*request.Request), bod
 	return nil
 }
 
-func sendProcessingResponseHeaders(t *testing.T, handler func(*request.Request), headers map[string]string, status string, spanId string, bodyLength int) (bool, *blockedAction) {
+func sendProcessingResponseHeaders(t *testing.T, handler func(*request.Request), headers map[string]string, status string, spanId string) (bool, *blockedAction) {
 	t.Helper()
-
-	// Define a content length when needed
-	if _, ok := headers["Content-Length"]; !ok && bodyLength > 0 {
-		headers["Content-Length"] = strconv.Itoa(bodyLength)
-	}
 
 	mKv := kv.NewKV()
 	mKv.Add(VarHeaders, convertBinaryHeaders(headers))
@@ -841,8 +917,7 @@ func end2EndStreamRequest(t *testing.T, handler func(*request.Request), path str
 
 	// First part: request
 	// 1- Send the headers
-	requestBodyLength := len(requestBody)
-	spanId, requestBodyRequested, _, blocked := sendProcessingRequestHeaders(t, handler, requestHeaders, method, path, requestBodyLength)
+	spanId, requestBodyRequested, _, blocked := sendProcessingRequestHeaders(t, handler, requestHeaders, method, path)
 	require.Nil(t, blocked, "expected no blocked action when sending request headers")
 
 	require.NotEmpty(t, spanId)
@@ -855,8 +930,7 @@ func end2EndStreamRequest(t *testing.T, handler func(*request.Request), path str
 
 	// Second part: response
 	// 1- Send the response headers
-	responseBodyLength := len(responseBody)
-	responseBodyRequested, blocked := sendProcessingResponseHeaders(t, handler, responseHeaders, "200", spanId, responseBodyLength)
+	responseBodyRequested, blocked := sendProcessingResponseHeaders(t, handler, responseHeaders, "200", spanId)
 	if blockOnResponseHeaders {
 		require.NotNil(t, blocked, "expected a blocked action when sending response headers")
 		return

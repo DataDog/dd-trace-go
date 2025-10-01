@@ -73,7 +73,9 @@ func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoR
 		scheme = "https"
 	}
 
-	// Define if a body is present, based on Content-Length header
+	m.hasBody = true
+
+	// Refine body presence if Content-Length is set
 	if contentLength := headers.Get("Content-Length"); contentLength != "" {
 		length, err := strconv.Atoi(contentLength)
 		if err != nil {
@@ -126,7 +128,9 @@ func (m *responseHeadersHAProxy) ExtractResponse() (proxy.PseudoResponse, error)
 
 	status := m.msg.Int(VarStatus)
 
-	// Set has body based on Content-Length header
+	m.hasBody = true
+
+	// Refine body presence if Content-Length is set
 	if contentLength := headers.Get("Content-Length"); contentLength != "" {
 		length, err := strconv.Atoi(contentLength)
 		if err != nil {
