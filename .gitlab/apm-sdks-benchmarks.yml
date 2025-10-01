@@ -29,7 +29,8 @@ setup-benchmark:
 run_benchmark:
   image: $BASE_CI_IMAGE
   stage: apm-sdks-benchmarks
-  needs: setup-benchmark
+  needs: 
+    - setup-benchmark
   rules:
     - if: $CI_COMMIT_BRANCH == "hannahkm/apm-sdks-benchmarks" # TODO: this should run on a schedule
       when: always
