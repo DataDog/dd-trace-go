@@ -91,3 +91,4 @@ include:
   - local: ".gitlab/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
   - local: ".gitlab/configuration-central-validation.yml"
+  - local: ".gitlab/apm-sdks-benchmarks.yml"

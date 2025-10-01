@@ -1,6 +1,6 @@
 stages:
   - setup-benchmark
-  - benchmark
+  - apm-sdks-benchmarks
 
 variables:
   BENCHMARK_URL: "https://github.com/DataDog/apm-sdks-benchmarks.git"
