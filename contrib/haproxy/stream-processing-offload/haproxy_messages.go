@@ -11,7 +11,6 @@ import (
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
-	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -25,20 +24,20 @@ var _ proxy.HTTPBody = (*messageBody)(nil)
 
 type messageRequestHeaders struct {
 	req     *request.Request
-	msg     *message.Message
+	msg     *haproxyMessage
 	hasBody bool
 }
 
 func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoRequest, error) {
-	headers, err := parseHAProxyReqHdrsBin(getBytesArrayValue(m.msg, "headers"))
+	headers, err := parseHAProxyReqHdrsBin(m.msg.Bytes("headers"))
 	if err != nil {
 		return proxy.PseudoRequest{}, err
 	}
 
 	authority := headers.Get("Host")
-	method := getStringValue(m.msg, "method")
-	path := getStringValue(m.msg, "path")
-	https := getBoolValue(m.msg, "https")
+	method := m.msg.String("method")
+	path := m.msg.String("path")
+	https := m.msg.Bool("https")
 
 	if authority == "" || method == "" || path == "" {
 		return proxy.PseudoRequest{}, fmt.Errorf("missing required values in the http request SPOE message")
@@ -59,9 +58,9 @@ func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoR
 	}
 
 	var remoteAddr string
-	remoteIp := getIPValue(m.msg, "ip")
+	remoteIp := m.msg.IP("ip")
 	if remoteIp != nil {
-		remotePort := strconv.Itoa(getIntValue(m.msg, "ip_port"))
+		remotePort := strconv.Itoa(m.msg.Int("ip_port"))
 		remoteAddr = remoteIp.String() + ":" + remotePort
 	}
 
@@ -90,17 +89,17 @@ func (m *messageRequestHeaders) SpanOptions(_ context.Context) []tracer.StartSpa
 }
 
 type responseHeadersHAProxy struct {
-	msg     *message.Message
+	msg     *haproxyMessage
 	hasBody bool
 }
 
 func (m *responseHeadersHAProxy) ExtractResponse() (proxy.PseudoResponse, error) {
-	headers, err := parseHAProxyReqHdrsBin(getBytesArrayValue(m.msg, "headers"))
+	headers, err := parseHAProxyReqHdrsBin(m.msg.Bytes("headers"))
 	if err != nil {
 		return proxy.PseudoResponse{}, err
 	}
 
-	status := getIntValue(m.msg, "status_code")
+	status := m.msg.Int("status_code")
 
 	// Set has body based on Content-Length header
 	if contentLength := headers.Get("Content-Length"); contentLength != "" {
@@ -126,7 +125,7 @@ func (m *responseHeadersHAProxy) MessageType() proxy.MessageType {
 }
 
 type messageBody struct {
-	msg *message.Message
+	msg *haproxyMessage
 	m   proxy.MessageType
 }
 
@@ -135,7 +134,7 @@ func (m messageBody) GetEndOfStream() bool {
 }
 
 func (m messageBody) GetBody() []byte {
-	return getBytesArrayValue(m.msg, "body")
+	return m.msg.Bytes("body")
 }
 
 func (m messageBody) MessageType() proxy.MessageType {

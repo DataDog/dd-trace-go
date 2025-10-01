@@ -13,7 +13,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 
 	"github.com/jellydator/ttlcache/v3"
-	"github.com/negasus/haproxy-spoe-go/message"
 )
 
 // initRequestStateCache creates a new cache for request states with a cleanup function that is called when a request state is evicted.
@@ -33,11 +32,11 @@ func initRequestStateCache(cleanup func(*proxy.RequestState)) *ttlcache.Cache[ui
 }
 
 // getCurrentRequest returns the current request state from the cache based on the `span_id` extracted from the message.
-func getCurrentRequest(cache *ttlcache.Cache[uint64, *proxy.RequestState], msg *message.Message) (*proxy.RequestState, error) {
+func getCurrentRequest(cache *ttlcache.Cache[uint64, *proxy.RequestState], msg *haproxyMessage) (*proxy.RequestState, error) {
 	if cache == nil {
 		return nil, fmt.Errorf("the request state cache is not initialized")
 	}
-	key, err := spanIDFromMessage(msg)
+	key, err := msg.SpanID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract span_id from message: %w", err)
 	}

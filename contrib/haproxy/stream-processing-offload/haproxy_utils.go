@@ -20,8 +20,19 @@ import (
 	"github.com/negasus/haproxy-spoe-go/message"
 )
 
-func getStringValue(msg *message.Message, key string) string {
-	if val, exists := msg.KV.Get(key); exists {
+// haproxyMessage wraps the SPOE message and provides typed accessors
+type haproxyMessage struct {
+	*message.Message
+}
+
+// newHaproxyMessage creates a new haproxyMessage wrapper of message.Message
+func newHaproxyMessage(msg *message.Message) *haproxyMessage {
+	return &haproxyMessage{Message: msg}
+}
+
+// String returns the string value for the given key, or returns an empty string if it's missing or not a string
+func (m *haproxyMessage) String(key string) string {
+	if val, exists := m.KV.Get(key); exists {
 		if str, ok := val.(string); ok {
 			return str
 		}
@@ -29,8 +40,9 @@ func getStringValue(msg *message.Message, key string) string {
 	return ""
 }
 
-func getIntValue(msg *message.Message, key string) int {
-	if val, exists := msg.KV.Get(key); exists {
+// Int returns the int value for the given key or 0 if missing
+func (m *haproxyMessage) Int(key string) int {
+	if val, exists := m.KV.Get(key); exists {
 		if i, ok := val.(int); ok {
 			return i
 		}
@@ -41,17 +53,19 @@ func getIntValue(msg *message.Message, key string) int {
 	return 0
 }
 
-func getBytesArrayValue(msg *message.Message, key string) []byte {
-	if val, exists := msg.KV.Get(key); exists {
-		if bytes, ok := val.([]byte); ok {
-			return bytes
+// Bytes returns the []byte value for the given key or nil if missing
+func (m *haproxyMessage) Bytes(key string) []byte {
+	if val, exists := m.KV.Get(key); exists {
+		if b, ok := val.([]byte); ok {
+			return b
 		}
 	}
 	return nil
 }
 
-func getBoolValue(msg *message.Message, key string) bool {
-	if val, exists := msg.KV.Get(key); exists {
+// Bool returns the bool value for the given key or false if missing
+func (m *haproxyMessage) Bool(key string) bool {
+	if val, exists := m.KV.Get(key); exists {
 		if b, ok := val.(bool); ok {
 			return b
 		}
@@ -59,8 +73,9 @@ func getBoolValue(msg *message.Message, key string) bool {
 	return false
 }
 
-func getIPValue(msg *message.Message, key string) net.IP {
-	if val, exists := msg.KV.Get(key); exists {
+// IP returns the net.IP value for the given key or nil if missing
+func (m *haproxyMessage) IP(key string) net.IP {
+	if val, exists := m.KV.Get(key); exists {
 		if ip, ok := val.(net.IP); ok {
 			return ip
 		}
@@ -68,14 +83,12 @@ func getIPValue(msg *message.Message, key string) net.IP {
 	return nil
 }
 
-// spanIDFromMessage extracts the `span_id` from the agent message to use as the key for the request state cache.
-func spanIDFromMessage(msg *message.Message) (uint64, error) {
-	spanIdStr := getStringValue(msg, "span_id")
-
+// SpanID extracts the `span_id` from the message and returns it as uint64.
+func (m *haproxyMessage) SpanID() (uint64, error) {
+	spanIdStr := m.String("span_id")
 	if spanIdStr == "" {
 		return 0, fmt.Errorf("span_id not found in message")
 	}
-
 	spanId, err := strconv.ParseUint(spanIdStr, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse span_id '%s': %v", spanIdStr, err)
@@ -83,7 +96,6 @@ func spanIDFromMessage(msg *message.Message) (uint64, error) {
 	if spanId == 0 {
 		return 0, fmt.Errorf("span_id is 0")
 	}
-
 	return spanId, nil
 }
 
@@ -105,7 +117,7 @@ func continueActionFunc(ctx context.Context, options proxy.ContinueActionOptions
 			return fmt.Errorf("failed to retreive the span from the context of the request")
 		}
 
-		timeout := getStringValue(requestContextData.msg, "timeout")
+		timeout := requestContextData.msg.String("timeout")
 		requestContextData.timeout = timeout
 
 		spanId := s.Context().SpanID()

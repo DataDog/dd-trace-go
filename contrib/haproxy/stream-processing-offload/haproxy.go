@@ -14,7 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 
 	"github.com/jellydator/ttlcache/v3"
-	"github.com/negasus/haproxy-spoe-go/message"
 	"github.com/negasus/haproxy-spoe-go/request"
 )
 
@@ -61,7 +60,7 @@ type haproxyRequestContextKey struct{}
 
 type haproxyRequestContextData struct {
 	req     *request.Request
-	msg     *message.Message
+	msg     *haproxyMessage
 	timeout string
 }
 
@@ -77,9 +76,10 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 			continue
 		}
 
-		reqState, _ := getCurrentRequest(s.requestStateCache, msg)
+		hMsg := newHaproxyMessage(msg)
+		reqState, _ := getCurrentRequest(s.requestStateCache, hMsg)
 
-		err = s.processMessage(req, msg, reqState)
+		err = s.processMessage(req, hMsg, reqState)
 		if err != nil && err != io.EOF {
 			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
 			return
@@ -88,7 +88,7 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 }
 
 // processMessage processes a single message from HAProxy based on its name.
-func (s *HAProxySPOA) processMessage(req *request.Request, msg *message.Message, currentRequest *proxy.RequestState) error {
+func (s *HAProxySPOA) processMessage(req *request.Request, msg *haproxyMessage, currentRequest *proxy.RequestState) error {
 	instr.Logger().Debug("haproxy_spoa: handling message: %s", msg.Name)
 
 	requestContextData := &haproxyRequestContextData{req: req, msg: msg}
@@ -138,8 +138,8 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *message.Message,
 }
 
 // cacheRequest stores the request state in the cache based on the `span_id` extracted from the message.
-func (s *HAProxySPOA) cacheRequest(reqState proxy.RequestState, msg *message.Message) error {
-	timeout := getStringValue(msg, "timeout")
+func (s *HAProxySPOA) cacheRequest(reqState proxy.RequestState, msg *haproxyMessage) error {
+	timeout := msg.String("timeout")
 
 	span, ok := reqState.Span()
 	if !ok {
