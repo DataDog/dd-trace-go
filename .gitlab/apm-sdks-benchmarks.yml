@@ -8,7 +8,7 @@ variables:
   DIR: "apm-sdks-benchmarks"
 
 setup-benchmark:
-  image: docker:latest
+  image: $BASE_CI_IMAGE
   stage: setup
   run: |-
     git clone --branch $BRANCH $BENCHMARK_URL $DIR
@@ -28,9 +28,13 @@ setup-benchmark:
   timeout: 1h
 
 run_benchmark:
-  image: docker:latest
+  image: $BASE_CI_IMAGE
   stage: apm-sdks-benchmarks
   needs: setup-benchmark
+  rules:
+    - if: $CI_COMMIT_BRANCH = hannahkm/apm-sdks-benchmarks # TODO: this should run on a schedule
+      when: always
+    - when: manual
   parallel: 
     matrix:
       CONFIG:
