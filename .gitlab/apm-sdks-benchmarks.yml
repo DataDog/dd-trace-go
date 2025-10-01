@@ -18,7 +18,6 @@ setup-benchmark:
     LANGUAGE=go
     FLOW=webserver
     APP=go-prof-app
-    BP_BENCHMARKS_CONFIGURATION=${CONFIG}
     EOF
     chmod +x run-full-benchmarks.sh
   artifacts:
@@ -32,7 +31,7 @@ run_benchmark:
   stage: apm-sdks-benchmarks
   needs: setup-benchmark
   rules:
-    - if: $CI_COMMIT_BRANCH = hannahkm/apm-sdks-benchmarks # TODO: this should run on a schedule
+    - if: $CI_COMMIT_BRANCH == "hannahkm/apm-sdks-benchmarks" # TODO: this should run on a schedule
       when: always
     - when: manual
   parallel: 
@@ -42,5 +41,6 @@ run_benchmark:
         - "baseline"
   script: |-
     cd $DIR
+    echo "BP_BENCHMARKS_CONFIGURATION=${CONFIG}" >> .env
     ./run-full-benchmarks.sh
   timeout: 1h
