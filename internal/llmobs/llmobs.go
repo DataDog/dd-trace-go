@@ -759,7 +759,7 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
 // PublicResourceBaseURL returns the base URL to access a resource (experiments, projects, etc.)
 func PublicResourceBaseURL() string {
 	site := "datadoghq.com"
-	if activeLLMObs != nil {
+	if activeLLMObs != nil && activeLLMObs.Config.TracerConfig.Site != "" {
 		site = activeLLMObs.Config.TracerConfig.Site
 	}
 

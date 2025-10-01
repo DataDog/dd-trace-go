@@ -31,7 +31,6 @@ const testAppKey = "test-app-key"
 
 func TestDatasetCreation(t *testing.T) {
 	t.Run("successful-creation", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -63,7 +62,6 @@ func TestDatasetCreation(t *testing.T) {
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("creation-with-options", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -86,10 +84,35 @@ func TestDatasetCreation(t *testing.T) {
 		assert.Equal(t, "test-dataset-with-options", ds.Name())
 		assert.Equal(t, 1, ds.Len())
 	})
-	t.Run("missing-dd-app-key", func(t *testing.T) {
+	t.Run("with-project-name-option", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"text": "Hello world"},
+				ExpectedOutput: "greeting",
+			},
+		}
+
+		ds, err := Create(
+			context.Background(),
+			"test-dataset-with-project",
+			records,
+			WithDescription("Dataset with custom project name"),
+			WithProjectName("custom-project"),
+		)
+
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "test-dataset-with-project", ds.Name())
+		assert.Equal(t, 1, ds.Len())
+	})
+	t.Run("missing-dd-app-key-agentless", func(t *testing.T) {
 		t.Setenv("DD_APP_KEY", "")
 
-		tt := testTracer(t)
+		// Use agentless mode to trigger app key requirement
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
 		defer tt.Stop()
 
 		records := []Record{
@@ -105,12 +128,36 @@ func TestDatasetCreation(t *testing.T) {
 			records,
 		)
 
-		// Should fail - datasets now require DD_APP_KEY like experiments do
+		// Should fail - datasets require DD_APP_KEY in agentless mode
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "an app key must be provided")
 	})
+	t.Run("missing-dd-app-key-agent-mode", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", "")
+
+		// Use agent mode - app key should not be required
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
+		defer tt.Stop()
+
+		records := []Record{
+			{
+				Input:          map[string]any{"question": "test"},
+				ExpectedOutput: "answer",
+			},
+		}
+
+		ds, err := Create(
+			context.Background(),
+			"test-dataset",
+			records,
+		)
+
+		// Should succeed - app key not required in agent mode
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "test-dataset", ds.Name())
+	})
 	t.Run("missing-project-name", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 
 		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
 		defer tt.Stop()
@@ -127,7 +174,6 @@ func TestDatasetCreation(t *testing.T) {
 		assert.Contains(t, err.Error(), "project name must be provided")
 	})
 	t.Run("empty-records", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -145,7 +191,6 @@ func TestDatasetCreation(t *testing.T) {
 
 func TestDatasetCRUDOperations(t *testing.T) {
 	t.Run("append-records", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -179,7 +224,6 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		assert.Equal(t, 3, ds.Len())
 	})
 	t.Run("update-records", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -211,7 +255,6 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		assert.Equal(t, 1, ds.Len())
 	})
 	t.Run("delete-records", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -242,7 +285,6 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		assert.Equal(t, 1, ds.Len())
 	})
 	t.Run("push-without-id-fails", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -262,7 +304,6 @@ func TestDatasetCRUDOperations(t *testing.T) {
 
 func TestDatasetCSVImport(t *testing.T) {
 	t.Run("successful-csv-import", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -298,8 +339,30 @@ What is the largest planet?,Jupiter,astronomy`
 		assert.Equal(t, map[string]any{"answer": "Paris"}, rec.ExpectedOutput)
 		assert.Equal(t, map[string]any{"category": "geography"}, rec.Metadata)
 	})
+	t.Run("csv-with-project-name-option", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		csvContent := "question,answer,category\nWhat is 2+2?,4,math\nWhat is the capital of Spain?,Madrid,geography\n"
+		csvFile := createTempCSV(t, csvContent)
+		defer os.Remove(csvFile)
+
+		ds, err := CreateFromCSV(
+			context.Background(),
+			"csv-dataset-with-project",
+			csvFile,
+			[]string{"question"},
+			WithCSVExpectedOutputColumns([]string{"answer"}),
+			WithCSVMetadataColumns([]string{"category"}),
+			WithProjectName("csv-custom-project"),
+		)
+
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "csv-dataset-with-project", ds.Name())
+		assert.Equal(t, 2, ds.Len())
+	})
 	t.Run("csv-with-custom-delimiter", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -325,7 +388,6 @@ What is 5+5?;10;math`
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("csv-missing-columns", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -348,7 +410,6 @@ What is the capital of Italy?,Rome`
 		assert.Contains(t, err.Error(), "metadata columns not found in CSV header")
 	})
 	t.Run("csv-empty-file", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -366,7 +427,6 @@ What is the capital of Italy?,Rome`
 		assert.Contains(t, err.Error(), "CSV file appears to be empty")
 	})
 	t.Run("csv-nonexistent-file", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -381,7 +441,6 @@ What is the capital of Italy?,Rome`
 		assert.Contains(t, err.Error(), "failed to open csv")
 	})
 	t.Run("csv-missing-project-name", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 
 		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
 		defer tt.Stop()
@@ -403,7 +462,6 @@ What is the capital of Italy?,Rome`
 
 func TestDatasetPull(t *testing.T) {
 	t.Run("successful-pull", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -416,7 +474,6 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, 2, ds.Len())
 	})
 	t.Run("pull-nonexistent-dataset", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -426,7 +483,6 @@ func TestDatasetPull(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to get dataset")
 	})
 	t.Run("pull-missing-project-name", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 
 		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsProjectName("")))
 		defer tt.Stop()
@@ -439,7 +495,6 @@ func TestDatasetPull(t *testing.T) {
 
 func TestDatasetRecordIteration(t *testing.T) {
 	t.Run("records-iterator", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -471,7 +526,6 @@ func TestDatasetRecordIteration(t *testing.T) {
 		assert.Equal(t, 3, count)
 	})
 	t.Run("record-by-index", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -500,16 +554,24 @@ func TestDatasetRecordIteration(t *testing.T) {
 }
 
 func TestDatasetURL(t *testing.T) {
-	t.Setenv("DD_SITE", "my-dd-site")
-	t.Setenv("DD_APP_KEY", testAppKey)
-	tt := testTracer(t)
-	defer tt.Stop()
+	run := func(t *testing.T) string {
+		tt := testTracer(t)
+		defer tt.Stop()
 
-	ds, err := Create(context.Background(), "test-dataset", []Record{})
-	require.NoError(t, err)
+		ds, err := Create(context.Background(), "test-dataset", []Record{})
+		require.NoError(t, err)
 
-	url := ds.URL()
-	assert.Equal(t, url, "https://my-dd-site/llm/datasets/test-dataset-id")
+		return ds.URL()
+	}
+	t.Run("with-dd-site", func(t *testing.T) {
+		t.Setenv("DD_SITE", "my-dd-site")
+		url := run(t)
+		assert.Equal(t, url, "https://my-dd-site/llm/datasets/test-dataset-id")
+	})
+	t.Run("empty-dd-site", func(t *testing.T) {
+		url := run(t)
+		assert.Equal(t, "https://app.datadoghq.com/llm/datasets/test-dataset-id", url)
+	})
 }
 
 func TestDDAppKeyHeader(t *testing.T) {
@@ -552,8 +614,6 @@ func TestDDAppKeyHeader(t *testing.T) {
 		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agentless mode")
 	})
 	t.Run("dd-app-key-header-agent-mode", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
-
 		var capturedHeaders http.Header
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
@@ -591,7 +651,46 @@ func TestDDAppKeyHeader(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agent mode too")
+		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should always be set in agent mode")
+		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set in agent mode")
+	})
+	t.Run("needs-app-key-header-agent-mode", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", "") // No app key provided
+
+		var capturedHeaders http.Header
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
+				capturedHeaders = r.Header.Clone()
+			}
+			// Let the default dataset mock handler handle the response
+			return createMockHandler()(r)
+		}
+
+		// Force agent mode explicitly
+		tt := testTracer(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsAgentlessEnabled(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"}, // Agent supports evp_proxy
+			}),
+			testtracer.WithMockResponses(h),
+		)
+		defer tt.Stop()
+
+		_, err := Create(context.Background(), "test-dataset", []Record{
+			{
+				Input:          map[string]any{"question": "test"},
+				ExpectedOutput: "answer",
+			},
+		})
+		require.NoError(t, err)
+
+		require.NotNil(t, capturedHeaders, "No headers were captured")
+		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should be set when no app key is provided in agent mode")
+		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set when no app key is provided")
 	})
 }
 
@@ -670,6 +769,7 @@ func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer 
 		tracer.WithLLMObsEnabled(true),
 		tracer.WithLLMObsMLApp("test-app"),
 		tracer.WithLLMObsProjectName("test-project"),
+		tracer.WithLLMObsAgentlessEnabled(false),
 		tracer.WithService("test-service"),
 		tracer.WithLogStartup(false),
 	}

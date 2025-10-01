@@ -30,7 +30,6 @@ const testAppKey = "test-app-key"
 
 func TestExperimentCreation(t *testing.T) {
 	t.Run("successful-creation", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -54,7 +53,6 @@ func TestExperimentCreation(t *testing.T) {
 		assert.Equal(t, "test-experiment", exp.Name)
 	})
 	t.Run("missing-project-name", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -68,17 +66,18 @@ func TestExperimentCreation(t *testing.T) {
 			ds,
 			evaluators,
 			experiment.WithDescription("Test experiment description"),
-			// No project name provided
+			experiment.WithProjectName(""),
 		)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "project name must be provided")
 	})
-	t.Run("missing-dd-app-key", func(t *testing.T) {
-		// DD_APP_KEY is mandatory for experiments
+	t.Run("missing-dd-app-key-agentless", func(t *testing.T) {
+		// DD_APP_KEY is mandatory for experiments in agentless mode
 		t.Setenv("DD_APP_KEY", "")
 
-		tt := testTracer(t)
+		// Use agentless mode to trigger app key requirement
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
 		defer tt.Stop()
 
 		_, err := experiment.New(
@@ -92,8 +91,31 @@ func TestExperimentCreation(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "an app key must be provided")
 	})
+	t.Run("missing-dd-app-key-agent-mode", func(t *testing.T) {
+		// DD_APP_KEY is not required in agent mode
+		t.Setenv("DD_APP_KEY", "")
+
+		// Use agent mode - app key should not be required
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		task := createTestTask()
+		evaluators := createTestEvaluators()
+
+		exp, err := experiment.New(
+			"test-experiment",
+			task,
+			ds,
+			evaluators,
+			experiment.WithDescription("Test experiment description"),
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+		assert.NotNil(t, exp)
+		assert.Equal(t, "test-experiment", exp.Name)
+	})
 	t.Run("project-name-from-env-variable", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		t.Setenv("DD_LLMOBS_PROJECT_NAME", "env-project")
 
 		tt := testTracer(t)
@@ -117,7 +139,6 @@ func TestExperimentCreation(t *testing.T) {
 		assert.Equal(t, "test-experiment-env-project", exp.Name)
 	})
 	t.Run("project-name-from-tracer-option", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 
 		// Use tracer option to set project name globally
 		tt := testTracer(t, testtracer.WithTracerStartOpts(
@@ -147,7 +168,6 @@ func TestExperimentCreation(t *testing.T) {
 		assert.Equal(t, "test-experiment-tracer-project", exp.Name)
 	})
 	t.Run("project-name-precedence", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		t.Setenv("DD_LLMOBS_PROJECT_NAME", "env-project")
 
 		// Use tracer option to set project name globally
@@ -228,7 +248,6 @@ func TestDDAppKeyHeader(t *testing.T) {
 		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agentless mode")
 	})
 	t.Run("dd-app-key-header-agent-mode", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 
 		var capturedHeaders http.Header
 		h := func(r *http.Request) *http.Response {
@@ -273,15 +292,15 @@ func TestDDAppKeyHeader(t *testing.T) {
 		_, err = exp.Run(context.Background())
 		require.NoError(t, err)
 
-		// Verify DD-APPLICATION-KEY header was set even in agent mode
+		// Verify X-Datadog-NeedsAppKey header is set in agent mode (app key is ignored)
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agent mode too")
+		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should always be set in agent mode")
+		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set in agent mode")
 	})
 }
 
 func TestExperimentRun(t *testing.T) {
 	t.Run("successful-run", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -334,7 +353,6 @@ func TestExperimentRun(t *testing.T) {
 		}
 	})
 	t.Run("run-with-options", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -368,7 +386,6 @@ func TestExperimentRun(t *testing.T) {
 		require.Len(t, spans, 1)
 	})
 	t.Run("task-error-handling", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -405,7 +422,6 @@ func TestExperimentRun(t *testing.T) {
 	})
 
 	t.Run("evaluator-error-handling", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", testAppKey)
 		tt := testTracer(t)
 		defer tt.Stop()
 
@@ -457,36 +473,42 @@ func TestExperimentRun(t *testing.T) {
 }
 
 func TestExperimentURL(t *testing.T) {
-	t.Setenv("DD_APP_KEY", testAppKey)
-	tt := testTracer(t)
-	defer tt.Stop()
+	run := func(t *testing.T) string {
+		tt := testTracer(t)
+		defer tt.Stop()
 
-	ds := createTestDataset(t)
-	task := createTestTask()
-	evaluators := createTestEvaluators()
+		ds := createTestDataset(t)
+		task := createTestTask()
+		evaluators := createTestEvaluators()
 
-	exp, err := experiment.New(
-		"test-experiment-url",
-		task,
-		ds,
-		evaluators,
-		experiment.WithDescription("Test experiment URL"),
-		experiment.WithProjectName("test-project"),
-	)
-	require.NoError(t, err)
+		exp, err := experiment.New(
+			"test-experiment-url",
+			task,
+			ds,
+			evaluators,
+			experiment.WithDescription("Test experiment URL"),
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
 
-	// Run the experiment to get an ID
-	_, err = exp.Run(context.Background())
-	require.NoError(t, err)
+		// Run the experiment to get an ID
+		_, err = exp.Run(context.Background())
+		require.NoError(t, err)
 
-	// Check URL generation
-	url := exp.URL()
-	assert.Contains(t, url, "/llm/experiments/")
-	assert.Contains(t, url, "test-experiment-id") // Mock ID from testtracer
+		return exp.URL()
+	}
+	t.Run("with-dd-site", func(t *testing.T) {
+		t.Setenv("DD_SITE", "my-dd-site")
+		url := run(t)
+		assert.Equal(t, "https://my-dd-site/llm/experiments/test-experiment-id", url)
+	})
+	t.Run("empty-dd-site", func(t *testing.T) {
+		url := run(t)
+		assert.Equal(t, "https://app.datadoghq.com/llm/experiments/test-experiment-id", url)
+	})
 }
 
 func TestExperimentMetricGeneration(t *testing.T) {
-	t.Setenv("DD_APP_KEY", testAppKey)
 	tt := testTracer(t)
 	defer tt.Stop()
 
@@ -549,6 +571,7 @@ func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer 
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("test-app"),
 			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
 			tracer.WithService("test-service"),
 			tracer.WithLogStartup(false),
 		),
@@ -572,10 +595,10 @@ func createMockHandler() testtracer.MockResponseFunc {
 			return handleMockExperiments(r)
 		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/experiments/") && strings.HasSuffix(path, "/events"):
 			return handleMockExperimentEvents(r)
-		case path == "/api/unstable/llm-obs/v1/datasets":
-			return handleMockDatasets(r)
-		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/datasets/") && strings.HasSuffix(path, "/batch_update"):
+		case strings.Contains(path, "/datasets") && strings.HasSuffix(path, "/batch_update"):
 			return handleMockDatasetBatchUpdate(r)
+		case strings.Contains(path, "/datasets"):
+			return handleMockDatasets(r)
 		default:
 			return nil
 		}

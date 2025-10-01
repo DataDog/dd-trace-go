@@ -162,9 +162,15 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		req.Header.Set(headerEVPSubdomain, subdomain)
 	}
 
-	// Set DD-APPLICATION-KEY header for datasets and experiments endpoints
-	if c.appKey != "" && strings.HasPrefix(path, endpointPrefixDNE) {
-		req.Header.Set("DD-APPLICATION-KEY", c.appKey)
+	// Set headers for datasets and experiments endpoints
+	if strings.HasPrefix(path, endpointPrefixDNE) {
+		if c.agentless && c.appKey != "" {
+			// In agentless mode, set the app key header if available
+			req.Header.Set("DD-APPLICATION-KEY", c.appKey)
+		} else if !c.agentless {
+			// In agent mode, always set the NeedsAppKey header (app key is ignored)
+			req.Header.Set("X-Datadog-NeedsAppKey", "true")
+		}
 	}
 	backoffStrat := &backoff.ExponentialBackOff{
 		InitialInterval:     defaultBackoff,

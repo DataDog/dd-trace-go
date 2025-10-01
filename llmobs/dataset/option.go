@@ -7,6 +7,7 @@ package dataset
 
 type createConfig struct {
 	description           string
+	projectName           string
 	csvDelimiter          rune
 	csvMetadataCols       []string
 	csvExpectedOutputCols []string
@@ -15,6 +16,7 @@ type createConfig struct {
 func defaultCreateConfig() *createConfig {
 	return &createConfig{
 		description:           "",
+		projectName:           "",
 		csvDelimiter:          ',',
 		csvMetadataCols:       nil,
 		csvExpectedOutputCols: nil,
@@ -26,6 +28,14 @@ type CreateOption func(cfg *createConfig)
 func WithDescription(description string) CreateOption {
 	return func(cfg *createConfig) {
 		cfg.description = description
+	}
+}
+
+// WithProjectName sets the project name for the dataset.
+// This overrides the global project name configured via DD_LLM_OBS_ML_APP or tracer.WithLLMObsProjectName().
+func WithProjectName(projectName string) CreateOption {
+	return func(cfg *createConfig) {
+		cfg.projectName = projectName
 	}
 }
 

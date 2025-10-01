@@ -25,8 +25,9 @@ import (
 )
 
 var (
-	errRequiresAppKey      = errors.New(`an app key must be provided for the dataset configured via the DD_APP_KEY environment variable`)
-	errRequiresProjectName = errors.New(`a project name must be provided for the dataset configured via the DD_LLM_OBS_ML_APP environment variable or tracer.WithLLMObsMLApp()`)
+	errRequiresProjectName = errors.New(`a project name must be provided for the dataset, either configured via the DD_LLMOBS_PROJECT_NAME
+environment variable, using the global tracer.WithLLMObsProjectName option, or dataset.WithProjectName option`)
+	errRequiresAppKey = errors.New(`an app key must be provided for the dataset in agentless mode configured via the DD_APP_KEY environment variable`)
 )
 
 const experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
@@ -111,15 +112,21 @@ func Create(ctx context.Context, name string, records []Record, opts ...CreateOp
 	}
 
 	// Validate required fields
-	if ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
-	if ll.Config.ProjectName == "" {
+
+	// Determine project name: option takes precedence over global config
+	projectName := cfg.projectName
+	if projectName == "" {
+		projectName = ll.Config.ProjectName
+	}
+	if projectName == "" {
 		return nil, errRequiresProjectName
 	}
 
 	// Get or create project
-	project, err := ll.Transport.GetOrCreateProject(ctx, ll.Config.ProjectName)
+	project, err := ll.Transport.GetOrCreateProject(ctx, projectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
@@ -161,15 +168,21 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	}
 
 	// Validate required fields
-	if ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
 	}
-	if ll.Config.ProjectName == "" {
+
+	// Determine project name: option takes precedence over global config
+	projectName := cfg.projectName
+	if projectName == "" {
+		projectName = ll.Config.ProjectName
+	}
+	if projectName == "" {
 		return nil, errRequiresProjectName
 	}
 
 	// Get or create project
-	project, err := ll.Transport.GetOrCreateProject(ctx, ll.Config.ProjectName)
+	project, err := ll.Transport.GetOrCreateProject(ctx, projectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}

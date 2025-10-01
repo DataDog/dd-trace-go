@@ -195,7 +195,7 @@ func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string
 
 	status, b, err := c.request(ctx, method, datasetPath, subdomainDNE, nil)
 	if err != nil || status != http.StatusOK {
-		return nil, fmt.Errorf("get dataset by name %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
+		return nil, fmt.Errorf("get dataset by name %q failed: %v", name, err)
 	}
 
 	var datasetResp GetDatasetResponse
@@ -233,7 +233,7 @@ func (c *Transport) CreateDataset(ctx context.Context, name, description, projec
 
 	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil {
-		return nil, fmt.Errorf("create dataset %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
+		return nil, fmt.Errorf("create dataset %q failed: %v", name, err)
 	}
 
 	log.Debug("llmobs/internal/transport.DatasetGetOrCreate: create dataset success (status code: %d)", status)
@@ -260,9 +260,9 @@ func (c *Transport) DeleteDataset(ctx context.Context, datasetIDs ...string) err
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
+	status, _, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
-		return fmt.Errorf("delete dataset %v failed: %v (status=%d, body=%s)", datasetIDs, err, status, string(b))
+		return fmt.Errorf("delete dataset %v failed: %v", datasetIDs, err)
 	}
 	return nil
 }
@@ -290,7 +290,7 @@ func (c *Transport) BatchUpdateDataset(
 
 	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
-		return -1, nil, fmt.Errorf("batch_update for dataset %q failed: %v (status=%d, body=%s)", datasetID, err, status, string(b))
+		return -1, nil, fmt.Errorf("batch_update for dataset %q failed: %v", datasetID, err)
 	}
 
 	var resp BatchUpdateDatasetResponse
@@ -364,7 +364,7 @@ func (c *Transport) GetOrCreateProject(ctx context.Context, name string) (*Proje
 	}
 	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
-		return nil, fmt.Errorf("create project %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
+		return nil, fmt.Errorf("create project %q failed: %v", name, err)
 	}
 
 	var resp CreateProjectResponse
@@ -410,7 +410,7 @@ func (c *Transport) CreateExperiment(
 
 	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil || status != http.StatusOK {
-		return nil, fmt.Errorf("create experiment %q failed: %v (status=%d, body=%s)", name, err, status, string(b))
+		return nil, fmt.Errorf("create experiment %q failed: %v", name, err)
 	}
 
 	var resp CreateExperimentResponse
@@ -445,7 +445,7 @@ func (c *Transport) PushExperimentEvents(
 
 	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
 	if err != nil {
-		return fmt.Errorf("post experiment eval metrics failed: %v (status=%d, body=%s)", err, status, string(b))
+		return fmt.Errorf("post experiment eval metrics failed: %v", err)
 	}
 	if status != http.StatusOK && status != http.StatusAccepted {
 		return fmt.Errorf("unexpected status %d: %s", status, string(b))
