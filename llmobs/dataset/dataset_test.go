@@ -27,7 +27,10 @@ import (
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
-const testAppKey = "test-app-key"
+const (
+	testAPIKey = "abcd1234efgh5678ijkl9012mnop3456"
+	testAppKey = "test-app-key"
+)
 
 func TestDatasetCreation(t *testing.T) {
 	t.Run("successful-creation", func(t *testing.T) {
@@ -109,6 +112,7 @@ func TestDatasetCreation(t *testing.T) {
 		assert.Equal(t, 1, ds.Len())
 	})
 	t.Run("missing-dd-app-key-agentless", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
 
 		// Use agentless mode to trigger app key requirement
@@ -591,6 +595,7 @@ func TestDatasetURL(t *testing.T) {
 
 func TestDDAppKeyHeader(t *testing.T) {
 	t.Run("dd-app-key-header-agentless", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", testAppKey)
 
 		var capturedHeaders http.Header

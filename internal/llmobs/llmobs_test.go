@@ -1253,6 +1253,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsEnabled(true),
 				tracer.WithLLMObsMLApp("app2"),
 				tracer.WithLogStartup(false),
+				tracer.WithLLMObsAgentlessEnabled(false),
 			),
 		)
 		defer tt2.Stop()
