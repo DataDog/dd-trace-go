@@ -26,7 +26,7 @@ import (
 
 const (
 	mlApp      = "gotest"
-	testApiKey = "abcd1234efgh5678ijkl9012mnop3456"
+	testAPIKey = "abcd1234efgh5678ijkl9012mnop3456"
 )
 
 func TestStartSpan(t *testing.T) {
@@ -1466,7 +1466,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 	})
 	t.Run("agentless-defaults-true-when-evp-proxy-unavailable", func(t *testing.T) {
 		// Set valid API key (32 chars, lowercase + numbers only)
-		t.Setenv("DD_API_KEY", testApiKey)
+		t.Setenv("DD_API_KEY", testAPIKey)
 
 		// When agent doesn't support evp_proxy/v2, should default to agentless=true
 		err := tracer.Start(

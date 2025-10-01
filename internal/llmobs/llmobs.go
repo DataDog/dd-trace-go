@@ -374,7 +374,7 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushSpanEvents(ctx, events); err != nil {
-				log.Error("llmobs: PushSpanEvents failed: %v", err)
+				log.Error("llmobs: PushSpanEvents failed: %v", err.Error())
 			} else {
 				log.Debug("llmobs: PushSpanEvents success")
 			}
@@ -394,7 +394,7 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushEvalMetrics(ctx, metrics); err != nil {
-				log.Error("llmobs: PushEvalMetrics failed: %v", err)
+				log.Error("llmobs: PushEvalMetrics failed: %v", err.Error())
 			} else {
 				log.Debug("llmobs: PushEvalMetrics success")
 			}
@@ -410,8 +410,6 @@ func (l *LLMObs) submitLLMObsSpan(span *Span) {
 }
 
 func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
-	log.Debug("creating span event from llmobs context: %+v", span.llmCtx)
-
 	meta := make(map[string]any)
 
 	spanKind := span.spanKind
@@ -631,11 +629,13 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	}
 
 	if parent, ok := ActiveLLMSpanFromContext(ctx); ok {
-		log.Debug("llmobs: found active llm span in context: %+v", parent)
+		log.Debug("llmobs: found active llm span in context: (trace_id: %q, span_id: %q, ml_app: %q)",
+			parent.TraceID(), parent.SpanID(), parent.MLApp())
 		span.parent = parent
 		span.llmTraceID = parent.llmTraceID
 	} else if propagated, ok := PropagatedLLMSpanFromContext(ctx); ok {
-		log.Debug("llmobs: found propagated llm span in context: %+v", propagated)
+		log.Debug("llmobs: found propagated llm span in context: (trace_id: %q, span_id: %q, ml_app: %q)",
+			propagated.TraceID, propagated.SpanID, propagated.MLApp)
 		span.propagated = propagated
 		span.llmTraceID = propagated.TraceID
 	} else {

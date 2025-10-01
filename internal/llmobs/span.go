@@ -302,8 +302,6 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	log.Debug("llmobs: annotating span with: %+v", a)
-
 	if s.finished {
 		log.Warn("llmobs: cannot annotate a finished span")
 		return

@@ -548,6 +548,7 @@ func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer 
 		testtracer.WithTracerStartOpts(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
 			tracer.WithService("test-service"),
 			tracer.WithLogStartup(false),
 		),

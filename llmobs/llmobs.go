@@ -379,7 +379,7 @@ func (s *noopSpan) AnnotateRetrievalIO(_ string, _ []RetrievedDocument, _ ...Ann
 func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (*baseSpan, context.Context, bool) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
-		log.Warn("llmobs: failed to start llmobs span: %v", err)
+		log.Warn("llmobs: failed to start llmobs span: %v", err.Error())
 		return nil, ctx, false
 	}
 	cfg := illmobs.StartSpanConfig{}

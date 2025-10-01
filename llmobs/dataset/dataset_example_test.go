@@ -117,7 +117,7 @@ func ExampleDataset_Update() {
 		log.Fatal(err)
 	}
 	defer tracer.Stop()
-	
+
 	ctx := context.Background()
 
 	// First, create the dataset

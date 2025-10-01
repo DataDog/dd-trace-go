@@ -33,11 +33,11 @@ func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span Bas
 
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
-		log.Warn("llmobs: failed to submit evaluation metric: %v", err)
+		log.Warn("llmobs: failed to submit evaluation metric: %v", err.Error())
 		return
 	}
 	if err := ll.SubmitEvaluation(cfg); err != nil {
-		log.Warn("llmobs: failed to submit evaluation metric: %v", err)
+		log.Warn("llmobs: failed to submit evaluation metric: %v", err.Error())
 	}
 }
 
@@ -66,11 +66,11 @@ func SubmitEvaluationFromTag[T EvaluationValue](label string, value T, tag JoinT
 
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
-		log.Warn("llmobs: failed to submit evaluation metric: %v", err)
+		log.Warn("llmobs: failed to submit evaluation metric: %v", err.Error())
 		return
 	}
 	if err := ll.SubmitEvaluation(cfg); err != nil {
-		log.Warn("llmobs: failed to submit evaluation metric: %v", err)
+		log.Warn("llmobs: failed to submit evaluation metric: %v", err.Error())
 	}
 }
 
