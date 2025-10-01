@@ -56,3 +56,23 @@ func WithCSVExpectedOutputColumns(cols []string) CreateOption {
 		cfg.csvExpectedOutputCols = cols
 	}
 }
+
+type pullConfig struct {
+	projectName string
+}
+
+func defaultPullConfig() *pullConfig {
+	return &pullConfig{
+		projectName: "",
+	}
+}
+
+type PullOption func(cfg *pullConfig)
+
+// WithPullProjectName sets the project name for pulling the dataset.
+// This overrides the global project name configured via DD_LLM_OBS_ML_APP or tracer.WithLLMObsProjectName().
+func WithPullProjectName(projectName string) PullOption {
+	return func(cfg *pullConfig) {
+		cfg.projectName = projectName
+	}
+}

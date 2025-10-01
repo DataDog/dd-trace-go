@@ -473,6 +473,21 @@ func TestDatasetPull(t *testing.T) {
 		// Mock returns 2 records
 		assert.Equal(t, 2, ds.Len())
 	})
+	t.Run("pull-with-project-name-option", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds, err := Pull(
+			context.Background(),
+			"existing-dataset",
+			WithPullProjectName("custom-pull-project"),
+		)
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "existing-dataset", ds.Name())
+		assert.Equal(t, "existing-dataset-id", ds.ID())
+		assert.Equal(t, 2, ds.Len())
+	})
 	t.Run("pull-nonexistent-dataset", func(t *testing.T) {
 		tt := testTracer(t)
 		defer tt.Stop()

@@ -289,19 +289,28 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 }
 
 // Pull fetches the given Dataset from DataDog.
-func Pull(ctx context.Context, name string) (*Dataset, error) {
+func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
 	}
 
-	// Validate required fields
-	if ll.Config.ProjectName == "" {
+	cfg := defaultPullConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	// Determine project name: option takes precedence over global config
+	projectName := cfg.projectName
+	if projectName == "" {
+		projectName = ll.Config.ProjectName
+	}
+	if projectName == "" {
 		return nil, errRequiresProjectName
 	}
 
 	// Get or create project
-	project, err := ll.Transport.GetOrCreateProject(ctx, ll.Config.ProjectName)
+	project, err := ll.Transport.GetOrCreateProject(ctx, projectName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
