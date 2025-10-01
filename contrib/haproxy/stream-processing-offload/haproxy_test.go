@@ -197,7 +197,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		end2EndStreamRequest(t, handler, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+		end2EndStreamRequest(t, handler, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "payload": {"name": "<script>alert(1)</script>" } }`, "")
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -375,22 +375,26 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.NotContains(t, span.Tags(), "_dd.appsec.json")
 	})
 
-	// This test is failing because the external processor is waiting for a body to run the waf on the response headers
-	// This scenario can happen if the processor never receive the body (due to a timeout, error in the app backend, ...)
-	/*t.Run("blocking-event-on-response-headers-with-body-not-sent", func(t *testing.T) {
+	// NOTE: This test simulates a scenario where the response body is never sent, even though it was requested by the processor.
+	// In reality, if HAProxy fails to send the body (e.g., due to a timeout or backend error), the processor times out and marks the request as blocked in the trace.
+	// However, this does not necessarily reflect what the client actually received, since we have no visibility into the real response.
+	// This test is validating this internal timeout/blocking behavior, not the actual client experience.
+	t.Run("blocking-event-on-response-headers-with-body-not-sent", func(t *testing.T) {
 		handler, mt, cleanup := setup()
 		defer cleanup()
 
-		spanId, bodyRequested, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/", 0)
-		require.False(t, bodyRequested)
+		spanId, bodyRequested, _, blockedAct := sendProcessingRequestHeaders(t, handler, map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, "GET", "/")
+		require.True(t, bodyRequested)
 		require.Nil(t, blockedAct)
 
 		// Send a processing response headers with the information that it would be followed by a body, but don't send the body
-		bodyRequested, blockedAct = sendProcessingResponseHeaders(t, handler, map[string]string{"test": "match-response-header", "Content-Type": "application/json"}, "200", spanId, 256)
+		bodyRequested, blockedAct = sendProcessingResponseHeaders(t, handler, map[string]string{"test": "match-response-header", "Content-Type": "application/json"}, "200", spanId)
 
 		// Res should be an immediate response with the blocking event
 		require.Nil(t, blockedAct)
-		require.False(t, bodyRequested)
+		require.True(t, bodyRequested)
+
+		time.Sleep(2 * time.Second)
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
@@ -400,7 +404,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		span := finished[0]
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
-	})*/
+	})
 }
 
 func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
