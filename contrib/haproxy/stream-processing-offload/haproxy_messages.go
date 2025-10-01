@@ -17,10 +17,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-// The following constants define the variable names used for communication between
+// The following constants define the variable or message names used for communication between
 // the Go SPOA agent and HAProxy, based on the SPOE configuration.
 // IMPORTANT: If you change any of these values, you MUST also update the corresponding
-// variable names in the HAProxy configuration to match, or the integration will break.
+// names in the HAProxy configuration to match, or the integration will break.
 const (
 	VarIp          = "ip"           // The remote IP address of the client as net.IP
 	VarIpPort      = "ip_port"      // The remote port of the client as an int.
@@ -40,6 +40,11 @@ const (
 	VarTracingHeaderOrigin           = "tracing_x_datadog_origin"            // The Datadog origin header of the request as a string.
 	VarTracingHeaderSamplingPriority = "tracing_x_datadog_sampling_priority" // The Datadog sampling priority header of the request as a string.
 	VarTracingHeaderTags             = "tracing_x_datadog_tags"              // The Datadog tags header of the request as a string.
+
+	MessageHTTPRequestHeaders  = "http-request-headers-msg"  // SPOE message name for request headers
+	MessageHTTPRequestBody     = "http-request-body-msg"     // SPOE message name for request body
+	MessageHTTPResponseHeaders = "http-response-headers-msg" // SPOE message name for response headers
+	MessageHTTPResponseBody    = "http-response-body-msg"    // SPOE message name for response body
 )
 
 var _ proxy.RequestHeaders = (*messageRequestHeaders)(nil)

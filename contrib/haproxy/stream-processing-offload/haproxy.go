@@ -94,7 +94,7 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *haproxyMessage, 
 	requestContextData := &haproxyRequestContextData{req: req, msg: msg}
 
 	switch msg.Name {
-	case "http-request-headers-msg":
+	case MessageHTTPRequestHeaders:
 		ctx := context.WithValue(context.Background(), haproxyRequestContextKey{}, requestContextData)
 		requestState, err := s.messageProcessor.OnRequestHeaders(ctx, &messageRequestHeaders{req: req, msg: msg})
 		if err != nil {
@@ -102,7 +102,7 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *haproxyMessage, 
 		}
 		return s.cacheRequest(requestState, msg)
 
-	case "http-request-body-msg":
+	case MessageHTTPRequestBody:
 		if currentRequest == nil {
 			return fmt.Errorf("received request body outside of a started a request")
 		}
@@ -113,7 +113,7 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *haproxyMessage, 
 		currentRequest.Context = ctx
 		return err
 
-	case "http-response-headers-msg":
+	case MessageHTTPResponseHeaders:
 		if currentRequest == nil {
 			return fmt.Errorf("received reponse headers outside of a started a request")
 		}
@@ -124,7 +124,7 @@ func (s *HAProxySPOA) processMessage(req *request.Request, msg *haproxyMessage, 
 		currentRequest.Context = ctx
 		return err
 
-	case "http-response-body-msg":
+	case MessageHTTPResponseBody:
 		if currentRequest == nil {
 			return fmt.Errorf("received reponse body outside of a started a request")
 		}
