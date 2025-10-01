@@ -137,7 +137,9 @@ func (p *unsafePayload) setTracerTags(t []*Span) {
 		if s == nil {
 			continue
 		}
-		shallowCopySpan := *s
+
+		shallowCopySpan := *s //nolint:govet // to avoid the copylocks warning, the locks were not used further down
+		// favoring a copy of all fields to avoid missing one
 		shallowCopySpan.meta = metaWithProcessTags(s.meta, pTags)
 		t[i] = &shallowCopySpan
 		return
