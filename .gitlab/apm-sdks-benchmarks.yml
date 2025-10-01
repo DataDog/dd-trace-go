@@ -1,5 +1,5 @@
 stages:
-  - setup-benchmark
+  - setup
   - apm-sdks-benchmarks
 
 variables:
@@ -10,7 +10,7 @@ variables:
 setup-benchmark:
   image: $BASE_CI_IMAGE
   stage: setup
-  run: |-
+  script: |-
     git clone --branch $BRANCH $BENCHMARK_URL $DIR
     cd $DIR
     cp flow/webserver/env.template .env
