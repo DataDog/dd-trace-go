@@ -79,7 +79,11 @@ func blockActionFunc(data proxy.BlockActionOptions) (envoyextproc.ProcessingResp
 func buildHeadersResponse(data proxy.ContinueActionOptions) envoyextproc.ProcessingResponse {
 	var modeOverride *envoyextprocfilter.ProcessingMode
 	if data.Body {
-		modeOverride = &envoyextprocfilter.ProcessingMode{RequestBodyMode: envoyextprocfilter.ProcessingMode_STREAMED}
+		if data.MessageType == proxy.MessageTypeRequestHeaders {
+			modeOverride = &envoyextprocfilter.ProcessingMode{RequestBodyMode: envoyextprocfilter.ProcessingMode_STREAMED}
+		} else {
+			modeOverride = &envoyextprocfilter.ProcessingMode{ResponseBodyMode: envoyextprocfilter.ProcessingMode_STREAMED}
+		}
 	}
 
 	processingResponse := envoyextproc.ProcessingResponse{ModeOverride: modeOverride}

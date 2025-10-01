@@ -20,9 +20,13 @@ import (
 
 // IsBodySupported checks if the body should be analyzed based on content type
 func IsBodySupported(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+
 	parsedCT, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		log.Debug("failed to parse content type: %s", err.Error())
+		log.Debug("failed to parse content type %q: %s", contentType, err.Error())
 		return false
 	}
 
@@ -56,7 +60,7 @@ func NewEncodable(contentType string, reader *io.ReadCloser, limit int) (libddwa
 	var newReader io.Reader = bytes.NewReader(data)
 
 	truncated := false
-	if len(data) > limit {
+	if len(data) >= limit {
 		data = data[:limit]
 		newReader = io.MultiReader(newReader, *reader)
 		truncated = true

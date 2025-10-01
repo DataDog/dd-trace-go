@@ -104,7 +104,9 @@ func TestSpansStartedTags(t *testing.T) {
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		assert.Eventually(func() bool {
+			return tg.Counts()["datadog.tracer.spans_started"] == 1
+		}, 1*time.Second, 10*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
 		counts := tg.Counts()
@@ -124,7 +126,9 @@ func TestSpansStartedTags(t *testing.T) {
 		sp := tracer.StartSpan("operation", Tag(ext.Component, "contrib"))
 		defer sp.Finish()
 
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		assert.Eventually(func() bool {
+			return tg.Counts()["datadog.tracer.spans_started"] == 1
+		}, 1*time.Second, 10*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 
 		counts := tg.Counts()

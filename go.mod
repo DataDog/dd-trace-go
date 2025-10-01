@@ -106,5 +106,3 @@ retract (
 	[v2.0.0-rc.1, v2.0.0-rc.22]
 	[v2.0.0-beta.1, v2.0.0-beta.11]
 )
-
-replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ./contrib/net/http

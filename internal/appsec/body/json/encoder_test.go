@@ -46,7 +46,7 @@ func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiall
 			}
 
 			wafObj := &libddwaf.WAFObject{}
-			truncations, err := encoder.Encode(config, wafObj, 0)
+			truncations, err := encoder.Encode(config, wafObj, config.MaxObjectDepth)
 
 			// Check truncations
 			if len(tc.truncations) == 0 {
@@ -710,7 +710,7 @@ func BenchmarkEncoder(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					encodable := encodableFunc(bytes)
 					var wafObj libddwaf.WAFObject
-					truncations, err := encodable.Encode(config, &wafObj, 0)
+					truncations, err := encodable.Encode(config, &wafObj, config.MaxObjectDepth)
 					if err != nil {
 						b.Fatalf("Error encoding: %v", err)
 					}
