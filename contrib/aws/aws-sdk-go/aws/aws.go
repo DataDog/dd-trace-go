@@ -198,6 +198,8 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 }
 
 func sqsTags(params interface{}, region string) (map[string]interface{}, error) {
+	fmt.Printf("sqs tags params: [%+v]\nregion: [%s]\n", params, region)
+
 	var queueURL string
 	switch input := params.(type) {
 	case *sqs.SendMessageInput:

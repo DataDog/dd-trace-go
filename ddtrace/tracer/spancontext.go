@@ -619,12 +619,17 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
 func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
-	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
+	fmt.Printf("in set peer service. meta: %+v\n", s.meta)
+
+	if val, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
+		fmt.Printf("peer service already set: %s\n", val)
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 		shouldSetDefaultPeerService := isOutboundRequest && peerServiceDefaults
+		fmt.Printf("spankind: %s\n", spanKind)
+		fmt.Printf("should set: %v\n", shouldSetDefaultPeerService)
 		if !shouldSetDefaultPeerService {
 			return
 		}
@@ -647,6 +652,9 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
 func setPeerServiceFromSource(s *Span) string {
+	fmt.Printf("setting peer service from source using span {%+v}\n", s.AsMap())
+	fmt.Printf("root span is {%+v}\n", s.Root().AsMap())
+
 	has := func(tag string) bool {
 		_, ok := s.meta[tag]
 		return ok
@@ -656,6 +664,14 @@ func setPeerServiceFromSource(s *Span) string {
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
 	case has("aws_service"):
+
+		hostname := deriveAWSHostName(s.meta)
+		if hostname != "" {
+			s.setMeta(ext.PeerHostname, hostname)
+			return "aws_service" //QUESTION what to return here for source?
+		}
+
+		fmt.Println("setting aws sources")
 		sources = []string{
 			"queuename",
 			"topicname",
@@ -663,6 +679,7 @@ func setPeerServiceFromSource(s *Span) string {
 			"tablename",
 			"bucketname",
 		}
+		fmt.Printf("set sources: %+v\n", sources)
 	case s.meta[ext.DBSystem] == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
@@ -682,6 +699,7 @@ func setPeerServiceFromSource(s *Span) string {
 			ext.RPCService,
 		}
 	}
+	fmt.Printf("sources before: %+v\n", sources) //QUESTION Why is this empty?
 	// network destination tags will be used as fallback unless there are higher priority sources already set.
 	if useTargetHost {
 		sources = append(sources, []string{
@@ -690,13 +708,34 @@ func setPeerServiceFromSource(s *Span) string {
 			ext.TargetHost,
 		}...)
 	}
+	fmt.Printf("sources after: %+v\n", sources)
 	for _, source := range sources {
 		if val, ok := s.meta[source]; ok {
+			fmt.Printf("source: [%s]. val: [%s]\n", source, val)
 			s.setMeta(ext.PeerService, val)
 			return source
 		}
 	}
 	return ""
+}
+
+// derives the AWS Host Name given the span metadata
+// or returns empty string if unable
+func deriveAWSHostName(sm map[string]string) string {
+
+	service := sm[ext.AWSService]
+	region := sm[ext.AWSRegion]
+
+	if service == "" || region == "" {
+		return ""
+	}
+
+	if service == "s3" && sm[ext.S3BucketName] != "" {
+		// bucket := sm[ext.S3BucketName]
+		return sm[ext.S3BucketName] + ".s3." + region + ".amazonaws.com"
+	} else {
+		return service + "." + region + ".amazonaws.com"
+	}
 }
 
 const hexEncodingDigits = "0123456789abcdef"

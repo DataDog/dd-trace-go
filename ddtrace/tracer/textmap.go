@@ -554,6 +554,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	if err != nil {
 		return nil, err
 	}
+	log.Debug("context in extractTextMap: %+v", ctx)
 	if ctx.trace != nil {
 		tid := ctx.trace.propagatingTag(keyTraceID128)
 		if err := validateTID(tid); err != nil {
@@ -565,6 +566,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 		}
 	}
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
+		log.Debug("errSpanContext. origin is: %s", ctx.origin)
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil

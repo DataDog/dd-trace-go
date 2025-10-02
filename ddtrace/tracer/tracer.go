@@ -753,6 +753,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 			span.service = newSvc
 		}
 	}
+	fmt.Printf("Started Span: %+v, Operation: %+s, Resource: %s, Tags: %+v, %+v", //nolint:gocritic // Debug logging needs full span representation
+		span, span.name, span.resource, span.meta, span.metrics)
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation

@@ -631,6 +631,8 @@ func (s *Span) serializeSpanEvents() {
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
+	fmt.Println("in Span.Finish")
+
 	if s == nil {
 		return
 	}
@@ -708,6 +710,8 @@ func (s *Span) SetOperationName(operationName string) {
 }
 
 func (s *Span) finish(finishTime int64) {
+	fmt.Println("in span.finish")
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
