@@ -12,6 +12,7 @@ setup-benchmark:
   stage: setup
   tags: ["runner:apm-k8s-same-cpu"]
   script: |-
+    git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
     git clone --branch $BRANCH $BENCHMARK_URL $DIR
     cd $DIR
     cp flow/webserver/env.template .env
