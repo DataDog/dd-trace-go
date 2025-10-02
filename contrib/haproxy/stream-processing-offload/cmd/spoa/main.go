@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/negasus/haproxy-spoe-go/agent"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -88,21 +87,14 @@ func main() {
 func startService(config haProxySpoaConfig) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	g, ctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		return startSpoa(ctx, config)
-	})
+	go func() {
+		if err := startHealthCheck(ctx, config); err != nil && ctx.Err() == nil {
+			cancel()
+		}
+	}()
 
-	g.Go(func() error {
-		return startHealthCheck(ctx, config)
-	})
-
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	return nil
+	return startSpoa(ctx, config)
 }
 
 func startHealthCheck(ctx context.Context, config haProxySpoaConfig) error {
@@ -161,7 +153,7 @@ func startSpoa(ctx context.Context, config haProxySpoaConfig) error {
 
 	log.Info("haproxy_spoa: datadog stream processing offload agent started on %s:%s\n", config.extensionHost, config.extensionPort)
 	if err := a.Serve(listener); err != nil {
-		if ctx.Err() != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			return nil // Clean shutdown
 		}
 
