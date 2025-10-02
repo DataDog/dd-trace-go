@@ -10,6 +10,7 @@ variables:
 setup-benchmark:
   image: $BASE_CI_IMAGE
   stage: setup
+  tags: ["runner:apm-k8s-same-cpu"]
   script: |-
     git clone --branch $BRANCH $BENCHMARK_URL $DIR
     cd $DIR
@@ -29,6 +30,7 @@ setup-benchmark:
 run_benchmark:
   image: $BASE_CI_IMAGE
   stage: apm-sdks-benchmarks
+  tags: ["runner:apm-k8s-same-cpu"]
   needs: 
     - setup-benchmark
   rules:
