@@ -1,8 +1,10 @@
 stages:
   - docker-images-reliability-env
   - generate
+  - setup
   - benchmarks
   - macrobenchmarks
+  - apm-sdks-benchmarks
   - gates
   - config-validation
   - test-apps
