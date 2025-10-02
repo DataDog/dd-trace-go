@@ -132,29 +132,16 @@ func (p *unsafePayload) setTracerTags(t []*Span) {
 	if pTags == "" {
 		return
 	}
-	for i, s := range t {
+	for _, s := range t {
 		// todo: can any span be nil?
 		if s == nil {
 			continue
 		}
-
-		shallowCopySpan := *s //nolint:govet // to avoid the copylocks warning, the locks were not used further down
-		// favoring a copy of all fields to avoid missing one
-		shallowCopySpan.meta = metaWithProcessTags(s.meta, pTags)
-		t[i] = &shallowCopySpan
+		s.mu.Lock()
+		s.meta[keyProcessTags] = pTags
+		s.mu.Unlock()
 		return
 	}
-}
-
-// duplicating to avoid race conditions on map access
-// this is fine as done only once per payload flushed
-func metaWithProcessTags(meta map[string]string, processTags string) map[string]string {
-	newMeta := make(map[string]string, len(meta)+1)
-	newMeta[keyProcessTags] = processTags
-	for k, v := range meta {
-		newMeta[k] = v
-	}
-	return newMeta
 }
 
 // itemCount returns the number of items available in the stream.
