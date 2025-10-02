@@ -30,6 +30,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"golang.org/x/tools/go/packages"
 
@@ -54,7 +55,7 @@ func main() {
 
 	var orchestrionVersion string
 
-	if v := os.Getenv("ORCHESTRION_VERSION"); v != "" {
+	if v := env.Get("ORCHESTRION_VERSION"); v != "" {
 		orchestrionVersion = v
 	} else {
 		log.Println("Determining latest version of orchestrion...")
