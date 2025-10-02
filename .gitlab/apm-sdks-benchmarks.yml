@@ -37,9 +37,8 @@ run_benchmark:
     - when: manual
   parallel: 
     matrix:
-      CONFIG:
-        - "datadog-latest"
-        - "baseline"
+      - CONFIG: "datadog-latest"
+      - CONFIG: "baseline"
   script: |-
     cd $DIR
     echo "BP_BENCHMARKS_CONFIGURATION=${CONFIG}" >> .env
