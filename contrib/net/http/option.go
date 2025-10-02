@@ -129,16 +129,19 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		IgnoreRequest: func(_ *http.Request) bool { return false },
 		IsStatusError: isClientError,
 	}
+
+	v := env.Get(internal.EnvClientErrorStatuses)
+	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
+		sharedCfg.IsStatusError = fn
+	}
+
 	rtConfig := internal.RoundTripperConfig{
 		CommonConfig: sharedCfg,
 		Propagation:  true,
 		SpanNamer:    defaultSpanNamer,
 		QueryString:  options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
 	}
-	v := env.Get(internal.EnvClientErrorStatuses)
-	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
-		sharedCfg.IsStatusError = fn
-	}
+
 	return &rtConfig
 }
 

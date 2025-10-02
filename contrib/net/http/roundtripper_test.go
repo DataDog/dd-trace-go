@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -146,8 +145,7 @@ func TestRoundTripperErrors(t *testing.T) {
 		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
 	})
 	t.Run("custom", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
-		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
+		t.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		rt := WrapRoundTripper(http.DefaultTransport)
@@ -666,8 +664,7 @@ func TestClientQueryStringCollected(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		os.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
-		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING")
+		t.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
 
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
