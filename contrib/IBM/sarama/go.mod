@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.2
+	github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.3
 	github.com/IBM/sarama v1.40.0
 	github.com/stretchr/testify v1.10.0
 )
