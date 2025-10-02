@@ -85,3 +85,49 @@ tmp/test-help.txt:
 .PHONY: docs
 docs: tools-install tmp/make-help.txt tmp/test-help.txt ## Generate and Update embedded documentation in README files
 	$(BIN_PATH) embedmd -w README.md scripts/README.md
+
+ORCHESTRION_VERSION := latest
+ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all
+
+.PHONY: upgrade/orchestrion
+upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
+	@echo "Checking Orchestrion upgrade to $(ORCHESTRION_VERSION)"
+	@TARGET_VERSION=$$(go list -m github.com/DataDog/orchestrion@$(ORCHESTRION_VERSION) 2>/dev/null | awk '{print $$2}'); \
+	if [ -z "$$TARGET_VERSION" ]; then \
+		echo "Error: Could not resolve Orchestrion version $(ORCHESTRION_VERSION)"; \
+		exit 1; \
+	fi; \
+	echo "Target version: $$TARGET_VERSION"; \
+	NEEDS_UPGRADE=false; \
+	for dir in $(ORCHESTRION_DIRS); do \
+		CURRENT_VERSION=$$(cd $$dir && go list -m github.com/DataDog/orchestrion 2>/dev/null | awk '{print $$2}'); \
+		if [ "$$CURRENT_VERSION" = "$$TARGET_VERSION" ]; then \
+			echo "$$dir: Already at version $$TARGET_VERSION"; \
+		else \
+			NEWER=$$(printf '%s\n%s\n' "$$CURRENT_VERSION" "$$TARGET_VERSION" | sort -V | tail -n1); \
+			if [ "$$NEWER" = "$$CURRENT_VERSION" ] && [ "$$CURRENT_VERSION" != "$$TARGET_VERSION" ]; then \
+				echo "$$dir: Current version $$CURRENT_VERSION is newer than target $$TARGET_VERSION, skipping"; \
+			else \
+				echo "$$dir: Current version $$CURRENT_VERSION will be upgraded to $$TARGET_VERSION"; \
+				NEEDS_UPGRADE=true; \
+			fi; \
+		fi; \
+	done; \
+	if [ "$$NEEDS_UPGRADE" = "false" ]; then \
+		echo "All modules already at or newer than target version $$TARGET_VERSION, skipping upgrade"; \
+		exit 0; \
+	fi; \
+	echo "Upgrading Orchestrion to $$TARGET_VERSION"; \
+	for dir in $(ORCHESTRION_DIRS); do \
+		( \
+			echo "Upgrading Orchestrion in $$dir"; \
+			cd $$dir && \
+			go get github.com/DataDog/orchestrion@$(ORCHESTRION_VERSION) && \
+			go mod tidy && \
+			go mod verify && \
+			echo "Orchestrion upgraded in $$dir" \
+		); \
+	done; \
+	make fix-modules; \
+	echo "$$TARGET_VERSION" > .orchestrion-version; \
+	echo "Orchestrion upgrade complete"

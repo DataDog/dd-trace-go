@@ -52,15 +52,24 @@ func main() {
 	_, thisFile, _, _ := runtime.Caller(0)
 	rootDir := filepath.Join(thisFile, "..", "..", "..", "..")
 
-	var buf bytes.Buffer
-	cmd := exec.Command("go", "list", "-m", "--versions", `-f={{ $v := "" }}{{ range .Versions }}{{ $v = . }}{{ end }}{{ $v }}`, "github.com/DataDog/orchestrion")
-	cmd.Stdout = &buf
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		log.Fatalln(err)
+	var orchestrionVersion string
+
+	if v := os.Getenv("ORCHESTRION_VERSION"); v != "" {
+		orchestrionVersion = v
+	} else {
+		log.Println("Determining latest version of orchestrion...")
+		var buf bytes.Buffer
+		cmd := exec.Command("go", "list", "-m", "--versions", `-f={{ $v := "" }}{{ range .Versions }}{{ $v = . }}{{ end }}{{ $v }}`, "github.com/DataDog/orchestrion")
+		cmd.Stdout = &buf
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalln(err)
+		}
+		orchestrionVersion = strings.TrimSpace(buf.String())
 	}
 
-	modules, err := generateRootConfig(rootDir, strings.TrimSpace(buf.String()))
+	log.Println("Using orchestrion version:", orchestrionVersion)
+	modules, err := generateRootConfig(rootDir, orchestrionVersion)
 	if err != nil {
 		log.Fatalln(err)
 	}
