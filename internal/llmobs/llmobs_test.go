@@ -1294,9 +1294,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 
 		// Verify span was flushed immediately
 		assert.Eventually(t, func() bool {
-			return len(tt.Payloads.LLMSpans) == 1
+			return len(tt.SentPayloads().LLMSpans) == 1
 		}, 100*time.Millisecond, 10*time.Millisecond, "Expected LLMObs span to be flushed immediately")
-		assert.Equal(t, "flush-test-span", tt.Payloads.LLMSpans[0].Name)
+		assert.Equal(t, "flush-test-span", tt.SentPayloads().LLMSpans[0].Name)
 	})
 	t.Run("flush-without-active-llmobs", func(t *testing.T) {
 		// Ensure no active LLMObs
@@ -1470,14 +1470,17 @@ func TestLLMObsLifecycle(t *testing.T) {
 		t.Setenv("DD_API_KEY", testAPIKey)
 
 		// When agent doesn't support evp_proxy/v2, should default to agentless=true
-		err := tracer.Start(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("agentless-test"),
-			tracer.WithLogStartup(false),
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("agentless-test"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{}, // Agent doesn't support evp_proxy
+			}),
 		)
-		defer tracer.Stop()
-
-		require.NoError(t, err)
+		defer tt.Stop()
 
 		ll, err := llmobs.ActiveLLMObs()
 		require.NoError(t, err)
@@ -1492,12 +1495,13 @@ func TestLLMObsLifecycle(t *testing.T) {
 		err := tracer.Start(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("agentless-test"),
+			tracer.WithLLMObsAgentlessEnabled(true), // Explicitly enable agentless to trigger validation
 			tracer.WithLogStartup(false),
 		)
 		defer tracer.Stop()
 
 		// Should get error due to invalid API key in agentless mode
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agentless mode requires a valid API key")
 
 		// Should not have active LLMObs due to startup failure
@@ -1513,13 +1517,13 @@ func TestLLMObsLifecycle(t *testing.T) {
 		err := tracer.Start(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("agentless-test"),
+			tracer.WithLLMObsAgentlessEnabled(true), // Explicitly enable agentless to trigger validation
 			tracer.WithLogStartup(false),
-			// Intentionally not setting API key
 		)
 		defer tracer.Stop()
 
 		// Should get error due to missing API key in agentless mode
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "agentless mode requires a valid API key")
 
 		// Should not have active LLMObs due to startup failure

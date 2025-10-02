@@ -93,7 +93,7 @@ type WaitCondition func(*Payloads) bool
 
 // TestTracer is an inspectable tracer useful for tests.
 type TestTracer struct {
-	Payloads     *Payloads
+	payloads     *Payloads
 	roundTripper *mockTransport
 }
 
@@ -119,7 +119,7 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 		Transport: rt,
 	}
 	tt := &TestTracer{
-		Payloads:     payloads,
+		payloads:     payloads,
 		roundTripper: rt,
 	}
 
@@ -193,16 +193,16 @@ func WithMockResponses(mr MockResponseFunc) Option {
 // collectPayloads runs in a goroutine and collects payloads from the channel
 func (tt *TestTracer) collectPayloads(payloadChan <-chan any) {
 	for payload := range payloadChan {
-		tt.Payloads.mu.Lock()
+		tt.payloads.mu.Lock()
 		switch p := payload.(type) {
 		case Span:
-			tt.Payloads.Spans = append(tt.Payloads.Spans, p)
+			tt.payloads.Spans = append(tt.payloads.Spans, p)
 		case LLMObsSpan:
-			tt.Payloads.LLMSpans = append(tt.Payloads.LLMSpans, p)
+			tt.payloads.LLMSpans = append(tt.payloads.LLMSpans, p)
 		case LLMObsMetric:
-			tt.Payloads.LLMMetrics = append(tt.Payloads.LLMMetrics, p)
+			tt.payloads.LLMMetrics = append(tt.payloads.LLMMetrics, p)
 		}
-		tt.Payloads.mu.Unlock()
+		tt.payloads.mu.Unlock()
 	}
 }
 
@@ -226,18 +226,18 @@ func (tt *TestTracer) WaitFor(t testing.TB, timeout time.Duration, cond WaitCond
 	for {
 		select {
 		case <-ticker.C:
-			tt.Payloads.mu.RLock()
-			if cond(tt.Payloads) {
-				tt.Payloads.mu.RUnlock()
-				return tt.Payloads
+			tt.payloads.mu.RLock()
+			if cond(tt.payloads) {
+				tt.payloads.mu.RUnlock()
+				return tt.payloads
 			}
-			tt.Payloads.mu.RUnlock()
+			tt.payloads.mu.RUnlock()
 		case <-timeoutChan:
-			tt.Payloads.mu.RLock()
+			tt.payloads.mu.RLock()
 			assert.FailNowf(t, "timeout waiting for condition",
 				"Current payloads: %d spans, %d LLM spans, %d LLM metrics",
-				len(tt.Payloads.Spans), len(tt.Payloads.LLMSpans), len(tt.Payloads.LLMMetrics))
-			tt.Payloads.mu.RUnlock()
+				len(tt.payloads.Spans), len(tt.payloads.LLMSpans), len(tt.payloads.LLMMetrics))
+			tt.payloads.mu.RUnlock()
 		}
 	}
 }
@@ -276,6 +276,18 @@ func (tt *TestTracer) WaitForLLMObsMetrics(t *testing.T, count int) []LLMObsMetr
 		return len(p.LLMMetrics) >= count
 	})
 	return p.LLMMetrics
+}
+
+// SentPayloads returns a thread-safe copy of all captured payloads.
+func (tt *TestTracer) SentPayloads() Payloads {
+	tt.payloads.mu.RLock()
+	defer tt.payloads.mu.RUnlock()
+
+	return Payloads{
+		Spans:      append([]Span(nil), tt.payloads.Spans...),
+		LLMSpans:   append([]LLMObsSpan(nil), tt.payloads.LLMSpans...),
+		LLMMetrics: append([]LLMObsMetric(nil), tt.payloads.LLMMetrics...),
+	}
 }
 
 type mockTransport struct {
