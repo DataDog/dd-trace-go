@@ -74,7 +74,6 @@ jobs:
           - APPSEC_DISABLED
           - APPSEC_BLOCKING
           - APPSEC_BLOCKING_FULL_DENYLIST
-          - APPSEC_REQUEST_BLOCKING
           - APPSEC_API_SECURITY
           - APPSEC_RASP
           - APPSEC_RUNTIME_ACTIVATION
@@ -177,7 +176,12 @@ jobs:
 
       - name: Compress artifact
         if: ${{ always() }}
-        run: tar -czvf artifact.tar.gz $(ls | grep logs)
+        run: |
+          if compgen -G "logs*/" > /dev/null; then
+            tar -czvf artifact.tar.gz logs*/
+          else
+            echo "No logs*/ found; skipping tar."
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -248,7 +252,12 @@ jobs:
 
       - name: Compress artifact
         if: ${{ always() }}
-        run: tar -czvf artifact.tar.gz $(ls | grep logs)
+        run: |
+          if compgen -G "logs*/" > /dev/null; then
+            tar -czvf artifact.tar.gz logs*/
+          else
+            echo "No logs*/ found; skipping tar."
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
