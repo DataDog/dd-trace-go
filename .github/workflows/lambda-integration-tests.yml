@@ -37,7 +37,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
-        working-directory: contrib/aws/datadog-lambda-go/tests/integration_tests/
+        working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: yarn install
 
       - name: Run Lambda integration tests
