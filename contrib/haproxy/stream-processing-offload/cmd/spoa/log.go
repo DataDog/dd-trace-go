@@ -6,47 +6,20 @@
 package main
 
 import (
-	ll "log"
-	"os"
+	streamprocessingoffload "github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-// Logger wraps the standard library log.Logger
+// Logger adapts the tracer instrumentation logger to the SPOE agent logger interface
 type Logger struct {
-	*ll.Logger
+	instrumentation.Logger
 }
 
 // NewLogger creates a new Logger instance
 func NewLogger() *Logger {
-	return &Logger{
-		Logger: ll.New(os.Stdout, "", ll.LstdFlags),
-	}
+	return &Logger{streamprocessingoffload.Logger()}
 }
 
-// Info logs an informational message
-func (l *Logger) Info(format string, v ...interface{}) {
-	l.SetPrefix("INFO: ")
-	//l.Printf(format, v...)
-	l.Printf(format, v...)
-}
-
-// Warn logs a warning message
-func (l *Logger) Warn(format string, v ...interface{}) {
-	l.SetPrefix("WARN: ")
-	l.Printf(format, v...)
-}
-
-// Error logs an error message
-func (l *Logger) Error(format string, v ...interface{}) {
-	l.SetPrefix("ERROR: ")
-	l.Printf(format, v...)
-}
-
-func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.Error("haproxy_spoa: "+format, v...)
-}
-
-// Debug logs a debug message
-func (l *Logger) Debug(format string, v ...interface{}) {
-	l.SetPrefix("DEBUG: ")
-	l.Printf(format, v...)
+func (l Logger) Errorf(format string, args ...interface{}) {
+	l.Error(format, args...)
 }
