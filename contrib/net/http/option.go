@@ -127,17 +127,17 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		AnalyticsRate: instr.GlobalAnalyticsRate(),
 		ResourceNamer: defaultResourceNamer,
 		IgnoreRequest: func(_ *http.Request) bool { return false },
+		IsStatusError: isClientError,
 	}
 	rtConfig := internal.RoundTripperConfig{
-		CommonConfig:  sharedCfg,
-		Propagation:   true,
-		SpanNamer:     defaultSpanNamer,
-		QueryString:   options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
-		IsStatusError: isClientError,
+		CommonConfig: sharedCfg,
+		Propagation:  true,
+		SpanNamer:    defaultSpanNamer,
+		QueryString:  options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
 	}
 	v := env.Get(internal.EnvClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
-		rtConfig.IsStatusError = fn
+		sharedCfg.IsStatusError = fn
 	}
 	return &rtConfig
 }

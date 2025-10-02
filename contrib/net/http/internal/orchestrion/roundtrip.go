@@ -48,15 +48,15 @@ func defaultRoundTripperConfig() *config.RoundTripperConfig {
 
 					return func(req *http.Request) string { return fmt.Sprintf("%s %s", req.Method, req.URL.Path) }
 				}(),
+				IsStatusError: func() func(int) bool {
+					envVal := env.Get(config.EnvClientErrorStatuses)
+					if fn := httptrace.GetErrorCodesFromInput(envVal); fn != nil {
+						return fn
+					}
+					return func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 }
+				}(),
 				ServiceName: config.Instrumentation.ServiceName(instrumentation.ComponentClient, nil),
 			},
-			IsStatusError: func() func(int) bool {
-				envVal := env.Get(config.EnvClientErrorStatuses)
-				if fn := httptrace.GetErrorCodesFromInput(envVal); fn != nil {
-					return fn
-				}
-				return func(statusCode int) bool { return statusCode >= 400 && statusCode < 500 }
-			}(),
 			Propagation: true,
 			QueryString: options.GetBoolEnv(config.EnvClientQueryStringEnabled, true),
 			SpanNamer: func(*http.Request) string {
