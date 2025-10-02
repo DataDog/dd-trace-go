@@ -27,6 +27,8 @@ aspects:
             {{ $ret := .Function.LastResultThatImplements "error" }}
             {{ with $ret }}
               defer func() {
-                {{ $ret }} = errortrace.Wrap({{ $ret }})
+                if {{ $ret }} != nil {
+                  {{ $ret }} = errortrace.Wrap({{ $ret }})
+                }
               }()
             {{- end -}}

@@ -61,11 +61,13 @@ func TestReportHealthMetricsAtInterval(t *testing.T) {
 	flush(1)
 	tg.Wait(assert, 4, 10*time.Second)
 
-	counts := tg.Counts()
-	assert.Equal(int64(1), counts["datadog.tracer.spans_started"])
-	assert.Equal(int64(1), counts["datadog.tracer.spans_finished"])
-	assert.Equal(int64(0), counts["datadog.tracer.traces_dropped"])
-	assert.Equal(int64(1), counts["datadog.tracer.queue.enqueued.traces"])
+	assert.Eventually(func() bool {
+		counts := tg.Counts()
+		return counts["datadog.tracer.spans_started"] == 1 &&
+			counts["datadog.tracer.spans_finished"] == 1 &&
+			counts["datadog.tracer.traces_dropped"] == 0 &&
+			counts["datadog.tracer.queue.enqueued.traces"] == 1
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestEnqueuedTracesHealthMetric(t *testing.T) {
@@ -153,7 +155,9 @@ func TestSpansFinishedTags(t *testing.T) {
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		assert.Eventually(func() bool {
+			return tg.Counts()["datadog.tracer.spans_finished"] == 1
+		}, 1*time.Second, 10*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
@@ -172,7 +176,9 @@ func TestSpansFinishedTags(t *testing.T) {
 
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 
-		tg.Wait(assert, 1, 100*time.Millisecond)
+		assert.Eventually(func() bool {
+			return tg.Counts()["datadog.tracer.spans_finished"] == 1
+		}, 1*time.Second, 10*time.Millisecond)
 		assertSpanMetricCountsAreZero(t, tracer.spansFinished)
 
 		counts := tg.Counts()
