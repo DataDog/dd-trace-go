@@ -1,8 +1,10 @@
 stages:
   - docker-images-reliability-env
   - generate
+  - setup
   - benchmarks
   - macrobenchmarks
+  - apm-sdks-benchmarks
   - gates
   - config-validation
   - test-apps
@@ -91,3 +93,4 @@ include:
   - local: ".gitlab/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
   - local: ".gitlab/configuration-central-validation.yml"
+  - local: ".gitlab/apm-sdks-benchmarks.yml"

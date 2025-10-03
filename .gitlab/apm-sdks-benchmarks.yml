@@ -1,0 +1,49 @@
+stages:
+  - setup
+  - apm-sdks-benchmarks
+
+variables:
+  BENCHMARK_URL: "https://github.com/DataDog/apm-sdks-benchmarks"
+  BRANCH: "dario.castane/go"
+  DIR: "apm-sdks-benchmarks"
+
+setup-benchmark:
+  image: $BASE_CI_IMAGE
+  stage: setup
+  tags: ["runner:apm-k8s-same-cpu"]
+  script: |-
+    git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+    git clone --branch $BRANCH $BENCHMARK_URL $DIR
+    cd $DIR
+    cp flow/webserver/env.template .env
+    cat >> .env << EOF
+    LANGUAGE=go
+    FLOW=webserver
+    APP=go-prof-app
+    EOF
+    chmod +x run-full-benchmarks.sh
+  artifacts:
+    paths:
+      - $DIR/
+    expire_in: 1d
+  timeout: 1h
+
+run_benchmark:
+  image: $BASE_CI_IMAGE
+  stage: apm-sdks-benchmarks
+  tags: ["runner:apm-k8s-same-cpu"]
+  needs: 
+    - setup-benchmark
+  rules:
+    - if: $CI_COMMIT_BRANCH == "hannahkm/apm-sdks-benchmarks" # TODO: this should run on a schedule
+      when: always
+    - when: manual
+  parallel: 
+    matrix:
+      - CONFIG: "datadog-latest"
+      - CONFIG: "baseline"
+  script: |-
+    cd $DIR
+    echo "BP_BENCHMARKS_CONFIGURATION=${CONFIG}" >> .env
+    ./run-full-benchmarks.sh
+  timeout: 1h
