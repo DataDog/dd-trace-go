@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -145,8 +144,7 @@ func TestRoundTripperErrors(t *testing.T) {
 		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
 	})
 	t.Run("custom", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
-		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
+		t.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		rt := WrapRoundTripper(http.DefaultTransport)
@@ -426,7 +424,12 @@ func TestRoundTripperStatusCheck(t *testing.T) {
 	defer mt.Stop()
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		if r.URL.Path == "/not-found" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusTeapot)
 	}))
 	defer s.Close()
 
@@ -437,17 +440,35 @@ func TestRoundTripperStatusCheck(t *testing.T) {
 	client := &http.Client{
 		Transport: rt,
 	}
-	resp, err := client.Get(s.URL + "/hello/world")
+
+	// First request is not marked as an error as it's a 404
+	resp, err := client.Get(s.URL + "/not-found")
 	assert.Nil(t, err)
-	defer resp.Body.Close()
+	resp.Body.Close()
 
 	spans := mt.FinishedSpans()
+	mt.Reset()
 	assert.Len(t, spans, 1)
 	assert.Equal(t, "http.request", spans[0].OperationName())
 	assert.Equal(t, "http.request", spans[0].Tag(ext.ResourceName))
 	assert.Equal(t, "404", spans[0].Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", spans[0].Tag(ext.HTTPMethod))
-	assert.Nil(t, spans[0].Tag(ext.Error))
+	assert.Nil(t, spans[0].Tag("http.errors"))
+	assert.Nil(t, spans[0].Tag(ext.ErrorNoStackTrace))
+
+	// Second request is marked as an error as it's a 418
+	resp, err = client.Get(s.URL + "/hello/world")
+	assert.Nil(t, err)
+	resp.Body.Close()
+
+	spans = mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	assert.Equal(t, "http.request", spans[0].OperationName())
+	assert.Equal(t, "http.request", spans[0].Tag(ext.ResourceName))
+	assert.Equal(t, "418", spans[0].Tag(ext.HTTPCode))
+	assert.Equal(t, "GET", spans[0].Tag(ext.HTTPMethod))
+	assert.EqualValues(t, "418 I'm a teapot", spans[0].Tag("http.errors"))
+	assert.EqualValues(t, "418: I'm a teapot", spans[0].Tag(ext.ErrorMsg))
 }
 
 func TestRoundTripperURLWithoutPort(t *testing.T) {
@@ -642,8 +663,7 @@ func TestClientQueryStringCollected(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		os.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
-		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING")
+		t.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
 
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
