@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,6 +26,7 @@ func TestPathway(t *testing.T) {
 			env:        "env",
 			timeSource: func() time.Time { return start },
 		}
+		processTags := processtags.GlobalTags().Slice()
 		ctx := processor.SetCheckpoint(context.Background())
 		middle := start.Add(time.Hour)
 		processor.timeSource = func() time.Time { return middle }
@@ -32,9 +34,9 @@ func TestPathway(t *testing.T) {
 		end := middle.Add(time.Hour)
 		processor.timeSource = func() time.Time { return end }
 		ctx = processor.SetCheckpoint(ctx, "topic:topic2")
-		hash1 := pathwayHash(nodeHash("service-1", "env", nil, nil), 0)
-		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic1"}, nil), hash1)
-		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic2"}, nil), hash2)
+		hash1 := pathwayHash(nodeHash("service-1", "env", nil, processTags), 0)
+		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic1"}, processTags), hash1)
+		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic2"}, processTags), hash2)
 		p, _ := PathwayFromContext(ctx)
 		assert.Equal(t, hash3, p.GetHash())
 		assert.Equal(t, start, p.PathwayStart())
@@ -82,9 +84,10 @@ func TestPathway(t *testing.T) {
 		pathwayWith1EdgeTag, _ := PathwayFromContext(processor.SetCheckpoint(context.Background(), "type:internal"))
 		pathwayWith2EdgeTags, _ := PathwayFromContext(processor.SetCheckpoint(context.Background(), "type:internal", "some_other_key:some_other_val"))
 
-		hash1 := pathwayHash(nodeHash("service-1", "env", nil, nil), 0)
-		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal"}, nil), 0)
-		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal", "some_other_key:some_other_val"}, nil), 0)
+		processTags := processtags.GlobalTags().Slice()
+		hash1 := pathwayHash(nodeHash("service-1", "env", nil, processTags), 0)
+		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal"}, processTags), 0)
+		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal", "some_other_key:some_other_val"}, processTags), 0)
 		assert.Equal(t, hash1, pathwayWithNoEdgeTags.GetHash())
 		assert.Equal(t, hash2, pathwayWith1EdgeTag.GetHash())
 		assert.Equal(t, hash3, pathwayWith2EdgeTags.GetHash())
