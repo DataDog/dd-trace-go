@@ -817,7 +817,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(err)
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
-			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
+			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("clamped-to-zero", func(t *testing.T) {
