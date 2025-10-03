@@ -7,7 +7,6 @@ package sqs
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -105,6 +104,5 @@ func injectTraceContext(traceContext types.MessageAttributeValue, messageAttribu
 		return
 	}
 
-	fmt.Printf("injecting context: %+v\n", traceContext)
 	messageAttributes[datadogKey] = traceContext
 }

@@ -51,7 +51,6 @@ type spanTimestampKey struct{}
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
-	fmt.Printf("appending middleware. config: %+v\n", awsCfg)
 	cfg := &config{}
 
 	defaults(cfg)
@@ -123,7 +122,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			fmt.Println("olivier detected sqs service")
 			sqsTracer.EnrichOperation(span, in, operation)
 		case "SNS":
 			snsTracer.EnrichOperation(span, in, operation)
@@ -140,8 +138,6 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
 		}
-
-		fmt.Printf("finished aws span: %+v\n", span.AsMap())
 		span.Finish()
 
 		return out, metadata, err
@@ -168,7 +164,9 @@ func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService 
 	case "Kinesis":
 		tags[ext.KinesisStreamName] = streamName(requestInput)
 	case "EventBridge":
+		fmt.Printf("setting events tags\n")
 		tags[ext.EventBridgeRuleName] = ruleName(requestInput)
+		fmt.Printf("events rulename = %s\n", tags[ext.EventBridgeRuleName])
 	case "SFN":
 		tags[ext.SFNStateMachineName] = stateMachineName(requestInput)
 	default:
@@ -340,6 +338,8 @@ func ruleName(requestInput middleware.InitializeInput) string {
 		return *params.Rule
 	case *eventbridge.RemoveTargetsInput:
 		return *params.Rule
+	// case *eventbridge.PutEventsInput:
+	// 	*params
 	}
 	return ""
 }

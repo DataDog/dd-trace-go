@@ -524,7 +524,7 @@ func (t *trace) setTraceTags(s *Span) {
 func (t *trace) finishedOne(s *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	s.finished = true
+		s.finished = true
 	if t.full {
 		// capacity has been reached, the buffer is no longer tracking
 		// all the spans in the trace, so the below conditions will not
@@ -652,9 +652,6 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
 func setPeerServiceFromSource(s *Span) string {
-	fmt.Printf("setting peer service from source using span {%+v}\n", s.AsMap())
-	fmt.Printf("root span is {%+v}\n", s.Root().AsMap())
-
 	has := func(tag string) bool {
 		_, ok := s.meta[tag]
 		return ok
@@ -664,22 +661,20 @@ func setPeerServiceFromSource(s *Span) string {
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
 	case has("aws_service"):
-
-		hostname := deriveAWSHostName(s.meta)
-		if hostname != "" {
-			s.setMeta(ext.PeerHostname, hostname)
-			return "aws_service" //QUESTION what to return here for source?
+		if source, peerService := deriveAWSPeerService(s.meta); peerService != "" {
+			s.setMeta(ext.PeerService, peerService)
+			return source //QUESTION what to return here for source?
 		}
-
-		fmt.Println("setting aws sources")
 		sources = []string{
-			"queuename",
-			"topicname",
-			"streamname",
-			"tablename",
-			"bucketname",
+			ext.SQSQueueName,
+			ext.SNSTopicName,
+			ext.DynamoDBTableName,
+			ext.S3BucketName,
+			ext.KinesisStreamName,
+			ext.EventBridgeRuleName,
+			// ext.SNSTargetName,
+			// ext.SFNStateMachineName // QUESTION do we consider sns targetname and sfns stateMachineName?
 		}
-		fmt.Printf("set sources: %+v\n", sources)
 	case s.meta[ext.DBSystem] == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
@@ -719,23 +714,39 @@ func setPeerServiceFromSource(s *Span) string {
 	return ""
 }
 
-// derives the AWS Host Name given the span metadata
-// or returns empty string if unable
-func deriveAWSHostName(sm map[string]string) string {
+/*
+derives the AWS Host Name given the span metadata
+or returns empty string if unable
+  - eventbridge/events -> events.<region>.amazonaws.com
+  - sqs               -> sqs.<region>.amazonaws.com
+  - sns               -> sns.<region>.amazonaws.com
+  - kinesis           -> kinesis.<region>.amazonaws.com
+  - dynamodb          -> dynamodb.<region>.amazonaws.com
+  - s3                -> <bucket>.s3.<region>.amazonaws.com (if Bucket param present)
+    s3.<region>.amazonaws.com          (otherwise)
+*/
+func deriveAWSPeerService(sm map[string]string) (source string, peerservice string) {
 
-	service := sm[ext.AWSService]
-	region := sm[ext.AWSRegion]
-
-	if service == "" || region == "" {
-		return ""
+	if service, region := sm[ext.AWSService], sm[ext.AWSRegion]; service != "" && region != "" {
+		switch strings.ToLower(service) {
+		case "s3":
+			if bucket, ok := sm[ext.S3BucketName]; ok {
+				return "bucketname", bucket + ".s3." + region + ".amazonaws.com"
+			}
+			return ext.S3BucketName, "s3." + region + ".amazonaws.com"
+		case "sqs":
+			return ext.SQSQueueName, "sqs." + region + ".amazonaws.com"
+		case "sns":
+			return ext.SNSTopicName, "sns." + region + ".amazonaws.com"
+		case "eventbridge":
+			return ext.EventBridgeRuleName, "events." + region + ".amazonaws.com" // QUESTION what should source be here?
+		case "dynamodb":
+			return ext.DynamoDBTableName, "dynamodb." + region + ".amazonaws.com"
+		case "kinesis":
+			return ext.KinesisStreamName, "kinesis." + region + ".amazonaws.com"
+		}
 	}
-
-	if service == "s3" && sm[ext.S3BucketName] != "" {
-		// bucket := sm[ext.S3BucketName]
-		return sm[ext.S3BucketName] + ".s3." + region + ".amazonaws.com"
-	} else {
-		return service + "." + region + ".amazonaws.com"
-	}
+	return "", ""
 }
 
 const hexEncodingDigits = "0123456789abcdef"
