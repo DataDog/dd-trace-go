@@ -31,15 +31,15 @@ type BlockActionOptions struct {
 }
 
 // ProcessorConfig contains configuration for the message processor
-type ProcessorConfig[O any] struct {
+type ProcessorConfig struct {
 	context.Context
 	BlockingUnavailable  bool
 	BodyParsingSizeLimit int
 	Framework            string
 
 	// ContinueMessageFunc is a function that generates a continue message of type O based on the provided ContinueActionOptions.
-	ContinueMessageFunc func(ContinueActionOptions) (O, error)
+	ContinueMessageFunc func(context.Context, ContinueActionOptions) error
 
 	// BlockMessageFunc is a function that generates a block message of type O based on the provided status code, headers, and body.
-	BlockMessageFunc func(options BlockActionOptions) (O, error)
+	BlockMessageFunc func(context.Context, BlockActionOptions) error
 }
