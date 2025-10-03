@@ -34,9 +34,9 @@ type payloadV1 struct {
 	// the 0th position in the stringTable should always be the empty string.
 	strings *stringTable
 
-	// Bitmap to track which index fields are set (bits 1-11 for field IDs 1-11)
+	// fieldSet tracks which index fields are set (bits 1-11 for field IDs 1-11)
 	// Bit 0 is unused since field IDs start from 1
-	fieldSet uint16
+	fieldSet bitmap
 
 	// Array to store the actual index values for set fields
 	// Index in array corresponds to field ID (fieldValues[1] = containerID value, etc.)
@@ -190,19 +190,22 @@ func (p *payloadV1) Read(b []byte) (int, error) {
 }
 
 func (p *payloadV1) encode() {
-	p.buf = encodeField(p.buf, 1, p.strings)
+	// fieldEncoded tracks which index fields have been encoded (bits 1-11 for field IDs 1-11)
+	// Bit 0 is unused since field IDs start from 1.
+	var fieldEncoded bitmap
+
 	for i := uint32(2); i <= 9; i++ {
-		if !p.isFieldSet(i) {
+		if !p.hasIndexField(i) {
 			continue
 		}
-		p.buf = encodeField(p.buf, i, p.getIndexField(i))
+		if fieldEncoded.Has(i) {
+			p.buf = encodeField(p.buf, i, p.getIndexField(i))
+			continue
+		}
+		v := encodableString(p.getStringField(i))
+		p.buf = encodeField(p.buf, i, &v)
+		fieldEncoded.Set(i)
 	}
-}
-
-func encodeField[T encodeDecoder](buf []byte, ref uint32, w T) []byte {
-	buf = msgp.AppendUint32(buf, ref)
-	buf = w.encode(buf)
-	return buf
 }
 
 // Write implements io.Writer. It writes data directly to the internal buffers.
@@ -227,7 +230,7 @@ func (p *payloadV1) hydrate() ([]byte, error) {
 			break
 		}
 		switch field {
-		case 1: // strings
+		case 1: // strings - unused because we are using an embedded streaming string table
 			o, err = p.strings.decode(o)
 		case 2: // containerID
 			fallthrough
@@ -244,12 +247,25 @@ func (p *payloadV1) hydrate() ([]byte, error) {
 		case 8: // hostname
 			fallthrough
 		case 9: // appVersion
-			var idx index
-			o, err = idx.decode(o)
-			if err != nil {
-				break
+			switch detectStringOrUint32Format(o[0]) {
+			case 0: // string
+				var v encodableString
+				o, err = v.decode(o)
+				if err != nil {
+					break
+				}
+				idx := p.strings.Add(string(v))
+				p.setIndexField(field, idx)
+			case 1: // string
+				var idx index
+				o, err = idx.decode(o)
+				if err != nil {
+					break
+				}
+				p.setIndexField(field, idx)
+			default:
+				err = fmt.Errorf("invalid type on field %d", field)
 			}
-			p.setIndexField(field, idx)
 		case 10, 11:
 			// TODO: implement remaining fields
 		default:
@@ -268,32 +284,12 @@ func (p *payloadV1) Close() error {
 	return nil
 }
 
-type encodeDecoder interface {
-	encode([]byte) []byte
-	decode([]byte) ([]byte, error)
-}
-
-type index uint32
-
-func (i index) encode(buf []byte) []byte {
-	return msgp.AppendUint32(buf, uint32(i))
-}
-
-func (i *index) decode(buf []byte) ([]byte, error) {
-	v, o, err := msgp.ReadUint32Bytes(buf)
-	if err != nil {
-		return o, err
-	}
-	*i = index(v)
-	return o, nil
-}
-
 // getIndexField returns the index value for the given field ID if it's set, nil otherwise
 func (p *payloadV1) getIndexField(fieldID uint32) *index {
 	if fieldID == 0 || fieldID >= 12 {
 		return nil
 	}
-	if p.fieldSet&(1<<fieldID) != 0 {
+	if p.fieldSet.Has(fieldID) {
 		return &p.fieldValues[fieldID]
 	}
 	return nil
@@ -305,16 +301,16 @@ func (p *payloadV1) setIndexField(fieldID uint32, value index) {
 		return
 	}
 	p.fieldValues[fieldID] = value
-	p.fieldSet |= (1 << fieldID)
+	p.fieldSet.Set(fieldID)
 	p.fields++
 }
 
-// isFieldSet checks if a field is set using bitwise operations
-func (p *payloadV1) isFieldSet(fieldID uint32) bool {
+// hasIndexField checks if a field is set using bitwise operations
+func (p *payloadV1) hasIndexField(fieldID uint32) bool {
 	if fieldID == 0 || fieldID >= 12 {
 		return false
 	}
-	return p.fieldSet&(1<<fieldID) != 0
+	return p.fieldSet.Has(fieldID)
 }
 
 // getStringField returns the string value for the given field ID by looking up the index in the string table
@@ -322,7 +318,7 @@ func (p *payloadV1) getStringField(fieldID uint32) string {
 	if fieldID == 0 || fieldID >= 12 {
 		return ""
 	}
-	if p.fieldSet&(1<<fieldID) == 0 {
+	if !p.fieldSet.Has(fieldID) {
 		return ""
 	}
 	idx := p.fieldValues[fieldID]
@@ -382,10 +378,106 @@ func (p *payloadV1) SetAppVersion(value string) {
 	p.setIndexField(9, idx)
 }
 
+func encodeField[T encodeDecoder](buf []byte, ref uint32, w T) []byte {
+	buf = msgp.AppendUint32(buf, ref)
+	buf = w.encode(buf)
+	return buf
+}
+
+// detectStringOrUint32Format examines the first byte of MessagePack data
+// to determine if it represents a string or uint32 format.
+// Returns 0 if string, 1 if uint32, or -1 if invalid.
+func detectStringOrUint32Format(firstByte byte) int8 {
+	switch firstByte {
+	// String formats
+	case 0xd9, 0xda, 0xdb: // str8, str16, str32
+		return 0
+	case 0xce: // uint32
+		return 1
+	default:
+		// Check for fixstr: high 3 bits should be 0b101 (0xa0)
+		if firstByte&0xe0 == 0xa0 {
+			return 0
+		}
+		// Check for positive fixint: high bit should be 0 (values 0-127)
+		if firstByte&0x80 == 0 {
+			return 1
+		}
+		return -1
+	}
+}
+
+type encodableString string
+
+func (es encodableString) encode(buf []byte) []byte {
+	return msgp.AppendString(buf, string(es))
+}
+
+func (es *encodableString) decode(buf []byte) ([]byte, error) {
+	v, o, err := msgp.ReadStringBytes(buf)
+	if err != nil {
+		return o, err
+	}
+	*es = encodableString(v)
+	return o, nil
+}
+
+type encodeDecoder interface {
+	encode([]byte) []byte
+	decode([]byte) ([]byte, error)
+}
+
+type index uint32
+
+func (i index) encode(buf []byte) []byte {
+	return msgp.AppendUint32(buf, uint32(i))
+}
+
+func (i *index) decode(buf []byte) ([]byte, error) {
+	v, o, err := msgp.ReadUint32Bytes(buf)
+	if err != nil {
+		return o, err
+	}
+	*i = index(v)
+	return o, nil
+}
+
+type bitmap uint16
+
+func (bm *bitmap) Set(i uint32) {
+	*bm |= (1 << i)
+}
+
+func (bm bitmap) Has(i uint32) bool {
+	return bm&(1<<i) != 0
+}
+
 type stringTable struct {
 	strings   []string                        // list of strings
 	indices   map[unique.Handle[string]]index // map strings to their indices
 	nextIndex index                           // last index of the stringTable
+}
+
+func newStringTable() *stringTable {
+	return &stringTable{
+		strings: []string{""},
+		indices: map[unique.Handle[string]]index{
+			unique.Make(""): 0,
+		},
+		nextIndex: 1,
+	}
+}
+
+func (s *stringTable) Add(str string) index {
+	k := unique.Make(str)
+	if v, ok := s.indices[k]; ok {
+		return v
+	}
+	v := s.nextIndex
+	s.indices[k] = v
+	s.strings = append(s.strings, str)
+	s.nextIndex += 1
+	return v
 }
 
 func (st *stringTable) encode(buf []byte) []byte {
@@ -439,43 +531,14 @@ const (
 	keyValueListType            // []keyValue -- 7
 )
 
-// keys in a keyValue can either be a string or a uint32 index
-// isString is true when the key is a string value, and false when the key is a uint32 index
-type streamingKey struct {
-	isString    bool
-	stringValue string
-}
-
 // keyValue is made up of the key and an AnyValue (the type of the value and the value itself)
 // The key is either a uint32 index into the string table or a string value.
 type keyValue struct {
-	key   streamingKey
+	key   encodableString
 	value anyValue
 }
 
 type keyValueList []keyValue
-
-func newStringTable() *stringTable {
-	return &stringTable{
-		strings: []string{""},
-		indices: map[unique.Handle[string]]index{
-			unique.Make(""): 0,
-		},
-		nextIndex: 1,
-	}
-}
-
-func (s *stringTable) Add(str string) index {
-	k := unique.Make(str)
-	if v, ok := s.indices[k]; ok {
-		return v
-	}
-	v := s.nextIndex
-	s.indices[k] = v
-	s.strings = append(s.strings, str)
-	s.nextIndex += 1
-	return v
-}
 
 // traceChunk represents a list of spans with the same trace ID,
 // i.e. a chunk of a trace
