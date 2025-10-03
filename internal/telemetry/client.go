@@ -65,10 +65,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
 		},
-		logger: logger{
-			store:           xsync.NewMapOf[loggerKey, *loggerValue](),
-			maxDistinctLogs: config.MaxDistinctLogs,
-		},
+		backend: newLoggerBackend(config.MaxDistinctLogs),
 	}
 
 	client.dataSources = append(client.dataSources,
@@ -79,7 +76,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 	)
 
 	if config.LogsEnabled {
-		client.dataSources = append(client.dataSources, &client.logger)
+		client.dataSources = append(client.dataSources, client.backend)
 	}
 
 	if config.MetricsEnabled {
@@ -106,7 +103,7 @@ type client struct {
 	products      products
 	configuration configuration
 	dependencies  dependencies
-	logger        logger
+	backend       *loggerBackend
 	metrics       metrics
 	distributions distributions
 
@@ -116,6 +113,8 @@ type client struct {
 
 	// flushTicker is the ticker that triggers a call to client.Flush every flush interval
 	flushTicker *internal.Ticker
+	// flushMu is used to ensure that only one flush is happening at a time
+	flushMu sync.Mutex
 
 	// writer is the writer to use to send the payloads to the backend or the agent
 	writer internal.Writer
@@ -128,12 +127,12 @@ type client struct {
 	flushTickerFuncsMu sync.Mutex
 }
 
-func (c *client) Log(level LogLevel, text string, options ...LogOption) {
+func (c *client) Log(record Record, options ...LogOption) {
 	if !c.clientConfig.LogsEnabled {
 		return
 	}
 
-	c.logger.Add(level, text, options...)
+	c.backend.Add(record, options...)
 }
 
 func (c *client) MarkIntegrationAsLoaded(integration Integration) {
@@ -271,6 +270,8 @@ func (c *client) transform(payloads []transport.Payload) []transport.Payload {
 // flush sends all the data sources to the writer after having sent them through the [transform] function.
 // It returns the amount of bytes sent to the writer.
 func (c *client) flush(payloads []transport.Payload) (int, error) {
+	c.flushMu.Lock()
+	defer c.flushMu.Unlock()
 	payloads = c.transform(payloads)
 
 	if c.payloadQueue.IsEmpty() && len(payloads) == 0 {

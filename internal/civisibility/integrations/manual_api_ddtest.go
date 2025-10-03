@@ -237,6 +237,7 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	file := utils.GetRelativePathFromCITagsSourceRoot(absolutePath)
 	t.SetTag(constants.TestSourceFile, file)
 	t.SetTag(constants.TestSourceStartLine, startLine)
+	t.suite.SetTag(constants.TestSourceFile, file)
 
 	// now, let's try to get the end line of the function using ast
 	// parse the entire file where the function is defined to create an abstract syntax tree (AST)
@@ -339,7 +340,9 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	if codeOwners != nil {
 		match, found := codeOwners.Match("/" + file)
 		if found {
-			t.SetTag(constants.TestCodeOwners, match.GetOwnersString())
+			ownerString := match.GetOwnersString()
+			t.SetTag(constants.TestCodeOwners, ownerString)
+			t.suite.SetTag(constants.TestCodeOwners, ownerString)
 		}
 	}
 }

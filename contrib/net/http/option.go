@@ -8,12 +8,12 @@ package http
 import (
 	"math"
 	"net/http"
-	"os"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
@@ -127,18 +127,21 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		AnalyticsRate: instr.GlobalAnalyticsRate(),
 		ResourceNamer: defaultResourceNamer,
 		IgnoreRequest: func(_ *http.Request) bool { return false },
-	}
-	rtConfig := internal.RoundTripperConfig{
-		CommonConfig:  sharedCfg,
-		Propagation:   true,
-		SpanNamer:     defaultSpanNamer,
-		QueryString:   options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
 		IsStatusError: isClientError,
 	}
-	v := os.Getenv(internal.EnvClientErrorStatuses)
+
+	v := env.Get(internal.EnvClientErrorStatuses)
 	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
-		rtConfig.IsStatusError = fn
+		sharedCfg.IsStatusError = fn
 	}
+
+	rtConfig := internal.RoundTripperConfig{
+		CommonConfig: sharedCfg,
+		Propagation:  true,
+		SpanNamer:    defaultSpanNamer,
+		QueryString:  options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
+	}
+
 	return &rtConfig
 }
 
@@ -188,6 +191,16 @@ func WithPropagation(propagation bool) RoundTripperOptionFn {
 func WithErrorCheck(fn func(err error) bool) RoundTripperOptionFn {
 	return func(cfg *internal.RoundTripperConfig) {
 		cfg.ErrCheck = fn
+	}
+}
+
+// WithClientTimings enables detailed HTTP request tracing using httptrace.ClientTrace.
+// When enabled, the integration will add timing information for DNS lookups,
+// connection establishment, TLS handshakes, and other HTTP request events as span tags.
+// This feature is disabled by default and adds minimal overhead when enabled.
+func WithClientTimings(enabled bool) RoundTripperOptionFn {
+	return func(cfg *internal.RoundTripperConfig) {
+		cfg.ClientTimings = enabled
 	}
 }
 

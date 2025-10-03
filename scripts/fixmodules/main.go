@@ -34,6 +34,11 @@ var (
 	verbose     bool
 )
 
+var skipModules = []string{
+	"github.com/DataDog/dd-trace-go/tools/v2fix",
+	"github.com/DataDog/dd-trace-go/_tools",
+}
+
 func init() {
 	flag.StringVar(&projectRoot, "root", ".", "Path to the project root (default: \".\")")
 	flag.BoolVar(&verbose, "verbose", false, "Run in verbose mode (default: false)")
@@ -132,7 +137,7 @@ func main() {
 
 	for _, modPath := range sortedKeys(fixModules) {
 		mod := fixModules[modPath]
-		if mod.Module.Path == "github.com/DataDog/dd-trace-go/tools/v2fix" {
+		if slices.Contains(skipModules, mod.Module.Path) {
 			continue
 		}
 

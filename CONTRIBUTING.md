@@ -17,8 +17,25 @@ Prepare context, which was wrong.
 Fixes #113
 ```
 
-Please apply the same logic for Pull Requests and Issues: start with the package name, followed by a colon and a description of the change, just like
-the official [Go language](https://github.com/golang/go/pulls).
+## Pull Request Naming
+
+Pull requests should follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) naming format with the following structure:
+
+```text
+<type>(scope): <description>
+```
+
+Where:
+
+- **type**: The type of change (feat, fix, docs, style, refactor, test, chore)
+- **scope**: The package or area affected (e.g., contrib/database/sql, ddtrace/tracer)
+- **description**: A brief description of the change
+
+Examples:
+
+- `feat(contrib/http): add support for custom headers`
+- `fix(ddtrace/tracer): resolve memory leak in span processor`
+
 
 All new code is expected to be covered by tests.
 
@@ -64,23 +81,41 @@ Sometimes a pull request's checks will show failures that aren't related to its 
 
 ### Running CI Checks Locally
 
-Before submitting a PR, you can run the same checks locally:
+Before submitting a PR, you can run the same checks locally using make targets:
 
 ```shell
+# Show all available targets
+make help
+
 # Run all linters (same as CI)
-./scripts/lint.sh
+make lint
 
 # Format code (recommended before committing)
-./scripts/format.sh --all
+make format
 
 # Check module consistency
-./scripts/fix_modules.sh
+make fix-modules
 
 # Run all tests
-./scripts/test.sh --all
+make test
 
 # Run integration tests
-./scripts/test.sh --integration
+make test-integration
+```
+
+You can also run scripts directly for more control:
+
+```shell
+# Run specific linting options
+./scripts/lint.sh --all
+
+# Format specific file types
+./scripts/format.sh --go
+./scripts/format.sh --shell
+
+# Run specific test configurations
+./scripts/test.sh --contrib
+./scripts/test.sh --appsec
 ```
 
 ## Getting a PR Reviewed
@@ -137,19 +172,19 @@ Formats Go and shell files in the repository.
 ./scripts/format.sh --tools
 ```
 
-#### `./scripts/checklocks.sh`
+#### `./scripts/check_locks.sh`
 
 Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ```shell
 # Run checklocks on the default target (./ddtrace/tracer)
-./scripts/checklocks.sh
+./scripts/check_locks.sh
 
 # Run checklocks on a specific directory
-./scripts/checklocks.sh ./path/to/target
+./scripts/check_locks.sh ./path/to/target
 
 # Run checklocks and ignore errors
-./scripts/checklocks.sh --ignore-errors
+./scripts/check_locks.sh --ignore-errors
 ```
 
 ### Module Management Scripts
@@ -214,17 +249,33 @@ It will help tremendously in avoiding comments and speeding up the PR process.
 
 ### Local Development
 
-For local development, you can use the provided scripts instead of running tools directly:
+For local development, use make targets as the primary interface:
 
 ```shell
 # Instead of running golangci-lint directly
-./scripts/lint.sh
+make lint
 
 # Instead of running formatters manually
-./scripts/format.sh --all
+make format
 
 # Instead of running go mod tidy manually
-./scripts/fix_modules.sh
+make fix-modules
+
+# Install all development tools
+make tools-install
+```
+
+For more specific control, you can use scripts directly:
+
+```shell
+# Run specific linting configurations
+./scripts/lint.sh --tools
+
+# Format only specific file types
+./scripts/format.sh --go
+
+# Run specific test types
+./scripts/test.sh --contrib
 ```
 
 ### Docker Alternative
@@ -246,6 +297,54 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
+### Working with environment variables
+
+When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
+
+Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal configuration registry for tracking and documentation purposes.
+
+Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
+
+#### Adding new environment variables using configinverter
+
+The `configinverter` tool provides a command to add new environment variable keys to the `supported_configurations.json` file and regenerate the corresponding Go code.
+
+```sh
+go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
+```
+
+After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
+If the key already exists in the registry because another language already registred it this step can be skipped.
+Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
+
+#### Auto-detection via tests
+
+All environment variables should be read at least once by a test. When this happens, a helper automatically detects the usage and adds the variable to the [JSON configuration file](./internal/env/supported_configurations.json). Since the variable isn't yet present in the generated code, it won't read any actual environment values initially, but it will be recorded for code generation.
+
+Note that CI jobs will fail if new keys are detected but not properly generated into the code.
+
+You can check for keys that have been added to the JSON file but not yet generated into code:
+
+```sh
+go run ./scripts/configinverter/main.go check
+```
+
+After the first test run that detects your new environment variable, regenerate the code:
+
+```sh
+go run ./scripts/configinverter/main.go generate
+```
+
+After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
+If the key already exists in the registry because another language already registred it this step can be skipped.
+Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
+
+#### Handling related CI failures
+
+The GitLab `validate_supported_configurations_local_file` job validates the JSON file content against Datadog's [configuration registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass, the key will need to be documented before merging the PR onto main.
+
+Additionally, multiple CI jobs include a [step](./.github/actions/supported_configurations_validation/action.yml) that checks for newly discovered environment variables during test execution and will fail if keys are missing from the generated list. To resolve this failure, use one of the two methods described above to add the key to the generated list.
+
 ### Adding Go Modules
 
 When adding a new dependency, especially for `contrib/` packages, prefer the minimum secure versions of any modules rather than the latest versions. This is to avoid forcing upgrades on downstream users for modules such as `google.golang.org/grpc` which often introduce breaking changes within minor versions.
@@ -256,7 +355,7 @@ This repository used to omit many dependencies from the `go.mod` file due to con
 git update-index --no-assume-unchanged go.*
 ```
 
-### Uprading Go Modules
+### Upgrading Go Modules
 
 Please also see the section about "Adding Go modules" when it comes to selecting the minimum secure versions of a module rather than the latest versions.
 
@@ -266,10 +365,10 @@ Then start by updating the main `go.mod` file, e.g. by running a `go get` comman
 go get <import-path>@<new-version>
 ```
 
-Then run the following script in order to update all `go.mod` and `go.sum` files in the repository:
+Then run the following command to update all `go.mod` and `go.sum` files in the repository:
 
 ```
-./scripts/fix_modules.sh
+make fix-modules
 ```
 
 This is neccessary because dd-trace-go is a multi-module repository.
@@ -282,3 +381,34 @@ Some benchmarks will run on any new PR commits, the results will be commented in
 
 To add additional benchmarks that should run for every PR, go to `.gitlab-ci.yml`.
 Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators.
+
+### Goroutine Leaks
+
+Some core packages are using [uber-go/goleak](https://github.com/uber-go/goleak) to detect goroutine leaks.
+
+To isolate the leak to a single test, you can use the bash script from the goleak README.
+
+If you are experiencing a leak failure in CI that doesn't seem to reproduce locally, try running a local datadog agent. Some test failures only appear when http connections to the agent are created and become idle after the test completes.
+
+Last but not least, you might find a goroutine leak with an unhelpful stack trace:
+
+```
+Goroutine 92554 in state IO wait, with internal/poll.runtime_pollWait on top of the stack:
+internal/poll.runtime_pollWait(0x7f46dcd5b368, 0x72)
+ /opt/hostedtoolcache/go/1.23.11/x64/src/runtime/netpoll.go:351 +0x85
+...
+net/http.(*persistConn).readLoop(0xc0041c8b40)
+ /opt/hostedtoolcache/go/1.23.11/x64/src/net/http/transport.go:2205 +0x354
+created by net/http.(*Transport).dialConn in goroutine 92609
+ /opt/hostedtoolcache/go/1.23.11/x64/src/net/http/transport.go:1874 +0x29b4
+```
+
+In this case, consider editing the stdlib code (e.g. `http/transport.go:1874`) to print a stack trace at the location where the goroutine is being created:
+
+```go
+fmt.Printf("Leak start at stack=%s\n", string(debug.Stack()))
+```
+
+In practice, leaks often go through `http.(*Client).Do`, so that can be a good place to instrument as well.
+
+Following the advice above, most goroutine leaks should be easy to debug and fix.

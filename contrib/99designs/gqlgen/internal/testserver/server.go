@@ -27,7 +27,9 @@ func New(t *testing.T, tracer graphql.HandlerExtension) (*handler.Server, *clien
 	h.AddTransport(transport.GET{})
 	h.AddTransport(transport.POST{})
 
-	h.Use(tracer)
+	if tracer != nil {
+		h.Use(tracer)
+	}
 
 	return h, client.New(h)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
@@ -28,8 +29,8 @@ type Config struct {
 
 func getConfig() Config {
 	cfg := Config{
-		ListenAddr:      os.Getenv("DD_REQUEST_MIRROR_LISTEN_ADDR"),
-		HealthCheckAddr: os.Getenv("DD_REQUEST_MIRROR_HEALTHCHECK_ADDR"),
+		ListenAddr:      env.Get("DD_REQUEST_MIRROR_LISTEN_ADDR"),
+		HealthCheckAddr: env.Get("DD_REQUEST_MIRROR_HEALTHCHECK_ADDR"),
 	}
 
 	if cfg.ListenAddr == "" {
@@ -61,7 +62,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", gatewayapi.HTTPRequestMirrorHandler(gatewayapi.Config{
 		ServeConfig: httptrace.ServeConfig{
-			Framework: "sigs.k8s.io/gateway-api",
+			Framework: "k8s.io/gateway-api",
 			FinishOpts: []tracer.FinishOption{
 				tracer.NoDebugStack(),
 			},

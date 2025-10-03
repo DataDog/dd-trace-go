@@ -41,17 +41,6 @@ EOF
 	exit 0
 }
 
-install_tools() {
-	message "Installing tools..."
-	SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-	TEMP_DIR=$(mktemp -d)
-	pushd "${TEMP_DIR}"
-	go -C "${SCRIPT_DIR}/../_tools" install github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-	go -C "${SCRIPT_DIR}/../_tools" install mvdan.cc/sh/v3/cmd/shfmt
-	popd
-	message "Tools installed."
-}
-
 format_go_files() {
 	message "Formatting Go files..."
 	run "golangci-lint fmt"
@@ -66,23 +55,16 @@ format_shell_files() {
 while [[ $# -gt 0 ]]; do
 	case $1 in
 	--all)
-		install_tools
 		format_go=true
 		format_shell=true
 		shift
 		;;
 	--go)
-		install_tools
 		format_go=true
 		shift
 		;;
 	--shell)
-		install_tools
 		format_shell=true
-		shift
-		;;
-	-t | --tools)
-		install_tools
 		shift
 		;;
 	-h | --help)

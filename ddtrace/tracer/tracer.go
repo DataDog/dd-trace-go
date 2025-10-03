@@ -21,12 +21,14 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -160,6 +162,9 @@ type tracer struct {
 
 	// runtimeMetrics is submitting runtime metrics to the agent using statsd.
 	runtimeMetrics *runtimemetrics.Emitter
+
+	// telemetry is the telemetry client for the tracer.
+	telemetry telemetry.Client
 }
 
 const (
@@ -184,10 +189,20 @@ const (
 // statsd client; replaced in tests.
 var statsInterval = 10 * time.Second
 
+// startStopMu ensures that calling Start and Stop concurrently doesn't leak
+// goroutines. In particular, without this lock TestTracerCleanStop will leak
+// goroutines from the internal telemetry client.
+//
+// TODO: The entire Start/Stop code should be refactored, it's pretty gnarly.
+var startStopMu sync.Mutex
+
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+
 	defer func(now time.Time) {
 		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
 	}(time.Now())
@@ -200,12 +215,10 @@ func Start(opts ...StartOption) error {
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
 		// share control of the global telemetry client.
+		t.Stop()
 		return nil
 	}
 	setGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -214,7 +227,7 @@ func Start(opts ...StartOption) error {
 
 		// start instrumentation telemetry unless it is disabled through the
 		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-		startTelemetry(t.config)
+		t.telemetry = startTelemetry(t.config)
 
 		globalinternal.SetTracerInitialized(true)
 		return nil
@@ -240,9 +253,13 @@ func Start(opts ...StartOption) error {
 
 	appsec.Start(appsecopts...)
 
+	if t.config.logStartup {
+		logStartup(t)
+	}
+
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
-	startTelemetry(t.config)
+	t.telemetry = startTelemetry(t.config)
 
 	// store the configuration in an in-memory file, allowing it to be read to
 	// determine if the process is instrumented with a tracer and to retrive
@@ -258,7 +275,7 @@ func storeConfig(c *config) {
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
 	metadata := Metadata{
-		SchemaVersion:      1,
+		SchemaVersion:      2,
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
@@ -266,6 +283,8 @@ func storeConfig(c *config) {
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
 		ServiceVersion:     c.version,
+		ProcessTags:        processtags.GlobalTags().String(),
+		ContainerID:        internal.ContainerID(),
 	}
 
 	data, _ := metadata.MarshalMsg(nil)
@@ -277,6 +296,9 @@ func storeConfig(c *config) {
 
 // Stop stops the started tracer. Subsequent calls are valid but become no-op.
 func Stop() {
+	startStopMu.Lock()
+	defer startStopMu.Unlock()
+
 	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
@@ -317,7 +339,7 @@ func SetUser(s *Span, id string, opts ...UserMonitoringOption) {
 // payloadQueueSize is the buffer size of the trace channel.
 const payloadQueueSize = 1000
 
-func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
+func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c, err := newConfig(opts...)
 	if err != nil {
 		return nil, err
@@ -326,8 +348,14 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
-		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
+		// We are not failing here because the error could be cause by
+		// a transitory issue.
 	}
+	defer func() {
+		if err != nil {
+			statsd.Close()
+		}
+	}()
 	var writer traceWriter
 	if c.ciVisibilityEnabled {
 		writer = newCiVisibilityTraceWriter(c)
@@ -371,7 +399,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 			c.logDirectory = ""
 		}
 	}
-	t := &tracer{
+	t = &tracer{
 		config:           c,
 		traceWriter:      writer,
 		out:              make(chan *chunk, payloadQueueSize),
@@ -399,7 +427,7 @@ func newUnstartedTracer(opts ...StartOption) (*tracer, error) {
 	return t, nil
 }
 
-// newTracer creates a new no-op tracer for testing.
+// newTracer creates a new tracer and starts it.
 // NOTE: This function does NOT set the global tracer, which is required for
 // most finish span/flushing operations to work as expected. If you are calling
 // span.Finish and/or expecting flushing to work, you must call
@@ -827,6 +855,10 @@ func (t *tracer) Stop() {
 	if t.logFile != nil {
 		t.logFile.Close()
 	}
+	if t.telemetry != nil {
+		t.telemetry.Close()
+	}
+	t.config.httpClient.CloseIdleConnections()
 }
 
 // Inject uses the configured or default TextMap Propagator.
@@ -887,6 +919,12 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
 			ctx.trace.priority = nil
+		}
+	}
+	if ctx != nil && ctx.trace != nil {
+		if _, ok := ctx.trace.samplingPriority(); ok {
+			// ensure that the trace isn't resampled
+			ctx.trace.setLocked(true)
 		}
 	}
 	return ctx, err
@@ -961,10 +999,10 @@ func (t *tracer) sample(span *Span) {
 	if sampler.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, sampler.Rate())
 	}
-	if t.rulesSampling.SampleTraceGlobalRate(span) {
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)

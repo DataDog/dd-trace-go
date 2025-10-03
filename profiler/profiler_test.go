@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -35,6 +36,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
+	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -554,6 +556,7 @@ func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// fatal error: runtime: netpoll failed
 	cpuProfileRate := int(9999 + rand.Int63n(9999))
 
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
 	profile := <-startTestProfiler(t, 1,
@@ -898,5 +901,45 @@ func TestMetricsProfileStopEarlyNoLog(t *testing.T) {
 		if strings.Contains(msg, "ERROR:") {
 			t.Errorf("unexpected error log: %s", msg)
 		}
+	}
+}
+
+func gzipDecompress(data []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(r)
+}
+
+func TestHeapProfileCompression(t *testing.T) {
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
+	t.Run("delta", func(t *testing.T) { testHeapProfileCompression(t, true) })
+	t.Run("non-delta", func(t *testing.T) { testHeapProfileCompression(t, false) })
+}
+
+func testHeapProfileCompression(t *testing.T, delta bool) {
+	profiles := startTestProfiler(t, 1,
+		WithPeriod(10*time.Millisecond), WithProfileTypes(HeapProfile), WithDeltaProfiles(delta),
+	)
+	p := <-profiles
+	attachment := "heap.pprof"
+	if delta {
+		attachment = "delta-heap.pprof"
+	}
+	data, ok := p.attachments[attachment]
+	if !ok {
+		t.Fatalf("no heap profile, got %s", p.event.Attachments)
+	}
+	decompressed, err := gzipDecompress(data)
+	if err != nil {
+		t.Fatalf("decompressing the heap profile failed: %s", err)
+	}
+	t.Logf("%x", decompressed[:16])
+	// We assume the profile is gzip compressed. The pprof pacakge
+	// can parse gzip-compressed profiles (it checks for the magic number).
+	// So we should be able to parse the original data
+	if _, err := pprofile.ParseData(data); err != nil {
+		t.Fatalf("parsing profile data failed: %s", err)
 	}
 }

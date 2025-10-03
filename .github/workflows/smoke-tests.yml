@@ -13,20 +13,22 @@ on:
         type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   schedule: # nightly
     - cron: "0 0 * * *"
   workflow_dispatch: { } # manually
   pull_request:
-    branches:
-      - '**'
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read
@@ -37,23 +39,34 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     env:
-      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v3.6.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
 
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version: "stable"
-          cache: true
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
 
       - name: go get -u
         run: |-
           mkdir -p $TEST_RESULTS
           go get -u -t $PACKAGES
+          go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/trace@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/util/log@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/util/scrubber@v0.71.0-rc.2
+          go get github.com/DataDog/datadog-agent/pkg/version@v0.71.0-rc.2
           go mod tidy
           for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
 
@@ -70,7 +83,7 @@ jobs:
         id: matrix
         run: |-
           echo -n "matrix="                      >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ci-contrib-matrix.go  >> "${GITHUB_OUTPUT}"
+          go run ./scripts/ci_contrib_matrix.go  >> "${GITHUB_OUTPUT}"
 
   go-get-u:
     #  Run go get -u to upgrade dd-trace-go dependencies to their
@@ -79,12 +92,13 @@ jobs:
     name: 'go get -u smoke test'
     needs: setup-env
     strategy:
+      fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -92,25 +106,33 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - name: Setup Go
+      - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "stable"
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Test contribs
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
-        run: ./scripts/ci-test-contrib.sh smoke ${{ toJson(matrix.chunk) }}
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
 
   smoke-test-tracer:
     name: Test dd-trace-go
     runs-on: ubuntu-latest
     env:
-      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/...
+      PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
       - run: go test $PACKAGES
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
@@ -124,15 +146,18 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: actions/setup-go@7c0b336c9aab5e8ed4f0ad8b81225b125f9883e4 # v3.5.0
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version: "1.23"
-          cache: true
+          go-version: "1.24"
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff
         run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/generate.sh
           ./scripts/fix_modules.sh
           git diff --exit-code
@@ -153,10 +178,10 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.23", "1.24" ]
-        build-env: [ alpine, bookworm, bullseye ]
+        go: [ "1.25", "1.24" ]
+        build-env: [ alpine, trixie, bookworm ]
         build-with-cgo: [ 0, 1 ]
-        deployment-env: [ alpine, debian11, debian12, al2, al2023, busybox, scratch ]
+        deployment-env: [ alpine, debian12, debian13, al2, al2023, busybox, scratchy ]
         include:
           # GitHub limits the number of matrix jobs to 256, so we need to reduce
           # it a bit, and we can reduce redundant tests.
@@ -184,10 +209,10 @@ jobs:
           #    environment: the C library isn't located at the same place.
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian11
+            deployment-env: debian12
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: debian12
+            deployment-env: debian13
           - build-env: alpine
             build-with-cgo: 1
             deployment-env: al2
@@ -199,20 +224,20 @@ jobs:
             deployment-env: busybox
           - build-env: alpine
             build-with-cgo: 1
-            deployment-env: scratch
+            deployment-env: scratchy
           # 2. Too old glibc on the deployment environment than on the build env
           - build-env: bookworm
             deployment-env: al2
-          - build-env: bookworm
-            deployment-env: debian11
+          - build-env: trixie
+            deployment-env: al2
           # 3. Build with CGO enabled and deploying to a scratch/busybox docker
           #    image requires copying the dynamic lib dependencies (full example
           #    provided at https://github.com/DataDog/appsec-go-test-app/blob/main/examples/docker/scratch/Dockerfile)
           - build-with-cgo: 1
-            deployment-env: scratch
+            deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f # v4.2.2
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is

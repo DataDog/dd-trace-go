@@ -32,37 +32,20 @@ EOF
 	exit 0
 }
 
-install_tools() {
-	message "Installing linting tools..."
-	SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-	TEMP_DIR=$(mktemp -d)
-	pushd "${TEMP_DIR}"
-	go -C "${SCRIPT_DIR}/../_tools" install golang.org/x/tools/cmd/goimports
-	go -C "${SCRIPT_DIR}/../_tools" install github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-	go -C "${SCRIPT_DIR}/../_tools" install gvisor.dev/gvisor/tools/checklocks/cmd/checklocks@go
-	popd
-	message "Linting tools installed."
-}
-
 run_linters() {
 	message "Running Linters"
 	export PATH="$(go env GOPATH)/bin:$PATH"
 	run "goimports -e -l -local github.com/DataDog/dd-trace-go/v2 ."
 	run "golangci-lint run ./..."
-	run "./scripts/checklocks.sh --ignore-errors ./ddtrace/tracer"
-	run "go run ./scripts/checkcopyright.go"
+	run "./scripts/check_locks.sh --ignore-errors ./ddtrace/tracer"
+	run "go run ./scripts/check_copyright.go"
 }
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
 	case $1 in
 	--all)
-		install_tools
 		run_linters
-		shift
-		;;
-	-t | --tools)
-		install_tools
 		shift
 		;;
 	-h | --help)

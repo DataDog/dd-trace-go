@@ -66,7 +66,6 @@ jobs:
       version: ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
       tags: >-
         ${{ needs.prepare-tag.outputs.service_extension_image_tag }}
-        ${{ github.event.inputs.commit_sha || github.sha }}
         ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
 
   build-request-mirror:
@@ -83,5 +82,4 @@ jobs:
       version: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
       tags: >-
         ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
-        ${{ github.event.inputs.commit_sha || github.sha }}
         ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}

@@ -9,7 +9,7 @@ repos:
       - id: end-of-file-fixer
       - id: check-json
   - repo: https://github.com/golangci/golangci-lint/
-    rev: v2.2.1 # TODO: Make sure this is synced with .github/workflows/static-checks.yml#env.GOLANGCI_LINT_VERSION
+    rev: v2.3.0 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
     hooks:
       - id: golangci-lint
         args:

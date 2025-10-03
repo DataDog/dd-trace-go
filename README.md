@@ -54,11 +54,36 @@ Before considering contributions to the project, please take a moment to read ou
 
 ### Testing
 
-Tests can be run locally using the Go toolset.
+Tests can be run locally using make targets or Go toolset directly.
+
+**Using Make (Recommended)**:
+
+[embedmd]:# (tmp/make-help.txt)
+```txt
+Usage: make [target]
+
+Targets:
+  help                 Show this help message
+  all                  Run complete build pipeline (tools, generate, lint, test)
+  tools-install        Install development tools
+  clean                Clean build artifacts
+  clean-all            Clean everything including tools and temporary files
+  generate             Run code generation
+  lint                 Run linting checks
+  lint-fix             Fix linting issues automatically
+  format               Format code
+  test                 Run all tests (core, integration, contrib)
+  test-appsec          Run tests with AppSec enabled
+  test-contrib         Run contrib package tests
+  test-integration     Run integration tests
+  fix-modules          Fix module dependencies and consistency
+  docs                 Update embedded documentation in README files
+```
+
+**Direct Script Usage**:
+For more control, you can use the [scripts/test.sh](./scripts/test.sh) script directly. You'll need Docker and docker-compose installed for integration tests. Run `./scripts/test.sh --help` for all available options.
 
 To run integration tests locally, you should set the `INTEGRATION` environment variable. The dependencies of the integration tests are best run via Docker. To get an idea about the versions and the set-up take a look at our [docker-compose config](./docker-compose.yaml).
-
-The best way to run the entire test suite is using the [scripts/test.sh](./scripts/test.sh) script. You'll need Docker and docker-compose installed. If this is your first time running the tests, you should run `./scripts/test.sh -t` to install any missing test tools/dependencies. Run `./scripts/test.sh --all` to run all of the integration tests through the docker-compose environment. Run `./scripts/test.sh --help` for more options.
 
 If you're only interested in the tests for a specific integration it can be useful to spin up just the required containers via docker-compose.
 For example if you're running tests that need the `mysql` database container to be up:

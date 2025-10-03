@@ -20,7 +20,6 @@ run() {
 
 contrib=""
 sleeptime=10
-tools=""
 unset INTEGRATION
 unset DD_APPSEC_ENABLED
 
@@ -30,64 +29,49 @@ if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
 fi
 
 while [[ $# -gt 0 ]]; do
-	case $1 in
-	-a | --appsec)
-		export DD_APPSEC_ENABLED=true
-		shift
-		;;
-	-i | --integration)
-		export INTEGRATION=true
-		shift
-		;;
-	-c | --contrib)
-		contrib=true
-		shift
-		;;
-	--all)
-		tools=true
-		contrib=true
-		export DD_APPSEC_ENABLED=true
-		export DD_TEST_APPS_ENABLED=true
-		export INTEGRATION=true
-		shift
-		;;
-	-s | --sleep)
-		sleeptime=$2
-		shift
-		shift
-		;;
-	-t | --tools)
-		tools=true
-		shift
-		;;
-	-h | --help)
-		echo "test.sh - Run the tests for dd-trace-go"
-		echo "	this script requires gotestsum and docker-compose."
-		echo "	-a | --appsec		- Test with appsec enabled"
-		echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
-		echo "	-c | --contrib		- Run contrib tests"
-		echo "	--all			- Run all tests with all features enabled"
-		echo "	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
-		echo "	-t | --tools		- Install gotestsum"
-		echo "	-h | --help		- Print this help message"
-		exit 0
-		;;
-	*)
-		echo "Ignoring unknown argument $1"
-		shift
-		;;
-	esac
+  case $1 in
+    -a|--appsec)
+      export DD_APPSEC_ENABLED=true
+      shift
+      ;;
+    -i|--integration)
+      export INTEGRATION=true
+      shift
+      ;;
+    -c|--contrib)
+      contrib=true
+      shift
+      ;;
+    --all)
+      contrib=true
+      export DD_APPSEC_ENABLED=true
+      export DD_TEST_APPS_ENABLED=true
+      export INTEGRATION=true
+      shift
+      ;;
+    -s|--sleep)
+      sleeptime=$2
+      shift
+      shift
+      ;;
+    -h|--help)
+      echo "test.sh - Run the tests for dd-trace-go"
+      echo "	this script requires gotestsum, goimports, docker and docker-compose."
+      echo "	-a | --appsec		- Test with appsec enabled"
+      echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
+      echo "	-c | --contrib		- Run contrib tests"
+      echo "	--all			- Synonym for -l -a -i -c"
+      echo "	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
+      echo "	-t | --tools		- Install gotestsum and goimports"
+      echo "	-h | --help		- Print this help message"
+      exit 0
+      ;;
+    *)
+      echo "Ignoring unknown argument $1"
+      shift
+      ;;
+  esac
 done
-
-if [[ -n "$tools" ]]; then
-	message "Installing tools..."
-	SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-	TEMP_DIR=$(mktemp -d)
-	pushd "${TEMP_DIR}"
-	go -C "${SCRIPT_DIR}/../_tools" install gotest.tools/gotestsum
-	popd
-	message "Tools installed."
-fi
 
 if [[ "$INTEGRATION" != "" ]]; then
 	## Make sure we shut down the docker containers on exit.

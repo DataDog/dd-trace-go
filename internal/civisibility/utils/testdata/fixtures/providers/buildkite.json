@@ -20,6 +20,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -56,6 +57,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -92,6 +94,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -128,6 +131,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -166,6 +170,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -204,6 +209,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -242,6 +248,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -278,6 +285,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -314,6 +322,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -350,6 +359,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -386,6 +396,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -422,6 +433,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -458,6 +470,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -494,6 +507,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -530,6 +544,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -566,6 +581,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -602,6 +618,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -646,6 +663,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -693,6 +711,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -732,6 +751,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -766,6 +786,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -799,6 +820,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -832,6 +854,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -865,6 +888,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -898,6 +922,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -931,6 +956,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -964,6 +990,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -997,6 +1024,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -1030,6 +1058,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
@@ -1065,6 +1094,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.node.labels": "[\"mytag:my-value\",\"myothertag:my-other-value\"]",
       "ci.node.name": "1a222222-e999-3636-8ddd-802222222222",
@@ -1098,6 +1128,7 @@
     },
     {
       "_dd.ci.env_vars": "{\"BUILDKITE_BUILD_ID\":\"buildkite-pipeline-id\",\"BUILDKITE_JOB_ID\":\"buildkite-job-id\"}",
+      "ci.job.id": "buildkite-job-id",
       "ci.job.url": "https://buildkite-build-url.com#buildkite-job-id",
       "ci.pipeline.id": "buildkite-pipeline-id",
       "ci.pipeline.name": "buildkite-pipeline-name",
