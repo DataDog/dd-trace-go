@@ -7,6 +7,8 @@ on:
       - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
       - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+'
       - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
+      - 'contrib/haproxy/stream-processing-offload/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/haproxy/stream-processing-offload/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -30,6 +32,11 @@ on:
         required: false
         default: false
         type: boolean
+      build_haproxy:
+        description: 'Build haproxy image'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -41,6 +48,7 @@ jobs:
     outputs:
       service_extension_image_tag: ${{ steps.extract.outputs.service_extension_image_tag }}
       request_mirroring_image_tag: ${{ steps.extract.outputs.request_mirroring_image_tag }}
+      haproxy_image_tag: ${{ steps.extract.outputs.haproxy_image_tag }}
     steps:
       - name: Extract raw/tag inputs
         id: extract
@@ -48,9 +56,11 @@ jobs:
           RAW_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
           PREFIX_SERVICE_EXTENSION: contrib/envoyproxy/go-control-plane/
           PREFIX_REQUEST_MIRRORING: contrib/k8s.io/gateway-api/
+          PREFIX_HAPROXY: contrib/haproxy/stream-processing-offload/
         run: |
           echo "service_extension_image_tag=${RAW_TAG#PREFIX_SERVICE_EXTENSION}" >> $GITHUB_OUTPUT
           echo "request_mirroring_image_tag=${RAW_TAG#PREFIX_REQUEST_MIRRORING}" >> $GITHUB_OUTPUT
+          echo "haproxy_image_tag=${RAW_TAG#PREFIX_REQUEST_MIRRORING}" >> $GITHUB_OUTPUT
 
   build-service-extensions-callout:
     needs: prepare-tag
@@ -82,4 +92,20 @@ jobs:
       version: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
       tags: >-
         ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
+        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
+
+  build-haproxy:
+    needs: prepare-tag
+    if: >
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/haproxy/stream-processing-offload')
+      || github.event.inputs.build_haproxy == 'true'
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/haproxy-spoa
+      dockerfile: ./contrib/haproxy/stream-processing-offload/cmd/spoa/Dockerfile
+      artifact_prefix: haproxy-spoa
+      commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.haproxy_image_tag }}
+      tags: >-
+        ${{ needs.prepare-tag.outputs.haproxy_image_tag }}
         ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
