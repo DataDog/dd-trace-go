@@ -52,7 +52,7 @@ func (t *httpTraceTimings) addTimingTags(span *tracer.Span) {
 	t.addDurationTag(span, "http.tls.duration_ms", t.tlsStart, t.tlsEnd)
 	t.addDurationTag(span, "http.get_conn.duration_ms", t.getConnStart, t.gotConn)
 	t.addDurationTag(span, "http.first_byte.duration_ms", t.wroteHeaders, t.gotFirstByte)
-	
+
 	// Add error information if present
 	if t.connectErr != nil {
 		span.SetTag("http.connect.error", t.connectErr.Error())
