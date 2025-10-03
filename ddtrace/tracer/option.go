@@ -822,9 +822,11 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	features.obfuscationVersion = info.ObfuscationVersion
 	features.spanEventsAvailable = info.SpanEvents
 	for _, endpoint := range info.Endpoints {
+		fmt.Println(endpoint)
 		switch endpoint {
 		case "/v0.6/stats":
 			features.Stats = true
+			fmt.Println("Stats endpoint available")
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
@@ -867,6 +869,7 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 }
 
 func (c *config) canComputeStats() bool {
+	fmt.Println("canComputeStats", c.agent.Stats, c.HasFeature("discovery"), c.statsComputationEnabled)
 	return c.agent.Stats && (c.HasFeature("discovery") || c.statsComputationEnabled)
 }
 

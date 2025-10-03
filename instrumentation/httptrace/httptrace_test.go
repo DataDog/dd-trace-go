@@ -393,6 +393,30 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	assert.Equal(t, "value2", baggageMap["key2"], "should propagate baggage from header to context")
 }
 
+func TestBeforeHandleSetsHTTPEndpointWhenNoRoute(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/api/v1/users/123?foo=bar", nil)
+	w := httptest.NewRecorder()
+	cfg := &ServeConfig{} // no route provided
+
+	rw, rt, after, handled := BeforeHandle(cfg, w, r)
+	assert.False(t, handled)
+
+	// run a no-op handler
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	h.ServeHTTP(rw, rt)
+
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	expected := simplifyHTTPUrl(URLFromRequest(r, true))
+	assert.Equal(t, expected, spans[0].Tag(ext.HTTPEndpoint))
+}
+
 func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
 	tracer.Start()
