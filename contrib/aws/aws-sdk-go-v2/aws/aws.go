@@ -338,8 +338,8 @@ func ruleName(requestInput middleware.InitializeInput) string {
 		return *params.Rule
 	case *eventbridge.RemoveTargetsInput:
 		return *params.Rule
-		// case *eventbridge.PutEventsInput:
-		// 	*params
+	// case *eventbridge.PutEventsInput:
+	// 	*params
 	}
 	return ""
 }

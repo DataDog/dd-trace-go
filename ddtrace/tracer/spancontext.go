@@ -524,7 +524,7 @@ func (t *trace) setTraceTags(s *Span) {
 func (t *trace) finishedOne(s *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	s.finished = true
+		s.finished = true
 	if t.full {
 		// capacity has been reached, the buffer is no longer tracking
 		// all the spans in the trace, so the below conditions will not
