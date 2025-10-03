@@ -76,12 +76,12 @@ func (tc *TestCaseNetHTTPContext) Run(_ context.Context, t *testing.T) {
 
 func (tc *TestCaseNetHTTPContext) ExpectedTraces() trace.Traces {
 	wantTraces := `
-[http.request | GET / | net/http | client]
-	[http.request | GET / | net/http | server]
-		[net/http.rootHandler | rootHandler]
-			[backgroundFunc | backgroundFunc]
-			[backgroundFunc | backgroundFunc]
-`
+		[http.request | GET / | net/http | client]
+			[http.request | GET / | net/http | server]
+				[net/http.rootHandler | rootHandler]
+					[backgroundFunc | backgroundFunc]
+					[backgroundFunc | backgroundFunc]
+	`
 
 	return trace.FromSimplified(wantTraces)
 }

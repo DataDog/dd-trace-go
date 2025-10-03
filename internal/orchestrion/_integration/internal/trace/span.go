@@ -150,7 +150,7 @@ func printableSpanAttribute(attrs map[string]any, key string) string {
 		switch key {
 		case "duration":
 			d := time.Duration(int64(t)) * time.Nanosecond
-			return fmt.Sprintf("%s", d)
+			return d.String()
 		case "start":
 			tm := time.Unix(0, int64(t))
 			return tm.Format(time.RFC3339Nano)
@@ -165,20 +165,22 @@ func printableSpanAttribute(attrs map[string]any, key string) string {
 // - 1 span per line
 // - Span format is [span.name | resource.name | component | span.kind]
 // - All values are optional except span.name
-// - Indentation (4 spaces or 1 tab) is used to represent parent-child relationships.
+// - Indentation (tabs only) is used to represent parent-child relationships.
 //
 // Example:
 //
 //	[http.request | GET / | net/http | client]
-//	    [http.request | GET / | net/http | server]
-//	        [echo.someMiddleware | echo-ctx-someMiddleware]
-//	            [http.request | GET / | labstack/echo.v4 | server]
-//	                [some.span]
-//	                [other.span]
+//		[http.request | GET / | net/http | server]
+//			[echo.someMiddleware | echo-ctx-someMiddleware]
+//				[http.request | GET / | labstack/echo.v4 | server]
+//					[some.span]
+//					[other.span]
 //	[another.root]
-//	    [another.root.child1]
-//	    [another.root.child2]
+//		[another.root.child1]
+//		[another.root.child2]
 func FromSimplified(input string) Traces {
+	// Trim common leading whitespace from all lines
+	input = trimCommonIndentation(input)
 	lines := strings.Split(input, "\n")
 	result := Traces{}
 
@@ -194,7 +196,7 @@ func FromSimplified(input string) Traces {
 			panic(fmt.Sprintf("invalid indentation: %q", line))
 		}
 
-		content := strings.TrimLeft(line, " \t")
+		content := strings.TrimLeft(line, "\t")
 		if !strings.HasPrefix(content, "[") || !strings.HasSuffix(content, "]") {
 			panic(fmt.Sprintf("invalid span format: %q", content))
 		}
@@ -244,26 +246,74 @@ func FromSimplified(input string) Traces {
 	return result
 }
 
-// computeIndentLevel returns the indent level where 4 spaces or 1 tab = 1 level
+// computeIndentLevel returns the indent level where 1 tab = 1 level
 func computeIndentLevel(s string) int {
 	level := 0
-	spaces := 0
 	for _, r := range s {
 		switch r {
-		case ' ':
-			spaces++
-			if spaces == 4 {
-				level++
-				spaces = 0
-			}
 		case '\t':
 			level++
-			spaces = 0
 		default:
 			return level
 		}
 	}
 	return level
+}
+
+// trimCommonIndentation removes the common leading whitespace from all non-empty lines.
+// This allows for properly indented multi-line strings in source code.
+// Only tabs are supported for indentation (following Go conventions).
+func trimCommonIndentation(input string) string {
+	lines := strings.Split(input, "\n")
+
+	// Skip leading and trailing empty lines
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	end := len(lines)
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	if start >= end {
+		return ""
+	}
+	lines = lines[start:end]
+
+	// Find the minimum number of leading tabs among non-empty lines
+	minTabs := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		tabs := 0
+		for _, r := range line {
+			if r == '\t' {
+				tabs++
+			} else {
+				break
+			}
+		}
+		if minTabs == -1 || tabs < minTabs {
+			minTabs = tabs
+		}
+	}
+	if minTabs <= 0 {
+		return strings.Join(lines, "\n")
+	}
+
+	// Remove the common leading tabs
+	result := make([]string, len(lines))
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			result[i] = ""
+		} else if len(line) >= minTabs {
+			result[i] = line[minTabs:]
+		} else {
+			result[i] = line
+		}
+	}
+	return strings.Join(result, "\n")
 }
 
 // ToSimplified returns the simplified version of a trace.
