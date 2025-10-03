@@ -20,8 +20,9 @@ run() {
 
 contrib=""
 sleeptime=10
-unset INTEGRATION
-unset DD_APPSEC_ENABLED
+INTEGRATION=false
+DD_APPSEC_ENABLED=false
+DD_TEST_APPS_ENABLED=false
 
 if [[ "$(uname -s)" = 'Darwin' && "$(uname -m)" = 'arm64' ]]; then
 	# Needed to run integration tests on Apple Silicon
@@ -73,6 +74,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+message "$INTEGRATION, $contrib, $DD_APPSEC_ENABLED, $DD_TEST_APPS_ENABLED"
+
 if [[ "$INTEGRATION" != "" ]]; then
 	## Make sure we shut down the docker containers on exit.
 	function finish {
@@ -91,8 +94,8 @@ fi
 
 ## CORE
 message "Testing core..."
-pkg_names=$(go list ./...)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic "${pkg_names}" && true
+pkg_names=$(go list ./... | tr '\n' ' ' | sed 's/ $//g')
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic ${pkg_names} && true
 
 if [[ "$contrib" != "" ]]; then
 	## CONTRIB
@@ -119,7 +122,7 @@ if [[ "$contrib" != "" ]]; then
 			cd - >/dev/null
 			continue
 		fi
-		nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic "${pkgs}"
+		nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic ${pkgs}
 		cd - >/dev/null
 	done
 fi
