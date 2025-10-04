@@ -98,7 +98,7 @@ func (h *agentTraceWriter) stop() {
 
 // newPayload returns a new payload based on the trace protocol.
 func (h *agentTraceWriter) newPayload() payload {
-	return newPayload(h.config.traceProtocol)
+	return newPayloadWithConfig(h.config.traceProtocol, h.config.v1Test)
 }
 
 // flush will push any currently buffered traces to the server.

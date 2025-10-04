@@ -66,8 +66,9 @@ const (
 	traceCountHeader         = "X-Datadog-Trace-Count"       // header containing the number of traces in the payload
 	obfuscationVersionHeader = "Datadog-Obfuscation-Version" // header containing the version of obfuscation used, if any
 
-	tracesAPIPath = "/v0.4/traces"
-	statsAPIPath  = "/v0.6/stats"
+	tracesAPIPath   = "/v0.4/traces"
+	tracesV1APIPath = "/v1.0/traces"
+	statsAPIPath    = "/v0.6/stats"
 )
 
 // transport is an interface for communicating data to the agent.
@@ -87,6 +88,7 @@ type httpTransport struct {
 	statsURL string            // the delivery URL for stats
 	client   *http.Client      // the HTTP client used in the POST
 	headers  map[string]string // the Transport headers
+	useV1    bool              // whether to use v1.0/traces endpoint
 }
 
 // newTransport returns a new Transport implementation that sends traces to a
@@ -96,7 +98,7 @@ type httpTransport struct {
 // running on a non-default port, if it's located on another machine, or when
 // otherwise needing to customize the transport layer, for instance when using
 // a unix domain socket.
-func newHTTPTransport(url string, client *http.Client) *httpTransport {
+func newHTTPTransport(url string, client *http.Client, useV1 bool) *httpTransport {
 	// initialize the default EncoderPool with Encoder headers
 	defaultHeaders := map[string]string{
 		"Datadog-Meta-Lang":             "go",
@@ -114,11 +116,16 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
 		defaultHeaders["Datadog-External-Env"] = extEnv
 	}
+	tracePath := tracesAPIPath
+	if useV1 {
+		tracePath = tracesV1APIPath
+	}
 	return &httpTransport{
-		traceURL: fmt.Sprintf("%s%s", url, tracesAPIPath),
+		traceURL: fmt.Sprintf("%s%s", url, tracePath),
 		statsURL: fmt.Sprintf("%s%s", url, statsAPIPath),
 		client:   client,
 		headers:  defaultHeaders,
+		useV1:    useV1,
 	}
 }
 
