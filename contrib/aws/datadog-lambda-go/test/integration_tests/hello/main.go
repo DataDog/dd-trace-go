@@ -7,9 +7,8 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -23,8 +22,8 @@ import (
 func handleRequest(ctx context.Context, ev events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	currentSpan, _ := tracer.SpanFromContext(ctx)
 	currentSpanContext := currentSpan.Context()
-	log.Println("Current span ID: " + strconv.FormatUint(currentSpanContext.SpanID(), 10))
-	log.Println("Current trace ID: " + currentSpanContext.TraceID())
+	slog.Info("Current span", "span_id", currentSpanContext.SpanID())
+	slog.Info("Current trace", "trace_id", currentSpanContext.TraceID())
 
 	// HTTP request
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://www.datadoghq.com", nil)
