@@ -472,11 +472,13 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		}
 		t.worker(tick)
 	}()
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		t.reportHealthMetricsAtInterval(statsInterval)
-	}()
+	if c.healthMetricsEnabled {
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.reportHealthMetricsAtInterval(statsInterval)
+		}()
+	}
 	t.stats.Start()
 	return t, nil
 }

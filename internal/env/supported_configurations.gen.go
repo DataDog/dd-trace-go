@@ -64,6 +64,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA":                             {},
 	"DD_GIT_REPOSITORY_URL":                                           {},
 	"DD_GIT_TAG":                                                      {},
+	"DD_HEALTH_METRICS_ENABLED":                                       {},
 	"DD_HOSTNAME":                                                     {},
 	"DD_INSTRUMENTATION_INSTALL_ID":                                   {},
 	"DD_INSTRUMENTATION_INSTALL_TIME":                                 {},
