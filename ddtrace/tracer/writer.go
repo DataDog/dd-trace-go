@@ -26,7 +26,7 @@ type traceWriter interface {
 	add([]*Span)
 
 	// flush causes the writer to send any buffered traces.
-	flush()
+	flush(done ...chan<- struct{})
 
 	// stop gracefully shuts down the writer.
 	stop()
@@ -102,12 +102,15 @@ func (h *agentTraceWriter) newPayload() payload {
 }
 
 // flush will push any currently buffered traces to the server.
-func (h *agentTraceWriter) flush() {
+func (h *agentTraceWriter) flush(done ...chan<- struct{}) {
 	h.mu.Lock()
 	oldp := h.payload
-	// Check after acquiring lock
+	// Check after acquiring lock.
 	if oldp.itemCount() == 0 {
 		h.mu.Unlock()
+		if len(done) > 0 && done[0] != nil {
+			close(done[0])
+		}
 		return
 	}
 	h.payload = h.newPayload()
@@ -116,6 +119,9 @@ func (h *agentTraceWriter) flush() {
 	h.climit <- struct{}{}
 	h.wg.Add(1)
 	go func(p payload) {
+		if len(done) > 0 && done[0] != nil {
+			defer close(done[0])
+		}
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object
@@ -377,7 +383,10 @@ func (h *logTraceWriter) stop() {
 }
 
 // flush will write any buffered traces to standard output.
-func (h *logTraceWriter) flush() {
+func (h *logTraceWriter) flush(done ...chan<- struct{}) {
+	if len(done) > 0 && done[0] != nil {
+		defer close(done[0])
+	}
 	if !h.hasTraces {
 		return
 	}
