@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -2777,7 +2778,7 @@ func TestInjectBaggageMaxBytes(t *testing.T) {
 		"key3": strings.Repeat("c", baggageMaxBytes/3),
 	}
 
-	ctx.baggage = baggageItems
+	ctx.baggage = NewBaggageContextWithItems(context.Background(), nil, baggageItems)
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
