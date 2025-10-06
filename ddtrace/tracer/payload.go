@@ -132,14 +132,10 @@ func (p *unsafePayload) setTracerTags(t []*Span) {
 	if pTags == "" {
 		return
 	}
-	for _, s := range t {
-		// todo: can any span be nil?
-		if s == nil {
-			continue
-		}
-		s.setProcessTags(pTags)
+	if len(t) == 0 {
 		return
 	}
+	t[0].setProcessTags(pTags)
 }
 
 // itemCount returns the number of items available in the stream.
