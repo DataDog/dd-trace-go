@@ -155,18 +155,24 @@ func TestPrioritySampler(t *testing.T) {
 		testSpan1.traceID = math.MaxUint64 - (math.MaxUint64 / 4)
 
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoKeep, testSpan1.metrics[keySamplingPriority])
-		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
+		priority, _ := getMetric(testSpan1, keySamplingPriority)
+		rate, _ := getMetric(testSpan1, keySamplingPriorityRate)
+		assert.EqualValues(ext.PriorityAutoKeep, priority)
+		assert.EqualValues(0.5, rate)
 
 		testSpan1.traceID = math.MaxUint64 - (math.MaxUint64 / 3)
 		ps.apply(testSpan1)
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.metrics[keySamplingPriority])
-		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
+		priority, _ = getMetric(testSpan1, keySamplingPriority)
+		rate, _ = getMetric(testSpan1, keySamplingPriorityRate)
+		assert.EqualValues(ext.PriorityAutoReject, priority)
+		assert.EqualValues(0.5, rate)
 
 		testSpan1.service = "other-service"
 		testSpan1.traceID = 1
-		assert.EqualValues(ext.PriorityAutoReject, testSpan1.metrics[keySamplingPriority])
-		assert.EqualValues(0.5, testSpan1.metrics[keySamplingPriorityRate])
+		priority, _ = getMetric(testSpan1, keySamplingPriority)
+		rate, _ = getMetric(testSpan1, keySamplingPriorityRate)
+		assert.EqualValues(ext.PriorityAutoReject, priority)
+		assert.EqualValues(0.5, rate)
 	})
 }
 
@@ -598,8 +604,10 @@ func TestRulesSampler(t *testing.T) {
 				span := makeSpan("http.request", "test-service")
 				result := rs.SampleTrace(span)
 				assert.True(result)
-				assert.Equal(1.0, span.metrics[keyRulesSamplerAppliedRate])
-				assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
+				samplerRate, _ := getMetric(span, keyRulesSamplerAppliedRate)
+				assert.Equal(1.0, samplerRate)
+				ruleRate, _ := getMetric(span, keyRulesSamplerLimiterRate)
+				assert.Equal(1.0, ruleRate)
 			})
 		}
 	})
@@ -1010,9 +1018,12 @@ func TestRulesSampler(t *testing.T) {
 					assert.False(result)
 					result = rs.SampleTraceGlobalRate(span)
 					assert.True(result)
-					assert.Equal(rate, span.metrics[keyRulesSamplerAppliedRate])
-					if rate > 0.0 && (span.metrics[keySamplingPriority] != ext.PriorityUserReject) {
-						assert.Equal(1.0, span.metrics[keyRulesSamplerLimiterRate])
+					ruleRate, _ := getMetric(span, keyRulesSamplerAppliedRate)
+					assert.Equal(rate, ruleRate)
+					priority, _ := getMetric(span, keySamplingPriority)
+					if rate > 0.0 && (priority != ext.PriorityUserReject) {
+						rateLimiter, _ := getMetric(span, keyRulesSamplerLimiterRate)
+						assert.Equal(1.0, rateLimiter)
 					}
 				})
 			}
@@ -1069,8 +1080,10 @@ func TestRulesSampler(t *testing.T) {
 				s.SetTag("tag2", "val2")
 				s.Finish()
 
-				assert.EqualValues(t, s.metrics[keySamplingPriority], test.samplingPriority)
-				assert.EqualValues(t, s.metrics[keyRulesSamplerAppliedRate], test.appliedRate)
+				priority, _ := getMetric(s, keySamplingPriority)
+				assert.EqualValues(t, priority, test.samplingPriority)
+				ruleRate, _ := getMetric(s, keyRulesSamplerAppliedRate)
+				assert.EqualValues(t, test.appliedRate, ruleRate)
 			})
 		}
 	})
@@ -1088,21 +1101,27 @@ func TestRulesSampler(t *testing.T) {
 		originSpan.SetTag("tag1", "val1")
 		// based on the  Tag("tag0", "val0") start span option, span sampling would be 'drop',
 		// and setting the second pair of tags doesn't invoke sampling func
-		assert.EqualValues(t, -1, originSpan.metrics[keySamplingPriority])
-		assert.EqualValues(t, 0, originSpan.metrics[keyRulesSamplerAppliedRate])
+		priority, _ := getMetric(originSpan, keySamplingPriority)
+		assert.EqualValues(t, -1, priority)
+		ruleRate, _ := getMetric(originSpan, keyRulesSamplerAppliedRate)
+		assert.EqualValues(t, 0, ruleRate)
 		headers := TextMapCarrier(map[string]string{})
 
 		// inject invokes resampling, since span satisfies rule #2, sampling will be 'keep'
 		err = tr.Inject(originSpan.Context(), headers)
 		assert.NoError(t, err)
-		assert.EqualValues(t, 2, originSpan.metrics[keySamplingPriority])
-		assert.EqualValues(t, 1, originSpan.metrics[keyRulesSamplerAppliedRate])
+		priority, _ = getMetric(originSpan, keySamplingPriority)
+		ruleRate, _ = getMetric(originSpan, keyRulesSamplerAppliedRate)
+		assert.EqualValues(t, 2, priority)
+		assert.EqualValues(t, 1, ruleRate)
 
 		// context already injected / propagated, and the sampling decision can no longer be changed
 		originSpan.SetTag("tag2", "val2")
 		originSpan.Finish()
-		assert.EqualValues(t, 2, originSpan.metrics[keySamplingPriority])
-		assert.EqualValues(t, 1, originSpan.metrics[keyRulesSamplerAppliedRate])
+		priority, _ = getMetric(originSpan, keySamplingPriority)
+		ruleRate, _ = getMetric(originSpan, keyRulesSamplerAppliedRate)
+		assert.EqualValues(t, 2, priority)
+		assert.EqualValues(t, 1, ruleRate)
 
 		w3cCtx, err := tr.Extract(headers)
 		assert.Nil(t, err)
@@ -1110,7 +1129,8 @@ func TestRulesSampler(t *testing.T) {
 		w3cSpan, _ := StartSpanFromContext(context.Background(), "web.request", ChildOf(w3cCtx))
 		w3cSpan.Finish()
 
-		assert.EqualValues(t, 2, w3cSpan.metrics[keySamplingPriority])
+		priority, _ = getMetric(w3cSpan, keySamplingPriority)
+		assert.EqualValues(t, 2, priority)
 	})
 
 	t.Run("manual keep priority", func(t *testing.T) {
@@ -1123,7 +1143,8 @@ func TestRulesSampler(t *testing.T) {
 		s.SetTag(ext.ManualKeep, true)
 		s.SetTag(ext.ResourceName, "keep_me")
 		s.Finish()
-		assert.EqualValues(t, s.metrics[keySamplingPriority], 2)
+		priority, _ := getMetric(s, keySamplingPriority)
+		assert.EqualValues(t, 2, priority)
 	})
 
 	t.Run("no-agent_psr-with-rules-sampling", func(t *testing.T) {
@@ -1930,13 +1951,14 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 			root.Finish()
 
 			// Root span should have the sampling rule applied
-			assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
-			assert.Equal(tc.rate, root.metrics[keyRulesSamplerAppliedRate])
+			rate, ok := getMetric(root, keyRulesSamplerAppliedRate)
+			assert.True(ok)
+			assert.Equal(tc.rate, rate)
 
 			// Root span should have the Knuth sampling rate tag with correctly formatted value
-			rate, ok := getMeta(root, keyKnuthSamplingRate)
+			knuthRate, ok := getMeta(root, keyKnuthSamplingRate)
 			assert.True(ok)
-			assert.Equal(tc.expected, rate)
+			assert.Equal(tc.expected, knuthRate)
 
 			// Child span should not have sampling tags
 			assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)

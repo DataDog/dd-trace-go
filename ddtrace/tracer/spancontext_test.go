@@ -145,9 +145,12 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		root, _ := StartSpanFromContext(context.Background(), "root")
 		for i := 0; i < 1000; i++ {
 			root.Finish(WithError(err))
-			assert.Equal(t, 1.0, root.metrics[keyRulesSamplerLimiterRate])
-			assert.Equal(t, 2.0, root.metrics[keySamplingPriority])
-			assert.Empty(t, root.metrics[keySamplingPriorityRate])
+			rateRule, _ := getMetric(root, keyRulesSamplerLimiterRate)
+			priority, _ := getMetric(root, keySamplingPriority)
+			assert.Equal(t, 1.0, rateRule)
+			assert.Equal(t, 2.0, priority)
+			_, hasPrioRate := getMetric(root, keySamplingPriorityRate)
+			assert.False(t, hasPrioRate)
 		}
 	})
 }
