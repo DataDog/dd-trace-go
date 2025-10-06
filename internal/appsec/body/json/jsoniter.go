@@ -39,12 +39,12 @@ func (e *jsonIterEncodable) ToEncoder(config libddwaf.EncoderConfig) *jsonIterEn
 	}
 }
 
-func (e *jsonIterEncodable) Encode(config libddwaf.EncoderConfig, obj *libddwaf.WAFObject, depth int) (map[libddwaf.TruncationReason][]int, error) {
+func (e *jsonIterEncodable) Encode(config libddwaf.EncoderConfig, obj *libddwaf.WAFObject, remainingDepth int) (map[libddwaf.TruncationReason][]int, error) {
 	encoder := e.ToEncoder(config)
 
 	defer cfg.ReturnIterator(encoder.iter)
 
-	if err := encoder.Encode(obj, config.MaxObjectDepth-depth); err != nil && (errors.Is(err, waferrors.ErrTimeout) || !e.truncated) {
+	if err := encoder.Encode(obj, remainingDepth); err != nil && (errors.Is(err, waferrors.ErrTimeout) || !e.truncated) {
 		// Return an error if a waf timeout error occurred, or we are in normal parsing mode
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (e *jsonIterEncoder) addTruncation(reason libddwaf.TruncationReason, size i
 	e.truncations[reason] = append(e.truncations[reason], size)
 }
 
-func (e *jsonIterEncoder) Encode(obj *libddwaf.WAFObject, depth int) error {
+func (e *jsonIterEncoder) Encode(obj *libddwaf.WAFObject, remainingDepth int) error {
 	if e.config.Timer.Exhausted() {
 		return waferrors.ErrTimeout
 	}
@@ -93,9 +93,9 @@ func (e *jsonIterEncoder) Encode(obj *libddwaf.WAFObject, depth int) error {
 
 	switch e.iter.WhatIsNext() {
 	case jsoniter.ObjectValue:
-		return e.encodeObject(obj, depth-1)
+		return e.encodeObject(obj, remainingDepth-1)
 	case jsoniter.ArrayValue:
-		return e.encodeArray(obj, depth-1)
+		return e.encodeArray(obj, remainingDepth-1)
 	case jsoniter.StringValue:
 		s := e.iter.ReadString()
 		if err = e.iter.Error; err == nil || err == io.EOF {

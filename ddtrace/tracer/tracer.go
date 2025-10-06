@@ -21,12 +21,14 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -273,7 +275,7 @@ func storeConfig(c *config) {
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
 	metadata := Metadata{
-		SchemaVersion:      1,
+		SchemaVersion:      2,
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
@@ -281,6 +283,8 @@ func storeConfig(c *config) {
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
 		ServiceVersion:     c.version,
+		ProcessTags:        processtags.GlobalTags().String(),
+		ContainerID:        internal.ContainerID(),
 	}
 
 	data, _ := metadata.MarshalMsg(nil)
@@ -344,7 +348,8 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
-		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
+		// We are not failing here because the error could be cause by
+		// a transitory issue.
 	}
 	defer func() {
 		if err != nil {

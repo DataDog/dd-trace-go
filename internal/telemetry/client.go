@@ -195,6 +195,15 @@ func (c *client) AddFlushTicker(f func(Client)) {
 	c.flushTickerFuncs = append(c.flushTickerFuncs, f)
 }
 
+func (c *client) callFlushTickerFuncs() {
+	c.flushTickerFuncsMu.Lock()
+	defer c.flushTickerFuncsMu.Unlock()
+
+	for _, f := range c.flushTickerFuncs {
+		f(c)
+	}
+}
+
 func (c *client) Config() ClientConfig {
 	return c.clientConfig
 }
@@ -220,14 +229,7 @@ func (c *client) Flush() {
 	}()
 
 	// We call the flushTickerFuncs before flushing the data for data sources
-	{
-		c.flushTickerFuncsMu.Lock()
-		defer c.flushTickerFuncsMu.Unlock()
-
-		for _, f := range c.flushTickerFuncs {
-			f(c)
-		}
-	}
+	c.callFlushTickerFuncs()
 
 	payloads := make([]transport.Payload, 0, 8)
 	for _, ds := range c.dataSources {
