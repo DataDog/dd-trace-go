@@ -32,6 +32,7 @@ const (
 	_ Integration = iota
 	GCPServiceExtensionIntegration
 	EnvoyIntegration
+	EnvoyGatewayIntegration
 	IstioIntegration
 )
 
@@ -67,7 +68,7 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 	}
 
 	switch config.Integration {
-	case GCPServiceExtensionIntegration, EnvoyIntegration, IstioIntegration:
+	case GCPServiceExtensionIntegration, EnvoyIntegration, IstioIntegration, EnvoyGatewayIntegration:
 	default:
 		instr.Logger().Error("external_processing: invalid proxy integration type %d. Defaulting to GCPServiceExtensionIntegration", config.Integration)
 		config.Integration = GCPServiceExtensionIntegration
