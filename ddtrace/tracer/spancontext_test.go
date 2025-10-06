@@ -162,6 +162,10 @@ func TestAsyncSpanRace(t *testing.T) {
 func TestAsyncSpanRacePartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
+	// disabling process tags as span.meta and span.metrics (key deletion) write operations
+	// run during encoding, defeating the TestAsyncSpanRacePartialFlush test purpose
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
 	testAsyncSpanRace(t)
 }
 
