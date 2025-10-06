@@ -46,17 +46,17 @@ type Experiment struct {
 // Task represents the task to run for an Experiment.
 type Task interface {
 	Name() string
-	Run(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error)
+	Run(ctx context.Context, rec dataset.Record, experimentCfg map[string]any) (any, error)
 }
 
 // Evaluator represents an evaluator for an Experiment.
 type Evaluator interface {
 	Name() string
-	Run(ctx context.Context, input any, output any, expectedOutput any) (any, error)
+	Run(ctx context.Context, rec dataset.Record, output any) (any, error)
 }
 
 // TaskFunc is the type for Task functions.
-type TaskFunc func(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error)
+type TaskFunc func(ctx context.Context, rec dataset.Record, experimentCfg map[string]any) (any, error)
 
 type namedTask struct {
 	name string
@@ -67,8 +67,8 @@ func (n *namedTask) Name() string {
 	return n.name
 }
 
-func (n *namedTask) Run(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error) {
-	return n.fn(ctx, inputData, experimentCfg)
+func (n *namedTask) Run(ctx context.Context, rec dataset.Record, experimentCfg map[string]any) (any, error) {
+	return n.fn(ctx, rec, experimentCfg)
 }
 
 // NewTask creates a new Task.
@@ -80,7 +80,7 @@ func NewTask(name string, fn TaskFunc) Task {
 }
 
 // EvaluatorFunc is the type for Evaluator functions.
-type EvaluatorFunc func(ctx context.Context, input any, output any, expectedOutput any) (any, error)
+type EvaluatorFunc func(ctx context.Context, rec dataset.Record, output any) (any, error)
 
 type namedEvaluator struct {
 	name string
@@ -91,8 +91,8 @@ func (n *namedEvaluator) Name() string {
 	return n.name
 }
 
-func (n *namedEvaluator) Run(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
-	return n.fn(ctx, input, output, expectedOutput)
+func (n *namedEvaluator) Run(ctx context.Context, rec dataset.Record, output any) (any, error) {
+	return n.fn(ctx, rec, output)
 }
 
 // NewEvaluator creates a new Evaluator.
@@ -268,7 +268,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 	tags["dataset_record_id"] = rec.ID()
 	tags["experiment_id"] = e.id
 
-	out, err := e.task.Run(ctx, rec.Input, e.cfg.experimentCfg)
+	out, err := e.task.Run(ctx, rec, e.cfg.experimentCfg)
 	if err != nil {
 		err = errortrace.Wrap(err)
 	}
@@ -314,7 +314,7 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*Result, cfg *
 		eg.Go(func() error {
 			evs := make([]*Evaluation, 0, len(e.evaluators))
 			for evIdx, ev := range e.evaluators {
-				val, err := ev.Run(ctx, rec.Input, res.Output, rec.ExpectedOutput)
+				val, err := ev.Run(ctx, rec, res.Output)
 				if err != nil {
 					// this error will be used later to create the payload sent to the backend, so it must contain the
 					// stacktrace.

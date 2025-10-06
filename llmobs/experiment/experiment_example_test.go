@@ -27,8 +27,8 @@ func ExampleNew() {
 		log.Fatal(err)
 	}
 
-	task := experiment.NewTask("capitals-of-the-world", func(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error) {
-		inputMap := inputData.(map[string]any)
+	task := experiment.NewTask("capitals-of-the-world", func(ctx context.Context, rec dataset.Record, experimentCfg map[string]any) (any, error) {
+		inputMap := rec.Input.(map[string]any)
 		question := inputMap["question"].(string)
 		// Your LLM or processing logic here
 		if strings.Contains(question, "China") {
@@ -38,17 +38,17 @@ func ExampleNew() {
 	})
 
 	evs := []experiment.Evaluator{
-		experiment.NewEvaluator("exact-match", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
-			return output == expectedOutput, nil
+		experiment.NewEvaluator("exact-match", func(ctx context.Context, rec dataset.Record, output any) (any, error) {
+			return output == rec.ExpectedOutput, nil
 		}),
-		experiment.NewEvaluator("overlap", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("overlap", func(ctx context.Context, rec dataset.Record, output any) (any, error) {
 			outStr, ok := output.(string)
 			if !ok {
 				return nil, fmt.Errorf("wanted output to be a string, got: %T", output)
 			}
-			expStr, ok := expectedOutput.(string)
+			expStr, ok := rec.ExpectedOutput.(string)
 			if !ok {
-				return nil, fmt.Errorf("wanted expectedOutput to be a string, got: %T", expectedOutput)
+				return nil, fmt.Errorf("wanted expectedOutput to be a string, got: %T", rec.ExpectedOutput)
 			}
 
 			outSet := make(map[rune]struct{})
@@ -80,7 +80,7 @@ func ExampleNew() {
 
 			return score, nil
 		}),
-		experiment.NewEvaluator("fake-llm-as-a-judge", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("fake-llm-as-a-judge", func(ctx context.Context, rec dataset.Record, output any) (any, error) {
 			return "excellent", nil
 		}),
 	}
