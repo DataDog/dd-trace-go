@@ -59,10 +59,12 @@ func (m messageRequestHeaders) MessageType() proxy.MessageType {
 const (
 	componentNameGCPServiceExtension = "gcp-service-extension"
 	componentNameEnvoy               = "envoy"
+	componentNameEnvoyGateway        = "envoy-gateway"
 	componentNameIstio               = "istio"
 
-	datadogEnvoyIntegrationHeader = "x-datadog-envoy-integration"
-	datadogIntegrationHeader      = "x-datadog-istio-integration"
+	datadogEnvoyIntegrationHeader        = "x-datadog-envoy-integration"
+	datadogEnvoyGatewayIntegrationHeader = "x-datadog-envoy-gateway-integration"
+	datadogIntegrationHeader             = "x-datadog-istio-integration"
 )
 
 func (i Integration) String() string {
@@ -71,6 +73,8 @@ func (i Integration) String() string {
 		return componentNameGCPServiceExtension
 	case EnvoyIntegration:
 		return componentNameEnvoy
+	case EnvoyGatewayIntegration:
+		return componentNameEnvoyGateway
 	case IstioIntegration:
 		return componentNameIstio
 	default:
@@ -91,6 +95,11 @@ func (m messageRequestHeaders) SpanOptions(ctx context.Context) []tracer.StartSp
 		valuesEnvoy := md.Get(datadogEnvoyIntegrationHeader)
 		if len(valuesEnvoy) > 0 && valuesEnvoy[0] == "1" {
 			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameEnvoy)}
+		}
+
+		valuesEnvoyGateway := md.Get(datadogEnvoyGatewayIntegrationHeader)
+		if len(valuesEnvoyGateway) > 0 && valuesEnvoyGateway[0] == "1" {
+			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameEnvoyGateway)}
 		}
 
 		valuesIstio := md.Get(datadogIntegrationHeader)
