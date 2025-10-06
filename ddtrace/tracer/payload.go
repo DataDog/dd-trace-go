@@ -128,11 +128,11 @@ func (p *unsafePayload) setTracerTags(t []*Span) {
 	if atomic.LoadUint32(&p.count) != 0 {
 		return
 	}
-	pTags := processtags.GlobalTags().String()
-	if pTags == "" {
+	if len(t) == 0 {
 		return
 	}
-	if len(t) == 0 {
+	pTags := processtags.GlobalTags().String()
+	if pTags == "" {
 		return
 	}
 	t[0].setProcessTags(pTags)

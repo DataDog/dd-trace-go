@@ -67,10 +67,6 @@ func TestPayloadIntegrity(t *testing.T) {
 func TestPayloadDecode(t *testing.T) {
 	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 	processtags.Reload()
-	defer func() {
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
-	}()
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
