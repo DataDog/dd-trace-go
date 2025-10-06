@@ -1281,7 +1281,8 @@ func TestIncident41436(t *testing.T) {
 
 		stop()
 
-		assert.Equal(t, "rum", s1.meta[keyOrigin])
+		origin, _ := getMeta(s2, keyOrigin)
+		assert.Equal(t, "rum", origin)
 		assert.Equal(t, float64(1), s1.metrics[keySamplingPriority])
 		assert.Empty(t, s1.metrics[keyDecisionMaker])
 		assert.Empty(t, s1.metrics[keyRulesSamplerAppliedRate])
@@ -1289,7 +1290,8 @@ func TestIncident41436(t *testing.T) {
 		assert.Empty(t, s1.metrics[keySingleSpanSamplingRuleRate])
 		assert.Empty(t, s1.metrics[keySingleSpanSamplingMPS])
 
-		assert.Equal(t, "rum", s2.meta[keyOrigin])
+		origin, _ = getMeta(s2, keyOrigin)
+		assert.Equal(t, "rum", origin)
 		assert.Equal(t, float64(0), s2.metrics[keySamplingPriority])
 		assert.Empty(t, s2.metrics[keyDecisionMaker])
 		assert.Empty(t, s2.metrics[keyRulesSamplerAppliedRate])
@@ -1324,7 +1326,8 @@ func TestIncident41436(t *testing.T) {
 
 		stop()
 
-		assert.Equal(t, "rum", s1.meta[keyOrigin])
+		origin, _ := getMeta(s1, keyOrigin)
+		assert.Equal(t, "rum", origin)
 		assert.Equal(t, float64(1), s1.metrics[keySamplingPriority])
 		assert.Empty(t, s1.metrics[keyDecisionMaker])
 		assert.Empty(t, s1.metrics[keyRulesSamplerAppliedRate])
@@ -1332,7 +1335,8 @@ func TestIncident41436(t *testing.T) {
 		assert.Empty(t, s1.metrics[keySingleSpanSamplingRuleRate])
 		assert.Empty(t, s1.metrics[keySingleSpanSamplingMPS])
 
-		assert.Equal(t, "rum", s2.meta[keyOrigin])
+		origin, _ = getMeta(s1, keyOrigin)
+		assert.Equal(t, "rum", origin)
 		assert.Equal(t, float64(0), s2.metrics[keySamplingPriority])
 		assert.Empty(t, s2.metrics[keyDecisionMaker])
 		assert.Empty(t, s2.metrics[keyRulesSamplerAppliedRate])
@@ -1829,15 +1833,17 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Equal(1., root.metrics[keyRulesSamplerAppliedRate])
 		assert.Contains(root.metrics, keyRulesSamplerLimiterRate)
 		// Knuth sampling rate tag should be set with rate 1.0
-		assert.Contains(root.meta, keyKnuthSamplingRate)
-		assert.Equal("1", root.meta[keyKnuthSamplingRate])
+		rate, ok := getMeta(root, keyKnuthSamplingRate)
+		assert.True(ok)
+		assert.Equal("1", rate)
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
 		// child span should not have Knuth sampling rate tag
-		assert.NotContains(child.meta, keyKnuthSamplingRate)
+		_, ok = getMeta(child, keyKnuthSamplingRate)
+		assert.False(ok)
 	})
 
 	t.Run("with-ctx-propagation", func(t *testing.T) {
@@ -1877,18 +1883,21 @@ func TestSampleTagsRootOnly(t *testing.T) {
 
 		// re-sampling should not occur
 		root.Finish()
+
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
 		// Knuth sampling rate tag should still be "0" since no re-sampling occurred
-		assert.Contains(root.meta, keyKnuthSamplingRate)
-		assert.Equal("0", root.meta[keyKnuthSamplingRate])
+		rate, ok := getMeta(root, keyKnuthSamplingRate)
+		assert.True(ok)
+		assert.Equal("0", rate)
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
 		// child span should not have Knuth sampling rate tag
-		assert.NotContains(child.meta, keyKnuthSamplingRate)
+		_, ok = getMeta(child, keyKnuthSamplingRate)
+		assert.False(ok)
 	})
 }
 
@@ -1925,12 +1934,14 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 			assert.Equal(tc.rate, root.metrics[keyRulesSamplerAppliedRate])
 
 			// Root span should have the Knuth sampling rate tag with correctly formatted value
-			assert.Contains(root.meta, keyKnuthSamplingRate)
-			assert.Equal(tc.expected, root.meta[keyKnuthSamplingRate])
+			rate, ok := getMeta(root, keyKnuthSamplingRate)
+			assert.True(ok)
+			assert.Equal(tc.expected, rate)
 
 			// Child span should not have sampling tags
 			assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
-			assert.NotContains(child.meta, keyKnuthSamplingRate)
+			_, ok = getMeta(child, keyKnuthSamplingRate)
+			assert.False(ok)
 		})
 	}
 }
