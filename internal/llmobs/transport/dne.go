@@ -40,10 +40,10 @@ type DatasetCreate struct {
 
 type DatasetRecordView struct {
 	ID             string
-	Input          map[string]any `json:"input"`
-	ExpectedOutput any            `json:"expected_output"`
-	Metadata       map[string]any `json:"metadata"`
-	Version        int            `json:"version"`
+	Input          any `json:"input"`
+	ExpectedOutput any `json:"expected_output"`
+	Metadata       any `json:"metadata"`
+	Version        int `json:"version"`
 }
 
 type ProjectView struct {
@@ -64,16 +64,16 @@ type ExperimentView struct {
 }
 
 type DatasetRecordCreate struct {
-	Input          map[string]any `json:"input,omitempty"`
-	ExpectedOutput any            `json:"expected_output,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
+	Input          any `json:"input,omitempty"`
+	ExpectedOutput any `json:"expected_output,omitempty"`
+	Metadata       any `json:"metadata,omitempty"`
 }
 
 type DatasetRecordUpdate struct {
-	ID             string         `json:"id"`
-	Input          map[string]any `json:"input,omitempty"`
-	ExpectedOutput *any           `json:"expected_output,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
+	ID             string `json:"id"`
+	Input          any    `json:"input,omitempty"`
+	ExpectedOutput *any   `json:"expected_output,omitempty"`
+	Metadata       any    `json:"metadata,omitempty"`
 }
 
 type ErrorMessage struct {

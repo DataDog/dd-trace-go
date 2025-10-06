@@ -397,7 +397,7 @@ func TestExperimentRun(t *testing.T) {
 		ds := createTestDataset(t)
 
 		// Create a task that always fails
-		task := experiment.NewTask("failing-task", func(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error) {
+		task := experiment.NewTask("failing-task", func(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error) {
 			return nil, errors.New("task failed")
 		})
 		evaluators := createTestEvaluators()
@@ -435,10 +435,10 @@ func TestExperimentRun(t *testing.T) {
 
 		// Create evaluators where one always fails
 		evaluators := []experiment.Evaluator{
-			experiment.NewEvaluator("working-evaluator", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+			experiment.NewEvaluator("working-evaluator", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 				return "success", nil
 			}),
-			experiment.NewEvaluator("failing-evaluator", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+			experiment.NewEvaluator("failing-evaluator", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 				return nil, errors.New("evaluator failed")
 			}),
 		}
@@ -521,16 +521,16 @@ func TestExperimentMetricGeneration(t *testing.T) {
 
 	// Create evaluators that return different metric types
 	evaluators := []experiment.Evaluator{
-		experiment.NewEvaluator("categorical-eval", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("categorical-eval", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			return "excellent", nil
 		}),
-		experiment.NewEvaluator("score-eval", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("score-eval", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			return 0.95, nil
 		}),
-		experiment.NewEvaluator("boolean-eval", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("boolean-eval", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			return true, nil
 		}),
-		experiment.NewEvaluator("int-eval", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("int-eval", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			return 42, nil
 		}),
 	}
@@ -762,8 +762,12 @@ func createTestDataset(t *testing.T) *dataset.Dataset {
 }
 
 func createTestTask() experiment.Task {
-	return experiment.NewTask("test-task", func(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error) {
-		question, ok := inputData["question"].(string)
+	return experiment.NewTask("test-task", func(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error) {
+		inputMap, ok := inputData.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("input is not a map")
+		}
+		question, ok := inputMap["question"].(string)
 		if !ok {
 			return nil, fmt.Errorf("question not found in input")
 		}
@@ -781,10 +785,10 @@ func createTestTask() experiment.Task {
 
 func createTestEvaluators() []experiment.Evaluator {
 	return []experiment.Evaluator{
-		experiment.NewEvaluator("exact-match", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("exact-match", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			return output == expectedOutput, nil
 		}),
-		experiment.NewEvaluator("similarity", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("similarity", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			if output == expectedOutput {
 				return 1.0, nil
 			}
