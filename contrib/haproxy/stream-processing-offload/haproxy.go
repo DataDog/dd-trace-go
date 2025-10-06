@@ -23,6 +23,11 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageHAProxyStreamProcessingOffload)
 }
 
+// Logger returns the integration logger for the HAProxy Stream Processing Offload package
+func Logger() instrumentation.Logger {
+	return instr.Logger()
+}
+
 // HAProxySPOA defines the AppSec HAProxy Stream Processing Offload Agent
 type HAProxySPOA struct {
 	requestStateCache *ttlcache.Cache[uint64, *proxy.RequestState]
