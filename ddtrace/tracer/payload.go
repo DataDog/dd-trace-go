@@ -137,9 +137,7 @@ func (p *unsafePayload) setTracerTags(t []*Span) {
 		if s == nil {
 			continue
 		}
-		s.mu.Lock()
-		s.meta[keyProcessTags] = pTags
-		s.mu.Unlock()
+		s.setProcessTags(pTags)
 		return
 	}
 }
