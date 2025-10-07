@@ -59,13 +59,13 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 		config.Hijack = ptr.To[bool](true)
 	}
 
-	processor := proxy.NewProcessor[any](proxy.ProcessorConfig[any]{
+	processor := proxy.NewProcessor(proxy.ProcessorConfig{
 		Context:              context.Background(),
 		BlockingUnavailable:  true,
 		BodyParsingSizeLimit: maxBodyBytes,
 		Framework:            framework,
-		ContinueMessageFunc:  func(_ proxy.ContinueActionOptions) (any, error) { return nil, nil },
-		BlockMessageFunc:     func(_ proxy.BlockActionOptions) (any, error) { return nil, nil },
+		ContinueMessageFunc:  func(_ context.Context, _ proxy.ContinueActionOptions) error { return nil },
+		BlockMessageFunc:     func(_ context.Context, _ proxy.BlockActionOptions) error { return nil },
 	}, instr)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +78,7 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 			r.Host = strings.TrimSuffix(r.Host, "-shadow")
 		}
 
-		reqState, _, err := processor.OnRequestHeaders(r.Context(), requestHeader{r, config.SpanOpts})
+		reqState, err := processor.OnRequestHeaders(r.Context(), requestHeader{r, config.SpanOpts})
 		if err != nil {
 			logger.Error("Failed to process request headers: %v", err)
 			return
@@ -87,7 +87,7 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 		defer reqState.Close()
 
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
-		if _, err := processor.OnRequestBody(requestBody{body: body}, &reqState); err != nil {
+		if err := processor.OnRequestBody(requestBody{body: body}, &reqState); err != nil {
 			logger.Error("Failed to process request body: %v", err)
 			return
 		}

@@ -21,7 +21,7 @@ var _ io.Closer = (*RequestState)(nil)
 
 // RequestState manages the state of a single request through its lifecycle
 type RequestState struct {
-	ctx         context.Context
+	Context     context.Context
 	afterHandle func()
 
 	// HTTP components
@@ -56,7 +56,7 @@ func newRequestState(request *http.Request, bodyLimit int, framework string, opt
 	}
 
 	return RequestState{
-		ctx:                   spanRequest.Context(),
+		Context:               spanRequest.Context(),
 		afterHandle:           afterHandle,
 		fakeResponseWriter:    fakeResponseWriter,
 		wrappedResponseWriter: wrappedResponseWriter,
@@ -68,7 +68,7 @@ func newRequestState(request *http.Request, bodyLimit int, framework string, opt
 
 // PropagationHeaders creates header mutations for trace propagation
 func (rs *RequestState) PropagationHeaders() (http.Header, error) {
-	span, ok := tracer.SpanFromContext(rs.ctx)
+	span, ok := tracer.SpanFromContext(rs.Context)
 	if !ok {
 		return nil, errors.New("no span found in context")
 	}
@@ -108,4 +108,8 @@ func (rs *RequestState) Close() error {
 		rs.State = MessageTypeFinished
 	}
 	return nil
+}
+
+func (rs *RequestState) Span() (*tracer.Span, bool) {
+	return tracer.SpanFromContext(rs.Context)
 }
