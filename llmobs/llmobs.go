@@ -18,11 +18,12 @@ import (
 )
 
 // SpanFromContext retrieves the active LLMObs span from the given context.
-// Returns the span and true if found, nil and false otherwise.
-// The returned span can be converted to specific span types using AsLLM(), AsWorkflow(), etc.
-func SpanFromContext(ctx context.Context) (Span, bool) {
+// Returns an AnySpan and true if found, nil and false otherwise.
+// The returned AnySpan can be converted to specific span types using the As* methods
+// (AsLLM, AsWorkflow, AsAgent, AsTool, AsTask, AsEmbedding, AsRetrieval).
+func SpanFromContext(ctx context.Context) (*AnySpan, bool) {
 	if span, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
-		return &baseSpan{span}, true
+		return &AnySpan{&baseSpan{span}}, true
 	}
 	return nil, false
 }
@@ -146,11 +147,11 @@ type (
 )
 
 // Span represents a generic LLMObs span that can be converted to specific span types.
-// Use AsLLM(), AsWorkflow(), etc. to convert to typed spans with specific annotation methods.
 type Span interface {
 	sealed() // Prevents external implementations
 
-	spanConverter
+	// Name returns the span name.
+	Name() string
 
 	// SpanID returns the unique identifier for this span.
 	SpanID() string
@@ -169,58 +170,43 @@ type Span interface {
 
 	// Finish completes the span and sends it for processing.
 	Finish(opts ...FinishSpanOption)
-}
 
-// spanConverter provides type conversion methods for generic spans.
-// Allows safe conversion from generic Span to specific span types.
-type spanConverter interface {
-	// AsLLM attempts to convert to an LLMSpan. Returns the span and true if successful.
-	AsLLM() (*LLMSpan, bool)
-
-	// AsWorkflow attempts to convert to a WorkflowSpan. Returns the span and true if successful.
-	AsWorkflow() (*WorkflowSpan, bool)
-
-	// AsAgent attempts to convert to an AgentSpan. Returns the span and true if successful.
-	AsAgent() (*AgentSpan, bool)
-
-	// AsTool attempts to convert to a ToolSpan. Returns the span and true if successful.
-	AsTool() (*ToolSpan, bool)
-
-	// AsTask attempts to convert to a TaskSpan. Returns the span and true if successful.
-	AsTask() (*TaskSpan, bool)
-
-	// AsEmbedding attempts to convert to an EmbeddingSpan. Returns the span and true if successful.
-	AsEmbedding() (*EmbeddingSpan, bool)
-
-	// AsRetrieval attempts to convert to a RetrievalSpan. Returns the span and true if successful.
-	AsRetrieval() (*RetrievalSpan, bool)
+	// Annotate allows to make generic span annotations. If you want to annotate Input/Output, you can use the specific
+	// functions from each span kind.
+	Annotate(opts ...AnnotateOption)
 }
 
 // WorkflowSpan represents a span for high-level workflow operations.
+// Use AnnotateTextIO to annotate with text input/output.
 type WorkflowSpan struct {
 	textIOSpan
 }
 
 // AgentSpan represents a span for AI agent operations.
+// Use AnnotateTextIO to annotate with text input/output.
 type AgentSpan struct {
 	textIOSpan
 }
 
 // ToolSpan represents a span for tool/function call operations.
+// Use AnnotateTextIO to annotate with text input/output.
 type ToolSpan struct {
 	textIOSpan
 }
 
 // TaskSpan represents a span for discrete task operations.
+// Use AnnotateTextIO to annotate with text input/output.
 type TaskSpan struct {
 	textIOSpan
 }
 
 // EmbeddingSpan represents a span for text embedding operations.
+// Use AnnotateEmbeddingIO to annotate with input documents and output embeddings.
 type EmbeddingSpan struct {
 	*baseSpan
 }
 
+// AnnotateEmbeddingIO annotates the embedding span with input documents and output embeddings text.
 func (s *EmbeddingSpan) AnnotateEmbeddingIO(input []EmbeddedDocument, output string, opts ...AnnotateOption) {
 	if s.baseSpan == nil {
 		return
@@ -228,14 +214,16 @@ func (s *EmbeddingSpan) AnnotateEmbeddingIO(input []EmbeddedDocument, output str
 	a := parseAnnotateOptions(opts...)
 	a.InputEmbeddedDocs = input
 	a.OutputText = output
-	s.Span.Annotate(a)
+	s.span.Annotate(a)
 }
 
 // RetrievalSpan represents a span for information retrieval operations.
+// Use AnnotateRetrievalIO to annotate with input query and output retrieved documents.
 type RetrievalSpan struct {
 	*baseSpan
 }
 
+// AnnotateRetrievalIO annotates the retrieval span with input query text and output retrieved documents.
 func (s *RetrievalSpan) AnnotateRetrievalIO(input string, output []RetrievedDocument, opts ...AnnotateOption) {
 	if s.baseSpan == nil {
 		return
@@ -243,130 +231,158 @@ func (s *RetrievalSpan) AnnotateRetrievalIO(input string, output []RetrievedDocu
 	a := parseAnnotateOptions(opts...)
 	a.InputText = input
 	a.OutputRetrievedDocs = output
-	s.Span.Annotate(a)
+	s.span.Annotate(a)
 }
 
-type baseSpan struct {
-	*illmobs.Span
+// AnySpan represents a generic LLMObs span retrieved from context.
+// It can represent any span kind (LLM, Workflow, Agent, Tool, Task, Embedding, or Retrieval).
+// Use the As* methods to convert it to a specific span type for type-specific operations.
+type AnySpan struct {
+	*baseSpan
 }
 
-func (s *baseSpan) SpanID() string {
-	if s == nil {
-		return ""
-	}
-	return s.Span.SpanID()
-}
-
-func (s *baseSpan) Kind() string {
-	if s == nil {
-		return ""
-	}
-	return s.Span.Kind()
-}
-
-func (s *baseSpan) TraceID() string {
-	if s == nil {
-		return ""
-	}
-	return s.Span.TraceID()
-}
-
-func (s *baseSpan) APMTraceID() string {
-	if s == nil {
-		return ""
-	}
-	return s.Span.APMTraceID()
-}
-
-func (s *baseSpan) AsLLM() (*LLMSpan, bool) {
-	if illmobs.SpanKind(s.Kind()) != illmobs.SpanKindLLM {
+// AsLLM attempts to convert the span to an LLMSpan.
+// Returns the LLMSpan and true if the span is of kind LLM, otherwise returns nil and false.
+func (s *AnySpan) AsLLM() (*LLMSpan, bool) {
+	if !isSpanKind(s, illmobs.SpanKindLLM) {
 		return nil, false
 	}
-	return &LLMSpan{s}, true
+	var l LLMSpan
+	l.baseSpan = s.baseSpan
+	return &l, true
 }
 
-func (s *baseSpan) AsWorkflow() (*WorkflowSpan, bool) {
-	if !s.isTextIO(illmobs.SpanKindWorkflow) {
+// AsWorkflow attempts to convert the span to a WorkflowSpan.
+// Returns the WorkflowSpan and true if the span is of kind Workflow, otherwise returns nil and false.
+func (s *AnySpan) AsWorkflow() (*WorkflowSpan, bool) {
+	if !isSpanKind(s, illmobs.SpanKindWorkflow) {
 		return nil, false
 	}
 	var w WorkflowSpan
-	w.baseSpan = s
+	w.baseSpan = s.baseSpan
 	return &w, true
 }
 
-func (s *baseSpan) AsAgent() (*AgentSpan, bool) {
-	if !s.isTextIO(illmobs.SpanKindAgent) {
+// AsAgent attempts to convert the span to an AgentSpan.
+// Returns the AgentSpan and true if the span is of kind Agent, otherwise returns nil and false.
+func (s *AnySpan) AsAgent() (*AgentSpan, bool) {
+	if !isSpanKind(s, illmobs.SpanKindAgent) {
 		return nil, false
 	}
 	var a AgentSpan
-	a.baseSpan = s
+	a.baseSpan = s.baseSpan
 	return &a, true
 }
 
-func (s *baseSpan) AsTool() (*ToolSpan, bool) {
-	if !s.isTextIO(illmobs.SpanKindTool) {
+// AsTool attempts to convert the span to a ToolSpan.
+// Returns the ToolSpan and true if the span is of kind Tool, otherwise returns nil and false.
+func (s *AnySpan) AsTool() (*ToolSpan, bool) {
+	if !isSpanKind(s, illmobs.SpanKindTool) {
 		return nil, false
 	}
 	var t ToolSpan
-	t.baseSpan = s
+	t.baseSpan = s.baseSpan
 	return &t, true
 }
 
-func (s *baseSpan) AsTask() (*TaskSpan, bool) {
-	if !s.isTextIO(illmobs.SpanKindTask) {
+// AsTask attempts to convert the span to a TaskSpan.
+// Returns the TaskSpan and true if the span is of kind Task, otherwise returns nil and false.
+func (s *AnySpan) AsTask() (*TaskSpan, bool) {
+	if !isSpanKind(s, illmobs.SpanKindTask) {
 		return nil, false
 	}
 	var t TaskSpan
-	t.baseSpan = s
+	t.baseSpan = s.baseSpan
 	return &t, true
 }
 
-func (s *baseSpan) AsEmbedding() (*EmbeddingSpan, bool) {
-	if illmobs.SpanKind(s.Kind()) != illmobs.SpanKindEmbedding {
+// AsEmbedding attempts to convert the span to an EmbeddingSpan.
+// Returns the EmbeddingSpan and true if the span is of kind Embedding, otherwise returns nil and false.
+func (s *AnySpan) AsEmbedding() (*EmbeddingSpan, bool) {
+	if !isSpanKind(s, illmobs.SpanKindEmbedding) {
 		return nil, false
 	}
 	var e EmbeddingSpan
-	e.baseSpan = s
+	e.baseSpan = s.baseSpan
 	return &e, true
 }
 
-func (s *baseSpan) AsRetrieval() (*RetrievalSpan, bool) {
-	if illmobs.SpanKind(s.Kind()) != illmobs.SpanKindRetrieval {
+// AsRetrieval attempts to convert the span to a RetrievalSpan.
+// Returns the RetrievalSpan and true if the span is of kind Retrieval, otherwise returns nil and false.
+func (s *AnySpan) AsRetrieval() (*RetrievalSpan, bool) {
+	if !isSpanKind(s, illmobs.SpanKindRetrieval) {
 		return nil, false
 	}
 	var r RetrievalSpan
-	r.baseSpan = s
+	r.baseSpan = s.baseSpan
 	return &r, true
 }
 
-func (s *baseSpan) isTextIO(target illmobs.SpanKind) bool {
-	if illmobs.SpanKind(s.Kind()) != target {
-		return false
+type baseSpan struct {
+	span *illmobs.Span
+}
+
+func (s *baseSpan) Name() string {
+	if s == nil || s.span == nil {
+		return ""
 	}
-	switch target {
-	case illmobs.SpanKindAgent:
-		fallthrough
-	case illmobs.SpanKindTask:
-		fallthrough
-	case illmobs.SpanKindTool:
-		fallthrough
-	case illmobs.SpanKindWorkflow:
-		return true
+	return s.span.Name()
+}
+
+func (s *baseSpan) Annotate(opts ...AnnotateOption) {
+	if s == nil || s.span == nil {
+		return
 	}
-	return false
+	a := parseAnnotateOptions(opts...)
+	s.span.Annotate(a)
+}
+
+func (s *baseSpan) AddLink(link SpanLink) {
+	if s == nil || s.span == nil {
+		return
+	}
+	s.span.AddLink(link)
+}
+
+func (s *baseSpan) SpanID() string {
+	if s == nil || s.span == nil {
+		return ""
+	}
+	return s.span.SpanID()
+}
+
+func (s *baseSpan) Kind() string {
+	if s == nil || s.span == nil {
+		return ""
+	}
+	return s.span.Kind()
+}
+
+func (s *baseSpan) TraceID() string {
+	if s == nil || s.span == nil {
+		return ""
+	}
+	return s.span.TraceID()
+}
+
+func (s *baseSpan) APMTraceID() string {
+	if s == nil || s.span == nil {
+		return ""
+	}
+	return s.span.APMTraceID()
 }
 
 func (*baseSpan) sealed() {}
 
 func (s *baseSpan) Finish(opts ...FinishSpanOption) {
-	if s == nil {
+	if s == nil || s.span == nil {
 		return
 	}
 	cfg := illmobs.FinishSpanConfig{}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	s.Span.Finish(cfg)
+	s.span.Finish(cfg)
 }
 
 type textIOSpan struct {
@@ -380,13 +396,17 @@ func (s *textIOSpan) AnnotateTextIO(input, output string, opts ...AnnotateOption
 	a := parseAnnotateOptions(opts...)
 	a.InputText = input
 	a.OutputText = output
-	s.Span.Annotate(a)
+	s.span.Annotate(a)
 }
 
+// LLMSpan represents a span for Large Language Model operations.
+// Use AnnotateLLMIO to annotate with LLM-specific input/output messages.
 type LLMSpan struct {
 	*baseSpan
 }
 
+// AnnotateLLMIO annotates the LLM span with input and output messages.
+// Messages should use the LLMMessage type with role and content.
 func (s *LLMSpan) AnnotateLLMIO(input, output []LLMMessage, opts ...AnnotateOption) {
 	if s.baseSpan == nil {
 		return
@@ -394,7 +414,7 @@ func (s *LLMSpan) AnnotateLLMIO(input, output []LLMMessage, opts ...AnnotateOpti
 	a := parseAnnotateOptions(opts...)
 	a.InputMessages = input
 	a.OutputMessages = output
-	s.Span.Annotate(a)
+	s.span.Annotate(a)
 }
 
 func startSpan(ctx context.Context, kind illmobs.SpanKind, name string, opts ...StartSpanOption) (*baseSpan, context.Context, bool) {
@@ -417,4 +437,8 @@ func parseAnnotateOptions(opts ...AnnotateOption) illmobs.SpanAnnotations {
 		opt(&a)
 	}
 	return a
+}
+
+func isSpanKind(s Span, target illmobs.SpanKind) bool {
+	return illmobs.SpanKind(s.Kind()) == target
 }

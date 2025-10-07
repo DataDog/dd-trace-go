@@ -221,6 +221,10 @@ type Span struct {
 	spanLinks []SpanLink
 }
 
+func (s *Span) Name() string {
+	return s.name
+}
+
 // SpanID returns the span ID of the underlying APM span.
 func (s *Span) SpanID() string {
 	return s.apm.SpanID()
