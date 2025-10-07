@@ -186,8 +186,6 @@ func TestGitMetadata(t *testing.T) {
 
 func TestProcessTags(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		processtags.Reload()
-
 		profile := doOneShortProfileUpload(t)
 		assert.NotEmpty(t, profile.event.ProcessTags)
 	})

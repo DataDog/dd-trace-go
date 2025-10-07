@@ -15,8 +15,6 @@ import (
 
 func TestProcessTags(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		Reload()
-
 		wantTagsRe := regexp.MustCompile(`^entrypoint\.basedir:[a-zA-Z0-9._-]+,entrypoint\.name:[a-zA-Z0-9._-]+,entrypoint.type:executable,entrypoint\.workdir:[a-zA-Z0-9._-]+$`)
 		p := GlobalTags()
 		assert.NotNil(t, p)

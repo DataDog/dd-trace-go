@@ -66,8 +66,6 @@ func TestNewWriter_ProcessTags(t *testing.T) {
 	}
 
 	t.Run("enabled", func(t *testing.T) {
-		processtags.Reload()
-
 		w, err := NewWriter(cfg)
 		require.NoError(t, err)
 

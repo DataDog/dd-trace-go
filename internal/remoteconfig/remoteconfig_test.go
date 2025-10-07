@@ -401,8 +401,6 @@ func TestProcessTags(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("enabled", func(t *testing.T) {
-		processtags.Reload()
-
 		b, err := client.newUpdateRequest()
 		require.NoError(t, err)
 		var req clientGetConfigsRequest
