@@ -107,7 +107,7 @@ type llmobsContext struct {
 	outputText      string
 
 	// experiment specific
-	experimentInput          map[string]any
+	experimentInput          any
 	experimentExpectedOutput any
 	experimentOutput         any
 }
@@ -459,7 +459,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 			meta["expected_output"] = expectedOut
 		}
 		if expInput := span.llmCtx.experimentInput; expInput != nil {
-			input = expInput
+			meta["input"] = expInput
 		}
 		if out := span.llmCtx.experimentOutput; out != nil {
 			meta["output"] = out

@@ -172,7 +172,7 @@ type SpanAnnotations struct {
 	OutputRetrievedDocs []RetrievedDocument
 
 	// ExperimentInput is the input data for experiment spans.
-	ExperimentInput map[string]any
+	ExperimentInput any
 	// ExperimentOutput is the output data for experiment spans.
 	ExperimentOutput any
 	// ExperimentExpectedOutput is the expected output for experiment spans.

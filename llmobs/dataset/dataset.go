@@ -49,9 +49,9 @@ type Dataset struct {
 
 // Record represents a record in a Dataset.
 type Record struct {
-	Input          map[string]any
+	Input          any
 	ExpectedOutput any
-	Metadata       map[string]any
+	Metadata       any
 
 	id      string
 	version int
@@ -83,9 +83,9 @@ func (r *Record) applyUpdate(update RecordUpdate) {
 // Use nil to signal no modifications to a given field.
 // Use empty values to signal deletion (e.g. empty strings or empty maps).
 type RecordUpdate struct {
-	Input          map[string]any
+	Input          any
 	ExpectedOutput any
-	Metadata       map[string]any
+	Metadata       any
 }
 
 func (u *RecordUpdate) merge(new RecordUpdate) {

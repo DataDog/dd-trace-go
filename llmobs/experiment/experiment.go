@@ -46,17 +46,17 @@ type Experiment struct {
 // Task represents the task to run for an Experiment.
 type Task interface {
 	Name() string
-	Run(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error)
+	Run(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error)
 }
 
 // Evaluator represents an evaluator for an Experiment.
 type Evaluator interface {
 	Name() string
-	Run(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error)
+	Run(ctx context.Context, input any, output any, expectedOutput any) (any, error)
 }
 
 // TaskFunc is the type for Task functions.
-type TaskFunc func(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error)
+type TaskFunc func(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error)
 
 type namedTask struct {
 	name string
@@ -67,7 +67,7 @@ func (n *namedTask) Name() string {
 	return n.name
 }
 
-func (n *namedTask) Run(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error) {
+func (n *namedTask) Run(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error) {
 	return n.fn(ctx, inputData, experimentCfg)
 }
 
@@ -80,7 +80,7 @@ func NewTask(name string, fn TaskFunc) Task {
 }
 
 // EvaluatorFunc is the type for Evaluator functions.
-type EvaluatorFunc func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error)
+type EvaluatorFunc func(ctx context.Context, input any, output any, expectedOutput any) (any, error)
 
 type namedEvaluator struct {
 	name string
@@ -91,7 +91,7 @@ func (n *namedEvaluator) Name() string {
 	return n.name
 }
 
-func (n *namedEvaluator) Run(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+func (n *namedEvaluator) Run(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 	return n.fn(ctx, input, output, expectedOutput)
 }
 
@@ -109,7 +109,7 @@ type Result struct {
 	SpanID         string
 	TraceID        string
 	Timestamp      time.Time
-	Input          map[string]any
+	Input          any
 	Output         any
 	ExpectedOutput any
 	Evaluations    []*Evaluation

@@ -339,7 +339,8 @@ What is the largest planet?,Jupiter,astronomy`
 		// Verify records were imported correctly
 		rec, ok := ds.Record(0)
 		require.True(t, ok)
-		assert.Equal(t, "What is the capital of France?", rec.Input["question"])
+
+		assert.Equal(t, map[string]any{"question": "What is the capital of France?"}, rec.Input)
 		assert.Equal(t, map[string]any{"answer": "Paris"}, rec.ExpectedOutput)
 		assert.Equal(t, map[string]any{"category": "geography"}, rec.Metadata)
 	})
@@ -510,6 +511,165 @@ func TestDatasetPull(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "project name must be provided")
 	})
+	t.Run("pull-dataset-with-non-map-input", func(t *testing.T) {
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
+				return nil
+			}
+			path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
+
+			switch {
+			case path == "/projects" && r.Method == http.MethodPost:
+				return handleMockProjectCreate(r)
+			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
+				response := llmobstransport.GetDatasetResponse{
+					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+						{
+							ID:   "string-input-dataset-id",
+							Type: "datasets",
+							Attributes: llmobstransport.DatasetView{
+								ID:             "string-input-dataset-id",
+								Name:           "string-input-dataset",
+								Description:    "Dataset with string input",
+								CurrentVersion: 1,
+							},
+						},
+					},
+				}
+				respData, _ := json.Marshal(response)
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader(respData)),
+					Request:    r,
+				}
+			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
+				// Return records with string input (not a map) - this simulates a dataset created externally
+				rawJSON := `{
+					"data": [
+						{
+							"id": "record-1",
+							"type": "dataset_records",
+							"attributes": {
+								"id": "record-1",
+								"input": "This is a simple string input, not a map",
+								"expected_output": "Some output",
+								"version": 1
+							}
+						}
+					]
+				}`
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(rawJSON)),
+					Request:    r,
+				}
+			default:
+				return nil
+			}
+		}
+
+		tt := testTracer(t, testtracer.WithMockResponses(h))
+		defer tt.Stop()
+
+		ds, err := Pull(context.Background(), "string-input-dataset")
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "string-input-dataset", ds.Name())
+		assert.Equal(t, 1, ds.Len())
+
+		// Verify the record has the string input
+		rec, ok := ds.Record(0)
+		require.True(t, ok)
+		assert.Equal(t, "This is a simple string input, not a map", rec.Input)
+		assert.Equal(t, "Some output", rec.ExpectedOutput)
+	})
+	t.Run("pull-dataset-with-non-map-metadata", func(t *testing.T) {
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
+				return nil
+			}
+			path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
+
+			switch {
+			case path == "/projects" && r.Method == http.MethodPost:
+				return handleMockProjectCreate(r)
+			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
+				response := llmobstransport.GetDatasetResponse{
+					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+						{
+							ID:   "string-metadata-dataset-id",
+							Type: "datasets",
+							Attributes: llmobstransport.DatasetView{
+								ID:             "string-metadata-dataset-id",
+								Name:           "string-metadata-dataset",
+								Description:    "Dataset with string metadata",
+								CurrentVersion: 1,
+							},
+						},
+					},
+				}
+				respData, _ := json.Marshal(response)
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader(respData)),
+					Request:    r,
+				}
+			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
+				// Return records with string metadata (not a map) - this simulates a dataset created externally
+				rawJSON := `{
+					"data": [
+						{
+							"id": "record-1",
+							"type": "dataset_records",
+							"attributes": {
+								"id": "record-1",
+								"input": {"question": "What is AI?"},
+								"expected_output": "Artificial Intelligence",
+								"metadata": "simple string metadata from UI",
+								"version": 1
+							}
+						}
+					]
+				}`
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(rawJSON)),
+					Request:    r,
+				}
+			default:
+				return nil
+			}
+		}
+
+		tt := testTracer(t, testtracer.WithMockResponses(h))
+		defer tt.Stop()
+
+		// This should succeed - metadata can be any type, not just map[string]any
+		ds, err := Pull(context.Background(), "string-metadata-dataset")
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "string-metadata-dataset", ds.Name())
+		assert.Equal(t, 1, ds.Len())
+
+		// Verify the record has the string metadata
+		rec, ok := ds.Record(0)
+		require.True(t, ok)
+		inputMap, ok := rec.Input.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "What is AI?", inputMap["question"])
+		assert.Equal(t, "Artificial Intelligence", rec.ExpectedOutput)
+		assert.Equal(t, "simple string metadata from UI", rec.Metadata)
+	})
 }
 
 func TestDatasetRecordIteration(t *testing.T) {
@@ -539,7 +699,9 @@ func TestDatasetRecordIteration(t *testing.T) {
 		count := 0
 		for i, rec := range ds.Records() {
 			assert.Equal(t, count, i)
-			assert.NotEmpty(t, rec.Input["question"])
+			inputMap, ok := rec.Input.(map[string]any)
+			require.True(t, ok, "Input should be a map")
+			assert.NotEmpty(t, inputMap["question"])
 			count++
 		}
 		assert.Equal(t, 3, count)
@@ -561,7 +723,9 @@ func TestDatasetRecordIteration(t *testing.T) {
 		// Test valid index
 		rec, ok := ds.Record(0)
 		require.True(t, ok)
-		assert.Equal(t, "Test question", rec.Input["question"])
+		inputMap, ok := rec.Input.(map[string]any)
+		require.True(t, ok, "Input should be a map")
+		assert.Equal(t, "Test question", inputMap["question"])
 
 		// Test invalid indices
 		_, ok = ds.Record(-1)

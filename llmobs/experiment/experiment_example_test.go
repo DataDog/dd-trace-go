@@ -27,8 +27,9 @@ func ExampleNew() {
 		log.Fatal(err)
 	}
 
-	task := experiment.NewTask("capitals-of-the-world", func(ctx context.Context, inputData map[string]any, experimentCfg map[string]any) (any, error) {
-		question := inputData["question"].(string)
+	task := experiment.NewTask("capitals-of-the-world", func(ctx context.Context, inputData any, experimentCfg map[string]any) (any, error) {
+		inputMap := inputData.(map[string]any)
+		question := inputMap["question"].(string)
 		// Your LLM or processing logic here
 		if strings.Contains(question, "China") {
 			return "Beijing", nil
@@ -37,10 +38,10 @@ func ExampleNew() {
 	})
 
 	evs := []experiment.Evaluator{
-		experiment.NewEvaluator("exact-match", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("exact-match", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			return output == expectedOutput, nil
 		}),
-		experiment.NewEvaluator("overlap", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("overlap", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			outStr, ok := output.(string)
 			if !ok {
 				return nil, fmt.Errorf("wanted output to be a string, got: %T", output)
@@ -79,7 +80,7 @@ func ExampleNew() {
 
 			return score, nil
 		}),
-		experiment.NewEvaluator("fake-llm-as-a-judge", func(ctx context.Context, input map[string]any, output any, expectedOutput any) (any, error) {
+		experiment.NewEvaluator("fake-llm-as-a-judge", func(ctx context.Context, input any, output any, expectedOutput any) (any, error) {
 			return "excellent", nil
 		}),
 	}
