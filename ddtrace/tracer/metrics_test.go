@@ -205,7 +205,11 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 	}
 	flush(10)
-	tg.Wait(assert, 10, 100*time.Millisecond)
+	// Wait until the specific counts we care about have all been reported to avoid flakiness
+	assert.Eventually(func() bool {
+		counts := tg.Counts()
+		return counts["datadog.tracer.spans_started"] == 10 && counts["datadog.tracer.spans_finished"] == 10
+	}, 1*time.Second, 10*time.Millisecond)
 
 	counts := tg.Counts()
 	assert.Equal(int64(10), counts["datadog.tracer.spans_started"])
