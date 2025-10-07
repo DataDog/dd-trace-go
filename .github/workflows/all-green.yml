@@ -20,6 +20,7 @@ jobs:
           # polling-interval-seconds: "60" # Default
           ignored-name-patterns: |
             devflow/merge
+            label_issues
             check-title
 
 # Reason for ignored-name-patterns:
