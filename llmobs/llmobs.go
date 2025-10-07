@@ -20,9 +20,9 @@ import (
 // SpanFromContext retrieves the active LLMObs span from the given context.
 // Returns the span and true if found, nil and false otherwise.
 // The returned span can be converted to specific span types using AsLLM(), AsWorkflow(), etc.
-func SpanFromContext(ctx context.Context) (*LLMSpan, bool) {
+func SpanFromContext(ctx context.Context) (Span, bool) {
 	if span, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
-		return &LLMSpan{&baseSpan{span}}, true
+		return &baseSpan{span}, true
 	}
 	return nil, false
 }
@@ -150,6 +150,8 @@ type (
 type Span interface {
 	sealed() // Prevents external implementations
 
+	spanConverter
+
 	// SpanID returns the unique identifier for this span.
 	SpanID() string
 
@@ -167,6 +169,31 @@ type Span interface {
 
 	// Finish completes the span and sends it for processing.
 	Finish(opts ...FinishSpanOption)
+}
+
+// spanConverter provides type conversion methods for generic spans.
+// Allows safe conversion from generic Span to specific span types.
+type spanConverter interface {
+	// AsLLM attempts to convert to an LLMSpan. Returns the span and true if successful.
+	AsLLM() (*LLMSpan, bool)
+
+	// AsWorkflow attempts to convert to a WorkflowSpan. Returns the span and true if successful.
+	AsWorkflow() (*WorkflowSpan, bool)
+
+	// AsAgent attempts to convert to an AgentSpan. Returns the span and true if successful.
+	AsAgent() (*AgentSpan, bool)
+
+	// AsTool attempts to convert to a ToolSpan. Returns the span and true if successful.
+	AsTool() (*ToolSpan, bool)
+
+	// AsTask attempts to convert to a TaskSpan. Returns the span and true if successful.
+	AsTask() (*TaskSpan, bool)
+
+	// AsEmbedding attempts to convert to an EmbeddingSpan. Returns the span and true if successful.
+	AsEmbedding() (*EmbeddingSpan, bool)
+
+	// AsRetrieval attempts to convert to a RetrievalSpan. Returns the span and true if successful.
+	AsRetrieval() (*RetrievalSpan, bool)
 }
 
 // WorkflowSpan represents a span for high-level workflow operations.
