@@ -119,6 +119,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 			attributes[k] = av
 			p.attributes[k] = av
 		}
+		// TODO(hannahkm): :sad-clown: :dead-tired:
 		// for k, v := range span.metaStruct {
 		// 	attributes = append(attributes, keyValue{key: k, value: anyValue{valueType: keyValueListType, value: v}})
 		// }
@@ -173,7 +174,7 @@ func (p *payloadV1) clear() {
 
 func (p *payloadV1) recordItem() {
 	atomic.AddUint32(&p.count, 1)
-	// p.updateHeader() TODO(hannahkm): figure out
+	// p.updateHeader() TODO(hannahkm): figure out if we need this
 }
 
 func (p *payloadV1) stats() payloadStats {
@@ -270,7 +271,7 @@ func (p *payloadV1) encodeField(bm bitmap, fieldID int, a anyValue, st *stringTa
 		return
 	}
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID)) // msgp key
-	// p.buf = msgp.AppendInt32(p.buf, int32(a.valueType)) // value type
+	// p.buf = msgp.AppendInt32(p.buf, int32(a.valueType)) // value type TODO(hannahkm): do we need this?
 	if a.valueType == StringValueType {
 		value := a.value.(string)
 		// encode msgp value, either by pulling from string table or writing it directly
@@ -322,6 +323,7 @@ func (p *payloadV1) encodeAttributes(fieldID int, kv map[string]anyValue, st *st
 	return nil
 }
 
+// TODO(hannahkm): this references chunk.bm, which is not implemented yet
 func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTable) error {
 	if len(tc) == 0 {
 		return nil
@@ -333,23 +335,10 @@ func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTa
 		p.buf = msgp.AppendMapHeader(p.buf, uint32(chunk.fields)) // number of item pairs in map
 
 		// priority
-		if chunk.bm.contains(1) {
-			p.buf = msgp.AppendUint32(p.buf, 1) // field ID
-			p.buf = msgp.AppendInt32(p.buf, chunk.priority)
-		}
+		p.encodeField(chunk.bm, 1, anyValue{valueType: IntValueType, value: chunk.priority}, st)
 
 		// origin
-		if chunk.bm.contains(2) {
-			p.buf = msgp.AppendUint32(p.buf, 2) // field ID
-			// encode msgp value, either by pulling from string table or writing it directly
-			if idx, ok := st.Get(chunk.origin); ok {
-				p.buf = idx.encode(p.buf)
-			} else {
-				s := stringValue(chunk.origin)
-				p.buf = s.encode(p.buf)
-				st.Add(chunk.origin)
-			}
-		}
+		p.encodeField(chunk.bm, 2, anyValue{valueType: StringValueType, value: chunk.origin}, st)
 
 		// attributes
 		if chunk.bm.contains(3) {
@@ -362,29 +351,14 @@ func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTa
 		}
 
 		// droppedTrace
-		if chunk.bm.contains(5) {
-			p.buf = msgp.AppendUint32(p.buf, 5) // field ID
-			p.buf = msgp.AppendBool(p.buf, chunk.droppedTrace)
-		}
+		p.encodeField(chunk.bm, 5, anyValue{valueType: BoolValueType, value: chunk.droppedTrace}, st)
 
 		// traceID
-		if chunk.bm.contains(6) {
-			p.buf = msgp.AppendUint32(p.buf, 6) // field ID
-			p.buf = msgp.AppendBytes(p.buf, chunk.traceID)
-		}
+		p.encodeField(chunk.bm, 6, anyValue{valueType: BytesValueType, value: chunk.traceID}, st)
 
 		// samplingMechanism
-		if chunk.bm.contains(7) {
-			p.buf = msgp.AppendUint32(p.buf, 7) // field ID
-			// encode msgp value, either by pulling from string table or writing it directly
-			if idx, ok := st.Get(chunk.samplingMechanism); ok {
-				p.buf = idx.encode(p.buf)
-			} else {
-				s := stringValue(chunk.samplingMechanism)
-				p.buf = s.encode(p.buf)
-				st.Add(chunk.samplingMechanism)
-			}
-		}
+		// TODO(hannahkm): I think the RFC changed, need to double check this
+		p.encodeField(chunk.bm, 7, anyValue{valueType: StringValueType, value: chunk.samplingMechanism}, st)
 	}
 
 	return nil
