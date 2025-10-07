@@ -27,7 +27,7 @@ const (
 // ------------- Start options -------------
 
 // StartSpanOption configures span creation. Use with Start*Span functions.
-type StartSpanOption = func(cfg *illmobs.StartSpanConfig)
+type StartSpanOption func(cfg *illmobs.StartSpanConfig)
 
 // WithSessionID sets the session identifier for the span.
 func WithSessionID(sessionID string) StartSpanOption {
@@ -71,7 +71,7 @@ func WithModelName(modelName string) StartSpanOption {
 // ------------- Finish options -------------
 
 // FinishSpanOption configures span finishing. Use with span.Finish().
-type FinishSpanOption = func(cfg *illmobs.FinishSpanConfig)
+type FinishSpanOption func(cfg *illmobs.FinishSpanConfig)
 
 // WithError marks the finished span with the given error.
 // The error will be captured with stack trace information and marked as a span error.

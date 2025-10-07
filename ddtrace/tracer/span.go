@@ -935,11 +935,13 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 }
 
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
-	if llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
+	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
+	if !ok {
+		return
 	}
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
