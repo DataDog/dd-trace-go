@@ -6,7 +6,9 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -162,8 +164,13 @@ type Response[T any] struct {
 	Data ResponseData[T] `json:"data"`
 }
 
+type ResponseMeta struct {
+	After string `json:"after,omitempty"` // Cursor for next page
+}
+
 type ResponseList[T any] struct {
 	Data []ResponseData[T] `json:"data"`
+	Meta ResponseMeta      `json:"meta,omitempty"`
 }
 
 type ResponseData[T any] struct {
@@ -193,7 +200,7 @@ func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string
 	datasetPath := fmt.Sprintf("%s/%s/datasets?%s", endpointPrefixDNE, url.PathEscape(projectID), q.Encode())
 	method := http.MethodGet
 
-	status, b, err := c.request(ctx, method, datasetPath, subdomainDNE, nil)
+	status, b, err := c.jsonRequest(ctx, method, datasetPath, subdomainDNE, nil, defaultTimeout)
 	if err != nil || status != http.StatusOK {
 		return nil, fmt.Errorf("get dataset by name %q failed: %v", name, err)
 	}
@@ -230,12 +237,10 @@ func (c *Transport) CreateDataset(ctx context.Context, name, description, projec
 			},
 		},
 	}
-
-	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
+	status, b, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("create dataset %q failed: %v", name, err)
 	}
-
 	log.Debug("llmobs/internal/transport.DatasetGetOrCreate: create dataset success (status code: %d)", status)
 
 	var resp CreateDatasetResponse
@@ -260,7 +265,7 @@ func (c *Transport) DeleteDataset(ctx context.Context, datasetIDs ...string) err
 		},
 	}
 
-	status, _, err := c.request(ctx, method, path, subdomainDNE, body)
+	status, _, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
 	if err != nil || status != http.StatusOK {
 		return fmt.Errorf("delete dataset %v failed: %v", datasetIDs, err)
 	}
@@ -288,7 +293,7 @@ func (c *Transport) BatchUpdateDataset(
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
+	status, b, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
 	if err != nil || status != http.StatusOK {
 		return -1, nil, fmt.Errorf("batch_update for dataset %q failed: %v", datasetID, err)
 	}
@@ -320,24 +325,24 @@ func (c *Transport) BatchUpdateDataset(
 	return newDatasetVersion, newRecordIDs, nil
 }
 
-func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID string) (*DatasetView, []DatasetRecordView, error) {
-	// 1) Fetch record by name
-	ds, err := c.GetDatasetByName(ctx, name, projectID)
-	if err != nil {
-		return nil, nil, err
+// GetDatasetRecordsPage fetches a single page of records for the given dataset.
+// Returns the records, the cursor for the next page (empty string if no more pages), and any error.
+func (c *Transport) GetDatasetRecordsPage(ctx context.Context, datasetID, cursor string) ([]DatasetRecordView, string, error) {
+	method := http.MethodGet
+	recordsPath := fmt.Sprintf("%s/datasets/%s/records", endpointPrefixDNE, url.PathEscape(datasetID))
+
+	if cursor != "" {
+		recordsPath = fmt.Sprintf("%s?page[cursor]=%s", recordsPath, url.QueryEscape(cursor))
 	}
 
-	// 2) Fetch records
-	method := http.MethodGet
-	recordsPath := fmt.Sprintf("%s/datasets/%s/records", endpointPrefixDNE, url.PathEscape(ds.ID))
-	status, b, err := c.request(ctx, method, recordsPath, subdomainDNE, nil)
+	status, b, err := c.jsonRequest(ctx, method, recordsPath, subdomainDNE, nil, getDatasetRecordsTimeout)
 	if err != nil || status != http.StatusOK {
-		return nil, nil, fmt.Errorf("get dataset records failed: %v (name=%q, status=%d)", err, name, status)
+		return nil, "", fmt.Errorf("get dataset records page failed: %v (datasetID=%q, status=%d)", err, datasetID, status)
 	}
 
 	var recordsResp GetDatasetRecordsResponse
 	if err := json.Unmarshal(b, &recordsResp); err != nil {
-		return nil, nil, fmt.Errorf("decode dataset records: %w", err)
+		return nil, "", fmt.Errorf("decode dataset records: %w", err)
 	}
 
 	records := make([]DatasetRecordView, 0, len(recordsResp.Data))
@@ -346,7 +351,43 @@ func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID s
 		rec.ID = r.ID
 		records = append(records, rec)
 	}
-	return ds, records, nil
+
+	return records, recordsResp.Meta.After, nil
+}
+
+// GetDatasetWithRecords fetches the given Dataset and all its records from DataDog.
+// This eagerly fetches all pages of records.
+func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID string) (*DatasetView, []DatasetRecordView, error) {
+	// 1) Fetch dataset by name
+	ds, err := c.GetDatasetByName(ctx, name, projectID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 2) Fetch all records with pagination support
+	var allRecords []DatasetRecordView
+	nextCursor := ""
+	pageNum := 0
+
+	for {
+		log.Debug("llmobs/transport: fetching dataset records page %d", pageNum)
+
+		records, cursor, err := c.GetDatasetRecordsPage(ctx, ds.ID, nextCursor)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get dataset records failed on page %d: %w", pageNum, err)
+		}
+
+		allRecords = append(allRecords, records...)
+
+		nextCursor = cursor
+		if nextCursor == "" {
+			break
+		}
+		pageNum++
+	}
+
+	log.Debug("llmobs/transport: fetched %d records across %d pages for dataset %q", len(allRecords), pageNum+1, name)
+	return ds, allRecords, nil
 }
 
 func (c *Transport) GetOrCreateProject(ctx context.Context, name string) (*ProjectView, error) {
@@ -362,7 +403,7 @@ func (c *Transport) GetOrCreateProject(ctx context.Context, name string) (*Proje
 			},
 		},
 	}
-	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
+	status, b, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
 	if err != nil || status != http.StatusOK {
 		return nil, fmt.Errorf("create project %q failed: %v", name, err)
 	}
@@ -408,7 +449,7 @@ func (c *Transport) CreateExperiment(
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
+	status, b, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
 	if err != nil || status != http.StatusOK {
 		return nil, fmt.Errorf("create experiment %q failed: %v", name, err)
 	}
@@ -443,12 +484,78 @@ func (c *Transport) PushExperimentEvents(
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, subdomainDNE, body)
+	status, b, err := c.jsonRequest(ctx, method, path, subdomainDNE, body, defaultTimeout)
 	if err != nil {
 		return fmt.Errorf("post experiment eval metrics failed: %v", err)
 	}
 	if status != http.StatusOK && status != http.StatusAccepted {
 		return fmt.Errorf("unexpected status %d: %s", status, string(b))
 	}
+	return nil
+}
+
+// BulkUploadDataset uploads dataset records via CSV file upload.
+// This is more efficient for large datasets (>5MB of changes).
+func (c *Transport) BulkUploadDataset(ctx context.Context, datasetID string, records []DatasetRecordView) error {
+	// Create CSV in memory
+	var csvBuf bytes.Buffer
+	csvWriter := csv.NewWriter(&csvBuf)
+
+	// Write header
+	if err := csvWriter.Write([]string{"input", "expected_output", "metadata"}); err != nil {
+		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	// Write records
+	for _, rec := range records {
+		inputJSON, err := json.Marshal(rec.Input)
+		if err != nil {
+			return fmt.Errorf("failed to marshal input: %w", err)
+		}
+		outputJSON, err := json.Marshal(rec.ExpectedOutput)
+		if err != nil {
+			return fmt.Errorf("failed to marshal expected_output: %w", err)
+		}
+		metadataJSON, err := json.Marshal(rec.Metadata)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+
+		if err := csvWriter.Write([]string{
+			string(inputJSON),
+			string(outputJSON),
+			string(metadataJSON),
+		}); err != nil {
+			return fmt.Errorf("failed to write CSV record: %w", err)
+		}
+	}
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		return fmt.Errorf("CSV writer error: %w", err)
+	}
+
+	// Create multipart body
+	boundary := "----------boundary------"
+	crlf := "\r\n"
+	filename := "dataset_upload.csv"
+
+	var body bytes.Buffer
+	body.WriteString("--" + boundary + crlf)
+	body.WriteString(fmt.Sprintf(`Content-Disposition: form-data; name="file"; filename="%s"`, filename) + crlf)
+	body.WriteString("Content-Type: text/csv" + crlf)
+	body.WriteString(crlf)
+	body.Write(csvBuf.Bytes())
+	body.WriteString(crlf)
+	body.WriteString("--" + boundary + "--" + crlf)
+
+	path := fmt.Sprintf("%s/datasets/%s/records/upload", endpointPrefixDNE, url.PathEscape(datasetID))
+	contentType := fmt.Sprintf("multipart/form-data; boundary=%s", boundary)
+
+	status, respBody, err := c.request(ctx, http.MethodPost, path, subdomainDNE, bytes.NewReader(body.Bytes()), contentType, bulkUploadTimeout)
+	if err != nil || status != http.StatusOK {
+		return fmt.Errorf("bulk upload failed: %w", err)
+	}
+
+	log.Debug("llmobs/transport: successfully bulk uploaded %d records to dataset %q: %s", len(records), datasetID, string(respBody))
 	return nil
 }
