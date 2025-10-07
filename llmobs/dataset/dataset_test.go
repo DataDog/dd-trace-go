@@ -304,6 +304,44 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "dataset has no ID")
 	})
+	t.Run("bulk-upload-for-large-datasets", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		// Create initial dataset with one record
+		initialRecords := []Record{
+			{
+				Input:          map[string]any{"small": "data"},
+				ExpectedOutput: "small",
+			},
+		}
+
+		ds, err := Create(context.Background(), "test-dataset", initialRecords)
+		require.NoError(t, err)
+
+		// Create a large string that will push us over the 5MB threshold
+		// We need > 5MB of data. Each record with this data will be ~1.5MB when JSON-encoded
+		largeString := strings.Repeat("x", 1500000) // ~1.5MB
+
+		// Append 4 large records to exceed the 5MB threshold
+		for i := 0; i < 4; i++ {
+			ds.Append(Record{
+				Input: map[string]any{
+					"large_field": largeString,
+					"index":       i,
+				},
+				ExpectedOutput: fmt.Sprintf("output-%d", i),
+				Metadata:       map[string]any{"size": "large"},
+			})
+		}
+
+		// Push should use bulk upload because the delta exceeds 5MB
+		err = ds.Push(context.Background())
+		require.NoError(t, err)
+
+		// Verify all records are present
+		assert.Equal(t, 5, ds.Len()) // 1 initial + 4 appended
+	})
 }
 
 func TestDatasetCSVImport(t *testing.T) {
@@ -670,6 +708,155 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, "Artificial Intelligence", rec.ExpectedOutput)
 		assert.Equal(t, "simple string metadata from UI", rec.Metadata)
 	})
+	t.Run("pull-dataset-with-pagination", func(t *testing.T) {
+		// Track which page we're on to simulate pagination
+		var requestCount int
+
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
+				return nil
+			}
+			path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
+
+			switch {
+			case path == "/projects" && r.Method == http.MethodPost:
+				return handleMockProjectCreate(r)
+			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
+				response := llmobstransport.GetDatasetResponse{
+					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+						{
+							ID:   "paginated-dataset-id",
+							Type: "datasets",
+							Attributes: llmobstransport.DatasetView{
+								ID:             "paginated-dataset-id",
+								Name:           "paginated-dataset",
+								Description:    "Dataset with pagination",
+								CurrentVersion: 1,
+							},
+						},
+					},
+				}
+				respData, _ := json.Marshal(response)
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader(respData)),
+					Request:    r,
+				}
+			case strings.Contains(path, "/datasets/") && strings.Contains(path, "/records") && r.Method == http.MethodGet:
+				// Simulate 3 pages of results
+				requestCount++
+				var rawJSON string
+
+				switch requestCount {
+				case 1:
+					// First page - has cursor for next page
+					rawJSON = `{
+						"data": [
+							{
+								"id": "record-1",
+								"type": "dataset_records",
+								"attributes": {
+									"id": "record-1",
+									"input": {"question": "Q1"},
+									"expected_output": "A1",
+									"metadata": {},
+									"version": 1
+								}
+							},
+							{
+								"id": "record-2",
+								"type": "dataset_records",
+								"attributes": {
+									"id": "record-2",
+									"input": {"question": "Q2"},
+									"expected_output": "A2",
+									"metadata": {},
+									"version": 1
+								}
+							}
+						],
+						"meta": {
+							"after": "cursor-page-2"
+						}
+					}`
+				case 2:
+					// Second page - has cursor for next page
+					rawJSON = `{
+						"data": [
+							{
+								"id": "record-3",
+								"type": "dataset_records",
+								"attributes": {
+									"id": "record-3",
+									"input": {"question": "Q3"},
+									"expected_output": "A3",
+									"metadata": {},
+									"version": 1
+								}
+							}
+						],
+						"meta": {
+							"after": "cursor-page-3"
+						}
+					}`
+				default:
+					// Third page - no cursor (last page)
+					rawJSON = `{
+						"data": [
+							{
+								"id": "record-4",
+								"type": "dataset_records",
+								"attributes": {
+									"id": "record-4",
+									"input": {"question": "Q4"},
+									"expected_output": "A4",
+									"metadata": {},
+									"version": 1
+								}
+							}
+						],
+						"meta": {}
+					}`
+				}
+
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(rawJSON)),
+					Request:    r,
+				}
+			default:
+				return nil
+			}
+		}
+
+		tt := testTracer(t, testtracer.WithMockResponses(h))
+		defer tt.Stop()
+
+		// Pull the dataset - should fetch all pages automatically (eager loading)
+		ds, err := Pull(context.Background(), "paginated-dataset")
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "paginated-dataset", ds.Name())
+
+		// Verify all records from all pages were fetched
+		assert.Equal(t, 4, ds.Len(), "should have fetched all records across all pages")
+		assert.Equal(t, 3, requestCount, "should have made 3 requests for 3 pages")
+
+		// Verify each record
+		for i := 0; i < 4; i++ {
+			rec, ok := ds.Record(i)
+			require.True(t, ok, "record %d should exist", i)
+			inputMap, ok := rec.Input.(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, fmt.Sprintf("Q%d", i+1), inputMap["question"])
+			assert.Equal(t, fmt.Sprintf("A%d", i+1), rec.ExpectedOutput)
+		}
+	})
 }
 
 func TestDatasetRecordIteration(t *testing.T) {
@@ -985,6 +1172,9 @@ func createMockHandler() testtracer.MockResponseFunc {
 		case strings.HasPrefix(path, "/datasets") && strings.HasSuffix(path, "/batch_update"):
 			return handleMockDatasetBatchUpdate(r)
 
+		case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records/upload") && r.Method == http.MethodPost:
+			return handleMockDatasetBulkUpload(r)
+
 		case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
 			return handleMockDatasetGet(r, state)
 
@@ -1250,6 +1440,42 @@ func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewReader(respData)),
+		Request:    r,
+	}
+}
+
+func handleMockDatasetBulkUpload(r *http.Request) *http.Response {
+	// For bulk upload, we just need to verify the multipart form is valid
+	// and return a success response. The actual CSV parsing is done on the backend.
+	contentType := r.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		return &http.Response{
+			Status:     "400 Bad Request",
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error": "expected multipart/form-data"}`)),
+			Request:    r,
+		}
+	}
+
+	// Read and verify the body exists (we don't parse CSV in tests)
+	body, _ := io.ReadAll(r.Body)
+	if len(body) == 0 {
+		return &http.Response{
+			Status:     "400 Bad Request",
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error": "empty body"}`)),
+			Request:    r,
+		}
+	}
+
+	// Return success response
+	return &http.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"status": "success"}`)),
 		Request:    r,
 	}
 }

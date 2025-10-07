@@ -45,14 +45,26 @@ const (
 )
 
 const (
-	defaultSite                     = "datadoghq.com"
-	defaultMaxRetries uint          = 3
-	defaultBackoff    time.Duration = 100 * time.Millisecond
+	defaultSite            = "datadoghq.com"
+	defaultMaxRetries uint = 3
+
+	defaultTimeout           time.Duration = 5 * time.Second
+	bulkUploadTimeout        time.Duration = 60 * time.Second
+	getDatasetRecordsTimeout time.Duration = 20 * time.Second
 )
 
 var (
 	ErrDatasetNotFound = errors.New("dataset not found")
 )
+
+func defaultBackoffStrategy() *backoff.ExponentialBackOff {
+	return &backoff.ExponentialBackOff{
+		InitialInterval:     100 * time.Millisecond,
+		RandomizationFactor: 0.5,
+		Multiplier:          1.5,
+		MaxInterval:         1 * time.Second,
+	}
+}
 
 type Transport struct {
 	httpClient     *http.Client
@@ -70,14 +82,22 @@ func New(cfg *config.Config) *Transport {
 		site = cfg.TracerConfig.Site
 	}
 
-	defaultHeaders := map[string]string{
-		"Content-Type": "application/json",
-	}
+	defaultHeaders := make(map[string]string)
 	if cfg.ResolvedAgentlessEnabled {
 		defaultHeaders["DD-API-KEY"] = cfg.TracerConfig.APIKey
 	}
+
+	// Clone the HTTP client and remove its global timeout
+	// We manage timeouts per-request using context.WithTimeout
+	httpClient := cfg.TracerConfig.HTTPClient
+	if httpClient != nil && httpClient.Timeout > 0 {
+		clientCopy := *httpClient
+		clientCopy.Timeout = 0
+		httpClient = &clientCopy
+	}
+
 	return &Transport{
-		httpClient:     cfg.TracerConfig.HTTPClient,
+		httpClient:     httpClient,
 		defaultHeaders: defaultHeaders,
 		site:           site,
 		agentURL:       cfg.TracerConfig.AgentURL,
@@ -136,10 +156,8 @@ func (c *Transport) baseURL(subdomain string) string {
 	return u
 }
 
-func (c *Transport) request(ctx context.Context, method, path, subdomain string, body any) (int, []byte, error) {
-	urlStr := c.baseURL(subdomain) + path
-
-	var reqBody io.Reader
+func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain string, body any, timeout time.Duration) (int, []byte, error) {
+	var jsonBody io.Reader
 	if body != nil {
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
@@ -147,39 +165,62 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		if err := enc.Encode(body); err != nil {
 			return 0, nil, fmt.Errorf("encode body: %w", err)
 		}
-		reqBody = bytes.NewReader(buf.Bytes())
+		jsonBody = bytes.NewReader(buf.Bytes())
 	}
+	return c.request(ctx, method, path, subdomain, jsonBody, "application/json", timeout)
+}
 
-	req, err := http.NewRequestWithContext(ctx, method, urlStr, reqBody)
-	if err != nil {
-		return 0, nil, err
+func (c *Transport) request(ctx context.Context, method, path, subdomain string, body io.Reader, contentType string, timeout time.Duration) (int, []byte, error) {
+	if timeout == 0 {
+		timeout = defaultTimeout
 	}
-
-	for key, val := range c.defaultHeaders {
-		req.Header.Set(key, val)
-	}
-	if !c.agentless {
-		req.Header.Set(headerEVPSubdomain, subdomain)
-	}
-
-	// Set headers for datasets and experiments endpoints
-	if strings.HasPrefix(path, endpointPrefixDNE) {
-		if c.agentless && c.appKey != "" {
-			// In agentless mode, set the app key header if available
-			req.Header.Set("DD-APPLICATION-KEY", c.appKey)
-		} else if !c.agentless {
-			// In agent mode, always set the NeedsAppKey header (app key is ignored)
-			req.Header.Set("X-Datadog-NeedsAppKey", "true")
-		}
-	}
-	backoffStrat := &backoff.ExponentialBackOff{
-		InitialInterval:     defaultBackoff,
-		RandomizationFactor: 0.5,
-		Multiplier:          1.5,
-		MaxInterval:         1 * time.Second,
-	}
+	urlStr := c.baseURL(subdomain) + path
+	backoffStrat := defaultBackoffStrategy()
 
 	doRequest := func() (resp *http.Response, err error) {
+		log.Debug("llmobs: sending request (method: %s | url: %s)", method, urlStr)
+		defer func() {
+			if err != nil {
+				log.Debug("llmobs: request failed: %s", err.Error())
+			}
+		}()
+
+		// Reset body reader if it's seekable (for retries)
+		if body != nil {
+			if seeker, ok := body.(io.Seeker); ok {
+				if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+					return nil, fmt.Errorf("failed to reset body reader: %w", err)
+				}
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Content-Type", contentType)
+		for key, val := range c.defaultHeaders {
+			req.Header.Set(key, val)
+		}
+		if !c.agentless {
+			req.Header.Set(headerEVPSubdomain, subdomain)
+		}
+
+		// Set headers for datasets and experiments endpoints
+		if strings.HasPrefix(path, endpointPrefixDNE) {
+			if c.agentless && c.appKey != "" {
+				// In agentless mode, set the app key header if available
+				req.Header.Set("DD-APPLICATION-KEY", c.appKey)
+			} else if !c.agentless {
+				// In agent mode, always set the NeedsAppKey header (app key is ignored)
+				req.Header.Set("X-Datadog-NeedsAppKey", "true")
+			}
+		}
+		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		req = req.WithContext(timeoutCtx)
+
 		resp, err = c.httpClient.Do(req)
 		if err != nil {
 			return nil, err
@@ -191,29 +232,21 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		}()
 
 		code := resp.StatusCode
-
 		if code >= 200 && code <= 299 {
 			return resp, nil
 		}
-
 		if isRetriableStatus(code) {
-			log.Debug("llmobs/internal/transport: retriable status code: %d", resp.StatusCode)
 			return nil, fmt.Errorf("request failed with transient http status code: %d", code)
 		}
-
 		if code == http.StatusTooManyRequests {
 			wait := parseRetryAfter(resp.Header)
-			log.Debug("llmobs/internal/transport: status code 429, waiting %s before retry...", wait.String())
+			log.Debug("llmobs: status code 429, waiting %s before retry...", wait.String())
 			drainAndClose(resp.Body)
 			return nil, backoff.RetryAfter(int(wait.Seconds()))
 		}
-
-		log.Debug("llmobs/internal/transport: non-retriable status code: %d", resp.StatusCode)
 		drainAndClose(resp.Body)
 		return nil, backoff.Permanent(fmt.Errorf("request failed with http status code: %d", resp.StatusCode))
 	}
-
-	log.Debug("llmobs/internal/transport: sending request (method: %s | url: %s)", method, urlStr)
 
 	resp, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
 	if err != nil {
@@ -225,7 +258,7 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	if err != nil {
 		return resp.StatusCode, nil, err
 	}
-	log.Debug("llmobs/internal/transport: got success response body: %s", string(b))
+	log.Debug("llmobs: got success response: %s", string(b))
 
 	return resp.StatusCode, b, nil
 }

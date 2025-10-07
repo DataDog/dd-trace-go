@@ -42,6 +42,8 @@ type Config struct {
 // We copy the transport to avoid using the default one, as it might be
 // augmented with tracing and we don't want these calls to be recorded.
 // See https://golang.org/pkg/net/http/#DefaultTransport .
+// Note: We don't set a global Timeout on the client; instead, we manage
+// timeouts per-request using context.WithTimeout for better control.
 func newHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
@@ -56,7 +58,6 @@ func newHTTPClient() *http.Client {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
-		Timeout: 5 * time.Second,
 	}
 }
 
@@ -83,7 +84,6 @@ func (c *Config) DefaultHTTPClient() *http.Client {
 				TLSHandshakeTimeout:   10 * time.Second,
 				ExpectContinueTimeout: 1 * time.Second,
 			},
-			Timeout: 10 * time.Second,
 		}
 	}
 	return cl
