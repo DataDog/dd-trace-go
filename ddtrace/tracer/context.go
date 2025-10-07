@@ -31,10 +31,10 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	newCtx := ctx
 
 	propagatedLLMObs := propagatedLLMSpanFromTags(s)
-	if propagatedLLMObs.SpanID != "" && propagatedLLMObs.TraceID != "" {
-		newCtx = illmobs.ContextWithPropagatedLLMSpan(newCtx, propagatedLLMObs)
+	if propagatedLLMObs.SpanID == "" || propagatedLLMObs.TraceID == "" {
+		return newCtx
 	}
-	return newCtx
+	return illmobs.ContextWithPropagatedLLMSpan(newCtx, propagatedLLMObs)
 }
 
 func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {

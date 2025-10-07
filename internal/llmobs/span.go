@@ -360,16 +360,12 @@ func (s *Span) annotateIO(a SpanAnnotations) {
 	switch s.spanKind {
 	case SpanKindLLM:
 		s.annotateIOLLM(a)
-
 	case SpanKindEmbedding:
 		s.annotateIOEmbedding(a)
-
 	case SpanKindRetrieval:
 		s.annotateIORetrieval(a)
-
 	case SpanKindExperiment:
 		s.annotateIOExperiment(a)
-
 	default:
 		s.annotateIOText(a)
 	}
