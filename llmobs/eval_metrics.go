@@ -20,11 +20,16 @@ type EvaluationValue interface {
 
 // SubmitEvaluationFromSpan submits an evaluation metric for the given span.
 // The metric will be associated with the span using its span ID and trace ID.
-func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span BaseSpan, opts ...EvaluationOption) {
+func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span Span, opts ...EvaluationOption) {
+	var spanID, traceID string
+	if span != nil {
+		spanID = span.SpanID()
+		traceID = span.TraceID()
+	}
 	cfg := illmobs.EvaluationConfig{
 		Label:   label,
-		SpanID:  span.SpanID(),
-		TraceID: span.TraceID(),
+		SpanID:  spanID,
+		TraceID: traceID,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
