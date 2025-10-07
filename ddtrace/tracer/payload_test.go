@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
@@ -65,8 +64,6 @@ func TestPayloadIntegrity(t *testing.T) {
 // TestPayloadDecode ensures that whatever we push into the payload can
 // be decoded by the codec.
 func TestPayloadDecode(t *testing.T) {
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
-	processtags.Reload()
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
