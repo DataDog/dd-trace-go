@@ -9,24 +9,45 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 )
 
 var fixedTime = now()
 
+// creates a simple span list with n spans
 func newSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*Span, n)
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].start = fixedTime
+	}
+	return list
+}
+
+// creates a list of n spans, populated with SpanLinks, SpanEvents, and other fields
+func newDetailedSpanList(n int) spanList {
+	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
+	list := make([]*Span, n)
+	for i := 0; i < n; i++ {
+		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
+		list[i].start = fixedTime
+		list[i].service = "service." + itoa[i%5+1]
+		list[i].resource = "resource." + itoa[i%5+1]
+		list[i].error = int32(i % 2)
+		list[i].SetTag("tag."+itoa[i%5+1], "value."+itoa[i%5+1])
+		// list[i].spanLinks = []SpanLink{{TraceID: 1, SpanID: 1}, {TraceID: 2, SpanID: 2}}
+		// list[i].spanEvents = []spanEvent{{Name: "span.event." + itoa[i%5+1]}}
 	}
 	return list
 }
@@ -81,18 +102,19 @@ func TestPayloadV04Decode(t *testing.T) {
 // be decoded by the codec, and that it matches the original payload.
 func TestPayloadV1Decode(t *testing.T) {
 	for _, n := range []int{10, 1 << 10} {
-		t.Run(strconv.Itoa(n), func(t *testing.T) {
-			assert := assert.New(t)
-			p := newPayloadV1()
-
-			p.containerID = "containerID"
-			p.languageName = "languageName"
-			p.languageVersion = "languageVersion"
-			p.tracerVersion = "tracerVersion"
-			p.runtimeID = "runtimeID"
-			p.env = "env"
-			p.hostname = "hostname"
-			p.appVersion = "appVersion"
+		t.Run("simple"+strconv.Itoa(n), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+			p.SetContainerID("containerID")
+			p.SetLanguageName("go")
+			p.SetLanguageVersion("1.25")
+			p.SetTracerVersion(version.Tag)
+			p.SetRuntimeID(globalconfig.RuntimeID())
+			p.SetEnv("test")
+			p.SetHostname("hostname")
+			p.SetAppVersion("appVersion")
 
 			for i := 0; i < n; i++ {
 				_, _ = p.push(newSpanList(i%5 + 1))
@@ -102,9 +124,14 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.NoError(err)
 
 			got := newPayloadV1()
-			_, err = got.Decode(encoded)
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
 			assert.NoError(err)
 
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			assert.Equal(p.fields, got.fields)
 			assert.Equal(p.containerID, got.containerID)
 			assert.Equal(p.languageName, got.languageName)
 			assert.Equal(p.languageVersion, got.languageVersion)
@@ -113,6 +140,76 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(p.env, got.env)
 			assert.Equal(p.hostname, got.hostname)
 			assert.Equal(p.appVersion, got.appVersion)
+			assert.Equal(p.fields, got.fields)
+		})
+
+		t.Run("detailed"+strconv.Itoa(n), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+
+			for i := 0; i < n; i++ {
+				_, _ = p.push(newDetailedSpanList(i%5 + 1))
+			}
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			_, err = got.decodeBuffer()
+			assert.NoError(err)
+			assert.NotEmpty(got.attributes)
+		})
+	}
+}
+
+func TestPayloadV1EmbeddedStreamingStringTable(t *testing.T) {
+	p := newPayloadV1()
+	p.SetHostname("production")
+	p.SetEnv("production")
+	p.SetLanguageName("go")
+
+	assert := assert.New(t)
+	encoded, err := io.ReadAll(p)
+	assert.NoError(err)
+
+	got := newPayloadV1()
+	buf := bytes.NewBuffer(encoded)
+	_, err = buf.WriteTo(got)
+	assert.NoError(err)
+
+	o, err := got.decodeBuffer()
+	assert.NoError(err)
+	assert.Empty(o)
+	assert.Equal(p.languageName, got.languageName)
+	assert.Equal(p.hostname, got.hostname)
+	assert.Equal(p.env, got.env)
+}
+
+func TestPayloadV1UpdateHeader(t *testing.T) {
+	testCases := []uint32{ // Number of items
+		15,
+		math.MaxUint16,
+		math.MaxUint32,
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("n=%d", tc), func(t *testing.T) {
+			var (
+				p = payloadV1{
+					fields: tc,
+					header: make([]byte, 8),
+				}
+				expected []byte
+			)
+			expected = msgp.AppendMapHeader(expected, tc)
+			p.updateHeader()
+			if got := p.header[p.readOff:]; !bytes.Equal(expected, got) {
+				t.Fatalf("expected %+v, got %+v", expected, got)
+			}
 		})
 	}
 }
