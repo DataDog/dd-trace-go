@@ -539,6 +539,8 @@ func (t *trace) finishedOne(s *Span) {
 	tc := tr.TracerConf()
 	setPeerService(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
 
+	// SHOULD WE DO SMTH ABOUT THE BASE SERVICE TAG (PYTHON RETURNS BEFORE SETTING IT)
+
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
 	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
@@ -566,6 +568,7 @@ func (t *trace) finishedOne(s *Span) {
 		mtr.FinishSpan(s)
 	}
 
+	log.Info("1")
 	if len(t.spans) == t.finished { // perform a full flush of all spans
 		if tr, ok := tr.(*tracer); ok {
 			t.finishChunk(tr, &chunk{
@@ -577,6 +580,7 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 
+	log.Info("2")
 	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
@@ -592,6 +596,7 @@ func (t *trace) finishedOne(s *Span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
+
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
@@ -606,6 +611,8 @@ func (t *trace) finishedOne(s *Span) {
 		})
 	}
 	t.spans = leftoverSpans
+
+	log.Info("3")
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
@@ -625,12 +632,15 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
 				s.setMeta(ext.PeerService, ps)
+				log.Info("HERE")
 			}
 		} else {
 			//QUESTION what to do if no ps is derived
-			log.Error("Unable to derive aws peer service")
+			log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
+			return
 		}
-		//QUESTION should we be ignoring all the logic below?
+		//QUESTION should we be ignoring all the logic below? I.e the peerservicedefaults variable and the
+		// keyPeerServiceSource tag
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -645,12 +655,16 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		}
 		s.setMeta(keyPeerServiceSource, source)
 	}
+
+	log.Info("there")
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
 	if to, ok := peerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
+
+	log.Info("done set peer service")
 }
 
 /*
