@@ -1885,8 +1885,10 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		// first sampling rule is applied, the sampling decision is 1
 		// and the "_dd.limit_psr" is present
 		root.Finish()
-		assert.Equal(1., root.metrics[keyRulesSamplerAppliedRate])
-		assert.Contains(root.metrics, keyRulesSamplerLimiterRate)
+		ruleRate, _ := getMetric(root, keyRulesSamplerAppliedRate)
+		assert.Equal(1., ruleRate)
+		_, hasLimiterRate := getMetric(root, keyRulesSamplerLimiterRate)
+		assert.True(hasLimiterRate)
 		// Knuth sampling rate tag should be set with rate 1.0
 		rate, ok := getMeta(root, keyKnuthSamplingRate)
 		assert.True(ok)
@@ -1939,8 +1941,10 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		// re-sampling should not occur
 		root.Finish()
 
-		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
-		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
+		_, hasRulesRate := getMetric(child, keyRulesSamplerAppliedRate)
+		assert.False(hasRulesRate)
+		_, hasLimiterRate := getMetric(root, keyRulesSamplerLimiterRate)
+		assert.False(hasLimiterRate)
 		// Knuth sampling rate tag should still be "0" since no re-sampling occurred
 		rate, ok := getMeta(root, keyKnuthSamplingRate)
 		assert.True(ok)
@@ -1948,8 +1952,10 @@ func TestSampleTagsRootOnly(t *testing.T) {
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
-		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
-		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
+		_, hasRulesRate = getMetric(child, keyRulesSamplerAppliedRate)
+		assert.False(hasRulesRate)
+		_, hasLimiterRate = getMetric(child, keyRulesSamplerLimiterRate)
+		assert.False(hasLimiterRate)
 		// child span should not have Knuth sampling rate tag
 		_, ok = getMeta(child, keyKnuthSamplingRate)
 		assert.False(ok)
