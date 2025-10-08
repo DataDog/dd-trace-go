@@ -50,15 +50,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       echo "test.sh - Run the tests for dd-trace-go"
-      echo "	this script requires gotestsum, goimports, docker and docker-compose."
-      echo "	-l | --lint		- Run the linter"
-      echo "	-a | --appsec		- Test with appsec enabled"
-      echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
-      echo "	-c | --contrib		- Run contrib tests"
-      echo "	--all			- Synonym for -l -a -i -c"
-      echo "	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
-      echo "	-t | --tools		- Install gotestsum and goimports"
-      echo "	-h | --help		- Print this help message"
+      echo "  this script requires gotestsum, goimports, docker and docker-compose."
+      echo "  -l | --lint   - Run the linter"
+      echo "  -a | --appsec   - Test with appsec enabled"
+      echo "  -i | --integration  - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
+      echo "  -c | --contrib    - Run contrib tests"
+      echo "  --all     - Synonym for -l -a -i -c"
+      echo "  -s | --sleep    - The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
+      echo "  -t | --tools    - Install gotestsum and goimports"
+      echo "  -h | --help   - Print this help message"
       exit 0
       ;;
     *)

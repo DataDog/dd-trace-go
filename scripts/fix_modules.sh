@@ -8,10 +8,10 @@ set -euo pipefail
 go run -tags=scripts ./scripts/fixmodules -root=. .
 
 for f in $(find . -name go.mod); do
-	(
-		cd $(dirname $f)
-		go mod tidy
-	)
+  (
+    cd $(dirname $f)
+    go mod tidy
+  )
 done
 
 # This command will update the go.work.sum file
