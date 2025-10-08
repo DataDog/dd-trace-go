@@ -107,6 +107,10 @@ func newPayloadV1() *payloadV1 {
 func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
 	// Conceptually, our `t spanList` corresponds to one `traceChunk`.
+	if !p.bm.contains(11) && len(t) > 0 {
+		p.bm.set(11)
+		p.fields += 1
+	}
 
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
@@ -139,11 +143,12 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 	// if there are attributes available, set them in our bitmap and increment
 	// the number of fields.
-	if len(attributes) > 0 {
+	if !p.bm.contains(10) && len(attributes) > 0 {
 		tc.attributes = attributes
 		p.bm.set(10)
 		p.fields += 1
 	}
+
 	p.chunks = append(p.chunks, tc)
 	p.recordItem()
 	return p.stats(), err
@@ -253,6 +258,7 @@ func (p *payloadV1) Read(b []byte) (n int, err error) {
 // encode writes existing payload fields into the buffer in msgp format.
 func (p *payloadV1) encode() {
 	st := newStringTable()
+	p.buf = msgp.AppendMapHeader(p.buf, p.fields) // number of fields in payload
 	p.buf = encodeField(p.buf, p.bm, 2, p.containerID, st)
 	p.buf = encodeField(p.buf, p.bm, 3, p.languageName, st)
 	p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, st)
@@ -297,7 +303,7 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 	case float64:
 		buf = msgp.AppendFloat64(buf, value)
 	case int32, int64:
-		buf = msgp.AppendInt64(buf, value.(int64))
+		buf = msgp.AppendInt64(buf, handleIntValue(value))
 	case []byte:
 		buf = msgp.AppendBytes(buf, value)
 	case arrayValue:
@@ -481,7 +487,7 @@ func (p *payloadV1) encodeSpanEvents(fieldID int, spanEvents []spanEvent, st *st
 			case spanEventAttributeTypeInt:
 				attr[k] = anyValue{
 					valueType: IntValueType,
-					value:     v.IntValue,
+					value:     handleIntValue(v.IntValue),
 				}
 			case spanEventAttributeTypeDouble:
 				attr[k] = anyValue{
@@ -673,8 +679,8 @@ func buildAnyValue(v any) *anyValue {
 		return &anyValue{valueType: BoolValueType, value: v}
 	case float64:
 		return &anyValue{valueType: FloatValueType, value: v}
-	case int64, int32:
-		return &anyValue{valueType: IntValueType, value: v}
+	case int32, int64:
+		return &anyValue{valueType: IntValueType, value: handleIntValue(v)}
 	case []byte:
 		return &anyValue{valueType: BytesValueType, value: v}
 	case arrayValue:
@@ -704,6 +710,19 @@ func (a anyValue) encode(buf []byte) []byte {
 		}
 	}
 	return buf
+}
+
+// translate any int value to int64
+func handleIntValue(a any) int64 {
+	switch v := a.(type) {
+	case int64:
+		return v
+	case int32:
+		return int64(v)
+	default:
+		// Fallback for other integer types
+		return v.(int64)
+	}
 }
 
 type arrayValue []anyValue
@@ -973,12 +992,12 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 		// read msgp string value
 		switch idx {
 		case 1:
-			span.name, o, err = msgp.ReadStringBytes(o)
+			span.service, o, err = msgp.ReadStringBytes(o)
 			if err != nil {
 				return o, err
 			}
 		case 2:
-			span.service, o, err = msgp.ReadStringBytes(o)
+			span.name, o, err = msgp.ReadStringBytes(o)
 			if err != nil {
 				return o, err
 			}
@@ -988,51 +1007,26 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 				return o, err
 			}
 		case 4:
-			span.spanType, o, err = msgp.ReadStringBytes(o)
-			if err != nil {
-				return o, err
-			}
-		case 5:
-			span.start, o, err = msgp.ReadInt64Bytes(o)
-			if err != nil {
-				return o, err
-			}
-		case 6:
-			span.duration, o, err = msgp.ReadInt64Bytes(o)
-			if err != nil {
-				return o, err
-			}
-		// case 7:
-		// 	span.meta, o, err = DecodeKeyValueList(o, st)
-		// 	if err != nil {
-		// 		return o, err
-		// 	}
-		// case 8:
-		// 	span.metaStruct, o, err = DecodeKeyValueList(o, st)
-		// 	if err != nil {
-		// 		return o, err
-		// 	}
-		// case 9:
-		// 	span.metrics, o, err = DecodeKeyValueList(o, st)
-		// 	if err != nil {
-		// 		return o, err
-		// 	}
-		case 10:
 			span.spanID, o, err = msgp.ReadUint64Bytes(o)
 			if err != nil {
 				return o, err
 			}
-		case 11:
-			span.traceID, o, err = msgp.ReadUint64Bytes(o)
-			if err != nil {
-				return o, err
-			}
-		case 12:
+		case 5:
 			span.parentID, o, err = msgp.ReadUint64Bytes(o)
 			if err != nil {
 				return o, err
 			}
-		case 13:
+		case 6:
+			span.start, o, err = msgp.ReadInt64Bytes(o)
+			if err != nil {
+				return o, err
+			}
+		case 7:
+			span.duration, o, err = msgp.ReadInt64Bytes(o)
+			if err != nil {
+				return o, err
+			}
+		case 8:
 			var v bool
 			v, o, err = msgp.ReadBoolBytes(o)
 			if err != nil {
@@ -1043,17 +1037,39 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			} else {
 				span.error = 0
 			}
-		case 14:
+		// case 9:
+		// 	span.attributes, o, err = DecodeKeyValueList(o, st)
+		// 	if err != nil {
+		// 		return o, err
+		// 	}
+		case 10:
+			span.spanType, o, err = msgp.ReadStringBytes(o)
+			if err != nil {
+				return o, err
+			}
+		case 11:
 			span.spanLinks, o, err = DecodeSpanLinks(o, st)
 			if err != nil {
 				return o, err
 			}
-		case 15:
+		case 12:
 			span.spanEvents, o, err = DecodeSpanEvents(o, st)
 			if err != nil {
 				return o, err
 			}
-		case 16:
+		case 13:
+			var env string
+			env, o, err = msgp.ReadStringBytes(o)
+			if env != "" && err != nil {
+				span.SetTag(ext.Environment, env)
+			}
+		case 14:
+			var ver string
+			ver, o, err = msgp.ReadStringBytes(o)
+			if ver != "" && err != nil {
+				span.SetTag(ext.Version, ver)
+			}
+		case 15:
 			span.integration, o, err = msgp.ReadStringBytes(o)
 			if err != nil {
 				return o, err
@@ -1210,7 +1226,8 @@ func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 		if err != nil {
 			return anyValue{}, o, err
 		}
-		return anyValue{valueType: IntValueType, value: i}, o, nil
+		intVal := handleIntValue(i)
+		return anyValue{valueType: IntValueType, value: intVal}, o, nil
 	case BytesValueType:
 		b, o, err := msgp.ReadBytesBytes(o, nil)
 		if err != nil {
