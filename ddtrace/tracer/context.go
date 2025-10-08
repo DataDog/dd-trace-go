@@ -37,6 +37,8 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	return illmobs.ContextWithPropagatedLLMSpan(newCtx, propagatedLLMObs)
 }
 
+// propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
+// This is used during distributed tracing to set the correct parent span for the current span.
 func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
 	propagatedLLMObs := &illmobs.PropagatedLLMSpan{}
 	if s.context == nil || s.context.trace == nil {

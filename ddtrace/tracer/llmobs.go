@@ -12,6 +12,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
+var (
+	_ llmobs.Tracer  = (*llmobsTracerAdapter)(nil)
+	_ llmobs.APMSpan = (*llmobsSpanAdapter)(nil)
+)
+
+// llmobsTracerAdapter adapts the public ddtrace/tracer API to the internal/llmobs.Tracer interface.
+// This allows the internal llmobs package to start APM spans without directly depending
+// on the tracer package, avoiding circular dependencies.
 type llmobsTracerAdapter struct{}
 
 func (l *llmobsTracerAdapter) StartSpan(ctx context.Context, name string, cfg llmobs.StartAPMSpanConfig) (llmobs.APMSpan, context.Context) {
@@ -26,6 +34,7 @@ func (l *llmobsTracerAdapter) StartSpan(ctx context.Context, name string, cfg ll
 	return &llmobsSpanAdapter{span}, ctx
 }
 
+// llmobsSpanAdapter adapts a public ddtrace/tracer.Span to the internal/llmobs.APMSpan interface.
 type llmobsSpanAdapter struct {
 	span *Span
 }
