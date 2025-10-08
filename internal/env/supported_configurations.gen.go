@@ -9,12 +9,12 @@ package env
 
 // SupportedConfigurations is a map of supported configuration keys.
 var SupportedConfigurations = map[string]struct{}{
-	"DD_ACTION_EXECUTION_ID":                                          {},
-	"DD_AGENT_HOST":                                                   {},
-	"DD_API_KEY":                                                      {},
+	"DD_ACTION_EXECUTION_ID": {},
+	"DD_AGENT_HOST":          {},
+	"DD_API_KEY":             {},
 	"DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE":    {},
 	"DD_API_SECURITY_ENABLED":                                         {},
-	"DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS":			   {},
+	"DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS":            {},
 	"DD_API_SECURITY_PROXY_SAMPLE_RATE":                               {},
 	"DD_API_SECURITY_REQUEST_SAMPLE_RATE":                             {},
 	"DD_API_SECURITY_SAMPLE_DELAY":                                    {},
@@ -100,6 +100,9 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_SERVICE_EXTENSION_HOST":                                       {},
 	"DD_SERVICE_EXTENSION_OBSERVABILITY_MODE":                         {},
 	"DD_SERVICE_EXTENSION_PORT":                                       {},
+	"DD_SERVICE_EXTENSION_TLS":                                        {},
+	"DD_SERVICE_EXTENSION_TLS_KEY_FILE":                               {},
+	"DD_SERVICE_EXTENSION_TLS_CERT_FILE":                              {},
 	"DD_SERVICE_MAPPING":                                              {},
 	"DD_SITE":                                                         {},
 	"DD_SPAN_SAMPLING_RULES":                                          {},
