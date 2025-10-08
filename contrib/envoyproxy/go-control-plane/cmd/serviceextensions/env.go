@@ -57,3 +57,13 @@ func boolEnv(key string, def bool) bool {
 	}
 	return v
 }
+
+// stringEnv returns the string value of an environment variable, or
+// def otherwise.
+func stringEnv(key, def string) string {
+	v, ok := env.Lookup(key)
+	if !ok {
+		return def
+	}
+	return v
+}

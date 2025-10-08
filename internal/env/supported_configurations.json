@@ -273,6 +273,15 @@
     "DD_SERVICE_EXTENSION_PORT": [
       "A"
     ],
+    "DD_SERVICE_EXTENSION_TLS": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_TLS_KEY_FILE": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_TLS_CERT_FILE": [
+      "A"
+    ],
     "DD_SERVICE_MAPPING": [
       "A"
     ],
