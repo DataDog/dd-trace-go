@@ -57,13 +57,13 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       echo "test.sh - Run the tests for dd-trace-go"
       echo "  this script requires gotestsum, goimports, docker and docker-compose."
-      echo "  -a | --appsec   - Test with appsec enabled"
-      echo "  -i | --integration  - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
-      echo "  -c | --contrib    - Run contrib tests"
-      echo "  --all     - Synonym for -l -a -i -c"
-      echo "  -s | --sleep    - The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
-      echo "  -t | --tools    - Install gotestsum and goimports"
-      echo "  -h | --help   - Print this help message"
+      echo "  -a | --appsec      - Test with appsec enabled"
+      echo "  -i | --integration - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
+      echo "  -c | --contrib     - Run contrib tests"
+      echo "  --all              - Synonym for -l -a -i -c"
+      echo "  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
+      echo "  -t | --tools       - Install gotestsum and goimports"
+      echo "  -h | --help        - Print this help message"
       exit 0
       ;;
     *)
@@ -92,7 +92,7 @@ fi
 ## CORE
 message "Testing core..."
 pkg_names=$(go list ./...)
-nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic "${pkg_names}" && true
+nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic ${pkg_names} && true
 
 if [[ "$contrib" != "" ]]; then
   ## CONTRIB
@@ -119,7 +119,7 @@ if [[ "$contrib" != "" ]]; then
       cd - >/dev/null
       continue
     fi
-    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic "${pkgs}"
+    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic ${pkgs}
     cd - >/dev/null
   done
 fi

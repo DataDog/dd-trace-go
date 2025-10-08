@@ -9,7 +9,7 @@ go run -tags=scripts ./scripts/fixmodules -root=. .
 
 for f in $(find . -name go.mod); do
   (
-    cd $(dirname $f)
+    cd "$(dirname "$f")"
     go mod tidy
   )
 done
