@@ -79,6 +79,9 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 		extensionHost        string
 		observabilityMode    bool
 		bodyParsingSizeLimit int
+		tlsEnabled           bool
+		tlsCertFile          string
+		tlsKeyFile           string
 	}
 
 	cases := []struct {
@@ -89,7 +92,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 		{
 			name: "defaults",
 			env:  nil,
-			want: want{"443", "80", "0.0.0.0", false, 0},
+			want: want{"443", "80", "0.0.0.0", false, 0, true, "localhost.key", "localhost.crt"},
 		},
 		{
 			name: "valid overrides",
@@ -100,7 +103,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 				"DD_SERVICE_EXTENSION_OBSERVABILITY_MODE": "true",
 				"DD_APPSEC_BODY_PARSING_SIZE_LIMIT":       "100000000",
 			},
-			want: want{"1234", "4321", "127.0.0.1", true, 100000000},
+			want: want{"1234", "4321", "127.0.0.1", true, 100000000, true, "localhost.key", "localhost.crt"},
 		},
 		{
 			name: "bad values fall back",
@@ -111,7 +114,22 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 				"DD_APPSEC_BODY_PARSING_SIZE_LIMIT":       "notanint",
 				"DD_SERVICE_EXTENSION_HOST":               "notanip",
 			},
-			want: want{"443", "80", "0.0.0.0", false, 0},
+			want: want{"443", "80", "0.0.0.0", false, 0, true, "localhost.key", "localhost.crt"},
+		},
+		{
+			name: "no-tls",
+			env: map[string]string{
+				"DD_SERVICE_EXTENSION_TLS": "false",
+			},
+			want: want{"443", "80", "0.0.0.0", false, 0, false, "localhost.key", "localhost.crt"},
+		},
+		{
+			name: "custom-tls",
+			env: map[string]string{
+				"DD_SERVICE_EXTENSION_TLS_KEY_FILE":  "/tls/tls.key",
+				"DD_SERVICE_EXTENSION_TLS_CERT_FILE": "/tls/tls.crt",
+			},
+			want: want{"443", "80", "0.0.0.0", false, 0, true, "/tls/tls.key", "/tls/tls.crt"},
 		},
 	}
 
@@ -121,6 +139,9 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 		"DD_SERVICE_EXTENSION_HOST",
 		"DD_SERVICE_EXTENSION_OBSERVABILITY_MODE",
 		"DD_APPSEC_BODY_PARSING_SIZE_LIMIT",
+		"DD_SERVICE_EXTENSION_TLS_CERT",
+		"DD_SERVICE_EXTENSION_TLS_KEY",
+		"DD_SERVICE_EXTENSION_TLS",
 	}
 
 	for _, tc := range cases {
@@ -134,6 +155,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 			assert.Equal(t, tc.want.extensionHost, cfg.extensionHost, "extensionHost")
 			assert.Equal(t, tc.want.observabilityMode, cfg.observabilityMode, "observabilityMode")
 			assert.Equal(t, tc.want.bodyParsingSizeLimit, cfg.bodyParsingSizeLimit, "bodyParsingSizeLimit")
+
 		})
 	}
 }
