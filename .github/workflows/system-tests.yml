@@ -230,30 +230,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [ external_processing, haproxy ]
-        scenario:
-          - EXTERNAL_PROCESSING
-          - EXTERNAL_PROCESSING_BLOCKING
-          - STREAM_PROCESSING_OFFLOAD
-          - STREAM_PROCESSING_OFFLOAD_BLOCKING
         include:
           - target: external_processing
+            scenario: EXTERNAL_PROCESSING
+            image_name: service-extensions-callout
+            image_artifact: service-extensions-image-linux-amd64
+            system_tests_name: external_processing
+          - target: external_processing
+            scenario: EXTERNAL_PROCESSING_BLOCKING
             image_name: service-extensions-callout
             image_artifact: service-extensions-image-linux-amd64
             system_tests_name: external_processing
           - target: haproxy
+            scenario: STREAM_PROCESSING_OFFLOAD
             image_name: haproxy-spoa
             image_artifact: haproxy-spoa-image-linux-amd64
             system_tests_name: stream_processing_offload
-        exclude:
-          - target: external_processing
-            scenario: STREAM_PROCESSING_OFFLOAD
-          - target: external_processing
+          - target: haproxy
             scenario: STREAM_PROCESSING_OFFLOAD_BLOCKING
-          - target: haproxy
-            scenario: EXTERNAL_PROCESSING
-          - target: haproxy
-            scenario: EXTERNAL_PROCESSING_BLOCKING
+            image_name: haproxy-spoa
+            image_artifact: haproxy-spoa-image-linux-amd64
+            system_tests_name: stream_processing_offload
 
     name: Test (${{ matrix.system_tests_name }}, ${{ matrix.scenario }})
     steps:

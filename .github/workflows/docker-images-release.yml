@@ -33,7 +33,7 @@ on:
         default: false
         type: boolean
       build_haproxy:
-        description: 'Build haproxy image'
+        description: 'Build haproxy SPOA image'
         required: false
         default: false
         type: boolean
@@ -60,7 +60,7 @@ jobs:
         run: |
           echo "service_extension_image_tag=${RAW_TAG#PREFIX_SERVICE_EXTENSION}" >> $GITHUB_OUTPUT
           echo "request_mirroring_image_tag=${RAW_TAG#PREFIX_REQUEST_MIRRORING}" >> $GITHUB_OUTPUT
-          echo "haproxy_image_tag=${RAW_TAG#PREFIX_REQUEST_MIRRORING}" >> $GITHUB_OUTPUT
+          echo "haproxy_image_tag=${RAW_TAG#PREFIX_HAPROXY}" >> $GITHUB_OUTPUT
 
   build-service-extensions-callout:
     needs: prepare-tag
