@@ -69,6 +69,9 @@
     "DD_APPSEC_WAF_TIMEOUT": [
       "A"
     ],
+    "DD_APP_KEY": [
+      "A"
+    ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
       "A"
     ],
@@ -181,6 +184,18 @@
       "A"
     ],
     "DD_KEY": [
+      "A"
+    ],
+    "DD_LLMOBS_AGENTLESS_ENABLED": [
+      "A"
+    ],
+    "DD_LLMOBS_ENABLED": [
+      "A"
+    ],
+    "DD_LLMOBS_ML_APP": [
+      "A"
+    ],
+    "DD_LLMOBS_PROJECT_NAME": [
       "A"
     ],
     "DD_LOGGING_RATE": [
