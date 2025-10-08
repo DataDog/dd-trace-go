@@ -9,8 +9,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -104,31 +107,34 @@ func newPayloadV1() *payloadV1 {
 func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
 	// Conceptually, our `t spanList` corresponds to one `traceChunk`.
+
+	// For now, we blindly set the origin, priority, and attributes values for the chunk
+	// In the future, attributes should hold values that are shared across all chunks in the payload
 	attributes := map[string]anyValue{}
+	origin, priority, sm := "", 0, 0
 	for _, span := range t {
 		if span == nil {
-			continue
+			break
 		}
-		for k, v := range span.meta {
-			// TODO(darccio): aren't these loops potentially overriding tags from different spans as attributes?
-			av := anyValue{valueType: StringValueType, value: v}
-			attributes[k] = av
-			p.attributes[k] = av
+		if p, ok := span.Context().SamplingPriority(); ok {
+			origin = span.Context().origin
+			priority = p
+			attributes["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
+			dm := span.context.trace.propagatingTag(keyDecisionMaker)
+			sm, err = strconv.Atoi(dm)
+			if err != nil {
+				log.Error("failed to convert decision maker to int: %s", err.Error())
+			}
+			break
 		}
-		for k, v := range span.metrics {
-			av := anyValue{valueType: FloatValueType, value: v}
-			attributes[k] = av
-			p.attributes[k] = av
-		}
-		// TODO(hannahkm): :sad-clown: :dead-tired:
-		// for k, v := range span.metaStruct {
-		// 	attributes = append(attributes, keyValue{key: k, value: anyValue{valueType: keyValueListType, value: v}})
-		// }
 	}
 
 	tc := traceChunk{
-		spans:   t,
-		traceID: t[0].Context().traceID[:],
+		spans:             t,
+		priority:          int32(priority),
+		origin:            origin,
+		traceID:           t[0].Context().traceID[:],
+		samplingMechanism: uint32(sm),
 	}
 
 	// if there are attributes available, set them in our bitmap and increment
@@ -175,8 +181,6 @@ func (p *payloadV1) clear() {
 
 func (p *payloadV1) recordItem() {
 	atomic.AddUint32(&p.count, 1)
-	// p.updateHeader() TODO(hannahkm): figure out if we need this
-	// TODO(darccio): after updating updateHeader, we should do it when we bump p.fields.
 }
 
 func (p *payloadV1) stats() payloadStats {
@@ -199,17 +203,17 @@ func (p *payloadV1) protocol() float64 {
 }
 
 func (p *payloadV1) updateHeader() {
-	n := uint64(p.fields) // TODO(darccio): possibly this needs to be atomic as it was before with p.count?
+	n := atomic.LoadUint32(&p.fields)
 	switch {
 	case n <= 15:
 		p.header[7] = msgpackMapFix + byte(n)
 		p.readOff = 7
 	case n <= 1<<16-1:
-		binary.BigEndian.PutUint64(p.header, n) // writes 2 bytes
+		binary.BigEndian.PutUint64(p.header, uint64(n)) // writes 2 bytes
 		p.header[5] = msgpackMap16
 		p.readOff = 5
 	default: // n <= 1<<32-1
-		binary.BigEndian.PutUint64(p.header, n) // writes 4 bytes
+		binary.BigEndian.PutUint64(p.header, uint64(n)) // writes 4 bytes
 		p.header[3] = msgpackMap32
 		p.readOff = 3
 	}
@@ -271,7 +275,8 @@ type fieldValue interface {
 	bool | []byte | int32 | int64 | uint32 | uint64 | string
 }
 
-// TODO(hannahkm): is this the best way to go about encoding fields?
+// encodeField takes a field of any value and encodes it into the given buffer
+// in msgp format.
 func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *stringTable) []byte {
 	if !bm.contains(fieldID) {
 		return buf
@@ -326,43 +331,36 @@ func (p *payloadV1) encodeAttributes(fieldID int, kv map[string]anyValue, st *st
 	return nil
 }
 
-// TODO(hannahkm): this references chunk.bm, which is not implemented yet
-// TODO(darccio): we can go without chunk.bm or other bm down the line
 func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTable) error {
-	if len(tc) == 0 {
+	if len(tc) == 0 || !p.bm.contains(uint32(fieldID)) {
 		return nil
 	}
 
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))      // msgp key
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(tc))) // number of chunks
 	for _, chunk := range tc {
-		p.buf = msgp.AppendMapHeader(p.buf, uint32(chunk.fields)) // number of item pairs in map
+		p.buf = msgp.AppendMapHeader(p.buf, 7) // number of fields in chunk
 
 		// priority
-		p.buf = encodeField(p.buf, chunk.bm, 1, chunk.priority, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
 
 		// origin
-		p.buf = encodeField(p.buf, chunk.bm, 2, chunk.origin, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 2, chunk.origin, st)
 
 		// attributes
-		if chunk.bm.contains(3) {
-			p.encodeAttributes(3, chunk.attributes, st)
-		}
+		p.encodeAttributes(3, chunk.attributes, st)
 
 		// spans
-		if chunk.bm.contains(4) {
-			p.encodeSpans(4, chunk.spans, st)
-		}
+		p.encodeSpans(4, chunk.spans, st)
 
 		// droppedTrace
-		p.buf = encodeField(p.buf, chunk.bm, 5, chunk.droppedTrace, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
 
 		// traceID
-		p.buf = encodeField(p.buf, chunk.bm, 6, chunk.traceID, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
 
 		// samplingMechanism
-		// TODO(hannahkm): I think the RFC changed, need to double check this
-		p.buf = encodeField(p.buf, chunk.bm, 7, chunk.samplingMechanism, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 7, chunk.samplingMechanism, st)
 	}
 
 	return nil
@@ -380,26 +378,54 @@ func (p *payloadV1) encodeSpans(fieldID int, spans spanList, st *stringTable) er
 		if span == nil {
 			continue
 		}
-		// TODO(hannahkm): how do we get the number of set fields efficiently?
-		// TODO(hannahkm): might need to change the bitmap value in the calls below
-		p.buf = encodeField(p.buf, p.bm, 1, span.service, st)
-		p.buf = encodeField(p.buf, p.bm, 2, span.name, st)
-		p.buf = encodeField(p.buf, p.bm, 3, span.resource, st)
-		p.buf = encodeField(p.buf, p.bm, 4, span.spanID, st)
-		p.buf = encodeField(p.buf, p.bm, 5, span.parentID, st)
-		p.buf = encodeField(p.buf, p.bm, 6, span.start, st)
-		p.buf = encodeField(p.buf, p.bm, 7, span.duration, st)
+		p.buf = msgp.AppendMapHeader(p.buf, 16) // number of fields in span
+
+		p.buf = encodeField(p.buf, fullSetBitmap, 1, span.service, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 2, span.name, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 3, span.resource, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 4, span.spanID, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 5, span.parentID, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 6, span.start, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 7, span.duration, st)
 		if span.error != 0 {
-			p.buf = encodeField(p.buf, p.bm, 8, true, st)
+			p.buf = encodeField(p.buf, fullSetBitmap, 8, true, st)
 		} else {
-			p.buf = encodeField(p.buf, p.bm, 8, false, st)
+			p.buf = encodeField(p.buf, fullSetBitmap, 8, false, st)
 		}
-		p.buf = encodeField(p.buf, p.bm, 10, span.spanType, st)
+
+		// span attributes combine the meta (tags), metrics and meta_struct
+		attr := map[string]anyValue{}
+		for k, v := range span.meta {
+			attr[k] = anyValue{
+				valueType: StringValueType,
+				value:     stringValue(v),
+			}
+		}
+		for k, v := range span.metrics {
+			attr[k] = anyValue{
+				valueType: FloatValueType,
+				value:     v,
+			}
+		}
+		for k, v := range span.metaStruct {
+			av := buildAnyValue(v)
+			if av != nil {
+				attr[k] = *av
+			}
+		}
+		p.encodeAttributes(9, attr, st)
+
+		p.buf = encodeField(p.buf, fullSetBitmap, 10, span.spanType, st)
 		p.encodeSpanLinks(11, span.spanLinks, st)
 		p.encodeSpanEvents(12, span.spanEvents, st)
-		p.buf = encodeField(p.buf, p.bm, 15, span.integration, st)
 
-		// TODO(hannahkm): add attributes, env, version
+		env := span.meta[ext.Environment]
+		p.buf = encodeField(p.buf, fullSetBitmap, 13, env, st)
+
+		version := span.meta[ext.Version]
+		p.buf = encodeField(p.buf, fullSetBitmap, 14, version, st)
+
+		p.buf = encodeField(p.buf, fullSetBitmap, 15, span.integration, st)
 	}
 	return nil
 }
@@ -412,14 +438,21 @@ func (p *payloadV1) encodeSpanLinks(fieldID int, spanLinks []SpanLink, st *strin
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spanLinks))) // number of span links
 
 	for _, link := range spanLinks {
-		// TODO(hannahkm): how do we get the number of set fields
-		// TODO(hannahkm): might need to change the bitmap value in the calls below
-		p.buf = encodeField(p.buf, p.bm, 1, link.TraceID, st)
-		p.buf = encodeField(p.buf, p.bm, 2, link.SpanID, st)
-		p.buf = encodeField(p.buf, p.bm, 4, link.Tracestate, st)
-		p.buf = encodeField(p.buf, p.bm, 5, link.Flags, st)
+		p.buf = msgp.AppendMapHeader(p.buf, 5) // number of fields in span link
 
-		// TODO(hannahkm): add attributes
+		p.buf = encodeField(p.buf, fullSetBitmap, 1, link.TraceID, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 2, link.SpanID, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 4, link.Tracestate, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 5, link.Flags, st)
+
+		attr := map[string]anyValue{}
+		for k, v := range link.Attributes {
+			attr[k] = anyValue{
+				valueType: StringValueType,
+				value:     stringValue(v),
+			}
+		}
+		p.encodeAttributes(3, attr, st)
 	}
 	return nil
 }
@@ -432,11 +465,44 @@ func (p *payloadV1) encodeSpanEvents(fieldID int, spanEvents []spanEvent, st *st
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spanEvents))) // number of span events
 
 	for _, event := range spanEvents {
-		// TODO(hannahkm): how do we get the number of set fields
-		// TODO(hannahkm): might need to change the bitmap value in the calls below
-		p.buf = encodeField(p.buf, p.bm, 1, event.TimeUnixNano, st)
-		p.buf = encodeField(p.buf, p.bm, 2, event.Name, st)
-		// TODO(hannahkm): add attributes
+		p.buf = msgp.AppendMapHeader(p.buf, 3) // number of fields in span event
+
+		p.buf = encodeField(p.buf, fullSetBitmap, 1, event.TimeUnixNano, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 2, event.Name, st)
+
+		attr := map[string]anyValue{}
+		for k, v := range event.Attributes {
+			switch v.Type {
+			case spanEventAttributeTypeString:
+				attr[k] = anyValue{
+					valueType: StringValueType,
+					value:     v.StringValue,
+				}
+			case spanEventAttributeTypeInt:
+				attr[k] = anyValue{
+					valueType: IntValueType,
+					value:     v.IntValue,
+				}
+			case spanEventAttributeTypeDouble:
+				attr[k] = anyValue{
+					valueType: FloatValueType,
+					value:     v.DoubleValue,
+				}
+			case spanEventAttributeTypeBool:
+				attr[k] = anyValue{
+					valueType: BoolValueType,
+					value:     v.BoolValue,
+				}
+			case spanEventAttributeTypeArray:
+				attr[k] = anyValue{
+					valueType: ArrayValueType,
+					value:     v.ArrayValue,
+				}
+			default:
+				log.Warn("dropped unsupported span event attribute type %d", v.Type)
+			}
+		}
+		p.encodeAttributes(3, attr, st)
 	}
 	return nil
 }
@@ -599,6 +665,25 @@ const (
 	keyValueListType            // []keyValue -- 7
 )
 
+func buildAnyValue(v any) *anyValue {
+	switch v := v.(type) {
+	case string:
+		return &anyValue{valueType: StringValueType, value: v}
+	case bool:
+		return &anyValue{valueType: BoolValueType, value: v}
+	case float64:
+		return &anyValue{valueType: FloatValueType, value: v}
+	case int64, int32:
+		return &anyValue{valueType: IntValueType, value: v}
+	case []byte:
+		return &anyValue{valueType: BytesValueType, value: v}
+	case arrayValue:
+		return &anyValue{valueType: ArrayValueType, value: v}
+	default:
+		return nil
+	}
+}
+
 func (a anyValue) encode(buf []byte) []byte {
 	buf = msgp.AppendInt32(buf, int32(a.valueType))
 	switch a.valueType {
@@ -626,6 +711,8 @@ type arrayValue []anyValue
 // keeps track of which fields have been set in the payload, with a
 // 1 for represented fields and 0 for unset fields.
 type bitmap int16
+
+var fullSetBitmap bitmap = -1
 
 func (b *bitmap) set(bit uint32) {
 	if bit >= 16 {
@@ -781,9 +868,7 @@ type traceChunk struct {
 	traceID []byte
 
 	// the optional string decision maker (previously span tag _dd.p.dm)
-	// TODO(darccio): we need to make sure this is an uint32 and the value assigned to _dd.p.m
-	// is set here but always positive.
-	samplingMechanism string
+	samplingMechanism uint32
 }
 
 // Decoding Functions
