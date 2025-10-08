@@ -31,7 +31,9 @@ func newMetricsReporter(ctx context.Context, logger instrumentation.Logger) *met
 		for {
 			select {
 			case <-ticker.C:
-				m.logger.Info("analyzed %d requests in the last minute", m.requestCounter.Swap(0))
+				if nbRequests := m.requestCounter.Swap(0); nbRequests > 0 {
+					m.logger.Info("analyzed %d requests in the last minute", nbRequests)
+				}
 			case <-ctx.Done():
 				return
 			}
