@@ -618,19 +618,18 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
-	} else if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		// if we are in an aws lambda and this is an outbound request,
-		// determine and set the peer service tag accordingly
-		if ps := deriveAWSPeerService(s.meta); ps != "" {
-			spanKind := s.meta[ext.SpanKind]
-			if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
+	} else if se := getServerlessEnvironment(); se == "aws_lambda" {
+		// if we are in an aws lambda function and this is an outbound
+		// request, determine and set the peer service tag accordingly
+		spanKind := s.meta[ext.SpanKind]
+		if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
+			if ps := deriveAWSPeerService(s.meta); ps != "" {
 				s.setMeta(ext.PeerService, ps)
 			}
 		} else {
 			//QUESTION what to do if no ps is derived
 			log.Error("Unable to derive aws peer service")
 		}
-
 		//QUESTION should we be ignoring all the logic below?
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
@@ -652,6 +651,18 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
+}
+
+/*
+checks if we are in a serverless environment
+
+TODO add checks for Azure functions and other serverless environments
+*/
+func getServerlessEnvironment() string {
+	if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		return "aws_lambda"
+	}
+	return ""
 }
 
 /*
