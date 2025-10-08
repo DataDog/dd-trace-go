@@ -166,6 +166,11 @@ func TestAsyncSpanRacePartialFlush(t *testing.T) {
 	// run during encoding, defeating the TestAsyncSpanRacePartialFlush test purpose
 	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
 	processtags.Reload()
+	defer func() {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		// reloading as this is a shared var process and can impact other tests
+		processtags.Reload()
+	}()
 	testAsyncSpanRace(t)
 }
 
