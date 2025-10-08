@@ -619,15 +619,19 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		// QUESTION what ab in the case of lambdas that we dont wanna set peer service on?
-		// do we not j wanna do this for producer
-
-		// if we are in a lambda function, set peer service
-		// MAYBE check for AZURE and other serverless
-
-		if ps := deriveAWSPeerService(s.meta); ps != "" { // TODO continue if unable to derive peer service
-			s.setMeta(ext.PeerService, ps)
+		// if we are in an aws lambda and this is an outbound request,
+		// determine and set the peer service tag accordingly
+		if ps := deriveAWSPeerService(s.meta); ps != "" {
+			spanKind := s.meta[ext.SpanKind]
+			if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
+				s.setMeta(ext.PeerService, ps)
+			}
+		} else {
+			//QUESTION what to do if no ps is derived
+			log.Error("Unable to derive aws peer service")
 		}
+
+		//QUESTION should we be ignoring all the logic below?
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -651,7 +655,8 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 }
 
 /*
-deriveAWSPeerService returns the AWS host name based on the span metadata,
+deriveAWSPeerService returns the host name of the
+outbound aws service call based on the span metadata,
 or an empty string if it cannot be determined.
 
 The mapping is as follows:
@@ -661,7 +666,7 @@ The mapping is as follows:
   - kinesis:     kinesis.<region>.amazonaws.com
   - dynamodb:    dynamodb.<region>.amazonaws.com
   - s3:          <bucket>.s3.<region>.amazonaws.com (if Bucket param present)
-    			 s3.<region>.amazonaws.com          (otherwise)
+    s3.<region>.amazonaws.com          (otherwise)
 */
 func deriveAWSPeerService(sm map[string]string) string {
 	service, region := sm[ext.AWSService], sm[ext.AWSRegion]
@@ -699,6 +704,9 @@ func setPeerServiceFromSource(s *Span) string {
 	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
+	// QUESTION should we remove this? we already check for lambda aws service, so whats the point of this?
+	// Maybe in the case we're using an AWS service without lambda? idk help me
+
 	case has("aws_service"):
 		sources = []string{
 			"queuename",
