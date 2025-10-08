@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -112,6 +113,7 @@ func newUnsafePayload(protocol float64) *unsafePayload {
 
 // push pushes a new item into the stream.
 func (p *unsafePayload) push(t []*Span) (stats payloadStats, err error) {
+	p.setTracerTags(t)
 	sl := spanList(t)
 	p.buf.Grow(sl.Msgsize())
 	if err := msgp.Encode(&p.buf, sl); err != nil {
@@ -119,6 +121,21 @@ func (p *unsafePayload) push(t []*Span) (stats payloadStats, err error) {
 	}
 	p.recordItem()
 	return p.stats(), nil
+}
+
+func (p *unsafePayload) setTracerTags(t []*Span) {
+	// set on first chunk
+	if atomic.LoadUint32(&p.count) != 0 {
+		return
+	}
+	if len(t) == 0 {
+		return
+	}
+	pTags := processtags.GlobalTags().String()
+	if pTags == "" {
+		return
+	}
+	t[0].setProcessTags(pTags)
 }
 
 // itemCount returns the number of items available in the stream.

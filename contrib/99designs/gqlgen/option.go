@@ -6,8 +6,10 @@
 package gqlgen
 
 import (
+	"context"
 	"math"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 )
@@ -17,6 +19,7 @@ type config struct {
 	analyticsRate                     float64
 	withoutTraceIntrospectionQuery    bool
 	withoutTraceTrivialResolvedFields bool
+	shouldStartSpanFunc               func(ctx context.Context, fieldCtx *graphql.FieldContext) bool
 	tags                              map[string]interface{}
 	errExtensions                     []string
 }
@@ -74,6 +77,19 @@ func WithoutTraceIntrospectionQuery() OptionFn {
 func WithoutTraceTrivialResolvedFields() OptionFn {
 	return func(cfg *config) {
 		cfg.withoutTraceTrivialResolvedFields = true
+	}
+}
+
+// WithShouldStartSpanFunc allows to skip creating spans for fields that match the function.
+func WithShouldStartSpanFunc(fn func(_ context.Context, _ *graphql.FieldContext) bool) OptionFn {
+	return func(cfg *config) {
+		if fn == nil {
+			fn = func(_ context.Context, _ *graphql.FieldContext) bool {
+				return true
+			}
+		}
+
+		cfg.shouldStartSpanFunc = fn
 	}
 }
 
