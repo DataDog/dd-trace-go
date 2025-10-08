@@ -110,6 +110,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 			continue
 		}
 		for k, v := range span.meta {
+			// TODO(darccio): aren't these loops potentially overriding tags from different spans as attributes?
 			av := anyValue{valueType: StringValueType, value: v}
 			attributes[k] = av
 			p.attributes[k] = av
@@ -175,6 +176,7 @@ func (p *payloadV1) clear() {
 func (p *payloadV1) recordItem() {
 	atomic.AddUint32(&p.count, 1)
 	// p.updateHeader() TODO(hannahkm): figure out if we need this
+	// TODO(darccio): after updating updateHeader, we should do it when we bump p.fields.
 }
 
 func (p *payloadV1) stats() payloadStats {
@@ -197,7 +199,7 @@ func (p *payloadV1) protocol() float64 {
 }
 
 func (p *payloadV1) updateHeader() {
-	n := uint64(p.fields)
+	n := uint64(p.fields) // TODO(darccio): possibly this needs to be atomic as it was before with p.count?
 	switch {
 	case n <= 15:
 		p.header[7] = msgpackMapFix + byte(n)
@@ -247,14 +249,14 @@ func (p *payloadV1) Read(b []byte) (n int, err error) {
 // encode writes existing payload fields into the buffer in msgp format.
 func (p *payloadV1) encode() {
 	st := newStringTable()
-	p.encodeField(p.bm, 2, anyValue{valueType: StringValueType, value: p.containerID}, st)
-	p.encodeField(p.bm, 3, anyValue{valueType: StringValueType, value: p.languageName}, st)
-	p.encodeField(p.bm, 4, anyValue{valueType: StringValueType, value: p.languageVersion}, st)
-	p.encodeField(p.bm, 5, anyValue{valueType: StringValueType, value: p.tracerVersion}, st)
-	p.encodeField(p.bm, 6, anyValue{valueType: StringValueType, value: p.runtimeID}, st)
-	p.encodeField(p.bm, 7, anyValue{valueType: StringValueType, value: p.env}, st)
-	p.encodeField(p.bm, 8, anyValue{valueType: StringValueType, value: p.hostname}, st)
-	p.encodeField(p.bm, 9, anyValue{valueType: StringValueType, value: p.appVersion}, st)
+	p.buf = encodeField(p.buf, p.bm, 2, p.containerID, st)
+	p.buf = encodeField(p.buf, p.bm, 3, p.languageName, st)
+	p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, st)
+	p.buf = encodeField(p.buf, p.bm, 5, p.tracerVersion, st)
+	p.buf = encodeField(p.buf, p.bm, 6, p.runtimeID, st)
+	p.buf = encodeField(p.buf, p.bm, 7, p.env, st)
+	p.buf = encodeField(p.buf, p.bm, 8, p.hostname, st)
+	p.buf = encodeField(p.buf, p.bm, 9, p.appVersion, st)
 
 	if len(p.attributes) > 0 {
 		p.encodeAttributes(10, p.attributes, st)
@@ -265,40 +267,41 @@ func (p *payloadV1) encode() {
 	}
 }
 
+type fieldValue interface {
+	bool | []byte | int32 | int64 | uint32 | uint64 | string
+}
+
 // TODO(hannahkm): is this the best way to go about encoding fields?
-func (p *payloadV1) encodeField(bm bitmap, fieldID int, a anyValue, st *stringTable) {
-	if !bm.contains(uint32(fieldID)) {
-		return
+func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *stringTable) []byte {
+	if !bm.contains(fieldID) {
+		return buf
 	}
-	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID)) // msgp key
-	// p.buf = msgp.AppendInt32(p.buf, int32(a.valueType)) // value type TODO(hannahkm): do we need this?
-	if a.valueType == StringValueType {
-		value := a.value.(string)
+	buf = msgp.AppendUint32(buf, uint32(fieldID)) // msgp key
+	switch value := any(a).(type) {
+	case string:
 		// encode msgp value, either by pulling from string table or writing it directly
 		if idx, ok := st.Get(value); ok {
-			p.buf = idx.encode(p.buf)
+			buf = idx.encode(buf)
 		} else {
 			s := stringValue(value)
-			p.buf = s.encode(p.buf)
+			buf = s.encode(buf)
 			st.Add(value)
 		}
-		return
-	}
-	switch a.valueType {
-	case BoolValueType:
-		p.buf = msgp.AppendBool(p.buf, a.value.(bool))
-	case FloatValueType:
-		p.buf = msgp.AppendFloat64(p.buf, a.value.(float64))
-	case IntValueType:
-		p.buf = msgp.AppendInt64(p.buf, a.value.(int64))
-	case BytesValueType:
-		p.buf = msgp.AppendBytes(p.buf, a.value.([]byte))
-	case ArrayValueType:
-		p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(a.value.(arrayValue))))
-		for _, v := range a.value.(arrayValue) {
-			v.encode(p.buf)
+	case bool:
+		buf = msgp.AppendBool(buf, value)
+	case float64:
+		buf = msgp.AppendFloat64(buf, value)
+	case int32, int64:
+		buf = msgp.AppendInt64(buf, value.(int64))
+	case []byte:
+		buf = msgp.AppendBytes(buf, value)
+	case arrayValue:
+		buf = msgp.AppendArrayHeader(buf, uint32(len(value)))
+		for _, v := range value {
+			buf = v.encode(buf)
 		}
 	}
+	return buf
 }
 
 func (p *payloadV1) encodeAttributes(fieldID int, kv map[string]anyValue, st *stringTable) error {
@@ -324,6 +327,7 @@ func (p *payloadV1) encodeAttributes(fieldID int, kv map[string]anyValue, st *st
 }
 
 // TODO(hannahkm): this references chunk.bm, which is not implemented yet
+// TODO(darccio): we can go without chunk.bm or other bm down the line
 func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTable) error {
 	if len(tc) == 0 {
 		return nil
@@ -335,10 +339,10 @@ func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTa
 		p.buf = msgp.AppendMapHeader(p.buf, uint32(chunk.fields)) // number of item pairs in map
 
 		// priority
-		p.encodeField(chunk.bm, 1, anyValue{valueType: IntValueType, value: chunk.priority}, st)
+		p.buf = encodeField(p.buf, chunk.bm, 1, chunk.priority, st)
 
 		// origin
-		p.encodeField(chunk.bm, 2, anyValue{valueType: StringValueType, value: chunk.origin}, st)
+		p.buf = encodeField(p.buf, chunk.bm, 2, chunk.origin, st)
 
 		// attributes
 		if chunk.bm.contains(3) {
@@ -351,14 +355,14 @@ func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTa
 		}
 
 		// droppedTrace
-		p.encodeField(chunk.bm, 5, anyValue{valueType: BoolValueType, value: chunk.droppedTrace}, st)
+		p.buf = encodeField(p.buf, chunk.bm, 5, chunk.droppedTrace, st)
 
 		// traceID
-		p.encodeField(chunk.bm, 6, anyValue{valueType: BytesValueType, value: chunk.traceID}, st)
+		p.buf = encodeField(p.buf, chunk.bm, 6, chunk.traceID, st)
 
 		// samplingMechanism
 		// TODO(hannahkm): I think the RFC changed, need to double check this
-		p.encodeField(chunk.bm, 7, anyValue{valueType: StringValueType, value: chunk.samplingMechanism}, st)
+		p.buf = encodeField(p.buf, chunk.bm, 7, chunk.samplingMechanism, st)
 	}
 
 	return nil
@@ -378,22 +382,22 @@ func (p *payloadV1) encodeSpans(fieldID int, spans spanList, st *stringTable) er
 		}
 		// TODO(hannahkm): how do we get the number of set fields efficiently?
 		// TODO(hannahkm): might need to change the bitmap value in the calls below
-		p.encodeField(p.bm, 1, anyValue{valueType: StringValueType, value: span.service}, st)
-		p.encodeField(p.bm, 2, anyValue{valueType: StringValueType, value: span.name}, st)
-		p.encodeField(p.bm, 3, anyValue{valueType: StringValueType, value: span.resource}, st)
-		p.encodeField(p.bm, 4, anyValue{valueType: IntValueType, value: span.spanID}, st)
-		p.encodeField(p.bm, 5, anyValue{valueType: IntValueType, value: span.parentID}, st)
-		p.encodeField(p.bm, 6, anyValue{valueType: IntValueType, value: span.start}, st)
-		p.encodeField(p.bm, 7, anyValue{valueType: IntValueType, value: span.duration}, st)
+		p.buf = encodeField(p.buf, p.bm, 1, span.service, st)
+		p.buf = encodeField(p.buf, p.bm, 2, span.name, st)
+		p.buf = encodeField(p.buf, p.bm, 3, span.resource, st)
+		p.buf = encodeField(p.buf, p.bm, 4, span.spanID, st)
+		p.buf = encodeField(p.buf, p.bm, 5, span.parentID, st)
+		p.buf = encodeField(p.buf, p.bm, 6, span.start, st)
+		p.buf = encodeField(p.buf, p.bm, 7, span.duration, st)
 		if span.error != 0 {
-			p.encodeField(p.bm, 8, anyValue{valueType: BoolValueType, value: true}, st)
+			p.buf = encodeField(p.buf, p.bm, 8, true, st)
 		} else {
-			p.encodeField(p.bm, 8, anyValue{valueType: BoolValueType, value: false}, st)
+			p.buf = encodeField(p.buf, p.bm, 8, false, st)
 		}
-		p.encodeField(p.bm, 10, anyValue{valueType: StringValueType, value: span.spanType}, st)
+		p.buf = encodeField(p.buf, p.bm, 10, span.spanType, st)
 		p.encodeSpanLinks(11, span.spanLinks, st)
 		p.encodeSpanEvents(12, span.spanEvents, st)
-		p.encodeField(p.bm, 15, anyValue{valueType: StringValueType, value: span.integration}, st)
+		p.buf = encodeField(p.buf, p.bm, 15, span.integration, st)
 
 		// TODO(hannahkm): add attributes, env, version
 	}
@@ -410,10 +414,10 @@ func (p *payloadV1) encodeSpanLinks(fieldID int, spanLinks []SpanLink, st *strin
 	for _, link := range spanLinks {
 		// TODO(hannahkm): how do we get the number of set fields
 		// TODO(hannahkm): might need to change the bitmap value in the calls below
-		p.encodeField(p.bm, 1, anyValue{valueType: BytesValueType, value: link.TraceID}, st)
-		p.encodeField(p.bm, 2, anyValue{valueType: IntValueType, value: link.SpanID}, st)
-		p.encodeField(p.bm, 4, anyValue{valueType: StringValueType, value: link.Tracestate}, st)
-		p.encodeField(p.bm, 5, anyValue{valueType: StringValueType, value: link.Flags}, st)
+		p.buf = encodeField(p.buf, p.bm, 1, link.TraceID, st)
+		p.buf = encodeField(p.buf, p.bm, 2, link.SpanID, st)
+		p.buf = encodeField(p.buf, p.bm, 4, link.Tracestate, st)
+		p.buf = encodeField(p.buf, p.bm, 5, link.Flags, st)
 
 		// TODO(hannahkm): add attributes
 	}
@@ -430,8 +434,8 @@ func (p *payloadV1) encodeSpanEvents(fieldID int, spanEvents []spanEvent, st *st
 	for _, event := range spanEvents {
 		// TODO(hannahkm): how do we get the number of set fields
 		// TODO(hannahkm): might need to change the bitmap value in the calls below
-		p.encodeField(p.bm, 1, anyValue{valueType: IntValueType, value: event.TimeUnixNano}, st)
-		p.encodeField(p.bm, 2, anyValue{valueType: StringValueType, value: event.Name}, st)
+		p.buf = encodeField(p.buf, p.bm, 1, event.TimeUnixNano, st)
+		p.buf = encodeField(p.buf, p.bm, 2, event.Name, st)
 		// TODO(hannahkm): add attributes
 	}
 	return nil
@@ -777,6 +781,8 @@ type traceChunk struct {
 	traceID []byte
 
 	// the optional string decision maker (previously span tag _dd.p.dm)
+	// TODO(darccio): we need to make sure this is an uint32 and the value assigned to _dd.p.m
+	// is set here but always positive.
 	samplingMechanism string
 }
 
