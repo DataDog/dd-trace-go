@@ -35,12 +35,18 @@ type AppsecCalloutExtensionService struct {
 	extproc.ExternalProcessorServer
 }
 
+type tlsConfig struct {
+	certFile string
+	keyFile  string
+}
+
 type serviceExtensionConfig struct {
 	extensionPort        string
 	extensionHost        string
 	healthcheckPort      string
 	observabilityMode    bool
 	bodyParsingSizeLimit int
+	tls                  *tlsConfig
 }
 
 var log = NewLogger()
@@ -87,9 +93,20 @@ func loadConfig() serviceExtensionConfig {
 	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 	observabilityMode := boolEnv("DD_SERVICE_EXTENSION_OBSERVABILITY_MODE", false)
 	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", 0)
+	enableTLS := boolEnv("DD_SERVICE_EXTENSION_TLS", true)
+	keyFile := stringEnv("DD_SERVICE_EXTENSION_TLS_KEY_FILE", "localhost.key")
+	certFile := stringEnv("DD_SERVICE_EXTENSION_TLS_CERT_FILE", "localhost.crt")
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
+
+	var tlsConf *tlsConfig
+	if enableTLS {
+		tlsConf = &tlsConfig{
+			certFile: certFile,
+			keyFile:  keyFile,
+		}
+	}
 
 	return serviceExtensionConfig{
 		extensionPort:        extensionPortStr,
@@ -97,6 +114,7 @@ func loadConfig() serviceExtensionConfig {
 		healthcheckPort:      healthcheckPortStr,
 		observabilityMode:    observabilityMode,
 		bodyParsingSizeLimit: bodyParsingSizeLimit,
+		tls:                  tlsConf,
 	}
 }
 
@@ -111,7 +129,6 @@ func main() {
 
 	if err := startService(config); err != nil {
 		log.Error("service_extension: %s\n", err.Error())
-		os.Exit(1)
 	}
 
 	log.Info("service_extension: shutting down\n")
@@ -135,11 +152,7 @@ func startService(config serviceExtensionConfig) error {
 		return startHealthCheck(ctx, config)
 	})
 
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	return nil
+	return g.Wait()
 }
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
@@ -178,12 +191,20 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 		return fmt.Errorf("gRPC server: %s", err)
 	}
 
-	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
-	if err != nil {
-		return fmt.Errorf("failed to load key pair: %s", err)
+	var serverOptions []grpc.ServerOption
+
+	if config.tls != nil {
+		cert, err := tls.LoadX509KeyPair(config.tls.certFile, config.tls.keyFile)
+		if err != nil {
+			return fmt.Errorf("failed to load key pair: %s", err)
+		}
+		serverOptions = append(serverOptions, grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
+		log.Info("service_extension: TLS enabled for gRPC server")
+		log.Info("service_extension: TLS key file path: %s\n", config.tls.keyFile)
+		log.Info("service_extension: TLS cert file path: %s\n", config.tls.certFile)
 	}
 
-	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
+	grpcServer := grpc.NewServer(serverOptions...)
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
 		gocontrolplane.AppsecEnvoyConfig{

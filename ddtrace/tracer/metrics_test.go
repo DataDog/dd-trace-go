@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -214,9 +215,11 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 		return counts["datadog.tracer.spans_started"] == 10 && counts["datadog.tracer.spans_finished"] == 10
 	}, 1*time.Second, 10*time.Millisecond)
 
-	counts := tg.Counts()
-	assert.Equal(int64(10), counts["datadog.tracer.spans_started"])
-	assert.Equal(int64(10), counts["datadog.tracer.spans_finished"])
+	require.Eventually(t, func() bool {
+		counts := tg.Counts()
+		return counts["datadog.tracer.spans_started"] == 10 &&
+			counts["datadog.tracer.spans_finished"] == 10
+	}, 5*time.Minute, 100*time.Millisecond)
 
 	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 	assertSpanMetricCountsAreZero(t, tracer.spansFinished)

@@ -306,6 +306,12 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
+func (s *Span) setProcessTags(pTags string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMeta(keyProcessTags, pTags)
+}
+
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
