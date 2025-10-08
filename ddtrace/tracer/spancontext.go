@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -617,6 +618,16 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	} else if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		// QUESTION what ab in the case of lambdas that we dont wanna set peer service on?
+		// do we not j wanna do this for producer
+
+		// if we are in a lambda function, set peer service
+		// MAYBE check for AZURE and other serverless
+
+		if ps := deriveAWSPeerService(s.meta); ps != "" { // TODO continue if unable to derive peer service
+			s.setMeta(ext.PeerService, ps)
+		}
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -637,6 +648,43 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
+}
+
+/*
+deriveAWSPeerService returns the AWS host name based on the span metadata,
+or an empty string if it cannot be determined.
+
+The mapping is as follows:
+  - eventbridge: events.<region>.amazonaws.com
+  - sqs:         sqs.<region>.amazonaws.com
+  - sns:         sns.<region>.amazonaws.com
+  - kinesis:     kinesis.<region>.amazonaws.com
+  - dynamodb:    dynamodb.<region>.amazonaws.com
+  - s3:          <bucket>.s3.<region>.amazonaws.com (if Bucket param present)
+    			 s3.<region>.amazonaws.com          (otherwise)
+*/
+func deriveAWSPeerService(sm map[string]string) string {
+	service, region := sm[ext.AWSService], sm[ext.AWSRegion]
+	if service == "" || region == "" {
+		return ""
+	}
+
+	s := strings.ToLower(service)
+	switch s {
+
+	case "s3":
+		if bucket := sm[ext.S3BucketName]; bucket != "" {
+			return bucket + ".s3." + region + ".amazonaws.com"
+		}
+		return "s3." + region + ".amazonaws.com"
+
+	case "eventbridge":
+		return "events." + region + ".amazonaws.com"
+
+	case "sqs", "sns", "dynamodb", "kinesis":
+		return s + "." + region + ".amazonaws.com"
+	}
+	return ""
 }
 
 // setPeerServiceFromSource sets peer.service from the sources determined
