@@ -13,7 +13,7 @@ import (
 // Tag specifies the current release tag. It needs to be manually
 // updated. A test checks that the value of Tag never points to a
 // git tag that is older than HEAD.
-const Tag = "v1.74.7-rc.2" // v2.3.0-rc.2
+const Tag = "v1.74.7-rc.4" // v2.3.0-rc.4
 
 // Dissected version number. Filled during init()
 var (
