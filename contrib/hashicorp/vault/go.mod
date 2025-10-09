@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0-rc.2
-	github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.2
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.4
 	github.com/hashicorp/vault/api v1.9.2
 	github.com/hashicorp/vault/sdk v0.9.2
 	github.com/stretchr/testify v1.10.0
@@ -28,7 +28,7 @@ require (
 	github.com/DataDog/sketches-go v1.4.7 // indirect
 	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
+	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
