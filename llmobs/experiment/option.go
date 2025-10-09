@@ -10,18 +10,20 @@ import (
 )
 
 type newCfg struct {
-	projectName   string
-	description   string
-	tags          map[string]string
-	experimentCfg map[string]any
+	projectName       string
+	description       string
+	tags              map[string]string
+	experimentCfg     map[string]any
+	summaryEvaluators []SummaryEvaluator
 }
 
 func defaultNewCfg(globalCfg *config.Config) *newCfg {
 	return &newCfg{
-		projectName:   globalCfg.ProjectName,
-		description:   "",
-		tags:          nil,
-		experimentCfg: nil,
+		projectName:       globalCfg.ProjectName,
+		description:       "",
+		tags:              nil,
+		experimentCfg:     nil,
+		summaryEvaluators: nil,
 	}
 }
 
@@ -48,6 +50,15 @@ func WithDescription(description string) Option {
 func WithExperimentConfig(experimentCfg map[string]any) Option {
 	return func(cfg *newCfg) {
 		cfg.experimentCfg = experimentCfg
+	}
+}
+
+// WithSummaryEvaluators sets the summary evaluators for the experiment.
+// Summary evaluators run after all tasks and evaluators have completed,
+// receiving all experiment results to compute aggregate metrics.
+func WithSummaryEvaluators(summaryEvaluators ...SummaryEvaluator) Option {
+	return func(cfg *newCfg) {
+		cfg.summaryEvaluators = summaryEvaluators
 	}
 }
 

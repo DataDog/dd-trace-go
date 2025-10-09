@@ -327,18 +327,16 @@ func TestExperimentRun(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify results
-		assert.Len(t, results, 2) // Our test dataset has 2 records
+		assert.Len(t, results.Results, 2) // Our test dataset has 2 records
 
-		for i, result := range results {
-			assert.Equal(t, i, result.RecordIndex)
+		for _, result := range results.Results {
 			assert.NotEmpty(t, result.SpanID)
 			assert.NotEmpty(t, result.TraceID)
 			assert.NotZero(t, result.Timestamp)
-			assert.NotNil(t, result.Input)
+			assert.NotNil(t, result.Record.Input)
 			assert.NotNil(t, result.Output)
-			assert.NotNil(t, result.ExpectedOutput)
+			assert.NotNil(t, result.Record.ExpectedOutput)
 			assert.Len(t, result.Evaluations, 2) // We have 2 evaluators
-			assert.NotNil(t, result.Metadata)
 			assert.NoError(t, result.Error)
 
 			// Check evaluations
@@ -383,8 +381,8 @@ func TestExperimentRun(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should only have 1 result due to sample size
-		assert.Len(t, results, 1)
-		assert.Equal(t, 0, results[0].RecordIndex)
+		assert.Len(t, results.Results, 1)
+		assert.NotNil(t, results.Results[0].Record)
 
 		// Verify only 1 span was created
 		spans := tt.WaitForLLMObsSpans(t, 1)
@@ -418,8 +416,8 @@ func TestExperimentRun(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should have results but with errors
-		assert.Len(t, results, 2)
-		for _, result := range results {
+		assert.Len(t, results.Results, 2)
+		for _, result := range results.Results {
 			if assert.Error(t, result.Error) {
 				assert.Contains(t, result.Error.Error(), "task failed")
 			}
@@ -459,8 +457,8 @@ func TestExperimentRun(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should have results
-		assert.Len(t, results, 2)
-		for _, result := range results {
+		assert.Len(t, results.Results, 2)
+		for _, result := range results.Results {
 			assert.NoError(t, result.Error) // Task should succeed
 			assert.Len(t, result.Evaluations, 2)
 
@@ -551,8 +549,8 @@ func TestExperimentMetricGeneration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify results contain evaluations with different value types
-	require.Len(t, results, 2) // 2 dataset records
-	for _, result := range results {
+	require.Len(t, results.Results, 2) // 2 dataset records
+	for _, result := range results.Results {
 		assert.Len(t, result.Evaluations, 4) // 4 evaluators
 
 		// Check that evaluations have the expected values
