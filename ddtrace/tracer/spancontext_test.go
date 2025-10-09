@@ -162,14 +162,19 @@ func TestAsyncSpanRace(t *testing.T) {
 func TestAsyncSpanRacePartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
-	// disabling process tags as span.meta and span.metrics (key deletion) write operations
-	// run during encoding, defeating the TestAsyncSpanRacePartialFlush test purpose
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-	processtags.Reload()
 	testAsyncSpanRace(t)
 }
 
 func testAsyncSpanRace(t *testing.T) {
+	// disabling process tags as it causes map writes on span.meta and span.metrics (due to key deletion)
+	// defeating the purpose of testAsyncSpanRace and trigerring systematically a read/write race
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+	defer func() {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		// reloading as this is a shared var process and can impact other tests
+		processtags.Reload()
+	}()
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
 	_, _, _, stop, err := startTestTracer(t)
