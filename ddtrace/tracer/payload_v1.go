@@ -268,13 +268,9 @@ func (p *payloadV1) encode() {
 	p.buf = encodeField(p.buf, p.bm, 8, p.hostname, st)
 	p.buf = encodeField(p.buf, p.bm, 9, p.appVersion, st)
 
-	if len(p.attributes) > 0 {
-		p.encodeAttributes(10, p.attributes, st)
-	}
+	p.encodeAttributes(p.bm, 10, p.attributes, st)
 
-	if len(p.chunks) > 0 {
-		p.encodeTraceChunks(11, p.chunks, st)
-	}
+	p.encodeTraceChunks(p.bm, 11, p.chunks, st)
 }
 
 type fieldValue interface {
@@ -319,9 +315,9 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 	return buf
 }
 
-func (p *payloadV1) encodeAttributes(fieldID int, kv map[string]anyValue, st *stringTable) error {
-	if !p.bm.contains(uint32(fieldID)) || len(kv) == 0 {
-		return nil
+func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyValue, st *stringTable) (bool, error) {
+	if !bm.contains(uint32(fieldID)) || len(kv) == 0 {
+		return false, nil
 	}
 
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))    // msgp key
@@ -338,12 +334,12 @@ func (p *payloadV1) encodeAttributes(fieldID int, kv map[string]anyValue, st *st
 		// encode value
 		p.buf = v.encode(p.buf)
 	}
-	return nil
+	return true, nil
 }
 
-func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTable) error {
-	if len(tc) == 0 || !p.bm.contains(uint32(fieldID)) {
-		return nil
+func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, st *stringTable) (bool, error) {
+	if len(tc) == 0 || !bm.contains(uint32(fieldID)) {
+		return false, nil
 	}
 
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))      // msgp key
@@ -358,10 +354,10 @@ func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTa
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, chunk.origin, st)
 
 		// attributes
-		p.encodeAttributes(3, chunk.attributes, st)
+		p.encodeAttributes(fullSetBitmap, 3, chunk.attributes, st)
 
 		// spans
-		p.encodeSpans(4, chunk.spans, st)
+		p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
 
 		// droppedTrace
 		p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
@@ -373,12 +369,12 @@ func (p *payloadV1) encodeTraceChunks(fieldID int, tc []traceChunk, st *stringTa
 		p.buf = encodeField(p.buf, fullSetBitmap, 7, chunk.samplingMechanism, st)
 	}
 
-	return nil
+	return true, nil
 }
 
-func (p *payloadV1) encodeSpans(fieldID int, spans spanList, st *stringTable) error {
-	if len(spans) == 0 || !p.bm.contains(uint32(fieldID)) {
-		return nil
+func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stringTable) (bool, error) {
+	if len(spans) == 0 || !bm.contains(uint32(fieldID)) {
+		return false, nil
 	}
 
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))         // msgp key
@@ -388,7 +384,7 @@ func (p *payloadV1) encodeSpans(fieldID int, spans spanList, st *stringTable) er
 		if span == nil {
 			continue
 		}
-		p.buf = msgp.AppendMapHeader(p.buf, 16) // number of fields in span
+		p.buf = msgp.AppendMapHeader(p.buf, 15) // number of fields in span
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, span.service, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, span.name, st)
@@ -419,11 +415,11 @@ func (p *payloadV1) encodeSpans(fieldID int, spans spanList, st *stringTable) er
 				attr[k] = *av
 			}
 		}
-		p.encodeAttributes(9, attr, st)
+		p.encodeAttributes(fullSetBitmap, 9, attr, st)
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 10, span.spanType, st)
-		p.encodeSpanLinks(11, span.spanLinks, st)
-		p.encodeSpanEvents(12, span.spanEvents, st)
+		p.encodeSpanLinks(fullSetBitmap, 11, span.spanLinks, st)
+		p.encodeSpanEvents(fullSetBitmap, 12, span.spanEvents, st)
 
 		env := span.meta[ext.Environment]
 		p.buf = encodeField(p.buf, fullSetBitmap, 13, env, st)
@@ -433,12 +429,12 @@ func (p *payloadV1) encodeSpans(fieldID int, spans spanList, st *stringTable) er
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 15, span.integration, st)
 	}
-	return nil
+	return true, nil
 }
 
-func (p *payloadV1) encodeSpanLinks(fieldID int, spanLinks []SpanLink, st *stringTable) error {
-	if len(spanLinks) == 0 || !p.bm.contains(uint32(fieldID)) {
-		return nil
+func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink, st *stringTable) (bool, error) {
+	if len(spanLinks) == 0 || !bm.contains(uint32(fieldID)) {
+		return false, nil
 	}
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))             // msgp key
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spanLinks))) // number of span links
@@ -458,14 +454,14 @@ func (p *payloadV1) encodeSpanLinks(fieldID int, spanLinks []SpanLink, st *strin
 				value:     stringValue(v),
 			}
 		}
-		p.encodeAttributes(3, attr, st)
+		p.encodeAttributes(fullSetBitmap, 3, attr, st)
 	}
-	return nil
+	return true, nil
 }
 
-func (p *payloadV1) encodeSpanEvents(fieldID int, spanEvents []spanEvent, st *stringTable) error {
-	if len(spanEvents) == 0 || !p.bm.contains(uint32(fieldID)) {
-		return nil
+func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEvent, st *stringTable) (bool, error) {
+	if len(spanEvents) == 0 || !bm.contains(uint32(fieldID)) {
+		return false, nil
 	}
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))              // msgp key
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spanEvents))) // number of span events
@@ -508,9 +504,9 @@ func (p *payloadV1) encodeSpanEvents(fieldID int, spanEvents []spanEvent, st *st
 				log.Warn("dropped unsupported span event attribute type %d", v.Type)
 			}
 		}
-		p.encodeAttributes(3, attr, st)
+		p.encodeAttributes(fullSetBitmap, 3, attr, st)
 	}
-	return nil
+	return true, nil
 }
 
 // Getters for payloadV1 fields
@@ -963,7 +959,7 @@ func DecodeSpans(b []byte, st *stringTable) (spanList, []byte, error) {
 
 func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
-	for range numFields {
+	for range numFields - 1 {
 		if err != nil {
 			return b, err
 		}
