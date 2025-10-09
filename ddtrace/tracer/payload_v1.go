@@ -258,7 +258,6 @@ func (p *payloadV1) Read(b []byte) (n int, err error) {
 // encode writes existing payload fields into the buffer in msgp format.
 func (p *payloadV1) encode() {
 	st := newStringTable()
-	p.buf = msgp.AppendMapHeader(p.buf, p.fields) // number of fields in payload
 	p.buf = encodeField(p.buf, p.bm, 2, p.containerID, st)
 	p.buf = encodeField(p.buf, p.bm, 3, p.languageName, st)
 	p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, st)
