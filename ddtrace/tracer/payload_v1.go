@@ -304,6 +304,10 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 		buf = msgp.AppendFloat64(buf, value)
 	case int32, int64:
 		buf = msgp.AppendInt64(buf, handleIntValue(value))
+	case uint32:
+		buf = msgp.AppendUint32(buf, value)
+	case uint64:
+		buf = msgp.AppendUint64(buf, value)
 	case []byte:
 		buf = msgp.AppendBytes(buf, value)
 	case arrayValue:
@@ -393,11 +397,7 @@ func (p *payloadV1) encodeSpans(fieldID int, spans spanList, st *stringTable) er
 		p.buf = encodeField(p.buf, fullSetBitmap, 5, span.parentID, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 6, span.start, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 7, span.duration, st)
-		if span.error != 0 {
-			p.buf = encodeField(p.buf, fullSetBitmap, 8, true, st)
-		} else {
-			p.buf = encodeField(p.buf, fullSetBitmap, 8, false, st)
-		}
+		p.buf = encodeField(p.buf, fullSetBitmap, 8, span.error != 0, st)
 
 		// span attributes combine the meta (tags), metrics and meta_struct
 		attr := map[string]anyValue{}
