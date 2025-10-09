@@ -54,6 +54,10 @@
 /civisibility                   @DataDog/ci-app-libraries
 /internal/civisibility          @DataDog/ci-app-libraries
 
+# llm observability
+/llmobs                         @DataDog/ml-observability
+/internal/llmobs                @DataDog/ml-observability
+
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
