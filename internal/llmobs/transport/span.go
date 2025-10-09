@@ -71,7 +71,7 @@ func (c *Transport) PushSpanEvents(
 		body = append(body, req)
 	}
 
-	status, b, err := c.request(ctx, method, path, subdomainLLMSpan, body)
+	status, b, err := c.jsonRequest(ctx, method, path, subdomainLLMSpan, body, defaultTimeout)
 	if err != nil {
 		return fmt.Errorf("post llmobs spans failed: %w", err)
 	}

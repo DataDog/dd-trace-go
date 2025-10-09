@@ -216,7 +216,7 @@ func defaultConfig() (*config, error) {
 	if v := env.Get("DD_PROFILING_UPLOAD_TIMEOUT"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err.Error())
+			return nil, fmt.Errorf("DD_PROFILING_UPLOAD_TIMEOUT: %s", err)
 		}
 		WithUploadTimeout(d)(&c)
 	}
@@ -273,7 +273,7 @@ func defaultConfig() (*config, error) {
 	if v := env.Get("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err.Error())
+			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
 		}
 		c.maxGoroutinesWait = n
 	}
