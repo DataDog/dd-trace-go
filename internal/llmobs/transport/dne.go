@@ -133,6 +133,7 @@ type RequestAttributesExperimentPushEvents struct {
 }
 
 type ExperimentEvalMetricEvent struct {
+	MetricSource     string        `json:"metric_source,omitempty"`
 	SpanID           string        `json:"span_id,omitempty"`
 	TraceID          string        `json:"trace_id,omitempty"`
 	TimestampMS      int64         `json:"timestamp_ms,omitempty"`
