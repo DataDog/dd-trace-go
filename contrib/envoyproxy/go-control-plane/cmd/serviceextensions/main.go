@@ -80,7 +80,7 @@ func configureObservabilityMode(mode bool) error {
 	}
 	const internalBlockingUnavailableKey = "_DD_APPSEC_BLOCKING_UNAVAILABLE"
 	if err := os.Setenv(internalBlockingUnavailableKey, "true"); err != nil {
-		return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err.Error())
+		return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err)
 	}
 	log.Debug("service_extension: observability mode enabled, disabling blocking\n")
 	return nil
@@ -179,7 +179,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 
 	log.Info("service_extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("health check http server: %s", err.Error())
+		return fmt.Errorf("health check http server: %s", err)
 	}
 
 	return nil
@@ -188,7 +188,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
-		return fmt.Errorf("gRPC server: %s", err.Error())
+		return fmt.Errorf("gRPC server: %s", err)
 	}
 
 	var serverOptions []grpc.ServerOption
@@ -196,7 +196,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	if config.tls != nil {
 		cert, err := tls.LoadX509KeyPair(config.tls.certFile, config.tls.keyFile)
 		if err != nil {
-			return fmt.Errorf("failed to load key pair: %s", err.Error())
+			return fmt.Errorf("failed to load key pair: %s", err)
 		}
 		serverOptions = append(serverOptions, grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
 		log.Info("service_extension: TLS enabled for gRPC server")
@@ -222,7 +222,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	extproc.RegisterExternalProcessorServer(grpcServer, appsecEnvoyExternalProcessorServer)
 	log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 	if err := grpcServer.Serve(lis); err != nil {
-		return fmt.Errorf("error starting gRPC server: %s", err.Error())
+		return fmt.Errorf("error starting gRPC server: %s", err)
 	}
 
 	return nil

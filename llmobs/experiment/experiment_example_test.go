@@ -107,9 +107,10 @@ func ExampleNew() {
 		log.Fatal(err)
 	}
 
-	for _, res := range results {
-		fmt.Printf("Record: %d", res.RecordIndex)
-		fmt.Printf("Input: %v", res.Input)
+	for _, res := range results.Results {
+		fmt.Printf("Record ID: %s", res.Record.ID())
+		fmt.Printf("Input: %v", res.Record.Input)
+		fmt.Printf("Expected Output: %v", res.Record.ExpectedOutput)
 		fmt.Printf("Output: %v", res.Output)
 		for _, ev := range res.Evaluations {
 			fmt.Printf("Evaluator score (%s): %v", ev.Name, ev.Value)

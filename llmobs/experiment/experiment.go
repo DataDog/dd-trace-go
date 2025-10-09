@@ -31,12 +31,13 @@ environment variable, using the global tracer.WithLLMObsProjectName option, or e
 type Experiment struct {
 	Name string
 
-	cfg         *newCfg
-	task        Task
-	dataset     *dataset.Dataset
-	evaluators  []Evaluator
-	description string
-	tagsSlice   []string
+	cfg               *newCfg
+	task              Task
+	dataset           *dataset.Dataset
+	evaluators        []Evaluator
+	summaryEvaluators []SummaryEvaluator
+	description       string
+	tagsSlice         []string
 
 	// these are set after the experiment is run
 	id      string
@@ -103,18 +104,58 @@ func NewEvaluator(name string, fn EvaluatorFunc) Evaluator {
 	}
 }
 
-// Result represents an experiment result.
-type Result struct {
-	RecordIndex    int
-	SpanID         string
-	TraceID        string
-	Timestamp      time.Time
-	Input          any
-	Output         any
-	ExpectedOutput any
-	Evaluations    []*Evaluation
-	Metadata       map[string]any
-	Error          error
+// SummaryEvaluator represents a summary evaluator for an Experiment.
+// Summary evaluators run after all tasks and evaluators have completed,
+// receiving all experiment results to compute aggregate metrics.
+type SummaryEvaluator interface {
+	Name() string
+	Run(ctx context.Context, results []*RecordResult) (any, error)
+}
+
+// SummaryEvaluatorFunc is the type for SummaryEvaluator functions.
+type SummaryEvaluatorFunc func(ctx context.Context, results []*RecordResult) (any, error)
+
+type namedSummaryEvaluator struct {
+	name string
+	fn   SummaryEvaluatorFunc
+}
+
+func (n *namedSummaryEvaluator) Name() string {
+	return n.name
+}
+
+func (n *namedSummaryEvaluator) Run(ctx context.Context, results []*RecordResult) (any, error) {
+	return n.fn(ctx, results)
+}
+
+// NewSummaryEvaluator creates a new SummaryEvaluator.
+func NewSummaryEvaluator(name string, fn SummaryEvaluatorFunc) SummaryEvaluator {
+	return &namedSummaryEvaluator{
+		name: name,
+		fn:   fn,
+	}
+}
+
+// ExperimentResult represents the complete results of an experiment run.
+type ExperimentResult struct {
+	ExperimentName     string
+	DatasetName        string
+	Results            []*RecordResult
+	SummaryEvaluations []*Evaluation
+}
+
+// RecordResult represents an experiment result for a single record.
+type RecordResult struct {
+	Record      *dataset.Record // The dataset record containing input, expected output, and metadata
+	Output      any             // The task output for this record
+	Evaluations []*Evaluation   // Evaluation results for this record
+
+	// Experiment execution metadata
+	RecordIndex int       // Index of the record in the dataset
+	SpanID      string    // Span ID for tracing
+	TraceID     string    // Trace ID for tracing
+	Timestamp   time.Time // When the task was executed
+	Error       error     // Any error that occurred during task execution
 }
 
 // Evaluation represents the output of an evaluator.
@@ -124,6 +165,7 @@ type Evaluation struct {
 	Error error
 }
 
+// New creates a new Experiment.
 func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, opts ...Option) (*Experiment, error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
@@ -152,17 +194,20 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, op
 	}
 
 	return &Experiment{
-		Name:        name,
-		task:        task,
-		dataset:     ds,
-		evaluators:  evaluators,
-		description: cfg.description,
-		cfg:         cfg,
-		tagsSlice:   tagsSlice,
+		Name:              name,
+		task:              task,
+		dataset:           ds,
+		evaluators:        evaluators,
+		summaryEvaluators: cfg.summaryEvaluators,
+		description:       cfg.description,
+		cfg:               cfg,
+		tagsSlice:         tagsSlice,
 	}, nil
 }
 
-func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, error) {
+// Run executes the experiment, running the task and evaluators on each record in the dataset,
+// then running summary evaluators on the aggregated results.
+func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (*ExperimentResult, error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
@@ -199,13 +244,24 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) ([]*Result, err
 		return nil, fmt.Errorf("failed to run experiment evaluators: %w", err)
 	}
 
-	// 4) Generate and publish metrics from the results
-	metrics := e.generateMetrics(results)
+	// 4) Run summary evaluators
+	summaryEvals, err := e.runSummaryEvaluators(ctx, results, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run summary evaluators: %w", err)
+	}
+
+	// 5) Generate and publish metrics from the results
+	metrics := e.generateMetrics(results, summaryEvals)
 	if err := ll.Transport.PushExperimentEvents(ctx, e.id, metrics, pushEventsTags); err != nil {
 		return nil, fmt.Errorf("failed to push experiment events: %w", err)
 	}
 
-	return results, nil
+	return &ExperimentResult{
+		ExperimentName:     e.Name,
+		DatasetName:        e.dataset.Name(),
+		Results:            results,
+		SummaryEvaluations: summaryEvals,
+	}, nil
 }
 
 func (e *Experiment) URL() string {
@@ -213,7 +269,7 @@ func (e *Experiment) URL() string {
 	return fmt.Sprintf("%s/llm/experiments/%s", illmobs.PublicResourceBaseURL(), e.id)
 }
 
-func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *runCfg) ([]*Result, error) {
+func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *runCfg) ([]*RecordResult, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	if cfg.maxConcurrency > 0 {
 		eg.SetLimit(cfg.maxConcurrency)
@@ -223,7 +279,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 	if cfg.sampleSize > 0 && cfg.sampleSize <= e.dataset.Len() {
 		dsSize = cfg.sampleSize
 	}
-	results := make([]*Result, dsSize)
+	results := make([]*RecordResult, dsSize)
 
 	for i, rec := range e.dataset.Records() {
 		if cfg.sampleSize > 0 && i >= cfg.sampleSize {
@@ -252,7 +308,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 	return results, nil
 }
 
-func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record) *Result {
+func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record) *RecordResult {
 	var (
 		err error
 	)
@@ -280,46 +336,33 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 		Tags:                     tags,
 	})
 
-	return &Result{
-		RecordIndex:    recIdx,
-		SpanID:         span.SpanID(),
-		TraceID:        span.TraceID(),
-		Timestamp:      span.StartTime(),
-		Input:          rec.Input,
-		Output:         out,
-		ExpectedOutput: rec.ExpectedOutput,
-		Metadata: map[string]any{
-			"dataset_record_index": recIdx,
-			"experiment_name":      e.Name,
-			"dataset_name":         e.dataset.Name(),
-			"tags":                 e.tagsSlice,
-		},
-		Error: err,
+	return &RecordResult{
+		Record:      &rec,
+		Output:      out,
+		RecordIndex: recIdx,
+		SpanID:      span.SpanID(),
+		TraceID:     span.TraceID(),
+		Timestamp:   span.StartTime(),
+		Error:       err,
 	}
 }
 
-func (e *Experiment) runEvaluators(ctx context.Context, results []*Result, cfg *runCfg) error {
+func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult, cfg *runCfg) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	if cfg.maxConcurrency > 0 {
 		eg.SetLimit(cfg.maxConcurrency)
 	}
 
 	for _, res := range results {
-		rec, ok := e.dataset.Record(res.RecordIndex)
-		if !ok {
-			log.Warn("record %d not found in dataset", res.RecordIndex)
-			continue
-		}
-
 		eg.Go(func() error {
 			evs := make([]*Evaluation, 0, len(e.evaluators))
 			for evIdx, ev := range e.evaluators {
-				val, err := ev.Run(ctx, rec, res.Output)
+				val, err := ev.Run(ctx, *res.Record, res.Output)
 				if err != nil {
 					// this error will be used later to create the payload sent to the backend, so it must contain the
 					// stacktrace.
 					err = errortrace.Wrap(err)
-					retErr := fmt.Errorf("evaluator %d (%s) failed on record %d: %w", evIdx, ev.Name(), res.RecordIndex, err)
+					retErr := fmt.Errorf("evaluator %d (%s) failed on record %s: %w", evIdx, ev.Name(), res.Record.ID(), err)
 					if cfg.abortOnError {
 						return retErr
 					} else {
@@ -339,18 +382,60 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*Result, cfg *
 	return eg.Wait()
 }
 
-func (e *Experiment) generateMetrics(results []*Result) []transport.ExperimentEvalMetricEvent {
-	metrics := make([]transport.ExperimentEvalMetricEvent, 0, len(results))
+func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*RecordResult, cfg *runCfg) ([]*Evaluation, error) {
+	if len(e.summaryEvaluators) == 0 {
+		return nil, nil
+	}
 
-	for _, res := range results {
-		for _, ev := range res.Evaluations {
-			metrics = append(metrics, e.generateMetricFromEvaluation(res, ev))
+	// Run summary evaluators
+	summaryEvals := make([]*Evaluation, 0, len(e.summaryEvaluators))
+	for evIdx, sumEv := range e.summaryEvaluators {
+		val, err := sumEv.Run(ctx, results)
+		if err != nil {
+			// Wrap error with stacktrace for backend
+			err = errortrace.Wrap(err)
+			retErr := fmt.Errorf("summary evaluator %d (%s) failed: %w", evIdx, sumEv.Name(), err)
+			if cfg.abortOnError {
+				return nil, retErr
+			} else {
+				log.Warn("llmobs: %s", retErr)
+			}
 		}
+		summaryEvals = append(summaryEvals, &Evaluation{
+			Name:  sumEv.Name(),
+			Value: val,
+			Error: err,
+		})
+	}
+
+	return summaryEvals, nil
+}
+
+func (e *Experiment) generateMetrics(results []*RecordResult, summaryEvals []*Evaluation) []transport.ExperimentEvalMetricEvent {
+	metrics := make([]transport.ExperimentEvalMetricEvent, 0, len(results)+len(summaryEvals))
+
+	// Track latest timestamp for summary evaluations
+	var latestTimestamp time.Time
+
+	// Generate metrics from per-record evaluations
+	for _, res := range results {
+		if res.Timestamp.After(latestTimestamp) {
+			latestTimestamp = res.Timestamp
+		}
+		for _, ev := range res.Evaluations {
+			metrics = append(metrics, e.generateMetricFromEvaluation(res, ev, "custom"))
+		}
+	}
+
+	// Generate metrics from summary evaluations
+	// Summary evaluations don't have associated spans, so we use empty span/trace IDs and latest timestamp
+	for _, sumEv := range summaryEvals {
+		metrics = append(metrics, e.generateMetricFromSummaryEvaluation(sumEv, latestTimestamp))
 	}
 	return metrics
 }
 
-func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) transport.ExperimentEvalMetricEvent {
+func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluation, source string) transport.ExperimentEvalMetricEvent {
 	var (
 		catVal   *string
 		scoreVal *float64
@@ -374,9 +459,50 @@ func (e *Experiment) generateMetricFromEvaluation(res *Result, ev *Evaluation) t
 	}
 
 	return transport.ExperimentEvalMetricEvent{
+		MetricSource:     source,
 		SpanID:           res.SpanID,
 		TraceID:          res.TraceID,
 		TimestampMS:      res.Timestamp.UnixMilli(),
+		MetricType:       metricType,
+		Label:            ev.Name,
+		CategoricalValue: catVal,
+		ScoreValue:       scoreVal,
+		BooleanValue:     boolVal,
+		Error:            transport.NewErrorMessage(ev.Error),
+		Tags:             e.tagsSlice,
+		ExperimentID:     e.id,
+	}
+}
+
+func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timestamp time.Time) transport.ExperimentEvalMetricEvent {
+	var (
+		catVal   *string
+		scoreVal *float64
+		boolVal  *bool
+	)
+
+	metricType := "categorical"
+	switch t := ev.Value.(type) {
+	case bool:
+		metricType = "boolean"
+		boolVal = transport.AnyPtr(t)
+
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64:
+		metricType = "score"
+		scoreVal = transport.AnyPtr(asFloat64(t))
+
+	default:
+		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
+	}
+
+	// Summary evaluations don't have span/trace IDs, but use the latest timestamp from per-record evaluations
+	return transport.ExperimentEvalMetricEvent{
+		MetricSource:     "summary",
+		SpanID:           "",
+		TraceID:          "",
+		TimestampMS:      timestamp.UnixMilli(),
 		MetricType:       metricType,
 		Label:            ev.Name,
 		CategoricalValue: catVal,
