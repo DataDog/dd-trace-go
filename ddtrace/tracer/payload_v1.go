@@ -333,7 +333,7 @@ func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyVa
 		}
 
 		// encode value
-		p.buf = v.encode(p.buf)
+		p.buf = v.encode(p.buf, st)
 	}
 	return true, nil
 }
@@ -695,12 +695,19 @@ func buildAnyValue(v any) *anyValue {
 	}
 }
 
-func (a anyValue) encode(buf []byte) []byte {
+func (a anyValue) encode(buf []byte, st *stringTable) []byte {
 	buf = msgp.AppendInt32(buf, int32(a.valueType))
 	switch a.valueType {
 	case StringValueType:
 		s := a.value.(string)
+		if idx, ok := st.Get(s); ok {
+			fmt.Printf("DEBUG: Encoded STRING IDX %v\n", idx)
+			buf = idx.encode(buf)
+		} else {
+			fmt.Printf("DEBUG: Encoded STRING %v\n", s)
 		buf = stringValue(s).encode(buf)
+			st.Add(s)
+		}
 	case BoolValueType:
 		buf = msgp.AppendBool(buf, a.value.(bool))
 	case FloatValueType:
@@ -712,7 +719,7 @@ func (a anyValue) encode(buf []byte) []byte {
 	case ArrayValueType:
 		buf = msgp.AppendArrayHeader(buf, uint32(len(a.value.(arrayValue))))
 		for _, v := range a.value.(arrayValue) {
-			buf = v.encode(buf)
+			buf = v.encode(buf, st)
 		}
 	}
 	return buf
@@ -851,7 +858,7 @@ func getStreamingType(b byte) int {
 	// String formats
 	case 0xd9, 0xda, 0xdb: // str8, str16, str32
 		return 0
-	case 0xce: // uint32
+	case 0xcc, 0xcd, 0xce: // uint8, uint16, uint32
 		return 1
 	default:
 		// Check for fixstr
