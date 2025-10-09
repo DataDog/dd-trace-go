@@ -80,7 +80,7 @@ func (c *Transport) PushEvalMetrics(
 		},
 	}
 
-	status, b, err := c.request(ctx, method, path, subdomainEvalMetric, body)
+	status, b, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
 	if err != nil {
 		return fmt.Errorf("post llmobs eval metrics failed: %v", err)
 	}

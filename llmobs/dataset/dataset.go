@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,7 +31,10 @@ environment variable, using the global tracer.WithLLMObsProjectName option, or d
 	errRequiresAppKey = errors.New(`an app key must be provided for the dataset in agentless mode configured via the DD_APP_KEY environment variable`)
 )
 
-const experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
+const (
+	experimentCSVFieldMaxSize = 10 * 1024 * 1024 // 10 MB
+	batchUpdateThreshold      = 5 * 1024 * 1024  // 5 MB - if delta is larger, use bulk upload instead of batch update
+)
 
 // Dataset represents a dataset for DataDog LLM Observability experiments.
 type Dataset struct {
@@ -335,6 +339,7 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 		name:        dsResp.Name,
 		description: dsResp.Description,
 		records:     records,
+		version:     dsResp.CurrentVersion,
 	}
 	return ds, nil
 }
@@ -433,7 +438,23 @@ func (d *Dataset) Delete(index int) {
 	d.records = slices.Delete(d.records, index, index+1)
 }
 
+// estimateDeltaSize estimates the size in bytes of the pending changes.
+func (d *Dataset) estimateDeltaSize() (int, error) {
+	// Estimate using JSON serialization of the changes
+	deltaData := map[string]any{
+		"insert": d.appendRecords,
+		"update": d.updateRecords,
+	}
+	encoded, err := json.Marshal(deltaData)
+	if err != nil {
+		return 0, fmt.Errorf("failed to estimate delta size: %w", err)
+	}
+	return len(encoded), nil
+}
+
 // Push pushes the Dataset changes to DataDog.
+// For large changes (>5MB), it uses bulk upload via CSV.
+// For smaller changes, it uses batch update API.
 func (d *Dataset) Push(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -446,6 +467,46 @@ func (d *Dataset) Push(ctx context.Context) error {
 		return err
 	}
 	d.initialize()
+
+	// Estimate delta size to choose between bulk upload and batch update
+	deltaSize, err := d.estimateDeltaSize()
+	if err != nil {
+		return err
+	}
+
+	// If delta is large, use bulk upload
+	if deltaSize > batchUpdateThreshold {
+		log.Debug("llmobs: dataset delta is %d bytes, using bulk upload", deltaSize)
+
+		// Convert all current records to transport format
+		allRecords := make([]transport.DatasetRecordView, 0, len(d.records))
+		for _, rec := range d.records {
+			allRecords = append(allRecords, transport.DatasetRecordView{
+				ID:             rec.id,
+				Input:          rec.Input,
+				ExpectedOutput: rec.ExpectedOutput,
+				Metadata:       rec.Metadata,
+				Version:        rec.version,
+			})
+		}
+
+		if err := ll.Transport.BulkUploadDataset(ctx, d.id, allRecords); err != nil {
+			return fmt.Errorf("failed to bulk upload dataset: %w", err)
+		}
+
+		// TODO: Backend doesn't return version from bulk upload yet
+		d.version++
+
+		// Clear pending changes
+		d.appendRecords = make(map[string]*Record)
+		d.updateRecords = make(map[string]*RecordUpdate)
+		d.deleteRecords = make(map[string]struct{})
+
+		return nil
+	}
+
+	// Use batch update for smaller changes
+	log.Debug("llmobs: dataset delta is %d bytes, using batch update", deltaSize)
 
 	insertOldIDs := make([]string, 0, len(d.appendRecords))
 	insert := make([]transport.DatasetRecordCreate, 0, len(d.appendRecords))
