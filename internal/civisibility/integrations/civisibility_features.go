@@ -332,7 +332,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	// get the search commits response
 	initialCommitData, err := getSearchCommits()
 	if err != nil {
-		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err.Error())
+		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
 	}
 
 	// let's check if we could retrieve commit data
@@ -371,7 +371,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	// after unshallowing the repository we need to get the search commits to calculate the missing commits again
 	commitsData, err := getSearchCommits()
 	if err != nil {
-		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err.Error())
+		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
 	}
 
 	// let's check if we could retrieve commit data

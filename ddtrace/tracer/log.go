@@ -72,7 +72,7 @@ type startupInfo struct {
 func checkEndpoint(c *http.Client, endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %s", err.Error())
+		return fmt.Errorf("cannot create http request: %s", err)
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")

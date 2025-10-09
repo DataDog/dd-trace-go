@@ -211,7 +211,7 @@ func fromFQDN(_ context.Context, _ string) (string, error) {
 	//TODO: test this on windows
 	fqdn, err := getSystemFQDN()
 	if err != nil {
-		return "", fmt.Errorf("unable to get FQDN from system: %s", err.Error())
+		return "", fmt.Errorf("unable to get FQDN from system: %s", err)
 	}
 	return fqdn, nil
 }
@@ -234,11 +234,11 @@ func fromEC2(ctx context.Context, currentHostname string) (string, error) {
 		// If the current hostname is a default one we try to get the instance id
 		instanceID, err := ec2.GetInstanceID(ctx)
 		if err != nil {
-			return "", fmt.Errorf("unable to determine hostname from EC2: %s", err.Error())
+			return "", fmt.Errorf("unable to determine hostname from EC2: %s", err)
 		}
 		err = validate.ValidHostname(instanceID)
 		if err != nil {
-			return "", fmt.Errorf("EC2 instance id is not a valid hostname: %s", err.Error())
+			return "", fmt.Errorf("EC2 instance id is not a valid hostname: %s", err)
 		}
 		return instanceID, nil
 	}
