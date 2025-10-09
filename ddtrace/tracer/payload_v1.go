@@ -925,7 +925,7 @@ func (tc *traceChunk) decode(b []byte, st *stringTable) ([]byte, error) {
 		case 2:
 			tc.origin, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 			}
 		case 3:
 			tc.attributes, o, err = DecodeKeyValueList(o, st)
@@ -981,17 +981,17 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 		case 1:
 			span.service, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 			}
 		case 2:
 			span.name, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 			}
 		case 3:
 			span.resource, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 			}
 		case 4:
 			span.spanID, o, err = msgp.ReadUint64Bytes(o)
@@ -1020,7 +1020,7 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 		case 10:
 			span.spanType, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 			}
 		case 11:
 			span.spanLinks, o, err = DecodeSpanLinks(o, st)
@@ -1030,7 +1030,7 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			var env string
 			env, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 				break
 			}
 			if env != "" {
@@ -1040,7 +1040,7 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			var ver string
 			ver, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 				break
 			}
 			if ver != "" {
@@ -1050,7 +1050,7 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			var component string
 			component, o, ok = st.Read(o)
 			if !ok {
-				err = unableDecodeStringError
+				err = errUnableDecodeString
 				break
 			}
 			if component != "" {
@@ -1180,7 +1180,7 @@ func (event *spanEvent) decode(b []byte, st *stringTable) ([]byte, error) {
 	return o, err
 }
 
-var unableDecodeStringError = errors.New("unable to read string value")
+var errUnableDecodeString = errors.New("unable to read string value")
 
 func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 	vType, o, err := msgp.ReadInt32Bytes(b)
@@ -1191,7 +1191,7 @@ func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 	case StringValueType:
 		str, o, ok := strings.Read(o)
 		if !ok {
-			return anyValue{}, o, unableDecodeStringError
+			return anyValue{}, o, errUnableDecodeString
 		}
 		return anyValue{valueType: StringValueType, value: str}, o, nil
 	case BoolValueType:
