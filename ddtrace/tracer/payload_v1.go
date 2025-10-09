@@ -309,7 +309,7 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 	case arrayValue:
 		buf = msgp.AppendArrayHeader(buf, uint32(len(value)))
 		for _, v := range value {
-			buf = v.encode(buf)
+			buf = v.encode(buf, st)
 		}
 	}
 	return buf
@@ -701,11 +701,9 @@ func (a anyValue) encode(buf []byte, st *stringTable) []byte {
 	case StringValueType:
 		s := a.value.(string)
 		if idx, ok := st.Get(s); ok {
-			fmt.Printf("DEBUG: Encoded STRING IDX %v\n", idx)
 			buf = idx.encode(buf)
 		} else {
-			fmt.Printf("DEBUG: Encoded STRING %v\n", s)
-		buf = stringValue(s).encode(buf)
+			buf = stringValue(s).encode(buf)
 			st.Add(s)
 		}
 	case BoolValueType:
@@ -768,7 +766,7 @@ func (i index) encode(buf []byte) []byte {
 }
 
 func (i *index) decode(buf []byte) ([]byte, error) {
-	val, o, err := msgp.ReadUint32Bytes(buf)
+	val, o, err := msgp.ReadUintBytes(buf)
 	if err != nil {
 		return buf, err
 	}
@@ -1226,38 +1224,47 @@ func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 	}
 	switch vType {
 	case StringValueType:
-		str, o, ok := strings.Read(o)
+		var (
+			str string
+			ok  bool
+		)
+		str, o, ok = strings.Read(o)
 		if !ok {
 			return anyValue{}, o, errUnableDecodeString
 		}
 		return anyValue{valueType: StringValueType, value: str}, o, nil
 	case BoolValueType:
-		b, o, err := msgp.ReadBoolBytes(o)
+		var b bool
+		b, o, err = msgp.ReadBoolBytes(o)
 		if err != nil {
 			return anyValue{}, o, err
 		}
 		return anyValue{valueType: BoolValueType, value: b}, o, nil
 	case FloatValueType:
-		f, o, err := msgp.ReadFloat64Bytes(o)
+		var f float64
+		f, o, err = msgp.ReadFloat64Bytes(o)
 		if err != nil {
 			return anyValue{}, o, err
 		}
 		return anyValue{valueType: FloatValueType, value: f}, o, nil
 	case IntValueType:
-		i, o, err := msgp.ReadInt64Bytes(o)
+		var i int64
+		i, o, err = msgp.ReadInt64Bytes(o)
 		if err != nil {
 			return anyValue{}, o, err
 		}
 		intVal := handleIntValue(i)
 		return anyValue{valueType: IntValueType, value: intVal}, o, nil
 	case BytesValueType:
-		b, o, err := msgp.ReadBytesBytes(o, nil)
+		var b []byte
+		b, o, err = msgp.ReadBytesBytes(o, nil)
 		if err != nil {
 			return anyValue{}, o, err
 		}
 		return anyValue{valueType: BytesValueType, value: b}, o, nil
 	case ArrayValueType:
-		len, o, err := msgp.ReadArrayHeaderBytes(o)
+		var len uint32
+		len, o, err = msgp.ReadArrayHeaderBytes(o)
 		if err != nil {
 			return anyValue{}, o, err
 		}
@@ -1270,7 +1277,8 @@ func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 		}
 		return anyValue{valueType: ArrayValueType, value: arrayValue}, o, nil
 	case keyValueListType:
-		kv, o, err := DecodeKeyValueList(o, strings)
+		var kv map[string]anyValue
+		kv, o, err = DecodeKeyValueList(o, strings)
 		if err != nil {
 			return anyValue{}, o, err
 		}
@@ -1288,11 +1296,16 @@ func DecodeKeyValueList(b []byte, strings *stringTable) (map[string]anyValue, []
 
 	kv := map[string]anyValue{}
 	for i := range numFields {
-		key, o, ok := strings.Read(o)
+		var (
+			key string
+			ok  bool
+			av  anyValue
+		)
+		key, o, ok = strings.Read(o)
 		if !ok {
 			return nil, o, fmt.Errorf("unable to read key of field %d", i)
 		}
-		av, o, err := decodeAnyValue(o, strings)
+		av, o, err = decodeAnyValue(o, strings)
 		if err != nil {
 			return nil, o, err
 		}
