@@ -577,7 +577,7 @@ func (p *payloadV1) SetAppVersion(v string) {
 func (p *payloadV1) decodeBuffer() ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(p.buf)
 	if err != nil {
-		return o, err
+		return p.buf, err
 	}
 	p.buf = o
 	p.fields = numFields
@@ -757,7 +757,7 @@ func (i index) encode(buf []byte) []byte {
 func (i *index) decode(buf []byte) ([]byte, error) {
 	val, o, err := msgp.ReadUint32Bytes(buf)
 	if err != nil {
-		return o, err
+		return buf, err
 	}
 	*i = index(val)
 	return o, nil
@@ -773,7 +773,7 @@ func (s stringValue) encode(buf []byte) []byte {
 func (s *stringValue) decode(buf []byte) ([]byte, error) {
 	val, o, err := msgp.ReadStringBytes(buf)
 	if err != nil {
-		return o, err
+		return buf, err
 	}
 	*s = stringValue(val)
 	return o, nil
@@ -821,7 +821,7 @@ func (s *stringTable) Read(b []byte) (string, []byte, bool) {
 		var sv stringValue
 		o, err := sv.decode(b)
 		if err != nil {
-			return "", o, false
+			return "", b, false
 		}
 		str := string(sv)
 		s.Add(str)
@@ -831,7 +831,7 @@ func (s *stringTable) Read(b []byte) (string, []byte, bool) {
 	var i index
 	o, err := i.decode(b)
 	if err != nil {
-		return "", o, false
+		return "", b, false
 	}
 	return s.strings[i], o, true
 }
@@ -889,7 +889,7 @@ func DecodeTraceChunks(b []byte, st *stringTable) ([]traceChunk, []byte, error) 
 	out := []traceChunk{}
 	numChunks, o, err := msgp.ReadArrayHeaderBytes(b)
 	if err != nil {
-		return nil, o, err
+		return nil, b, err
 	}
 	for range numChunks {
 		tc := traceChunk{}
@@ -904,10 +904,10 @@ func DecodeTraceChunks(b []byte, st *stringTable) ([]traceChunk, []byte, error) 
 
 func (tc *traceChunk) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
-	if err != nil {
-		return o, err
-	}
 	for range numFields {
+		if err != nil {
+			return b, err
+		}
 		// read msgp field ID
 		var (
 			idx uint32
@@ -922,39 +922,21 @@ func (tc *traceChunk) decode(b []byte, st *stringTable) ([]byte, error) {
 		switch idx {
 		case 1:
 			tc.priority, o, err = msgp.ReadInt32Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 2:
 			tc.origin, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
 			}
 		case 3:
 			tc.attributes, o, err = DecodeKeyValueList(o, st)
-			if err != nil {
-				return o, err
-			}
 		case 4:
 			tc.spans, o, err = DecodeSpans(o, st)
-			if err != nil {
-				return o, err
-			}
 		case 5:
 			tc.droppedTrace, o, err = msgp.ReadBoolBytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 6:
 			tc.traceID, o, err = msgp.ReadBytesBytes(o, nil)
-			if err != nil {
-				return o, err
-			}
 		case 7:
 			tc.samplingMechanism, o, err = msgp.ReadUint32Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		default:
 			return o, fmt.Errorf("unexpected field ID %d", idx)
 		}
@@ -966,7 +948,7 @@ func DecodeSpans(b []byte, st *stringTable) (spanList, []byte, error) {
 	out := spanList{}
 	numSpans, o, err := msgp.ReadArrayHeaderBytes(b)
 	if err != nil {
-		return nil, o, err
+		return nil, b, err
 	}
 	for range numSpans {
 		span := Span{}
@@ -981,10 +963,10 @@ func DecodeSpans(b []byte, st *stringTable) (spanList, []byte, error) {
 
 func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
-	if err != nil {
-		return o, err
-	}
 	for range numFields {
+		if err != nil {
+			return b, err
+		}
 		var (
 			idx uint32 // read msgp field ID
 			ok  bool
@@ -999,43 +981,31 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 		case 1:
 			span.service, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
 			}
 		case 2:
 			span.name, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
 			}
 		case 3:
 			span.resource, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
 			}
 		case 4:
 			span.spanID, o, err = msgp.ReadUint64Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 5:
 			span.parentID, o, err = msgp.ReadUint64Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 6:
 			span.start, o, err = msgp.ReadInt64Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 7:
 			span.duration, o, err = msgp.ReadInt64Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 8:
 			var v bool
 			v, o, err = msgp.ReadBoolBytes(o)
 			if err != nil {
-				return o, err
+				break
 			}
 			if v {
 				span.error = 1
@@ -1050,23 +1020,18 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 		case 10:
 			span.spanType, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
 			}
 		case 11:
 			span.spanLinks, o, err = DecodeSpanLinks(o, st)
-			if err != nil {
-				return o, err
-			}
 		case 12:
 			span.spanEvents, o, err = DecodeSpanEvents(o, st)
-			if err != nil {
-				return o, err
-			}
 		case 13:
 			var env string
 			env, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
+				break
 			}
 			if env != "" {
 				span.SetTag(ext.Environment, env)
@@ -1075,7 +1040,8 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			var ver string
 			ver, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
+				break
 			}
 			if ver != "" {
 				span.SetTag(ext.Version, ver)
@@ -1084,7 +1050,8 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			var component string
 			component, o, ok = st.Read(o)
 			if !ok {
-				return o, unableDecodeStringError
+				err = unableDecodeStringError
+				break
 			}
 			if component != "" {
 				span.SetTag(ext.Component, component)
@@ -1101,7 +1068,7 @@ func DecodeSpanLinks(b []byte, st *stringTable) ([]SpanLink, []byte, error) {
 	out := []SpanLink{}
 	numLinks, o, err := msgp.ReadArrayHeaderBytes(b)
 	if err != nil {
-		return nil, o, err
+		return nil, b, err
 	}
 	for range numLinks {
 		link := SpanLink{}
@@ -1117,7 +1084,7 @@ func DecodeSpanLinks(b []byte, st *stringTable) ([]SpanLink, []byte, error) {
 func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {
-		return o, err
+		return b, err
 	}
 	for range numFields {
 		// read msgp field ID
@@ -1165,7 +1132,7 @@ func DecodeSpanEvents(b []byte, st *stringTable) ([]spanEvent, []byte, error) {
 	out := []spanEvent{}
 	numEvents, o, err := msgp.ReadArrayHeaderBytes(b)
 	if err != nil {
-		return nil, o, err
+		return nil, b, err
 	}
 	for range numEvents {
 		event := spanEvent{}
@@ -1181,7 +1148,7 @@ func DecodeSpanEvents(b []byte, st *stringTable) ([]spanEvent, []byte, error) {
 func (event *spanEvent) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {
-		return o, err
+		return b, err
 	}
 	for range numFields {
 		// read msgp field ID
@@ -1218,7 +1185,7 @@ var unableDecodeStringError = errors.New("unable to read string value")
 func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 	vType, o, err := msgp.ReadInt32Bytes(b)
 	if err != nil {
-		return anyValue{}, o, err
+		return anyValue{}, b, err
 	}
 	switch vType {
 	case StringValueType:
@@ -1279,7 +1246,7 @@ func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 func DecodeKeyValueList(b []byte, strings *stringTable) (map[string]anyValue, []byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {
-		return nil, o, err
+		return nil, b, err
 	}
 
 	kv := map[string]anyValue{}
