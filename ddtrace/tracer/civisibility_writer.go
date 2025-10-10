@@ -82,7 +82,7 @@ func (w *ciVisibilityTraceWriter) stop() {
 
 // flush sends the current payload to the transport. It ensures that the payload is reset
 // and the resources are freed after the flush operation is completed.
-func (w *ciVisibilityTraceWriter) flush() {
+func (w *ciVisibilityTraceWriter) flush(done ...chan<- struct{}) {
 	if w.payload.stats().itemCount == 0 {
 		return
 	}
@@ -93,6 +93,9 @@ func (w *ciVisibilityTraceWriter) flush() {
 	w.payload = newCiVisibilityPayload()
 
 	go func(p *ciVisibilityPayload) {
+		if len(done) > 0 && done[0] != nil {
+			defer close(done[0])
+		}
 		defer func(_ time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object
