@@ -19,8 +19,8 @@ XXXX-XX-XX XX:XX:XX.XXX {"status":"debug","message":"datadog: sending metric via
   ],
   "v": 1
 }
-Current span ID:XXXX
-Current trace ID:XXXX
+XXXX-XX-XX XX:XX:XX.XXX INFO Current span span_id=XXXX
+XXXX-XX-XX XX:XX:XX.XXX INFO Current trace trace_id=XXXX
 XXXX-XX-XX XX:XX:XX.XXX {"status":"debug","message":"datadog: adding metric \"hello-go.dog\", with value 1.000000"}
 {
   "traces": [

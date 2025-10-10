@@ -37,7 +37,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
-        working-directory: contrib/aws/datadog-lambda-go/tests/integration_tests/
+        working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: yarn install
 
       - name: Run Lambda integration tests
@@ -46,5 +46,5 @@ jobs:
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        working-directory: contrib/aws/datadog-lambda-go/tests/integration_tests/
+        working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: ./run_integration_tests.sh
