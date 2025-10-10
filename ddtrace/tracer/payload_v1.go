@@ -115,18 +115,21 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
-	attributes := map[string]anyValue{}
 	origin, priority, sm := "", 0, 0
 	for _, span := range t {
 		if span == nil {
 			break
 		}
+		// If we haven't seen the service yet, we set it blindly assuming that all the spans created by
+		// a service must share the same value.
+		if _, ok := p.attributes["service"]; !ok {
+			p.attributes["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
+		}
 		if p, ok := span.Context().SamplingPriority(); ok {
-			origin = span.Context().origin
-			priority = p
-			attributes["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
+			origin = span.Context().origin // TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
+			priority = p                   // TODO(darccio): the same goes for priority.
 			dm := span.context.trace.propagatingTag(keyDecisionMaker)
-			sm, err = strconv.Atoi(dm)
+			sm, err = strconv.Atoi(dm) // TODO(darccio): shouldn't this string represent the absolute value of dm?
 			if err != nil {
 				log.Error("failed to convert decision maker to int: %s", err.Error())
 			}
@@ -144,8 +147,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 	// if there are attributes available, set them in our bitmap and increment
 	// the number of fields.
-	if !p.bm.contains(10) && len(attributes) > 0 {
-		tc.attributes = attributes
+	if !p.bm.contains(10) && len(p.attributes) > 0 {
 		p.bm.set(10)
 		p.fields += 1
 	}

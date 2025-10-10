@@ -42,7 +42,7 @@ func newDetailedSpanList(n int) spanList {
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].start = fixedTime
-		list[i].service = "service." + itoa[i%5+1]
+		list[i].service = "golden"
 		list[i].resource = "resource." + itoa[i%5+1]
 		list[i].error = int32(i % 2)
 		list[i].SetTag("tag."+itoa[i%5+1], "value."+itoa[i%5+1])
@@ -160,9 +160,14 @@ func TestPayloadV1Decode(t *testing.T) {
 			_, err = buf.WriteTo(got)
 			assert.NoError(err)
 
-			_, err = got.decodeBuffer()
+			o, err := got.decodeBuffer()
 			assert.NoError(err)
+			assert.Empty(o)
 			assert.NotEmpty(got.attributes)
+			assert.Equal(p.attributes, got.attributes)
+			assert.Equal(got.attributes["service"].value, "golden")
+			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
+			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
 		})
 	}
 }
