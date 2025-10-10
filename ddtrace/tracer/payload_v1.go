@@ -187,6 +187,7 @@ func (p *payloadV1) clear() {
 	p.reader = nil
 }
 
+// recordItem records that a new chunk was added to the payload.
 func (p *payloadV1) recordItem() {
 	atomic.AddUint32(&p.count, 1)
 }
@@ -317,6 +318,7 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 	return buf
 }
 
+// encodeAttributes encodes a keyValueList (most often attributes) associated with fieldID into the buffer in msgp format.
 func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyValue, st *stringTable) (bool, error) {
 	if !bm.contains(uint32(fieldID)) {
 		return false, nil
@@ -340,6 +342,7 @@ func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyVa
 	return true, nil
 }
 
+// encodeTraceChunks encodes a list of trace chunks associated with fieldID into p.buf in msgp format.
 func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, st *stringTable) (bool, error) {
 	if len(tc) == 0 || !bm.contains(uint32(fieldID)) {
 		return false, nil
@@ -375,6 +378,7 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 	return true, nil
 }
 
+// encodeSpans encodes a list of spans associated with fieldID into p.buf in msgp format.
 func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stringTable) (bool, error) {
 	if len(spans) == 0 || !bm.contains(uint32(fieldID)) {
 		return false, nil
@@ -439,6 +443,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 	return true, nil
 }
 
+// encodeSpanLinks encodes a list of span links associated with fieldID into p.buf in msgp format.
 func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink, st *stringTable) (bool, error) {
 	if !bm.contains(uint32(fieldID)) {
 		return false, nil
@@ -467,6 +472,7 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 	return true, nil
 }
 
+// encodeSpanEvents encodes a list of span events associated with fieldID into p.buf in msgp format.
 func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEvent, st *stringTable) (bool, error) {
 	if !bm.contains(uint32(fieldID)) {
 		return false, nil
@@ -677,6 +683,7 @@ const (
 	keyValueListType            // []keyValue -- 7
 )
 
+// buildAnyValue builds an anyValue from a given any type.
 func buildAnyValue(v any) *anyValue {
 	switch v := v.(type) {
 	case string:
@@ -743,6 +750,7 @@ type arrayValue []anyValue
 // 1 for represented fields and 0 for unset fields.
 type bitmap int32
 
+// fullSetBitmap is a bitmap that represents all fields that have been set in the payload.
 var fullSetBitmap bitmap = -1
 
 func (b *bitmap) set(bit uint32) {
@@ -791,6 +799,8 @@ func (s *stringValue) decode(buf []byte) ([]byte, error) {
 	return o, nil
 }
 
+var errUnableDecodeString = errors.New("unable to read string value")
+
 type stringTable struct {
 	strings   []stringValue         // list of strings
 	indices   map[stringValue]index // map strings to their indices
@@ -805,6 +815,7 @@ func newStringTable() *stringTable {
 	}
 }
 
+// Adds a string to the string table if it does not already exist. Returns the index of the string.
 func (s *stringTable) Add(str string) (idx index) {
 	sv := stringValue(str)
 	if _, ok := s.indices[sv]; ok {
@@ -817,6 +828,7 @@ func (s *stringTable) Add(str string) (idx index) {
 	return
 }
 
+// Get returns the index of a string in the string table if it exists. Returns false if the string does not exist.
 func (s *stringTable) Get(str string) (index, bool) {
 	sv := stringValue(str)
 	if idx, ok := s.indices[sv]; ok {
@@ -825,6 +837,8 @@ func (s *stringTable) Get(str string) (index, bool) {
 	return -1, false
 }
 
+// Reads a string from a byte slice and returns it from the string table if it exists.
+// Returns false if the string does not exist.
 func (s *stringTable) Read(b []byte) (string, []byte, bool) {
 	sType := getStreamingType(b[0])
 	if sType == -1 {
@@ -898,7 +912,7 @@ type traceChunk struct {
 	samplingMechanism uint32
 }
 
-// Decoding Functions
+// DecodeTraceChunks decodes a list of trace chunks from a byte slice.
 func DecodeTraceChunks(b []byte, st *stringTable) ([]traceChunk, []byte, error) {
 	out := []traceChunk{}
 	numChunks, o, err := msgp.ReadArrayHeaderBytes(b)
@@ -959,6 +973,7 @@ func (tc *traceChunk) decode(b []byte, st *stringTable) ([]byte, error) {
 	return o, err
 }
 
+// DecodeSpans decodes a list of spans from a byte slice.
 func DecodeSpans(b []byte, st *stringTable) (spanList, []byte, error) {
 	out := spanList{}
 	numSpans, o, err := msgp.ReadArrayHeaderBytes(b)
@@ -976,6 +991,8 @@ func DecodeSpans(b []byte, st *stringTable) (spanList, []byte, error) {
 	return out, o, nil
 }
 
+// decode reads a span from a byte slice and populates the associated fields in the span.
+// This should only be used with decoding v1.0 payloads.
 func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	for range numFields {
@@ -1087,6 +1104,7 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 	return o, err
 }
 
+// DecodeSpanLinks decodes a list of span links from a byte slice.
 func DecodeSpanLinks(b []byte, st *stringTable) ([]SpanLink, []byte, error) {
 	out := []SpanLink{}
 	numLinks, o, err := msgp.ReadArrayHeaderBytes(b)
@@ -1104,6 +1122,8 @@ func DecodeSpanLinks(b []byte, st *stringTable) ([]SpanLink, []byte, error) {
 	return out, o, nil
 }
 
+// decode reads a span link from a byte slice and populates the associated fields in the span link.
+// This should only be used with decoding v1.0 payloads.
 func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {
@@ -1153,6 +1173,7 @@ func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 	return o, err
 }
 
+// DecodeSpanEvents decodes a list of span events from a byte slice.
 func DecodeSpanEvents(b []byte, st *stringTable) ([]spanEvent, []byte, error) {
 	out := []spanEvent{}
 	numEvents, o, err := msgp.ReadArrayHeaderBytes(b)
@@ -1170,6 +1191,8 @@ func DecodeSpanEvents(b []byte, st *stringTable) ([]spanEvent, []byte, error) {
 	return out, o, nil
 }
 
+// decode reads a span event from a byte slice and populates the associated fields in the span event.
+// This should only be used with decoding v1.0 payloads.
 func (event *spanEvent) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {
@@ -1214,8 +1237,6 @@ func (event *spanEvent) decode(b []byte, st *stringTable) ([]byte, error) {
 	}
 	return o, err
 }
-
-var errUnableDecodeString = errors.New("unable to read string value")
 
 func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 	vType, o, err := msgp.ReadInt32Bytes(b)
@@ -1288,6 +1309,7 @@ func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 	}
 }
 
+// DecodeKeyValueList decodes a map of string to anyValue from a byte slice.
 func DecodeKeyValueList(b []byte, strings *stringTable) (map[string]anyValue, []byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	if err != nil {

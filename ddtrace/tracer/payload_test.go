@@ -167,8 +167,8 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(p.attributes, got.attributes)
 			assert.Equal(got.attributes["service"].value, "golden")
 			assert.Greater(len(got.chunks), 0)
-			// assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
-			// assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
+			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
 		})
 	}
 }
