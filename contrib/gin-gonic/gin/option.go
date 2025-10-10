@@ -95,7 +95,8 @@ func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
 }
 
-// WithErrorPropagation enables the propagation of gin's error to the span.
+// WithErrorPropagation enables the propagation of gin's errors to the span.
+// If there are multiple errors in the gin context, they will be all added to the span.
 func WithErrorPropagation() OptionFn {
 	return func(cfg *config) {
 		cfg.propagateError = true
