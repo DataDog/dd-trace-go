@@ -46,11 +46,13 @@ type payload interface {
 	payloadReader
 }
 
-// newpayload returns a ready to use unsafe payload.
+// newPayload returns a ready to use payload.
 func newPayload(protocol float64) payload {
-	// TODO(hannahkm): add support for v1 protocol
-	// if protocol == traceProtocolV1 {
-	// }
+	if protocol == traceProtocolV1 {
+		return &safePayload{
+			p: newPayloadV1(),
+		}
+	}
 	return &safePayload{
 		p: newPayloadV04(),
 	}
@@ -58,9 +60,15 @@ func newPayload(protocol float64) payload {
 
 // https://github.com/msgpack/msgpack/blob/master/spec.md#array-format-family
 const (
+	// arrays
 	msgpackArrayFix byte = 144  // up to 15 items
 	msgpackArray16  byte = 0xdc // up to 2^16-1 items, followed by size in 2 bytes
 	msgpackArray32  byte = 0xdd // up to 2^32-1 items, followed by size in 4 bytes
+
+	// maps
+	msgpackMapFix byte = 0x80 // up to 15 items
+	msgpackMap16  byte = 0xde // up to 2^16-1 items, followed by size in 2 bytes
+	msgpackMap32  byte = 0xdf // up to 2^32-1 items, followed by size in 4 bytes
 )
 
 // safePayload provides a thread-safe wrapper around payload.
@@ -149,30 +157,4 @@ func (sp *safePayload) stats() payloadStats {
 func (sp *safePayload) protocol() float64 {
 	// Protocol is immutable after creation - no lock needed
 	return sp.p.protocol()
-}
-
-// traceChunk represents a list of spans with the same trace ID,
-// i.e. a chunk of a trace
-type traceChunk struct {
-	// the sampling priority of the trace
-	priority int32
-
-	// the optional string origin ("lambda", "rum", etc.) of the trace chunk
-	origin uint32
-
-	// a collection of key to value pairs common in all `spans`
-	attributes map[uint32]anyValue
-
-	// a list of spans in this chunk
-	spans []Span
-
-	// whether the trace only contains analyzed spans
-	// (not required by tracers and set by the agent)
-	droppedTrace bool
-
-	// the ID of the trace to which all spans in this chunk belong
-	traceID uint8
-
-	// the optional string decision maker (previously span tag _dd.p.dm)
-	decisionMaker uint32
 }
