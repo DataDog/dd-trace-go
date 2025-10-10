@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -538,6 +539,8 @@ func (t *trace) finishedOne(s *Span) {
 	tc := tr.TracerConf()
 	setPeerService(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
 
+	// SHOULD WE DO SMTH ABOUT THE BASE SERVICE TAG (PYTHON RETURNS BEFORE SETTING IT)
+
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
 	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
@@ -565,6 +568,7 @@ func (t *trace) finishedOne(s *Span) {
 		mtr.FinishSpan(s)
 	}
 
+	log.Info("1")
 	if len(t.spans) == t.finished { // perform a full flush of all spans
 		if tr, ok := tr.(*tracer); ok {
 			t.finishChunk(tr, &chunk{
@@ -576,6 +580,7 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 
+	log.Info("2")
 	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
@@ -591,6 +596,7 @@ func (t *trace) finishedOne(s *Span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
+
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
@@ -605,6 +611,8 @@ func (t *trace) finishedOne(s *Span) {
 		})
 	}
 	t.spans = leftoverSpans
+
+	log.Info("3")
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
@@ -617,6 +625,22 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	} else if se := getServerlessEnvironment(); se == "aws_lambda" {
+		// if we are in an aws lambda function and this is an outbound
+		// request, determine and set the peer service tag accordingly
+		spanKind := s.meta[ext.SpanKind]
+		if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
+			if ps := deriveAWSPeerService(s.meta); ps != "" {
+				s.setMeta(ext.PeerService, ps)
+				log.Info("HERE")
+			}
+		} else {
+			//QUESTION what to do if no ps is derived
+			log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
+			return
+		}
+		//QUESTION should we be ignoring all the logic below? I.e the peerservicedefaults variable and the
+		// keyPeerServiceSource tag
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -631,12 +655,66 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		}
 		s.setMeta(keyPeerServiceSource, source)
 	}
+
+	log.Info("there")
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
 	if to, ok := peerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
+
+	log.Info("done set peer service")
+}
+
+/*
+checks if we are in a serverless environment
+
+TODO add checks for Azure functions and other serverless environments
+*/
+func getServerlessEnvironment() string {
+	if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		return "aws_lambda"
+	}
+	return ""
+}
+
+/*
+deriveAWSPeerService returns the host name of the
+outbound aws service call based on the span metadata,
+or an empty string if it cannot be determined.
+
+The mapping is as follows:
+  - eventbridge: events.<region>.amazonaws.com
+  - sqs:         sqs.<region>.amazonaws.com
+  - sns:         sns.<region>.amazonaws.com
+  - kinesis:     kinesis.<region>.amazonaws.com
+  - dynamodb:    dynamodb.<region>.amazonaws.com
+  - s3:          <bucket>.s3.<region>.amazonaws.com (if Bucket param present)
+    s3.<region>.amazonaws.com          (otherwise)
+*/
+func deriveAWSPeerService(sm map[string]string) string {
+	service, region := sm[ext.AWSService], sm[ext.AWSRegion]
+	if service == "" || region == "" {
+		return ""
+	}
+
+	s := strings.ToLower(service)
+	switch s {
+
+	case "s3":
+		if bucket := sm[ext.S3BucketName]; bucket != "" {
+			return bucket + ".s3." + region + ".amazonaws.com"
+		}
+		return "s3." + region + ".amazonaws.com"
+
+	case "eventbridge":
+		return "events." + region + ".amazonaws.com"
+
+	case "sqs", "sns", "dynamodb", "kinesis":
+		return s + "." + region + ".amazonaws.com"
+	}
+	return ""
 }
 
 // setPeerServiceFromSource sets peer.service from the sources determined
@@ -651,6 +729,9 @@ func setPeerServiceFromSource(s *Span) string {
 	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
+	// QUESTION should we remove this? we already check for lambda aws service, so whats the point of this?
+	// Maybe in the case we're using an AWS service without lambda? idk help me
+
 	case has("aws_service"):
 		sources = []string{
 			"queuename",
