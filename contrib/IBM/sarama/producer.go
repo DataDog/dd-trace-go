@@ -194,6 +194,9 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	if cfg.customProducerSpanOptionsFunc != nil {
+		opts = append(opts, cfg.customProducerSpanOptionsFunc(msg)...)
+	}
 	// if there's a span context in the headers, use that as the parent
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		// If there are span links as a result of context extraction, add them as a StartSpanOption
