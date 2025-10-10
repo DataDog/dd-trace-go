@@ -118,7 +118,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	origin, priority, sm := "", 0, 0
 	for _, span := range t {
 		if span == nil {
-			break
+			continue
 		}
 		// If we haven't seen the service yet, we set it blindly assuming that all the spans created by
 		// a service must share the same value.
@@ -387,7 +387,6 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		if span == nil {
 			continue
 		}
-		// In encodeSpans function, after line 388:
 		p.buf = msgp.AppendMapHeader(p.buf, 16) // number of fields in span
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, span.service, st)
@@ -434,7 +433,6 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		component := span.meta[ext.Component]
 		p.buf = encodeField(p.buf, fullSetBitmap, 15, component, st)
 
-		// And especially field 16:
 		spanKind := span.meta[ext.SpanKind]
 		p.buf = encodeField(p.buf, fullSetBitmap, 16, spanKind, st)
 	}
@@ -453,8 +451,6 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, link.TraceID, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, link.SpanID, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 4, link.Tracestate, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 5, link.Flags, st)
 
 		attr := map[string]anyValue{}
 		for k, v := range link.Attributes {
@@ -464,6 +460,9 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 			}
 		}
 		p.encodeAttributes(fullSetBitmap, 3, attr, st)
+
+		p.buf = encodeField(p.buf, fullSetBitmap, 4, link.Tracestate, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 5, link.Flags, st)
 	}
 	return true, nil
 }
@@ -625,7 +624,7 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 		var ok bool
 		value, o, ok = st.Read(o)
 		if !ok {
-			err = fmt.Errorf("unable to read string value of field %d", idx)
+			err = errUnableDecodeString
 			break
 		}
 
@@ -1111,6 +1110,9 @@ func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 		return b, err
 	}
 	for range numFields {
+		if err != nil {
+			return b, err
+		}
 		// read msgp field ID
 		var idx uint32
 		idx, o, err = msgp.ReadUint32Bytes(o)
@@ -1122,20 +1124,11 @@ func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 		switch idx {
 		case 1:
 			link.TraceID, o, err = msgp.ReadUint64Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 2:
 			link.SpanID, o, err = msgp.ReadUint64Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		case 3:
 			var attr map[string]anyValue
 			attr, o, err = DecodeKeyValueList(o, st)
-			if err != nil {
-				return o, err
-			}
 			for k, v := range attr {
 				if v.valueType != StringValueType {
 					return o, fmt.Errorf("unexpected value type: %d", v.valueType)
@@ -1143,15 +1136,16 @@ func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 				link.Attributes[k] = v.value.(string)
 			}
 		case 4:
-			link.Tracestate, o, err = msgp.ReadStringBytes(o)
-			if err != nil {
-				return o, err
+			var state string
+			var ok bool
+			state, o, ok = st.Read(o)
+			if !ok {
+				err = errUnableDecodeString
+				break
 			}
+			link.Tracestate = state
 		case 5:
 			link.Flags, o, err = msgp.ReadUint32Bytes(o)
-			if err != nil {
-				return o, err
-			}
 		default:
 			return o, fmt.Errorf("unexpected field ID %d", idx)
 		}
@@ -1195,10 +1189,14 @@ func (event *spanEvent) decode(b []byte, st *stringTable) ([]byte, error) {
 				return o, err
 			}
 		case 2:
-			event.Name, o, err = msgp.ReadStringBytes(o)
-			if err != nil {
-				return o, err
+			var name string
+			var ok bool
+			name, o, ok = st.Read(o)
+			if !ok {
+				err = errUnableDecodeString
+				break
 			}
+			event.Name = name
 		case 3:
 			var attr map[string]anyValue
 			attr, o, err = DecodeKeyValueList(o, st)
