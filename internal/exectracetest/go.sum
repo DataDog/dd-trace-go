@@ -16,10 +16,10 @@ github.com/DataDog/datadog-agent/pkg/version v0.67.0 h1:TB8H8r+laB1Qdttvvc6XJVyL
 github.com/DataDog/datadog-agent/pkg/version v0.67.0/go.mod h1:kvAw/WbI7qLAsDI2wHabZfM7Cv2zraD3JA3323GEB+8=
 github.com/DataDog/datadog-go/v5 v5.6.0 h1:2oCLxjF/4htd55piM75baflj/KoE6VYS7alEUqFvRDw=
 github.com/DataDog/datadog-go/v5 v5.6.0/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.3.0-rc.2 h1:L3iSxq+CU72flrdj2X7AYQflwSEAwkveZs764p0djdA=
-github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.3.0-rc.2/go.mod h1:RTQ5bpRVywfiYZZwdirYUKAGBPgTe9F6OKjD0UjL9SI=
-github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.2 h1:YFB2AegunYOGsgWTXVY8Z6ORuiU/GLVWTheMDXh+8cw=
-github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.2/go.mod h1:gtac0BEnFnpwQWFw10sslSDeh7avl7m10frK3XlZAtk=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.3.0-rc.4 h1:L3iSxq+CU72flrdj2X7AYQflwSEAwkveZs764p0djdA=
+github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.3.0-rc.4/go.mod h1:RTQ5bpRVywfiYZZwdirYUKAGBPgTe9F6OKjD0UjL9SI=
+github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.4 h1:YFB2AegunYOGsgWTXVY8Z6ORuiU/GLVWTheMDXh+8cw=
+github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.4/go.mod h1:gtac0BEnFnpwQWFw10sslSDeh7avl7m10frK3XlZAtk=
 github.com/DataDog/go-libddwaf/v4 v4.3.2 h1:YGvW2Of1C4e1yU+p7iibmhN2zEOgi9XEchbhQjBxb/A=
 github.com/DataDog/go-libddwaf/v4 v4.3.2/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633 h1:ZRLR9Lbym748e8RznWzmSoK+OfV+8qW6SdNYA4/IqdA=
