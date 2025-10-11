@@ -17,6 +17,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed" // For go:embed
 	"encoding/json"
 	"fmt"
 	"go/format"
@@ -32,8 +33,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"golang.org/x/tools/go/packages"
-
-	_ "embed" // For go:embed
 )
 
 const orchestrionToolGo = "orchestrion.tool.go"
@@ -163,6 +162,11 @@ func generateRootConfig(rootDir string, orchestrionLatestVersion string) (map[st
 
 	if err := goCmd(pkgDir, "mod", "tidy", "-go", goVersion); err != nil {
 		return nil, fmt.Errorf("go mod tidy: %w", err)
+	}
+
+	// Run orchestrion pin
+	if err := goCmd(pkgDir, "run", "github.com/DataDog/orchestrion@latest", "pin", "--validate"); err != nil {
+		return nil, fmt.Errorf("orchestrion pin: %w", err)
 	}
 
 	// Make sure this is present in the modules map, as it's not a natural part of it...
