@@ -4,6 +4,7 @@ set -euo pipefail
 # message: Prints a message to the console with a timestamp and prefix.
 message() {
   local msg="$1"
+  # shellcheck disable=SC2059
   printf "\n> $(date -u +%Y-%m-%dT%H:%M:%SZ) - $msg\n"
 }
 
@@ -92,6 +93,7 @@ fi
 ## CORE
 message "Testing core..."
 pkg_names=$(go list ./...)
+# shellcheck disable=SC2086
 nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- -race -v -coverprofile=core_coverage.txt -covermode=atomic ${pkg_names} && true
 
 if [[ "$contrib" != "" ]]; then
@@ -119,6 +121,7 @@ if [[ "$contrib" != "" ]]; then
       cd - >/dev/null
       continue
     fi
+    # shellcheck disable=SC2086
     nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic ${pkgs}
     cd - >/dev/null
   done

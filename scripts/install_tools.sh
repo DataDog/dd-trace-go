@@ -4,6 +4,7 @@ set -euo pipefail
 # message: Prints a message to the console with a timestamp and prefix.
 message() {
   local msg="$1"
+  # shellcheck disable=SC2059
   printf "\n> $(date -u +%Y-%m-%dT%H:%M:%SZ) - $msg\n"
 }
 

@@ -7,6 +7,7 @@ set -euo pipefail
 
 go run -tags=scripts ./scripts/fixmodules -root=. .
 
+# shellcheck disable=SC2044
 for f in $(find . -name go.mod); do
   (
     cd "$(dirname "$f")"
