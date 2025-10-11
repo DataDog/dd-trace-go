@@ -130,6 +130,7 @@ if [[ "$contrib" != "" ]]; then
       cd - > /dev/null
       continue
     fi
+    # shellcheck disable=SC2086
     nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic ${pkgs}
     cd - > /dev/null
   done

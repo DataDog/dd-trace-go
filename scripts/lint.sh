@@ -4,6 +4,7 @@ set -euo pipefail
 # message: Prints a message to the console with a timestamp and prefix.
 message() {
   local msg="$1"
+  # shellcheck disable=SC2059
   printf "\n> $(date -u +%Y-%m-%dT%H:%M:%SZ) - $msg\n"
 }
 
@@ -34,11 +35,13 @@ EOF
 
 run_linters() {
   message "Running Linters"
+  # shellcheck disable=SC2155
   export PATH="$(go env GOPATH)/bin:$PATH"
   run "goimports -e -l -local github.com/DataDog/dd-trace-go/v2 ."
   run "golangci-lint run ./..."
   run "./scripts/check_locks.sh --ignore-errors ./ddtrace/tracer"
   run "go run ./scripts/check_copyright.go"
+  run "./scripts/shellcheck.sh"
 }
 
 # Parse command line arguments

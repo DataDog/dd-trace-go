@@ -83,6 +83,7 @@ if [ -n "$output" ]; then
   echo "$output"
 
   # Check if all lines start with "-:" or "#"
+  # shellcheck disable=SC2126
   ignorable_lines=$(echo "$output" | grep -v "^-:" | grep -v "^#" | wc -l)
 
   if [ "$ignorable_lines" -eq 0 ]; then
