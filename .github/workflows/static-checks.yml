@@ -94,6 +94,26 @@ jobs:
       - name: Check for changes
         run: git diff --exit-code
 
+  check-shell-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Format shell scripts
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          make format/shell
+      - name: Check for changes
+        run: git diff --exit-code
+
   lint:
     runs-on:
       group: "APM Larger Runners"

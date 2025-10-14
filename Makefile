@@ -44,6 +44,10 @@ lint-fix: tools-install ## Fix linting issues automatically
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all
 
+.PHONY: format/shell
+format/shell: tools-install ## install shfmt
+	$(BIN_PATH) ./scripts/format.sh --shell
+
 .PHONY: test
 test: tools-install ## Run all tests (core, integration, contrib)
 	$(BIN_PATH) ./scripts/test.sh --all
