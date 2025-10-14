@@ -1,6 +1,7 @@
 name: Static Checks
 
 on:
+  pull_request:
   push:
     branches:
       - release-*
@@ -11,7 +12,6 @@ on:
       - 'internal/**'
       - 'orchestrion/**'
       - 'scripts/**'
-  pull_request:
   workflow_call:
     inputs:
       go-version:
@@ -35,6 +35,8 @@ env:
 
 permissions:
   contents: read
+  pull-requests: write
+  checks: write
 
 jobs:
   copyright:
@@ -94,7 +96,7 @@ jobs:
       - name: Check for changes
         run: git diff --exit-code
 
-  check-shell-scripts:
+  check-format:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -107,10 +109,10 @@ jobs:
           go-version: ${{ inputs.go-version }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
-      - name: Format shell scripts
+      - name: Format
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          make format/shell
+          make format
       - name: Check for changes
         run: git diff --exit-code
 
@@ -141,6 +143,15 @@ jobs:
           fail_level: error
           reporter: github-pr-review
           workdir: internal/orchestrion/_integration
+
+      - name: shellcheck
+        uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
+          fail_level: error
+          path: ./scripts
+          pattern: "**/*.sh"
 
   checklocks:
     runs-on: ubuntu-latest

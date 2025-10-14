@@ -7,13 +7,12 @@ set -euo pipefail
 
 go run -tags=scripts ./scripts/fixmodules -root=. .
 
-# shellcheck disable=SC2044
-for f in $(find . -name go.mod); do
+while IFS= read -r -d '' f; do
   (
-    cd "$(dirname "$f")"
+    cd "$(dirname "$f")" || exit 1
     go mod tidy
   )
-done
+done < <(find . -name go.mod -print0)
 
 # This command will update the go.work.sum file
 go list -m all > /dev/null

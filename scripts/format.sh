@@ -4,8 +4,7 @@ set -euo pipefail
 # message: Prints a message to the console with a timestamp and prefix.
 message() {
   local msg="$1"
-  # shellcheck disable=SC2059
-  printf "\n> $(date -u +%Y-%m-%dT%H:%M:%SZ) - $msg\n"
+  printf "\n> %s - %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg"
 }
 
 # run: Runs the tool and fails early if it fails.
@@ -22,8 +21,6 @@ run() {
 # Default flags
 format_go=false
 format_shell=false
-# shellcheck disable=SC2034
-tools=false
 
 usage() {
   cat << EOF
@@ -35,7 +32,6 @@ Options:
   --all          Format both Go and Shell files and install tools
   --go           Format only Go files
   --shell        Format only Shell files
-  -t, --tools    Install formatting tools
   -h, --help     Show this help message
 
 Without any flags, formats Go files only (default behavior).

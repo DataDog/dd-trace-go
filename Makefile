@@ -34,11 +34,15 @@ lint: tools-install ## Run linting checks
 
 .PHONY: lint/go
 lint/go: tools-install ## Run Go linting checks
-	$(BIN_PATH) golangci-lint run ./...
+	$(BIN_PATH) ./scripts/lint.sh --go
 
-.PHONY: lint-fix
-lint-fix: tools-install ## Fix linting issues automatically
+.PHONY: lint/go/fix
+lint/go/fix: tools-install ## Fix linting issues automatically
 	$(BIN_PATH) golangci-lint run --fix ./...
+
+.PHONY: lint/shell
+lint/shell: tools-install ## Run shell script linting checks
+	$(BIN_PATH) ./scripts/lint.sh --shell
 
 .PHONY: format
 format: tools-install ## Format code
