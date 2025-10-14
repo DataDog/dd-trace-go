@@ -641,8 +641,6 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		} else {
 			return
 		}
-		//QUESTION should we be ignoring all the logic below? I.e the peerservicedefaults variable and the
-		// keyPeerServiceSource tag
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -675,7 +673,7 @@ checks if we are in a serverless environment
 TODO add checks for Azure functions and other serverless environments
 */
 func getServerlessEnvironment() string {
-	if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+	if val, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok && val != "" {
 		return "aws_lambda"
 	}
 	return ""
