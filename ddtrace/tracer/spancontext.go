@@ -519,6 +519,7 @@ func (t *trace) setTraceTags(s *Span) {
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 // The provided span must be locked.
 func (t *trace) finishedOne(s *Span) {
+	log.Info("Start")
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s.finished = true
@@ -538,8 +539,6 @@ func (t *trace) finishedOne(s *Span) {
 	}
 	tc := tr.TracerConf()
 	setPeerService(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
-
-	// SHOULD WE DO SMTH ABOUT THE BASE SERVICE TAG (PYTHON RETURNS BEFORE SETTING IT)
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
@@ -626,17 +625,20 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else if se := getServerlessEnvironment(); se == "aws_lambda" {
+		log.Info("is serverless")
 		// if we are in an aws lambda function and this is an outbound
 		// request, determine and set the peer service tag accordingly
 		spanKind := s.meta[ext.SpanKind]
 		if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
 				s.setMeta(ext.PeerService, ps)
+				s.setMeta(keyPeerServiceSource, ext.PeerService)
 				log.Info("HERE")
+			} else {
+				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
+				return
 			}
 		} else {
-			//QUESTION what to do if no ps is derived
-			log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
 			return
 		}
 		//QUESTION should we be ignoring all the logic below? I.e the peerservicedefaults variable and the
