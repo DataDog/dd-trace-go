@@ -519,7 +519,6 @@ func (t *trace) setTraceTags(s *Span) {
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 // The provided span must be locked.
 func (t *trace) finishedOne(s *Span) {
-	log.Info("Start")
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s.finished = true
@@ -567,7 +566,6 @@ func (t *trace) finishedOne(s *Span) {
 		mtr.FinishSpan(s)
 	}
 
-	log.Info("1")
 	if len(t.spans) == t.finished { // perform a full flush of all spans
 		if tr, ok := tr.(*tracer); ok {
 			t.finishChunk(tr, &chunk{
@@ -579,7 +577,6 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 
-	log.Info("2")
 	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
 		return // The trace hasn't completed and partial flushing will not occur
@@ -595,7 +592,6 @@ func (t *trace) finishedOne(s *Span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
-
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
@@ -610,8 +606,6 @@ func (t *trace) finishedOne(s *Span) {
 		})
 	}
 	t.spans = leftoverSpans
-
-	log.Info("3")
 }
 
 func (t *trace) finishChunk(tr *tracer, ch *chunk) {
@@ -625,7 +619,6 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
 	} else if se := getServerlessEnvironment(); se == "aws_lambda" {
-		log.Info("is serverless")
 		// if we are in an aws lambda function and this is an outbound
 		// request, determine and set the peer service tag accordingly
 		spanKind := s.meta[ext.SpanKind]
@@ -633,7 +626,6 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
 				s.setMeta(ext.PeerService, ps)
 				s.setMeta(keyPeerServiceSource, ext.PeerService)
-				log.Info("HERE")
 			} else {
 				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
 				return
@@ -655,16 +647,12 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 		}
 		s.setMeta(keyPeerServiceSource, source)
 	}
-
-	log.Info("there")
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
 	if to, ok := peerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
-
-	log.Info("done set peer service")
 }
 
 /*
