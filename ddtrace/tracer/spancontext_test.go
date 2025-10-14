@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -528,7 +527,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "some-bucket.s3.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -543,7 +542,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "dynamodb.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -556,7 +555,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "kinesis.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -569,7 +568,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "sns.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -582,7 +581,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "sqs.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -595,7 +594,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "events.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -727,9 +726,10 @@ func TestSpanPeerService(t *testing.T) {
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
-			if strings.Contains(tc.name, "AWS-") {
-				t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "test_name")
-			}
+			log.Info("%s", tc.name)
+			// if strings.Contains(tc.name, "AWS-") {
+			// 	t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "test_name")
+			// }
 
 			tracer, transport, flush, stop, err := startTestTracer(t)
 			assert.Nil(t, err)
@@ -790,7 +790,7 @@ func TestSpanPeerServiceServerless(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "some-bucket.s3.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -805,7 +805,7 @@ func TestSpanPeerServiceServerless(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "dynamodb.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -818,7 +818,7 @@ func TestSpanPeerServiceServerless(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "kinesis.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -831,7 +831,7 @@ func TestSpanPeerServiceServerless(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "sns.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -844,7 +844,7 @@ func TestSpanPeerServiceServerless(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "sqs.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -857,11 +857,11 @@ func TestSpanPeerServiceServerless(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "events.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "",
+			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},
 	}
-	t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "test_name")
+	t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "test_lambda")
 	for _, tc := range testCases {
 		assertSpan := func(t *testing.T, s *Span) {
 			if tc.wantPeerService == "" {
