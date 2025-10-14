@@ -69,14 +69,14 @@ The test script provides many options for different testing scenarios:
 [embedmd]:# (../tmp/test-help.txt)
 ```txt
 test.sh - Run the tests for dd-trace-go
-	this script requires gotestsum, goimports, docker and docker-compose.
-	-a | --appsec		- Test with appsec enabled
-	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
-	-c | --contrib		- Run contrib tests
-	--all			- Synonym for -l -a -i -c
-	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds
-	-t | --tools		- Install gotestsum and goimports
-	-h | --help		- Print this help message
+  this script requires gotestsum, goimports, docker and docker-compose.
+  -a | --appsec      - Test with appsec enabled
+  -i | --integration - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
+  -c | --contrib     - Run contrib tests
+  --all              - Synonym for -l -a -i -c
+  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds
+  -t | --tools       - Install gotestsum and goimports
+  -h | --help        - Print this help message
 ```
 
 ### Go Programs

@@ -15,15 +15,15 @@ fi
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    -a|--appsec)
+    -a | --appsec)
       export DD_APPSEC_ENABLED=true
       shift
       ;;
-    -i|--integration)
+    -i | --integration)
       export INTEGRATION=true
       shift
       ;;
-    -c|--contrib)
+    -c | --contrib)
       contrib=true
       shift
       ;;
@@ -35,30 +35,30 @@ while [[ $# -gt 0 ]]; do
       export INTEGRATION=true
       shift
       ;;
-    -s|--sleep)
+    -s | --sleep)
       sleeptime=$2
       shift
       shift
       ;;
-    -l|--lint)
+    -l | --lint)
       lint=true
       shift
       ;;
-    -t|--tools)
+    -t | --tools)
       tools=true
       shift
       ;;
-    -h|--help)
+    -h | --help)
       echo "test.sh - Run the tests for dd-trace-go"
-      echo "	this script requires gotestsum, goimports, docker and docker-compose."
-      echo "	-l | --lint		- Run the linter"
-      echo "	-a | --appsec		- Test with appsec enabled"
-      echo "	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
-      echo "	-c | --contrib		- Run contrib tests"
-      echo "	--all			- Synonym for -l -a -i -c"
-      echo "	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
-      echo "	-t | --tools		- Install gotestsum and goimports"
-      echo "	-h | --help		- Print this help message"
+      echo "  this script requires gotestsum, goimports, docker and docker-compose."
+      echo "  -l | --lint   - Run the linter"
+      echo "  -a | --appsec   - Test with appsec enabled"
+      echo "  -i | --integration  - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
+      echo "  -c | --contrib    - Run contrib tests"
+      echo "  --all     - Synonym for -l -a -i -c"
+      echo "  -s | --sleep    - The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
+      echo "  -t | --tools    - Install gotestsum and goimports"
+      echo "  -h | --help   - Print this help message"
       exit 0
       ;;
     *)
@@ -69,16 +69,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$tools" ]]; then
-    pushd /tmp
-    SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-    go -C "${SCRIPT_DIR}/_tools" install golang.org/x/tools/cmd/goimports
-    go -C "${SCRIPT_DIR}/_tools" install gotest.tools/gotestsum
-    popd
+  pushd /tmp
+  SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+  go -C "${SCRIPT_DIR}/_tools" install golang.org/x/tools/cmd/goimports
+  go -C "${SCRIPT_DIR}/_tools" install gotest.tools/gotestsum
+  popd
 fi
 
 if [[ -n "$lint" ]]; then
-    echo "Running Linter"
-    goimports -e -l -local github.com/DataDog/dd-trace-go/v2 .
+  echo "Running Linter"
+  goimports -e -l -local github.com/DataDog/dd-trace-go/v2 .
 fi
 
 if [[ "$INTEGRATION" != "" ]]; then
@@ -117,10 +117,10 @@ if [[ "$contrib" != "" ]]; then
 
   find . -mindepth 2 -type f -name go.mod | while read -r go_mod_path; do
     dir=$(dirname "$go_mod_path")
-  [ "$dir" = "./tools/v2fix/_stage" ] && continue
-  [ "$dir" = "./scripts/autoreleasetagger/testdata/root" ] && continue
-  [ "$dir" = "./scripts/autoreleasetagger/testdata/root/moduleA" ] && continue
-  [ "$dir" = "./scripts/autoreleasetagger/testdata/root/moduleB" ] && continue
+    [ "$dir" = "./tools/v2fix/_stage" ] && continue
+    [ "$dir" = "./scripts/autoreleasetagger/testdata/root" ] && continue
+    [ "$dir" = "./scripts/autoreleasetagger/testdata/root/moduleA" ] && continue
+    [ "$dir" = "./scripts/autoreleasetagger/testdata/root/moduleB" ] && continue
 
     cd "$dir"
     echo testing "$dir"
@@ -130,7 +130,8 @@ if [[ "$contrib" != "" ]]; then
       cd - > /dev/null
       continue
     fi
-    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic "${pkgs}"
+    # shellcheck disable=SC2086
+    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic ${pkgs}
     cd - > /dev/null
   done
 fi
