@@ -528,7 +528,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "some-bucket.s3.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -543,7 +543,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "dynamodb.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -556,7 +556,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "kinesis.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -569,7 +569,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "sns.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -582,7 +582,7 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "sqs.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
@@ -595,22 +595,22 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "events.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceSource:       "",
 			wantPeerServiceRemappedFrom: "",
 		},
-		// {
-		// 	name: "DBClient",
-		// 	spanOpts: []StartSpanOption{
-		// 		Tag("span.kind", "client"),
-		// 		Tag("db.system", "some-db"),
-		// 		Tag("db.instance", "db-instance"),
-		// 	},
-		// 	peerServiceDefaultsEnabled:  true,
-		// 	peerServiceMappings:         nil,
-		// 	wantPeerService:             "db-instance",
-		// 	wantPeerServiceSource:       "db.instance",
-		// 	wantPeerServiceRemappedFrom: "",
-		// },
+		{
+			name: "DBClient",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("db.system", "some-db"),
+				Tag("db.instance", "db-instance"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "db-instance",
+			wantPeerServiceSource:       "db.instance",
+			wantPeerServiceRemappedFrom: "",
+		},
 		// {
 		// 	name: "DBClientDefaultsDisabled",
 		// 	spanOpts: []StartSpanOption{
@@ -729,7 +729,6 @@ func TestSpanPeerService(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if strings.Contains(tc.name, "AWS-") {
 				t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "test_name")
-				// defer os.Unsetenv("AWS_LAMBDA_FUNCTION_NAME")
 			}
 
 			tracer, transport, flush, stop, err := startTestTracer(t)
@@ -739,16 +738,175 @@ func TestSpanPeerService(t *testing.T) {
 			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
 			tracer.config.peerServiceMappings = tc.peerServiceMappings
 
+			log.Info("hi")
+
 			p := tracer.StartSpan("parent-span", tc.spanOpts...)
 			opts := append([]StartSpanOption{ChildOf(p.Context())}, tc.spanOpts...)
 			s := tracer.StartSpan("child-span", opts...)
 			s.Finish()
 			p.Finish()
 
+			log.Info("bye")
+
 			flush(1)
+			log.Info("hello")
 			traces := transport.Traces()
+			log.Info("nyoom")
 			require.Len(t, traces, 1)
 			require.Len(t, traces[0], 2)
+
+			log.Info("why")
+
+			t.Run("ParentSpan", func(t *testing.T) {
+				assertSpan(t, traces[0][0])
+			})
+			t.Run("ChildSpan", func(t *testing.T) {
+				assertSpan(t, traces[0][1])
+			})
+		})
+	}
+}
+
+func TestSpanPeerServiceServerless(t *testing.T) {
+	testCases := []struct {
+		name                        string
+		spanOpts                    []StartSpanOption
+		peerServiceDefaultsEnabled  bool
+		peerServiceMappings         map[string]string
+		wantPeerService             string
+		wantPeerServiceSource       string
+		wantPeerServiceRemappedFrom string
+	}{
+		{
+			name: "AWS-S3",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "S3"),
+				Tag("region", "us-east-2"),
+				Tag("bucketname", "some-bucket"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "some-bucket.s3.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-DynamoDB",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "DynamoDB"),
+				Tag("region", "us-east-2"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "dynamodb.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-Kinesis",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "Kinesis"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "kinesis.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-SNS",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "SNS"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "sns.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-SQS",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "SQS"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "sqs.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-Events",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "EventBridge"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "events.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+	}
+	t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "test_name")
+	for _, tc := range testCases {
+		assertSpan := func(t *testing.T, s *Span) {
+			if tc.wantPeerService == "" {
+				assert.NotContains(t, s.meta, "peer.service")
+			} else {
+				assert.Equal(t, tc.wantPeerService, s.meta["peer.service"])
+			}
+			if tc.wantPeerServiceSource == "" {
+				assert.NotContains(t, s.meta, "_dd.peer.service.source")
+			} else {
+				assert.Equal(t, tc.wantPeerServiceSource, s.meta["_dd.peer.service.source"])
+			}
+			if tc.wantPeerServiceRemappedFrom == "" {
+				assert.NotContains(t, s.meta, "_dd.peer.service.remapped_from")
+			} else {
+				assert.Equal(t, tc.wantPeerServiceRemappedFrom, s.meta["_dd.peer.service.remapped_from"])
+			}
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			tracer, transport, flush, stop, err := startTestTracer(t)
+			assert.Nil(t, err)
+			defer stop()
+
+			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
+			tracer.config.peerServiceMappings = tc.peerServiceMappings
+
+			log.Info("hi")
+
+			p := tracer.StartSpan("parent-span", tc.spanOpts...)
+			opts := append([]StartSpanOption{ChildOf(p.Context())}, tc.spanOpts...)
+			s := tracer.StartSpan("child-span", opts...)
+			s.Finish()
+			p.Finish()
+
+			log.Info("bye")
+
+			flush(1)
+			log.Info("hello")
+			traces := transport.Traces()
+			log.Info("nyoom")
+			require.Len(t, traces, 1)
+			require.Len(t, traces[0], 2)
+
+			log.Info("why")
 
 			t.Run("ParentSpan", func(t *testing.T) {
 				assertSpan(t, traces[0][0])
