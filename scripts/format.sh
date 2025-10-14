@@ -26,7 +26,7 @@ format_shell=false
 tools=false
 
 usage() {
-  cat <<EOF
+  cat << EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [options]
 
 Format Go and Shell files in the repository.
@@ -50,32 +50,32 @@ format_go_files() {
 
 format_shell_files() {
   message "Formatting shell scripts..."
-  run "shfmt -l -w scripts/*.sh"
+  run "shfmt --indent=2 --case-indent --space-redirects -l -w scripts/*.sh"
 }
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-  --all)
-    format_go=true
-    format_shell=true
-    shift
-    ;;
-  --go)
-    format_go=true
-    shift
-    ;;
-  --shell)
-    format_shell=true
-    shift
-    ;;
-  -h | --help)
-    usage
-    ;;
-  *)
-    echo "Ignoring unknown argument $1"
-    shift
-    ;;
+    --all)
+      format_go=true
+      format_shell=true
+      shift
+      ;;
+    --go)
+      format_go=true
+      shift
+      ;;
+    --shell)
+      format_shell=true
+      shift
+      ;;
+    -h | --help)
+      usage
+      ;;
+    *)
+      echo "Ignoring unknown argument $1"
+      shift
+      ;;
   esac
 done
 

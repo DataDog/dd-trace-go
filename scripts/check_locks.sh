@@ -8,7 +8,7 @@ IGNORE_ERRORS=false
 TARGET_DIR="./ddtrace/tracer"
 
 usage() {
-  cat <<EOF
+  cat << EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [options] [target_directory]
 
 Run checklocks to analyze lock usage and detect potential deadlocks.
@@ -30,17 +30,17 @@ EOF
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-  --ignore-errors | -i)
-    IGNORE_ERRORS=true
-    shift
-    ;;
-  -h | --help)
-    usage
-    ;;
-  *)
-    TARGET_DIR="$1"
-    shift
-    ;;
+    --ignore-errors | -i)
+      IGNORE_ERRORS=true
+      shift
+      ;;
+    -h | --help)
+      usage
+      ;;
+    *)
+      TARGET_DIR="$1"
+      shift
+      ;;
   esac
 done
 

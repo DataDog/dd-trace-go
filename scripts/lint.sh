@@ -20,7 +20,7 @@ run() {
 }
 
 usage() {
-  cat <<EOF
+  cat << EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [options]
 
 Run linters on the codebase.
@@ -47,17 +47,17 @@ run_linters() {
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-  --all)
-    run_linters
-    shift
-    ;;
-  -h | --help)
-    usage
-    ;;
-  *)
-    echo "Ignoring unknown argument $1"
-    shift
-    ;;
+    --all)
+      run_linters
+      shift
+      ;;
+    -h | --help)
+      usage
+      ;;
+    *)
+      echo "Ignoring unknown argument $1"
+      shift
+      ;;
   esac
 done
 

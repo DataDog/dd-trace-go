@@ -16,4 +16,4 @@ for f in $(find . -name go.mod); do
 done
 
 # This command will update the go.work.sum file
-go list -m all >/dev/null
+go list -m all > /dev/null

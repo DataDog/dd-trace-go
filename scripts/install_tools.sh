@@ -20,7 +20,7 @@ run() {
 }
 
 usage() {
-  cat <<EOF
+  cat << EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [options]
 
 Install development tools from _tools/tools.go file.
@@ -55,21 +55,21 @@ GOWORK="${GOWORK:-off}"
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-  -t | --tools-dir)
-    TOOLS_DIR="$2"
-    shift 2
-    ;;
-  -b | --bin-dir)
-    BIN_DIR="$2"
-    shift 2
-    ;;
-  -h | --help)
-    usage
-    ;;
-  *)
-    echo "Error: Unknown argument $1"
-    usage
-    ;;
+    -t | --tools-dir)
+      TOOLS_DIR="$2"
+      shift 2
+      ;;
+    -b | --bin-dir)
+      BIN_DIR="$2"
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      ;;
+    *)
+      echo "Error: Unknown argument $1"
+      usage
+      ;;
   esac
 done
 
@@ -91,7 +91,7 @@ run "mkdir -p $BIN_DIR"
 
 # Get absolute paths
 TOOLS_DIR_ABS=$(cd "$TOOLS_DIR" && pwd)
-BIN_DIR_ABS=$(cd "$BIN_DIR" && pwd 2>/dev/null || echo "$(pwd)/$BIN_DIR")
+BIN_DIR_ABS=$(cd "$BIN_DIR" && pwd 2> /dev/null || echo "$(pwd)/$BIN_DIR")
 
 # Download dependencies
 message "Downloading tool dependencies..."
