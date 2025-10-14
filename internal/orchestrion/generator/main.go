@@ -39,6 +39,10 @@ import (
 
 const orchestrionToolGo = "orchestrion.tool.go"
 
+var optionalIntegrations = map[string]struct{}{
+	"instrumentation/errortrace": {},
+}
+
 var (
 	//go:embed orchestrion.tool.go.tmpl
 	templateText string
@@ -106,9 +110,12 @@ func generateRootConfig(rootDir string, orchestrionLatestVersion string) (map[st
 		if err != nil {
 			return fmt.Errorf("relative path of %q: %w", path, err)
 		}
-
 		if rel == "." {
 			// We don't want to have the root file circular reference itself!
+			return nil
+		}
+		if _, ok := optionalIntegrations[rel]; ok {
+			log.Println("Skipping optional integration:", rel)
 			return nil
 		}
 
