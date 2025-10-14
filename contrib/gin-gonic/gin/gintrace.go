@@ -55,12 +55,8 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
 			status := c.Writer.Status()
-			if cfg.propagateError && cfg.isStatusError(status) {
-				var err error
-				for _, e := range c.Errors {
-					err = errors.Join(err, e.Err)
-				}
-				finishSpans(status, cfg.isStatusError, tracer.WithError(err))
+			if cfg.useGinErrors && cfg.isStatusError(status) && len(c.Errors) > 0 {
+				finishSpans(status, cfg.isStatusError, tracer.WithError(errors.New(c.Errors.String())))
 			}
 			finishSpans(status, cfg.isStatusError)
 		}()

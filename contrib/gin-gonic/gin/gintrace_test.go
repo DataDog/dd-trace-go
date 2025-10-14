@@ -185,7 +185,7 @@ func TestError(t *testing.T) {
 		defer mt.Reset()
 
 		router := gin.New()
-		router.Use(Middleware("foobar", WithErrorPropagation()))
+		router.Use(Middleware("foobar", WithUseGinErrors()))
 
 		// configure a handler that returns an error and 5xx status code
 		router.GET("/server_err", func(c *gin.Context) {
@@ -210,7 +210,7 @@ func TestError(t *testing.T) {
 		assert.Equal("500", span.Tag(ext.HTTPCode))
 		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
 		// server errors set the ext.ErrorMsg tag
-		assert.Equal("oh no", span.Tag(ext.ErrorMsg))
+		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag(ext.ErrorMsg))
 		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
 		assert.Equal(componentName, span.Integration())
@@ -220,7 +220,7 @@ func TestError(t *testing.T) {
 		defer mt.Reset()
 
 		router := gin.New()
-		router.Use(Middleware("foobar", WithErrorPropagation()))
+		router.Use(Middleware("foobar", WithUseGinErrors()))
 
 		// configure a handler that returns an error and 5xx status code
 		router.GET("/server_err", func(c *gin.Context) {

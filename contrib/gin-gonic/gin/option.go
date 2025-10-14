@@ -15,13 +15,13 @@ import (
 )
 
 type config struct {
-	analyticsRate  float64
-	resourceNamer  func(c *gin.Context) string
-	serviceName    string
-	ignoreRequest  func(c *gin.Context) bool
-	isStatusError  func(statusCode int) bool
-	propagateError bool
-	headerTags     instrumentation.HeaderTags
+	analyticsRate float64
+	resourceNamer func(c *gin.Context) string
+	serviceName   string
+	ignoreRequest func(c *gin.Context) bool
+	isStatusError func(statusCode int) bool
+	useGinErrors  bool
+	headerTags    instrumentation.HeaderTags
 }
 
 func newConfig(serviceName string) *config {
@@ -30,13 +30,13 @@ func newConfig(serviceName string) *config {
 	}
 	rate := instr.AnalyticsRate(true)
 	return &config{
-		analyticsRate:  rate,
-		resourceNamer:  defaultResourceNamer,
-		serviceName:    serviceName,
-		ignoreRequest:  func(_ *gin.Context) bool { return false },
-		isStatusError:  isServerError,
-		propagateError: false,
-		headerTags:     instr.HTTPHeadersAsTags(),
+		analyticsRate: rate,
+		resourceNamer: defaultResourceNamer,
+		serviceName:   serviceName,
+		ignoreRequest: func(_ *gin.Context) bool { return false },
+		isStatusError: isServerError,
+		useGinErrors:  false,
+		headerTags:    instr.HTTPHeadersAsTags(),
 	}
 }
 
@@ -95,11 +95,11 @@ func isServerError(statusCode int) bool {
 	return statusCode >= 500 && statusCode < 600
 }
 
-// WithErrorPropagation enables the propagation of gin's errors to the span.
+// WithUseGinErrors enables the usage of gin's errors for the span instead of crafting generic errors from the status code.
 // If there are multiple errors in the gin context, they will be all added to the span.
-func WithErrorPropagation() OptionFn {
+func WithUseGinErrors() OptionFn {
 	return func(cfg *config) {
-		cfg.propagateError = true
+		cfg.useGinErrors = true
 	}
 }
 
