@@ -81,6 +81,7 @@ Targets:
   test/integration     Run integration tests
   fix-modules          Fix module dependencies and consistency
   docs                 Generate and Update embedded documentation in README files
+  upgrade/orchestrion  Upgrade Orchestrion and fix modules
 ```
 
 **Direct Script Usage**:
