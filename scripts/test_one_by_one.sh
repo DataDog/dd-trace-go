@@ -124,14 +124,14 @@ if [[ "$contrib" != "" ]]; then
 
     cd "$dir"
     echo testing "$dir"
-    pkgs=$(go list ./... | grep -v -e google.golang.org/api | tr '\n' ' ' | sed 's/ $//g')
-    pkg_id=$(echo "$pkgs" | head -n1 | sed 's#github.com/DataDog/dd-trace-go/v2##g;s/\//_/g')
-    if [[ -z "$pkg_id" ]]; then
+    mapfile -t pkgs < <(go list ./... | grep -v -e google.golang.org/api)
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
       cd - > /dev/null
       continue
     fi
-    # shellcheck disable=SC2086
-    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic ${pkgs}
+    pkg_id="${pkgs[0]#github.com/DataDog/dd-trace-go/v2}"
+    pkg_id="${pkg_id//\//_}"
+    nice -n20 gotestsum --junitfile "./gotestsum-report.$pkg_id.xml" -- -race -v -coverprofile="contrib_coverage.$pkg_id.txt" -covermode=atomic "${pkgs[@]}"
     cd - > /dev/null
   done
 fi
