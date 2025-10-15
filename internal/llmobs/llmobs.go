@@ -538,6 +538,11 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	tags["ddtrace.version"] = version.Tag
 	tags["language"] = "go"
 
+	sessionID := span.propagatedSessionID()
+	if sessionID != "" {
+		tags["session_id"] = sessionID
+	}
+
 	errTag := "0"
 	if span.error != nil {
 		errTag = "1"
@@ -563,7 +568,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		SpanID:           spanID,
 		TraceID:          span.llmTraceID,
 		ParentID:         parentID,
-		SessionID:        span.propagatedSessionID(),
+		SessionID:        sessionID,
 		Tags:             tagsSlice,
 		Name:             span.name,
 		StartNS:          span.startTime.UnixNano(),
