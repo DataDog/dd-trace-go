@@ -141,11 +141,17 @@ type LLMMessage struct {
 type EmbeddedDocument struct {
 	// Text is the text content of the document.
 	Text string `json:"text"`
+	// Name is the name or title of the document.
+	Name string `json:"name,omitempty"`
+	// Score is the relevance score of the document (typically 0.0-1.0).
+	Score float64 `json:"score,omitempty"`
+	// ID is the unique identifier of the document.
+	ID string `json:"id,omitempty"`
 }
 
 // RetrievedDocument represents a document retrieved from a search operation.
 type RetrievedDocument struct {
-	// Text is the text content of the retrieved document.
+	// Text is the text content of the document.
 	Text string `json:"text"`
 	// Name is the name or title of the document.
 	Name string `json:"name,omitempty"`
