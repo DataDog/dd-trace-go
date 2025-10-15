@@ -37,14 +37,17 @@ Targets:
   clean-all            Clean everything including tools and temporary files
   generate             Run code generation
   lint                 Run linting checks
-  lint-fix             Fix linting issues automatically
+  lint/go              Run Go linting checks
+  lint/go/fix          Fix linting issues automatically
+  lint/shell           Run shell script linting checks
   format               Format code
+  format/shell         install shfmt
   test                 Run all tests (core, integration, contrib)
-  test-appsec          Run tests with AppSec enabled
-  test-contrib         Run contrib package tests
-  test-integration     Run integration tests
+  test/appsec          Run tests with AppSec enabled
+  test/contrib         Run contrib package tests
+  test/integration     Run integration tests
   fix-modules          Fix module dependencies and consistency
-  docs                 Update embedded documentation in README files
+  docs                 Generate and Update embedded documentation in README files
 ```
 
 ### Direct Execution
