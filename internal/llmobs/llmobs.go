@@ -139,15 +139,22 @@ type LLMObs struct {
 }
 
 func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
+	agentSupportsLLMObs := cfg.AgentFeatures.EVPProxyV2
+	if !agentSupportsLLMObs {
+		log.Debug("llmobs: agent not available or does not support llmobs")
+	}
 	if cfg.AgentlessEnabled != nil {
+		if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
+			log.Warn("llmobs: DD_LLMOBS_AGENTLESS_ENABLED has been configured to false and the agent is not available or does not support llmobs")
+		}
 		cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
 	} else {
 		// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
-		cfg.ResolvedAgentlessEnabled = !cfg.AgentFeatures.EVPProxyV2
+		cfg.ResolvedAgentlessEnabled = !agentSupportsLLMObs
 		if cfg.ResolvedAgentlessEnabled {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to true since agent mode is supported")
+			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
 		} else {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to false since agent mode is not supported")
+			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
 		}
 	}
 
