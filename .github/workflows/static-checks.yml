@@ -152,6 +152,7 @@ jobs:
           fail_level: error
           path: ./scripts
           pattern: "**/*.sh"
+          filter_mode: nofilter
 
   checklocks:
     runs-on: ubuntu-latest
