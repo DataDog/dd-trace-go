@@ -85,3 +85,10 @@ tmp/test-help.txt:
 .PHONY: docs
 docs: tools-install tmp/make-help.txt tmp/test-help.txt ## Generate and Update embedded documentation in README files
 	$(BIN_PATH) embedmd -w README.md scripts/README.md
+
+ORCHESTRION_VERSION := latest
+ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all
+
+.PHONY: upgrade/orchestrion
+upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
+	$(BIN_PATH) ORCHESTRION_VERSION=$(ORCHESTRION_VERSION) ORCHESTRION_DIRS="$(ORCHESTRION_DIRS)" ./scripts/upgrade_orchestrion.sh
