@@ -234,7 +234,7 @@ func assertProcessTags(t *testing.T, payload spanLists) {
 			}
 			require.False(t, ok, "process tags should be present on the first span of each chunk only (chunk: %d span: %d)", i, j)
 		}
-  }
+	}
 }
 
 func BenchmarkPayloadThroughput(b *testing.B) {
