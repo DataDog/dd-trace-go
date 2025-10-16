@@ -158,6 +158,13 @@ func getTraceContext(ctx context.Context, headers map[string]string) (TraceConte
 		samplingPriority = "1" //sampler-keep
 	}
 
+	// try to pull datadog origin from either headers or context
+	if origin, ok := headers[originHeader]; ok {
+		tc[originHeader] = origin
+	} else if origin, ok := ctx.Value(extension.DdOrigin).(string); ok {
+		tc[originHeader] = origin
+	}
+
 	tc[samplingPriorityHeader] = samplingPriority
 	tc[traceIDHeader] = traceID
 	tc[parentIDHeader] = parentID

@@ -41,7 +41,7 @@ func mockLambdaXRayTraceContext(ctx context.Context, traceID, parentID string, s
 	return context.WithValue(ctx, xray.LambdaTraceHeaderKey, headerString)
 }
 
-func mockTraceContext(traceID, parentID, samplingPriority string) context.Context {
+func mockTraceContext(traceID, parentID, samplingPriority, origin string) context.Context {
 	ctx := context.Background()
 	if traceID != "" {
 		ctx = context.WithValue(ctx, extension.DdTraceId, traceID)
@@ -51,6 +51,9 @@ func mockTraceContext(traceID, parentID, samplingPriority string) context.Contex
 	}
 	if samplingPriority != "" {
 		ctx = context.WithValue(ctx, extension.DdSamplingPriority, samplingPriority)
+	}
+	if origin != "" {
+		ctx = context.WithValue(ctx, extension.DdOrigin, origin)
 	}
 	return ctx
 }
@@ -134,6 +137,7 @@ func TestGetDatadogTraceContextWithMultivalueHeaders(t *testing.T) {
 	ctx := mockLambdaXRayTraceContext(context.Background(), mockXRayTraceID, mockXRayEntityID, true)
 	ev := loadRawJSON(t, "../testdata/non-proxy-with-multivalue-headers.json")
 	expected := TraceContext{
+		"x-datadog-origin":            "origin1",
 		"x-datadog-trace-id":          "1231452342",
 		"x-datadog-parent-id":         "45678910",
 		"x-datadog-sampling-priority": "2",
@@ -149,6 +153,7 @@ func TestGetDatadogTraceContextFromContextObject(t *testing.T) {
 		traceID          string
 		parentID         string
 		samplingPriority string
+		origin           string
 		expectTC         TraceContext
 		expectOk         bool
 	}{
@@ -156,6 +161,20 @@ func TestGetDatadogTraceContextFromContextObject(t *testing.T) {
 			"trace",
 			"parent",
 			"sampling",
+			"origin",
+			TraceContext{
+				"x-datadog-trace-id":          "trace",
+				"x-datadog-parent-id":         "parent",
+				"x-datadog-sampling-priority": "sampling",
+				"x-datadog-origin":            "origin",
+			},
+			true,
+		},
+		{
+			"trace",
+			"parent",
+			"sampling",
+			"",
 			TraceContext{
 				"x-datadog-trace-id":          "trace",
 				"x-datadog-parent-id":         "parent",
@@ -167,6 +186,7 @@ func TestGetDatadogTraceContextFromContextObject(t *testing.T) {
 			"",
 			"parent",
 			"sampling",
+			"origin",
 			TraceContext{},
 			false,
 		},
@@ -174,12 +194,14 @@ func TestGetDatadogTraceContextFromContextObject(t *testing.T) {
 			"trace",
 			"",
 			"sampling",
+			"",
 			TraceContext{},
 			false,
 		},
 		{
 			"trace",
 			"parent",
+			"",
 			"",
 			TraceContext{
 				"x-datadog-trace-id":          "trace",
@@ -192,8 +214,8 @@ func TestGetDatadogTraceContextFromContextObject(t *testing.T) {
 
 	ev := loadRawJSON(t, "../testdata/non-proxy-no-headers.json")
 	for _, test := range testcases {
-		t.Run(test.traceID+test.parentID+test.samplingPriority, func(t *testing.T) {
-			ctx := mockTraceContext(test.traceID, test.parentID, test.samplingPriority)
+		t.Run(test.traceID+test.parentID+test.samplingPriority+test.origin, func(t *testing.T) {
+			ctx := mockTraceContext(test.traceID, test.parentID, test.samplingPriority, test.origin)
 			tc, ok := getTraceContext(ctx, getHeadersFromEventHeaders(ctx, *ev))
 			assert.Equal(t, test.expectTC, tc)
 			assert.Equal(t, test.expectOk, ok)
