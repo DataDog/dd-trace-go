@@ -8,7 +8,9 @@ package gocontrolplane
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -62,10 +64,14 @@ const (
 	componentNameEnvoyGateway        = "envoy-gateway"
 	componentNameIstio               = "istio"
 
-	datadogEnvoyIntegrationHeader        = "x-datadog-envoy-integration"
-	datadogEnvoyGatewayIntegrationHeader = "x-datadog-envoy-gateway-integration"
-	datadogIntegrationHeader             = "x-datadog-istio-integration"
+	datadogEnvoyIntegrationHeader = "x-datadog-envoy-integration"
+	datadogIntegrationHeader      = "x-datadog-istio-integration"
 )
+
+var isK8s = sync.OnceValue(func() bool {
+	isk8s, _ := strconv.ParseBool(os.Getenv("KUBERNETES"))
+	return isk8s
+})
 
 func (i Integration) String() string {
 	switch i {
@@ -97,14 +103,16 @@ func (m messageRequestHeaders) SpanOptions(ctx context.Context) []tracer.StartSp
 			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameEnvoy)}
 		}
 
-		valuesEnvoyGateway := md.Get(datadogEnvoyGatewayIntegrationHeader)
-		if len(valuesEnvoyGateway) > 0 && valuesEnvoyGateway[0] == "1" {
-			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameEnvoyGateway)}
-		}
-
 		valuesIstio := md.Get(datadogIntegrationHeader)
 		if len(valuesIstio) > 0 && valuesIstio[0] == "1" {
 			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameIstio)}
+		}
+
+		// We don't have the ability to add custom headers in envoy gateway EnvoyExtensionPolicy CRD.
+		// So we fall back to detecting if we are running in k8s or not.
+		// If we are running in k8s, we assume it is Envoy Gateway, otherwise GCP Service Extension.
+		if isK8s() {
+			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameEnvoyGateway)}
 		}
 	}
 
