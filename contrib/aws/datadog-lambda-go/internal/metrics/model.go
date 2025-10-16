@@ -81,7 +81,7 @@ func (d *Distribution) ToAPIMetric(interval time.Duration) []APIMetric {
 	}
 
 	return []APIMetric{
-		APIMetric{
+		{
 			Name:       d.Name,
 			Host:       d.Host,
 			Tags:       d.Tags,
