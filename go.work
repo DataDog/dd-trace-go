@@ -8,6 +8,7 @@ use (
 	./contrib/Shopify/sarama
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
+	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
@@ -38,6 +39,7 @@ use (
 	./contrib/gorm.io/gorm.v1
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
+	./contrib/haproxy/stream-processing-offload
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault
 	./contrib/jackc/pgx.v5

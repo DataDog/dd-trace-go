@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
@@ -25,7 +24,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -197,6 +198,11 @@ func (s *Span) SetTag(key string, value interface{}) {
 			noDebugStack: s.noDebugStack,
 		})
 		return
+	case ext.ErrorNoStackTrace:
+		s.setTagError(value, errorConfig{
+			noDebugStack: true,
+		})
+		return
 	case ext.Component:
 		integration, ok := value.(string)
 		if ok {
@@ -299,6 +305,12 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
+}
+
+func (s *Span) setProcessTags(pTags string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMeta(keyProcessTags, pTags)
 }
 
 // root returns the root span of the span's trace. The return value shouldn't be
@@ -430,23 +442,23 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
-		switch err := v.(type) {
-		case xerrors.Formatter:
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
-		case fmt.Formatter:
-			// pkg/errors approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
-		case *errortrace.TracerError:
-			// instrumentation/errortrace approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
-			if !cfg.noDebugStack {
-				s.setMeta(ext.ErrorStack, err.Format())
-			}
+		if cfg.noDebugStack {
 			return
 		}
-		if !cfg.noDebugStack {
-			s.setMeta(ext.ErrorStack, takeStacktrace(cfg.stackFrames, cfg.stackSkip))
+		switch err := v.(type) {
+		case xerrors.Formatter:
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+		case fmt.Formatter:
+			// pkg/errors approach
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+		case *errortrace.TracerError:
+			// instrumentation/errortrace approach
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorHandlingStack, err.Format())
+			return
 		}
+		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+		s.setMeta(ext.ErrorHandlingStack, stack)
 	case nil:
 		// no error
 		setError(false)
@@ -872,12 +884,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := os.Getenv("DD_ENV"); env != "" {
+			} else if env := env.Get("DD_ENV"); env != "" {
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := os.Getenv("DD_VERSION"); v != "" {
+			} else if v := env.Get("DD_VERSION"); v != "" {
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}
@@ -926,6 +938,16 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 		event.RawAttributes = cfg.Attributes
 	}
 	s.spanEvents = append(s.spanEvents, event)
+}
+
+func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
+	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
+	if !ok {
+		return
+	}
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -986,6 +1008,15 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
+	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
+	keyKnuthSamplingRate = "_dd.p.ksr"
+	// keyPropagatedLLMObsParentID contains the propagated llmobs span ID.
+	keyPropagatedLLMObsParentID = "_dd.p.llmobs_parent_id"
+	// keyPropagatedLLMObsMLAPP contains the propagated ML App.
+	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
+	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
+	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

@@ -82,7 +82,7 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 
 	if err != nil {
 		telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
-		return nil, fmt.Errorf("sending known tests request: %s", err.Error())
+		return nil, fmt.Errorf("sending known tests request: %s", err)
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -97,7 +97,7 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 	var responseObject knownTestsResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshalling known tests response: %s", err.Error())
+		return nil, fmt.Errorf("unmarshalling known tests response: %s", err)
 	}
 
 	testCount := 0

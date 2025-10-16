@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"runtime"
@@ -71,7 +72,7 @@ type startupInfo struct {
 func checkEndpoint(c *http.Client, endpoint string) error {
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %s", err.Error())
+		return fmt.Errorf("cannot create http request: %s", err)
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
@@ -173,5 +174,5 @@ func logStartup(t *tracer) {
 		return
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
-	telemetrylog.Debug("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	telemetrylog.Debug("DATADOG TRACER CONFIGURATION", slog.String("config", string(bs)))
 }

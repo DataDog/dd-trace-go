@@ -1,0 +1,43 @@
+# This CI jobs are copied from libdatadog-build one-pipeline.yml gitlab template.
+# This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
+# a change is made on the one-pipeline template.
+variables:
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/b8fc1b7f45e49ddd65623f217f03c38def169aff6f2518380e5b415514e4cb81/scripts/
+
+.download-scripts-from-template: &download-scripts-from-template
+  - mkdir -p scripts
+  - |
+    for script_file in "config-inversion-local-validation.sh" "config-inversion-update-supported-range.sh"
+    do
+      curl --location --fail --show-error --output "scripts/${script_file}" "${SCRIPTS_BASE_URL}/${script_file}"
+      if [[ $script_file == *sh ]]
+      then
+         chmod +x scripts/$script_file
+      fi
+    done
+
+.validate_supported_configurations_local_file:
+  allow_failure: false
+  rules:
+    - when: on_success
+  variables:
+    LOCAL_JSON_PATH: ""
+  before_script:
+    - *download-scripts-from-template
+  script:
+    - scripts/config-inversion-local-validation.sh "$LOCAL_JSON_PATH"
+
+.update_central_configurations_version_range:
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/'
+      when: on_success
+  variables:
+    LOCAL_JSON_PATH: ""
+    LANGUAGE_NAME: ""
+    MULTIPLE_RELEASE_LINES: "false" # expect "true" or "false" as a value to determine if a new "branch" identifier is needed to differentiate between multiple release lines
+  before_script:
+    - *download-scripts-from-template
+    - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
+  script:
+    - scripts/config-inversion-update-supported-range.sh "$LOCAL_JSON_PATH" "$LANGUAGE_NAME" "$MULTIPLE_RELEASE_LINES"

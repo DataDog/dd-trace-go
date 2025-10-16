@@ -133,7 +133,6 @@ func TestConcentrator(t *testing.T) {
 		})
 
 		t.Run("processTagsEnabled", func(t *testing.T) {
-			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 			processtags.Reload()
 
 			transport := newDummyTransport()
