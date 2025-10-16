@@ -38,6 +38,8 @@ type ServeConfig struct {
 	SpanOpts []tracer.StartSpanOption
 	// isStatusError allows customization of error code determination.
 	IsStatusError func(int) bool
+	// Endpoint is the computed endpoint of the request when it lacks http.route
+	Endpoint string
 }
 
 // BeforeHandle contains functionality that should be executed before a http.Handler runs.
@@ -58,19 +60,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
 	}
-	if cfg.Route != "" {
-		opts = append(opts, tracer.Tag(ext.HTTPRoute, cfg.Route))
-	} else {
-		f := func(cfg *tracer.StartSpanConfig) {
-			if cfg.Tags == nil {
-				return
-			}
-
-			httpUrl := cfg.Tags[ext.HTTPURL].(string)
-			cfg.Tags[ext.HTTPEndpoint] = simplifyHTTPUrl(httpUrl)
-		}
-		opts = append(opts, f)
-	}
+	opts = append(opts, handleResourceRenaming(cfg))
 	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
@@ -80,13 +70,9 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	afterHandle := closeSpan
 	handled := false
 	if appsec.Enabled() {
-		route := cfg.Route
-		if route == "" {
-			route = QuantizeURL(r.URL.EscapedPath())
-		}
 		appsecConfig := &httpsec.Config{
 			Framework:   cfg.Framework,
-			Route:       route,
+			Route:       renamedRoute(cfg, r.URL.EscapedPath()),
 			RouteParams: cfg.RouteParams,
 		}
 
@@ -100,4 +86,54 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 		handled = secHandled
 	}
 	return rw, rt, afterHandle, handled
+}
+
+// handleResourceRenaming tag the span with http.endpoint based on the resource renaming configuration.
+func handleResourceRenaming(serveCfg *ServeConfig) func(sc *tracer.StartSpanConfig) {
+	return func(sc *tracer.StartSpanConfig) {
+		if sc.Tags == nil {
+			return
+		}
+		if serveCfg.Route != "" {
+			sc.Tags[ext.HTTPRoute] = serveCfg.Route
+		}
+
+		// If DD_APPSEC_ENABLED is set to a true value, this feature must be enabled by default at start,
+		// except if DD_TRACE_RESOURCE_RENAMING_ENABLED is explicitly set to false.
+		if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
+			return
+		}
+		httpURL, ok := sc.Tags[ext.HTTPURL].(string)
+		if !ok {
+			return
+		}
+		if cfg.resourceRenamingAlwaysSimplifiedEndpoint {
+			endpoint := simplifyHTTPUrl(httpURL)
+			sc.Tags[ext.HTTPEndpoint] = endpoint
+			serveCfg.Endpoint = endpoint
+			return
+		}
+
+		var endpoint string
+		if serveCfg.Route != "" {
+			endpoint = serveCfg.Route
+		} else {
+			endpoint = simplifyHTTPUrl(httpURL)
+		}
+
+		sc.Tags[ext.HTTPEndpoint] = endpoint
+		serveCfg.Endpoint = endpoint
+	}
+}
+
+// renamedEndpoint returns the key value to use for the API Security sampler. The returned value is based on the
+// resource renaming configuration. If no route or endpoint are available, the key is computed based on the url.
+func renamedRoute(serveCfg *ServeConfig, url string) string {
+	if serveCfg.Route != "" {
+		return serveCfg.Route
+	}
+	if serveCfg.Endpoint != "" {
+		return serveCfg.Endpoint
+	}
+	return simplifyHTTPUrl(url)
 }
