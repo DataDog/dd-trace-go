@@ -299,7 +299,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "payload": {"name": "<script>alert(1)</script>" } }`, "")
 
 		err = stream.CloseSend()
 		require.NoError(t, err)
@@ -458,10 +458,28 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		stream, err := client.Process(ctx)
 		require.NoError(t, err)
 
-		end2EndStreamRequest(t, stream, "/", "OPTION", map[string]string{"User-Agent": "Chrome"}, map[string]string{"test": "match-response-header"}, false, true, "", "body")
+		sendProcessingRequestHeaders(t, stream, map[string]string{"User-Agent": "Chrome"}, "OPTION", "/", true)
+		res, err := stream.Recv()
+		require.NoError(t, err)
+
+		msgCount := sendProcessingRequestBodyStreamed(t, stream, []byte(`{ "name": "$globals" }`), 100)
+		for i := 0; i < msgCount; i++ {
+			res, err = stream.Recv()
+			require.NoError(t, err)
+		}
+
+		sendProcessingResponseHeaders(t, stream, map[string]string{"test": "match-response-header", "Content-type": "application/json"}, "200", true)
+		res, err = stream.Recv()
+		require.NoError(t, err)
+
+		msgCount = sendProcessingResponseBodyStreamed(t, stream, []byte("body"), 100)
+		for i := 0; i < msgCount-1; i++ {
+			res, err = stream.Recv()
+			require.NoError(t, err)
+		}
 
 		// Handle the immediate response
-		res, err := stream.Recv()
+		res, err = stream.Recv()
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
@@ -619,7 +637,128 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.Equal(t, "true", span.Tag("appsec.event"))
 		require.Equal(t, "true", span.Tag("appsec.blocked"))
 	})*/
+}
 
+func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+	t.Setenv("_DD_APPSEC_PROXY_ENVIRONMENT", "true") // Enable API Security proxy sampler
+
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, 256)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	t.Run("only-headers-schema-returned", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium"}, map[string]string{"Content-Type": "text/html"}, false, false, "", "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.res.body"))
+	})
+
+	t.Run("headers-and-req-body-schema-returned", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{"Content-Type": "text/html"}, false, false, `{"hello_request_body":"world"}`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}],"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Equal(t, `[{"hello_request_body":[8]}]`, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.res.body"))
+	})
+
+	t.Run("headers-and-res-body-schema-returned", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium"}, map[string]string{"Content-Type": "application/json"}, false, false, "", `{"hello_response_body": "world"}`)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Nil(t, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Equal(t, `[{"hello_response_body":[8]}]`, span.Tag("_dd.appsec.s.res.body"))
+	})
+
+	t.Run("all-schema-returned", func(t *testing.T) {
+		client, mt, cleanup := setup()
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "GET", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{"Content-Type": "application/json"}, false, false, `{"hello_request_body":"world"}`, `{"hello_response_body": "world"}`)
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check for api security schema
+		span := finished[0]
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}],"host":[[[8]],{"len":1}],"user-agent":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.req.headers"))
+		require.Equal(t, `[{"hello_request_body":[8]}]`, span.Tag("_dd.appsec.s.req.body"))
+		require.Equal(t, `[{"content-type":[[[8]],{"len":1}]}]`, span.Tag("_dd.appsec.s.res.headers"))
+		require.Equal(t, `[{"hello_response_body":[8]}]`, span.Tag("_dd.appsec.s.res.body"))
+	})
 }
 
 func TestGeneratedSpan(t *testing.T) {
@@ -738,7 +877,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 		_, _ = stream.Recv()
 
 		// No span created, the request is invalid.
-		// Span couldn't be created without request data
+		// span couldn't be created without request data
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 0)
 	})
@@ -1139,14 +1278,23 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	// 1- Send the response headers
 	sendProcessingResponseHeaders(t, stream, responseHeaders, "200", len(responseBody) != 0)
 
-	if blockOnResponseHeaders || res.GetModeOverride().GetResponseBodyMode() != envoyextprocfilter.ProcessingMode_STREAMED {
-		// Should have received an immediate response for blocking or the body wasn't accepted for analysis
+	if blockOnResponseHeaders {
+		// Should have received an immediate response for blocking
 		// Let the test handle the response
 		return
 	}
 
 	res, err = stream.Recv()
+	if err == io.EOF {
+		// Stream closed, the processor don't analyze more
+		return
+	}
+
 	require.NoError(t, err)
+	require.IsType(t, &envoyextproc.ProcessingResponse_ResponseHeaders{}, res.GetResponse())
+
+	// At this stage, the processor should have required the body (streamed mode override)
+	require.Equal(t, res.GetModeOverride().GetResponseBodyMode(), envoyextprocfilter.ProcessingMode_STREAMED)
 	require.Equal(t, envoyextproc.CommonResponse_CONTINUE, res.GetResponseHeaders().GetResponse().GetStatus())
 
 	// 2- Send the response body
@@ -1165,7 +1313,8 @@ func end2EndStreamRequest(t *testing.T, stream envoyextproc.ExternalProcessor_Pr
 	}
 
 	// The stream should now be closed
-	_, err = stream.Recv()
+	tt, err := stream.Recv()
+	require.Nil(t, tt)
 	require.Equal(t, io.EOF, err)
 }
 

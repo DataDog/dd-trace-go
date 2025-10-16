@@ -379,12 +379,12 @@ func compressData(data []byte) ([]byte, error) {
 func decompressData(data []byte) ([]byte, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gzip reader: %s", err.Error())
+		return nil, fmt.Errorf("failed to create gzip reader: %s", err)
 	}
 	defer reader.Close()
 	decompressedData, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decompress data: %s", err.Error())
+		return nil, fmt.Errorf("failed to decompress data: %s", err)
 	}
 	return decompressedData, nil
 }

@@ -6,6 +6,7 @@
 package telemetrytest
 
 import (
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -130,12 +131,12 @@ func (r *RecordClient) Distribution(namespace telemetry.Namespace, name string, 
 	})
 }
 
-func (r *RecordClient) Log(level telemetry.LogLevel, text string, _ ...telemetry.LogOption) {
+func (r *RecordClient) Log(record telemetry.Record, _ ...telemetry.LogOption) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Logs = append(r.Logs, LogLine{
-		Level: level,
-		Text:  text,
+		Level: slogLevelToLogLevel(record.Level),
+		Text:  record.Message,
 	})
 }
 
@@ -214,4 +215,17 @@ func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value
 	}
 
 	t.Fatalf("could not find configuration key %s with value %v", key, value)
+}
+
+func slogLevelToLogLevel(level slog.Level) telemetry.LogLevel {
+	switch level {
+	case slog.LevelDebug:
+		return telemetry.LogDebug
+	case slog.LevelWarn:
+		return telemetry.LogWarn
+	case slog.LevelError:
+		return telemetry.LogError
+	default:
+		return telemetry.LogError
+	}
 }

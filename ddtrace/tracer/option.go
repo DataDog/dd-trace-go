@@ -33,7 +33,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -44,6 +46,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+)
+
+const (
+	envLLMObsEnabled          = "DD_LLMOBS_ENABLED"
+	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
+	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
+	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
 )
 
 var contribIntegrations = map[string]struct {
@@ -115,7 +124,7 @@ var (
 	defaultStatsdPort = "8125"
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
-	defaultMaxTagsHeaderLen = 128
+	defaultMaxTagsHeaderLen = 512
 
 	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
 	defaultRateLimit = 100.0
@@ -321,6 +330,9 @@ type config struct {
 
 	// traceProtocol specifies the trace protocol to use.
 	traceProtocol float64
+
+	// llmobs contains the LLM Observability config
+	llmobs llmobsconfig.Config
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -384,7 +396,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	c.traceRateLimitPerSecond = defaultRateLimit
 	origin := telemetry.OriginDefault
-	if v, ok := os.LookupEnv("DD_TRACE_RATE_LIMIT"); ok {
+	if v, ok := env.Lookup("DD_TRACE_RATE_LIMIT"); ok {
 		l, err := strconv.ParseFloat(v, 64)
 		if err != nil {
 			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err.Error())
@@ -401,13 +413,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Set the trace protocol to use.
 	c.traceProtocol = internal.FloatEnv("DD_TRACE_AGENT_PROTOCOL_VERSION", traceProtocolV04)
 
-	if v := os.Getenv("OTEL_LOGS_EXPORTER"); v != "" {
+	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
-	if os.Getenv("DD_TRACE_REPORT_HOSTNAME") == "true" {
+	if env.Get("DD_TRACE_REPORT_HOSTNAME") == "true" {
 		var err error
 		c.hostname, err = os.Hostname()
 		if err != nil {
@@ -415,13 +427,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostnamet: %s", err.Error())
 		}
 	}
-	if v := os.Getenv("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
+	if v := env.Get("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
 		c.hostname = v
 	}
-	if v := os.Getenv("DD_ENV"); v != "" {
+	if v := env.Get("DD_ENV"); v != "" {
 		c.env = v
 	}
-	if v := os.Getenv("DD_TRACE_FEATURES"); v != "" {
+	if v := env.Get("DD_TRACE_FEATURES"); v != "" {
 		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
 			return r == ',' || r == ' '
 		})...)(c)
@@ -430,14 +442,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
-	if ver := os.Getenv("DD_VERSION"); ver != "" {
+	if ver := env.Get("DD_VERSION"); ver != "" {
 		c.version = ver
 	}
-	if v := os.Getenv("DD_SERVICE_MAPPING"); v != "" {
+	if v := env.Get("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
-	if v := os.Getenv("DD_TRACE_HEADER_TAGS"); v != "" {
+	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
 		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
 		// Required to ensure that the startup header tags are set on reset.
 		c.headerAsTags.startup = c.headerAsTags.current
@@ -451,7 +463,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
-	if _, ok := os.LookupEnv("AWS_LAMBDA_FUNCTION_NAME"); ok {
+	if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
@@ -460,14 +472,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
-	c.logDirectory = os.Getenv("DD_TRACE_LOG_DIRECTORY")
+	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
-	if _, ok := os.LookupEnv("DD_TRACE_ENABLED"); ok {
+	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
-	if compatMode := os.Getenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
+	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
 		if semver.IsValid(compatMode) {
 			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
 		} else {
@@ -504,10 +516,18 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	}
 	c.peerServiceMappings = make(map[string]string)
-	if v := os.Getenv("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
+	if v := env.Get("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
+
+	// LLM Observability config
+	c.llmobs = llmobsconfig.Config{
+		Enabled:          internal.BoolEnv(envLLMObsEnabled, false),
+		MLApp:            env.Get(envLLMObsMlApp),
+		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
+		ProjectName:      env.Get(envLLMObsProjectName),
+	}
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -622,8 +642,31 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
+	// Update the llmobs config with stuff needed from the tracer.
+	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
+		DDTags:     c.globalTags.get(),
+		Env:        c.env,
+		Service:    c.serviceName,
+		Version:    c.version,
+		AgentURL:   c.agentURL,
+		APIKey:     env.Get("DD_API_KEY"),
+		APPKey:     env.Get("DD_APP_KEY"),
+		HTTPClient: c.httpClient,
+		Site:       env.Get("DD_SITE"),
+	}
+	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
+		EVPProxyV2: c.agent.evpProxyV2,
+	}
 
 	return c, nil
+}
+
+func llmobsAgentlessEnabledFromEnv() *bool {
+	v, ok := internal.BoolEnvNoDefault(envLLMObsAgentlessEnabled)
+	if !ok {
+		return nil
+	}
+	return &v
 }
 
 func apmTracingDisabled(c *config) {
@@ -711,9 +754,9 @@ func udsClient(socketPath string, timeout time.Duration) *http.Client {
 
 // defaultDogstatsdAddr returns the default connection address for Dogstatsd.
 func defaultDogstatsdAddr() string {
-	envHost, envPort := os.Getenv("DD_DOGSTATSD_HOST"), os.Getenv("DD_DOGSTATSD_PORT")
+	envHost, envPort := env.Get("DD_DOGSTATSD_HOST"), env.Get("DD_DOGSTATSD_PORT")
 	if envHost == "" {
-		envHost = os.Getenv("DD_AGENT_HOST")
+		envHost = env.Get("DD_AGENT_HOST")
 	}
 	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
 		// socket exists and user didn't specify otherwise via env vars
@@ -768,6 +811,9 @@ type agentFeatures struct {
 
 	// spanEvents reports whether the trace-agent can receive spans with the `span_events` field.
 	spanEventsAvailable bool
+
+	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
+	evpProxyV2 bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -824,6 +870,8 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		switch endpoint {
 		case "/v0.6/stats":
 			features.Stats = true
+		case "/evp_proxy/v2/":
+			features.evpProxyV2 = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
@@ -1465,6 +1513,42 @@ func WithTestDefaults(statsdClient any) StartOption {
 		}
 		c.statsdClient = statsdClient.(internal.StatsdClient)
 		c.transport = newDummyTransport()
+	}
+}
+
+// WithLLMObsEnabled allows to enable LLM Observability (it is disabled by default).
+// This is equivalent to the DD_LLMOBS_ENABLED environment variable.
+func WithLLMObsEnabled(enabled bool) StartOption {
+	return func(c *config) {
+		c.llmobs.Enabled = enabled
+	}
+}
+
+// WithLLMObsMLApp allows to configure the default ML App for LLM Observability.
+// It is required to have this configured to use any LLM Observability features.
+// This is equivalent to the DD_LLMOBS_ML_APP environment variable.
+func WithLLMObsMLApp(mlApp string) StartOption {
+	return func(c *config) {
+		c.llmobs.MLApp = mlApp
+	}
+}
+
+// WithLLMObsProjectName allows to configure the default LLM Observability project to use.
+// It is required when using the Experiments and Datasets feature.
+// This is equivalent to the DD_LLMOBS_PROJECT_NAME environment variable.
+func WithLLMObsProjectName(projectName string) StartOption {
+	return func(c *config) {
+		c.llmobs.ProjectName = projectName
+	}
+}
+
+// WithLLMObsAgentlessEnabled allows to configure LLM Observability to work in agent/agentless mode.
+// The default is using the agent if it is available and supports it, otherwise it will default to agentless mode.
+// Please note when using agentless mode, a valid DD_API_KEY must also be set.
+// This is equivalent to the DD_LLMOBS_AGENTLESS_ENABLED environment variable.
+func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
+	return func(c *config) {
+		c.llmobs.AgentlessEnabled = &agentlessEnabled
 	}
 }
 

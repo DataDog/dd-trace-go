@@ -8,11 +8,11 @@ package httpsec
 import (
 	"net/http"
 	"net/netip"
-	"os"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 const (
@@ -134,6 +134,14 @@ func headersRemoveCookies(headers http.Header) map[string][]string {
 	return headersNoCookies
 }
 
+func headersToLower(headers map[string][]string) map[string][]string {
+	headersNoCookies := make(map[string][]string, len(headers))
+	for k, v := range headers {
+		headersNoCookies[strings.ToLower(k)] = v
+	}
+	return headersNoCookies
+}
+
 func normalizeHTTPHeaderName(name string) string {
 	return strings.ToLower(name)
 }
@@ -155,7 +163,7 @@ func makeCollectedHTTPHeadersLookupMap() {
 }
 
 func readMonitoredClientIPHeadersConfig() {
-	if header := os.Getenv(envClientIPHeader); header != "" {
+	if header := env.Get(envClientIPHeader); header != "" {
 		// Make this header the only one to consider in RemoteAddr
 		monitoredClientIPHeadersCfg = []string{header}
 

@@ -44,6 +44,9 @@ type (
 		method string
 		// route is the HTTP route for the current handler operation (or the URL if no route is available).
 		route string
+
+		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
+		downstreamRequestBodyAnalysis atomic.Int32
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -112,6 +115,16 @@ func (op *HandlerOperation) Route() string {
 	return op.route
 }
 
+// DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
+func (op *HandlerOperation) DownstreamRequestBodyAnalysis() int {
+	return int(op.downstreamRequestBodyAnalysis.Load())
+}
+
+// IncrementDownstreamRequestBodyAnalysis increments the number of times a call to a downstream request body monitoring function was made.
+func (op *HandlerOperation) IncrementDownstreamRequestBodyAnalysis() {
+	op.downstreamRequestBodyAnalysis.Add(1)
+}
+
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
 func (op *HandlerOperation) Finish(res HandlerOperationRes) {
 	dyngo.FinishOperation(op, res)
@@ -177,7 +190,8 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
 	if !ok {
 		log.Debug("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
-		telemetrylog.Warn("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring", telemetry.WithTags([]string{"product:appsec"}))
+		telemetrylog.With(telemetry.WithTags([]string{"product:appsec"})).
+			Warn("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
 		return nil
 	}
 

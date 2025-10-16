@@ -30,6 +30,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"golang.org/x/tools/go/packages"
 
@@ -37,6 +38,10 @@ import (
 )
 
 const orchestrionToolGo = "orchestrion.tool.go"
+
+var optionalIntegrations = map[string]struct{}{
+	"instrumentation/errortrace": {},
+}
 
 var (
 	//go:embed orchestrion.tool.go.tmpl
@@ -52,15 +57,24 @@ func main() {
 	_, thisFile, _, _ := runtime.Caller(0)
 	rootDir := filepath.Join(thisFile, "..", "..", "..", "..")
 
-	var buf bytes.Buffer
-	cmd := exec.Command("go", "list", "-m", "--versions", `-f={{ $v := "" }}{{ range .Versions }}{{ $v = . }}{{ end }}{{ $v }}`, "github.com/DataDog/orchestrion")
-	cmd.Stdout = &buf
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		log.Fatalln(err)
+	var orchestrionVersion string
+
+	if v := env.Get("ORCHESTRION_VERSION"); v != "" {
+		orchestrionVersion = v
+	} else {
+		log.Println("Determining latest version of orchestrion...")
+		var buf bytes.Buffer
+		cmd := exec.Command("go", "list", "-m", "--versions", `-f={{ $v := "" }}{{ range .Versions }}{{ $v = . }}{{ end }}{{ $v }}`, "github.com/DataDog/orchestrion")
+		cmd.Stdout = &buf
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalln(err)
+		}
+		orchestrionVersion = strings.TrimSpace(buf.String())
 	}
 
-	modules, err := generateRootConfig(rootDir, strings.TrimSpace(buf.String()))
+	log.Println("Using orchestrion version:", orchestrionVersion)
+	modules, err := generateRootConfig(rootDir, orchestrionVersion)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -96,9 +110,12 @@ func generateRootConfig(rootDir string, orchestrionLatestVersion string) (map[st
 		if err != nil {
 			return fmt.Errorf("relative path of %q: %w", path, err)
 		}
-
 		if rel == "." {
 			// We don't want to have the root file circular reference itself!
+			return nil
+		}
+		if _, ok := optionalIntegrations[rel]; ok {
+			log.Println("Skipping optional integration:", rel)
 			return nil
 		}
 

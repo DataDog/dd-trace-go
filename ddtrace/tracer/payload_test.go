@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -73,7 +74,23 @@ func TestPayloadDecode(t *testing.T) {
 			var got spanLists
 			err := msgp.Decode(p, &got)
 			assert.NoError(err)
+			assertProcessTags(t, got)
 		})
+	}
+}
+
+func assertProcessTags(t *testing.T, payload spanLists) {
+	assert := assert.New(t)
+	for i, spanList := range payload {
+		for j, span := range spanList {
+			processTags, ok := span.meta[keyProcessTags]
+			if i+j == 0 {
+				assert.True(ok, "process tags should be present on the first span of each chunk only")
+				assert.Contains(processTags, "entrypoint.name", "process tags should have entrypoint.name")
+				break
+			}
+			require.False(t, ok, "process tags should be present on the first span of each chunk only (chunk: %d span: %d)", i, j)
+		}
 	}
 }
 

@@ -98,7 +98,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			span.SetTag(ext.Error, err)
 		} else if cfg.isStatusError(status) {
 			// mark 5xx server error
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, http.StatusText(status)))
 		}
 		return err
 	}

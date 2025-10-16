@@ -9,10 +9,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -145,8 +145,7 @@ func TestRoundTripperErrors(t *testing.T) {
 		assert.Equal(t, "200", s.Tag(ext.HTTPCode))
 	})
 	t.Run("custom", func(t *testing.T) {
-		os.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
-		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES")
+		t.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
 		mt := mocktracer.Start()
 		defer mt.Stop()
 		rt := WrapRoundTripper(http.DefaultTransport)
@@ -426,7 +425,12 @@ func TestRoundTripperStatusCheck(t *testing.T) {
 	defer mt.Stop()
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		if r.URL.Path == "/not-found" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusTeapot)
 	}))
 	defer s.Close()
 
@@ -437,17 +441,35 @@ func TestRoundTripperStatusCheck(t *testing.T) {
 	client := &http.Client{
 		Transport: rt,
 	}
-	resp, err := client.Get(s.URL + "/hello/world")
+
+	// First request is not marked as an error as it's a 404
+	resp, err := client.Get(s.URL + "/not-found")
 	assert.Nil(t, err)
-	defer resp.Body.Close()
+	resp.Body.Close()
 
 	spans := mt.FinishedSpans()
+	mt.Reset()
 	assert.Len(t, spans, 1)
 	assert.Equal(t, "http.request", spans[0].OperationName())
 	assert.Equal(t, "http.request", spans[0].Tag(ext.ResourceName))
 	assert.Equal(t, "404", spans[0].Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", spans[0].Tag(ext.HTTPMethod))
-	assert.Nil(t, spans[0].Tag(ext.Error))
+	assert.Nil(t, spans[0].Tag("http.errors"))
+	assert.Nil(t, spans[0].Tag(ext.ErrorNoStackTrace))
+
+	// Second request is marked as an error as it's a 418
+	resp, err = client.Get(s.URL + "/hello/world")
+	assert.Nil(t, err)
+	resp.Body.Close()
+
+	spans = mt.FinishedSpans()
+	assert.Len(t, spans, 1)
+	assert.Equal(t, "http.request", spans[0].OperationName())
+	assert.Equal(t, "http.request", spans[0].Tag(ext.ResourceName))
+	assert.Equal(t, "418", spans[0].Tag(ext.HTTPCode))
+	assert.Equal(t, "GET", spans[0].Tag(ext.HTTPMethod))
+	assert.EqualValues(t, "418 I'm a teapot", spans[0].Tag("http.errors"))
+	assert.EqualValues(t, "418: I'm a teapot", spans[0].Tag(ext.ErrorMsg))
 }
 
 func TestRoundTripperURLWithoutPort(t *testing.T) {
@@ -642,8 +664,7 @@ func TestClientQueryStringCollected(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		os.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
-		defer os.Unsetenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING")
+		t.Setenv("DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING", "false")
 
 		rt := WrapRoundTripper(http.DefaultTransport)
 		client := &http.Client{
@@ -767,9 +788,15 @@ func TestRoundTripperPropagation(t *testing.T) {
 	defer resp.Body.Close()
 }
 
-type emptyRoundTripper struct{}
+type emptyRoundTripper struct {
+	customResponse *http.Response
+}
 
 func (rt *emptyRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
+	if rt.customResponse != nil {
+		return rt.customResponse, nil
+	}
+
 	recorder := httptest.NewRecorder()
 	recorder.WriteHeader(200)
 	return recorder.Result(), nil
@@ -829,7 +856,7 @@ func TestAppsec(t *testing.T) {
 
 			require.Contains(t, serviceSpan.Tags(), "_dd.appsec.json")
 			appsecJSON := serviceSpan.Tag("_dd.appsec.json")
-			require.Contains(t, appsecJSON, addresses.ServerIoNetURLAddr)
+			require.Contains(t, appsecJSON, addresses.ServerIONetURLAddr)
 
 			require.Contains(t, serviceSpan.Tags(), "_dd.stack")
 			require.NotContains(t, serviceSpan.Tags(), "error.message")
@@ -837,6 +864,163 @@ func TestAppsec(t *testing.T) {
 			// This is a nested event so it should contain the child span id in the service entry span
 			// TODO(eliott.bouhana): uncomment this once we have the child span id in the service entry span
 			// require.Contains(t, appsecJSON, `"span_id":`+strconv.FormatUint(requestSpan.SpanID(), 10))
+		})
+	}
+}
+
+func TestAppsecAPI10(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
+	t.Setenv("DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
+
+	var b strings.Builder
+	b.WriteString(`{"payload_in":"%s"`)
+	for i := 0; i < 1<<12; i++ {
+		b.WriteString(fmt.Sprintf(`,"%d":"b"`, i))
+	}
+	b.WriteString(`}`)
+
+	for _, tc := range []struct {
+		name     string
+		request  func(ctx context.Context) *http.Request
+		response *http.Response
+		tagName  string
+		tagValue string
+	}{
+		{
+			name: "method",
+			request: func(ctx context.Context) *http.Request {
+				req, _ := http.NewRequestWithContext(ctx, "TRACE", "http://localhost:8080", nil)
+				return req
+			},
+			tagName:  "_dd.appsec.trace.req_method",
+			tagValue: "TAG_API10_REQ_METHOD",
+		},
+		{
+			name: "headers",
+			request: func(ctx context.Context) *http.Request {
+				req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080", nil)
+				req.Header.Set("Witness", "pwq3ojtropiw3hjtowir")
+				return req
+			},
+			tagName:  "_dd.appsec.trace.req_headers",
+			tagValue: "TAG_API10_REQ_HEADERS",
+		},
+		{
+			name: "body",
+			request: func(ctx context.Context) *http.Request {
+				req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080", io.NopCloser(strings.NewReader(`{"payload_in":"qw2jedrkjerbgol23ewpfirj2qw3or"}`)))
+				req.Header.Set("Content-Type", "application/json")
+				return req
+			},
+			tagName:  "_dd.appsec.trace.req_body",
+			tagValue: "TAG_API10_REQ_BODY",
+		},
+		{
+			name: "big-body",
+			request: func(ctx context.Context) *http.Request {
+				t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+				body := fmt.Sprintf(b.String(), "qw2jedrkjerbgol23ewpfirj2qw3or")
+				req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080", io.NopCloser(strings.NewReader(body)))
+				req.Header.Set("Content-Type", "application/json")
+				return req
+			},
+			tagName:  "_dd.appsec.trace.req_body",
+			tagValue: "TAG_API10_REQ_BODY",
+		},
+		{
+			name: "resp-status",
+			request: func(ctx context.Context) *http.Request {
+				req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080", nil)
+				return req
+			},
+			response: &http.Response{
+				StatusCode: 201,
+			},
+			tagName:  "_dd.appsec.trace.res_status",
+			tagValue: "TAG_API10_RES_STATUS",
+		},
+		{
+			name: "resp-headers",
+			request: func(ctx context.Context) *http.Request {
+				req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080", nil)
+				return req
+			},
+			response: &http.Response{
+				StatusCode: 200,
+				Header: map[string][]string{
+					"echo-headers": {"qwoierj12l3"},
+				},
+			},
+			tagName:  "_dd.appsec.trace.res_headers",
+			tagValue: "TAG_API10_RES_HEADERS",
+		},
+		{
+			name: "resp-body",
+			request: func(ctx context.Context) *http.Request {
+				req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080", nil)
+				return req
+			},
+			response: &http.Response{
+				StatusCode: 200,
+				Header: map[string][]string{
+					"Content-Type": {"application/json"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{"payload_out":"kqehf09123r4lnksef"}`)),
+			},
+			tagName:  "_dd.appsec.trace.res_body",
+			tagValue: "TAG_API10_RES_BODY",
+		},
+		{
+			name: "resp-big-body",
+			request: func(ctx context.Context) *http.Request {
+				t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+				req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080", nil)
+				return req
+			},
+			response: &http.Response{
+				StatusCode: 200,
+				Header: map[string][]string{
+					"Content-Type": {"application/json"},
+				},
+				Body: io.NopCloser(strings.NewReader(fmt.Sprintf(b.String(), "kqehf09123r4lnksef"))),
+			},
+			tagName:  "_dd.appsec.trace.res_body",
+			tagValue: "TAG_API10_RES_BODY",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+
+			client := WrapRoundTripper(&emptyRoundTripper{customResponse: tc.response})
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			testutils.StartAppSec(t)
+			if !internal.Instrumentation.AppSecEnabled() {
+				t.Skip("appsec not enabled")
+			}
+
+			w := httptest.NewRecorder()
+			r, err := http.NewRequest("GET", "", nil)
+			require.NoError(t, err)
+
+			TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				resp, err := client.RoundTrip(tc.request(r.Context()))
+				require.NoError(t, err)
+				if resp != nil && resp.Body != nil {
+					defer resp.Body.Close()
+				}
+			}), w, r, &ServeConfig{
+				Service:  "service",
+				Resource: "resource",
+			})
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2) // service entry serviceSpan & http request serviceSpan
+			serviceSpan := spans[1]
+
+			require.Contains(t, serviceSpan.Tags(), tc.tagName)
+			require.Equal(t, serviceSpan.Tags()[tc.tagName], tc.tagValue)
 		})
 	}
 }

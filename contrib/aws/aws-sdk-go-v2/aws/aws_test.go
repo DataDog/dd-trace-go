@@ -95,6 +95,7 @@ func TestAppendMiddleware(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -172,6 +173,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "SQS.DeleteMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -248,6 +250,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS.ReceiveMessage", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
@@ -385,6 +388,7 @@ func TestAppendMiddlewareS3ListObjects(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "S3.ListObjects", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.S3", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -481,6 +485,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "SNS.Publish", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SNS", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -574,6 +579,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "DynamoDB.Query", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.DynamoDB", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -648,6 +654,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "Kinesis.PutRecord", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.Kinesis", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -720,6 +727,7 @@ func TestAppendMiddlewareEventBridgePutRule(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "EventBridge.PutRule", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.EventBridge", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -848,6 +856,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
+			assert.Equal(t, "aws", s.Tag(ext.AWSPartition))
 			assert.Equal(t, "SFN.DescribeStateMachine", s.Tag(ext.ResourceName))
 			assert.Equal(t, "aws.SFN", s.Tag(ext.ServiceName))
 			assert.Equal(t, float64(tt.expectedStatusCode), s.Tag(ext.HTTPCode))
@@ -1224,6 +1233,54 @@ func TestStreamName(t *testing.T) {
 	}
 }
 
+func TestPartitionTag(t *testing.T) {
+	tests := []struct {
+		region    string
+		partition string
+	}{
+		{"us-east-1", "aws"},
+		{"eu-west-1", "aws"},
+		{"cn-north-1", "aws-cn"},
+		{"us-gov-east-1", "aws-us-gov"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.region, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(200)
+			defer server.Close()
+
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					PartitionID:   tt.partition,
+					URL:           server.URL,
+					SigningRegion: tt.region,
+				}, nil
+			})
+
+			awsCfg := aws.Config{
+				Region:           tt.region,
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+
+			AppendMiddleware(&awsCfg)
+
+			sqsClient := sqs.NewFromConfig(awsCfg)
+			sqsClient.ListQueues(context.Background(), &sqs.ListQueuesInput{})
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+
+			s := spans[0]
+			assert.Equal(t, tt.partition, s.Tag(ext.AWSPartition))
+			assert.Equal(t, tt.region, s.Tag(ext.AWSRegion))
+		})
+	}
+}
+
 func TestExtractSQSMetadata(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -1285,7 +1342,8 @@ func TestExtractSQSMetadata(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region)
+			partition := awsPartition(tt.region)
+			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region, partition)
 			assert.Equal(t, tt.expectedQueueName, queueName)
 			assert.Equal(t, tt.expectedARN, arn)
 		})

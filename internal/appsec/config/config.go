@@ -7,13 +7,14 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 func init() {
@@ -26,7 +27,7 @@ func init() {
 func registerSCAAppConfigTelemetry() {
 	_, _, err := stableconfig.Bool(EnvSCAEnabled, false)
 	if err != nil {
-		log.Error("appsec: %s", err.Error())
+		telemetrylog.Error("appsec: failed to get SCA config", slog.Any("error", telemetrylog.NewSafeError(err)))
 		return
 	}
 }

@@ -7,14 +7,15 @@ package main
 
 import (
 	"net"
-	"os"
 	"strconv"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 // IntEnv returns the parsed int value of an environment variable, or
 // def otherwise.
 func intEnv(key string, def int) int {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
 		return def
 	}
@@ -28,7 +29,7 @@ func intEnv(key string, def int) int {
 
 // IpEnv returns the valid IP value of an environment variable, or def otherwise.
 func ipEnv(key string, def net.IP) net.IP {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
 		return def
 	}
@@ -45,13 +46,23 @@ func ipEnv(key string, def net.IP) net.IP {
 // BoolEnv returns the parsed boolean value of an environment variable, or
 // def otherwise.
 func boolEnv(key string, def bool) bool {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
 		return def
 	}
 	v, err := strconv.ParseBool(vv)
 	if err != nil {
 		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err)
+		return def
+	}
+	return v
+}
+
+// stringEnv returns the string value of an environment variable, or
+// def otherwise.
+func stringEnv(key, def string) string {
+	v, ok := env.Lookup(key)
+	if !ok {
 		return def
 	}
 	return v

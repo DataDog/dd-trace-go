@@ -145,9 +145,12 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		root, _ := StartSpanFromContext(context.Background(), "root")
 		for i := 0; i < 1000; i++ {
 			root.Finish(WithError(err))
-			assert.Equal(t, 1.0, root.metrics[keyRulesSamplerLimiterRate])
-			assert.Equal(t, 2.0, root.metrics[keySamplingPriority])
-			assert.Empty(t, root.metrics[keySamplingPriorityRate])
+			rateRule, _ := getMetric(root, keyRulesSamplerLimiterRate)
+			priority, _ := getMetric(root, keySamplingPriority)
+			assert.Equal(t, 1.0, rateRule)
+			assert.Equal(t, 2.0, priority)
+			_, hasPrioRate := getMetric(root, keySamplingPriorityRate)
+			assert.False(t, hasPrioRate)
 		}
 	})
 }
@@ -163,6 +166,15 @@ func TestAsyncSpanRacePartialFlush(t *testing.T) {
 }
 
 func testAsyncSpanRace(t *testing.T) {
+	// disabling process tags as it causes map writes on span.meta and span.metrics (due to key deletion)
+	// defeating the purpose of testAsyncSpanRace and trigerring systematically a read/write race
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+	defer func() {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		// reloading as this is a shared var process and can impact other tests
+		processtags.Reload()
+	}()
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
 	_, _, _, stop, err := startTestTracer(t)

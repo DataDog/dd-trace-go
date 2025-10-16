@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -146,7 +147,7 @@ var (
 
 // newProfiler creates a new, unstarted profiler.
 func newProfiler(opts ...Option) (*profiler, error) {
-	if os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != "" {
+	if env.Get("AWS_LAMBDA_FUNCTION_NAME") != "" {
 		return nil, errProfilingNotSupportedInAWSLambda
 	}
 	cfg, err := defaultConfig()
@@ -166,7 +167,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	}
 
 	// TODO(fg) remove this after making expGoroutineWaitProfile public.
-	if os.Getenv("DD_PROFILING_WAIT_PROFILE") != "" {
+	if env.Get("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
 	// Agentless upload is disabled by default as of v1.30.0, but
@@ -194,7 +195,7 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		hostname, err := os.Hostname()
 		if err != nil {
 			if cfg.targetURL == cfg.apiURL {
-				return nil, fmt.Errorf("could not obtain hostname: %s", err.Error())
+				return nil, fmt.Errorf("could not obtain hostname: %s", err)
 			}
 			log.Warn("unable to look up hostname: %s", err.Error())
 		}

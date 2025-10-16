@@ -48,9 +48,11 @@ type payload interface {
 
 // newpayload returns a ready to use unsafe payload.
 func newPayload(protocol float64) payload {
-	// TODO(hannahkm): add support for v1 protocol
-	// if protocol == traceProtocolV1 {
-	// }
+	if protocol == traceProtocolV1 {
+		return &safePayload{
+			p: newPayloadV1(),
+		}
+	}
 	return &safePayload{
 		p: newPayloadV04(),
 	}

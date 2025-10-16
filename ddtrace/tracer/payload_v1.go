@@ -92,9 +92,9 @@ type keyValue struct {
 type keyValueList = []keyValue
 
 // newPayloadV1 returns a ready to use payloadV1.
-func newPayloadV1(protocol float64) *payloadV1 {
+func newPayloadV1() *payloadV1 {
 	return &payloadV1{
-		protocolVersion: protocol,
+		protocolVersion: traceProtocolV1,
 		strings:         make([]string, 0),
 		attributes:      make(map[uint32]anyValue),
 		chunks:          make([]traceChunk, 0),

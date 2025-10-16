@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -30,6 +31,11 @@ const (
 	// EnvAPISecProxySampleRate is the env var used to set the sampling rate of API Security schema extraction for proxies.
 	// The value represents the number of schemas extracted per minute (samples per minute).
 	EnvAPISecProxySampleRate = "DD_API_SECURITY_PROXY_SAMPLE_RATE"
+	// EnvAPISecDownstreamRequestBodyAnalysisSampleRate Defines the probability of a downstream request body being sampled,
+	// or said differently, defines the overall number of requests for which the request and response body should be sampled / analysed (50%).
+	EnvAPISecDownstreamRequestBodyAnalysisSampleRate = "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE"
+	// EnvAPISecMaxDownstreamRequestBodyAnalysis The maximum number of downstream requests per request for which the request and response body should be analysed.
+	EnvAPISecMaxDownstreamRequestBodyAnalysis = "DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS"
 	// EnvObfuscatorKey is the env var used to provide the WAF key obfuscation regexp
 	EnvObfuscatorKey = "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP"
 	// EnvObfuscatorValue is the env var used to provide the WAF value obfuscation regexp
@@ -58,12 +64,16 @@ const (
 	DefaultAPISecProxySampleRate = 300
 	// DefaultAPISecProxySampleInterval is the default time window for the API Security proxy sampler rate limiter.
 	DefaultAPISecProxySampleInterval = time.Minute
+	// DefaultDownstreamRequestBodyAnalysisSampleRate is the default sample rate for downstream request body analysis per incoming request.
+	DefaultDownstreamRequestBodyAnalysisSampleRate = 0.5
+	// DefaultMaxDownstreamRequestBodyAnalysis is the default maximum size in bytes of downstream request body to be analyzed.
+	DefaultMaxDownstreamRequestBodyAnalysis = 1
 	// DefaultObfuscatorKeyRegex is the default regexp used to obfuscate keys
 	DefaultObfuscatorKeyRegex = `(?i)pass|pw(?:or)?d|secret|(?:api|private|public|access)[_-]?key|token|consumer[_-]?(?:id|key|secret)|sign(?:ed|ature)|bearer|authorization|jsessionid|phpsessid|asp\.net[_-]sessionid|sid|jwt`
 	// DefaultObfuscatorValueRegex is the default regexp used to obfuscate values
 	DefaultObfuscatorValueRegex = `(?i)(?:p(?:ass)?w(?:or)?d|pass(?:[_-]?phrase)?|secret(?:[_-]?key)?|(?:(?:api|private|public|access)[_-]?)key(?:[_-]?id)?|(?:(?:auth|access|id|refresh)[_-]?)?token|consumer[_-]?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?|jsessionid|phpsessid|asp\.net(?:[_-]|-)sessionid|sid|jwt)(?:\s*=([^;&]+)|"\s*:\s*("[^"]+"|\d+))|bearer\s+([a-z0-9\._\-]+)|token\s*:\s*([a-z0-9]{13})|gh[opsu]_([0-9a-zA-Z]{36})|ey[I-L][\w=-]+\.(ey[I-L][\w=-]+(?:\.[\w.+\/=-]+)?)|[\-]{5}BEGIN[a-z\s]+PRIVATE\sKEY[\-]{5}([^\-]+)[\-]{5}END[a-z\s]+PRIVATE\sKEY|ssh-rsa\s*([a-z0-9\/\.+]{100,})`
 	// DefaultWAFTimeout is the default time limit past which a WAF run will timeout
-	DefaultWAFTimeout = time.Millisecond
+	DefaultWAFTimeout = 2 * time.Millisecond
 	// DefaultTraceRate is the default limit (trace/sec) past which ASM traces are sampled out
 	DefaultTraceRate = 100 // up to 100 appsec traces/s
 )
@@ -76,6 +86,10 @@ type APISecConfig struct {
 	IsProxy bool
 	// Deprecated: use the new [APISecConfig.Sampler] instead.
 	SampleRate float64
+	// DownstreamRequestBodyAnalysisSampleRate is the sample rate for downstream request body analysis per incoming request.
+	DownstreamRequestBodyAnalysisSampleRate float64
+	// MaxDownstreamRequestBodyAnalysis is the maximum size in bytes of downstream request body to be analyzed.
+	MaxDownstreamRequestBodyAnalysis int
 }
 
 // ObfuscatorConfig wraps the key and value regexp to be passed to the WAF to perform obfuscation.
@@ -89,11 +103,19 @@ type APISecOption func(*APISecConfig)
 // NewAPISecConfig creates and returns a new API Security configuration by reading the env
 func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 	cfg := APISecConfig{
-		Enabled:    internal.BoolEnv(EnvAPISecEnabled, true),
-		SampleRate: readAPISecuritySampleRate(),
+		Enabled:                                 internal.BoolEnv(EnvAPISecEnabled, true),
+		DownstreamRequestBodyAnalysisSampleRate: internal.FloatEnv(EnvAPISecDownstreamRequestBodyAnalysisSampleRate, DefaultDownstreamRequestBodyAnalysisSampleRate),
+		MaxDownstreamRequestBodyAnalysis:        internal.IntEnv(EnvAPISecMaxDownstreamRequestBodyAnalysis, DefaultMaxDownstreamRequestBodyAnalysis),
+		SampleRate:                              readAPISecuritySampleRate(),
 	}
 	for _, opt := range opts {
 		opt(&cfg)
+	}
+
+	if !RASPEnabled() {
+		log.Debug("appsec: RASP functionalities are disabled, disabling API Security downward request body analysis")
+		cfg.DownstreamRequestBodyAnalysisSampleRate = 0.0
+		cfg.MaxDownstreamRequestBodyAnalysis = 0
 	}
 
 	if cfg.Sampler != nil {
@@ -112,7 +134,7 @@ func NewAPISecConfig(opts ...APISecOption) APISecConfig {
 }
 
 func readAPISecuritySampleRate() float64 {
-	value := os.Getenv(EnvAPISecSampleRate)
+	value := env.Get(EnvAPISecSampleRate)
 	if value == "" {
 		return DefaultAPISecSampleRate
 	}
@@ -160,7 +182,7 @@ func NewObfuscatorConfig() ObfuscatorConfig {
 }
 
 func readObfuscatorConfigRegexp(name, defaultValue string) string {
-	val, present := os.LookupEnv(name)
+	val, present := env.Lookup(name)
 	if !present {
 		log.Debug("appsec: %s not defined, starting with the default obfuscator regular expression", name)
 		return defaultValue
@@ -177,7 +199,7 @@ func readObfuscatorConfigRegexp(name, defaultValue string) string {
 // If not set, it defaults to `DefaultWAFTimeout`
 func WAFTimeoutFromEnv() (timeout time.Duration) {
 	timeout = DefaultWAFTimeout
-	value := os.Getenv(EnvWAFTimeout)
+	value := env.Get(EnvWAFTimeout)
 	if value == "" {
 		return
 	}
@@ -205,7 +227,7 @@ func WAFTimeoutFromEnv() (timeout time.Duration) {
 // If not set, it defaults to `DefaultTraceRate`
 func RateLimitFromEnv() (rate int64) {
 	rate = DefaultTraceRate
-	value := os.Getenv(EnvTraceRateLimit)
+	value := env.Get(EnvTraceRateLimit)
 	if value == "" {
 		return rate
 	}
@@ -228,7 +250,7 @@ func RateLimitFromEnv() (rate int64) {
 // RulesFromEnv returns the security rules provided through the environment
 // If the env var is not set, the default recommended rules are returned instead
 func RulesFromEnv() ([]byte, error) {
-	filepath := os.Getenv(EnvRules)
+	filepath := env.Get(EnvRules)
 	if filepath == "" {
 		log.Debug("appsec: using the default built-in recommended security rules")
 		return nil, nil
