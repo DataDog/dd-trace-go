@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -472,6 +473,10 @@ func TestBeforeHandleHTTPEndpoint(t *testing.T) {
 }
 
 func TestResourceRenamingActivation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
 	type tc struct {
 		name        string
 		trn         *string // nil => unset
@@ -498,21 +503,20 @@ func TestResourceRenamingActivation(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ENABLED")
+			os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT")
+			os.Unsetenv("DD_APPSEC_ENABLED")
+
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
 			if c.trn != nil {
 				t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", *c.trn)
-			} else {
-				os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ENABLED")
 			}
-			os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT")
 
 			if c.appsecStart {
 				os.Setenv("DD_APPSEC_ENABLED", "true")
 				appsec.Start()
-			} else {
-				os.Unsetenv("DD_APPSEC_ENABLED")
 			}
 			defer appsec.Stop()
 
@@ -537,6 +541,10 @@ func TestResourceRenamingActivation(t *testing.T) {
 
 // Ensure the resource renaming is enabled only if appsec was enabled at the startup with the env var.
 func TestResourceRenamingActivationAppSecNotStartup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
