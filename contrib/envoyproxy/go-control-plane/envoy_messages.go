@@ -69,8 +69,7 @@ const (
 )
 
 var isK8s = sync.OnceValue(func() bool {
-	isk8s, _ := strconv.ParseBool(os.Getenv("KUBERNETES"))
-	return isk8s
+	return os.Getenv("KUBERNETES") != ""
 })
 
 func (i Integration) String() string {
