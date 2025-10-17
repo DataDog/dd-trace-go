@@ -80,18 +80,23 @@ func TestSimplifyHTTPRoute(t *testing.T) {
 
 		// Integer ID parameter tests
 		{
-			name:     "integer ID with dashes",
-			input:    "/items/123-456",
+			name:     "integer ID minimal length with dash",
+			input:    "/items/1-2",
 			expected: "/items/{param:int_id}",
 		},
 		{
-			name:     "integer ID with dots",
-			input:    "/items/123.456",
+			name:     "integer ID with mixed numbers and separators",
+			input:    "/items/.----00-1_2.3",
 			expected: "/items/{param:int_id}",
 		},
 		{
-			name:     "integer ID with underscores",
-			input:    "/items/123_456",
+			name:     "integer ID containing a non-hex letter should not match",
+			input:    "/items/12g-34",
+			expected: "/items/12g-34",
+		},
+		{
+			name:     "integer ID all zeros length three",
+			input:    "/items/000",
 			expected: "/items/{param:int_id}",
 		},
 
@@ -101,28 +106,52 @@ func TestSimplifyHTTPRoute(t *testing.T) {
 			input:    "/commits/abc123",
 			expected: "/commits/{param:hex}",
 		},
-		// Failing because no lookaround done, so no checks for first digits
-		/*{
+		{
 			name:     "hex ID all letters (no digit)",
-			input:    "/commits/abcdef",
-			expected: "/commits/abcdef",
-		},*/
+			input:    "/commits/deadbeef",
+			expected: "/commits/deadbeef",
+		},
 		{
 			name:     "hex ID too short",
 			input:    "/commits/abc12",
 			expected: "/commits/abc12",
 		},
+		{
+			name:     "hex ID uppercase all letters (no digit)",
+			input:    "/h/ABCDEF",
+			expected: "/h/ABCDEF",
+		},
+		{
+			name:     "hex ID uppercase with a digit",
+			input:    "/h/ABCDEF1",
+			expected: "/h/{param:hex}",
+		},
+		{
+			name:     "hex ID uppercase with a digit",
+			input:    "/h/000ABCDEF1",
+			expected: "/h/{param:hex}",
+		},
 
 		// Hex ID parameter tests
 		{
-			name:     "hex ID with dashes",
-			input:    "/items/abc123-def",
+			name:     "hex ID with separators",
+			input:    "/items/abc123-def.def2_def3",
 			expected: "/items/{param:hex_id}",
 		},
 		{
-			name:     "hex ID with dots",
-			input:    "/items/abc123.def",
+			name:     "hex ID no digit should not match",
+			input:    "/items/abcdef-abc",
+			expected: "/items/abcdef-abc",
+		},
+		{
+			name:     "hex ID many dashes and a digit and an hex letter",
+			input:    "/items/-----1a",
 			expected: "/items/{param:hex_id}",
+		},
+		{
+			name:     "hex ID vs int_id precedence on digits and dash",
+			input:    "/items/123-456",
+			expected: "/items/{param:int_id}",
 		},
 
 		// String parameter tests
