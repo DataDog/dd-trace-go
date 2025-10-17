@@ -19,9 +19,9 @@ var (
 	// Route parameter replacement patterns in order of priority
 	// TODO: Use the lookaround version from the RFC
 	intPattern   = regexp.MustCompile(`^[1-9][0-9]+$`)
-	intIDPattern = regexp.MustCompile(`^[0-9._-]{3,}$`)
-	hexPattern   = regexp.MustCompile(`^[A-Fa-f0-9]{6,}$`)
-	hexIDPattern = regexp.MustCompile(`^[A-Fa-f0-9._-]{6,}$`)
+	intIDPattern = regexp.MustCompile(`^(?:[0-9][0-9._-]{2,}|[._-][0-9][0-9._-]+|[._-]{2,}[0-9][0-9._-]*)$`)
+	hexPattern   = regexp.MustCompile(`^(?:[0-9][A-Fa-f0-9]{5,}|[A-Fa-f][0-9][A-Fa-f0-9]{4,}|[A-Fa-f]{2}[0-9][A-Fa-f0-9]{3,}|[A-Fa-f]{3}[0-9][A-Fa-f0-9]{2,}|[A-Fa-f]{4}[0-9][A-Fa-f0-9]+|[A-Fa-f]{5,}[0-9][A-Fa-f0-9]*)$`)
+	hexIDPattern = regexp.MustCompile(`^(?:[0-9][A-Fa-f0-9._-]{5,}|[A-Fa-f._-][0-9][A-Fa-f0-9._-]{4,}|[A-Fa-f._-]{2}[0-9][A-Fa-f0-9._-]{3,}|[A-Fa-f._-]{3}[0-9][A-Fa-f0-9._-]{2,}|[A-Fa-f._-]{4}[0-9][A-Fa-f0-9._-]+|[A-Fa-f._-]{5,}[0-9][A-Fa-f0-9._-]*)$`)
 	strPattern   = regexp.MustCompile(`^(.{20,}|.*[%&'()*+,:=@].*)$`)
 )
 
@@ -75,11 +75,11 @@ func simplifyPathElement(elem string) string {
 	switch {
 	case intPattern.MatchString(elem):
 		return "{param:int}"
-	case intIDPattern.MatchString(elem):
+	case intIDPattern.MatchString(elem) /* && hasDigit(elem) */ :
 		return "{param:int_id}"
 	case hexPattern.MatchString(elem):
 		return "{param:hex}"
-	case hexIDPattern.MatchString(elem):
+	case hexIDPattern.MatchString(elem) /* && hasDigit(elem)*/ :
 		return "{param:hex_id}"
 	case strPattern.MatchString(elem):
 		return "{param:str}"
