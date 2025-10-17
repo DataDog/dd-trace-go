@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -617,6 +618,21 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
+	} else if se := getServerlessEnvironment(); se == "aws_lambda" {
+		// if we are in an aws lambda function and this is an outbound
+		// request, determine and set the peer service tag accordingly
+		spanKind := s.meta[ext.SpanKind]
+		if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
+			if ps := deriveAWSPeerService(s.meta); ps != "" {
+				s.setMeta(ext.PeerService, ps)
+				s.setMeta(keyPeerServiceSource, ext.PeerService)
+			} else {
+				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
+				return
+			}
+		} else {
+			return
+		}
 	} else { // no peer.service currently set
 		spanKind := s.meta[ext.SpanKind]
 		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -639,6 +655,56 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 	}
 }
 
+/*
+checks if we are in a serverless environment
+
+TODO add checks for Azure functions and other serverless environments
+*/
+func getServerlessEnvironment() string {
+	if val, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok && val != "" {
+		return "aws_lambda"
+	}
+	return ""
+}
+
+/*
+deriveAWSPeerService returns the host name of the
+outbound aws service call based on the span metadata,
+or an empty string if it cannot be determined.
+
+The mapping is as follows:
+  - eventbridge: events.<region>.amazonaws.com
+  - sqs:         sqs.<region>.amazonaws.com
+  - sns:         sns.<region>.amazonaws.com
+  - kinesis:     kinesis.<region>.amazonaws.com
+  - dynamodb:    dynamodb.<region>.amazonaws.com
+  - s3:          <bucket>.s3.<region>.amazonaws.com (if Bucket param present)
+    s3.<region>.amazonaws.com          (otherwise)
+*/
+func deriveAWSPeerService(sm map[string]string) string {
+	service, region := sm[ext.AWSService], sm[ext.AWSRegion]
+	if service == "" || region == "" {
+		return ""
+	}
+
+	s := strings.ToLower(service)
+	switch s {
+
+	case "s3":
+		if bucket := sm[ext.S3BucketName]; bucket != "" {
+			return bucket + ".s3." + region + ".amazonaws.com"
+		}
+		return "s3." + region + ".amazonaws.com"
+
+	case "eventbridge":
+		return "events." + region + ".amazonaws.com"
+
+	case "sqs", "sns", "dynamodb", "kinesis":
+		return s + "." + region + ".amazonaws.com"
+	}
+	return ""
+}
+
 // setPeerServiceFromSource sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
@@ -651,6 +717,9 @@ func setPeerServiceFromSource(s *Span) string {
 	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
+	// QUESTION should we remove this? we already check for lambda aws service, so whats the point of this?
+	// Maybe in the case we're using an AWS service without lambda? idk help me
+
 	case has("aws_service"):
 		sources = []string{
 			"queuename",
