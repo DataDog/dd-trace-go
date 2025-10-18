@@ -7,6 +7,7 @@
 package gin // import "github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2"
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -53,7 +54,11 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
-			finishSpans(c.Writer.Status(), nil)
+			status := c.Writer.Status()
+			if cfg.useGinErrors && cfg.isStatusError(status) && len(c.Errors) > 0 {
+				finishSpans(status, cfg.isStatusError, tracer.WithError(errors.New(c.Errors.String())))
+			}
+			finishSpans(status, cfg.isStatusError)
 		}()
 
 		// pass the span through the request context
