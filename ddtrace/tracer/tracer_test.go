@@ -2760,25 +2760,25 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 
 func wasteA(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
 func wasteB(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
 func wasteC(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
