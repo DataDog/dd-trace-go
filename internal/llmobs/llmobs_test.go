@@ -983,6 +983,26 @@ func TestPropagatedInfo(t *testing.T) {
 		require.NotNil(t, childLLMSpan, "Child span should be found")
 		assert.Equal(t, "grandparent-session", childLLMSpan.SessionID, "Should inherit session ID through parent chain")
 	})
+	t.Run("session-id-tag-is-also-set", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		// Create span with session ID
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "test-span", llmobs.StartSpanConfig{
+			SessionID: "test-session-123",
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		l0 := llmSpans[0]
+
+		// Verify SessionID field is set
+		assert.Equal(t, "test-session-123", l0.SessionID, "SessionID field should be set")
+
+		// Verify the session_id tag is also present
+		sessionIDTag := findTag(l0.Tags, "session_id")
+		assert.Equal(t, "test-session-123", sessionIDTag, "session_id tag should be present in Tags array")
+	})
 	t.Run("mixed-propagation-sources", func(t *testing.T) {
 		tt, ll := testTracer(t)
 		ctx := context.Background()
