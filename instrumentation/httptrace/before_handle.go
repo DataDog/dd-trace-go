@@ -38,7 +38,7 @@ type ServeConfig struct {
 	SpanOpts []tracer.StartSpanOption
 	// isStatusError allows customization of error code determination.
 	IsStatusError func(int) bool
-	// Endpoint is the computed endpoint of the request when it lacks http.route
+	// Endpoint represents the value of the "http.endpoint" tag.
 	Endpoint string
 }
 
@@ -60,7 +60,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
 	}
-	opts = append(opts, handleResourceRenaming(cfg))
+	opts = append(opts, handleHTTPEndpoint(cfg, r))
 	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
@@ -88,8 +88,8 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	return rw, rt, afterHandle, handled
 }
 
-// handleResourceRenaming tag the span with http.endpoint based on the resource renaming configuration.
-func handleResourceRenaming(serveCfg *ServeConfig) func(sc *tracer.StartSpanConfig) {
+// handleHTTPEndpoint tag the span with http.endpoint based on the resource renaming configuration.
+func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) func(sc *tracer.StartSpanConfig) {
 	return func(sc *tracer.StartSpanConfig) {
 		if sc.Tags == nil {
 			return
@@ -103,10 +103,8 @@ func handleResourceRenaming(serveCfg *ServeConfig) func(sc *tracer.StartSpanConf
 		if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
 			return
 		}
-		httpURL, ok := sc.Tags[ext.HTTPURL].(string)
-		if !ok {
-			return
-		}
+
+		httpURL := r.URL.EscapedPath()
 		if cfg.resourceRenamingAlwaysSimplifiedEndpoint {
 			endpoint := simplifyHTTPUrl(httpURL)
 			sc.Tags[ext.HTTPEndpoint] = endpoint
@@ -126,8 +124,8 @@ func handleResourceRenaming(serveCfg *ServeConfig) func(sc *tracer.StartSpanConf
 	}
 }
 
-// renamedEndpoint returns the key value to use for the API Security sampler. The returned value is based on the
-// resource renaming configuration. If no route or endpoint are available, the key is computed based on the url.
+// renamedEndpoint returns the key value to use for the API Security sampler.
+// If no route or endpoint are available, the key is computed based on the url.
 func renamedRoute(serveCfg *ServeConfig, url string) string {
 	if serveCfg.Route != "" {
 		return serveCfg.Route
