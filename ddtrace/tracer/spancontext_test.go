@@ -531,21 +531,6 @@ func TestSpanPeerService(t *testing.T) {
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
-			name: "AWS-S3-No-Bucket",
-			spanOpts: []StartSpanOption{
-				Tag("span.kind", "client"),
-				Tag("aws_service", "S3"),
-				Tag("region", "us-east-2"),
-				Tag("db.system", "db-system"),
-				Tag("db.name", "db-name"),
-			},
-			peerServiceDefaultsEnabled:  true,
-			peerServiceMappings:         nil,
-			wantPeerService:             "s3.us-east-2.amazonaws.com",
-			wantPeerServiceSource:       "peer.service",
-			wantPeerServiceRemappedFrom: "",
-		},
-		{
 			name: "AWS-No-Service",
 			spanOpts: []StartSpanOption{
 				Tag("span.kind", "client"),
@@ -614,6 +599,21 @@ func TestSpanPeerService(t *testing.T) {
 			peerServiceDefaultsEnabled:  true,
 			peerServiceMappings:         nil,
 			wantPeerService:             "some-bucket.s3.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-S3-No-Bucket",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "S3"),
+				Tag("region", "us-east-2"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "s3.us-east-2.amazonaws.com",
 			wantPeerServiceSource:       "peer.service",
 			wantPeerServiceRemappedFrom: "",
 		},

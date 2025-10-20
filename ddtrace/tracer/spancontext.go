@@ -616,26 +616,22 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
 func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
+	spanKind := s.meta[ext.SpanKind]
+	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
-	} else if se := getServerlessEnvironment(); se == "aws_lambda" {
-		// if we are in an aws lambda function and this is an outbound
-		// request, determine and set the peer service tag accordingly
-		spanKind := s.meta[ext.SpanKind]
-		if spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer {
+	} else if isServerless() {
+		// Set peerService only in outbound Lambda requests
+		if isOutboundRequest {
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
 				s.setMeta(ext.PeerService, ps)
 				s.setMeta(keyPeerServiceSource, ext.PeerService)
 			} else {
 				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
-				return
 			}
-		} else {
-			return
 		}
 	} else { // no peer.service currently set
-		spanKind := s.meta[ext.SpanKind]
-		isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 		shouldSetDefaultPeerService := isOutboundRequest && peerServiceDefaults
 		if !shouldSetDefaultPeerService {
 			return
@@ -660,11 +656,11 @@ checks if we are in a serverless environment
 
 TODO add checks for Azure functions and other serverless environments
 */
-func getServerlessEnvironment() string {
+func isServerless() bool {
 	if val, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok && val != "" {
-		return "aws_lambda"
+		return true
 	}
-	return ""
+	return false
 }
 
 /*
@@ -717,9 +713,6 @@ func setPeerServiceFromSource(s *Span) string {
 	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
-	// QUESTION should we remove this? we already check for lambda aws service, so whats the point of this?
-	// Maybe in the case we're using an AWS service without lambda? idk help me
-
 	case has("aws_service"):
 		sources = []string{
 			"queuename",
