@@ -410,9 +410,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
 
-	// Set the trace protocol to use.
-	c.traceProtocol = internal.FloatEnv("DD_TRACE_AGENT_PROTOCOL_VERSION", traceProtocolV04)
-
 	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -587,6 +584,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
+	}
+	// Set the trace protocol to use.
+	if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
+		c.traceProtocol = traceProtocolV1
+		if t, ok := c.transport.(*httpTransport); ok {
+			t.traceURL = tracesAPIPathV1
+		}
+	} else {
+		c.traceProtocol = traceProtocolV04
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"

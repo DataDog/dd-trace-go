@@ -128,7 +128,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED":                        {},
 	"DD_TRACE_ABANDONED_SPAN_TIMEOUT":                                 {},
 	"DD_TRACE_AGENT_PORT":                                             {},
-	"DD_TRACE_AGENT_PROTOCOL_VERSION":                                 {},
+	"DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED":                              {},
 	"DD_TRACE_AGENT_URL":                                              {},
 	"DD_TRACE_ANALYTICS_ENABLED":                                      {},
 	"DD_TRACE_AWS_ANALYTICS_ENABLED":                                  {},
