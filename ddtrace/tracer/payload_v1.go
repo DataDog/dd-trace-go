@@ -97,6 +97,7 @@ type payloadV1 struct {
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
 		protocolVersion: traceProtocolV1,
+		header:          make([]byte, 8),
 		attributes:      make(map[string]anyValue),
 		chunks:          make([]traceChunk, 0),
 		readOff:         8,
