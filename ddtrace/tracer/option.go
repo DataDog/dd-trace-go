@@ -589,7 +589,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
 		c.traceProtocol = traceProtocolV1
 		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = tracesAPIPathV1
+			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
 		}
 	} else {
 		c.traceProtocol = traceProtocolV04
