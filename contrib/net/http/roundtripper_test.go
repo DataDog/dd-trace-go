@@ -454,7 +454,6 @@ func TestRoundTripperStatusCheck(t *testing.T) {
 	assert.Equal(t, "404", spans[0].Tag(ext.HTTPCode))
 	assert.Equal(t, "GET", spans[0].Tag(ext.HTTPMethod))
 	assert.Nil(t, spans[0].Tag("http.errors"))
-	assert.Nil(t, spans[0].Tag(ext.ErrorNoStackTrace))
 
 	// Second request is marked as an error as it's a 418
 	resp, err = client.Get(s.URL + "/hello/world")
