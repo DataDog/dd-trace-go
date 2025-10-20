@@ -2,7 +2,7 @@ module github.com/DataDog/dd-trace-go/internal/setup-smoke-test
 
 go 1.24.0
 
-require gopkg.in/DataDog/dd-trace-go.v1 v1.74.6
+require gopkg.in/DataDog/dd-trace-go.v1 v1.74.7
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.67.0 // indirect
@@ -14,8 +14,8 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.67.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.67.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.6.0 // indirect
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0-rc.4 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.3.0-rc.4 // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.3.0 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.3.2 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633 // indirect
 	github.com/DataDog/go-sqllexer v0.1.6 // indirect
