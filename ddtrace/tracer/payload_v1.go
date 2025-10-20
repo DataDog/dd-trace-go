@@ -97,7 +97,6 @@ type payloadV1 struct {
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
 		protocolVersion: traceProtocolV1,
-		header:          make([]byte, 8),
 		attributes:      make(map[string]anyValue),
 		chunks:          make([]traceChunk, 0),
 		readOff:         8,
@@ -213,6 +212,9 @@ func (p *payloadV1) protocol() float64 {
 }
 
 func (p *payloadV1) updateHeader() {
+	if len(p.header) == 0 {
+		p.header = make([]byte, 8)
+	}
 	n := atomic.LoadUint32(&p.fields)
 	switch {
 	case n <= 15:
