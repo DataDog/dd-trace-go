@@ -19,7 +19,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -537,7 +536,8 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 	tc := tr.TracerConf()
-	setPeerService(s, tc.PeerServiceDefaults, tc.PeerServiceMappings)
+	fmt.Printf("lambda function name: %q\n", tc.LambdaFunctionName)
+	setPeerService(s, tc)
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
@@ -615,13 +615,13 @@ func (t *trace) finishChunk(tr *tracer, ch *chunk) {
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
-func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[string]string) {
+func setPeerService(s *Span, tc TracerConf) {
 	spanKind := s.meta[ext.SpanKind]
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMeta(keyPeerServiceSource, ext.PeerService)
-	} else if isServerless() {
+	} else if isServerless(tc) {
 		// Set peerService only in outbound Lambda requests
 		if isOutboundRequest {
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
@@ -632,7 +632,7 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 			}
 		}
 	} else { // no peer.service currently set
-		shouldSetDefaultPeerService := isOutboundRequest && peerServiceDefaults
+		shouldSetDefaultPeerService := isOutboundRequest && tc.PeerServiceDefaults
 		if !shouldSetDefaultPeerService {
 			return
 		}
@@ -645,7 +645,7 @@ func setPeerService(s *Span, peerServiceDefaults bool, peerServiceMappings map[s
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
-	if to, ok := peerServiceMappings[ps]; ok {
+	if to, ok := tc.PeerServiceMappings[ps]; ok {
 		s.setMeta(keyPeerServiceRemappedFrom, ps)
 		s.setMeta(ext.PeerService, to)
 	}
@@ -656,8 +656,8 @@ checks if we are in a serverless environment
 
 TODO add checks for Azure functions and other serverless environments
 */
-func isServerless() bool {
-	if val, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok && val != "" {
+func isServerless(tc TracerConf) bool {
+	if tc.LambdaFunctionName != "" {
 		return true
 	}
 	return false

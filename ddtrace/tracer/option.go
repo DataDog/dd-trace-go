@@ -333,6 +333,10 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
+
+	// lambdaFunctionName, if set, indicates we are in a lambda function and holds the respective name
+	// It is set using the LAMBDA_FUNCTION_NAME env var is available. 
+	lambdaFunctionName string
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -463,10 +467,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
-	if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
+		c.lambdaFunctionName = v
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
