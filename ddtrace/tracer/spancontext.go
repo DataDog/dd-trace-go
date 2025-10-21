@@ -536,7 +536,6 @@ func (t *trace) finishedOne(s *Span) {
 		return
 	}
 	tc := tr.TracerConf()
-	fmt.Printf("lambda function name: %q\n", tc.LambdaFunctionName)
 	setPeerService(s, tc)
 
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
