@@ -20,6 +20,9 @@ export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported
 
 report_error=0
 
+TEST_RESULTS="${TEST_RESULTS:-.}"
+mkdir -p "$TEST_RESULTS"
+
 for contrib in $CONTRIBS; do
   echo "Testing contrib module: $contrib"
   contrib_id=$(echo "$contrib" | sed 's/^\.\///g;s/[\/\.]/_/g')
