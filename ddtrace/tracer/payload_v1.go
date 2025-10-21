@@ -115,7 +115,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
-	origin, priority, sm := "", 0, 0
+	origin, priority, sm, traceID := "", 0, 0, []byte{}
 	for _, span := range t {
 		if span == nil {
 			continue
@@ -124,6 +124,11 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		// a service must share the same value.
 		if _, ok := p.attributes["service"]; !ok {
 			p.attributes["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
+		}
+		if len(traceID) == 0 {
+			b := make([]byte, 8)
+			binary.LittleEndian.PutUint64(b, span.traceID)
+			traceID = b
 		}
 		if p, ok := span.Context().SamplingPriority(); ok {
 			origin = span.Context().origin // TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
@@ -141,7 +146,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		spans:             t,
 		priority:          int32(priority),
 		origin:            origin,
-		traceID:           t[0].Context().traceID[:],
+		traceID:           traceID,
 		samplingMechanism: uint32(sm),
 	}
 
