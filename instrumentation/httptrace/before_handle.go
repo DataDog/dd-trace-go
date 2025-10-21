@@ -98,8 +98,8 @@ func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) func(sc *tracer.
 			sc.Tags[ext.HTTPRoute] = serveCfg.Route
 		}
 
-		// If DD_APPSEC_ENABLED is set to a true value, this feature must be enabled by default at start,
-		// except if DD_TRACE_RESOURCE_RENAMING_ENABLED is explicitly set to false.
+		// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
+		// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
 		if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
 			return
 		}
