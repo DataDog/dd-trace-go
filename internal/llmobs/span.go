@@ -149,7 +149,7 @@ type EmbeddedDocument struct {
 	ID string `json:"id,omitempty"`
 }
 
-// RetrievedDocument represents a document retrieved from a search operation.
+// RetrievedDocument represents a document for retrieval operations.
 type RetrievedDocument struct {
 	// Text is the text content of the document.
 	Text string `json:"text"`

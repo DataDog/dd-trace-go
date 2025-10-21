@@ -723,7 +723,6 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
 	if mlApp == "" {
 		mlApp = l.Config.MLApp
 	}
-
 	timestampMS := cfg.TimestampMS
 	if timestampMS == 0 {
 		timestampMS = time.Now().UnixMilli()
@@ -743,12 +742,20 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
 		}
 	}
 
+	tags := make([]string, 0, len(cfg.Tags)+1)
+	for _, tag := range cfg.Tags {
+		if !strings.HasPrefix(tag, "ddtrace.version:") {
+			tags = append(tags, tag)
+		}
+	}
+	tags = append(tags, fmt.Sprintf("ddtrace.version:%s", version.Tag))
+
 	metric := &transport.LLMObsMetric{
 		JoinOn:      joinOn,
 		Label:       cfg.Label,
 		MLApp:       mlApp,
 		TimestampMS: timestampMS,
-		Tags:        cfg.Tags,
+		Tags:        tags,
 	}
 
 	if cfg.CategoricalValue != nil {
