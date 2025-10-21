@@ -89,6 +89,7 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			var outBuf bytes.Buffer
 			// Start the CPU profiler at the end of the profiling
 			// period so that we're sure to capture the CPU usage of
 			// this library, which mostly happens at the end
@@ -101,9 +102,7 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			compressor := p.compressors[CPUProfile]
-			compressor.Reset(&buf)
-			if err := p.startCPUProfile(compressor); err != nil {
+			if err := p.startCPUProfile(&outBuf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
@@ -113,7 +112,15 @@ var profileTypes = map[ProfileType]profileType{
 			// the other profile types
 			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
-			if err := compressor.Close(); err != nil {
+
+			c := p.compressors[CPUProfile]
+			compressionMux.Lock()
+			defer compressionMux.Unlock()
+			c.Reset(&buf)
+			if _, err := outBuf.WriteTo(c); err != nil {
+				return nil, err
+			}
+			if err := c.Close(); err != nil {
 				return nil, err
 			}
 			return buf.Bytes(), nil
@@ -175,10 +182,12 @@ var profileTypes = map[ProfileType]profileType{
 				return nil, err
 			}
 
-			compressor := p.compressors[expGoroutineWaitProfile]
-			compressor.Reset(pprof)
-			err := goroutineDebug2ToPprof(text, compressor, now)
-			err = cmp.Or(err, compressor.Close())
+			c := p.compressors[expGoroutineWaitProfile]
+			compressionMux.Lock()
+			defer compressionMux.Unlock()
+			c.Reset(pprof)
+			err := goroutineDebug2ToPprof(text, c, now)
+			err = cmp.Or(err, c.Close())
 			return pprof.Bytes(), err
 		},
 	},
@@ -187,11 +196,13 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
-			compressor := p.compressors[MetricsProfile]
-			compressor.Reset(&buf)
+			c := p.compressors[MetricsProfile]
+			compressionMux.Lock()
+			defer compressionMux.Unlock()
+			c.Reset(&buf)
 			interrupted := p.interruptibleSleep(p.cfg.period)
-			err := p.met.report(now(), compressor)
-			err = cmp.Or(err, compressor.Close())
+			err := p.met.report(now(), c)
+			err = cmp.Or(err, c.Close())
 			if err != nil && interrupted {
 				err = errProfilerStopped
 			}
@@ -204,9 +215,8 @@ var profileTypes = map[ProfileType]profileType{
 		Collect: func(p *profiler) ([]byte, error) {
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
-			compressor := p.compressors[executionTrace]
-			compressor.Reset(buf)
-			lt := newLimitedTraceCollector(compressor, int64(p.cfg.traceConfig.Limit))
+			outBuf := new(bytes.Buffer)
+			lt := newLimitedTraceCollector(outBuf, int64(p.cfg.traceConfig.Limit))
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
@@ -217,7 +227,15 @@ var profileTypes = map[ProfileType]profileType{
 			case <-lt.done: // The trace size limit was exceeded
 			}
 			trace.Stop()
-			if err := compressor.Close(); err != nil {
+
+			c := p.compressors[executionTrace]
+			compressionMux.Lock()
+			defer compressionMux.Unlock()
+			c.Reset(buf)
+			if _, err := outBuf.WriteTo(c); err != nil {
+				return nil, err
+			}
+			if err := c.Close(); err != nil {
 				return nil, err
 			}
 			return buf.Bytes(), nil
@@ -284,10 +302,12 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 		var buf bytes.Buffer
 		dp, ok := p.deltas[pt]
 		if !ok || !p.cfg.deltaProfiles {
-			compressor := p.compressors[pt]
-			compressor.Reset(&buf)
-			err := p.lookupProfile(name, compressor, 0)
-			err = cmp.Or(err, compressor.Close())
+			c := p.compressors[pt]
+			compressionMux.Lock()
+			defer compressionMux.Unlock()
+			c.Reset(&buf)
+			err := p.lookupProfile(name, c, 0)
+			err = cmp.Or(err, c.Close())
 			return buf.Bytes(), err
 		}
 
@@ -435,12 +455,15 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	}
 
 	fdp.buf.Reset()
-	fdp.compressor.Reset(&fdp.buf)
+	c := fdp.compressor
+	compressionMux.Lock()
+	defer compressionMux.Unlock()
+	c.Reset(&fdp.buf)
 
-	if err = fdp.dc.Delta(data, fdp.compressor); err != nil {
+	if err = fdp.dc.Delta(data, c); err != nil {
 		return nil, fmt.Errorf("error computing delta: %s", err.Error())
 	}
-	if err = fdp.compressor.Close(); err != nil {
+	if err = c.Close(); err != nil {
 		return nil, fmt.Errorf("error flushing gzip writer: %s", err.Error())
 	}
 	// The returned slice will be retained in case the profile upload fails,

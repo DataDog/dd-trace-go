@@ -32,6 +32,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 
 	kgzip "github.com/klauspost/compress/gzip"
 	"github.com/klauspost/compress/zstd"
@@ -137,6 +138,39 @@ func getZstdLevelOrDefault(level int) zstd.EncoderLevel {
 	return zstd.SpeedDefault
 }
 
+type sema struct {
+	c chan struct{}
+}
+
+func (s *sema) Lock()   { s.c <- struct{}{} }
+func (s *sema) Unlock() { <-s.c }
+
+var (
+	// compressionMux protects zstdEncoder. It must be locked
+	// when doing compression that _might_ use zstdEncoder.
+	//
+	// It's a channel-based semaphore rather than a mutex
+	// so that contention on it doesn't appear in the mutex
+	// profile (we expect it to be contended).
+	// This is a kludge. We only really want it for zstdEncoder,
+	// but the places where we actually do compression just
+	// take a compressor interface. It's easier for now to just
+	// have this global semaphore than to plumb the locking
+	// through the existing abstractions.
+	compressionMux = &sema{c: make(chan struct{}, 1)}
+
+	zstdEncoderOnce sync.Once
+	zstdEncoder     *zstd.Encoder
+	zstdEncoderErr  error
+)
+
+func getZstdEncoder(opts ...zstd.EOption) (*zstd.Encoder, error) {
+	zstdEncoderOnce.Do(func() {
+		zstdEncoder, zstdEncoderErr = zstd.NewWriter(nil, opts...)
+	})
+	return zstdEncoder, zstdEncoderErr
+}
+
 // newCompressionPipeline returns a compressor that converts the data written to
 // it from the expected input compression to the given output compression.
 func newCompressionPipeline(in compression, out compression) (compressor, error) {
@@ -149,7 +183,7 @@ func newCompressionPipeline(in compression, out compression) (compressor, error)
 	}
 
 	if in == noCompression && out.algorithm == compressionAlgorithmZstd {
-		return zstd.NewWriter(nil, zstd.WithEncoderLevel(getZstdLevelOrDefault(out.level)))
+		return getZstdEncoder(zstd.WithEncoderLevel(getZstdLevelOrDefault(out.level)))
 	}
 
 	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmZstd {
@@ -187,7 +221,7 @@ func (r *passthroughCompressor) Close() error {
 }
 
 func newZstdRecompressor(level zstd.EncoderLevel) (*zstdRecompressor, error) {
-	zstdOut, err := zstd.NewWriter(io.Discard, zstd.WithEncoderLevel(level))
+	zstdOut, err := getZstdEncoder(zstd.WithEncoderLevel(level))
 	if err != nil {
 		return nil, err
 	}
