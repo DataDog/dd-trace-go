@@ -1328,6 +1328,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1354,6 +1357,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt1.Stop()
 
@@ -1369,6 +1375,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt2.Stop()
 
@@ -1390,6 +1399,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1438,6 +1450,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 
 		// Verify LLMObs is active
@@ -1481,11 +1496,12 @@ func TestLLMObsLifecycle(t *testing.T) {
 		})
 	})
 	t.Run("llmobs-enabled-without-ml-app", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", testAPIKey)
+
 		// Start tracer directly with LLMObs enabled but no ML app - should return error
 		err := tracer.Start(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLogStartup(false),
-			tracer.WithLLMObsAgentlessEnabled(false),
 		)
 		defer tracer.Stop()
 
@@ -1498,6 +1514,19 @@ func TestLLMObsLifecycle(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "LLMObs is not enabled")
 	})
+	t.Run("agentless-disabled-without-agent-support", func(t *testing.T) {
+		// Start tracer with agentless explicitly disabled but without agent support - should return error
+		err := tracer.Start(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLogStartup(false),
+		)
+		defer tracer.Stop()
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "the agent is not available or does not support LLMObs")
+	})
 	t.Run("env-vars-config", func(t *testing.T) {
 		t.Setenv("DD_LLMOBS_ENABLED", "true")
 		t.Setenv("DD_LLMOBS_ML_APP", "env-test-app")
@@ -1507,6 +1536,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 			testtracer.WithTracerStartOpts(
 				tracer.WithLogStartup(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1552,6 +1584,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsAgentlessEnabled(false),
 				tracer.WithLogStartup(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1653,6 +1688,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsAgentlessEnabled(false),
 				tracer.WithLogStartup(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 

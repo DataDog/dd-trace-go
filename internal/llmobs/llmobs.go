@@ -36,6 +36,7 @@ var (
 	errLLMObsNotEnabled        = errors.New("LLMObs is not enabled. Ensure the tracer has been started with the option tracer.WithLLMObsEnabled(true) or set DD_LLMOBS_ENABLED=true")
 	errAgentlessRequiresAPIKey = errors.New("LLMOBs agentless mode requires a valid API key - set the DD_API_KEY env variable to configure one")
 	errMLAppRequired           = errors.New("ML App is required for sending LLM Observability data")
+	errAgentModeNotSupported   = errors.New("DD_LLMOBS_AGENTLESS_ENABLED has been configured to false but the agent is not available or does not support LLMObs")
 )
 
 const (
@@ -145,7 +146,7 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 	}
 	if cfg.AgentlessEnabled != nil {
 		if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
-			log.Warn("llmobs: DD_LLMOBS_AGENTLESS_ENABLED has been configured to false and the agent is not available or does not support llmobs")
+			return nil, errAgentModeNotSupported
 		}
 		cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
 	} else {
