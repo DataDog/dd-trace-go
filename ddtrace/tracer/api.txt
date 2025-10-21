@@ -357,6 +357,7 @@ type TracerConf struct {
 	DebugAbandonedSpans bool
 	Disabled bool
 	EnvTag string
+	LambdaFunctionName string
 	PartialFlush bool
 	PartialFlushMinSpans int
 	PeerServiceDefaults bool
