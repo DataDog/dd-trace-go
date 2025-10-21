@@ -1516,16 +1516,18 @@ func TestLLMObsLifecycle(t *testing.T) {
 	})
 	t.Run("agentless-disabled-without-agent-support", func(t *testing.T) {
 		// Start tracer with agentless explicitly disabled but without agent support - should return error
-		err := tracer.Start(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-app"),
-			tracer.WithLLMObsAgentlessEnabled(false),
-			tracer.WithLogStartup(false),
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithRequireNoTracerStartError(false),
 		)
-		defer tracer.Stop()
 
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "the agent is not available or does not support LLMObs")
+		require.Error(t, tt.StartError())
+		assert.Contains(t, tt.StartError().Error(), "the agent is not available or does not support LLMObs")
 	})
 	t.Run("env-vars-config", func(t *testing.T) {
 		t.Setenv("DD_LLMOBS_ENABLED", "true")
