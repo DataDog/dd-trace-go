@@ -127,7 +127,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		}
 		if len(traceID) == 0 {
 			b := make([]byte, 8)
-			binary.LittleEndian.PutUint64(b, span.traceID)
+			binary.BigEndian.PutUint64(b, span.traceID)
 			traceID = b
 		}
 		if p, ok := span.Context().SamplingPriority(); ok {
