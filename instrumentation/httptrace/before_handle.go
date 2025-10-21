@@ -38,8 +38,6 @@ type ServeConfig struct {
 	SpanOpts []tracer.StartSpanOption
 	// isStatusError allows customization of error code determination.
 	IsStatusError func(int) bool
-	// Endpoint represents the value of the "http.endpoint" tag.
-	Endpoint string
 }
 
 // BeforeHandle contains functionality that should be executed before a http.Handler runs.
@@ -60,7 +58,8 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
 	}
-	opts = append(opts, handleHTTPEndpoint(cfg, r))
+	endpointOpt, endpointFn := handleHTTPEndpoint(cfg, r)
+	opts = append(opts, endpointOpt)
 	span, ctx, finishSpans := StartRequestSpan(r, opts...)
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
@@ -72,7 +71,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	if appsec.Enabled() {
 		appsecConfig := &httpsec.Config{
 			Framework:   cfg.Framework,
-			Route:       renamedRoute(cfg, r.URL.EscapedPath()),
+			Route:       renamedRoute(cfg.Route, endpointFn(), r.URL.EscapedPath()),
 			RouteParams: cfg.RouteParams,
 		}
 
@@ -88,50 +87,51 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	return rw, rt, afterHandle, handled
 }
 
-// handleHTTPEndpoint tag the span with http.endpoint based on the resource renaming configuration.
-func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) func(sc *tracer.StartSpanConfig) {
+// handleHTTPEndpoint tags the span with http.endpoint based on the resource renaming configuration and returns the computed endpoint.
+func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) (tracer.StartSpanOption, func() string) {
+	var endpoint string
+
 	return func(sc *tracer.StartSpanConfig) {
-		if sc.Tags == nil {
-			return
-		}
-		if serveCfg.Route != "" {
-			sc.Tags[ext.HTTPRoute] = serveCfg.Route
-		}
+			if sc.Tags == nil {
+				return
+			}
+			if serveCfg.Route != "" {
+				sc.Tags[ext.HTTPRoute] = serveCfg.Route
+			}
 
-		// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
-		// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
-		if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
-			return
-		}
+			// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
+			// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
+			if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
+				return
+			}
 
-		httpURL := r.URL.EscapedPath()
-		if cfg.resourceRenamingAlwaysSimplifiedEndpoint {
-			endpoint := simplifyHTTPUrl(httpURL)
+			httpURL := r.URL.EscapedPath()
+			if cfg.resourceRenamingAlwaysSimplifiedEndpoint {
+				endpoint = simplifyHTTPUrl(httpURL)
+				sc.Tags[ext.HTTPEndpoint] = endpoint
+				return
+			}
+
+			if serveCfg.Route != "" {
+				endpoint = serveCfg.Route
+			} else {
+				endpoint = simplifyHTTPUrl(httpURL)
+			}
+
 			sc.Tags[ext.HTTPEndpoint] = endpoint
-			serveCfg.Endpoint = endpoint
-			return
+		}, func() string {
+			return endpoint
 		}
-
-		var endpoint string
-		if serveCfg.Route != "" {
-			endpoint = serveCfg.Route
-		} else {
-			endpoint = simplifyHTTPUrl(httpURL)
-		}
-
-		sc.Tags[ext.HTTPEndpoint] = endpoint
-		serveCfg.Endpoint = endpoint
-	}
 }
 
-// renamedEndpoint returns the key value to use for the API Security sampler.
+// renamedRoute returns the key value to use for the API Security sampler.
 // If no route or endpoint are available, the key is computed based on the url.
-func renamedRoute(serveCfg *ServeConfig, url string) string {
-	if serveCfg.Route != "" {
-		return serveCfg.Route
+func renamedRoute(route string, endpoint string, url string) string {
+	if route != "" {
+		return route
 	}
-	if serveCfg.Endpoint != "" {
-		return serveCfg.Endpoint
+	if endpoint != "" {
+		return endpoint
 	}
 	return simplifyHTTPUrl(url)
 }

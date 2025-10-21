@@ -577,28 +577,28 @@ func TestResourceRenamingActivationAppSecNotStartup(t *testing.T) {
 
 func TestRenamedRouteSelection(t *testing.T) {
 	type tc struct {
-		name   string
-		cfg    *ServeConfig
-		url    string // escaped path
-		expect string
+		name     string
+		route    string
+		endpoint string
+		url      string // escaped path
+		expect   string
 	}
 
 	cases := []tc{
 		{
 			name:   "route used when available",
-			cfg:    &ServeConfig{Route: "/users/{id}"},
+			route:  "/users/{id}",
 			url:    "/users/123",
 			expect: "/users/{id}",
 		},
 		{
-			name:   "endpoint used when route empty",
-			cfg:    &ServeConfig{Endpoint: "/users/{id}"},
-			url:    "/users/123",
-			expect: "/users/{id}",
+			name:     "endpoint used when route empty",
+			endpoint: "/users/{id}",
+			url:      "/users/123",
+			expect:   "/users/{id}",
 		},
 		{
 			name:   "fallback to simplified url when both empty",
-			cfg:    &ServeConfig{},
 			url:    "/a/b/123456",
 			expect: simplifyHTTPUrl("/a/b/123456"),
 		},
@@ -606,7 +606,7 @@ func TestRenamedRouteSelection(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := renamedRoute(c.cfg, c.url)
+			got := renamedRoute(c.route, c.endpoint, c.url)
 			assert.Equal(t, c.expect, got)
 		})
 	}
