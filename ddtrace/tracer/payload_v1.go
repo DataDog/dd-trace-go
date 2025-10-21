@@ -293,13 +293,7 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 	switch value := any(a).(type) {
 	case string:
 		// encode msgp value, either by pulling from string table or writing it directly
-		if idx, ok := st.Get(value); ok {
-			buf = idx.encode(buf)
-		} else {
-			s := stringValue(value)
-			buf = s.encode(buf)
-			st.Add(value)
-		}
+		buf = st.Serialize(value, buf)
 	case bool:
 		buf = msgp.AppendBool(buf, value)
 	case float64:
@@ -321,23 +315,18 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 	return buf
 }
 
-// encodeAttributes encodes a keyValueList (most often attributes) associated with fieldID into the buffer in msgp format.
+// encodeAttributes encodes an array associated with fieldID into the buffer in msgp format.
 func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyValue, st *stringTable) (bool, error) {
 	if !bm.contains(uint32(fieldID)) {
 		return false, nil
 	}
 
-	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))    // msgp key
-	p.buf = msgp.AppendMapHeader(p.buf, uint32(len(kv))) // number of item pairs in map
+	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))        // msgp key
+	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(kv)*3)) // number of item pairs in map
 
 	for k, v := range kv {
 		// encode msgp key
-		if idx, ok := st.Get(string(k)); ok {
-			p.buf = idx.encode(p.buf)
-		} else {
-			p.buf = stringValue(k).encode(p.buf)
-			st.Add(string(k))
-		}
+		p.buf = st.Serialize(k, p.buf)
 
 		// encode value
 		p.buf = v.encode(p.buf, st)
@@ -612,7 +601,7 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 
 		// handle attributes
 		if idx == 10 {
-			p.attributes, o, err = DecodeKeyValueList(o, st)
+			p.attributes, o, err = DecodeAttributes(o, st)
 			if err != nil {
 				break
 			}
@@ -711,12 +700,7 @@ func (a anyValue) encode(buf []byte, st *stringTable) []byte {
 	switch a.valueType {
 	case StringValueType:
 		s := a.value.(string)
-		if idx, ok := st.Get(s); ok {
-			buf = idx.encode(buf)
-		} else {
-			buf = stringValue(s).encode(buf)
-			st.Add(s)
-		}
+		buf = st.Serialize(s, buf)
 	case BoolValueType:
 		buf = msgp.AppendBool(buf, a.value.(bool))
 	case FloatValueType:
@@ -790,6 +774,7 @@ func (i *index) decode(buf []byte) ([]byte, error) {
 type stringValue string
 
 func (s stringValue) encode(buf []byte) []byte {
+	// TODO(hannahkm): add the fixstr representation
 	return msgp.AppendString(buf, string(s))
 }
 
@@ -838,6 +823,17 @@ func (s *stringTable) Get(str string) (index, bool) {
 		return idx, true
 	}
 	return -1, false
+}
+
+func (st *stringTable) Serialize(value string, buf []byte) []byte {
+	if idx, ok := st.Get(value); ok {
+		buf = idx.encode(buf)
+	} else {
+		s := stringValue(value)
+		buf = s.encode(buf)
+		st.Add(value)
+	}
+	return buf
 }
 
 // Reads a string from a byte slice and returns it from the string table if it exists.
@@ -960,7 +956,7 @@ func (tc *traceChunk) decode(b []byte, st *stringTable) ([]byte, error) {
 				err = errUnableDecodeString
 			}
 		case 3:
-			tc.attributes, o, err = DecodeKeyValueList(o, st)
+			tc.attributes, o, err = DecodeAttributes(o, st)
 		case 4:
 			tc.spans, o, err = DecodeSpans(o, st)
 		case 5:
@@ -1047,7 +1043,7 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			}
 		case 9:
 			var attr map[string]anyValue
-			attr, o, err = DecodeKeyValueList(o, st)
+			attr, o, err = DecodeAttributes(o, st)
 			for k, v := range attr {
 				span.SetTag(k, v.value)
 			}
@@ -1151,7 +1147,7 @@ func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 			link.SpanID, o, err = msgp.ReadUint64Bytes(o)
 		case 3:
 			var attr map[string]anyValue
-			attr, o, err = DecodeKeyValueList(o, st)
+			attr, o, err = DecodeAttributes(o, st)
 			for k, v := range attr {
 				if v.valueType != StringValueType {
 					return o, fmt.Errorf("unexpected value type: %d", v.valueType)
@@ -1225,7 +1221,7 @@ func (event *spanEvent) decode(b []byte, st *stringTable) ([]byte, error) {
 			event.Name = name
 		case 3:
 			var attr map[string]anyValue
-			attr, o, err = DecodeKeyValueList(o, st)
+			attr, o, err = DecodeAttributes(o, st)
 			if err != nil {
 				break
 			}
@@ -1315,6 +1311,35 @@ func decodeAnyValue(b []byte, strings *stringTable) (anyValue, []byte, error) {
 // DecodeKeyValueList decodes a map of string to anyValue from a byte slice.
 func DecodeKeyValueList(b []byte, strings *stringTable) (map[string]anyValue, []byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
+	if err != nil {
+		return nil, b, err
+	}
+
+	kv := map[string]anyValue{}
+	for i := range numFields {
+		var (
+			key string
+			ok  bool
+			av  anyValue
+		)
+		key, o, ok = strings.Read(o)
+		if !ok {
+			return nil, o, fmt.Errorf("unable to read key of field %d", i)
+		}
+		av, o, err = decodeAnyValue(o, strings)
+		if err != nil {
+			return nil, o, err
+		}
+		kv[key] = av
+	}
+	return kv, o, nil
+}
+
+// DecodeAttributes decodes a map of string to anyValue from a byte slice
+// Attributes are encoded as an array of key, valueType, and value.
+func DecodeAttributes(b []byte, strings *stringTable) (map[string]anyValue, []byte, error) {
+	n, o, err := msgp.ReadArrayHeaderBytes(b)
+	numFields := n / 3
 	if err != nil {
 		return nil, b, err
 	}
