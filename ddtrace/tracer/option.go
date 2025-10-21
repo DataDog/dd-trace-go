@@ -335,7 +335,7 @@ type config struct {
 	llmobs llmobsconfig.Config
 
 	// lambdaFunctionName, if set, indicates we are in a lambda function and holds the respective name
-	// It is set using the LAMBDA_FUNCTION_NAME env var is available. 
+	// It is set using the LAMBDA_FUNCTION_NAME env var is available.
 	lambdaFunctionName string
 }
 
