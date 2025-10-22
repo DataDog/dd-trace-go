@@ -123,6 +123,9 @@
     "DD_ENV": [
       "A"
     ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED": [
+      "A"
+    ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
       "A"
     ],
