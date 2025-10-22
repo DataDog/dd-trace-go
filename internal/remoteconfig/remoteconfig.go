@@ -322,8 +322,6 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 		return fmt.Errorf("product %s already registered via RegisterProduct", product)
 	}
 
-	client.products[product] = struct{}{}
-
 	client.productsWithCallbacksMu.Lock()
 	defer client.productsWithCallbacksMu.Unlock()
 	client.productsWithCallbacks[product] = callback
@@ -389,9 +387,6 @@ func UnregisterProduct(p string) error {
 	client.productsMu.Lock()
 	defer client.productsMu.Unlock()
 	delete(client.products, p)
-	client.productsWithCallbacksMu.Lock()
-	defer client.productsWithCallbacksMu.Unlock()
-	delete(client.productsWithCallbacks, p)
 	return nil
 }
 
