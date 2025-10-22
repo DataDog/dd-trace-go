@@ -387,10 +387,12 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
+	log.Debug("setSamplingPriorityLocked span: %v, priority: %v, sampler: %v", s.spanID, priority, sampler)
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
+		log.Debug("cannot update sampling priority for finished span: %v", s.spanID)
 		return
 	}
 	s.setMetric(keySamplingPriority, float64(priority))
@@ -542,6 +544,7 @@ func (s *Span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualKeep:
 		if v {
+			log.Debug("manual keep on span: %v, trace id: %v", s.spanID, s.traceID)
 			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
 		}
 	default:

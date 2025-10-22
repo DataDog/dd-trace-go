@@ -67,6 +67,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	closeSpan := func() {
 		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
 	}
+
 	afterHandle := closeSpan
 	handled := false
 	if appsec.Enabled() {
