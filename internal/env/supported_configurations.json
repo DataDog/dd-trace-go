@@ -558,6 +558,12 @@
     "DD_TRACE_REPORT_HOSTNAME": [
       "A"
     ],
+    "DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT": [
+      "A"
+    ],
+    "DD_TRACE_RESOURCE_RENAMING_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [
       "A"
     ],
