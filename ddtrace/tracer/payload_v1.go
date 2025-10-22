@@ -125,10 +125,9 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		if _, ok := p.attributes["service"]; !ok {
 			p.attributes["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
 		}
-		if len(traceID) == 0 {
-			binary.BigEndian.PutUint64(traceID[:8], span.Context().traceID.Upper())
-			binary.BigEndian.PutUint64(traceID[8:], span.Context().traceID.Lower())
-		}
+		binary.BigEndian.PutUint64(traceID[:8], span.Context().traceID.Upper())
+		binary.BigEndian.PutUint64(traceID[8:], span.Context().traceID.Lower())
+
 		if p, ok := span.Context().SamplingPriority(); ok {
 			origin = span.Context().origin // TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
 			priority = p                   // TODO(darccio): the same goes for priority.
