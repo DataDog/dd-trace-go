@@ -132,14 +132,17 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 			origin = span.Context().origin // TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
 			priority = p                   // TODO(darccio): the same goes for priority.
 			dm := span.context.trace.propagatingTag(keyDecisionMaker)
-			sm, err = strconv.Atoi(dm) // TODO(darccio): shouldn't this string represent the absolute value of dm?
+			sm, err = strconv.Atoi(dm)
 			if err != nil {
 				log.Error("failed to convert decision maker to int: %s", err.Error())
 			}
 			break
 		}
 	}
-
+	// we want to represent sampling mechanism as a uint32, the absolute value of the decision maker
+	if sm < 0 {
+		sm *= -1
+	}
 	tc := traceChunk{
 		spans:             t,
 		priority:          int32(priority),
