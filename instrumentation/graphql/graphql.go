@@ -9,9 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 )
 
 // ErrorExtensionsFromEnv returns the configured error extensions from an environment variable.
@@ -76,7 +75,7 @@ func errToSpanEventAttributes(gErr Error, errExtensions []string) map[string]any
 	res := map[string]any{
 		"message":    gErr.Message,
 		"type":       reflect.TypeOf(gErr.OriginalErr).String(),
-		"stacktrace": takeStacktrace(0, 0),
+		"stacktrace": takeStacktrace(0),
 	}
 	if locs := parseErrLocations(gErr.Locations); len(locs) > 0 {
 		res["locations"] = locs
@@ -134,38 +133,10 @@ func errExtensionMapValue(val any) (any, error) {
 	}
 }
 
-// defaultStackLength specifies the default maximum size of a stack trace.
-const defaultStackLength = 32
-
 // takeStacktrace takes a stack trace of maximum n entries, skipping the first skip entries.
-// This function is the same as ddtrace/tracer/span.go
-func takeStacktrace(n, skip uint) string {
-	if n == 0 {
-		n = defaultStackLength
-	}
-	var builder strings.Builder
-	pcs := make([]uintptr, n)
-
-	// +2 to exclude runtime.Callers and takeStacktrace
-	numFrames := runtime.Callers(2+int(skip), pcs)
-	if numFrames == 0 {
-		return ""
-	}
-	frames := runtime.CallersFrames(pcs[:numFrames])
-	for i := 0; ; i++ {
-		frame, more := frames.Next()
-		if i != 0 {
-			builder.WriteByte('\n')
-		}
-		builder.WriteString(frame.Function)
-		builder.WriteByte('\n')
-		builder.WriteByte('\t')
-		builder.WriteString(frame.File)
-		builder.WriteByte(':')
-		builder.WriteString(strconv.Itoa(frame.Line))
-		if !more {
-			break
-		}
-	}
-	return builder.String()
+// Uses the centralized internal/stacktrace implementation.
+func takeStacktrace(skip uint) string {
+	// Skip +1 to account for this wrapper function
+	stack := stacktrace.SkipAndCapture(int(skip) + 1)
+	return stacktrace.Format(stack)
 }
