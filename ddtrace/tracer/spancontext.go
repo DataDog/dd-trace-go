@@ -268,6 +268,7 @@ func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 func (c *SpanContext) setSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
+		log.Debug("setSamplingPriority trace is nil, creating new trace, span ID: %v, trace ID: %v", c.spanID, c.traceID.Lower())
 	}
 	if c.trace.setSamplingPriority(p, sampler) {
 		// the trace's sampling priority or sampler was updated: mark this as updated
@@ -423,9 +424,13 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
-	log.Debug("setSamplingPriorityLocked trace: %v, priority: %v, sampler: %v", t.root.traceID, p, sampler)
+	var tID uint64
+	if t.root != nil {
+		tID = t.root.traceID
+	}
+	log.Debug("setSamplingPriorityLocked trace: %v, priority: %v, sampler: %v", tID, p, sampler)
 	if t.locked {
-		log.Debug("cannot set sampling priority for trace already locked: %v", t.root.traceID)
+		log.Debug("cannot set sampling priority for trace already locked: %v", tID)
 		return false
 	}
 
