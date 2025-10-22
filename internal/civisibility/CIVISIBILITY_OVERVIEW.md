@@ -36,7 +36,7 @@
     2. Child-only directives wrap the subtest locally (when feature flag enabled and exact match present) while leaving the parent neutral.  
     3. Parent and child requesting attempt-to-fix results in the parent winning; subtests receive tags but do not run retries.  
     4. Parent quarantine + attempt-to-fix keeps the parent as the retry owner while subtests inherit quarantine tags; a quarantined parent without attempt-to-fix leaves children free to execute their own retries if explicitly configured.
-  - Feature gating: `DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED` enables subtest directives. `RUN_SUBTEST_CONTROLLER` forces wrappers to short-circuit for harness-driven scenarios; standard debug logs capture identity/ownership traces when enabled.
+  - Feature gating: `DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED` enables subtest directives. Standard debug logs capture identity/ownership traces when enabled.
   - `instrumentation_orchestrion.go` and `orchestrion.yml` support bytecode rewriting via Orchestrion for transparent instrumentation in user code. The orchestrion path computes subtest identities, inspects parent metadata, and applies the same ownership logic as the manual wrappers.
   - `coverage/` builds code coverage payloads, writes them via `coverage_writer`, and includes an auto-generated `test_coverage_msgp.go` for MsgPack encoding.
   - `reflections.go` / `_test.go` ensure compatibility with `go test` internal structures across versions; helper routines detect struct offsets, function pointers, and maintain compatibility with new Go releases.

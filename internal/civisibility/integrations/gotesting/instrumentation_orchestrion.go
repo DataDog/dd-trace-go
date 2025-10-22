@@ -23,7 +23,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -183,12 +182,6 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					log.Debug("subtest gating no exact match for %s (hasData=%t matchKind=%d)", subtestIdentity.FullName, hasData, matchKind)
 				}
 			}
-
-			if !hasDirective && env.Get("RUN_SUBTEST_CONTROLLER") == "1" {
-				f(t)
-				return
-			}
-
 		}
 
 		subtestInfo := &commonInfo{

@@ -151,7 +151,7 @@ func (ctx *scenarioContext) setEnv(key, value string) {
 }
 
 // baselineScenario captures the control case where no directives are present, ensuring
-// that the harness keeps its default behaviour without subtest-specific spans.
+// that subtests execute normally without management tags or retry orchestration.
 func baselineScenario() *matrixScenario {
 	return &matrixScenario{
 		name: "baseline",
@@ -189,7 +189,11 @@ func baselineScenario() *matrixScenario {
 			for _, sub := range []string{"SubDisabled", "SubQuarantined", "SubAttemptFix", "SubAttemptFixParallel"} {
 				resource := fmt.Sprintf("%s/%s", parentResource, sub)
 				subSpans := spansByResource(testSpans, resource)
-				requireSpanCount(subSpans, 0, fmt.Sprintf("subtest %s baseline count", sub))
+				requireSpanCount(subSpans, 1, fmt.Sprintf("subtest %s baseline count", sub))
+				assertTagEquals(subSpans[0], constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("subtest %s baseline status", sub))
+				assertTagNotTrue(subSpans[0], constants.TestIsDisabled, fmt.Sprintf("subtest %s baseline disabled", sub))
+				assertTagNotTrue(subSpans[0], constants.TestIsQuarantined, fmt.Sprintf("subtest %s baseline quarantined", sub))
+				assertTagNotTrue(subSpans[0], constants.TestIsAttempToFix, fmt.Sprintf("subtest %s baseline attempt_to_fix", sub))
 			}
 		},
 	}
@@ -641,7 +645,7 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 	sc.configure(ctx)
 	debugMatrixf("scenario %s management data: %+v", scenario, ctx.data)
 
-	envSnapshots := []envSnapshot{setEnv("RUN_SUBTEST_CONTROLLER", "1")}
+	var envSnapshots []envSnapshot
 	for key, value := range ctx.env {
 		envSnapshots = append(envSnapshots, setEnv(key, value))
 	}

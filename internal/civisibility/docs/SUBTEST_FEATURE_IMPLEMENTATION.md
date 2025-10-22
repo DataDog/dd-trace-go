@@ -72,7 +72,7 @@ The feature builds on three pillars:
 
 - On entry, computes the subtest identity and inspects parent metadata when available.
 - Short-circuits in two cases:
-  - Feature flag disabled or no directives present (`RUN_SUBTEST_CONTROLLER=1` harness case).
+  - Feature flag disabled or no directives present (harness mode short-circuits to defer to the scenario driver).
   - Parent already handles everything (legacy behaviour).
 - For subtests needing instrumentation:
   - Calls `applyAdditionalFeaturesToTestFunc` with parent metadata so ownership stays consistent.
@@ -138,8 +138,6 @@ Each scenario is thoroughly documented inline so future contributors can extend 
 - `DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED` – enable subtest-specific behaviour.
 - `CIVisibilityTestManagementAttemptToFixRetries` – global attempt-to-fix retry budget (already
   supported but exercised by new scenarios).
-- `RUN_SUBTEST_CONTROLLER` – harness env var that forces the orchestrion wrapper to defer to the
-  scenario driver when no directives exist.
 
 ## Summary
 
