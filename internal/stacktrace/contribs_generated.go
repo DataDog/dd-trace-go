@@ -553,6 +553,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/onsi/ginkgo",
 		"github.com/onsi/ginkgo/v2",
 		"github.com/onsi/gomega",
+		"github.com/open-feature/go-sdk",
 		"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/sampling",
 		"github.com/open-telemetry/opentelemetry-collector-contrib/processor/probabilisticsamplerprocessor",
 		"github.com/opencontainers/go-digest",
