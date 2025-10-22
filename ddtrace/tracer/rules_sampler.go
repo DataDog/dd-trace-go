@@ -463,9 +463,10 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
-			if rule.Provenance == Customer {
+			switch rule.Provenance {
+			case Customer:
 				sampler = samplernames.RemoteUserRule
-			} else if rule.Provenance == Dynamic {
+			case Dynamic:
 				sampler = samplernames.RemoteDynamicRule
 			}
 			break

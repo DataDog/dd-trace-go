@@ -703,8 +703,6 @@ func TestSpanString(t *testing.T) {
 	// don't bother checking the contents, just make sure it works.
 	assert.NotEqual("", span.String())
 	span.Finish()
-	span.mu.RLock()
-	defer span.mu.RUnlock()
 	assert.NotEqual("", span.String())
 }
 
