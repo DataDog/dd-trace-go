@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -274,4 +275,38 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("unknown-env", c.aggregationKey.Env)
 	})
+}
+
+func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
+	uniqueMethod := "POST"
+	uniqueEndpoint := "/__unique_endpoint__"
+
+	bucketSize := int64(500_000)
+	s := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano(),
+		duration: int64(time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+		meta: map[string]string{
+			ext.HTTPMethod:   uniqueMethod,
+			ext.HTTPEndpoint: uniqueEndpoint,
+		},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(&config{transport: transport, env: "someEnv"}, bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+
+	// Assert via typed fields in the aggregation key
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
+	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
 }

@@ -156,14 +156,14 @@ func logStartup(t *tracer) {
 		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err.Error())
+		info.SamplingRulesError = err.Error()
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
-			info.AgentError = fmt.Sprintf("%s", err.Error())
+			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
 	}
