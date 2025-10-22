@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -29,7 +30,7 @@ func TestMain(m *testing.M) {
 		var buffer bytes.Buffer
 		cmd.Stdout = &buffer
 		cmd.Stderr = &buffer
-		if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
+		if log.DebugEnabled() {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 		}

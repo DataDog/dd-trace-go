@@ -8,7 +8,6 @@ package gotesting
 import (
 	"bufio"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"slices"
@@ -26,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -713,8 +713,8 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 
 	// Set the Test Optimization test to the execution metadata
 	execMeta.test = test
-	if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" && execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
-		fmt.Printf("setTestTagsFromExecutionMetadata assigned test for %s\n", execMeta.identity.FullName)
+	if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+		log.Debug("setTestTagsFromExecutionMetadata assigned test for %s", execMeta.identity.FullName)
 	}
 
 	// If the execution is for a new test we tag the test event as new

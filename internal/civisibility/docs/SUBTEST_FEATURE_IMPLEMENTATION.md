@@ -65,7 +65,7 @@ The feature builds on three pillars:
     isn’t already handling retries.
 - During execution:
   - Propagates explicit directives before OR-ing inherited values, ensuring targeted overrides win.
-  - Logs debug output (`SUBTEST_MATRIX_DEBUG=1`) to help trace scenario execution.
+  - Emits debug logs to help trace scenario execution when verbose logging is enabled.
   - Only the orchestrator in charge emits attempt-to-fix retry logs and success tags.
 
 ### `instrumentation_orchestrion.go`
@@ -78,7 +78,7 @@ The feature builds on three pillars:
   - Calls `applyAdditionalFeaturesToTestFunc` with parent metadata so ownership stays consistent.
   - Handles panic, fail, skip, and pass paths, tagging attempt-to-fix success/failure and retry
     exhaustion where appropriate.
-  - Writes verbose debug messages when `SUBTEST_MATRIX_DEBUG=1` to aid troubleshooting.
+  - Writes verbose debug messages when debug logging is enabled to aid troubleshooting.
 
 ## Attempt-to-Fix Ownership Rules
 
@@ -108,7 +108,7 @@ These rules are codified in `parentAttemptFixScenario`,
   - Attempt-to-fix telemetry (`test.is_retry`, `test.retry_reason`, `test.test_management.attempt_to_fix_passed`).
   - Quarantine/disable tags for parent/child combinations.
   - Parallel subtests (`SubAttemptFixParallel`) behave identically to sequential ones.
-- Debug logging (`SUBTEST_MATRIX_DEBUG=1`) provides detailed trace output, including identity matches,
+- Debug logging provides detailed trace output, including identity matches,
   retry decisions, and span metadata.
 
 ### Scenarios Covered
@@ -140,7 +140,6 @@ Each scenario is thoroughly documented inline so future contributors can extend 
   supported but exercised by new scenarios).
 - `RUN_SUBTEST_CONTROLLER` – harness env var that forces the orchestrion wrapper to defer to the
   scenario driver when no directives exist.
-- `SUBTEST_MATRIX_DEBUG` – verbose logging for development/tests.
 
 ## Summary
 

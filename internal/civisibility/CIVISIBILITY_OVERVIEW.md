@@ -36,7 +36,7 @@
     2. Child-only directives wrap the subtest locally (when feature flag enabled and exact match present) while leaving the parent neutral.  
     3. Parent and child requesting attempt-to-fix results in the parent winning; subtests receive tags but do not run retries.  
     4. Parent quarantine + attempt-to-fix keeps the parent as the retry owner while subtests inherit quarantine tags; a quarantined parent without attempt-to-fix leaves children free to execute their own retries if explicitly configured.
-  - Feature gating: `DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED` enables subtest directives. `RUN_SUBTEST_CONTROLLER` forces wrappers to short-circuit for harness-driven scenarios, while `SUBTEST_MATRIX_DEBUG=1` prints verbose identity/ownership traces.
+  - Feature gating: `DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED` enables subtest directives. `RUN_SUBTEST_CONTROLLER` forces wrappers to short-circuit for harness-driven scenarios; standard debug logs capture identity/ownership traces when enabled.
   - `instrumentation_orchestrion.go` and `orchestrion.yml` support bytecode rewriting via Orchestrion for transparent instrumentation in user code. The orchestrion path computes subtest identities, inspects parent metadata, and applies the same ownership logic as the manual wrappers.
   - `coverage/` builds code coverage payloads, writes them via `coverage_writer`, and includes an auto-generated `test_coverage_msgp.go` for MsgPack encoding.
   - `reflections.go` / `_test.go` ensure compatibility with `go test` internal structures across versions; helper routines detect struct offsets, function pointers, and maintain compatibility with new Go releases.
@@ -66,7 +66,7 @@
 
 ## Testing, Fixtures, and Tooling
 - Extensive `_test.go` coverage in integrations (`manual_api`, `gotesting`, `logs`) and utils ensures feature toggles, retries, coverage serialization, and network clients behave as expected.
-- Subtest matrix harness (`integrations/gotesting/subtests`) runs under `go test` and exercises the parent/subtest permutations needed to guard subtest-specific instrumentation changes. Use `SUBTEST_MATRIX_DEBUG=1` locally to print per-scenario diagnostics.
+- Subtest matrix harness (`integrations/gotesting/subtests`) runs under `go test` and exercises the parent/subtest permutations needed to guard subtest-specific instrumentation changes. Enable debug logging to surface per-scenario diagnostics.
 - `integrations/gotesting/testcontroller_test.go` retains historical scenarios for flaky retries, EFD, ITR, and impacted tests; it coexists with the new subtest harness to avoid regression gaps.
 - `utils/testdata/fixtures/providers/*.json` mimics CI payloads; `github-event.json` supports webhook parsing tests.
 - Generated assets: `coverage/test_coverage_msgp.go` (MsgPack via `go:generate`), with tests to ensure deterministic encoding.
@@ -85,6 +85,6 @@
 - Logging pipeline mirrors test span IDs and includes service/host tags, but is guarded behind stable-config flag to avoid unexpected log emission.
 
 ## Getting Involved
-- When touching `integrations/gotesting`, run both the legacy controller suite and the subtest matrix (`go test ./internal/civisibility/integrations/gotesting/...`). Many scenarios spawn subprocesses; set `SUBTEST_MATRIX_DEBUG=1` for verbose traces.
+- When touching `integrations/gotesting`, run both the legacy controller suite and the subtest matrix (`go test ./internal/civisibility/integrations/gotesting/...`). Many scenarios spawn subprocesses; enable debug logging for verbose traces.
 - Any change to retry ownership or metadata propagation should be mirrored in the harness scenarios and in `docs/SUBTEST_FEATURE_IMPLEMENTATION.md` to keep documentation synchronized.
 - Utility changes often require updating fixtures or provider expectations; leverage the existing test suites instead of ad-hoc scripts.

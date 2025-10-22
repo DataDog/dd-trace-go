@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"sync"
@@ -388,8 +387,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 
 				// Attempt To Fix retries are always set to the configured value.
 				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
-					if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" && execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
-						fmt.Printf("postAdjustRetryCount attempt_to_fix identity=%s setting=%d\n", execMeta.identity.FullName, settings.TestManagement.AttemptToFixRetries)
+					if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+						log.Debug("postAdjustRetryCount attempt_to_fix identity=%s setting=%d", execMeta.identity.FullName, settings.TestManagement.AttemptToFixRetries)
 					}
 					return int64(settings.TestManagement.AttemptToFixRetries)
 				}
@@ -436,8 +435,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 					} else if skipped {
 						status = "SKIP"
 					}
-					if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" && execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
-						fmt.Printf("postPerExecution attempt_to_fix identity=%s orchestrate=%t run=%d status=%s\n", execMeta.identity.FullName, ptrMeta.shouldOrchestrateAttemptToFix, executionIndex, status)
+					if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+						log.Debug("postPerExecution attempt_to_fix identity=%s orchestrate=%t run=%d status=%s", execMeta.identity.FullName, ptrMeta.shouldOrchestrateAttemptToFix, executionIndex, status)
 					}
 
 					if ptrMeta.shouldOrchestrateAttemptToFix {
@@ -757,8 +756,8 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	}
 
 	// Extract module and suite if present
-	if execMeta.test == nil && execMeta.identity != nil && os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-		fmt.Printf("execMeta.test nil for %s\n", execMeta.identity.FullName)
+	if execMeta.test == nil && execMeta.identity != nil {
+		log.Debug("execMeta.test nil for %s", execMeta.identity.FullName)
 	}
 	var currentSuite integrations.TestSuite
 	if execMeta.test != nil {

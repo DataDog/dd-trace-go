@@ -20,6 +20,7 @@ import (
 	gotesting "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -587,9 +588,7 @@ func assertTagCount(spans []*mocktracer.Span, key string, value string, expected
 			count++
 		}
 	}
-	if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-		debugMatrixf("%s: observed %d spans with %s=%q", label, count, key, value)
-	}
+	debugMatrixf("%s: observed %d spans with %s=%q", label, count, key, value)
 	if count != expected {
 		panic(fmt.Sprintf("%s: expected %d spans with tag %s=%q, got %d", label, expected, key, value, count))
 	}
@@ -661,11 +660,9 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 	settings := integrations.GetSettings()
 	if settings != nil {
 		settings.SubtestFeaturesEnabled = true
-		if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-			fmt.Printf("subtest matrix: settings.SubtestFeaturesEnabled=%t\n", settings.SubtestFeaturesEnabled)
-		}
-	} else if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-		fmt.Printf("subtest matrix: settings unavailable\n")
+		debugMatrixf("subtest matrix: settings.SubtestFeaturesEnabled=%t", settings.SubtestFeaturesEnabled)
+	} else {
+		debugMatrixf("subtest matrix: settings unavailable")
 	}
 
 	tracer := integrations.InitializeCIVisibilityMock()
@@ -693,11 +690,9 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 	return 0
 }
 
-// debugMatrixf prints scenario scoped diagnostics when SUBTEST_MATRIX_DEBUG is enabled.
+// debugMatrixf emits scenario-scoped diagnostics using the package logger.
 func debugMatrixf(format string, args ...interface{}) {
-	if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-		fmt.Printf(format+"\n", args...)
-	}
+	log.Debug(format, args...)
 }
 
 type envSnapshot struct {
@@ -776,10 +771,8 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 			debugMatrixf("subtest server: test-management request")
 			defer r.Body.Close()
 			w.Header().Set("Content-Type", "application/json")
-			if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-				if payload, err := json.Marshal(cfg.managementData); err == nil {
-					fmt.Printf("subtest server: management payload %s\n", payload)
-				}
+			if payload, err := json.Marshal(cfg.managementData); err == nil {
+				debugMatrixf("subtest server: management payload %s", payload)
 			}
 			resp := struct {
 				Data struct {

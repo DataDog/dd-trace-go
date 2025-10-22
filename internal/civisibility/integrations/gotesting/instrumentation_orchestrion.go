@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -156,19 +157,18 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			shouldInstrument := settings != nil && settings.SubtestFeaturesEnabled
 			hasDirective := false
 
-			if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-				globalData := integrations.GetTestManagementTestsData()
-				fmt.Printf("subtest gating management snapshot modules=%d\n", len(globalData.Modules))
-				fmt.Printf("subtest gating module=%s suite=%s identity=%s\n", moduleName, suiteName, subtestIdentity.FullName)
+			if globalData := integrations.GetTestManagementTestsData(); globalData != nil {
+				log.Debug("subtest gating management snapshot modules=%d", len(globalData.Modules))
+			} else {
+				log.Debug("subtest gating management snapshot unavailable")
 			}
+			log.Debug("subtest gating module=%s suite=%s identity=%s", moduleName, suiteName, subtestIdentity.FullName)
 
 			if parentExecMeta != nil {
 				if parentExecMeta.isAttemptToFix || parentExecMeta.isDisabled || parentExecMeta.isQuarantined {
 					hasDirective = true
-					if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-						fmt.Printf("subtest gating parent directive for %s: attempt_to_fix=%t disabled=%t quarantined=%t\n",
-							subtestIdentity.FullName, parentExecMeta.isAttemptToFix, parentExecMeta.isDisabled, parentExecMeta.isQuarantined)
-					}
+					log.Debug("subtest gating parent directive for %s: attempt_to_fix=%t disabled=%t quarantined=%t",
+						subtestIdentity.FullName, parentExecMeta.isAttemptToFix, parentExecMeta.isDisabled, parentExecMeta.isQuarantined)
 				}
 			}
 
@@ -176,17 +176,15 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				if data, matchKind, hasData := getTestManagementData(subtestIdentity); hasData && matchKind == testManagementMatchExact && data != nil {
 					if data.Disabled || data.Quarantined || data.AttemptToFix {
 						hasDirective = true
-						if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-							fmt.Printf("subtest gating exact match for %s: disabled=%t quarantined=%t attempt_to_fix=%t\n",
-								subtestIdentity.FullName, data.Disabled, data.Quarantined, data.AttemptToFix)
-						}
+						log.Debug("subtest gating exact match for %s: disabled=%t quarantined=%t attempt_to_fix=%t",
+							subtestIdentity.FullName, data.Disabled, data.Quarantined, data.AttemptToFix)
 					}
-				} else if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-					fmt.Printf("subtest gating no exact match for %s (hasData=%t matchKind=%d)\n", subtestIdentity.FullName, hasData, matchKind)
+				} else {
+					log.Debug("subtest gating no exact match for %s (hasData=%t matchKind=%d)", subtestIdentity.FullName, hasData, matchKind)
 				}
 			}
 
-			if !hasDirective && os.Getenv("RUN_SUBTEST_CONTROLLER") == "1" {
+			if !hasDirective && env.Get("RUN_SUBTEST_CONTROLLER") == "1" {
 				f(t)
 				return
 			}
@@ -210,9 +208,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			addModulesCounters(moduleName, 1)
 			addSuitesCounters(suiteName, 1)
 
-			if os.Getenv("SUBTEST_MATRIX_DEBUG") == "1" {
-				fmt.Printf("instrumentTestingTFunc: creating test span for %s\n", currentT.Name())
-			}
+			log.Debug("instrumentTestingTFunc: creating test span for %s", currentT.Name())
 
 			module := session.GetOrCreateModule(moduleName)
 			suite := module.GetOrCreateSuite(suiteName)
