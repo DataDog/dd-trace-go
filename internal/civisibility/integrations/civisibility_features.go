@@ -148,9 +148,9 @@ func ensureSettingsInitialization(serviceName string) {
 		}
 
 		// determine if subtest-specific features are enabled via environment variables
-		subtestFeaturesEnabled := internal.BoolEnv(constants.CIVisibilitySubtestFeaturesEnabled, false)
-		if subtestFeaturesEnabled {
-			log.Debug("civisibility: subtest test management features enabled by environment variable")
+		subtestFeaturesEnabled := internal.BoolEnv(constants.CIVisibilitySubtestFeaturesEnabled, true)
+		if !subtestFeaturesEnabled {
+			log.Debug("civisibility: subtest test management features disabled by environment variable")
 		}
 		ciSettings.SubtestFeaturesEnabled = subtestFeaturesEnabled
 
