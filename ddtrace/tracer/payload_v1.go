@@ -99,7 +99,7 @@ func newPayloadV1() *payloadV1 {
 		protocolVersion: traceProtocolV1,
 		attributes:      make(map[string]anyValue),
 		chunks:          make([]traceChunk, 0),
-		readOff:         8,
+		readOff:         0,
 		writeOff:        0,
 	}
 }

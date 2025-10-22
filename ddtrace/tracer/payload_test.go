@@ -200,6 +200,7 @@ func TestPayloadV1EmbeddedStreamingStringTable(t *testing.T) {
 
 func TestPayloadV1UpdateHeader(t *testing.T) {
 	testCases := []uint32{ // Number of items
+		0,
 		15,
 		math.MaxUint16,
 		math.MaxUint32,
@@ -220,6 +221,17 @@ func TestPayloadV1UpdateHeader(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEmptyPayloadV1(t *testing.T) {
+	p := newPayloadV1()
+	assert := assert.New(t)
+	encoded, err := io.ReadAll(p)
+	assert.NoError(err)
+	length, o, err := msgp.ReadMapHeaderBytes(encoded)
+	assert.NoError(err)
+	assert.Equal(uint32(0), length)
+	assert.Empty(o)
 }
 
 func assertProcessTags(t *testing.T, payload spanLists) {
