@@ -130,11 +130,12 @@ type (
 	// Contains role (user, assistant, system) and content.
 	LLMMessage = illmobs.LLMMessage
 
-	// EmbeddedDocument represents a document that can be converted to embeddings.
+	// EmbeddedDocument represents a document for embedding operations.
+	// Contains the document content and metadata.
 	// It is used to annotate input of embedding spans.
 	EmbeddedDocument = illmobs.EmbeddedDocument
 
-	// RetrievedDocument represents a document retrieved from a knowledge base or search system.
+	// RetrievedDocument represents a document for retrieval operations.
 	// Contains the document content, metadata, and relevance score.
 	// It is used to annotate output of retrieval spans.
 	RetrievedDocument = illmobs.RetrievedDocument

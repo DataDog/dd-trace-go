@@ -18,9 +18,15 @@ type EvaluationValue interface {
 	~bool | ~string | ~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64
 }
 
+// EvaluatedSpan is the interface used in SubmitEvaluationFromSpan to identify the span to evaluate.
+type EvaluatedSpan interface {
+	SpanID() string
+	TraceID() string
+}
+
 // SubmitEvaluationFromSpan submits an evaluation metric for the given span.
 // The metric will be associated with the span using its span ID and trace ID.
-func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span Span, opts ...EvaluationOption) {
+func SubmitEvaluationFromSpan[T EvaluationValue](label string, value T, span EvaluatedSpan, opts ...EvaluationOption) {
 	var spanID, traceID string
 	if span != nil {
 		spanID = span.SpanID()
