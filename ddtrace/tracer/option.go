@@ -138,7 +138,7 @@ const (
 
 // config holds the tracer configuration.
 type config struct {
-	// debug, when true, writes details to logs.
+	// debug, when true,instrumentationSource writes details to logs.
 	debug bool
 
 	// appsecStartOptions controls the options used when starting appsec features.
