@@ -1085,7 +1085,7 @@ func WithAgentURL(agentURL string) StartOption {
 					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
 					return
 				}
-				log.Warn("Fail to parse Agent URL")
+				log.Warn("Fail to parse Agent URL: %s", err.Error())
 				return
 			}
 			log.Warn("Fail to parse Agent URL: %s", err.Error())
