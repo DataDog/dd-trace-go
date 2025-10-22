@@ -287,6 +287,9 @@ type config struct {
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
 
+	// syncFlushEnabled specifies whether the tracer should perform flush synchronously.
+	syncFlushEnabled bool
+
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
 
@@ -1360,6 +1363,14 @@ func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
 		c.partialFlushEnabled = true
 		c.partialFlushMinSpans = numSpans
+	}
+}
+
+// WithSyncFlushing enables synchronous flushing, meaning that calls to
+// Flush() will block until the payload has been sent.
+func WithSyncFlushing(enabled bool) StartOption {
+	return func(c *config) {
+		c.syncFlushEnabled = enabled
 	}
 }
 
