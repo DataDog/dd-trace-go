@@ -441,9 +441,45 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		p.buf = encodeField(p.buf, fullSetBitmap, 15, component, st)
 
 		spanKind := span.meta[ext.SpanKind]
-		p.buf = encodeField(p.buf, fullSetBitmap, 16, spanKind, st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 16, getSpanKindValue(spanKind), st)
 	}
 	return true, nil
+}
+
+// translate a span kind string to its uint32 value
+func getSpanKindValue(sk string) uint32 {
+	switch sk {
+	case ext.SpanKindInternal:
+		return 1
+	case ext.SpanKindServer:
+		return 2
+	case ext.SpanKindClient:
+		return 3
+	case ext.SpanKindProducer:
+		return 4
+	case ext.SpanKindConsumer:
+		return 5
+	default:
+		return 1 // default to internal
+	}
+}
+
+// translate a span kind uint32 value to its string value
+func getSpanKindString(sk uint32) string {
+	switch sk {
+	case 1:
+		return ext.SpanKindInternal
+	case 2:
+		return ext.SpanKindServer
+	case 3:
+		return ext.SpanKindClient
+	case 4:
+		return ext.SpanKindProducer
+	case 5:
+		return ext.SpanKindConsumer
+	default:
+		return ext.SpanKindInternal
+	}
 }
 
 // encodeSpanLinks encodes a list of span links associated with fieldID into p.buf in msgp format.
@@ -1098,15 +1134,12 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 				span.SetTag(ext.Component, component)
 			}
 		case 16:
-			var kind string
-			kind, o, ok = st.Read(o)
-			if !ok {
-				err = errUnableDecodeString
-				break
+			var sk uint32
+			sk, o, err = msgp.ReadUint32Bytes(o)
+			if err != nil {
+				return o, err
 			}
-			if kind != "" {
-				span.SetTag(ext.SpanKind, kind)
-			}
+			span.SetTag(ext.SpanKind, getSpanKindString(sk))
 		default:
 			return o, fmt.Errorf("unexpected field ID %d", idx)
 		}
