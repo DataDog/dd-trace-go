@@ -190,7 +190,7 @@ func (p *payloadV1) clear() {
 	p.reader = nil
 	p.header = nil
 	p.readOff = 0
-	p.fields = 0
+	atomic.StoreUint32(&p.fields, 0)
 	p.count = 0
 }
 
@@ -590,7 +590,7 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 		return p.buf, err
 	}
 	p.buf = o
-	p.fields = numFields
+	atomic.StoreUint32(&p.fields, numFields)
 	p.header = make([]byte, 8)
 	p.updateHeader()
 
