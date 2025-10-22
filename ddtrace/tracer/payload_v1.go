@@ -70,7 +70,7 @@ type payloadV1 struct {
 	protocolVersion float64
 
 	// header specifies the first few bytes in the msgpack stream
-	// indicating the type of array (fixarray, array16 or array32)
+	// indicating the type of map (fixmap, map16 or map32)
 	// and the number of items contained in the stream.
 	header []byte
 
@@ -110,7 +110,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// Conceptually, our `t spanList` corresponds to one `traceChunk`.
 	if !p.bm.contains(11) && len(t) > 0 {
 		p.bm.set(11)
-		p.fields += 1
+		atomic.AddUint32(&p.fields, 1)
 	}
 
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
@@ -152,7 +152,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// the number of fields.
 	if !p.bm.contains(10) && len(p.attributes) > 0 {
 		p.bm.set(10)
-		p.fields += 1
+		atomic.AddUint32(&p.fields, 1)
 	}
 
 	p.chunks = append(p.chunks, tc)
@@ -186,8 +186,12 @@ func (p *payloadV1) reset() {
 
 func (p *payloadV1) clear() {
 	p.bm = 0
-	p.buf = p.buf[:]
+	p.buf = p.buf[:0]
 	p.reader = nil
+	p.header = nil
+	p.readOff = 0
+	p.fields = 0
+	p.count = 0
 }
 
 // recordItem records that a new chunk was added to the payload.
@@ -319,13 +323,14 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 }
 
 // encodeAttributes encodes an array associated with fieldID into the buffer in msgp format.
+// Each attribute is encoded as three values: the key, value type, and value.
 func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyValue, st *stringTable) (bool, error) {
 	if !bm.contains(uint32(fieldID)) {
 		return false, nil
 	}
 
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))        // msgp key
-	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(kv)*3)) // number of item pairs in map
+	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(kv)*3)) // number of item pairs in array
 
 	for k, v := range kv {
 		// encode msgp key
@@ -532,49 +537,49 @@ func (p *payloadV1) GetAttributes() map[string]anyValue { return p.attributes }
 func (p *payloadV1) SetContainerID(v string) {
 	p.containerID = v
 	p.bm.set(2)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 func (p *payloadV1) SetLanguageName(v string) {
 	p.languageName = v
 	p.bm.set(3)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 func (p *payloadV1) SetLanguageVersion(v string) {
 	p.languageVersion = v
 	p.bm.set(4)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 func (p *payloadV1) SetTracerVersion(v string) {
 	p.tracerVersion = v
 	p.bm.set(5)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 func (p *payloadV1) SetRuntimeID(v string) {
 	p.runtimeID = v
 	p.bm.set(6)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 func (p *payloadV1) SetEnv(v string) {
 	p.env = v
 	p.bm.set(7)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 func (p *payloadV1) SetHostname(v string) {
 	p.hostname = v
 	p.bm.set(8)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 func (p *payloadV1) SetAppVersion(v string) {
 	p.appVersion = v
 	p.bm.set(9)
-	p.fields += 1
+	atomic.AddUint32(&p.fields, 1)
 }
 
 // decodeBuffer takes the buffer from the payload, decodes it, and populates the fields
