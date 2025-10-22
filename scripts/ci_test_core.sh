@@ -11,7 +11,8 @@ mkdir -p "$TEST_RESULTS"
 NO_SHUFFLE_PATTERN="(github\.com/DataDog/dd-trace-go/v2/ddtrace/tracer|\
 github\.com/DataDog/dd-trace-go/v2/internal/civisibility/utils|\
 github\.com/DataDog/dd-trace-go/v2/profiler|\
-github\.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo)$"
+github\.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo|\
+github\.com/DataDog/dd-trace-go/v2/instrumentation/httptrace)$"
 
 mapfile -t SHUFFLE_PACKAGES < <(go list ./... | grep -v /contrib/ | grep -Ev "$NO_SHUFFLE_PATTERN")
 mapfile -t NO_SHUFFLE_PACKAGES < <(go list ./... | grep -v /contrib/ | grep -E "$NO_SHUFFLE_PATTERN")
