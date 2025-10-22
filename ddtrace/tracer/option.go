@@ -334,9 +334,9 @@ type config struct {
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
 
-	// lambdaFunctionName, if set, indicates we are in a lambda function and holds the respective name
-	// It is set using the LAMBDA_FUNCTION_NAME env var is available.
-	lambdaFunctionName string
+	// isLambdaFunction, if true, indicates we are in a lambda function
+	// It is set by checking for a nonempty LAMBDA_FUNCTION_NAME env var.
+	isLambdaFunction bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -471,7 +471,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
-		c.lambdaFunctionName = v
+		if v != "" {
+			c.isLambdaFunction = true
+		}
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)

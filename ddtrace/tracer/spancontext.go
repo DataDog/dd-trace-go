@@ -656,7 +656,7 @@ checks if we are in a serverless environment
 TODO add checks for Azure functions and other serverless environments
 */
 func isServerless(tc TracerConf) bool {
-	if tc.LambdaFunctionName != "" {
+	if tc.isLambdaFunction {
 		return true
 	}
 	return false

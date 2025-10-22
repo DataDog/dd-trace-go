@@ -54,7 +54,7 @@ type TracerConf struct { //nolint:revive
 	VersionTag           string
 	ServiceTag           string
 	TracingAsTransport   bool
-	LambdaFunctionName   string
+	isLambdaFunction     bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -956,7 +956,7 @@ func (t *tracer) TracerConf() TracerConf {
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
-		LambdaFunctionName:   t.config.lambdaFunctionName,
+		isLambdaFunction:     t.config.isLambdaFunction,
 	}
 }
 
