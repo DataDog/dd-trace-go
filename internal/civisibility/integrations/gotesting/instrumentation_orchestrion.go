@@ -156,11 +156,6 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			shouldInstrument := settings != nil && settings.SubtestFeaturesEnabled
 			hasDirective := false
 
-			if globalData := integrations.GetTestManagementTestsData(); globalData != nil {
-				log.Debug("subtest gating management snapshot modules=%d", len(globalData.Modules))
-			} else {
-				log.Debug("subtest gating management snapshot unavailable")
-			}
 			log.Debug("subtest gating module=%s suite=%s identity=%s", moduleName, suiteName, subtestIdentity.FullName)
 
 			if parentExecMeta != nil {
