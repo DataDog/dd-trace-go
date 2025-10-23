@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -36,9 +35,7 @@ type DatadogProvider struct {
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
 
-	configChangeMu sync.Mutex
-	configChange   sync.Cond
-	initDone       atomic.Bool
+	configChange sync.Cond
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider.
@@ -64,7 +61,7 @@ func newDatadogProvider() *DatadogProvider {
 			Name: "Datadog Remote Config Provider",
 		},
 	}
-	p.configChange.L = &p.configChangeMu
+	p.configChange.L = &p.mu
 	return p
 }
 
@@ -74,7 +71,6 @@ func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguratio
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.configuration = config
-	p.initDone.Store(true)
 	p.configChange.Broadcast()
 }
 
@@ -93,12 +89,12 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 // Init initializes the provider. For the Datadog provider,
 // this is waiting for the first configuration to be loaded.
 func (p *DatadogProvider) Init(openfeature.EvaluationContext) error {
-	if p.initDone.Load() {
-		return nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for p.configuration == nil {
+		p.configChange.Wait()
 	}
 
-	p.configChangeMu.TryLock()
-	p.configChange.Wait()
 	return nil
 }
 
