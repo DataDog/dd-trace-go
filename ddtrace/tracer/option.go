@@ -1086,7 +1086,7 @@ func WithAgentURL(agentURL string) StartOption {
 		if err != nil {
 			var urlErr *url.Error
 			if errors.As(err, &urlErr) {
-				u, err = url.Parse(urlErr.URL)
+				u, _ = url.Parse(urlErr.URL)
 				if u != nil {
 					urlErr.URL = u.Redacted()
 					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
@@ -1095,7 +1095,7 @@ func WithAgentURL(agentURL string) StartOption {
 				log.Warn("Fail to parse Agent URL: %s", err.Error())
 				return
 			}
-			log.Warn("Fail to parse Agent URL: %s", err.Error())
+			log.Warn("Fail to parse Agent URL")
 			return
 		}
 		switch u.Scheme {
