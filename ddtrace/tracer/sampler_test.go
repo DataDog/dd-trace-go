@@ -827,7 +827,7 @@ func TestRulesSampler(t *testing.T) {
 			resName  string
 		}{
 			{
-				//first matching rule takes precedence
+				// first matching rule takes precedence
 				rules:    `[{"name": "abcd?", "sample_rate": 0.0},{"name": "abcd?", "sample_rate": 1.0}]`,
 				spanSrv:  "test-service",
 				spanName: "abcdef",

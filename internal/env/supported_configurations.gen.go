@@ -50,6 +50,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_DOGSTATSD_PORT":                                               {},
 	"DD_DYNAMIC_INSTRUMENTATION_ENABLED":                              {},
 	"DD_ENV":                                                          {},
+	"DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED":                       {},
 	"DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED":                  {},
 	"DD_EXTERNAL_ENV":                                                 {},
 	"DD_GIT_BRANCH":                                                   {},
