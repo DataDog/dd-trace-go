@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -112,6 +113,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		p.bm.set(11)
 		atomic.AddUint32(&p.fields, 1)
 	}
+	p.setTracerTags(t)
 
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
@@ -239,6 +241,21 @@ func (p *payloadV1) updateHeader() {
 		p.header[3] = msgpackMap32
 		p.readOff = 3
 	}
+}
+
+func (p *payloadV1) setTracerTags(t spanList) {
+	// set on first chunk
+	if atomic.LoadUint32(&p.count) != 0 {
+		return
+	}
+	if len(t) == 0 {
+		return
+	}
+	pTags := processtags.GlobalTags().String()
+	if pTags == "" {
+		return
+	}
+	t[0].setProcessTags(pTags)
 }
 
 func (p *payloadV1) Close() error {
