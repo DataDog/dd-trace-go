@@ -42,7 +42,7 @@ for contrib in $CONTRIBS; do
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
   fi
   go mod tidy
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
+  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race -coverprofile="coverage-$contrib_id.txt" -covermode=atomic --shuffle=on
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
@@ -58,7 +58,7 @@ for mod in $INSTRUMENTATION_SUBMODULES; do
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
   fi
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race -coverprofile="coverage-$mod_id.txt" -covermode=atomic
+  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race -coverprofile="coverage-$mod_id.txt" -covermode=atomic --shuffle=on
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
