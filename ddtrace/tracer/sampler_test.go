@@ -1169,7 +1169,7 @@ func TestRulesSampler(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Create a new span with the extracted context as parent
-		childSpan, _ := StartSpanFromContext(context.Background(), "child", ChildOf(extractedCtx))
+		childSpan, _ := StartSpanFromContext(context.Background(), "child", ChildOf(extractedCtx)) // At this point, extractedCtx has *trace.locked of true.
 
 		// Set ext.ManualKeep and check that the sampler changes
 		childSpan.SetTag(ext.ManualKeep, true)
