@@ -1147,6 +1147,38 @@ func TestRulesSampler(t *testing.T) {
 		assert.EqualValues(t, 2, priority)
 	})
 
+	t.Run("manual keep on propagated sampling decision", func(t *testing.T) {
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0")
+		tr, _, _, stop, err := startTestTracer(t)
+		assert.NoError(t, err)
+		defer stop()
+
+		s, _ := StartSpanFromContext(context.Background(), "whatever")
+		s.Finish()
+
+		// Ensure the span has a sampling decision (should be drop due to sample rate 0)
+		priority, _ := getMetric(s, keySamplingPriority)
+		assert.EqualValues(t, -1, priority)
+
+		// Inject the span context and extract it back
+		headers := TextMapCarrier(map[string]string{})
+		err = tr.Inject(s.Context(), headers)
+		assert.NoError(t, err)
+
+		extractedCtx, err := tr.Extract(headers)
+		assert.NoError(t, err)
+
+		// Create a new span with the extracted context as parent
+		childSpan, _ := StartSpanFromContext(context.Background(), "child", ChildOf(extractedCtx))
+
+		// Set ext.ManualKeep and check that the sampler changes
+		childSpan.SetTag(ext.ManualKeep, true)
+		childSpan.Finish()
+
+		childPriority, _ := getMetric(childSpan, keySamplingPriority)
+		assert.EqualValues(t, 2, childPriority)
+	})
+
 	t.Run("no-agent_psr-with-rules-sampling", func(t *testing.T) {
 		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"resource": "keep_me", "sample_rate": 0}]`)
 		_, _, _, stop, err := startTestTracer(t)
