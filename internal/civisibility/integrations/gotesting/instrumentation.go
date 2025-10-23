@@ -283,10 +283,6 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 		// Subtests currently inherit parent EFD/flaky retry behaviour; disable here to avoid double wrapping.
 		meta.isEarlyFlakeDetectionEnabled = false
 		meta.isFlakyTestRetriesEnabled = false
-		if parentExecMeta != nil && parentExecMeta.isAttemptToFix {
-			// Only orchestrate locally if the subtest explicitly overrides the parent directive.
-			meta.shouldOrchestrateAttemptToFix = meta.hasExplicitAttemptToFix && meta.isAttemptToFix && !parentExecMeta.isAttemptToFix
-		}
 	}
 
 	// Early Flake Detection feature
@@ -644,7 +640,6 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	}
 }
 
-// executeTestIteration executes a single test iteration and handles retries.
 // executeTestIteration runs a single attempt of the test (or subtest), recording metadata and
 // ensuring the retry orchestration has the latest execution context.
 func executeTestIteration(execOpts *executionOptions) bool {
@@ -736,11 +731,6 @@ func executeTestIteration(execOpts *executionOptions) bool {
 		opts.targetFunc(pLocalT)
 	}(ptrToLocalT, execOpts.options, &chn)
 	<-chn
-
-	if latestMeta := getTestMetadata(ptrToLocalT); latestMeta != nil {
-		// Capture the most recent metadata produced by the test run for downstream consumers.
-		execMeta = latestMeta
-	}
 
 	// Call cleanup functions after this execution
 	if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {
