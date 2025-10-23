@@ -43,6 +43,10 @@ func (r requestHeader) SpanOptions(_ context.Context) []tracer.StartSpanOption {
 	return r.spanOptions
 }
 
+func (r requestHeader) BodyParsingSizeLimit(_ context.Context) int {
+	return proxy.DefaultBodyParsingSizeLimit
+}
+
 var _ proxy.HTTPBody = (*requestBody)(nil)
 
 type requestBody struct {

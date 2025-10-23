@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
@@ -41,20 +40,32 @@ type AppsecEnvoyConfig struct {
 	Integration          Integration
 	BlockingUnavailable  bool
 	Context              context.Context
-	BodyParsingSizeLimit int
+	BodyParsingSizeLimit *int
 }
 
 // appsecEnvoyExternalProcessorServer is a server that implements the Envoy ExternalProcessorServer interface.
 type appsecEnvoyExternalProcessorServer struct {
 	envoyextproc.ExternalProcessorServer
 	config           AppsecEnvoyConfig
-	requestCounter   atomic.Uint32
 	messageProcessor proxy.Processor
 }
 
 // AppsecEnvoyExternalProcessorServer creates a new external processor server with AAP enabled
 func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer, config AppsecEnvoyConfig) envoyextproc.ExternalProcessorServer {
-	processor := &appsecEnvoyExternalProcessorServer{
+	switch config.Integration {
+	case GCPServiceExtensionIntegration:
+	case EnvoyIntegration, IstioIntegration, EnvoyGatewayIntegration:
+		// Set default body parsing size limit if not specified for non-default integrations
+		if config.BodyParsingSizeLimit == nil {
+			defaultBody := proxy.DefaultBodyParsingSizeLimit
+			config.BodyParsingSizeLimit = &defaultBody
+		}
+	default:
+		instr.Logger().Error("external_processing: invalid proxy integration type %d. Defaulting to GCPServiceExtensionIntegration", config.Integration)
+		config.Integration = GCPServiceExtensionIntegration
+	}
+
+	return &appsecEnvoyExternalProcessorServer{
 		ExternalProcessorServer: userImplementation,
 		config:                  config,
 		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
@@ -66,15 +77,6 @@ func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.External
 			BlockMessageFunc:     blockActionFunc,
 		}, instr),
 	}
-
-	switch config.Integration {
-	case GCPServiceExtensionIntegration, EnvoyIntegration, IstioIntegration, EnvoyGatewayIntegration:
-	default:
-		instr.Logger().Error("external_processing: invalid proxy integration type %d. Defaulting to GCPServiceExtensionIntegration", config.Integration)
-		config.Integration = GCPServiceExtensionIntegration
-	}
-
-	return processor
 }
 
 type processServerKeyType struct{}

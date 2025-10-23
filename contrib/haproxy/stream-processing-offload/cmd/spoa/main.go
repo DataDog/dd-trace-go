@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 )
 
 type haProxySpoaConfig struct {
@@ -59,7 +60,7 @@ func loadConfig() haProxySpoaConfig {
 	extensionHostStr := ipEnv("DD_HAPROXY_SPOA_HOST", net.IP{0, 0, 0, 0}).String()
 	extensionPortInt := intEnv("DD_HAPROXY_SPOA_PORT", 3000)
 	healthcheckPortInt := intEnv("DD_HAPROXY_SPOA_HEALTHCHECK_PORT", 3080)
-	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", 0)
+	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", proxy.DefaultBodyParsingSizeLimit)
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
