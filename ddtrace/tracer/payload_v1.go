@@ -113,7 +113,6 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		p.bm.set(11)
 		atomic.AddUint32(&p.fields, 1)
 	}
-	p.setTracerTags(t)
 
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
@@ -158,6 +157,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	if !p.bm.contains(10) && len(p.attributes) > 0 {
 		p.bm.set(10)
 		atomic.AddUint32(&p.fields, 1)
+		p.setProcessTags()
 	}
 
 	p.chunks = append(p.chunks, tc)
@@ -243,19 +243,19 @@ func (p *payloadV1) updateHeader() {
 	}
 }
 
-func (p *payloadV1) setTracerTags(t spanList) {
-	// set on first chunk
+// Set process tags onto the payload attributes
+func (p *payloadV1) setProcessTags() {
 	if atomic.LoadUint32(&p.count) != 0 {
-		return
-	}
-	if len(t) == 0 {
 		return
 	}
 	pTags := processtags.GlobalTags().String()
 	if pTags == "" {
 		return
 	}
-	t[0].setProcessTags(pTags)
+	p.attributes[keyProcessTags] = anyValue{
+		valueType: StringValueType,
+		value:     pTags,
+	}
 }
 
 func (p *payloadV1) Close() error {

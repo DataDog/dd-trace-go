@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -168,12 +169,10 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.NotEmpty(got.attributes)
 			assert.Equal(p.attributes, got.attributes)
 			assert.Equal(got.attributes["service"].value, "golden")
+			assert.Equal(got.attributes[keyProcessTags].value, processtags.GlobalTags().String())
 			assert.Greater(len(got.chunks), 0)
 			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
 			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
-
-			// check that the first span of the first chunk has the process tags
-			assert.Contains(got.chunks[0].spans[0].meta, keyProcessTags)
 		})
 	}
 }
