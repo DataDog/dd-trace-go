@@ -407,7 +407,7 @@ require (
 retract (
 	[v1.999.0-rc.1, v1.999.0-rc.41]
 	[v1.999.0-beta.5, v1.999.0-beta.13]
-	v1.74.8-rc.1 // Only contains retractions
+	[v1.74.8-rc.1, v1.74.8-rc.3] // Only contains retractions
 	v1.74.7 // Inappropriate Go version upgrade
 	v1.74.7-rc.1 // Invalid tag
 	v1.74.4 // Incorrect dd-trace-go/v2 version
