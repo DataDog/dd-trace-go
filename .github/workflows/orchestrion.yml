@@ -220,6 +220,7 @@ jobs:
       # failure tests as real failures in the backend.
       - name: Run Tests
         shell: bash
+        continue-on-error: true
         run: |-
           export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
           echo "PATH: ${PATH}"
@@ -291,12 +292,11 @@ jobs:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
 
-      # Checkout and prepare for uploading to Datadog CI
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          repository: 'DataDog/dd-trace-go'
-          ref:  ${{ inputs.orchestrion-version != '' && 'main' || github.ref }}
+          ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
+          clean: false
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true

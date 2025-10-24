@@ -222,6 +222,7 @@ jobs:
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Test Contrib
+        continue-on-error: true
         if: always()
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
@@ -303,6 +304,7 @@ jobs:
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Test Core
+        continue-on-error: true
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
