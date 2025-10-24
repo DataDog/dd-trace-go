@@ -102,8 +102,10 @@ type Config struct {
 func loadConfig() *Config {
 	cfg := new(Config)
 
+	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg.AgentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
 	cfg.Debug = provider.getBool("DD_TRACE_DEBUG", false)
+	// TODO: Initialize all fields
 
 	return cfg
 }
