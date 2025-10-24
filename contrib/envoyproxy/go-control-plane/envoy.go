@@ -53,13 +53,7 @@ type appsecEnvoyExternalProcessorServer struct {
 // AppsecEnvoyExternalProcessorServer creates a new external processor server with AAP enabled
 func AppsecEnvoyExternalProcessorServer(userImplementation envoyextproc.ExternalProcessorServer, config AppsecEnvoyConfig) envoyextproc.ExternalProcessorServer {
 	switch config.Integration {
-	case GCPServiceExtensionIntegration:
-	case EnvoyIntegration, IstioIntegration, EnvoyGatewayIntegration:
-		// Set default body parsing size limit if not specified for non-default integrations
-		if config.BodyParsingSizeLimit == nil {
-			defaultBody := proxy.DefaultBodyParsingSizeLimit
-			config.BodyParsingSizeLimit = &defaultBody
-		}
+	case GCPServiceExtensionIntegration, EnvoyIntegration, IstioIntegration, EnvoyGatewayIntegration:
 	default:
 		instr.Logger().Error("external_processing: invalid proxy integration type %d. Defaulting to GCPServiceExtensionIntegration", config.Integration)
 		config.Integration = GCPServiceExtensionIntegration
