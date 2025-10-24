@@ -66,8 +66,9 @@ const (
 	traceCountHeader         = "X-Datadog-Trace-Count"       // header containing the number of traces in the payload
 	obfuscationVersionHeader = "Datadog-Obfuscation-Version" // header containing the version of obfuscation used, if any
 
-	tracesAPIPath = "/v0.4/traces"
-	statsAPIPath  = "/v0.6/stats"
+	tracesAPIPath   = "/v0.4/traces"
+	tracesAPIPathV1 = "/v1.0/traces"
+	statsAPIPath    = "/v0.6/stats"
 )
 
 // transport is an interface for communicating data to the agent.
