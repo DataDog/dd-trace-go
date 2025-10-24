@@ -226,6 +226,7 @@ jobs:
           echo "Working directory: ${PWD}"
           orchestrion version
           PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
+          exit 1
 
           case "${MODE}" in
           "DRIVER")
