@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -30,31 +31,22 @@ type Processor struct {
 	metrics                      *metrics
 	done                         context.CancelFunc
 	firstRequest                 sync.Once
-	computedBodyParsingSizeLimit int
+	computedBodyParsingSizeLimit atomic.Int64
 }
 
 // NewProcessor creates a new [Processor] instance with the given configuration and instrumentation
 // It also initializes the metrics reporter and a context cancellation function
 func NewProcessor(config ProcessorConfig, instr *instrumentation.Instrumentation) Processor {
-	computedBodyParsingSizeLimit := 0
-	if config.BodyParsingSizeLimit != nil {
-		computedBodyParsingSizeLimit = *config.BodyParsingSizeLimit
-		if computedBodyParsingSizeLimit <= 0 {
-			instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The request and response bodies will NOT be analyzed.")
-		}
-	}
-
 	if config.Context == nil {
 		config.Context = context.Background()
 	}
 	var done context.CancelFunc
 	config.Context, done = context.WithCancel(config.Context)
 	return Processor{
-		ProcessorConfig:              config,
-		instr:                        instr,
-		metrics:                      newMetricsReporter(config.Context, instr.Logger()),
-		done:                         done,
-		computedBodyParsingSizeLimit: computedBodyParsingSizeLimit,
+		ProcessorConfig: config,
+		instr:           instr,
+		metrics:         newMetricsReporter(config.Context, instr.Logger()),
+		done:            done,
 	}
 }
 
@@ -75,18 +67,23 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 	}
 
 	mp.firstRequest.Do(func() {
-		if mp.BodyParsingSizeLimit == nil {
-			mp.computedBodyParsingSizeLimit = req.BodyParsingSizeLimit(ctx)
-			if mp.computedBodyParsingSizeLimit <= 0 {
-				mp.instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The request and response bodies will NOT be analyzed.")
-			}
+		var bodyLimit int64
+		if mp.BodyParsingSizeLimit != nil {
+			bodyLimit = int64(*mp.BodyParsingSizeLimit)
+		} else {
+			bodyLimit = int64(req.BodyParsingSizeLimit(ctx))
 		}
-		mp.instr.Logger().Info("external_processing: first request received. Configuration: BlockingUnavailable=%v, BodyParsingSizeLimit=%dB, Framework=%s", mp.BlockingUnavailable, mp.computedBodyParsingSizeLimit, mp.Framework)
+		mp.computedBodyParsingSizeLimit.Store(bodyLimit)
+
+		if bodyLimit <= 0 {
+			mp.instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The request and response bodies will NOT be analyzed.")
+		}
+		mp.instr.Logger().Info("external_processing: first request received. Configuration: BlockingUnavailable=%v, BodyParsingSizeLimit=%dB, Framework=%s", mp.BlockingUnavailable, mp.computedBodyParsingSizeLimit.Load(), mp.Framework)
 	})
 
 	reqState, blocked := newRequestState(
 		httpRequest,
-		mp.computedBodyParsingSizeLimit,
+		int(mp.computedBodyParsingSizeLimit.Load()),
 		mp.Framework,
 		req.SpanOptions(ctx)...,
 	)
@@ -139,7 +136,7 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 
 	mp.instr.Logger().Debug("message_processor: received request body: %v - EOS: %v\n", len(req.GetBody()), req.GetEndOfStream())
 
-	if mp.computedBodyParsingSizeLimit <= 0 || reqState.State != MessageTypeRequestBody {
+	if mp.computedBodyParsingSizeLimit.Load() <= 0 || reqState.State != MessageTypeRequestBody {
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
 
@@ -223,7 +220,7 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 
 	mp.instr.Logger().Debug("message_processor: received response body: %v - EOS: %v\n", len(resp.GetBody()), resp.GetEndOfStream())
 
-	if mp.computedBodyParsingSizeLimit <= 0 || reqState.State != MessageTypeResponseBody {
+	if mp.computedBodyParsingSizeLimit.Load() <= 0 || reqState.State != MessageTypeResponseBody {
 		mp.instr.Logger().Error("message_processor: the body parsing has been wrongly configured. " +
 			"Please refer to the official documentation for guidance on the proper settings or contact support.")
 		return io.EOF
@@ -280,7 +277,7 @@ func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos b
 
 // isBodySupported checks if the body should be analyzed based on content type
 func (mp *Processor) isBodySupported(contentType string) bool {
-	if mp.computedBodyParsingSizeLimit <= 0 {
+	if mp.computedBodyParsingSizeLimit.Load() <= 0 {
 		return false
 	}
 
