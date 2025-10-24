@@ -8,6 +8,7 @@ package config
 import (
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 var provider = DefaultConfigProvider()
@@ -75,16 +76,25 @@ func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
 	return def
 }
 
+func DefaultConfigProvider() *ConfigProvider {
+	return &ConfigProvider{
+		sources: []ConfigSource{
+			ManagedDeclarativeConfig,
+			new(envConfigSource),
+			LocalDeclarativeConfig,
+		},
+	}
+}
+
 type ConfigSource interface {
 	Get(key string) string
 }
 
-func DefaultConfigProvider() *ConfigProvider {
-	return &ConfigProvider{
-		sources: []ConfigSource{
-			LocalDeclarativeConfig,
-			// EnvSource,
-			ManagedDeclarativeConfig,
-		},
+// normalizeKey is a helper function for ConfigSource implementations to normalize the key to a valid environment variable name.
+func normalizeKey(key string) string {
+	// Try to convert key to a valid environment variable name
+	if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") {
+		return key
 	}
+	return "DD_" + strings.ToUpper(key)
 }

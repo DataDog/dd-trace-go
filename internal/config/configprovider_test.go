@@ -6,10 +6,12 @@
 package config
 
 import (
+	"os"
 	"testing"
 
 	"net/url"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -57,5 +59,155 @@ func TestGetMethods(t *testing.T) {
 		assert.Equal(t, 1, provider.getInt("INT_KEY", 0))
 		assert.Equal(t, 1.0, provider.getFloat("FLOAT_KEY", 0.0))
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("URL_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+	})
+}
+
+func TestDefaultConfigProvider(t *testing.T) {
+	t.Run("Settings only exist in EnvConfigSource", func(t *testing.T) {
+		// Setup: environment variables of each type
+		t.Setenv("DD_SERVICE", "string")
+		t.Setenv("DD_TRACE_DEBUG", "true")
+		t.Setenv("DD_TRACE_SEND_RETRIES", "1")
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "1.0")
+		t.Setenv("DD_TRACE_AGENT_URL", "https://localhost:8126")
+		// TODO: Add more types as we go along
+
+		provider := DefaultConfigProvider()
+
+		// Configured values are returned correctly
+		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+
+		// Defaults are returned for settings that are not configured
+		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
+		assert.Equal(t, false, provider.getBool("NONEXISTENT_KEY", false))
+		assert.Equal(t, 0, provider.getInt("NONEXISTENT_KEY", 0))
+		assert.Equal(t, 0.0, provider.getFloat("NONEXISTENT_KEY", 0.0))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("NONEXISTENT_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+	})
+	t.Run("Settings only exist in LocalDeclarativeConfigSource", func(t *testing.T) {
+		const localYaml = `
+apm_configuration_default:
+  DD_SERVICE: local
+  DD_TRACE_DEBUG: true
+  DD_TRACE_SEND_RETRIES: "1"
+  DD_TRACE_SAMPLE_RATE: 1.0
+  DD_TRACE_AGENT_URL: https://localhost:8126
+`
+
+		tempLocalPath := "local.yml"
+		err := os.WriteFile(tempLocalPath, []byte(localYaml), 0644)
+		assert.NoError(t, err)
+		defer os.Remove(tempLocalPath)
+
+		LocalDeclarativeConfig = newDeclarativeConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+		defer func() {
+			LocalDeclarativeConfig = newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
+		}()
+
+		provider := DefaultConfigProvider()
+
+		assert.Equal(t, "local", provider.getString("DD_SERVICE", "value"))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+
+		// Defaults are returned for settings that are not configured
+		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
+		assert.Equal(t, false, provider.getBool("NONEXISTENT_KEY", false))
+		assert.Equal(t, 0, provider.getInt("NONEXISTENT_KEY", 0))
+		assert.Equal(t, 0.0, provider.getFloat("NONEXISTENT_KEY", 0.0))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("NONEXISTENT_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+	})
+
+	t.Run("Settings only exist in ManagedDeclarativeConfigSource", func(t *testing.T) {
+		const managedYaml = `
+apm_configuration_default:
+  DD_SERVICE: managed
+  DD_TRACE_DEBUG: true
+  DD_TRACE_SEND_RETRIES: "1"
+  DD_TRACE_SAMPLE_RATE: 1.0
+  DD_TRACE_AGENT_URL: https://localhost:8126`
+
+		tempManagedPath := "managed.yml"
+		err := os.WriteFile(tempManagedPath, []byte(managedYaml), 0644)
+		assert.NoError(t, err)
+		defer os.Remove(tempManagedPath)
+
+		ManagedDeclarativeConfig = newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
+		defer func() {
+			ManagedDeclarativeConfig = newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
+		}()
+
+		provider := DefaultConfigProvider()
+
+		assert.Equal(t, "managed", provider.getString("DD_SERVICE", "value"))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+
+		// Defaults are returned for settings that are not configured
+		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
+		assert.Equal(t, false, provider.getBool("NONEXISTENT_KEY", false))
+		assert.Equal(t, 0, provider.getInt("NONEXISTENT_KEY", 0))
+		assert.Equal(t, 0.0, provider.getFloat("NONEXISTENT_KEY", 0.0))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("NONEXISTENT_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+	})
+	t.Run("Settings exist in all ConfigSources", func(t *testing.T) {
+		localYaml := `
+apm_configuration_default:
+  DD_SERVICE: local
+  DD_TRACE_DEBUG: false
+  DD_TRACE_HOSTNAME: otherhost
+  DD_TRACE_SEND_RETRIES: "1"`
+
+		managedYaml := `
+apm_configuration_default:
+  DD_SERVICE: managed
+  DD_TRACE_DEBUG: true
+  DD_TRACE_LOG_TO_STDOUT: true
+  DD_VERSION: 1.0.0`
+
+		t.Setenv("DD_SERVICE", "env")
+		t.Setenv("DD_TRACE_LOG_TO_STDOUT", "false")
+		t.Setenv("DD_ENV", "dev")
+		t.Setenv("DD_TRACE_HOSTNAME", "otherhost")
+
+		tempLocalPath := "local.yml"
+		err := os.WriteFile(tempLocalPath, []byte(localYaml), 0644)
+		assert.NoError(t, err)
+		defer os.Remove(tempLocalPath)
+
+		LocalDeclarativeConfig = newDeclarativeConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+		defer func() {
+			LocalDeclarativeConfig = newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
+		}()
+
+		tempManagedPath := "managed.yml"
+		err = os.WriteFile(tempManagedPath, []byte(managedYaml), 0644)
+		assert.NoError(t, err)
+		defer os.Remove(tempManagedPath)
+
+		ManagedDeclarativeConfig = newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
+		defer func() {
+			ManagedDeclarativeConfig = newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
+		}()
+
+		provider := DefaultConfigProvider()
+		assert.Equal(t, "managed", provider.getString("DD_SERVICE", "value"))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
+		assert.Equal(t, "otherhost", provider.getString("DD_TRACE_HOSTNAME", "value"))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, "dev", provider.getString("DD_ENV", "value"))
+		assert.Equal(t, "1.0.0", provider.getString("DD_VERSION", "0"))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_LOG_TO_STDOUT", false))
+
+		// Defaults are returned for settings that are not configured
+		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
 	})
 }

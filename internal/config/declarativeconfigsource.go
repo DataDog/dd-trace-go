@@ -37,7 +37,7 @@ type declarativeConfigSource struct {
 }
 
 func (d *declarativeConfigSource) Get(key string) string {
-	return d.config.get(key)
+	return d.config.get(normalizeKey(key))
 }
 
 func (d *declarativeConfigSource) GetID() string {
