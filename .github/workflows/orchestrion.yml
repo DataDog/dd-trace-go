@@ -222,6 +222,7 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |-
+          exit 1
           export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
           echo "PATH: ${PATH}"
           echo "Working directory: ${PWD}"
