@@ -108,9 +108,13 @@ func loadConfig() *Config {
 	return cfg
 }
 
-func Get() *Config {
+func GlobalConfig() *Config {
 	if globalConfig == nil {
 		globalConfig = loadConfig()
 	}
 	return globalConfig
+}
+
+func (c *Config) IsDebugEnabled() bool {
+	return c.Debug
 }
