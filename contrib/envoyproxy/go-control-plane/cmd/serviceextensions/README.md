@@ -28,7 +28,7 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 | `DD_SERVICE_EXTENSION_PORT`               | `443`           | Port used by the gRPC Server.<br>Envoy Google backend’s is only using secure connection to Service Extension. |
 | `DD_SERVICE_EXTENSION_HEALTHCHECK_PORT`   | `80`            | Port used for the HTTP server for the health check.                                                           |
 | `DD_SERVICE_EXTENSION_OBSERVABILITY_MODE` | `false`         | Enable observability mode. This will process a request asynchronously (blocking would be disabled).           |
-| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT`       | `10000000`      | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed.               |
+| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT`       | `10485760`      | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed.               |
 | `DD_SERVICE_EXTENSION_TLS`                | `true`          | Enable the gRPC TLS layer. Do not modify if you are using GCP.                                                |
 | `DD_SERVICE_EXTENSION_TLS_KEY_FILE`       | `localhost.key` | Change the default gRPC TLS layer key. Do not modify if you are using GCP.                                    |
 | `DD_SERVICE_EXTENSION_TLS_CERT_FILE`      | `localhost.crt` | Change the default gRPC TLS layer cert. Do not modify if you are using GCP.                                   |

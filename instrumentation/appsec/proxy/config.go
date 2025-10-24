@@ -11,7 +11,7 @@ import (
 
 const (
 	// DefaultBodyParsingSizeLimit is the default number of bytes parsed for body analysis.
-	DefaultBodyParsingSizeLimit = 10_000_000 // 10MB
+	DefaultBodyParsingSizeLimit = 10 * 1 << 20 // 10MB
 )
 
 // ContinueActionOptions contains options for the continue action created through [ProcessorConfig.ContinueMessageFunc].

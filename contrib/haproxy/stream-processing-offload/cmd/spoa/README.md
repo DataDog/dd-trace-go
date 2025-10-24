@@ -24,7 +24,7 @@ The HAProxy SPOA agent expose some configuration:
 | `DD_HAPROXY_SPOA_HOST`              | `0.0.0.0`     | Host on where the SPOA and HTTP server should listen to.                                        |
 | `DD_HAPROXY_SPOA_PORT`              | `3000`        | Port used by the SPOA that accept communication with HAProxy.                                   |
 | `DD_HAPROXY_SPOA_HEALTHCHECK_PORT`  | `3080`        | Port used for the HTTP server for the health check.                                             |
-| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT` | `10000000`    | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. |
+| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT` | `10485760`    | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. |
 
 > The HAProxy SPOA need to be connected to a deployed [Datadog agent](https://docs.datadoghq.com/agent).
 
