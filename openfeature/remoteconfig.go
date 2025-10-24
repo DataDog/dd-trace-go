@@ -149,6 +149,13 @@ func validateFlag(flagKey string, flag *flag) error {
 				return fmt.Errorf("flag %q allocation %d split %d is nil", flagKey, i, j)
 			}
 
+			for _, shard := range split.Shards {
+				if shard.TotalShards < 0 {
+					return fmt.Errorf("flag %q allocation %d split %d has shard with non-positive TotalShards %d",
+						flagKey, i, j, shard.TotalShards)
+				}
+			}
+
 			if _, exists := flag.Variations[split.VariationKey]; !exists {
 				return fmt.Errorf("flag %q allocation %d split %d references non-existent variation %q",
 					flagKey, i, j, split.VariationKey)

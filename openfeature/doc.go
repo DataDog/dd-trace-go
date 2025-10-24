@@ -74,12 +74,7 @@
 //
 //	value, err := client.StringValue(ctx, "api-version", "v1", evalCtx)
 //
-// The provider automatically looks for a targeting key in the following order:
-//   - "targetingKey" (OpenFeature standard)
-//   - "targeting_key"
-//   - "userId"
-//   - "user_id"
-//   - "id"
+// The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
 // # Flag Configuration
 //
