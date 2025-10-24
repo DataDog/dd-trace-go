@@ -70,7 +70,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Parse the configuration
-	log.Debug("openfeature: remote config: processing configuration update %q (%d bytes)", path, len(data))
+	log.Debug("openfeature: remote config: processing configuration update %q: %s", path, string(data))
 
 	var config serverConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
