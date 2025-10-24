@@ -220,7 +220,6 @@ jobs:
       # failure tests as real failures in the backend.
       - name: Run Tests
         shell: bash
-        continue-on-error: true
         run: |-
           export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
           echo "PATH: ${PATH}"
@@ -294,6 +293,7 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        if: always()
         with:
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
           clean: false
