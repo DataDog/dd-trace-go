@@ -22,22 +22,23 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 
 >**GCP requires that the default configuration for the Service Extension should not change.**
 
-| Environment variable | Default value   | Description                                                                                                   |
-|---|-----------------|---------------------------------------------------------------------------------------------------------------|
-| `DD_SERVICE_EXTENSION_HOST` | `0.0.0.0`       | Host on where the gRPC and HTTP server should listen to.                                                      |
-| `DD_SERVICE_EXTENSION_PORT` | `443`           | Port used by the gRPC Server.<br>Envoy Google backend’s is only using secure connection to Service Extension. |
-| `DD_SERVICE_EXTENSION_HEALTHCHECK_PORT` | `80`            | Port used for the HTTP server for the health check.                                                           |
+| Environment variable                      | Default value   | Description                                                                                                   |
+|-------------------------------------------|-----------------|---------------------------------------------------------------------------------------------------------------|
+| `DD_SERVICE_EXTENSION_HOST`               | `0.0.0.0`       | Host on where the gRPC and HTTP server should listen to.                                                      |
+| `DD_SERVICE_EXTENSION_PORT`               | `443`           | Port used by the gRPC Server.<br>Envoy Google backend’s is only using secure connection to Service Extension. |
+| `DD_SERVICE_EXTENSION_HEALTHCHECK_PORT`   | `80`            | Port used for the HTTP server for the health check.                                                           |
 | `DD_SERVICE_EXTENSION_OBSERVABILITY_MODE` | `false`         | Enable observability mode. This will process a request asynchronously (blocking would be disabled).           |
-| `DD_SERVICE_EXTENSION_TLS` | `true`          | Enable the gRPC TLS layer. Do not modify if you are using GCP.                                                |
-| `DD_SERVICE_EXTENSION_TLS_KEY_FILE` | `localhost.key` | Change the default gRPC TLS layer key. Do not modify if you are using GCP.                                    |
-| `DD_SERVICE_EXTENSION_TLS_CERT_FILE` | `localhost.crt` | Change the default gRPC TLS layer cert. Do not modify if you are using GCP.                                   |
+| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT`       | `10000000`      | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed.               |
+| `DD_SERVICE_EXTENSION_TLS`                | `true`          | Enable the gRPC TLS layer. Do not modify if you are using GCP.                                                |
+| `DD_SERVICE_EXTENSION_TLS_KEY_FILE`       | `localhost.key` | Change the default gRPC TLS layer key. Do not modify if you are using GCP.                                    |
+| `DD_SERVICE_EXTENSION_TLS_CERT_FILE`      | `localhost.crt` | Change the default gRPC TLS layer cert. Do not modify if you are using GCP.                                   |
 
 > The Service Extension need to be connected to a deployed [Datadog agent](https://docs.datadoghq.com/agent).
 
-| Environment variable | Default value | Description |
-|---|---|---|
-| `DD_AGENT_HOST` | `N/A` | Host of a running Datadog Agent. |
-| `DD_TRACE_AGENT_PORT` | `8126` | Port of a running Datadog Agent. |
+| Environment variable  | Default value | Description                      |
+|-----------------------|---------------|----------------------------------|
+| `DD_AGENT_HOST`       | `N/A`         | Host of a running Datadog Agent. |
+| `DD_TRACE_AGENT_PORT` | `8126`        | Port of a running Datadog Agent. |
 
 ### SSL Configuration
 
