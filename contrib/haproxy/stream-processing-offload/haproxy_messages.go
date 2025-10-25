@@ -58,6 +58,10 @@ type messageRequestHeaders struct {
 	hasBody bool
 }
 
+func (m *messageRequestHeaders) BodyParsingSizeLimit(_ context.Context) int {
+	return proxy.DefaultBodyParsingSizeLimit
+}
+
 func (m *messageRequestHeaders) ExtractRequest(_ context.Context) (proxy.PseudoRequest, error) {
 	headers, err := parseHAProxyReqHdrsBin(m.msg.Bytes(VarHeaders))
 	if err != nil {

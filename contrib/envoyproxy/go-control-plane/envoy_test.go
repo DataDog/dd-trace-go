@@ -38,7 +38,7 @@ func TestAppSec(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, 0)
+		rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, nil)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -280,7 +280,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, 256)
+		bodyParsingSizeLimit := 256
+		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, &bodyParsingSizeLimit)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -649,7 +650,8 @@ func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, 256)
+		bodyParsingSizeLimit := 256
+		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, &bodyParsingSizeLimit)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -761,9 +763,183 @@ func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
 	})
 }
 
+func TestAppSecBodyParsingActivation(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
+
+	testutils.StartAppSec(t)
+	if !instr.AppSecEnabled() {
+		t.Skip("appsec disabled")
+	}
+
+	setup := func(integration Integration, bodyParsingSizeLimit *int) (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
+		rig, err := newEnvoyAppsecRig(t, integration, false, bodyParsingSizeLimit)
+		require.NoError(t, err)
+
+		mt := mocktracer.Start()
+
+		return rig.client, mt, func() {
+			rig.Close()
+			mt.Stop()
+		}
+	}
+
+	// Body parsing disabled by default on GCP Service Extension
+	t.Run("default-gcp-se-no-monitoring-event-on-request-body-parsing", func(t *testing.T) {
+		client, mt, cleanup := setup(GCPServiceExtensionIntegration, nil)
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that no appsec event was created
+		span := finished[0]
+		require.NotContains(t, span.Tags(), "appsec.event")
+		require.NotContains(t, span.Tags(), "_dd.appsec.json")
+	})
+
+	t.Run("value_set_zero-gcp-se-no-monitoring-event-on-request-body-parsing", func(t *testing.T) {
+		bodySize := 0
+		client, mt, cleanup := setup(GCPServiceExtensionIntegration, &bodySize)
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that no appsec event was created
+		span := finished[0]
+		require.NotContains(t, span.Tags(), "appsec.event")
+		require.NotContains(t, span.Tags(), "_dd.appsec.json")
+	})
+
+	t.Run("value_set_256-gcp-se-monitoring-event-on-request-body-parsing", func(t *testing.T) {
+		bodySize := 256
+		client, mt, cleanup := setup(GCPServiceExtensionIntegration, &bodySize)
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that no appsec event was created
+		span := finished[0]
+		require.Contains(t, span.Tags(), "appsec.event")
+		require.Contains(t, span.Tags(), "_dd.appsec.json")
+	})
+
+	t.Run("default-code-envoy-monitoring-event-on-request-body-parsing", func(t *testing.T) {
+		client, mt, cleanup := setup(EnvoyIntegration, nil)
+		defer cleanup()
+
+		ctx := context.Background()
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that no appsec event was created
+		span := finished[0]
+		require.Contains(t, span.Tags(), "appsec.event")
+		require.Contains(t, span.Tags(), "_dd.appsec.json")
+	})
+
+	t.Run("default-metadata-envoy-monitoring-event-on-request-body-parsing", func(t *testing.T) {
+		client, mt, cleanup := setup(GCPServiceExtensionIntegration, nil)
+		defer cleanup()
+
+		// Set the metadata for an envoy request
+		md := metadata.New(map[string]string{
+			"x-datadog-envoy-integration": "1",
+		})
+		ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that no appsec event was created
+		span := finished[0]
+		require.Contains(t, span.Tags(), "appsec.event")
+		require.Contains(t, span.Tags(), "_dd.appsec.json")
+	})
+
+	t.Run("value_set_zero-headers-envoy-no-monitoring-event-on-request-body-parsing", func(t *testing.T) {
+		bodySize := 0
+		client, mt, cleanup := setup(GCPServiceExtensionIntegration, &bodySize)
+		defer cleanup()
+
+		// Set the metadata for an envoy request
+		md := metadata.New(map[string]string{
+			"x-datadog-envoy-integration": "1",
+		})
+		ctx := metadata.NewOutgoingContext(context.Background(), md)
+
+		stream, err := client.Process(ctx)
+		require.NoError(t, err)
+
+		end2EndStreamRequest(t, stream, "/", "PUT", map[string]string{"User-Agent": "Chromium", "Content-Type": "application/json"}, map[string]string{}, false, false, `{ "name": "<script>alert(1)</script>" }`, "")
+
+		err = stream.CloseSend()
+		require.NoError(t, err)
+		_, _ = stream.Recv() // to flush the spans
+
+		finished := mt.FinishedSpans()
+		require.Len(t, finished, 1)
+
+		// Check that no appsec event was created
+		span := finished[0]
+		require.NotContains(t, span.Tags(), "appsec.event")
+		require.NotContains(t, span.Tags(), "_dd.appsec.json")
+	})
+}
+
 func TestGeneratedSpan(t *testing.T) {
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, 0)
+		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, nil)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -851,7 +1027,7 @@ func TestMalformedEnvoyProcessing(t *testing.T) {
 	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, 0)
+		rig, err := newEnvoyAppsecRig(t, EnvoyIntegration, false, nil)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -926,7 +1102,7 @@ func TestAppSecComponentName(t *testing.T) {
 	}
 
 	setup := func(integration Integration) (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
-		rig, err := newEnvoyAppsecRig(t, integration, false, 0)
+		rig, err := newEnvoyAppsecRig(t, integration, false, nil)
 		require.NoError(t, err)
 
 		mt := mocktracer.Start()
@@ -1056,7 +1232,7 @@ func TestAppSecComponentName(t *testing.T) {
 	})
 }
 
-func newEnvoyAppsecRig(t *testing.T, integration Integration, blockingUnavailable bool, bodyParsingSizeLimit int) (*envoyAppsecRig, error) {
+func newEnvoyAppsecRig(t *testing.T, integration Integration, blockingUnavailable bool, bodyParsingSizeLimit *int) (*envoyAppsecRig, error) {
 	t.Helper()
 
 	server := grpc.NewServer()

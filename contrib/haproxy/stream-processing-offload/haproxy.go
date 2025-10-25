@@ -46,7 +46,7 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 	return &HAProxySPOA{
 		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
 			BlockingUnavailable:  config.BlockingUnavailable,
-			BodyParsingSizeLimit: config.BodyParsingSizeLimit,
+			BodyParsingSizeLimit: &config.BodyParsingSizeLimit,
 			Framework:            "haproxy/haproxy",
 			Context:              config.Context,
 			ContinueMessageFunc:  continueActionFunc,

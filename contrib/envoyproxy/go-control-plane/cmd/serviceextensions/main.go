@@ -45,7 +45,7 @@ type serviceExtensionConfig struct {
 	extensionHost        string
 	healthcheckPort      string
 	observabilityMode    bool
-	bodyParsingSizeLimit int
+	bodyParsingSizeLimit *int
 	tls                  *tlsConfig
 }
 
@@ -92,7 +92,7 @@ func loadConfig() serviceExtensionConfig {
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
 	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 	observabilityMode := boolEnv("DD_SERVICE_EXTENSION_OBSERVABILITY_MODE", false)
-	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", 0)
+	bodyParsingSizeLimit := intEnvNil("DD_APPSEC_BODY_PARSING_SIZE_LIMIT")
 	enableTLS := boolEnv("DD_SERVICE_EXTENSION_TLS", true)
 	keyFile := stringEnv("DD_SERVICE_EXTENSION_TLS_KEY_FILE", "localhost.key")
 	certFile := stringEnv("DD_SERVICE_EXTENSION_TLS_CERT_FILE", "localhost.crt")
