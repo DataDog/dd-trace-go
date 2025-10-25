@@ -649,6 +649,10 @@ func TestServiceName(t *testing.T) {
 // TestTracerStartedMultipleTimes tests a v2 regression where the global service name was being set to an empty string
 // when the tracer is started more than once.
 func TestTracerStartedMultipleTimes(t *testing.T) {
+	// tracer.WithService below overwrites the global service name, this call
+	// ensures we restore it its previous value after this test finishes.
+	testutils.SetGlobalServiceName(t, "")
+
 	tt1 := testtracer.Start(t)
 	defer tt1.Stop()
 	tt2 := testtracer.Start(t, testtracer.WithTracerStartOpts(tracer.WithService("global_service")))
