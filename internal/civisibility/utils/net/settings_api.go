@@ -68,6 +68,7 @@ type (
 			Enabled             bool `json:"enabled"`
 			AttemptToFixRetries int  `json:"attempt_to_fix_retries"`
 		} `json:"test_management"`
+		SubtestFeaturesEnabled bool `json:"-"`
 	}
 )
 
