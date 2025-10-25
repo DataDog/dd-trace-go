@@ -8,17 +8,24 @@ package sarama
 import (
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/IBM/sarama"
 )
 
+type CustomConsumerSpanOptsFunc func(msg *sarama.ConsumerMessage) []tracer.StartSpanOption
+type CustomProducerSpanOptsFunc func(msg *sarama.ProducerMessage) []tracer.StartSpanOption
+
 type config struct {
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-	dataStreamsEnabled  bool
-	groupID             string
+	consumerServiceName           string
+	producerServiceName           string
+	consumerSpanName              string
+	producerSpanName              string
+	analyticsRate                 float64
+	dataStreamsEnabled            bool
+	groupID                       string
+	customConsumerSpanOptionsFunc CustomConsumerSpanOptsFunc
+	customProducerSpanOptionsFunc CustomProducerSpanOptsFunc
 }
 
 func defaults(cfg *config) {
@@ -87,5 +94,19 @@ func WithAnalyticsRate(rate float64) OptionFn {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithCustomConsumerSpanOptions enables calling a callback func to add custom span options on wrapped consumers.
+func WithCustomConsumerSpanOptions(f CustomConsumerSpanOptsFunc) OptionFn {
+	return func(cfg *config) {
+		cfg.customConsumerSpanOptionsFunc = f
+	}
+}
+
+// WithCustomProducerSpanOptions enables calling a callback func to add custom span options on wrapped producers.
+func WithCustomProducerSpanOptions(f CustomProducerSpanOptsFunc) OptionFn {
+	return func(cfg *config) {
+		cfg.customProducerSpanOptionsFunc = f
 	}
 }
