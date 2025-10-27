@@ -93,6 +93,7 @@ type WaitCondition func(*Payloads) bool
 
 // TestTracer is an inspectable tracer useful for tests.
 type TestTracer struct {
+	startError   error
 	payloads     *Payloads
 	roundTripper *mockTransport
 }
@@ -136,8 +137,10 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 	}, cfg.TracerStartOpts...)
 
 	err := tracer.Start(startOpts...)
-	require.NoError(t, err)
-
+	if cfg.RequireNoError {
+		require.NoError(t, err)
+	}
+	tt.startError = err
 	return tt
 }
 
@@ -146,6 +149,7 @@ type config struct {
 	AgentInfoResponse AgentInfo
 	RequestDelay      time.Duration
 	MockResponse      MockResponseFunc
+	RequireNoError    bool
 }
 
 func defaultConfig() *config {
@@ -154,6 +158,7 @@ func defaultConfig() *config {
 		AgentInfoResponse: AgentInfo{},
 		RequestDelay:      0,
 		MockResponse:      nil,
+		RequireNoError:    true,
 	}
 }
 
@@ -190,6 +195,14 @@ func WithMockResponses(mr MockResponseFunc) Option {
 	}
 }
 
+// WithRequireNoTracerStartError allows to customize the behavior for the Start function. By default, it calls require.NoError
+// on the error returned by tracer.Start, but that can be changed by using this option with false as argument.
+func WithRequireNoTracerStartError(requireNoErr bool) Option {
+	return func(cfg *config) {
+		cfg.RequireNoError = requireNoErr
+	}
+}
+
 // collectPayloads runs in a goroutine and collects payloads from the channel
 func (tt *TestTracer) collectPayloads(payloadChan <-chan any) {
 	for payload := range payloadChan {
@@ -204,6 +217,11 @@ func (tt *TestTracer) collectPayloads(payloadChan <-chan any) {
 		}
 		tt.payloads.mu.Unlock()
 	}
+}
+
+// StartError returns the error from tracer.Start.
+func (tt *TestTracer) StartError() error {
+	return tt.startError
 }
 
 // Stop stops the tracer. It should be called after the test finishes.
@@ -328,31 +346,25 @@ func (rt *mockTransport) handleRequest(r *http.Request) *http.Response {
 		return rt.emptyResponse(r)
 	}
 
-	var (
-		resp            *http.Response
-		respOverwritten = false
-	)
+	var resp *http.Response
+
 	if rt.mockResponse != nil {
 		resp = rt.mockResponse(r)
-		respOverwritten = true
+		if resp != nil {
+			return resp
+		}
 	}
-	if resp == nil {
-		resp = rt.emptyResponse(r)
-	}
+	resp = rt.emptyResponse(r)
 
 	switch r.URL.Path {
 	case "/v0.4/traces":
 		rt.handleTraces(r)
 	case "/info":
-		if !respOverwritten {
-			resp = rt.handleInfo(r)
-		}
+		resp = rt.handleInfo(r)
 	case "/evp_proxy/v2/api/v2/llmobs", "/api/v2/llmobs":
 		rt.handleLLMObsSpanEvents(r)
 	case "/evp_proxy/v2/api/intake/llm-obs/v2/eval-metric", "/api/intake/llm-obs/v2/eval-metric":
 		rt.handleLLMObsEvalMetrics(r)
-	case "/v0.7/config", "/telemetry/proxy/api/v2/apmtelemetry":
-		// known cases, no need to log these
 	default:
 		logWarn := true
 		for _, p := range noLogPaths {

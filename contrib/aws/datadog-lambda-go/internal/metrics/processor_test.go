@@ -154,7 +154,7 @@ func TestProcessorBatchesPerTick(t *testing.T) {
 	batches := [][]APIMetric{firstBatch, secondBatch}
 
 	assert.Equal(t, [][]APIMetric{
-		[]APIMetric{
+		{
 			{
 				Name:       "metric-1",
 				Tags:       []string{"a", "b", "c"},
@@ -165,7 +165,7 @@ func TestProcessorBatchesPerTick(t *testing.T) {
 					[]interface{}{firstTimeUnix, []interface{}{float64(3)}},
 				},
 			}},
-		[]APIMetric{
+		{
 			{
 				Name:       "metric-1",
 				Tags:       []string{"a", "b", "c"},

@@ -21,7 +21,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -54,6 +53,7 @@ type TracerConf struct { //nolint:revive
 	VersionTag           string
 	ServiceTag           string
 	TracingAsTransport   bool
+	isLambdaFunction     bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -290,7 +290,7 @@ func storeConfig(c *config) {
 		ServiceEnvironment: c.env,
 		ServiceVersion:     c.version,
 		ProcessTags:        processtags.GlobalTags().String(),
-		ContainerID:        internal.ContainerID(),
+		ContainerID:        globalinternal.ContainerID(),
 	}
 
 	data, _ := metadata.MarshalMsg(nil)
@@ -955,6 +955,7 @@ func (t *tracer) TracerConf() TracerConf {
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
+		isLambdaFunction:     t.config.isLambdaFunction,
 	}
 }
 

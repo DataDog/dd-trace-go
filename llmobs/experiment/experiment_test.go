@@ -578,6 +578,9 @@ func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer 
 			tracer.WithService("test-service"),
 			tracer.WithLogStartup(false),
 		),
+		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+			Endpoints: []string{"/evp_proxy/v2/"},
+		}),
 		testtracer.WithMockResponses(createMockHandler()),
 	}
 	allOpts := append(defaultOpts, opts...)
