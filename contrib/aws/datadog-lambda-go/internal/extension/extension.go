@@ -32,6 +32,7 @@ const (
 	DdParentId             ddTraceContext = "x-datadog-parent-id"
 	DdSpanId               ddTraceContext = "x-datadog-span-id"
 	DdSamplingPriority     ddTraceContext = "x-datadog-sampling-priority"
+	DdOrigin               ddTraceContext = "x-datadog-origin"
 	DdInvocationError      ddTraceContext = "x-datadog-invocation-error"
 	DdInvocationErrorMsg   ddTraceContext = "x-datadog-invocation-error-msg"
 	DdInvocationErrorType  ddTraceContext = "x-datadog-invocation-error-type"

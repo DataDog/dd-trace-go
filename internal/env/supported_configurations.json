@@ -123,6 +123,9 @@
     "DD_ENV": [
       "A"
     ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED": [
+      "A"
+    ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
       "A"
     ],
@@ -553,6 +556,12 @@
       "A"
     ],
     "DD_TRACE_REPORT_HOSTNAME": [
+      "A"
+    ],
+    "DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT": [
+      "A"
+    ],
+    "DD_TRACE_RESOURCE_RENAMING_ENABLED": [
       "A"
     ],
     "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [

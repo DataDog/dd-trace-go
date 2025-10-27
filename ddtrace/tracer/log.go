@@ -160,7 +160,7 @@ func logStartup(t *tracer) {
 		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err.Error())
+		info.SamplingRulesError = err.Error()
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)

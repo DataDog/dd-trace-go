@@ -36,6 +36,7 @@ var (
 	errLLMObsNotEnabled        = errors.New("LLMObs is not enabled. Ensure the tracer has been started with the option tracer.WithLLMObsEnabled(true) or set DD_LLMOBS_ENABLED=true")
 	errAgentlessRequiresAPIKey = errors.New("LLMOBs agentless mode requires a valid API key - set the DD_API_KEY env variable to configure one")
 	errMLAppRequired           = errors.New("ML App is required for sending LLM Observability data")
+	errAgentModeNotSupported   = errors.New("DD_LLMOBS_AGENTLESS_ENABLED has been configured to false but the agent is not available or does not support LLMObs")
 )
 
 const (
@@ -139,15 +140,22 @@ type LLMObs struct {
 }
 
 func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
+	agentSupportsLLMObs := cfg.AgentFeatures.EVPProxyV2
+	if !agentSupportsLLMObs {
+		log.Debug("llmobs: agent not available or does not support llmobs")
+	}
 	if cfg.AgentlessEnabled != nil {
+		if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
+			return nil, errAgentModeNotSupported
+		}
 		cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
 	} else {
 		// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
-		cfg.ResolvedAgentlessEnabled = !cfg.AgentFeatures.EVPProxyV2
+		cfg.ResolvedAgentlessEnabled = !agentSupportsLLMObs
 		if cfg.ResolvedAgentlessEnabled {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to true since agent mode is supported")
+			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
 		} else {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to false since agent mode is not supported")
+			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
 		}
 	}
 
@@ -531,6 +539,11 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	tags["ddtrace.version"] = version.Tag
 	tags["language"] = "go"
 
+	sessionID := span.propagatedSessionID()
+	if sessionID != "" {
+		tags["session_id"] = sessionID
+	}
+
 	errTag := "0"
 	if span.error != nil {
 		errTag = "1"
@@ -556,7 +569,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		SpanID:           spanID,
 		TraceID:          span.llmTraceID,
 		ParentID:         parentID,
-		SessionID:        span.propagatedSessionID(),
+		SessionID:        sessionID,
 		Tags:             tagsSlice,
 		Name:             span.name,
 		StartNS:          span.startTime.UnixNano(),
@@ -711,7 +724,6 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
 	if mlApp == "" {
 		mlApp = l.Config.MLApp
 	}
-
 	timestampMS := cfg.TimestampMS
 	if timestampMS == 0 {
 		timestampMS = time.Now().UnixMilli()
@@ -731,12 +743,20 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
 		}
 	}
 
+	tags := make([]string, 0, len(cfg.Tags)+1)
+	for _, tag := range cfg.Tags {
+		if !strings.HasPrefix(tag, "ddtrace.version:") {
+			tags = append(tags, tag)
+		}
+	}
+	tags = append(tags, fmt.Sprintf("ddtrace.version:%s", version.Tag))
+
 	metric := &transport.LLMObsMetric{
 		JoinOn:      joinOn,
 		Label:       cfg.Label,
 		MLApp:       mlApp,
 		TimestampMS: timestampMS,
-		Tags:        cfg.Tags,
+		Tags:        tags,
 	}
 
 	if cfg.CategoricalValue != nil {

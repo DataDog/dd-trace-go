@@ -24,7 +24,8 @@ import (
 
 type (
 	eventWithHeaders struct {
-		Headers map[string]string `json:"headers"`
+		Headers           map[string]string   `json:"headers"`
+		MultiValueHeaders map[string][]string `json:"multiValueHeaders"`
 	}
 
 	// TraceContext is map of headers containing a Datadog trace context.
@@ -157,6 +158,13 @@ func getTraceContext(ctx context.Context, headers map[string]string) (TraceConte
 		samplingPriority = "1" //sampler-keep
 	}
 
+	// try to pull datadog origin from either headers or context
+	if origin, ok := headers[originHeader]; ok {
+		tc[originHeader] = origin
+	} else if origin, ok := ctx.Value(extension.DdOrigin).(string); ok {
+		tc[originHeader] = origin
+	}
+
 	tc[samplingPriorityHeader] = samplingPriority
 	tc[traceIDHeader] = traceID
 	tc[parentIDHeader] = parentID
@@ -164,8 +172,9 @@ func getTraceContext(ctx context.Context, headers map[string]string) (TraceConte
 	return tc, true
 }
 
-// getHeadersFromEventHeaders extracts the Datadog trace context from an incoming Lambda event payload
-// and creates a dummy X-Ray subsegment containing this information.
+// getHeadersFromEventHeaders extracts the Datadog trace context from an incoming
+// Lambda event payload's headers and multivalueHeaders, with headers taking precedence
+// then creates a dummy X-Ray subsegment containing this information.
 // This is used as the DefaultTraceExtractor.
 func getHeadersFromEventHeaders(ctx context.Context, ev json.RawMessage) map[string]string {
 	eh := eventWithHeaders{}
@@ -178,8 +187,20 @@ func getHeadersFromEventHeaders(ctx context.Context, ev json.RawMessage) map[str
 	}
 
 	lowercaseHeaders := map[string]string{}
+
+	// extract values from event headers into lowercaseheaders
 	for k, v := range eh.Headers {
 		lowercaseHeaders[strings.ToLower(k)] = v
+	}
+
+	// now extract from multivalue headers
+	for k, v := range eh.MultiValueHeaders {
+		if len(v) > 0 {
+			// If this key was not already extracted from event headers, extract first value from multivalue headers
+			if _, ok := lowercaseHeaders[strings.ToLower(k)]; !ok {
+				lowercaseHeaders[strings.ToLower(k)] = v[0]
+			}
+		}
 	}
 
 	return lowercaseHeaders
