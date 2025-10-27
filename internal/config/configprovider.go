@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var provider = DefaultConfigProvider()
@@ -46,6 +47,42 @@ func (p *ConfigProvider) getInt(key string, def int) int {
 			v, err := strconv.Atoi(v)
 			if err == nil {
 				return v
+			}
+		}
+	}
+	return def
+}
+
+func (p *ConfigProvider) getInt64(key string, def int64) int64 {
+	for _, source := range p.sources {
+		if v := source.Get(key); v != "" {
+			v, err := strconv.ParseInt(v, 10, 64)
+			if err == nil {
+				return v
+			}
+		}
+	}
+	return def
+}
+
+func (p *ConfigProvider) getMap(key string, def map[string]string) map[string]string {
+	for _, source := range p.sources {
+		if v := source.Get(key); v != "" {
+			m := parseMapString(v)
+			if len(m) > 0 {
+				return m
+			}
+		}
+	}
+	return def
+}
+
+func (p *ConfigProvider) getDuration(key string, def time.Duration) time.Duration {
+	for _, source := range p.sources {
+		if v := source.Get(key); v != "" {
+			d, err := time.ParseDuration(v)
+			if err == nil {
+				return d
 			}
 		}
 	}
@@ -97,4 +134,39 @@ func normalizeKey(key string) string {
 		return key
 	}
 	return "DD_" + strings.ToUpper(key)
+}
+
+// parseMapString parses a string containing key:value pairs separated by comma or space.
+// Format: "key1:value1,key2:value2" or "key1:value1 key2:value2"
+func parseMapString(str string) map[string]string {
+	result := make(map[string]string)
+
+	// Determine separator (comma or space)
+	sep := " "
+	if strings.Contains(str, ",") {
+		sep = ","
+	}
+
+	// Parse each key:value pair
+	for _, pair := range strings.Split(str, sep) {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+
+		// Split on colon delimiter
+		kv := strings.SplitN(pair, ":", 2)
+		key := strings.TrimSpace(kv[0])
+		if key == "" {
+			continue
+		}
+
+		var val string
+		if len(kv) == 2 {
+			val = strings.TrimSpace(kv[1])
+		}
+		result[key] = val
+	}
+
+	return result
 }

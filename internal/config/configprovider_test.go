@@ -44,23 +44,23 @@ func TestGetMethods(t *testing.T) {
 		provider := newTestConfigProvider(newTestConfigSource(nil))
 		assert.Equal(t, "value", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", true))
-		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 1))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1))
 		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 1.0))
 		assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"}))
 	})
 	t.Run("non-defaults", func(t *testing.T) {
 		// Test that non-defaults are used when the queried key exists
 		entries := map[string]string{
-			"DD_SERVICE":            "string",
-			"DD_TRACE_DEBUG":        "true",
-			"DD_TRACE_SEND_RETRIES": "1",
-			"DD_TRACE_SAMPLE_RATE":  "1.0",
-			"DD_TRACE_AGENT_URL":    "https://localhost:8126",
+			"DD_SERVICE":                       "string",
+			"DD_TRACE_DEBUG":                   "true",
+			"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS": "1",
+			"DD_TRACE_SAMPLE_RATE":             "1.0",
+			"DD_TRACE_AGENT_URL":               "https://localhost:8126",
 		}
 		provider := newTestConfigProvider(newTestConfigSource(entries))
 		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
-		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
 		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 	})
@@ -71,7 +71,7 @@ func TestDefaultConfigProvider(t *testing.T) {
 		// Setup: environment variables of each type
 		t.Setenv("DD_SERVICE", "string")
 		t.Setenv("DD_TRACE_DEBUG", "true")
-		t.Setenv("DD_TRACE_SEND_RETRIES", "1")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "1.0")
 		t.Setenv("DD_TRACE_AGENT_URL", "https://localhost:8126")
 		// TODO: Add more types as we go along
@@ -81,7 +81,7 @@ func TestDefaultConfigProvider(t *testing.T) {
 		// Configured values are returned correctly
 		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
-		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
 		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 
@@ -93,7 +93,7 @@ func TestDefaultConfigProvider(t *testing.T) {
 apm_configuration_default:
   DD_SERVICE: local
   DD_TRACE_DEBUG: true
-  DD_TRACE_SEND_RETRIES: "1"
+  DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: "1"
   DD_TRACE_SAMPLE_RATE: 1.0
   DD_TRACE_AGENT_URL: https://localhost:8126
 `
@@ -112,7 +112,7 @@ apm_configuration_default:
 
 		assert.Equal(t, "local", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
-		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
 		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 
@@ -125,7 +125,7 @@ apm_configuration_default:
 apm_configuration_default:
   DD_SERVICE: managed
   DD_TRACE_DEBUG: true
-  DD_TRACE_SEND_RETRIES: "1"
+  DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: "1"
   DD_TRACE_SAMPLE_RATE: 1.0
   DD_TRACE_AGENT_URL: https://localhost:8126`
 
@@ -143,7 +143,7 @@ apm_configuration_default:
 
 		assert.Equal(t, "managed", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
-		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
 		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 
@@ -156,7 +156,7 @@ apm_configuration_default:
   DD_SERVICE: local
   DD_TRACE_DEBUG: false
   DD_TRACE_HOSTNAME: otherhost
-  DD_TRACE_SEND_RETRIES: "1"`
+  DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: "1"`
 
 		managedYaml := `
 apm_configuration_default:
@@ -194,7 +194,7 @@ apm_configuration_default:
 		assert.Equal(t, "managed", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
 		assert.Equal(t, "otherhost", provider.getString("DD_TRACE_HOSTNAME", "value"))
-		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
 		assert.Equal(t, "dev", provider.getString("DD_ENV", "value"))
 		assert.Equal(t, "1.0.0", provider.getString("DD_VERSION", "0"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_LOG_TO_STDOUT", false))

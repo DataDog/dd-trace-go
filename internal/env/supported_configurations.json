@@ -456,6 +456,9 @@
     "DD_TRACE_HEADER_TAGS": [
       "A"
     ],
+    "DD_TRACE_HOSTNAME": [
+      "A"
+    ],
     "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED": [
       "A"
     ],
@@ -472,6 +475,9 @@
       "A"
     ],
     "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING": [
+      "A"
+    ],
+    "DD_TRACE_HTTP_CLIENT_TIMEOUT": [
       "A"
     ],
     "DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE": [
@@ -496,6 +502,9 @@
       "A"
     ],
     "DD_TRACE_LOG_DIRECTORY": [
+      "A"
+    ],
+    "DD_TRACE_LOG_TO_STDOUT": [
       "A"
     ],
     "DD_TRACE_MEMCACHE_ANALYTICS_ENABLED": [
@@ -526,6 +535,12 @@
       "A"
     ],
     "DD_TRACE_PEER_SERVICE_MAPPING": [
+      "A"
+    ],
+    "DD_TRACE_PROFILER_ENDPOINTS": [
+      "A"
+    ],
+    "DD_TRACE_PROFILER_HOTSPOTS": [
       "A"
     ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
@@ -561,6 +576,12 @@
     "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_RUNTIME_METRICS": [
+      "A"
+    ],
+    "DD_TRACE_RUNTIME_METRICS_V2": [
+      "A"
+    ],
     "DD_TRACE_SAMPLE_RATE": [
       "A"
     ],
@@ -573,10 +594,16 @@
     "DD_TRACE_SARAMA_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_SEND_RETRIES": [
+      "A"
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       "A"
     ],
     "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA": [
+      "A"
+    ],
+    "DD_TRACE_SPAN_TIMEOUT": [
       "A"
     ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
