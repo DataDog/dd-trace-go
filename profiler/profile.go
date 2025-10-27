@@ -114,16 +114,10 @@ var profileTypes = map[ProfileType]profileType{
 			p.stopCPUProfile()
 
 			c := p.compressors[CPUProfile]
-			compressionMux.Lock()
-			defer compressionMux.Unlock()
 			c.Reset(&buf)
-			if _, err := outBuf.WriteTo(c); err != nil {
-				return nil, err
-			}
-			if err := c.Close(); err != nil {
-				return nil, err
-			}
-			return buf.Bytes(), nil
+			_, writeErr := outBuf.WriteTo(c)
+			closeErr := c.Close()
+			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
 	},
 	// HeapProfile is complex due to how the Go runtime exposes it. It contains 4
@@ -183,8 +177,6 @@ var profileTypes = map[ProfileType]profileType{
 			}
 
 			c := p.compressors[expGoroutineWaitProfile]
-			compressionMux.Lock()
-			defer compressionMux.Unlock()
 			c.Reset(pprof)
 			err := goroutineDebug2ToPprof(text, c, now)
 			err = cmp.Or(err, c.Close())
@@ -197,8 +189,6 @@ var profileTypes = map[ProfileType]profileType{
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
 			c := p.compressors[MetricsProfile]
-			compressionMux.Lock()
-			defer compressionMux.Unlock()
 			c.Reset(&buf)
 			interrupted := p.interruptibleSleep(p.cfg.period)
 			err := p.met.report(now(), c)
@@ -229,16 +219,10 @@ var profileTypes = map[ProfileType]profileType{
 			trace.Stop()
 
 			c := p.compressors[executionTrace]
-			compressionMux.Lock()
-			defer compressionMux.Unlock()
 			c.Reset(buf)
-			if _, err := outBuf.WriteTo(c); err != nil {
-				return nil, err
-			}
-			if err := c.Close(); err != nil {
-				return nil, err
-			}
-			return buf.Bytes(), nil
+			_, writeErr := outBuf.WriteTo(c)
+			closeErr := c.Close()
+			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
 	},
 }
@@ -303,8 +287,6 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 		dp, ok := p.deltas[pt]
 		if !ok || !p.cfg.deltaProfiles {
 			c := p.compressors[pt]
-			compressionMux.Lock()
-			defer compressionMux.Unlock()
 			c.Reset(&buf)
 			err := p.lookupProfile(name, c, 0)
 			err = cmp.Or(err, c.Close())
@@ -456,15 +438,14 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 
 	fdp.buf.Reset()
 	c := fdp.compressor
-	compressionMux.Lock()
-	defer compressionMux.Unlock()
 	c.Reset(&fdp.buf)
 
-	if err = fdp.dc.Delta(data, c); err != nil {
-		return nil, fmt.Errorf("error computing delta: %s", err.Error())
-	}
-	if err = c.Close(); err != nil {
-		return nil, fmt.Errorf("error flushing gzip writer: %s", err.Error())
+	deltaErr := fdp.dc.Delta(data, c)
+	closeErr := c.Close()
+	if deltaErr != nil {
+		return nil, fmt.Errorf("error computing delta: %w", deltaErr)
+	} else if closeErr != nil {
+		return nil, fmt.Errorf("error flushing gzip writer: %w", closeErr)
 	}
 	// The returned slice will be retained in case the profile upload fails,
 	// so we need to return a copy of the buffer's bytes to avoid a data
