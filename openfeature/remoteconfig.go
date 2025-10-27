@@ -102,6 +102,10 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 // validateConfiguration performs basic validation on a serverConfiguration.
 func validateConfiguration(config *universalFlagsConfiguration) error {
+	if config == nil {
+		return fmt.Errorf("configuration is nil")
+	}
+
 	if config.Format != "SERVER" {
 		return fmt.Errorf("unsupported format %q, expected SERVER (Is the remote config payload the right format ?)", config.Format)
 	}
