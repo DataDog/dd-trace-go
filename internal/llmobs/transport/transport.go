@@ -48,9 +48,9 @@ const (
 	defaultSite            = "datadoghq.com"
 	defaultMaxRetries uint = 3
 
-	defaultTimeout           time.Duration = 5 * time.Second
-	bulkUploadTimeout        time.Duration = 60 * time.Second
-	getDatasetRecordsTimeout time.Duration = 20 * time.Second
+	defaultTimeout           = 5 * time.Second
+	bulkUploadTimeout        = 60 * time.Second
+	getDatasetRecordsTimeout = 20 * time.Second
 )
 
 var (

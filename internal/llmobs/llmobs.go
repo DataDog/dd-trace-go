@@ -382,9 +382,9 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushSpanEvents(ctx, events); err != nil {
-				log.Error("llmobs: PushSpanEvents failed: %v", err.Error())
+				log.Error("llmobs: failed to push span events: %v", err.Error())
 			} else {
-				log.Debug("llmobs: PushSpanEvents success")
+				log.Debug("llmobs: push span events success")
 			}
 		}()
 	}
@@ -402,9 +402,9 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushEvalMetrics(ctx, metrics); err != nil {
-				log.Error("llmobs: PushEvalMetrics failed: %v", err.Error())
+				log.Error("llmobs: failed to push eval metrics: %v", err.Error())
 			} else {
-				log.Debug("llmobs: PushEvalMetrics success")
+				log.Debug("llmobs: push eval metrics success")
 			}
 		}()
 	}
