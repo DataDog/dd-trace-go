@@ -173,7 +173,10 @@ func BenchmarkRecompression(b *testing.B) {
 			data := compressData(b, inputdata, in.inAlg)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				z := &zstdRecompressor{level: in.outLevel}
+				z, err := newZstdRecompressor(in.outLevel)
+				if err != nil {
+					b.Fatal(err)
+				}
 				z.Reset(io.Discard)
 				if _, err := z.Write(data); err != nil {
 					b.Fatal(err)

@@ -234,7 +234,6 @@ type zstdRecompressor struct {
 	err     chan error
 	pw      io.WriteCloser
 	zstdOut *zstd.Encoder
-	level   zstd.EncoderLevel
 }
 
 func (r *zstdRecompressor) Reset(w io.Writer) {
