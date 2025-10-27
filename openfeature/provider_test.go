@@ -244,7 +244,7 @@ func createTestConfig() *universalFlagsConfiguration {
 }
 
 func TestNewDatadogProvider(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	if provider == nil {
 		t.Fatal("expected provider to be non-nil")
 	}
@@ -261,7 +261,7 @@ func TestNewDatadogProvider(t *testing.T) {
 }
 
 func TestBooleanEvaluation(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -333,7 +333,7 @@ func TestBooleanEvaluation(t *testing.T) {
 }
 
 func TestStringEvaluation(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -374,7 +374,7 @@ func TestStringEvaluation(t *testing.T) {
 }
 
 func TestIntEvaluation(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -411,7 +411,7 @@ func TestIntEvaluation(t *testing.T) {
 }
 
 func TestFloatEvaluation(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -449,7 +449,7 @@ func TestFloatEvaluation(t *testing.T) {
 }
 
 func TestObjectEvaluation(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -499,7 +499,7 @@ func TestObjectEvaluation(t *testing.T) {
 }
 
 func TestProviderWithoutConfiguration(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	ctx := context.Background()
 
 	flatCtx := openfeature.FlattenedContext{
@@ -522,7 +522,7 @@ func TestProviderWithoutConfiguration(t *testing.T) {
 }
 
 func TestProviderConfigurationUpdate(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Initially no config
 	if provider.getConfiguration() != nil {
@@ -544,7 +544,7 @@ func TestProviderConfigurationUpdate(t *testing.T) {
 }
 
 func TestConcurrentEvaluations(t *testing.T) {
-	provider := newDatadogProvider(nil)
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
