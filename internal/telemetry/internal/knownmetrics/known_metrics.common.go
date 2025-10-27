@@ -8,6 +8,8 @@
 package knownmetrics
 
 var commonMetrics = []Declaration{
+	{Namespace: "appsec", Type: "count", Name: "ai_guard.requests"},
+	{Namespace: "appsec", Type: "count", Name: "ai_guard.truncated"},
 	{Namespace: "appsec", Type: "count", Name: "api_security.missing_route"},
 	{Namespace: "appsec", Type: "count", Name: "api_security.request.no_schema"},
 	{Namespace: "appsec", Type: "count", Name: "api_security.request.schema"},

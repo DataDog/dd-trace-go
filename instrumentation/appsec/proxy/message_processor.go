@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -21,7 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // Processor is a state machine that handles incoming HTTP request and response is a streaming manner
@@ -80,6 +78,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 		if bodyLimit <= 0 {
 			mp.instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The request and response bodies will NOT be analyzed.")
 		}
+		RegisterConfig(mp)
 		mp.instr.Logger().Info("external_processing: first request received. Configuration: BlockingUnavailable=%v, BodyParsingSizeLimit=%dB, Framework=%s", mp.BlockingUnavailable, mp.computedBodyParsingSizeLimit.Load(), mp.Framework)
 	})
 
@@ -268,11 +267,7 @@ func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos b
 	bodyBuffer.append(body)
 
 	if eos || bodyBuffer.truncated {
-		telemetry.Distribution(telemetry.NamespaceAppSec, "instrum.body_size", []string{
-			"direction:" + direction,
-			"truncated:" + strconv.FormatBool(bodyBuffer.truncated),
-		}).Submit(float64(len(bodyBuffer.buffer)))
-
+		EmitBodySize(len(bodyBuffer.buffer), direction, bodyBuffer.truncated)
 		bodyBuffer.analyzed = true
 		return analyzeBody(ctx, json.NewEncodableFromData(bodyBuffer.buffer, bodyBuffer.truncated))
 	}
