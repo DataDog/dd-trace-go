@@ -236,7 +236,11 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			return resp, nil
 		}
 		if isRetriableStatus(code) {
-			return nil, fmt.Errorf("request failed with transient http status code: %d", code)
+			errMsg := fmt.Sprintf("request failed with transient http status code: %d", code)
+			if body := readErrorBody(resp); body != "" {
+				errMsg = fmt.Sprintf("%s: %s", errMsg, body)
+			}
+			return nil, fmt.Errorf("%s", errMsg)
 		}
 		if code == http.StatusTooManyRequests {
 			wait := parseRetryAfter(resp.Header)
@@ -244,8 +248,12 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			drainAndClose(resp.Body)
 			return nil, backoff.RetryAfter(int(wait.Seconds()))
 		}
+		errMsg := fmt.Sprintf("request failed with http status code: %d", resp.StatusCode)
+		if body := readErrorBody(resp); body != "" {
+			errMsg = fmt.Sprintf("%s: %s", errMsg, body)
+		}
 		drainAndClose(resp.Body)
-		return nil, backoff.Permanent(fmt.Errorf("request failed with http status code: %d", resp.StatusCode))
+		return nil, backoff.Permanent(fmt.Errorf("%s", errMsg))
 	}
 
 	resp, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
@@ -261,6 +269,23 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 	log.Debug("llmobs: got success response: %s", string(b))
 
 	return resp.StatusCode, b, nil
+}
+
+func readErrorBody(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	// Only read the body if it's JSON
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		return ""
+	}
+	// Limit reading to 1KB to avoid reading huge error responses
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(body))
 }
 
 func drainAndClose(b io.ReadCloser) {
