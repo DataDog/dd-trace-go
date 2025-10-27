@@ -156,28 +156,33 @@ func (c *Transport) baseURL(subdomain string) string {
 	return u
 }
 
-func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain string, body any, timeout time.Duration) (int, []byte, error) {
+func (c *Transport) jsonRequest(ctx context.Context, method, path, subdomain string, body any, timeout time.Duration) (requestResult, error) {
 	var jsonBody io.Reader
 	if body != nil {
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
 		enc.SetEscapeHTML(false)
 		if err := enc.Encode(body); err != nil {
-			return 0, nil, fmt.Errorf("encode body: %w", err)
+			return requestResult{}, fmt.Errorf("failed to json encode body: %w", err)
 		}
 		jsonBody = bytes.NewReader(buf.Bytes())
 	}
 	return c.request(ctx, method, path, subdomain, jsonBody, "application/json", timeout)
 }
 
-func (c *Transport) request(ctx context.Context, method, path, subdomain string, body io.Reader, contentType string, timeout time.Duration) (int, []byte, error) {
+type requestResult struct {
+	statusCode int
+	body       []byte
+}
+
+func (c *Transport) request(ctx context.Context, method, path, subdomain string, body io.Reader, contentType string, timeout time.Duration) (requestResult, error) {
 	if timeout == 0 {
 		timeout = defaultTimeout
 	}
 	urlStr := c.baseURL(subdomain) + path
 	backoffStrat := defaultBackoffStrategy()
 
-	doRequest := func() (resp *http.Response, err error) {
+	doRequest := func() (result requestResult, err error) {
 		log.Debug("llmobs: sending request (method: %s | url: %s)", method, urlStr)
 		defer func() {
 			if err != nil {
@@ -189,14 +194,14 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		if body != nil {
 			if seeker, ok := body.(io.Seeker); ok {
 				if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-					return nil, fmt.Errorf("failed to reset body reader: %w", err)
+					return requestResult{}, fmt.Errorf("failed to reset body reader: %w", err)
 				}
 			}
 		}
 
 		req, err := http.NewRequestWithContext(ctx, method, urlStr, body)
 		if err != nil {
-			return nil, err
+			return requestResult{}, err
 		}
 
 		req.Header.Set("Content-Type", contentType)
@@ -217,58 +222,49 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 				req.Header.Set("X-Datadog-NeedsAppKey", "true")
 			}
 		}
+
+		// Set per-endpoint timeout
 		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		req = req.WithContext(timeoutCtx)
 
-		resp, err = c.httpClient.Do(req)
+		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, err
+			return requestResult{}, err
 		}
-		defer func() {
-			if err != nil && resp != nil {
-				_ = resp.Body.Close()
-			}
-		}()
+		defer resp.Body.Close()
 
 		code := resp.StatusCode
 		if code >= 200 && code <= 299 {
-			return resp, nil
+			b, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				return requestResult{}, fmt.Errorf("failed to read response body: %w", readErr)
+			}
+			log.Debug("llmobs: got success response: %s", string(b))
+			return requestResult{statusCode: code, body: b}, nil
 		}
 		if isRetriableStatus(code) {
 			errMsg := fmt.Sprintf("request failed with transient http status code: %d", code)
 			if body := readErrorBody(resp); body != "" {
 				errMsg = fmt.Sprintf("%s: %s", errMsg, body)
 			}
-			return nil, fmt.Errorf("%s", errMsg)
+			return requestResult{}, fmt.Errorf("%s", errMsg)
 		}
 		if code == http.StatusTooManyRequests {
 			wait := parseRetryAfter(resp.Header)
 			log.Debug("llmobs: status code 429, waiting %s before retry...", wait.String())
 			drainAndClose(resp.Body)
-			return nil, backoff.RetryAfter(int(wait.Seconds()))
+			return requestResult{}, backoff.RetryAfter(int(wait.Seconds()))
 		}
 		errMsg := fmt.Sprintf("request failed with http status code: %d", resp.StatusCode)
 		if body := readErrorBody(resp); body != "" {
 			errMsg = fmt.Sprintf("%s: %s", errMsg, body)
 		}
 		drainAndClose(resp.Body)
-		return nil, backoff.Permanent(fmt.Errorf("%s", errMsg))
+		return requestResult{}, backoff.Permanent(fmt.Errorf("%s", errMsg))
 	}
 
-	resp, err := backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
-	if err != nil {
-		return 0, nil, err
-	}
-	defer resp.Body.Close()
-
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp.StatusCode, nil, err
-	}
-	log.Debug("llmobs: got success response: %s", string(b))
-
-	return resp.StatusCode, b, nil
+	return backoff.Retry(ctx, doRequest, backoff.WithBackOff(backoffStrat), backoff.WithMaxTries(defaultMaxRetries))
 }
 
 func readErrorBody(resp *http.Response) string {
