@@ -195,8 +195,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_REDIS_RAW_COMMAND":                                      {},
 	"DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED":               {},
 	"DD_TRACE_REPORT_HOSTNAME":                                        {},
-	"DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT":           {},
-	"DD_TRACE_RESOURCE_RENAMING_ENABLED":                              {},
 	"DD_TRACE_RESTFUL_ANALYTICS_ENABLED":                              {},
 	"DD_TRACE_SAMPLE_RATE":                                            {},
 	"DD_TRACE_SAMPLING_RULES":                                         {},
