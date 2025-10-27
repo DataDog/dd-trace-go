@@ -72,7 +72,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Parse the configuration
 	log.Debug("openfeature: remote config: processing configuration update %q: %s", path, string(data))
 
-	var config serverConfiguration
+	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
 		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error())
 		return rc.ApplyStatus{
@@ -82,7 +82,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Validate the configuration
-	err := validateConfiguration(&config.FlagConfiguration)
+	err := validateConfiguration(&config)
 	if err != nil {
 		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error())
 		return rc.ApplyStatus{
@@ -92,8 +92,8 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Update the provider with the new configuration
-	provider.updateConfiguration(&config.FlagConfiguration)
-	log.Debug("openfeature: remote config: successfully applied configuration %q with %d flags", path, len(config.FlagConfiguration.Flags))
+	provider.updateConfiguration(&config)
+	log.Debug("openfeature: remote config: successfully applied configuration %q with %d flags", path, len(config.Flags))
 
 	return rc.ApplyStatus{
 		State: rc.ApplyStateAcknowledged,
@@ -102,13 +102,11 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 // validateConfiguration performs basic validation on a serverConfiguration.
 func validateConfiguration(config *universalFlagsConfiguration) error {
-	if config == nil {
-		return fmt.Errorf("configuration is nil")
+	if config.Format != "SERVER" {
+		return fmt.Errorf("unsupported format %q, expected SERVER (Is the remote config payload the right format ?)", config.Format)
 	}
 
-	if config.Format != "SERVER" && config.Format != "" {
-		return fmt.Errorf("unsupported format %q, expected SERVER", config.Format)
-	}
+	hasFlags := len(config.Flags) > 0
 
 	// Validate each flag and delete invalid ones from the map
 	// Collect errors for reporting
@@ -118,6 +116,10 @@ func validateConfiguration(config *universalFlagsConfiguration) error {
 		errs = append(errs, err)
 		return err != nil
 	})
+
+	if hasFlags && len(config.Flags) == 0 {
+		errs = append(errs, errors.New("all flags are invalid"))
+	}
 
 	return errors.Join(errs...)
 }

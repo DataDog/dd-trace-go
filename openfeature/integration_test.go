@@ -814,20 +814,20 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 	originalConfig := createE2EBooleanConfig()
 
 	// Serialize to JSON
-	data, err := json.Marshal(serverConfiguration{originalConfig})
+	data, err := json.Marshal(originalConfig)
 	if err != nil {
 		t.Fatalf("failed to marshal config: %v", err)
 	}
 
 	// Deserialize from JSON
-	var parsedConfig serverConfiguration
+	var parsedConfig universalFlagsConfiguration
 	if err := json.Unmarshal(data, &parsedConfig); err != nil {
 		t.Fatalf("failed to unmarshal config: %v", err)
 	}
 
 	// Use the parsed config
 	provider := newDatadogProvider()
-	provider.updateConfiguration(&parsedConfig.FlagConfiguration)
+	provider.updateConfiguration(&parsedConfig)
 
 	err = of.SetProviderAndWait(provider)
 	if err != nil {

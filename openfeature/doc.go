@@ -226,7 +226,7 @@
 //	    defer tracer.Stop()
 //
 //	    // Create OpenFeature provider
-//	    provider, err := openfeature.NewDatadogProvider()
+//	    provider, err := openfeature.NewDatadogProvider(openfeature.ProviderConfig{})
 //	    if err != nil {
 //	        log.Fatalf("Failed to create provider: %v", err)
 //	    }
@@ -278,7 +278,7 @@
 //	provider := openfeature.newDatadogProvider()
 //
 //	// Manually set test configuration
-//	config := &serverConfiguration{
+//	config := &universalFlagConfiguration{
 //	    Format: "SERVER",
 //	    Flags: map[string]*flag{
 //	        "test-flag": {

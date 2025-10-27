@@ -38,6 +38,10 @@ type DatadogProvider struct {
 	configChange sync.Cond
 }
 
+type ProviderConfig struct {
+	// Add any configuration fields if needed in the future
+}
+
 // NewDatadogProvider creates a new Datadog OpenFeature provider.
 // It subscribes to Remote Config updates and automatically updates the provider's configuration
 // when new flag configurations are received.
@@ -47,9 +51,10 @@ type DatadogProvider struct {
 //
 // Returns an error if the default configuration of the Remote Config client is NOT working
 // In this case, please call tracer.Start before creating the provider.
-func NewDatadogProvider() (*DatadogProvider, error) {
+func NewDatadogProvider(ProviderConfig) (openfeature.FeatureProvider, error) {
 	if !internal.BoolEnv(ffeProductEnvVar, false) {
-		return nil, fmt.Errorf("experimental flagging provider is not enabled: set %s=true to enable it", ffeProductEnvVar)
+		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
+		return &openfeature.NoopProvider{}, nil
 	}
 
 	return startWithRemoteConfig()

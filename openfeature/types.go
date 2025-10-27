@@ -7,12 +7,6 @@ package openfeature
 
 import "time"
 
-// serverConfiguration represents the top-level configuration received from Remote Config.
-// It contains the feature flags configuration for a specific environment.
-type serverConfiguration struct {
-	FlagConfiguration universalFlagsConfiguration `json:"flag_configuration"`
-}
-
 // universalFlagsConfiguration represents the universal feature flags configuration structure.
 // of the openfeature standard for server-side flag configurations.
 type universalFlagsConfiguration struct {
