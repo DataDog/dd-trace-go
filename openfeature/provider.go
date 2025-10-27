@@ -29,14 +29,21 @@ var (
 	errNoConfiguration = errors.New("no configuration loaded")
 )
 
-const ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
-
 const (
+	// ffeProductEnvVar is the environment variable to enable the experimental flagging provider
+	ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
 	// Default timeout for provider initialization
 	defaultInitTimeout = 30 * time.Second
 	// Default timeout for provider shutdown
 	defaultShutdownTimeout = 30 * time.Second
 )
+
+// ProviderConfig contains configuration options for the Datadog OpenFeature provider
+type ProviderConfig struct {
+	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
+	// Default: 1 second
+	ExposureFlushInterval time.Duration
+}
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
 // using configuration received from Datadog Remote Config.
@@ -46,13 +53,13 @@ type DatadogProvider struct {
 	metadata      openfeature.Metadata
 
 	configChange sync.Cond
+
+	// Exposure tracking
+	exposureWriter *exposureWriter
+	exposureHook   *exposureHook
 }
 
-type ProviderConfig struct {
-	// Add any configuration fields if needed in the future
-}
-
-// NewDatadogProvider creates a new Datadog OpenFeature provider.
+// NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
 // It subscribes to Remote Config updates and automatically updates the provider's configuration
 // when new flag configurations are received.
 //
@@ -61,20 +68,28 @@ type ProviderConfig struct {
 //
 // Returns an error if the default configuration of the Remote Config client is NOT working
 // In this case, please call tracer.Start before creating the provider.
-func NewDatadogProvider(ProviderConfig) (openfeature.FeatureProvider, error) {
+func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
 	if !internal.BoolEnv(ffeProductEnvVar, false) {
 		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
 		return &openfeature.NoopProvider{}, nil
 	}
 
-	return startWithRemoteConfig()
+	return startWithRemoteConfig(config)
 }
 
-func newDatadogProvider() *DatadogProvider {
+func newDatadogProvider(config ProviderConfig) *DatadogProvider {
+	// Create exposure writer
+	writer := newExposureWriter(config)
+
+	// Create exposure hook
+	hook := newExposureHook(writer)
+
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
+		exposureWriter: writer,
+		exposureHook:   hook,
 	}
 	p.configChange.L = &p.mu
 	return p
@@ -156,6 +171,8 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		}
 	}
 
+	p.exposureWriter.start()
+
 	return nil
 }
 
@@ -177,6 +194,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	go func() {
 		// Perform the shutdown operations
 		err := stopRemoteConfig()
+		// Stop the exposure writer
+		if p.exposureWriter != nil {
+			p.exposureWriter.stop()
+		}
 		done <- err
 	}()
 
@@ -212,6 +233,7 @@ func (p *DatadogProvider) BooleanEvaluation(
 			ResolutionError: toResolutionError(result.Error),
 			Reason:          result.Reason,
 			Variant:         result.VariantKey,
+			FlagMetadata:    result.Metadata,
 		},
 	}
 }
@@ -239,6 +261,7 @@ func (p *DatadogProvider) StringEvaluation(
 			ResolutionError: toResolutionError(result.Error),
 			Reason:          result.Reason,
 			Variant:         result.VariantKey,
+			FlagMetadata:    result.Metadata,
 		},
 	}
 }
@@ -285,6 +308,7 @@ func (p *DatadogProvider) FloatEvaluation(
 			ResolutionError: toResolutionError(result.Error),
 			Reason:          result.Reason,
 			Variant:         result.VariantKey,
+			FlagMetadata:    result.Metadata,
 		},
 	}
 }
@@ -338,6 +362,7 @@ func (p *DatadogProvider) IntEvaluation(
 			ResolutionError: toResolutionError(result.Error),
 			Reason:          result.Reason,
 			Variant:         result.VariantKey,
+			FlagMetadata:    result.Metadata,
 		},
 	}
 }
@@ -357,13 +382,17 @@ func (p *DatadogProvider) ObjectEvaluation(
 			ResolutionError: toResolutionError(result.Error),
 			Reason:          result.Reason,
 			Variant:         result.VariantKey,
+			FlagMetadata:    result.Metadata,
 		},
 	}
 }
 
 // Hooks returns the hooks for this provider.
-// Currently returns an empty slice as we don't have provider-level hooks.
+// This includes the exposure tracking hook.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
+	if p.exposureHook != nil {
+		return []openfeature.Hook{p.exposureHook}
+	}
 	return []openfeature.Hook{}
 }
 

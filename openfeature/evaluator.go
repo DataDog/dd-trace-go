@@ -29,6 +29,8 @@ type evaluationResult struct {
 	Reason of.Reason
 	// Error contains any error that occurred during evaluation
 	Error error
+	// Metadata contains additional evaluation metadata for hooks
+	Metadata map[string]any
 }
 
 // evaluateFlag evaluates a feature flag with the given context.
@@ -66,10 +68,22 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 				}
 			}
 
+			// Build metadata for exposure tracking
+			metadata := make(map[string]any)
+			metadata[metadataAllocationKey] = allocation.Key
+
+			// Get doLog value (defaults to true if not specified)
+			doLog := true
+			if allocation.DoLog != nil {
+				doLog = *allocation.DoLog
+			}
+			metadata[metadataDoLog] = doLog
+
 			return evaluationResult{
 				Value:      variant.Value,
 				VariantKey: variant.Key,
 				Reason:     of.TargetingMatchReason,
+				Metadata:   metadata,
 			}
 		}
 	}

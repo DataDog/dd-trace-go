@@ -21,8 +21,8 @@ const (
 	ffeCapability  = 46
 )
 
-func startWithRemoteConfig() (*DatadogProvider, error) {
-	provider := newDatadogProvider()
+func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
+	provider := newDatadogProvider(config)
 
 	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
 		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
@@ -70,7 +70,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Parse the configuration
-	log.Debug("openfeature: remote config: processing configuration update %q: %s", path, string(data))
+	log.Debug("openfeature: remote config: processing configuration update %q: %s", path, len(data))
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
