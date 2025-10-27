@@ -14,7 +14,7 @@ import (
 
 // BenchmarkBooleanEvaluation benchmarks boolean flag evaluation
 func BenchmarkBooleanEvaluation(b *testing.B) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -34,7 +34,7 @@ func BenchmarkBooleanEvaluation(b *testing.B) {
 
 // BenchmarkStringEvaluation benchmarks string flag evaluation
 func BenchmarkStringEvaluation(b *testing.B) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -54,7 +54,7 @@ func BenchmarkStringEvaluation(b *testing.B) {
 
 // BenchmarkIntEvaluation benchmarks integer flag evaluation
 func BenchmarkIntEvaluation(b *testing.B) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -74,7 +74,7 @@ func BenchmarkIntEvaluation(b *testing.B) {
 
 // BenchmarkFloatEvaluation benchmarks float flag evaluation
 func BenchmarkFloatEvaluation(b *testing.B) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -94,7 +94,7 @@ func BenchmarkFloatEvaluation(b *testing.B) {
 
 // BenchmarkObjectEvaluation benchmarks object flag evaluation
 func BenchmarkEvaluation(b *testing.B) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -126,7 +126,7 @@ func BenchmarkEvaluationWithVaryingContextSize(b *testing.B) {
 
 	for _, size := range contextSizes {
 		b.Run(size.name, func(b *testing.B) {
-			provider := newDatadogProvider()
+			provider := newDatadogProvider(nil)
 			config := createTestConfig()
 			provider.updateConfiguration(config)
 
@@ -165,7 +165,7 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 
 	for _, count := range flagCounts {
 		b.Run(count.name, func(b *testing.B) {
-			provider := newDatadogProvider()
+			provider := newDatadogProvider(nil)
 			config := createTestConfig()
 
 			// Add additional flags
@@ -213,7 +213,7 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 
 // BenchmarkConcurrentEvaluations benchmarks concurrent flag evaluations
 func BenchmarkConcurrentEvaluations(b *testing.B) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 

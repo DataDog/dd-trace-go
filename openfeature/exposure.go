@@ -85,10 +85,17 @@ type exposurePayload struct {
 	Exposures []exposureEvent `json:"exposures"`
 }
 
+type bufferKey struct {
+	flagKey       string
+	allocationKey string
+	variantKey    string
+	subjectID     string
+}
+
 // exposureWriter manages buffering and flushing of exposure events to the Datadog Agent
 type exposureWriter struct {
 	mu            sync.Mutex
-	buffer        map[string]exposureEvent // Deduplicate by composite key
+	buffer        map[bufferKey]exposureEvent // Deduplicate by composite key
 	flushInterval time.Duration
 	httpClient    *http.Client
 	agentURL      *url.URL
@@ -136,7 +143,7 @@ func newExposureWriter(config ProviderConfig) *exposureWriter {
 	}
 
 	return &exposureWriter{
-		buffer:        make(map[string]exposureEvent),
+		buffer:        make(map[bufferKey]exposureEvent),
 		flushInterval: flushInterval,
 		httpClient:    httpClient,
 		agentURL:      agentURL,
@@ -171,7 +178,12 @@ func (w *exposureWriter) append(event exposureEvent) {
 
 	// Create composite key for deduplication
 	// Deduplicate by flag, allocation, variant, and subject.id
-	key := fmt.Sprintf("%s|%s|%s|%s", event.Flag.Key, event.Allocation.Key, event.Variant.Key, event.Subject.ID)
+	key := bufferKey{
+		flagKey:       event.Flag.Key,
+		allocationKey: event.Allocation.Key,
+		variantKey:    event.Variant.Key,
+		subjectID:     event.Subject.ID,
+	}
 
 	// Store event (will overwrite if duplicate)
 	w.buffer[key] = event
@@ -190,7 +202,7 @@ func (w *exposureWriter) flush() {
 	for _, event := range w.buffer {
 		events = append(events, event)
 	}
-	w.buffer = make(map[string]exposureEvent)
+	w.buffer = make(map[bufferKey]exposureEvent)
 	w.mu.Unlock()
 
 	// Build payload

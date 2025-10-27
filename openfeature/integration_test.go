@@ -18,7 +18,7 @@ import (
 // using the actual OpenFeature SDK client.
 func TestEndToEnd_BooleanFlag(t *testing.T) {
 	// Create provider and configuration
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -88,7 +88,7 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 
 // TestEndToEnd_StringFlag tests string flag evaluation with the OpenFeature SDK.
 func TestEndToEnd_StringFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createE2EStringConfig()
 	provider.updateConfiguration(config)
 
@@ -133,7 +133,7 @@ func TestEndToEnd_StringFlag(t *testing.T) {
 
 // TestEndToEnd_IntegerFlag tests integer flag evaluation.
 func TestEndToEnd_IntegerFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createE2EIntegerConfig()
 	provider.updateConfiguration(config)
 
@@ -178,7 +178,7 @@ func TestEndToEnd_IntegerFlag(t *testing.T) {
 
 // TestEndToEnd_FloatFlag tests float flag evaluation.
 func TestEndToEnd_FloatFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createE2EFloatConfig()
 	provider.updateConfiguration(config)
 
@@ -206,7 +206,7 @@ func TestEndToEnd_FloatFlag(t *testing.T) {
 
 // TestEndToEnd_ObjectFlag tests JSON/object flag evaluation.
 func TestEndToEnd_ObjectFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createE2EObjectConfig()
 	provider.updateConfiguration(config)
 
@@ -252,7 +252,7 @@ func TestEndToEnd_ObjectFlag(t *testing.T) {
 
 // TestEndToEnd_DisabledFlag tests that disabled flags return defaults.
 func TestEndToEnd_DisabledFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -297,7 +297,7 @@ func TestEndToEnd_DisabledFlag(t *testing.T) {
 
 // TestEndToEnd_MissingFlag tests error handling for non-existent flags.
 func TestEndToEnd_MissingFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -334,7 +334,7 @@ func TestEndToEnd_MissingFlag(t *testing.T) {
 
 // TestEndToEnd_ConfigurationUpdate tests that configuration updates are reflected in evaluations.
 func TestEndToEnd_ConfigurationUpdate(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	provider.updateConfiguration(&universalFlagsConfiguration{})
 	err := of.SetProviderAndWait(provider)
 	if err != nil {
@@ -368,7 +368,7 @@ func TestEndToEnd_ConfigurationUpdate(t *testing.T) {
 
 // TestEndToEnd_TrafficSharding tests that traffic distribution works correctly.
 func TestEndToEnd_TrafficSharding(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := createE2EShardingConfig()
 	provider.updateConfiguration(config)
 
@@ -826,7 +826,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 	}
 
 	// Use the parsed config
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	provider.updateConfiguration(&parsedConfig)
 
 	err = of.SetProviderAndWait(provider)
@@ -853,7 +853,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 // TestEndToEnd_EmptyRulesAllocation tests that an allocation with no rules matches all users.
 // This covers the fix where empty rules should match everyone (no targeting restrictions).
 func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -925,7 +925,7 @@ func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
 // TestEndToEnd_ShardCalculationWithDash tests that the shard calculation uses
 // salt + "-" + targetingKey (with dash separator) to match Eppo SDK implementation.
 func TestEndToEnd_ShardCalculationWithDash(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1035,7 +1035,7 @@ func TestEndToEnd_ShardCalculationWithDash(t *testing.T) {
 // TestEndToEnd_IdAttributeFallback tests that when an attribute named "id" is not
 // explicitly provided, the targeting key is used as the "id" value.
 func TestEndToEnd_IdAttributeFallback(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1151,7 +1151,7 @@ func TestEndToEnd_IdAttributeFallback(t *testing.T) {
 
 // TestEndToEnd_AllThreeFixes tests a complex scenario that exercises all three fixes together.
 func TestEndToEnd_AllThreeFixes(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(nil)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
