@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: hannahkm/implement-v1-serialization
       - name: Pin exact commit SHA for system-tests
         id: pin
         run: |
