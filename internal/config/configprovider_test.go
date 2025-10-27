@@ -25,18 +25,13 @@ type testConfigSource struct {
 	entries map[string]string
 }
 
-func newTestConfigSource() *testConfigSource {
-	t := &testConfigSource{
-		entries: make(map[string]string),
+func newTestConfigSource(entries map[string]string) *testConfigSource {
+	if entries == nil {
+		entries = make(map[string]string)
 	}
-
-	t.entries["STRING_KEY"] = "string"
-	t.entries["BOOL_KEY"] = "true"
-	t.entries["INT_KEY"] = "1"
-	t.entries["FLOAT_KEY"] = "1.0"
-	t.entries["URL_KEY"] = "https://localhost:8126"
-
-	return t
+	return &testConfigSource{
+		entries: entries,
+	}
 }
 
 func (s *testConfigSource) Get(key string) string {
@@ -45,20 +40,29 @@ func (s *testConfigSource) Get(key string) string {
 
 func TestGetMethods(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
-		provider := newTestConfigProvider(newTestConfigSource())
-		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
-		assert.Equal(t, false, provider.getBool("NONEXISTENT_KEY", false))
-		assert.Equal(t, 0, provider.getInt("NONEXISTENT_KEY", 0))
-		assert.Equal(t, 0.0, provider.getFloat("NONEXISTENT_KEY", 0.0))
-		assert.Equal(t, &url.URL{Scheme: "https", Host: "otherhost:1234"}, provider.getURL("NONEXISTENT_KEY", &url.URL{Scheme: "https", Host: "otherhost:1234"}))
+		// Test that defaults are used when the queried key does not exist
+		provider := newTestConfigProvider(newTestConfigSource(nil))
+		assert.Equal(t, "value", provider.getString("DD_SERVICE", "value"))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", true))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 1))
+		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 1.0))
+		assert.Equal(t, &url.URL{Scheme: "http", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"}))
 	})
 	t.Run("non-defaults", func(t *testing.T) {
-		provider := newTestConfigProvider(newTestConfigSource())
-		assert.Equal(t, "string", provider.getString("STRING_KEY", "value"))
-		assert.Equal(t, true, provider.getBool("BOOL_KEY", false))
-		assert.Equal(t, 1, provider.getInt("INT_KEY", 0))
-		assert.Equal(t, 1.0, provider.getFloat("FLOAT_KEY", 0.0))
-		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("URL_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+		// Test that non-defaults are used when the queried key exists
+		entries := map[string]string{
+			"DD_SERVICE":            "string",
+			"DD_TRACE_DEBUG":        "true",
+			"DD_TRACE_SEND_RETRIES": "1",
+			"DD_TRACE_SAMPLE_RATE":  "1.0",
+			"DD_TRACE_AGENT_URL":    "https://localhost:8126",
+		}
+		provider := newTestConfigProvider(newTestConfigSource(entries))
+		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
+		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
+		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 	})
 }
 
@@ -79,14 +83,10 @@ func TestDefaultConfigProvider(t *testing.T) {
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
 		assert.Equal(t, 1, provider.getInt("DD_TRACE_SEND_RETRIES", 0))
 		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
-		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 
 		// Defaults are returned for settings that are not configured
-		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
-		assert.Equal(t, false, provider.getBool("NONEXISTENT_KEY", false))
-		assert.Equal(t, 0, provider.getInt("NONEXISTENT_KEY", 0))
-		assert.Equal(t, 0.0, provider.getFloat("NONEXISTENT_KEY", 0.0))
-		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("NONEXISTENT_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+		assert.Equal(t, "value", provider.getString("DD_ENV", "value"))
 	})
 	t.Run("Settings only exist in LocalDeclarativeConfigSource", func(t *testing.T) {
 		const localYaml = `
@@ -117,11 +117,7 @@ apm_configuration_default:
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 
 		// Defaults are returned for settings that are not configured
-		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
-		assert.Equal(t, false, provider.getBool("NONEXISTENT_KEY", false))
-		assert.Equal(t, 0, provider.getInt("NONEXISTENT_KEY", 0))
-		assert.Equal(t, 0.0, provider.getFloat("NONEXISTENT_KEY", 0.0))
-		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("NONEXISTENT_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+		assert.Equal(t, "value", provider.getString("DD_ENV", "value"))
 	})
 
 	t.Run("Settings only exist in ManagedDeclarativeConfigSource", func(t *testing.T) {
@@ -152,11 +148,7 @@ apm_configuration_default:
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 
 		// Defaults are returned for settings that are not configured
-		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
-		assert.Equal(t, false, provider.getBool("NONEXISTENT_KEY", false))
-		assert.Equal(t, 0, provider.getInt("NONEXISTENT_KEY", 0))
-		assert.Equal(t, 0.0, provider.getFloat("NONEXISTENT_KEY", 0.0))
-		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("NONEXISTENT_KEY", &url.URL{Scheme: "https", Host: "localhost:8126"}))
+		assert.Equal(t, "value", provider.getString("DD_ENV", "value"))
 	})
 	t.Run("Settings exist in all ConfigSources", func(t *testing.T) {
 		localYaml := `
@@ -208,6 +200,6 @@ apm_configuration_default:
 		assert.Equal(t, true, provider.getBool("DD_TRACE_LOG_TO_STDOUT", false))
 
 		// Defaults are returned for settings that are not configured
-		assert.Equal(t, "value", provider.getString("NONEXISTENT_KEY", "value"))
+		assert.Equal(t, false, provider.getBool("DD_TRACE_STARTUP_LOGS", false))
 	})
 }

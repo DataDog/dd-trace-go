@@ -6,9 +6,6 @@
     "DD_AGENT_HOST": [
       "A"
     ],
-    "DD_AGENT_URL": [
-      "A"
-    ],
     "DD_API_KEY": [
       "A"
     ],
@@ -75,9 +72,6 @@
     "DD_APP_KEY": [
       "A"
     ],
-    "DD_BOOL_KEY": [
-      "A"
-    ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
       "A"
     ],
@@ -135,9 +129,6 @@
     "DD_EXTERNAL_ENV": [
       "A"
     ],
-    "DD_FLOAT_KEY": [
-      "A"
-    ],
     "DD_GIT_BRANCH": [
       "A"
     ],
@@ -192,9 +183,6 @@
     "DD_INSTRUMENTATION_TELEMETRY_ENABLED": [
       "A"
     ],
-    "DD_INT_KEY": [
-      "A"
-    ],
     "DD_KEY": [
       "A"
     ],
@@ -211,9 +199,6 @@
       "A"
     ],
     "DD_LOGGING_RATE": [
-      "A"
-    ],
-    "DD_NONEXISTENT_KEY": [
       "A"
     ],
     "DD_PIPELINE_EXECUTION_ID": [
@@ -322,9 +307,6 @@
       "A"
     ],
     "DD_SPAN_SAMPLING_RULES_FILE": [
-      "A"
-    ],
-    "DD_STRING_KEY": [
       "A"
     ],
     "DD_TAGS": [
@@ -444,9 +426,6 @@
     "DD_TRACE_GIT_METADATA_ENABLED": [
       "A"
     ],
-    "DD_TRACE_GLOBAL_SAMPLE_RATE": [
-      "A"
-    ],
     "DD_TRACE_GOCQL_ANALYTICS_ENABLED": [
       "A"
     ],
@@ -475,9 +454,6 @@
       "A"
     ],
     "DD_TRACE_HEADER_TAGS": [
-      "A"
-    ],
-    "DD_TRACE_HOSTNAME": [
       "A"
     ],
     "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED": [
@@ -520,9 +496,6 @@
       "A"
     ],
     "DD_TRACE_LOG_DIRECTORY": [
-      "A"
-    ],
-    "DD_TRACE_LOG_TO_STDOUT": [
       "A"
     ],
     "DD_TRACE_MEMCACHE_ANALYTICS_ENABLED": [
@@ -585,6 +558,12 @@
     "DD_TRACE_REPORT_HOSTNAME": [
       "A"
     ],
+    "DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT": [
+      "A"
+    ],
+    "DD_TRACE_RESOURCE_RENAMING_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [
       "A"
     ],
@@ -598,12 +577,6 @@
       "A"
     ],
     "DD_TRACE_SARAMA_ANALYTICS_ENABLED": [
-      "A"
-    ],
-    "DD_TRACE_SEND_RETRIES": [
-      "A"
-    ],
-    "DD_TRACE_SERVICE_NAME": [
       "A"
     ],
     "DD_TRACE_SOURCE_HOSTNAME": [
@@ -640,9 +613,6 @@
       "A"
     ],
     "DD_TRACE__ANALYTICS_ENABLED": [
-      "A"
-    ],
-    "DD_URL_KEY": [
       "A"
     ],
     "DD_VERSION": [
