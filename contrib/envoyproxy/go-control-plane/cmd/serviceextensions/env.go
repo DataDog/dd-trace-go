@@ -27,6 +27,21 @@ func intEnv(key string, def int) int {
 	return v
 }
 
+// intEnvNil returns the parsed int value of an environment variable if it exists, or
+// return nil if unset or failed to parse.
+func intEnvNil(key string) *int {
+	vv, ok := env.Lookup(key)
+	if !ok {
+		return nil
+	}
+	v, err := strconv.Atoi(vv)
+	if err != nil {
+		log.Warn("Non-integer value for env var %s. Parse failed with error: %v", key, err)
+		return nil
+	}
+	return &v
+}
+
 // IpEnv returns the valid IP value of an environment variable, or def otherwise.
 func ipEnv(key string, def net.IP) net.IP {
 	vv, ok := env.Lookup(key)
@@ -53,6 +68,16 @@ func boolEnv(key string, def bool) bool {
 	v, err := strconv.ParseBool(vv)
 	if err != nil {
 		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err)
+		return def
+	}
+	return v
+}
+
+// stringEnv returns the string value of an environment variable, or
+// def otherwise.
+func stringEnv(key, def string) string {
+	v, ok := env.Lookup(key)
+	if !ok {
 		return def
 	}
 	return v

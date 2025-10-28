@@ -3,28 +3,27 @@ set -euo pipefail
 
 # message: Prints a message to the console with a timestamp and prefix.
 message() {
-	local msg="$1"
-	printf "\n> $(date -u +%Y-%m-%dT%H:%M:%SZ) - $msg\n"
+  local msg="$1"
+  printf "\n> %s - %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg"
 }
 
 # run: Runs the tool and fails early if it fails.
 run() {
-	local cmd="$1"
-	message "Running: $cmd"
-	if ! eval "$cmd"; then
-		message "Command failed: $cmd"
-		exit 1
-	fi
-	message "Command ran successfully: $cmd"
+  local cmd="$1"
+  message "Running: $cmd"
+  if ! eval "$cmd"; then
+    message "Command failed: $cmd"
+    exit 1
+  fi
+  message "Command ran successfully: $cmd"
 }
 
 # Default flags
 format_go=false
 format_shell=false
-tools=false
 
 usage() {
-	cat <<EOF
+  cat << EOF
 Usage: $(basename "${BASH_SOURCE[0]}") [options]
 
 Format Go and Shell files in the repository.
@@ -33,60 +32,59 @@ Options:
   --all          Format both Go and Shell files and install tools
   --go           Format only Go files
   --shell        Format only Shell files
-  -t, --tools    Install formatting tools
   -h, --help     Show this help message
 
 Without any flags, formats Go files only (default behavior).
 EOF
-	exit 0
+  exit 0
 }
 
 format_go_files() {
-	message "Formatting Go files..."
-	run "golangci-lint fmt"
+  message "Formatting Go files..."
+  run "golangci-lint fmt"
 }
 
 format_shell_files() {
-	message "Formatting shell scripts..."
-	run "shfmt -l -w scripts/*.sh"
+  message "Formatting shell scripts..."
+  run "shfmt --indent=2 --case-indent --space-redirects -l -w scripts/*.sh"
 }
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
-	case $1 in
-	--all)
-		format_go=true
-		format_shell=true
-		shift
-		;;
-	--go)
-		format_go=true
-		shift
-		;;
-	--shell)
-		format_shell=true
-		shift
-		;;
-	-h | --help)
-		usage
-		;;
-	*)
-		echo "Ignoring unknown argument $1"
-		shift
-		;;
-	esac
+  case $1 in
+    --all)
+      format_go=true
+      format_shell=true
+      shift
+      ;;
+    --go)
+      format_go=true
+      shift
+      ;;
+    --shell)
+      format_shell=true
+      shift
+      ;;
+    -h | --help)
+      usage
+      ;;
+    *)
+      echo "Ignoring unknown argument $1"
+      shift
+      ;;
+  esac
 done
 
 # Default behavior: format Go files if no specific format is selected
 if [[ ${format_go} == false ]] && [[ ${format_shell} == false ]]; then
-	format_go=true
+  format_go=true
 fi
 
 # Run formatters based on flags
 if [[ ${format_go} == true ]]; then
-	format_go_files
+  format_go_files
 fi
 
 if [[ ${format_shell} == true ]]; then
-	format_shell_files
+  format_shell_files
 fi

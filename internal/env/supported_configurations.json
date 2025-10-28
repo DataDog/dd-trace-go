@@ -69,6 +69,9 @@
     "DD_APPSEC_WAF_TIMEOUT": [
       "A"
     ],
+    "DD_APP_KEY": [
+      "A"
+    ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
       "A"
     ],
@@ -118,6 +121,9 @@
       "A"
     ],
     "DD_ENV": [
+      "A"
+    ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED": [
       "A"
     ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
@@ -181,6 +187,18 @@
       "A"
     ],
     "DD_KEY": [
+      "A"
+    ],
+    "DD_LLMOBS_AGENTLESS_ENABLED": [
+      "A"
+    ],
+    "DD_LLMOBS_ENABLED": [
+      "A"
+    ],
+    "DD_LLMOBS_ML_APP": [
+      "A"
+    ],
+    "DD_LLMOBS_PROJECT_NAME": [
       "A"
     ],
     "DD_LOGGING_RATE": [
@@ -271,6 +289,15 @@
       "A"
     ],
     "DD_SERVICE_EXTENSION_PORT": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_TLS": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_TLS_CERT_FILE": [
+      "A"
+    ],
+    "DD_SERVICE_EXTENSION_TLS_KEY_FILE": [
       "A"
     ],
     "DD_SERVICE_MAPPING": [
@@ -532,6 +559,12 @@
       "A"
     ],
     "DD_TRACE_REPORT_HOSTNAME": [
+      "A"
+    ],
+    "DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT": [
+      "A"
+    ],
+    "DD_TRACE_RESOURCE_RENAMING_ENABLED": [
       "A"
     ],
     "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [

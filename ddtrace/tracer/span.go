@@ -26,6 +26,7 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -304,6 +305,12 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.setSamplingPriorityLocked(priority, sampler)
+}
+
+func (s *Span) setProcessTags(pTags string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMeta(keyProcessTags, pTags)
 }
 
 // root returns the root span of the span's trace. The return value shouldn't be
@@ -933,6 +940,16 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 	s.spanEvents = append(s.spanEvents, event)
 }
 
+func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
+	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
+	if !ok {
+		return
+	}
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
+}
+
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
@@ -953,7 +970,6 @@ const (
 	keySamplingPriority     = "_sampling_priority_v1"
 	keySamplingPriorityRate = "_dd.agent_psr"
 	keyDecisionMaker        = "_dd.p.dm"
-	keyServiceHash          = "_dd.dm.service_hash"
 	keyOrigin               = "_dd.origin"
 	keyReparentID           = "_dd.parent_id"
 	// keyHostname can be used to override the agent's hostname detection when using `WithHostname`.
@@ -994,6 +1010,12 @@ const (
 	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
 	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
 	keyKnuthSamplingRate = "_dd.p.ksr"
+	// keyPropagatedLLMObsParentID contains the propagated llmobs span ID.
+	keyPropagatedLLMObsParentID = "_dd.p.llmobs_parent_id"
+	// keyPropagatedLLMObsMLAPP contains the propagated ML App.
+	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
+	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
+	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
@@ -1002,7 +1024,6 @@ const (
 	keyUserLogin     = "usr.login"
 	keyUserEmail     = "usr.email"
 	keyUserName      = "usr.name"
-	keyUserOrg       = "usr.org"
 	keyUserRole      = "usr.role"
 	keyUserScope     = "usr.scope"
 	keyUserSessionID = "usr.session_id"

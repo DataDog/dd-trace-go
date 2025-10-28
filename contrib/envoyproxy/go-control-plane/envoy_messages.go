@@ -8,7 +8,9 @@ package gocontrolplane
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -59,11 +61,16 @@ func (m messageRequestHeaders) MessageType() proxy.MessageType {
 const (
 	componentNameGCPServiceExtension = "gcp-service-extension"
 	componentNameEnvoy               = "envoy"
+	componentNameEnvoyGateway        = "envoy-gateway"
 	componentNameIstio               = "istio"
 
 	datadogEnvoyIntegrationHeader = "x-datadog-envoy-integration"
 	datadogIntegrationHeader      = "x-datadog-istio-integration"
 )
+
+var isK8s = sync.OnceValue(func() bool {
+	return os.Getenv("KUBERNETES") != ""
+})
 
 func (i Integration) String() string {
 	switch i {
@@ -71,6 +78,8 @@ func (i Integration) String() string {
 		return componentNameGCPServiceExtension
 	case EnvoyIntegration:
 		return componentNameEnvoy
+	case EnvoyGatewayIntegration:
+		return componentNameEnvoyGateway
 	case IstioIntegration:
 		return componentNameIstio
 	default:
@@ -78,11 +87,24 @@ func (i Integration) String() string {
 	}
 }
 
+func (m messageRequestHeaders) BodyParsingSizeLimit(ctx context.Context) int {
+	switch m.component(ctx) {
+	case componentNameGCPServiceExtension:
+		return 0
+	default:
+		return proxy.DefaultBodyParsingSizeLimit
+	}
+}
+
 func (m messageRequestHeaders) SpanOptions(ctx context.Context) []tracer.StartSpanOption {
+	return []tracer.StartSpanOption{tracer.Tag(ext.Component, m.component(ctx))}
+}
+
+func (m messageRequestHeaders) component(ctx context.Context) string {
 	// As the integration (callout container) is run by default with the GCP Service Extension value,
 	// we can consider that if this flag is false, it means that it is running in a custom integration.
 	if m.integration != GCPServiceExtensionIntegration {
-		return []tracer.StartSpanOption{tracer.Tag(ext.Component, m.integration.String())}
+		return m.integration.String()
 	}
 
 	// In newer version of the documentation, customers are instructed to inject the
@@ -90,16 +112,24 @@ func (m messageRequestHeaders) SpanOptions(ctx context.Context) []tracer.StartSp
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		valuesEnvoy := md.Get(datadogEnvoyIntegrationHeader)
 		if len(valuesEnvoy) > 0 && valuesEnvoy[0] == "1" {
-			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameEnvoy)}
+			return componentNameEnvoy
 		}
 
 		valuesIstio := md.Get(datadogIntegrationHeader)
 		if len(valuesIstio) > 0 && valuesIstio[0] == "1" {
-			return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameIstio)}
+			return componentNameIstio
+		}
+
+		// We don't have the ability to add custom headers in envoy gateway EnvoyExtensionPolicy CRD.
+		// So we fall back to detecting if we are running in k8s or not.
+		// If we are running in k8s, we assume it is Envoy Gateway, otherwise GCP Service Extension.
+		if isK8s() {
+			return componentNameEnvoyGateway
 		}
 	}
 
-	return []tracer.StartSpanOption{tracer.Tag(ext.Component, componentNameGCPServiceExtension)}
+	return componentNameGCPServiceExtension
+
 }
 
 type responseHeadersEnvoy struct {

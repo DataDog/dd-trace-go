@@ -134,6 +134,14 @@ func headersRemoveCookies(headers http.Header) map[string][]string {
 	return headersNoCookies
 }
 
+func headersToLower(headers map[string][]string) map[string][]string {
+	headersNoCookies := make(map[string][]string, len(headers))
+	for k, v := range headers {
+		headersNoCookies[strings.ToLower(k)] = v
+	}
+	return headersNoCookies
+}
+
 func normalizeHTTPHeaderName(name string) string {
 	return strings.ToLower(name)
 }

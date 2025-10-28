@@ -185,7 +185,8 @@ func TestSpanFinishTwice(t *testing.T) {
 	// check that the span does not have any span links serialized
 	// spans don't have span links by default and they are serialized in the meta map
 	// as part of the Finish call
-	assert.Zero(span.meta["_dd.span_links"])
+	_, spanLinksStr := getMeta(span, "_dd.span_links")
+	assert.Zero(spanLinksStr)
 
 	// manipulate the span
 	span.AddLink(SpanLink{
@@ -201,7 +202,8 @@ func TestSpanFinishTwice(t *testing.T) {
 	span.Finish()
 
 	assert.Equal(previousDuration, span.duration)
-	assert.Zero(span.meta["_dd.span_links"])
+	_, spanLinksStr = getMeta(span, "_dd.span_links")
+	assert.Zero(spanLinksStr)
 
 	tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
 }
@@ -245,12 +247,16 @@ func TestSpanFinishNilOption(t *testing.T) {
 			span.Finish(tc.options...)
 			if tc.wantErr {
 				assert.Equal(tc.wantErr, span.error != 0)
-				assert.Equal(span.meta[ext.ErrorMsg], "test error")
-				assert.Equal(span.meta[ext.ErrorType], "*errors.errorString")
+				errMsg, _ := getMeta(span, ext.ErrorMsg)
+				errType, _ := getMeta(span, ext.ErrorType)
+				assert.Equal("test error", errMsg)
+				assert.Equal("*errors.errorString", errType)
 			} else {
 				assert.Equal(span.error, int32(0))
-				assert.Empty(span.meta[ext.ErrorMsg])
-				assert.Empty(span.meta[ext.ErrorType])
+				_, ok := getMeta(span, ext.ErrorMsg)
+				assert.False(ok)
+				_, ok = getMeta(span, ext.ErrorType)
+				assert.False(ok)
 			}
 		})
 	}
@@ -337,9 +343,12 @@ func TestSpanFinishWithError(t *testing.T) {
 	span.Finish(WithError(err))
 
 	assert.Equal(int32(1), span.error)
-	assert.Equal("test error", span.meta[ext.ErrorMsg])
-	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEmpty(span.meta[ext.ErrorHandlingStack])
+	errMsg, _ := getMeta(span, ext.ErrorMsg)
+	errType, _ := getMeta(span, ext.ErrorType)
+	errStack, _ := getMeta(span, ext.ErrorHandlingStack)
+	assert.Equal("test error", errMsg)
+	assert.Equal("*errors.errorString", errType)
+	assert.NotEmpty(errStack)
 }
 
 func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
@@ -349,10 +358,13 @@ func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 	span := newBasicSpan("web.request")
 	span.Finish(WithError(err), NoDebugStack())
 
+	errMsg, _ := getMeta(span, ext.ErrorMsg)
+	errType, _ := getMeta(span, ext.ErrorType)
+	_, hasErrStack := getMeta(span, ext.ErrorHandlingStack)
 	assert.Equal(int32(1), span.error)
-	assert.Equal("test error", span.meta[ext.ErrorMsg])
-	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.Empty(span.meta[ext.ErrorStack])
+	assert.Equal("test error", errMsg)
+	assert.Equal("*errors.errorString", errType)
+	assert.False(hasErrStack)
 }
 
 func TestSpanFinishWithErrorStackFrames(t *testing.T) {
@@ -362,12 +374,16 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 	span := newBasicSpan("web.request")
 	span.Finish(WithError(err), StackFrames(2, 1))
 
+	errMsg, _ := getMeta(span, ext.ErrorMsg)
+	errType, _ := getMeta(span, ext.ErrorType)
+	errStack, _ := getMeta(span, ext.ErrorHandlingStack)
+
 	assert.Equal(int32(1), span.error)
-	assert.Equal("test error", span.meta[ext.ErrorMsg])
-	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.Contains(span.meta[ext.ErrorHandlingStack], "tracer.TestSpanFinishWithErrorStackFrames")
-	assert.Contains(span.meta[ext.ErrorHandlingStack], "tracer.(*Span).Finish")
-	assert.Equal(strings.Count(span.meta[ext.ErrorHandlingStack], "\n\t"), 2)
+	assert.Equal("test error", errMsg)
+	assert.Equal("*errors.errorString", errType)
+	assert.Contains(errStack, "tracer.TestSpanFinishWithErrorStackFrames")
+	assert.Contains(errStack, "tracer.(*Span).Finish")
+	assert.Equal(strings.Count(errStack, "\n\t"), 2)
 }
 
 // nilStringer is used to test nil detection when setting tags.
@@ -848,6 +864,8 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(0), span.error)
 
 	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`
+	span.mu.RLock()
+	defer span.mu.RUnlock()
 	t.Logf("%q\n", span.meta)
 	assert.Equal(nMeta+3, len(span.meta))
 	assert.Equal("", span.meta[ext.ErrorMsg])
@@ -999,10 +1017,13 @@ func TestSpanErrorNoStackTrace(t *testing.T) {
 		span.SetTag(ext.ErrorNoStackTrace, errors.New("test"))
 		span.Finish()
 
+		errStack, _ := getMeta(span, ext.ErrorStack)
+		errMsg, _ := getMeta(span, ext.ErrorMsg)
+		errType, _ := getMeta(span, ext.ErrorType)
 		assert.Equal(int32(1), span.error)
-		assert.Equal("", span.meta[ext.ErrorStack])
-		assert.Equal("test", span.meta[ext.ErrorMsg])
-		assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
+		assert.Equal("", errStack)
+		assert.Equal("test", errMsg)
+		assert.Equal("*errors.errorString", errType)
 	})
 }
 
@@ -1639,7 +1660,8 @@ func TestStatsAfterFinish(t *testing.T) {
 		sp.SetTag(keyMeasured, 1)
 		sp.Finish()
 
-		assert.Equal(t, "kafka-cluster", sp.meta["peer.service"])
+		peerService, _ := getMeta(sp, "peer.service")
+		assert.Equal(t, "kafka-cluster", peerService)
 
 		// peer.service has been added on the span.Finish() call. Ensure the StatSpan is also accessing this.
 		c.Stop()
@@ -1676,7 +1698,8 @@ func TestStatsAfterFinish(t *testing.T) {
 		sp.SetTag(keyMeasured, 1)
 		sp.Finish()
 
-		assert.Equal(t, "", sp.meta["peer.service"])
+		_, ok := getMeta(sp, "peer.service")
+		assert.False(t, ok)
 
 		c.Stop()
 		stats := transport.Stats()
@@ -1697,6 +1720,6 @@ func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
 		WithError(errors.New("test error")),
 		NoDebugStack(),
 	)
-
-	assert.Equal(t, "boom", sp.meta["error.stack"])
+	errorStack, _ := getMeta(sp, "error.stack")
+	assert.Equal(t, "boom", errorStack)
 }

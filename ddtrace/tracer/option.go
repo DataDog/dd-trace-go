@@ -35,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -45,6 +46,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+)
+
+const (
+	envLLMObsEnabled          = "DD_LLMOBS_ENABLED"
+	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
+	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
+	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
 )
 
 var contribIntegrations = map[string]struct {
@@ -116,7 +124,7 @@ var (
 	defaultStatsdPort = "8125"
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
-	defaultMaxTagsHeaderLen = 128
+	defaultMaxTagsHeaderLen = 512
 
 	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
 	defaultRateLimit = 100.0
@@ -322,6 +330,13 @@ type config struct {
 
 	// traceProtocol specifies the trace protocol to use.
 	traceProtocol float64
+
+	// llmobs contains the LLM Observability config
+	llmobs llmobsconfig.Config
+
+	// isLambdaFunction, if true, indicates we are in a lambda function
+	// It is set by checking for a nonempty LAMBDA_FUNCTION_NAME env var.
+	isLambdaFunction bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -452,10 +467,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
-	if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
+		if v != "" {
+			c.isLambdaFunction = true
+		}
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
@@ -509,6 +527,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
 	c.retryInterval = time.Millisecond
+
+	// LLM Observability config
+	c.llmobs = llmobsconfig.Config{
+		Enabled:          internal.BoolEnv(envLLMObsEnabled, false),
+		MLApp:            env.Get(envLLMObsMlApp),
+		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
+		ProjectName:      env.Get(envLLMObsProjectName),
+	}
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -623,8 +649,31 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
+	// Update the llmobs config with stuff needed from the tracer.
+	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
+		DDTags:     c.globalTags.get(),
+		Env:        c.env,
+		Service:    c.serviceName,
+		Version:    c.version,
+		AgentURL:   c.agentURL,
+		APIKey:     env.Get("DD_API_KEY"),
+		APPKey:     env.Get("DD_APP_KEY"),
+		HTTPClient: c.httpClient,
+		Site:       env.Get("DD_SITE"),
+	}
+	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
+		EVPProxyV2: c.agent.evpProxyV2,
+	}
 
 	return c, nil
+}
+
+func llmobsAgentlessEnabledFromEnv() *bool {
+	v, ok := internal.BoolEnvNoDefault(envLLMObsAgentlessEnabled)
+	if !ok {
+		return nil
+	}
+	return &v
 }
 
 func apmTracingDisabled(c *config) {
@@ -769,6 +818,9 @@ type agentFeatures struct {
 
 	// spanEvents reports whether the trace-agent can receive spans with the `span_events` field.
 	spanEventsAvailable bool
+
+	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
+	evpProxyV2 bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -825,6 +877,8 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		switch endpoint {
 		case "/v0.6/stats":
 			features.Stats = true
+		case "/evp_proxy/v2/":
+			features.evpProxyV2 = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
@@ -1032,16 +1086,16 @@ func WithAgentURL(agentURL string) StartOption {
 		if err != nil {
 			var urlErr *url.Error
 			if errors.As(err, &urlErr) {
-				u, err = url.Parse(urlErr.URL)
+				u, _ = url.Parse(urlErr.URL)
 				if u != nil {
 					urlErr.URL = u.Redacted()
 					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
 					return
 				}
-				log.Warn("Fail to parse Agent URL")
+				log.Warn("Fail to parse Agent URL: %s", err.Error())
 				return
 			}
-			log.Warn("Fail to parse Agent URL: %s", err.Error())
+			log.Warn("Fail to parse Agent URL")
 			return
 		}
 		switch u.Scheme {
@@ -1466,6 +1520,42 @@ func WithTestDefaults(statsdClient any) StartOption {
 		}
 		c.statsdClient = statsdClient.(internal.StatsdClient)
 		c.transport = newDummyTransport()
+	}
+}
+
+// WithLLMObsEnabled allows to enable LLM Observability (it is disabled by default).
+// This is equivalent to the DD_LLMOBS_ENABLED environment variable.
+func WithLLMObsEnabled(enabled bool) StartOption {
+	return func(c *config) {
+		c.llmobs.Enabled = enabled
+	}
+}
+
+// WithLLMObsMLApp allows to configure the default ML App for LLM Observability.
+// It is required to have this configured to use any LLM Observability features.
+// This is equivalent to the DD_LLMOBS_ML_APP environment variable.
+func WithLLMObsMLApp(mlApp string) StartOption {
+	return func(c *config) {
+		c.llmobs.MLApp = mlApp
+	}
+}
+
+// WithLLMObsProjectName allows to configure the default LLM Observability project to use.
+// It is required when using the Experiments and Datasets feature.
+// This is equivalent to the DD_LLMOBS_PROJECT_NAME environment variable.
+func WithLLMObsProjectName(projectName string) StartOption {
+	return func(c *config) {
+		c.llmobs.ProjectName = projectName
+	}
+}
+
+// WithLLMObsAgentlessEnabled allows to configure LLM Observability to work in agent/agentless mode.
+// The default is using the agent if it is available and supports it, otherwise it will default to agentless mode.
+// Please note when using agentless mode, a valid DD_API_KEY must also be set.
+// This is equivalent to the DD_LLMOBS_AGENTLESS_ENABLED environment variable.
+func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
+	return func(c *config) {
+		c.llmobs.AgentlessEnabled = &agentlessEnabled
 	}
 }
 
