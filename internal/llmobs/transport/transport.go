@@ -276,8 +276,7 @@ func readErrorBody(resp *http.Response) string {
 	if !strings.Contains(contentType, "application/json") {
 		return ""
 	}
-	// Limit reading to 1KB to avoid reading huge error responses
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return ""
 	}
