@@ -445,7 +445,7 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	if deltaErr != nil {
 		return nil, fmt.Errorf("error computing delta: %w", deltaErr)
 	} else if closeErr != nil {
-		return nil, fmt.Errorf("error flushing gzip writer: %w", closeErr)
+		return nil, fmt.Errorf("error flushing compressor: %w", closeErr)
 	}
 	// The returned slice will be retained in case the profile upload fails,
 	// so we need to return a copy of the buffer's bytes to avoid a data
