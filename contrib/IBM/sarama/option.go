@@ -34,6 +34,9 @@ func defaults(cfg *config) {
 	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+
+	cfg.consumerCustomTags = make(map[string]func(msg *sarama.ConsumerMessage) any)
+	cfg.producerCustomTags = make(map[string]func(msg *sarama.ProducerMessage) any)
 }
 
 // Option describes options for the Sarama integration.
