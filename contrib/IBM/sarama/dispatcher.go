@@ -59,8 +59,10 @@ func (w *wrappedDispatcher) Run() {
 		if !math.IsNaN(w.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
 		}
-		if w.cfg.customConsumerSpanOptionsFunc != nil {
-			opts = append(opts, w.cfg.customConsumerSpanOptionsFunc(msg)...)
+		if len(w.cfg.consumerCustomTags) > 0 {
+			for tag, tagValueFn := range w.cfg.consumerCustomTags {
+				opts = append(opts, tracer.Tag(tag, tagValueFn(msg)))
+			}
 		}
 		// kafka supports headers, so try to extract a span context
 		carrier := NewConsumerMessageCarrier(msg)

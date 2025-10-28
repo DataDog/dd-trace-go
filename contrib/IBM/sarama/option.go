@@ -8,24 +8,20 @@ package sarama
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/IBM/sarama"
 )
 
-type CustomConsumerSpanOptsFunc func(msg *sarama.ConsumerMessage) []tracer.StartSpanOption
-type CustomProducerSpanOptsFunc func(msg *sarama.ProducerMessage) []tracer.StartSpanOption
-
 type config struct {
-	consumerServiceName           string
-	producerServiceName           string
-	consumerSpanName              string
-	producerSpanName              string
-	analyticsRate                 float64
-	dataStreamsEnabled            bool
-	groupID                       string
-	customConsumerSpanOptionsFunc CustomConsumerSpanOptsFunc
-	customProducerSpanOptionsFunc CustomProducerSpanOptsFunc
+	consumerServiceName string
+	producerServiceName string
+	consumerSpanName    string
+	producerSpanName    string
+	analyticsRate       float64
+	dataStreamsEnabled  bool
+	groupID             string
+	consumerCustomTags  map[string]func(msg *sarama.ConsumerMessage) any
+	producerCustomTags  map[string]func(msg *sarama.ProducerMessage) any
 }
 
 func defaults(cfg *config) {
@@ -97,16 +93,16 @@ func WithAnalyticsRate(rate float64) OptionFn {
 	}
 }
 
-// WithCustomConsumerSpanOptions enables calling a callback func to add custom span options on wrapped consumers.
-func WithCustomConsumerSpanOptions(f CustomConsumerSpanOptsFunc) OptionFn {
+// WithConsumerCustomTag enables calling a callback func to generate the value for a custom tag on wrapped consumers.
+func WithConsumerCustomTag(tag string, tagFn func(msg *sarama.ConsumerMessage) any) OptionFn {
 	return func(cfg *config) {
-		cfg.customConsumerSpanOptionsFunc = f
+		cfg.consumerCustomTags[tag] = tagFn
 	}
 }
 
-// WithCustomProducerSpanOptions enables calling a callback func to add custom span options on wrapped producers.
-func WithCustomProducerSpanOptions(f CustomProducerSpanOptsFunc) OptionFn {
+// WithCustomProducerSpanOptions enables calling a callback func to generate the value for a custom tag on wrapped producers.
+func WithProducerCustomTag(tag string, tagFn func(msg *sarama.ProducerMessage) any) OptionFn {
 	return func(cfg *config) {
-		cfg.customProducerSpanOptionsFunc = f
+		cfg.producerCustomTags[tag] = tagFn
 	}
 }

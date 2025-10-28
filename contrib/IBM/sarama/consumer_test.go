@@ -124,11 +124,10 @@ func TestWrapConsumerWithCustomConsumerSpanOptions(t *testing.T) {
 	consumer = WrapConsumer(
 		consumer,
 		WithDataStreams(),
-		WithCustomConsumerSpanOptions(
-			func(msg *sarama.ConsumerMessage) []tracer.StartSpanOption {
-				return []tracer.StartSpanOption{
-					tracer.Tag("messaging.kafka.key", string(msg.Key)),
-				}
+		WithConsumerCustomTag(
+			"messaging.kafka.key",
+			func(msg *sarama.ConsumerMessage) any {
+				return string(msg.Key)
 			},
 		),
 	)

@@ -14,7 +14,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestSyncProducer(t *testing.T) {
@@ -117,14 +116,13 @@ func TestSyncProducerWithCustomSpanOptions(t *testing.T) {
 		cfg,
 		producer,
 		WithDataStreams(),
-		WithCustomProducerSpanOptions(
-			func(msg *sarama.ProducerMessage) []tracer.StartSpanOption {
+		WithProducerCustomTag(
+			"kafka.messaging.key",
+			func(msg *sarama.ProducerMessage) any {
 				key, err := msg.Key.Encode()
 				assert.NoError(t, err)
 
-				return []tracer.StartSpanOption{
-					tracer.Tag("kafka.messaging.key", key),
-				}
+				return key
 			},
 		),
 	)

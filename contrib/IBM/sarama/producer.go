@@ -194,8 +194,10 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	if cfg.customProducerSpanOptionsFunc != nil {
-		opts = append(opts, cfg.customProducerSpanOptionsFunc(msg)...)
+	if len(cfg.producerCustomTags) > 0 {
+		for tag, tagValueFn := range cfg.producerCustomTags {
+			opts = append(opts, tracer.Tag(tag, tagValueFn(msg)))
+		}
 	}
 	// if there's a span context in the headers, use that as the parent
 	if spanctx, err := tracer.Extract(carrier); err == nil {
