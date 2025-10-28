@@ -189,9 +189,9 @@ func (b *compressionPipelineBuilder) Build(in compression, out compression) (com
 type compressor interface {
 	io.Writer
 	// Reset reset the compressor to the given writer. It may also acquire a
-	// shared underlaying resource, so callers must always call Close().
+	// shared underlying resource, so callers must always call Close().
 	Reset(w io.Writer)
-	// Close closes the compressor and releases any shared underlaying resource.
+	// Close closes the compressor and releases any shared underlying resource.
 	Close() error
 }
 
