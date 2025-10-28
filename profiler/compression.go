@@ -188,7 +188,7 @@ func (b *compressionPipelineBuilder) Build(in compression, out compression) (com
 // the data from one format and then re-compresses it into another format.
 type compressor interface {
 	io.Writer
-	// Reset reset the compressor to the given writer. It may also acquire a
+	// Reset resets the compressor to the given writer. It may also acquire a
 	// shared underlying resource, so callers must always call Close().
 	Reset(w io.Writer)
 	// Close closes the compressor and releases any shared underlying resource.
