@@ -374,7 +374,7 @@ func TestSpanAnnotations(t *testing.T) {
 		span, _ := llmobs.StartEmbeddingSpan(ctx, "test-embedding-annotations")
 
 		docs := []llmobs.EmbeddedDocument{
-			{Text: "Document 1"},
+			{Text: "Document 1", Name: "test-doc.txt", Score: 0.85, ID: "test-1"},
 		}
 		span.AnnotateEmbeddingIO(docs, "embedding output")
 

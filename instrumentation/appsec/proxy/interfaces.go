@@ -25,6 +25,9 @@ type RequestHeaders interface {
 
 	// SpanOptions returns additional options to use when starting the span for this request.
 	SpanOptions(context.Context) []tracer.StartSpanOption
+
+	// BodyParsingSizeLimit returns the default value for body processing based on the request.
+	BodyParsingSizeLimit(ctx context.Context) int
 }
 
 // HTTPBody is an interface for accessing the body of an HTTP message used by the message processor.
