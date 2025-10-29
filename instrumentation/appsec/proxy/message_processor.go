@@ -78,6 +78,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 		if bodyLimit <= 0 {
 			mp.instr.Logger().Info("external_processing: body parsing size limit set to 0 or negative. The request and response bodies will NOT be analyzed.")
 		}
+		RegisterConfig(mp)
 		mp.instr.Logger().Info("external_processing: first request received. Configuration: BlockingUnavailable=%v, BodyParsingSizeLimit=%dB, Framework=%s", mp.BlockingUnavailable, mp.computedBodyParsingSizeLimit.Load(), mp.Framework)
 	})
 
@@ -109,7 +110,6 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 
 	if !req.GetEndOfStream() && mp.isBodySupported(httpRequest.Header.Get("Content-Type")) {
 		reqState.State = MessageTypeRequestBody
-		// Todo: Set telemetry body size (using content-length)
 	}
 
 	if err := mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{
@@ -143,7 +143,7 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 		return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeRequestBody})
 	}
 
-	blocked := processBody(reqState.Context, reqState.requestBuffer, req.GetBody(), req.GetEndOfStream(), appsec.MonitorParsedHTTPBody)
+	blocked := processBody(reqState.Context, reqState.requestBuffer, req.GetBody(), req.GetEndOfStream(), appsec.MonitorParsedHTTPBody, "request")
 	if blocked != nil && !mp.BlockingUnavailable {
 		mp.instr.Logger().Debug("external_processing: request blocked, end the stream")
 		actionOpts := reqState.BlockAction()
@@ -187,7 +187,6 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 		}
 	}
 
-	// TODO: Set telemetry body size (using content-length)
 	reqState.State = MessageTypeResponseBody
 
 	// Run the waf on the response headers only when we are sure to not receive a response body
@@ -226,7 +225,7 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 		return io.EOF
 	}
 
-	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody)
+	blocked := processBody(reqState.Context, reqState.responseBuffer, resp.GetBody(), resp.GetEndOfStream(), appsec.MonitorHTTPResponseBody, "response")
 	if reqState.responseBuffer.analyzed {
 		reqState.Close() // Call Close to ensure the response headers are analyzed
 
@@ -260,7 +259,7 @@ func (mp *Processor) OnResponseTrailers(reqState *RequestState) error {
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseTrailers})
 }
 
-func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos bool, analyzeBody func(ctx context.Context, encodable any) error) error {
+func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos bool, analyzeBody func(ctx context.Context, encodable any) error, direction string) error {
 	if bodyBuffer.analyzed {
 		return nil
 	}
@@ -268,6 +267,7 @@ func processBody(ctx context.Context, bodyBuffer *bodyBuffer, body []byte, eos b
 	bodyBuffer.append(body)
 
 	if eos || bodyBuffer.truncated {
+		EmitBodySize(len(bodyBuffer.buffer), direction, bodyBuffer.truncated)
 		bodyBuffer.analyzed = true
 		return analyzeBody(ctx, json.NewEncodableFromData(bodyBuffer.buffer, bodyBuffer.truncated))
 	}
