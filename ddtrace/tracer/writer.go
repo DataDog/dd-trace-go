@@ -145,6 +145,14 @@ func (h *agentTraceWriter) flush() {
 				return
 			}
 
+			// Check if this is a retryable error (429 Too Many Requests)
+			if !IsRetryable(err) {
+				// Non-retryable error, drop the payload immediately
+				h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:non_retryable_error"}, 1)
+				log.Error("dropping %d traces due to non-retryable error: %v", stats.itemCount, err.Error())
+				return
+			}
+
 			if attempt+1%5 == 0 {
 				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
 			}

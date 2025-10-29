@@ -509,3 +509,139 @@ func TestDefaultHeaders(t *testing.T) {
 	err = trc.config.transport.sendStats(&pb.ClientStatsPayload{}, 1)
 	assert.NoError(err)
 }
+
+func TestRetryableError(t *testing.T) {
+	t.Run("Error message", func(t *testing.T) {
+		err := &retryableError{statusCode: 429}
+		expected := "Trace Agent returned status 429 (Too Many Requests)"
+		assert.Equal(t, expected, err.Error())
+	})
+
+	t.Run("IsRetryable with retryableError", func(t *testing.T) {
+		err := &retryableError{statusCode: 429}
+		assert.True(t, IsRetryable(err))
+	})
+
+	t.Run("IsRetryable with non-retryable error", func(t *testing.T) {
+		err := fmt.Errorf("some other error")
+		assert.False(t, IsRetryable(err))
+	})
+
+	t.Run("IsRetryable with nil", func(t *testing.T) {
+		assert.False(t, IsRetryable(nil))
+	})
+}
+
+func TestHTTPTransportSendWithStatusCodes(t *testing.T) {
+	t.Run("200 OK - success", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{}`))
+		}))
+		defer srv.Close()
+
+		transport := newHTTPTransport(srv.URL, srv.Client())
+		p, err := encode(getTestTrace(1, 1))
+		require.NoError(t, err)
+
+		body, err := transport.send(p)
+		assert.NoError(t, err)
+		assert.NotNil(t, body)
+		if body != nil {
+			body.Close()
+		}
+	})
+
+	t.Run("429 Too Many Requests - retryable", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusTooManyRequests)
+		}))
+		defer srv.Close()
+
+		transport := newHTTPTransport(srv.URL, srv.Client())
+		p, err := encode(getTestTrace(1, 1))
+		require.NoError(t, err)
+
+		body, err := transport.send(p)
+		assert.Error(t, err)
+		assert.Nil(t, body)
+		assert.True(t, IsRetryable(err), "Expected error to be retryable")
+
+		// Verify it's a retryableError with correct status code
+		retryErr, ok := err.(*retryableError)
+		assert.True(t, ok, "Expected error to be *retryableError")
+		if ok {
+			assert.Equal(t, http.StatusTooManyRequests, retryErr.statusCode)
+		}
+	})
+
+	t.Run("400 Bad Request - non-retryable", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad request"))
+		}))
+		defer srv.Close()
+
+		transport := newHTTPTransport(srv.URL, srv.Client())
+		p, err := encode(getTestTrace(1, 1))
+		require.NoError(t, err)
+
+		body, err := transport.send(p)
+		assert.Error(t, err)
+		assert.Nil(t, body)
+		assert.False(t, IsRetryable(err), "Expected error to be non-retryable")
+		assert.Contains(t, err.Error(), "Bad Request")
+	})
+
+	t.Run("500 Internal Server Error - non-retryable", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal server error"))
+		}))
+		defer srv.Close()
+
+		transport := newHTTPTransport(srv.URL, srv.Client())
+		p, err := encode(getTestTrace(1, 1))
+		require.NoError(t, err)
+
+		body, err := transport.send(p)
+		assert.Error(t, err)
+		assert.Nil(t, body)
+		assert.False(t, IsRetryable(err), "Expected error to be non-retryable")
+		assert.Contains(t, err.Error(), "Internal Server Error")
+	})
+
+	t.Run("503 Service Unavailable - non-retryable", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer srv.Close()
+
+		transport := newHTTPTransport(srv.URL, srv.Client())
+		p, err := encode(getTestTrace(1, 1))
+		require.NoError(t, err)
+
+		body, err := transport.send(p)
+		assert.Error(t, err)
+		assert.Nil(t, body)
+		assert.False(t, IsRetryable(err), "Expected error to be non-retryable")
+	})
+
+	t.Run("Header Datadog-Send-Real-Http-Status is set", func(t *testing.T) {
+		headerReceived := false
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			headerReceived = r.Header.Get("Datadog-Send-Real-Http-Status") == "yes"
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{}`))
+		}))
+		defer srv.Close()
+
+		transport := newHTTPTransport(srv.URL, srv.Client())
+		p, err := encode(getTestTrace(1, 1))
+		require.NoError(t, err)
+
+		_, err = transport.send(p)
+		assert.NoError(t, err)
+		assert.True(t, headerReceived, "Expected Datadog-Send-Real-Http-Status header to be set")
+	})
+}

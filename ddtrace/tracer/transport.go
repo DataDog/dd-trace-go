@@ -31,6 +31,22 @@ const (
 	headerComputedTopLevel = "Datadog-Client-Computed-Top-Level"
 )
 
+// retryableError is returned when the agent returns a 429 status code,
+// indicating that the request should be retried later.
+type retryableError struct {
+	statusCode int
+}
+
+func (e *retryableError) Error() string {
+	return fmt.Sprintf("Trace Agent returned status %d (Too Many Requests)", e.statusCode)
+}
+
+// IsRetryable returns true if the error indicates the request should be retried.
+func IsRetryable(err error) bool {
+	_, ok := err.(*retryableError)
+	return ok
+}
+
 func defaultDialer(timeout time.Duration) *net.Dialer {
 	return &net.Dialer{
 		Timeout:   timeout,
@@ -171,6 +187,7 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	}
 	req.Header.Set(traceCountHeader, strconv.Itoa(stats.itemCount))
 	req.Header.Set(headerComputedTopLevel, "yes")
+	req.Header.Set("Datadog-Send-Real-Http-Status", "yes")
 	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()
 		if tc.TracingAsTransport || tc.CanComputeStats {
@@ -197,9 +214,15 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 		return nil, err
 	}
 	if code := response.StatusCode; code >= 400 {
+		if code == http.StatusTooManyRequests {
+			// The agent told us it can't accept this right now.
+			// Return a retryable error so the caller can queue it for retry.
+			response.Body.Close()
+			reportAPIErrorsMetric(response, nil, tracesAPIPath)
+			return nil, &retryableError{statusCode: code}
+		}
+		// Drop payloads with unknown errors
 		reportAPIErrorsMetric(response, err, tracesAPIPath)
-		// error, check the body for context information and
-		// return a nice error.
 		msg := make([]byte, 1000)
 		n, _ := response.Body.Read(msg)
 		response.Body.Close()

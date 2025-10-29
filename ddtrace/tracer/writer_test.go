@@ -650,3 +650,174 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 	// 2. Incorrect metrics reporting due to counter races
 	// 3. Data corruption in payload structures
 }
+
+// retryableTransport simulates a transport that returns retryable (429) or non-retryable errors
+type retryableTransport struct {
+	dummyTransport
+	sendAttempts       int
+	failCount          int
+	returnRetryable    bool // if true, returns 429; if false, returns non-retryable error
+	successAfterFails  bool
+	tracesSent         bool
+	traces             spanLists
+	assert             *assert.Assertions
+}
+
+func (t *retryableTransport) send(p payload) (io.ReadCloser, error) {
+	t.sendAttempts++
+
+	traces, err := decode(p)
+	if err != nil {
+		return nil, err
+	}
+	if t.sendAttempts == 1 {
+		t.traces = traces
+	} else {
+		t.assert.Equal(t.traces, traces)
+	}
+
+	if t.failCount > 0 {
+		t.failCount--
+		if t.returnRetryable {
+			// Return a retryable error (429)
+			return nil, &retryableError{statusCode: 429}
+		}
+		// Return a non-retryable error
+		return nil, errors.New("non-retryable error")
+	}
+
+	if t.successAfterFails {
+		t.tracesSent = true
+		return io.NopCloser(strings.NewReader("OK")), nil
+	}
+
+	t.tracesSent = true
+	return io.NopCloser(strings.NewReader("OK")), nil
+}
+
+func TestTraceWriterRetryableErrors(t *testing.T) {
+	t.Run("429 error is retried", func(t *testing.T) {
+		assert := assert.New(t)
+		p := &retryableTransport{
+			failCount:         2, // fail twice with 429
+			returnRetryable:   true,
+			successAfterFails: true,
+			assert:            assert,
+		}
+		c, err := newTestConfig(func(c *config) {
+			c.transport = p
+			c.sendRetries = 3
+			c.retryInterval = time.Millisecond
+		})
+		assert.Nil(err)
+		var statsd statsdtest.TestStatsdClient
+
+		h := newAgentTraceWriter(c, newPrioritySampler(), &statsd)
+		ss := []*Span{makeSpan(0)}
+		h.add(ss)
+		h.flush()
+		h.wg.Wait()
+
+		// Should retry and eventually succeed
+		assert.Equal(3, p.sendAttempts, "Expected 3 send attempts (2 failures + 1 success)")
+		assert.True(p.tracesSent, "Expected traces to be sent after retries")
+	})
+
+	t.Run("Non-retryable error stops retry immediately", func(t *testing.T) {
+		assert := assert.New(t)
+		p := &retryableTransport{
+			failCount:       1, // fail once with non-retryable error
+			returnRetryable: false,
+			assert:          assert,
+		}
+		c, err := newTestConfig(func(c *config) {
+			c.transport = p
+			c.sendRetries = 5 // configured for many retries
+			c.retryInterval = time.Millisecond
+		})
+		assert.Nil(err)
+		var statsd statsdtest.TestStatsdClient
+
+		h := newAgentTraceWriter(c, newPrioritySampler(), &statsd)
+		ss := []*Span{makeSpan(0)}
+		h.add(ss)
+		start := time.Now()
+		h.flush()
+		h.wg.Wait()
+		elapsed := time.Since(start)
+
+		// Should NOT retry and stop immediately
+		assert.Equal(1, p.sendAttempts, "Expected only 1 send attempt, no retries for non-retryable error")
+		assert.False(p.tracesSent, "Expected traces to be dropped")
+		
+		// Should return quickly without waiting for retry intervals
+		assert.Less(elapsed, 10*time.Millisecond, "Should not wait for retry interval on non-retryable error")
+
+		// Check that the correct drop reason is recorded
+		counts := statsd.Counts()
+		droppedCount := counts["datadog.tracer.traces_dropped"]
+		assert.Equal(int64(1), droppedCount, "Expected traces to be dropped")
+	})
+
+	t.Run("429 exhausts retries", func(t *testing.T) {
+		assert := assert.New(t)
+		p := &retryableTransport{
+			failCount:       10, // fail more times than retries configured
+			returnRetryable: true,
+			assert:          assert,
+		}
+		c, err := newTestConfig(func(c *config) {
+			c.transport = p
+			c.sendRetries = 2 // only 2 retries
+			c.retryInterval = time.Millisecond
+		})
+		assert.Nil(err)
+		var statsd statsdtest.TestStatsdClient
+
+		h := newAgentTraceWriter(c, newPrioritySampler(), &statsd)
+		ss := []*Span{makeSpan(0)}
+		h.add(ss)
+		h.flush()
+		h.wg.Wait()
+
+		// Should retry up to the limit and then drop
+		assert.Equal(3, p.sendAttempts, "Expected 3 send attempts (initial + 2 retries)")
+		assert.False(p.tracesSent, "Expected traces to be dropped after exhausting retries")
+
+		// Check that traces were dropped with correct reason
+		counts := statsd.Counts()
+		droppedCount := counts["datadog.tracer.traces_dropped"]
+		assert.Equal(int64(1), droppedCount, "Expected traces to be dropped")
+	})
+
+	t.Run("Mixed errors - non-retryable stops immediately", func(t *testing.T) {
+		assert := assert.New(t)
+		// First attempt returns non-retryable error
+		p := &retryableTransport{
+			failCount:       1,
+			returnRetryable: false,
+			assert:          assert,
+		}
+		c, err := newTestConfig(func(c *config) {
+			c.transport = p
+			c.sendRetries = 5
+			c.retryInterval = 10 * time.Millisecond
+		})
+		assert.Nil(err)
+		var statsd statsdtest.TestStatsdClient
+
+		h := newAgentTraceWriter(c, newPrioritySampler(), &statsd)
+		ss := []*Span{makeSpan(0)}
+		h.add(ss)
+		start := time.Now()
+		h.flush()
+		h.wg.Wait()
+		elapsed := time.Since(start)
+
+		assert.Equal(1, p.sendAttempts, "Expected only 1 attempt")
+		assert.False(p.tracesSent, "Expected traces to be dropped")
+		
+		// Should be fast, not wait for 5 retry intervals
+		assert.Less(elapsed, 20*time.Millisecond, "Should return quickly")
+	})
+}
