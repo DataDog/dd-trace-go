@@ -85,6 +85,7 @@ func (sp *safePayload) push(t spanList) (stats payloadStats, err error) {
 }
 
 // itemCount returns the number of items available in the stream in a thread-safe manner.
+// This method is not thread-safe, but the underlying payload.itemCount() must be.
 func (sp *safePayload) itemCount() int {
 	return sp.p.itemCount()
 }
