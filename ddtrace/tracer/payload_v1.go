@@ -67,9 +67,6 @@ type payloadV1 struct {
 	// a list of trace `chunks`
 	chunks []traceChunk // 11
 
-	// protocolVersion specifies the trace protocol to use.
-	protocolVersion float64
-
 	// header specifies the first few bytes in the msgpack stream
 	// indicating the type of map (fixmap, map16 or map32)
 	// and the number of items contained in the stream.
@@ -97,11 +94,10 @@ type payloadV1 struct {
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
-		protocolVersion: traceProtocolV1,
-		attributes:      make(map[string]anyValue),
-		chunks:          make([]traceChunk, 0),
-		readOff:         0,
-		writeOff:        0,
+		attributes: make(map[string]anyValue),
+		chunks:     make([]traceChunk, 0),
+		readOff:    0,
+		writeOff:   0,
 	}
 }
 
@@ -220,7 +216,7 @@ func (p *payloadV1) itemCount() int {
 }
 
 func (p *payloadV1) protocol() float64 {
-	return p.protocolVersion
+	return traceProtocolV1
 }
 
 func (p *payloadV1) updateHeader() {

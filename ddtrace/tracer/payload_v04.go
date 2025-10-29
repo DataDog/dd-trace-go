@@ -58,9 +58,6 @@ type payloadV04 struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
-
-	// protocolVersion specifies the trace protocol to use.
-	protocolVersion float64
 }
 
 var _ io.Reader = (*payloadV04)(nil)
@@ -68,9 +65,8 @@ var _ io.Reader = (*payloadV04)(nil)
 // newPayloadV04 returns a ready to use payload.
 func newPayloadV04() *payloadV04 {
 	p := &payloadV04{
-		header:          make([]byte, 8),
-		off:             8,
-		protocolVersion: traceProtocolV04,
+		header: make([]byte, 8),
+		off:    8,
 	}
 	return p
 }
@@ -149,7 +145,7 @@ func (p *payloadV04) stats() payloadStats {
 
 // protocol returns the protocol version of the payload.
 func (p *payloadV04) protocol() float64 {
-	return p.protocolVersion
+	return traceProtocolV04
 }
 
 // updateHeader updates the payload header based on the number of items currently
