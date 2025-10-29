@@ -274,6 +274,17 @@ func (c *SpanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	}
 }
 
+// sets (and forces if the trace is locked) the sampling priority and decision maker (based on `sampler`).
+func (c *SpanContext) forceSamplingPriority(p int, sampler samplernames.SamplerName) {
+	if c.trace == nil {
+		c.trace = newTrace()
+	}
+	if c.trace.forceSamplingPriority(p, sampler) {
+		// the trace's sampling priority or sampler was updated: mark this as updated
+		c.updated = true
+	}
+}
+
 func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 	if c == nil || c.trace == nil {
 		return 0, false
@@ -396,6 +407,14 @@ func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) boo
 	return t.setSamplingPriorityLocked(p, sampler)
 }
 
+// forceSamplingPriority forces the sampling priority and the decision maker
+// and returns true if it was modified.
+func (t *trace) forceSamplingPriority(p int, sampler samplernames.SamplerName) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.setSamplingPriorityWithForce(p, sampler, true)
+}
+
 func (t *trace) keep() {
 	atomic.CompareAndSwapUint32((*uint32)(&t.samplingDecision), uint32(decisionNone), uint32(decisionKeep))
 }
@@ -421,8 +440,8 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 	return "-" + strconv.Itoa(int(sampler))
 }
 
-func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
-	if t.locked {
+func (t *trace) setSamplingPriorityWithForce(p int, sampler samplernames.SamplerName, force bool) bool {
+	if t.locked && !force {
 		return false
 	}
 
@@ -453,6 +472,10 @@ func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerNam
 	}
 
 	return updatedPriority
+}
+
+func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+	return t.setSamplingPriorityWithForce(p, sampler, false)
 }
 
 func (t *trace) isLocked() bool {
