@@ -12,13 +12,13 @@ require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.71.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.71.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/proto v0.71.0 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.71.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f // indirect
 	github.com/DataDog/datadog-agent/pkg/trace v0.71.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/log v0.71.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.71.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.71.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.7.1 // indirect
-	github.com/DataDog/go-libddwaf/v4 v4.5.0 // indirect
+	github.com/DataDog/go-libddwaf/v4 v4.6.1 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250806100345-ca5e7fdaf7b6 // indirect
 	github.com/DataDog/go-sqllexer v0.1.8 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect

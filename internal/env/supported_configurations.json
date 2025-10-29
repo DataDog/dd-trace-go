@@ -126,6 +126,9 @@
     "DD_ENV": [
       "A"
     ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED": [
+      "A"
+    ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
       "A"
     ],
@@ -169,6 +172,15 @@
       "A"
     ],
     "DD_GIT_TAG": [
+      "A"
+    ],
+    "DD_HAPROXY_SPOA_HEALTHCHECK_PORT": [
+      "A"
+    ],
+    "DD_HAPROXY_SPOA_HOST": [
+      "A"
+    ],
+    "DD_HAPROXY_SPOA_PORT": [
       "A"
     ],
     "DD_HOSTNAME": [

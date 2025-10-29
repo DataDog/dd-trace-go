@@ -10,7 +10,7 @@ require (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.4.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.4.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
-	github.com/DataDog/go-libddwaf/v4 v4.6.0
+	github.com/DataDog/go-libddwaf/v4 v4.6.1
 	github.com/DataDog/orchestrion v1.6.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -84,7 +84,7 @@ require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.71.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.71.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.71.2 // indirect
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.71.2 // indirect
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f // indirect
 	github.com/DataDog/datadog-agent/pkg/trace v0.71.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/log v0.71.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.71.2 // indirect

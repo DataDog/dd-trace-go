@@ -43,7 +43,8 @@ func TestNewCompressionPipeline(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("%s->%s", test.in, test.out), func(t *testing.T) {
-			pipeline, err := newCompressionPipeline(test.in, test.out)
+			var pipelineBuilder compressionPipelineBuilder
+			pipeline, err := pipelineBuilder.Build(test.in, test.out)
 			require.NoError(t, err)
 			buf := &bytes.Buffer{}
 			pipeline.Reset(buf)
@@ -172,8 +173,13 @@ func BenchmarkRecompression(b *testing.B) {
 		b.Run(fmt.Sprintf("%s-%s", in.inAlg.String(), in.outLevel), func(b *testing.B) {
 			data := compressData(b, inputdata, in.inAlg)
 			b.ResetTimer()
+			var pipelineBuilder compressionPipelineBuilder
 			for i := 0; i < b.N; i++ {
-				z := &zstdRecompressor{level: in.outLevel}
+				encoder, err := pipelineBuilder.getZstdEncoder(in.outLevel)
+				if err != nil {
+					b.Fatal(err)
+				}
+				z := newZstdRecompressor(encoder)
 				z.Reset(io.Discard)
 				if _, err := z.Write(data); err != nil {
 					b.Fatal(err)
