@@ -274,12 +274,12 @@ func (c *SpanContext) setSamplingPriority(p int, sampler samplernames.SamplerNam
 	}
 }
 
-// sets (and forces if the trace is locked) the sampling priority and decision maker (based on `sampler`).
-func (c *SpanContext) forceSamplingPriority(p int, sampler samplernames.SamplerName) {
+// forceSetSamplingPriority sets (and forces if the trace is locked) the sampling priority and decision maker (based on `sampler`).
+func (c *SpanContext) forceSetSamplingPriority(p int, sampler samplernames.SamplerName) {
 	if c.trace == nil {
 		c.trace = newTrace()
 	}
-	if c.trace.forceSamplingPriority(p, sampler) {
+	if c.trace.forceSetSamplingPriority(p, sampler) {
 		// the trace's sampling priority or sampler was updated: mark this as updated
 		c.updated = true
 	}
@@ -407,9 +407,9 @@ func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) boo
 	return t.setSamplingPriorityLocked(p, sampler)
 }
 
-// forceSamplingPriority forces the sampling priority and the decision maker
+// forceSetSamplingPriority forces the sampling priority and the decision maker
 // and returns true if it was modified.
-func (t *trace) forceSamplingPriority(p int, sampler samplernames.SamplerName) bool {
+func (t *trace) forceSetSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.setSamplingPriorityWithForce(p, sampler, true)
