@@ -9,12 +9,16 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
@@ -22,12 +26,30 @@ import (
 
 var fixedTime = now()
 
+// creates a simple span list with n spans
 func newSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*Span, n)
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].start = fixedTime
+	}
+	return list
+}
+
+// creates a list of n spans, populated with SpanLinks, SpanEvents, and other fields
+func newDetailedSpanList(n int) spanList {
+	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
+	list := make([]*Span, n)
+	for i := 0; i < n; i++ {
+		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
+		list[i].start = fixedTime
+		list[i].service = "golden"
+		list[i].resource = "resource." + itoa[i%5+1]
+		list[i].error = int32(i % 2)
+		list[i].SetTag("tag."+itoa[i%5+1], "value."+itoa[i%5+1])
+		list[i].spanLinks = []SpanLink{{TraceID: 1, SpanID: 1}, {TraceID: 2, SpanID: 2}}
+		list[i].spanEvents = []spanEvent{{Name: "span.event." + itoa[i%5+1]}}
 	}
 	return list
 }
@@ -61,9 +83,9 @@ func TestPayloadIntegrity(t *testing.T) {
 	}
 }
 
-// TestPayloadDecode ensures that whatever we push into the payload can
+// TestPayloadV04Decode ensures that whatever we push into a v0.4 payload can
 // be decoded by the codec.
-func TestPayloadDecode(t *testing.T) {
+func TestPayloadV04Decode(t *testing.T) {
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
@@ -77,6 +99,147 @@ func TestPayloadDecode(t *testing.T) {
 			assertProcessTags(t, got)
 		})
 	}
+}
+
+// TestPayloadV1Decode ensures that whatever we push into a v1 payload can
+// be decoded by the codec, and that it matches the original payload.
+func TestPayloadV1Decode(t *testing.T) {
+	for _, n := range []int{10, 1 << 10} {
+		t.Run("simple"+strconv.Itoa(n), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+			p.SetContainerID("containerID")
+			p.SetLanguageName("go")
+			p.SetLanguageVersion("1.25")
+			p.SetTracerVersion(version.Tag)
+			p.SetRuntimeID(globalconfig.RuntimeID())
+			p.SetEnv("test")
+			p.SetHostname("hostname")
+			p.SetAppVersion("appVersion")
+
+			for i := 0; i < n; i++ {
+				_, _ = p.push(newSpanList(i%5 + 1))
+			}
+
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			assert.Equal(p.fields, got.fields)
+			assert.Equal(p.containerID, got.containerID)
+			assert.Equal(p.languageName, got.languageName)
+			assert.Equal(p.languageVersion, got.languageVersion)
+			assert.Equal(p.tracerVersion, got.tracerVersion)
+			assert.Equal(p.runtimeID, got.runtimeID)
+			assert.Equal(p.env, got.env)
+			assert.Equal(p.hostname, got.hostname)
+			assert.Equal(p.appVersion, got.appVersion)
+			assert.Equal(p.fields, got.fields)
+		})
+
+		t.Run("detailed"+strconv.Itoa(n), func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+
+			for i := 0; i < n; i++ {
+				_, _ = p.push(newDetailedSpanList(i%5 + 1))
+			}
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			assert.NotEmpty(got.attributes)
+			assert.Equal(p.attributes, got.attributes)
+			assert.Equal(got.attributes[keyProcessTags].value, processtags.GlobalTags().String())
+			assert.Greater(len(got.chunks), 0)
+			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
+			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+			assert.Equal(got.chunks[0].attributes["service"].value, "golden")
+		})
+	}
+}
+
+// TestPayloadV1EmbeddedStreamingStringTable tests that string values on the payload
+// can be encoded and decoded correctly after using the string table.
+// Tests repeated string values.
+func TestPayloadV1EmbeddedStreamingStringTable(t *testing.T) {
+	p := newPayloadV1()
+	p.SetHostname("production")
+	p.SetEnv("production")
+	p.SetLanguageName("go")
+
+	assert := assert.New(t)
+	encoded, err := io.ReadAll(p)
+	assert.NoError(err)
+
+	got := newPayloadV1()
+	buf := bytes.NewBuffer(encoded)
+	_, err = buf.WriteTo(got)
+	assert.NoError(err)
+
+	o, err := got.decodeBuffer()
+	assert.NoError(err)
+	assert.Empty(o)
+	assert.Equal(p.languageName, got.languageName)
+	assert.Equal(p.hostname, got.hostname)
+	assert.Equal(p.env, got.env)
+}
+
+// TestPayloadV1UpdateHeader tests that the header of the payload is updated and grown correctly.
+func TestPayloadV1UpdateHeader(t *testing.T) {
+	testCases := []uint32{ // Number of items
+		0,
+		15,
+		math.MaxUint16,
+		math.MaxUint32,
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("n=%d", tc), func(t *testing.T) {
+			var (
+				p = payloadV1{
+					fields: tc,
+					header: make([]byte, 8),
+				}
+				expected []byte
+			)
+			expected = msgp.AppendMapHeader(expected, tc)
+			p.updateHeader()
+			if got := p.header[p.readOff:]; !bytes.Equal(expected, got) {
+				t.Fatalf("expected %+v, got %+v", expected, got)
+			}
+		})
+	}
+}
+
+// TestEmptyPayloadV1 tests that an empty payload can be encoded and decoded correctly.
+// Notably, it should send an empty map.
+func TestEmptyPayloadV1(t *testing.T) {
+	p := newPayloadV1()
+	assert := assert.New(t)
+	encoded, err := io.ReadAll(p)
+	assert.NoError(err)
+	length, o, err := msgp.ReadMapHeaderBytes(encoded)
+	assert.NoError(err)
+	assert.Equal(uint32(0), length)
+	assert.Empty(o)
 }
 
 func assertProcessTags(t *testing.T, payload spanLists) {
@@ -105,7 +268,7 @@ func BenchmarkPayloadThroughput(b *testing.B) {
 // payload is filled.
 func benchmarkPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
-		p := newUnsafePayload(traceProtocolV04)
+		p := newPayloadV04()
 		s := newBasicSpan("X")
 		s.meta["key"] = strings.Repeat("X", 10*1024)
 		trace := make(spanList, count)
@@ -265,7 +428,7 @@ func BenchmarkPayloadPush(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				p := newUnsafePayload(traceProtocolV04)
+				p := newPayloadV04()
 				_, _ = p.push(spans)
 			}
 		})
