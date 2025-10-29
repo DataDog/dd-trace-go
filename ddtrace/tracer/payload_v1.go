@@ -113,14 +113,15 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
 	origin, priority, sm, traceID := "", 0, 0, [16]byte{}
+	attr := make(map[string]anyValue)
 	for _, span := range t {
 		if span == nil {
 			continue
 		}
 		// If we haven't seen the service yet, we set it blindly assuming that all the spans created by
 		// a service must share the same value.
-		if _, ok := p.attributes["service"]; !ok {
-			p.attributes["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
+		if _, ok := attr["service"]; !ok {
+			attr["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
 		}
 		binary.BigEndian.PutUint64(traceID[:8], span.Context().traceID.Upper())
 		binary.BigEndian.PutUint64(traceID[8:], span.Context().traceID.Lower())
@@ -146,14 +147,16 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		origin:            origin,
 		traceID:           traceID[:],
 		samplingMechanism: uint32(sm),
+		attributes:        attr,
 	}
 
+	// Append process tags to the payload attributes
 	// if there are attributes available, set them in our bitmap and increment
 	// the number of fields.
+	p.setProcessTags()
 	if !p.bm.contains(10) && len(p.attributes) > 0 {
 		p.bm.set(10)
 		atomic.AddUint32(&p.fields, 1)
-		p.setProcessTags()
 	}
 
 	p.chunks = append(p.chunks, tc)
