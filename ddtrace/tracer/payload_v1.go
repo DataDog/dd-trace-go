@@ -126,9 +126,9 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		binary.BigEndian.PutUint64(traceID[:8], span.Context().traceID.Upper())
 		binary.BigEndian.PutUint64(traceID[8:], span.Context().traceID.Lower())
 
-		if p, ok := span.Context().SamplingPriority(); ok {
+		if prio, ok := span.Context().SamplingPriority(); ok {
 			origin = span.Context().origin // TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
-			priority = p                   // TODO(darccio): the same goes for priority.
+			priority = prio                // TODO(darccio): the same goes for priority.
 			dm := span.context.trace.propagatingTag(keyDecisionMaker)
 			sm, err = strconv.Atoi(dm)
 			if err != nil {
@@ -309,7 +309,7 @@ type fieldValue interface {
 	bool | []byte | int32 | int64 | uint32 | uint64 | string
 }
 
-// encodeField takes a field of any value and encodes it into the given buffer
+// encodeField takes a field of any fieldValue and encodes it into the given buffer
 // in msgp format.
 func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *stringTable) []byte {
 	if !bm.contains(fieldID) {

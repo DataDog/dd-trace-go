@@ -177,6 +177,9 @@ func TestPayloadV1Decode(t *testing.T) {
 	}
 }
 
+// TestPayloadV1EmbeddedStreamingStringTable tests that string values on the payload
+// can be encoded and decoded correctly after using the string table.
+// Tests repeated string values.
 func TestPayloadV1EmbeddedStreamingStringTable(t *testing.T) {
 	p := newPayloadV1()
 	p.SetHostname("production")
@@ -200,6 +203,7 @@ func TestPayloadV1EmbeddedStreamingStringTable(t *testing.T) {
 	assert.Equal(p.env, got.env)
 }
 
+// TestPayloadV1UpdateHeader tests that the header of the payload is updated and grown correctly.
 func TestPayloadV1UpdateHeader(t *testing.T) {
 	testCases := []uint32{ // Number of items
 		0,
@@ -225,6 +229,8 @@ func TestPayloadV1UpdateHeader(t *testing.T) {
 	}
 }
 
+// TestEmptyPayloadV1 tests that an empty payload can be encoded and decoded correctly.
+// Notably, it should send an empty map.
 func TestEmptyPayloadV1(t *testing.T) {
 	p := newPayloadV1()
 	assert := assert.New(t)
