@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.4.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.1
 	github.com/dimfeld/httptreemux/v5 v5.5.0
 	github.com/stretchr/testify v1.11.1
 )

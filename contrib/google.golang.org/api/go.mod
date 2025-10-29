@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.4.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.1
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.30.0
 	google.golang.org/api v0.169.0

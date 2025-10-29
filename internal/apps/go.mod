@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.4.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.1
 	golang.org/x/sync v0.17.0
 )
 
