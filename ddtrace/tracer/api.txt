@@ -382,3 +382,8 @@ type Metadata struct {
 	Version string
 }
 
+// File: transport.go
+
+// Package Functions
+func IsRetryable(error) (bool)
+

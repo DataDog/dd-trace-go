@@ -654,13 +654,13 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 // retryableTransport simulates a transport that returns retryable (429) or non-retryable errors
 type retryableTransport struct {
 	dummyTransport
-	sendAttempts       int
-	failCount          int
-	returnRetryable    bool // if true, returns 429; if false, returns non-retryable error
-	successAfterFails  bool
-	tracesSent         bool
-	traces             spanLists
-	assert             *assert.Assertions
+	sendAttempts      int
+	failCount         int
+	returnRetryable   bool // if true, returns 429; if false, returns non-retryable error
+	successAfterFails bool
+	tracesSent        bool
+	traces            spanLists
+	assert            *assert.Assertions
 }
 
 func (t *retryableTransport) send(p payload) (io.ReadCloser, error) {
@@ -749,7 +749,7 @@ func TestTraceWriterRetryableErrors(t *testing.T) {
 		// Should NOT retry and stop immediately
 		assert.Equal(1, p.sendAttempts, "Expected only 1 send attempt, no retries for non-retryable error")
 		assert.False(p.tracesSent, "Expected traces to be dropped")
-		
+
 		// Should return quickly without waiting for retry intervals
 		assert.Less(elapsed, 10*time.Millisecond, "Should not wait for retry interval on non-retryable error")
 
@@ -816,7 +816,7 @@ func TestTraceWriterRetryableErrors(t *testing.T) {
 
 		assert.Equal(1, p.sendAttempts, "Expected only 1 attempt")
 		assert.False(p.tracesSent, "Expected traces to be dropped")
-		
+
 		// Should be fast, not wait for 5 retry intervals
 		assert.Less(elapsed, 20*time.Millisecond, "Should return quickly")
 	})
