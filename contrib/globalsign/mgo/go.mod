@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.5.0-dev
 	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
 	github.com/stretchr/testify v1.11.1
 )
