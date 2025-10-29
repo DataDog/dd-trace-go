@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.5.0-dev
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/stretchr/testify v1.11.1
 )
