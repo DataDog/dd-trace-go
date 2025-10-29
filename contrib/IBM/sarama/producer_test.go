@@ -117,12 +117,12 @@ func TestSyncProducerWithCustomSpanOptions(t *testing.T) {
 		producer,
 		WithDataStreams(),
 		WithProducerCustomTag(
-			"kafka.messaging.key",
+			"messaging.kafka.key",
 			func(msg *sarama.ProducerMessage) any {
 				key, err := msg.Key.Encode()
 				assert.NoError(t, err)
 
-				return key
+				return string(key)
 			},
 		),
 	)
