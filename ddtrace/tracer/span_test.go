@@ -575,7 +575,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
-			// Create a span context with locked sampling decision
+
 			spanCtx := &SpanContext{
 				traceID: traceIDFrom64Bits(42),
 				spanID:  42,
@@ -583,40 +583,38 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			}
 
 			// Set sampling priority (0 = drop decision from upstream) & lock the trace
-			// mimicking inheriting a trace from upstream service with a drop decision.
-			spanCtx.setSamplingPriority(0, samplernames.Unknown)
+			// mimicking inheriting a trace from an upstream service with a drop decision.
+			spanCtx.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
 			spanCtx.trace.setLocked(true)
 
-			// Create child span from this locked context
 			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
 
-			// Manual keep/drop should be ignored because trace is locked
-			// The sampling decision should remain locked at priority=0 (drop)
+			// The sampling decision should be applied as manual keep takes
+			// precedence over propagated keep decision
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
-			// Create a span context with locked sampling decision
+
 			spanCtx := &SpanContext{
 				traceID: traceIDFrom64Bits(42),
 				spanID:  42,
 				trace:   newTrace(),
 			}
 
-			// Set sampling priority (0 = drop decision from upstream) & lock the trace
-			// mimicking inheriting a trace from upstream service with a drop decision.
-			spanCtx.setSamplingPriority(1, samplernames.Unknown)
+			// Set sampling priority (1 = keep decision from upstream) & lock the trace
+			// mimicking inheriting a trace from an upstream service with a keep decision.
+			spanCtx.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
 			spanCtx.trace.setLocked(true)
 
-			// Create child span from this locked context
 			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
 
-			// Manual keep/drop should be ignored because trace is locked
-			// The sampling decision should remain locked at priority=0 (drop)
+			// The sampling decision should be applied as manual keep takes
+			// precedence over propagated keep decision
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 	}
