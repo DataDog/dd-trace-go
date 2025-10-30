@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func SetGlobalServiceName(t *testing.T, val string) {
@@ -115,4 +116,11 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	ptr := uintptr(unsafe.Pointer(ctx))
 	cc := (*cookieCutter)(*(*unsafe.Pointer)(unsafe.Pointer(&ptr)))
 	cc.trace.propagatingTags[k] = v
+}
+
+// FlushTelemetry flushes any pending telemetry data.
+func FlushTelemetry() {
+	if client := telemetry.GlobalClient(); client != nil {
+		client.Flush()
+	}
 }

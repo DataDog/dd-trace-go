@@ -325,7 +325,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		for _, call := range failedCalls {
 			errs = append(errs, call.Error)
 		}
-		log.Debug("non-fatal error(s) while flushing telemetry data: %v", errors.Join(errs...).Error())
+		log.Debug("telemetry: non-fatal error(s) while flushing telemetry data: %v", errors.Join(errs...).Error())
 	}
 
 	return nbBytes, nil
