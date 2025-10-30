@@ -37,14 +37,12 @@ var telemetryErrorTypes = map[error]string{
 }
 
 func trackLLMObsStart(startTime time.Time, err error, cfg config.Config) {
-	tags := []string{
+	tags := errTelemetryTags(err)
+	tags = append(tags, []string{
 		fmt.Sprintf("agentless:%s", boolTag(cfg.ResolvedAgentlessEnabled)),
 		fmt.Sprintf("site:%s", cfg.TracerConfig.Site),
 		fmt.Sprintf("ml_app:%s", valOrNA(cfg.MLApp)),
-	}
-	if err != nil {
-		tags = append(tags, errTelemetryTags(err)...)
-	}
+	}...)
 
 	initTimeMs := float64(time.Since(startTime).Milliseconds())
 	telemetry.Distribution(telemetry.NamespaceMLObs, telemetryMetricInitTime, tags).Submit(initTimeMs)
