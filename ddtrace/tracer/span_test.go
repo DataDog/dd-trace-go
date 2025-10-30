@@ -555,6 +555,52 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			span.SetTag(scenario.tag, true)
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
+		t.Run(fmt.Sprintf("%s/upstream-drop-locked", scenario.tag), func(t *testing.T) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(t, err)
+
+			spanCtx := &SpanContext{
+				traceID: traceIDFrom64Bits(42),
+				spanID:  42,
+				trace:   newTrace(),
+			}
+
+			// Set sampling priority (0 = drop decision from upstream) & lock the trace
+			// mimicking inheriting a trace from an upstream service with a drop decision.
+			spanCtx.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
+			spanCtx.trace.setLocked(true)
+
+			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
+			span.SetTag(scenario.tag, true)
+
+			// The sampling decision should be applied as manual sampling takes
+			// precedence over propagated decision
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
+		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(t, err)
+
+			spanCtx := &SpanContext{
+				traceID: traceIDFrom64Bits(42),
+				spanID:  42,
+				trace:   newTrace(),
+			}
+
+			// Set sampling priority (1 = keep decision from upstream) & lock the trace
+			// mimicking inheriting a trace from an upstream service with a keep decision.
+			spanCtx.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
+			spanCtx.trace.setLocked(true)
+
+			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
+			span.SetTag(scenario.tag, true)
+
+			// The sampling decision should be applied as manual sampling takes
+			// precedence over propagated decision
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
 	}
 }
 
