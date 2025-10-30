@@ -226,6 +226,7 @@ jobs:
         env:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
+          return 1
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
 
