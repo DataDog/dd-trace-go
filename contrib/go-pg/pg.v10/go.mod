@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/go-pg/pg.v10/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.1
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.2
 	github.com/go-pg/pg/v10 v10.15.0
 	github.com/stretchr/testify v1.11.1
 )
