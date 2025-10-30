@@ -1,5 +1,5 @@
 // API Stability Report
-// Package: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+// Package: github.com/DataDog/ddtrace/tracer
 // Module: github.com/DataDog/dd-trace-go/v2
 
 // File: context.go
@@ -129,16 +129,6 @@ type UserMonitoringConfig struct {
 }
 
 type UserMonitoringOption func(*UserMonitoringConfig)()
-
-// File: payload_v1.go
-
-// Package Functions
-func DecodeAttributes([]byte, *stringTable) (map[string]anyValue, []byte, error)
-func DecodeKeyValueList([]byte, *stringTable) (map[string]anyValue, []byte, error)
-func DecodeSpanEvents([]byte, *stringTable) ([]spanEvent, []byte, error)
-func DecodeSpanLinks([]byte, *stringTable) ([]SpanLink, []byte, error)
-func DecodeSpans([]byte, *stringTable) (spanList, []byte, error)
-func DecodeTraceChunks([]byte, *stringTable) ([]traceChunk, []byte, error)
 
 // File: propagator.go
 
