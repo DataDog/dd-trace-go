@@ -155,20 +155,20 @@ apm_configuration_default:
 apm_configuration_default:
   DD_SERVICE: local
   DD_TRACE_DEBUG: false
-  DD_TRACE_HOSTNAME: otherhost
+  DD_TRACE_SOURCE_HOSTNAME: otherhost
   DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: "1"`
 
 		managedYaml := `
 apm_configuration_default:
   DD_SERVICE: managed
   DD_TRACE_DEBUG: true
-  DD_TRACE_LOG_TO_STDOUT: true
+  DD_TRACE_PARTIAL_FLUSH_ENABLED: true
   DD_VERSION: 1.0.0`
 
 		t.Setenv("DD_SERVICE", "env")
-		t.Setenv("DD_TRACE_LOG_TO_STDOUT", "false")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
 		t.Setenv("DD_ENV", "dev")
-		t.Setenv("DD_TRACE_HOSTNAME", "otherhost")
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "otherhost")
 
 		tempLocalPath := "local.yml"
 		err := os.WriteFile(tempLocalPath, []byte(localYaml), 0644)
@@ -193,11 +193,11 @@ apm_configuration_default:
 		provider := DefaultConfigProvider()
 		assert.Equal(t, "managed", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
-		assert.Equal(t, "otherhost", provider.getString("DD_TRACE_HOSTNAME", "value"))
+		assert.Equal(t, "otherhost", provider.getString("DD_TRACE_SOURCE_HOSTNAME", "value"))
 		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
 		assert.Equal(t, "dev", provider.getString("DD_ENV", "value"))
 		assert.Equal(t, "1.0.0", provider.getString("DD_VERSION", "0"))
-		assert.Equal(t, true, provider.getBool("DD_TRACE_LOG_TO_STDOUT", false))
+		assert.Equal(t, true, provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false))
 
 		// Defaults are returned for settings that are not configured
 		assert.Equal(t, false, provider.getBool("DD_TRACE_STARTUP_LOGS", false))
