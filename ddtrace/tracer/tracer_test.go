@@ -2924,3 +2924,19 @@ func TestNewUnstartedTracerDDAgentHostNotFound(t *testing.T) {
 	_, err := newUnstartedTracer()
 	assert.NoError(t, err)
 }
+
+func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
+	// This checks that starting the tracer twice properly shuts down the
+	// previous tracer, specifically the runtime metrics emitter.
+	tp := new(log.RecordLogger)
+	err := Start(WithLogger(tp))
+	require.NoError(t, err)
+	err = Start(WithLogger(tp))
+	require.NoError(t, err)
+	Stop()
+
+	// Check that runtime metrics emitters lifetimes did not overlap.
+	for _, logMsg := range tp.Logs() {
+		assert.NotContains(t, logMsg, "runtimemetrics has already been started")
+	}
+}
