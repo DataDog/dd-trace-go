@@ -32,7 +32,7 @@ type Config struct {
 
 	Hostname string `json:"DD_TRACE_SOURCE_HOSTNAME"`
 
-	RuntimeMetrics bool `json:"DD_RUNTIME_METRICS"`
+	RuntimeMetrics bool `json:"DD_RUNTIME_METRICS_ENABLED"`
 
 	RuntimeMetricsV2 bool `json:"DD_RUNTIME_METRICS_V2_ENABLED"`
 
@@ -85,7 +85,7 @@ func loadConfig() *Config {
 	cfg.Env = provider.getString("DD_ENV", "")
 	cfg.ServiceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
 	cfg.Hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
-	cfg.RuntimeMetrics = provider.getBool("DD_RUNTIME_METRICS", false)
+	cfg.RuntimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.RuntimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", false)
 	cfg.ProfilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
 	cfg.ProfilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
