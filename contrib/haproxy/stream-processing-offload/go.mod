@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.1
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.2
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/negasus/haproxy-spoe-go v1.0.7
 	github.com/stretchr/testify v1.11.1
