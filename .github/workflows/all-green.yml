@@ -3,6 +3,8 @@ name: Check Pull Request CI Status
 on:
   workflow_dispatch: # allow to trigger the workflow on main, to add it in suggestion on branch protection rules
   pull_request:
+  check_run:
+    types: [rerequested] # allow to trigger the workflow when a job is rerun
 
 permissions:
   checks: read
