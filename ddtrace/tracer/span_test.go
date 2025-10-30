@@ -590,8 +590,8 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
 
-			// The sampling decision should be applied as manual keep takes
-			// precedence over propagated keep decision
+			// The sampling decision should be applied as manual sampling takes
+			// precedence over propagated decision
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
@@ -613,8 +613,8 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
 
-			// The sampling decision should be applied as manual keep takes
-			// precedence over propagated keep decision
+			// The sampling decision should be applied as manual sampling takes
+			// precedence over propagated decision
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 	}

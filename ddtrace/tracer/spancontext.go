@@ -412,7 +412,7 @@ func (t *trace) setSamplingPriority(p int, sampler samplernames.SamplerName) boo
 func (t *trace) forceSetSamplingPriority(p int, sampler samplernames.SamplerName) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.setSamplingPriorityWithForce(p, sampler, true)
+	return t.setSamplingPriorityLockedWithForce(p, sampler, true)
 }
 
 func (t *trace) keep() {
@@ -440,7 +440,12 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 	return "-" + strconv.Itoa(int(sampler))
 }
 
-func (t *trace) setSamplingPriorityWithForce(p int, sampler samplernames.SamplerName, force bool) bool {
+// setSamplingPriority sets the sampling priority and the decision maker
+// and returns true if it was modified.
+//
+// The force parameter is used to bypass the locked sampling decision check
+// when setting the sampling priority. This is used to apply a manual keep or drop decision.
+func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.SamplerName, force bool) bool {
 	if t.locked && !force {
 		return false
 	}
@@ -475,7 +480,7 @@ func (t *trace) setSamplingPriorityWithForce(p int, sampler samplernames.Sampler
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
-	return t.setSamplingPriorityWithForce(p, sampler, false)
+	return t.setSamplingPriorityLockedWithForce(p, sampler, false)
 }
 
 func (t *trace) isLocked() bool {
