@@ -422,6 +422,7 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+	// So by the time we get here, when trying to set manual keep, we will just return without modifying the sampling priority.
 	if t.locked {
 		return false
 	}
