@@ -645,9 +645,7 @@ func dropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
 // StartSpan starts a new LLMObs span with the given kind, name, and configuration.
 // Returns the created span and a context containing the span.
 func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
-	defer func() {
-		trackSpanStarted()
-	}()
+	defer trackSpanStarted()
 
 	spanName := name
 	if spanName == "" {
