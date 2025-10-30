@@ -316,7 +316,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	var err error
 	defer func() {
 		if err != nil {
-			log.Warn("llmobs: failed to annotate span: %v", err)
+			log.Warn("llmobs: failed to annotate span: %v", err.Error())
 		}
 		trackSpanAnnotations(s, err)
 	}()
