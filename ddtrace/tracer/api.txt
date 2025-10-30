@@ -1,5 +1,5 @@
 // API Stability Report
-// Package: github.com/DataDog/ddtrace/tracer
+// Package: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
 // Module: github.com/DataDog/dd-trace-go/v2
 
 // File: context.go
