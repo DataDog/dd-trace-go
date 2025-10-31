@@ -24,6 +24,11 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane)
 }
 
+// Instrumentation returns the instrumentation.Instrumentation package instrumentation
+func Instrumentation() *instrumentation.Instrumentation {
+	return instr
+}
+
 // Integration represents the proxy integration type that is used for the External Processing.
 type Integration int
 
