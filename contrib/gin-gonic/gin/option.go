@@ -19,6 +19,8 @@ type config struct {
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
+	isStatusError func(statusCode int) bool
+	useGinErrors  bool
 	headerTags    instrumentation.HeaderTags
 }
 
@@ -32,6 +34,8 @@ func newConfig(serviceName string) *config {
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
+		isStatusError: isServerError,
+		useGinErrors:  false,
 		headerTags:    instr.HTTPHeadersAsTags(),
 	}
 }
@@ -76,6 +80,26 @@ func WithAnalyticsRate(rate float64) OptionFn {
 func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
+	return func(cfg *config) {
+		cfg.isStatusError = fn
+	}
+}
+
+func isServerError(statusCode int) bool {
+	return statusCode >= 500 && statusCode < 600
+}
+
+// WithUseGinErrors enables the usage of gin's errors for the span instead of crafting generic errors from the status code.
+// If there are multiple errors in the gin context, they will be all added to the span.
+func WithUseGinErrors() OptionFn {
+	return func(cfg *config) {
+		cfg.useGinErrors = true
 	}
 }
 
