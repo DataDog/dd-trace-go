@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/IBM/sarama"
 )
 
 type config struct {
@@ -19,6 +20,8 @@ type config struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	groupID             string
+	consumerCustomTags  map[string]func(msg *sarama.ConsumerMessage) any
+	producerCustomTags  map[string]func(msg *sarama.ProducerMessage) any
 }
 
 func defaults(cfg *config) {
@@ -31,6 +34,9 @@ func defaults(cfg *config) {
 	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+
+	cfg.consumerCustomTags = make(map[string]func(msg *sarama.ConsumerMessage) any)
+	cfg.producerCustomTags = make(map[string]func(msg *sarama.ProducerMessage) any)
 }
 
 // Option describes options for the Sarama integration.
@@ -87,5 +93,19 @@ func WithAnalyticsRate(rate float64) OptionFn {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithConsumerCustomTag enables calling a callback func to generate the value for a custom tag on wrapped consumers.
+func WithConsumerCustomTag(tag string, tagFn func(msg *sarama.ConsumerMessage) any) OptionFn {
+	return func(cfg *config) {
+		cfg.consumerCustomTags[tag] = tagFn
+	}
+}
+
+// WithCustomProducerSpanOptions enables calling a callback func to generate the value for a custom tag on wrapped producers.
+func WithProducerCustomTag(tag string, tagFn func(msg *sarama.ProducerMessage) any) OptionFn {
+	return func(cfg *config) {
+		cfg.producerCustomTags[tag] = tagFn
 	}
 }

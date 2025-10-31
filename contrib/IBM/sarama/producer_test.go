@@ -103,6 +103,62 @@ func TestSyncProducerSendMessages(t *testing.T) {
 	}
 }
 
+func TestSyncProducerWithCustomSpanOptions(t *testing.T) {
+	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
+	require.NoError(t, err)
+	producer = WrapSyncProducer(
+		cfg,
+		producer,
+		WithDataStreams(),
+		WithProducerCustomTag(
+			"messaging.kafka.key",
+			func(msg *sarama.ProducerMessage) any {
+				key, err := msg.Key.Encode()
+				assert.NoError(t, err)
+
+				return string(key)
+			},
+		),
+	)
+	defer func() {
+		assert.NoError(t, producer.Close())
+	}()
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    topic,
+		Key:      sarama.StringEncoder("test key"),
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
+	_, _, err = producer.SendMessage(msg1)
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	{
+		s := spans[0]
+		assert.Equal(t, "kafka", s.Tag(ext.ServiceName))
+		assert.Equal(t, "queue", s.Tag(ext.SpanType))
+		assert.Equal(t, "Produce Topic "+topic, s.Tag(ext.ResourceName))
+		assert.Equal(t, "kafka.produce", s.OperationName())
+		assert.Equal(t, float64(0), s.Tag(ext.MessagingKafkaPartition))
+		assert.NotNil(t, s.Tag("offset"))
+		assert.Equal(t, "IBM/sarama", s.Tag(ext.Component))
+		assert.Equal(t, ext.SpanKindProducer, s.Tag(ext.SpanKind))
+		assert.Equal(t, "kafka", s.Tag(ext.MessagingSystem))
+		assert.Equal(t, topic, s.Tag("messaging.destination.name"))
+		assert.Equal(t, "test key", s.Tag("messaging.kafka.key"))
+
+		assertDSMProducerPathway(t, topic, msg1)
+	}
+}
+
 func TestWrapAsyncProducer(t *testing.T) {
 	// the default for producers is a fire-and-forget model that doesn't return
 	// successes
