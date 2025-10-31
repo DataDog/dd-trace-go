@@ -283,6 +283,9 @@ func (s *Span) Finish(cfg FinishSpanConfig) {
 		log.Debug("llmobs: attempted to finish an already finished span")
 		return
 	}
+	defer func() {
+		trackSpanFinished(s)
+	}()
 
 	if cfg.FinishTime.IsZero() {
 		cfg.FinishTime = time.Now()
@@ -303,8 +306,6 @@ func (s *Span) Finish(cfg FinishSpanConfig) {
 	}
 	l.submitLLMObsSpan(s)
 	s.finished = true
-
-	//TODO: telemetry.record_span_created(span)
 }
 
 // Annotate adds annotations to the span using the provided SpanAnnotations.
@@ -312,8 +313,16 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var err error
+	defer func() {
+		if err != nil {
+			log.Warn("llmobs: failed to annotate span: %v", err.Error())
+		}
+		trackSpanAnnotations(s, err)
+	}()
+
 	if s.finished {
-		log.Warn("llmobs: cannot annotate a finished span")
+		err = errFinishedSpan
 		return
 	}
 
