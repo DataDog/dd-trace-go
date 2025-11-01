@@ -47,6 +47,10 @@ type (
 		allAttemptsPassed            bool              // flag to check if all attempts passed for a test marked as attempt to fix
 		allRetriesFailed             bool              // flag to check if all retries failed for a test
 		hasAdditionalFeatureWrapper  bool              // flag to check if the current execution is part of an additional feature wrapper
+		identity                     *testIdentity     // identity of the current execution (test or subtest)
+		hasExplicitQuarantined       bool              // flag to mark if quarantine state comes from explicit configuration
+		hasExplicitDisabled          bool              // flag to mark if disabled state comes from explicit configuration
+		hasExplicitAttemptToFix      bool              // flag to mark if attempt-to-fix state comes from explicit configuration
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -185,8 +189,9 @@ func checkIfCIVisibilityExitIsRequiredByPanic() bool {
 	return !settings.FlakyTestRetriesEnabled && !settings.EarlyFlakeDetection.Enabled
 }
 
-// applyAdditionalFeaturesToTestFunc applies all the additional features as wrapper of a func(*testing.T)
-func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo) func(*testing.T) {
+// applyAdditionalFeaturesToTestFunc applies all the additional features as wrapper of a func(*testing.T).
+// parentExecMeta is optional and allows subtests to inherit behaviour from their parent test when needed.
+func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo, parentExecMeta *testExecutionMetadata) func(*testing.T) {
 	// Apply additional features
 	settings := integrations.GetSettings()
 
@@ -198,18 +203,32 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 		return f
 	}
 
+	identity := testInfo.identity
+	if identity == nil {
+		// Derive an identity for tests that did not populate it (such as subtests discovered at runtime).
+		identity = newTestIdentity(testInfo.moduleName, testInfo.suiteName, testInfo.testName)
+	}
+	isSubtest := len(identity.Segments) > 1
+
 	var meta struct {
-		isTestManagementEnabled      bool
-		isEarlyFlakeDetectionEnabled bool
-		isFlakyTestRetriesEnabled    bool
-		isQuarantined                bool
-		isDisabled                   bool
-		isAttemptToFix               bool
-		isNew                        bool
-		isModified                   bool
+		identity                      *testIdentity
+		isTestManagementEnabled       bool
+		isEarlyFlakeDetectionEnabled  bool
+		isFlakyTestRetriesEnabled     bool
+		isQuarantined                 bool
+		isDisabled                    bool
+		isAttemptToFix                bool
+		isNew                         bool
+		isModified                    bool
+		hasExplicitQuarantined        bool
+		hasExplicitDisabled           bool
+		hasExplicitAttemptToFix       bool
+		managementMatchKind           testManagementMatchKind
+		shouldOrchestrateAttemptToFix bool
 	}
 
 	// init metadata
+	meta.identity = identity
 	meta.isTestManagementEnabled = settings.TestManagement.Enabled
 	meta.isEarlyFlakeDetectionEnabled = settings.EarlyFlakeDetection.Enabled
 	meta.isFlakyTestRetriesEnabled = settings.FlakyTestRetriesEnabled
@@ -218,18 +237,57 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 	meta.isAttemptToFix = false
 	meta.isNew = false
 	meta.isModified = false
+	meta.hasExplicitQuarantined = false
+	meta.hasExplicitDisabled = false
+	meta.hasExplicitAttemptToFix = false
+	meta.managementMatchKind = testManagementMatchNone
+	meta.shouldOrchestrateAttemptToFix = false
 
 	// Test Management feature
 	if meta.isTestManagementEnabled {
-		if data, ok := getTestManagementData(testInfo); ok && data != nil {
+		// Pull the most specific directives available for the current identity.
+		if data, matchKind, ok := getTestManagementData(identity); ok && data != nil {
+			meta.managementMatchKind = matchKind
 			meta.isQuarantined = data.Quarantined
 			meta.isDisabled = data.Disabled
 			meta.isAttemptToFix = data.AttemptToFix
+			if matchKind == testManagementMatchExact {
+				meta.hasExplicitQuarantined = true
+				meta.hasExplicitDisabled = true
+				meta.hasExplicitAttemptToFix = true
+			}
 		}
+	}
+
+	// determine whether attempt-to-fix retries should be orchestrated at this level
+	meta.shouldOrchestrateAttemptToFix = meta.isAttemptToFix
+	if parentExecMeta != nil && parentExecMeta.isAttemptToFix {
+		// The parent already controls the attempt-to-fix loop; subtests should only orchestrate if explicitly requested.
+		meta.shouldOrchestrateAttemptToFix = meta.hasExplicitAttemptToFix && meta.isAttemptToFix && !parentExecMeta.isAttemptToFix
+	}
+
+	if isSubtest {
+		if !settings.SubtestFeaturesEnabled {
+			// Feature gate keeps legacy behaviour when subtests support is disabled.
+			return f
+		}
+		// Require an exact match before applying subtest-specific directives; fallbacks remain parent-scoped.
+		if meta.managementMatchKind != testManagementMatchExact {
+			return f
+		}
+		shouldWrap := meta.isQuarantined || meta.isDisabled || meta.isAttemptToFix ||
+			meta.hasExplicitQuarantined || meta.hasExplicitDisabled || meta.hasExplicitAttemptToFix
+		if !shouldWrap {
+			return f
+		}
+		// Subtests currently inherit parent EFD/flaky retry behaviour; disable here to avoid double wrapping.
+		meta.isEarlyFlakeDetectionEnabled = false
+		meta.isFlakyTestRetriesEnabled = false
 	}
 
 	// Early Flake Detection feature
 	if meta.isEarlyFlakeDetectionEnabled {
+		// Record whether the test is new so we can surface it in spans later.
 		isKnown, hasKnownData := isKnownTest(testInfo)
 		meta.isNew = hasKnownData && !isKnown
 	}
@@ -255,9 +313,31 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 			preExecMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 				// Synchronize the test execution metadata with the original test execution metadata.
 
-				execMeta.isQuarantined = execMeta.isQuarantined || ptrMeta.isQuarantined
-				execMeta.isDisabled = execMeta.isDisabled || ptrMeta.isDisabled
-				execMeta.isAttemptToFix = execMeta.isAttemptToFix || ptrMeta.isAttemptToFix
+				execMeta.identity = ptrMeta.identity
+				if ptrMeta.hasExplicitQuarantined {
+					// Honour the explicitly requested quarantine flag for this execution.
+					execMeta.isQuarantined = ptrMeta.isQuarantined
+					execMeta.hasExplicitQuarantined = true
+				} else {
+					// Otherwise accumulate quarantine state from earlier runs.
+					execMeta.isQuarantined = execMeta.isQuarantined || ptrMeta.isQuarantined
+				}
+				if ptrMeta.hasExplicitDisabled {
+					// Apply the disabled directive exactly as configured.
+					execMeta.isDisabled = ptrMeta.isDisabled
+					execMeta.hasExplicitDisabled = true
+				} else {
+					// Merge prior disabled state from parent/wrappers.
+					execMeta.isDisabled = execMeta.isDisabled || ptrMeta.isDisabled
+				}
+				if ptrMeta.hasExplicitAttemptToFix {
+					// Only explicit attempt-to-fix should override propagated state.
+					execMeta.isAttemptToFix = ptrMeta.isAttemptToFix
+					execMeta.hasExplicitAttemptToFix = true
+				} else {
+					// Otherwise inherit whether previous owners already requested attempt-to-fix.
+					execMeta.isAttemptToFix = execMeta.isAttemptToFix || ptrMeta.isAttemptToFix
+				}
 				execMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled || ptrMeta.isEarlyFlakeDetectionEnabled
 				execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || ptrMeta.isFlakyTestRetriesEnabled
 				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
@@ -268,17 +348,26 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				// Propagate flags from the original test metadata.
 				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
 
+				ptrMeta.identity = execMeta.identity
 				ptrMeta.isQuarantined = execMeta.isQuarantined
 				ptrMeta.isDisabled = execMeta.isDisabled
 				ptrMeta.isAttemptToFix = execMeta.isAttemptToFix
+				ptrMeta.hasExplicitQuarantined = execMeta.hasExplicitQuarantined
+				ptrMeta.hasExplicitDisabled = execMeta.hasExplicitDisabled
+				ptrMeta.hasExplicitAttemptToFix = execMeta.hasExplicitAttemptToFix
 				ptrMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled
 				ptrMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled
 				ptrMeta.isNew = execMeta.isANewTest
 				ptrMeta.isModified = execMeta.isAModifiedTest
 			},
 			preIsLastRetry: func(execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
-				if execMeta.isAttemptToFix || isAnEfdExecution(execMeta) {
+				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
 					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
+					return remainingRetries == 1
+				}
+
+				if isAnEfdExecution(execMeta) {
+					// For EFD, the last retry is when remaining retries == 1.
 					return remainingRetries == 1
 				}
 
@@ -293,7 +382,10 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				// adjust retry count only runs after the first run
 
 				// Attempt To Fix retries are always set to the configured value.
-				if execMeta.isAttemptToFix {
+				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
+					if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+						log.Debug("postAdjustRetryCount attempt_to_fix identity=%s setting=%d", execMeta.identity.FullName, settings.TestManagement.AttemptToFixRetries)
+					}
 					return int64(settings.TestManagement.AttemptToFixRetries)
 				}
 
@@ -339,8 +431,16 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 					} else if skipped {
 						status = "SKIP"
 					}
+					if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+						log.Debug("postPerExecution attempt_to_fix identity=%s orchestrate=%t run=%d status=%s", execMeta.identity.FullName, ptrMeta.shouldOrchestrateAttemptToFix, executionIndex, status)
+					}
 
-					ptrToLocalT.Logf("  [attempt to fix retry: %d (%s)]", executionIndex+1, status)
+					if ptrMeta.shouldOrchestrateAttemptToFix {
+						isSubtest := execMeta.identity != nil && len(execMeta.identity.Segments) > 1
+						if !isSubtest {
+							ptrToLocalT.Logf("  [attempt to fix retry: %d (%s)]", executionIndex+1, status)
+						}
+					}
 					return
 				}
 
@@ -366,7 +466,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo)
 				}
 			},
 			postShouldRetry: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
-				if execMeta.isAttemptToFix {
+				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
 					// For attempt-to-fix tests, retry if remaining retries > 0.
 					return remainingRetries > 0
 				}
@@ -540,7 +640,8 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	}
 }
 
-// executeTestIteration executes a single test iteration and handles retries.
+// executeTestIteration runs a single attempt of the test (or subtest), recording metadata and
+// ensuring the retry orchestration has the latest execution context.
 func executeTestIteration(execOpts *executionOptions) bool {
 	// Iteration lock
 	execOpts.mutex.Lock()
@@ -571,7 +672,9 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	if localTPrivateFields.parent == nil {
 		panic("parent of the test is nil")
 	}
-	*localTPrivateFields.parent = unsafe.Pointer(&testing.T{})
+	dummyParent := &testing.T{}
+	copyTestWithoutParent(execOpts.options.t, dummyParent)
+	*localTPrivateFields.parent = unsafe.Pointer(dummyParent)
 
 	// Create an execution metadata instance
 	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
@@ -643,7 +746,13 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	}
 
 	// Extract module and suite if present
-	currentSuite := execMeta.test.Suite()
+	if execMeta.test == nil && execMeta.identity != nil {
+		log.Debug("execMeta.test nil for %s", execMeta.identity.FullName)
+	}
+	var currentSuite integrations.TestSuite
+	if execMeta.test != nil {
+		currentSuite = execMeta.test.Suite()
+	}
 	if execOpts.suite == nil && currentSuite != nil {
 		execOpts.suite = currentSuite
 	}
@@ -697,7 +806,10 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 	execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || originalExecMeta.isFlakyTestRetriesEnabled
 	execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
 	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
-	execMeta.isAttemptToFix = execMeta.isAttemptToFix || originalExecMeta.isAttemptToFix
+	if !execMeta.hasExplicitAttemptToFix && originalExecMeta.isAttemptToFix {
+		// Preserve attempt-to-fix inheritance only when the child didn't explicitly override it.
+		execMeta.isAttemptToFix = true
+	}
 }
 
 // isAnEfdExecution checks if the current test execution is an Early Flake Detection execution.

@@ -99,6 +99,9 @@
     "DD_CIVISIBILITY_LOGS_ENABLED": [
       "A"
     ],
+    "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [
+      "A"
+    ],
     "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT": [
       "A"
     ],
