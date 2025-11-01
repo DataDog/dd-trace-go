@@ -9,6 +9,7 @@ for file in gotestsum-report*.xml; do
     echo -e "\n" >> $file
 
     while read p; do
+        echo "line: $p"
         # we might try to report gotestsum-report.xml multiple times, so don't
         # calculate codeowners more times than we need
         if [[ "$p" =~ \<testcase && ! "$p" =~ "file=" ]]; then
