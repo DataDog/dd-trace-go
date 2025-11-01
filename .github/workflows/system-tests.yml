@@ -39,7 +39,7 @@ jobs:
       sha: ${{ steps.pin.outputs.sha }}
     steps:
       - name: Checkout system-tests
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
@@ -48,7 +48,7 @@ jobs:
         run: |
           echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
       - name: Cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
@@ -148,7 +148,7 @@ jobs:
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Restore repo cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
@@ -187,7 +187,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
@@ -258,7 +258,7 @@ jobs:
     steps:
       - name: Download ${{ matrix.target }}) artifacts
         if: github.ref != 'refs/heads/main'
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           name: ${{ matrix.image_artifact }}
 
@@ -299,7 +299,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.system_tests_name }}_${{ matrix.scenario }}
