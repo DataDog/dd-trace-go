@@ -53,8 +53,12 @@ format/shell: tools-install ## install shfmt
 	$(BIN_PATH) ./scripts/format.sh --shell
 
 .PHONY: test
-test: tools-install ## Run all tests (core, integration, contrib)
+test: tools-install test/unit ## Run all tests (core, integration, contrib)
 	$(BIN_PATH) ./scripts/test.sh --all
+
+.PHONY: test/unit
+test/unit: tools-install ## Run unit tests
+	go test -v -failfast ./...
 
 .PHONY: test-appsec
 test/appsec: tools-install ## Run tests with AppSec enabled
