@@ -1704,7 +1704,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 	})
 }
 
-func BenchmarkStartSpan(b *testing.B) {
+func BenchmarkLLMObsStartSpan(b *testing.B) {
 	run := func(b *testing.B, ll *llmobs.LLMObs, tt *testtracer.TestTracer, done chan struct{}) {
 		b.Log("starting benchmark")
 

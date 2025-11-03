@@ -37,6 +37,12 @@ var (
 	errAgentlessRequiresAPIKey = errors.New("LLMOBs agentless mode requires a valid API key - set the DD_API_KEY env variable to configure one")
 	errMLAppRequired           = errors.New("ML App is required for sending LLM Observability data")
 	errAgentModeNotSupported   = errors.New("DD_LLMOBS_AGENTLESS_ENABLED has been configured to false but the agent is not available or does not support LLMObs")
+	errInvalidMetricLabel      = errors.New("label is required for evaluation metrics")
+	errFinishedSpan            = errors.New("span is already finished")
+	errEvalJoinBothPresent     = errors.New("provide either span/trace IDs or tag key/value, not both")
+	errEvalJoinNonePresent     = errors.New("must provide either span/trace IDs or tag key/value for joining")
+	errInvalidSpanJoin         = errors.New("both span and trace IDs are required for span-based joining")
+	errInvalidTagJoin          = errors.New("both tag key and value are required for tag-based joining")
 )
 
 const (
@@ -182,7 +188,11 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 
 // Start starts the global LLMObs instance with the given configuration and tracer.
 // Returns an error if LLMObs is already running or if configuration is invalid.
-func Start(cfg config.Config, tracer Tracer) error {
+func Start(cfg config.Config, tracer Tracer) (err error) {
+	startTime := time.Now()
+	defer func() {
+		trackLLMObsStart(startTime, err, cfg)
+	}()
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -224,6 +234,7 @@ func ActiveLLMObs() (*LLMObs, error) {
 func Flush() {
 	if activeLLMObs != nil {
 		activeLLMObs.Flush()
+		trackUserFlush()
 	}
 }
 
@@ -382,9 +393,10 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushSpanEvents(ctx, events); err != nil {
-				log.Error("llmobs: PushSpanEvents failed: %v", err.Error())
+				log.Error("llmobs: failed to push span events: %v", err.Error())
+				trackDroppedPayload(len(events), telemetryMetricDroppedSpanEvents, "transport_error")
 			} else {
-				log.Debug("llmobs: PushSpanEvents success")
+				log.Debug("llmobs: push span events success")
 			}
 		}()
 	}
@@ -402,9 +414,10 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushEvalMetrics(ctx, metrics); err != nil {
-				log.Error("llmobs: PushEvalMetrics failed: %v", err.Error())
+				log.Error("llmobs: failed to push eval metrics: %v", err.Error())
+				trackDroppedPayload(len(metrics), telemetryMetricDroppedEvalEvents, "transport_error")
 			} else {
-				log.Debug("llmobs: PushEvalMetrics success")
+				log.Debug("llmobs: push eval metrics success")
 			}
 		}()
 	}
@@ -583,20 +596,34 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Scope:            span.scope,
 	}
 	if b, err := json.Marshal(ev); err == nil {
-		if len(b) > sizeLimitEVPEvent {
+		rawSize := len(b)
+		trackSpanEventRawSize(ev, rawSize)
+
+		truncated := false
+		if rawSize > sizeLimitEVPEvent {
 			log.Warn(
 				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
-				readableBytes(len(b)),
+				readableBytes(rawSize),
 			)
-			dropSpanEventIO(ev)
+			truncated = dropSpanEventIO(ev)
+			if !truncated {
+				log.Debug("llmobs: attempted to drop span event IO but it was not present")
+			}
 		}
+		actualSize := rawSize
+		if truncated {
+			if b, err := json.Marshal(ev); err == nil {
+				actualSize = len(b)
+			}
+		}
+		trackSpanEventSize(ev, actualSize, truncated)
 	}
 	return ev
 }
 
-func dropSpanEventIO(ev *transport.LLMObsSpanEvent) {
+func dropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
 	if ev == nil {
-		return
+		return false
 	}
 	droppedIO := false
 	if _, ok := ev.Meta["input"]; ok {
@@ -612,11 +639,14 @@ func dropSpanEventIO(ev *transport.LLMObsSpanEvent) {
 	} else {
 		log.Debug("llmobs: attempted to drop span event IO but it was not present")
 	}
+	return droppedIO
 }
 
 // StartSpan starts a new LLMObs span with the given kind, name, and configuration.
 // Returns the created span and a context containing the span.
 func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
+	defer trackSpanStarted()
+
 	spanName := name
 	if spanName == "" {
 		spanName = string(kind)
@@ -692,20 +722,38 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimen
 
 // SubmitEvaluation submits an evaluation metric for a span.
 // The span can be identified either by span/trace IDs or by tag key-value pairs.
-func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
-	// Validate exactly one join method is provided
-	hasSpanJoin := cfg.SpanID != "" && cfg.TraceID != ""
-	hasTagJoin := cfg.TagKey != "" && cfg.TagValue != ""
+func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
+	var metric *transport.LLMObsMetric
+	defer func() {
+		trackSubmitEvaluationMetric(metric, err)
+	}()
 
+	if cfg.Label == "" {
+		return errInvalidMetricLabel
+	}
+	var (
+		hasTagJoin  bool
+		hasSpanJoin bool
+	)
+	if cfg.SpanID != "" || cfg.TraceID != "" {
+		if !(cfg.SpanID != "" && cfg.TraceID != "") {
+			return errInvalidSpanJoin
+		}
+		hasSpanJoin = true
+	}
+	if cfg.TagKey != "" || cfg.TagValue != "" {
+		if !(cfg.TagKey != "" && cfg.TagValue != "") {
+			return errInvalidTagJoin
+		}
+		hasTagJoin = true
+	}
 	if hasSpanJoin && hasTagJoin {
-		return errors.New("provide either span/trace IDs or tag key/value, not both")
+		return errEvalJoinBothPresent
 	}
 	if !hasSpanJoin && !hasTagJoin {
-		return errors.New("must provide either span/trace IDs or tag key/value for joining")
+		return errEvalJoinNonePresent
 	}
-	if cfg.Label == "" {
-		return errors.New("label is required for evaluation metrics")
-	}
+
 	numValues := 0
 	if cfg.CategoricalValue != nil {
 		numValues++
@@ -751,7 +799,7 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) error {
 	}
 	tags = append(tags, fmt.Sprintf("ddtrace.version:%s", version.Tag))
 
-	metric := &transport.LLMObsMetric{
+	metric = &transport.LLMObsMetric{
 		JoinOn:      joinOn,
 		Label:       cfg.Label,
 		MLApp:       mlApp,

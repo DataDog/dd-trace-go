@@ -63,11 +63,16 @@ func getDefaultEnvVars() map[string]string {
 // initializeEnvironment sets up required environment variables with their defaults
 func initializeEnvironment() {
 	for k, v := range getDefaultEnvVars() {
-		if env.Get(k) == "" {
+		setValue := env.Get(k)
+		if setValue == "" {
 			if err := os.Setenv(k, v); err != nil {
 				log.Error("service_extension: failed to set %s environment variable: %s\n", k, err.Error())
+				continue
 			}
+			gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(k, v, instrumentation.TelemetryOriginDefault)
+			continue
 		}
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(k, setValue, instrumentation.TelemetryOriginEnvVar)
 	}
 }
 

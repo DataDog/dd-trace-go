@@ -155,6 +155,11 @@ jobs:
           filter_mode: nofilter
 
   checklocks:
+    # We have the infrastructure in place for this check,
+    # but we still need to add the required annotations for
+    # checklocks to actually identify issues. Skipping the
+    # check until we do so.
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -170,5 +175,4 @@ jobs:
       - name: Run checklocks
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          # Errors are expected here, but we want to fail the CI if there are any errors for now
-          ./scripts/check_locks.sh || true
+          ./scripts/check_locks.sh
