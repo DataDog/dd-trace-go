@@ -454,6 +454,7 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 	case error:
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
+		// TODO: once Error Tracking fix is resolved, update relevant tags here. See #4095
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
