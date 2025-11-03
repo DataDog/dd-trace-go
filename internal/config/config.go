@@ -7,10 +7,14 @@ package config
 
 import (
 	"net/url"
+	"sync"
 	"time"
 )
 
-var globalConfig *Config
+var (
+	globalConfig *Config
+	configOnce   sync.Once
+)
 
 // Config represents global configuration properties.
 type Config struct {
@@ -110,9 +114,9 @@ func loadConfig() *Config {
 }
 
 func GlobalConfig() *Config {
-	if globalConfig == nil {
+	configOnce.Do(func() {
 		globalConfig = loadConfig()
-	}
+	})
 	return globalConfig
 }
 
