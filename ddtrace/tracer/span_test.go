@@ -855,7 +855,7 @@ func TestErrorStack(t *testing.T) {
 		assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 		assert.Equal("*errortrace.TracerError", span.meta[ext.ErrorType])
 
-		stack := span.meta[ext.ErrorStack]
+		stack := span.meta[ext.ErrorHandlingStack]
 		assert.NotEqual("", stack)
 		assert.Contains(stack, "tracer.TestErrorStack")
 		assert.Contains(stack, "tracer.createErrorTrace")
