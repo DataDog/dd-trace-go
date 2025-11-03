@@ -185,7 +185,7 @@ apm_configuration_default:
   DD_ENV: local_env                    # Set in 3 sources (Local, DD Env, OTEL) - should lose to DD Env
   DD_VERSION: 0.1.0                    # Set in 2 sources (Local, Managed) - should lose to Managed
   DD_TRACE_SAMPLE_RATE: 0.1            # Set in 2 sources (Local, OTEL) - should lose to OTEL
-  DD_TRACE_AGENT_TIMEOUT: 5s           # Only in Local - should WIN (lowest priority available)
+  DD_TRACE_STARTUP_LOGS: true          # Only in Local - should WIN (lowest priority available)
 `
 
 		managedYaml := `
@@ -260,11 +260,11 @@ apm_configuration_default:
 			"DD_TRACE_SAMPLE_RATE: OTEL should win over Local")
 
 		// Local Config wins (only in Local)
-		assert.Equal(t, "5s", provider.getString("DD_TRACE_AGENT_TIMEOUT", "default"),
-			"DD_TRACE_AGENT_TIMEOUT: Local should win (only source)")
+		assert.Equal(t, true, provider.getBool("DD_TRACE_STARTUP_LOGS", false),
+			"DD_TRACE_STARTUP_LOGS: Local should win (only source)")
 
 		// Defaults are returned for settings not configured anywhere
-		assert.Equal(t, false, provider.getBool("DD_TRACE_STARTUP_LOGS", false),
+		assert.Equal(t, "default", provider.getString("DD_TRACE_AGENT_URL", "default"),
 			"Unconfigured setting should return default")
 	})
 }
