@@ -133,6 +133,7 @@ func (w *exposureWriter) start() {
 			if r := recover(); r != nil {
 				log.Error("openfeature: exposure writer recovered panic: %v", r)
 			}
+			w.stop()
 		}()
 
 		for {
@@ -243,8 +244,6 @@ func (w *exposureWriter) buildRequestURL() string {
 
 // stop stops the exposure writer and flushes any remaining events
 func (w *exposureWriter) stop() {
-	w.flush()
-
 	w.mu.Lock()
 	if w.stopped {
 		w.mu.Unlock()
