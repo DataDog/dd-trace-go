@@ -74,7 +74,7 @@ type exposureSubject struct {
 
 // exposureContext represents service context metadata for the exposure payload
 type exposureContext struct {
-	ServiceName string `json:"service_name"`
+	ServiceName string `json:"service"`
 	Version     string `json:"version,omitempty"`
 	Env         string `json:"env,omitempty"`
 }
@@ -85,17 +85,10 @@ type exposurePayload struct {
 	Exposures []exposureEvent `json:"exposures"`
 }
 
-type bufferKey struct {
-	flagKey       string
-	allocationKey string
-	variantKey    string
-	subjectID     string
-}
-
 // exposureWriter manages buffering and flushing of exposure events to the Datadog Agent
 type exposureWriter struct {
 	mu            sync.Mutex
-	buffer        map[bufferKey]exposureEvent // Deduplicate by composite key
+	buffer        []exposureEvent // Buffer for exposure events
 	flushInterval time.Duration
 	httpClient    *http.Client
 	agentURL      *url.URL
@@ -143,7 +136,7 @@ func newExposureWriter(config ProviderConfig) *exposureWriter {
 	}
 
 	return &exposureWriter{
-		buffer:        make(map[bufferKey]exposureEvent),
+		buffer:        make([]exposureEvent, 0),
 		flushInterval: flushInterval,
 		httpClient:    httpClient,
 		agentURL:      agentURL,
@@ -167,7 +160,7 @@ func (w *exposureWriter) start() {
 	}()
 }
 
-// append adds an exposure event to the buffer with deduplication
+// append adds an exposure event to the buffer
 func (w *exposureWriter) append(event exposureEvent) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -176,17 +169,9 @@ func (w *exposureWriter) append(event exposureEvent) {
 		return
 	}
 
-	// Create composite key for deduplication
-	// Deduplicate by flag, allocation, variant, and subject.id
-	key := bufferKey{
-		flagKey:       event.Flag.Key,
-		allocationKey: event.Allocation.Key,
-		variantKey:    event.Variant.Key,
-		subjectID:     event.Subject.ID,
-	}
-
-	// Store event (will overwrite if duplicate)
-	w.buffer[key] = event
+	// Append event to buffer
+	// Each exposure event is tracked individually to maintain accurate analytics
+	w.buffer = append(w.buffer, event)
 }
 
 // flush sends all buffered exposure events to the agent
@@ -198,11 +183,8 @@ func (w *exposureWriter) flush() {
 	}
 
 	// Move buffer to local variable and create new buffer
-	events := make([]exposureEvent, 0, len(w.buffer))
-	for _, event := range w.buffer {
-		events = append(events, event)
-	}
-	w.buffer = make(map[bufferKey]exposureEvent)
+	events := w.buffer
+	w.buffer = make([]exposureEvent, 0)
 	w.mu.Unlock()
 
 	// Build payload
