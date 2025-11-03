@@ -510,6 +510,9 @@
     "DD_TRACE_LOG_DIRECTORY": [
       "A"
     ],
+    "DD_TRACE_MCPGO_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_MEMCACHE_ANALYTICS_ENABLED": [
       "A"
     ],

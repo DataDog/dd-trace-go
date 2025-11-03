@@ -179,6 +179,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_LEVELDB_ANALYTICS_ENABLED":                              {},
 	"DD_TRACE_LOGRUS_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_LOG_DIRECTORY":                                          {},
+	"DD_TRACE_MCPGO_ANALYTICS_ENABLED":                                {},
 	"DD_TRACE_MEMCACHE_ANALYTICS_ENABLED":                             {},
 	"DD_TRACE_MGO_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_MONGO_ANALYTICS_ENABLED":                                {},

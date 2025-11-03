@@ -688,6 +688,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	span.mlApp = cfg.MLApp
 	span.spanKind = kind
 	span.sessionID = cfg.SessionID
+	span.integration = cfg.Integration
 
 	span.llmCtx = llmobsContext{
 		modelName:     cfg.ModelName,
