@@ -469,8 +469,8 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case *errortrace.TracerError:
 			// instrumentation/errortrace approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
-			s.setMeta(ext.ErrorStack, err.Format())
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorHandlingStack, err.Format())
 			return
 		}
 		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
