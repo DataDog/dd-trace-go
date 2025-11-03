@@ -77,6 +77,8 @@ type Config struct {
 	TraceProtocol float64 `json:"DD_TRACE_AGENT_PROTOCOL_VERSION"`
 }
 
+// loadConfig initializes and returns a new Config by reading from all configured sources.
+// This function is NOT thread-safe and should only be called once through GlobalConfig's sync.Once.
 func loadConfig() *Config {
 	cfg := new(Config)
 
@@ -113,6 +115,10 @@ func loadConfig() *Config {
 	return cfg
 }
 
+// GlobalConfig returns the global configuration singleton.
+// This function is thread-safe and can be called from multiple goroutines concurrently.
+// The configuration is lazily initialized on first access using sync.Once, ensuring
+// loadConfig() is called exactly once even under concurrent access.
 func GlobalConfig() *Config {
 	configOnce.Do(func() {
 		globalConfig = loadConfig()
