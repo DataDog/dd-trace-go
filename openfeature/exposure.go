@@ -195,7 +195,7 @@ func (w *exposureWriter) flush() {
 
 	// Send to agent
 	if err := w.sendToAgent(payload); err != nil {
-		log.Error("openfeature: failed to send exposure events: %v", err)
+		log.Error("openfeature: failed to send exposure events: %v", err.Error())
 	} else {
 		log.Debug("openfeature: successfully sent %d exposure events", len(events))
 	}

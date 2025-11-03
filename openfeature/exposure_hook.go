@@ -38,10 +38,10 @@ func newExposureHook(writer *exposureWriter) *exposureHook {
 // It extracts the necessary information from the evaluation details and sends
 // an exposure event to the writer if doLog is true.
 func (h *exposureHook) After(
-	ctx context.Context,
+	_ context.Context,
 	hookContext of.HookContext,
 	flagEvaluationDetails of.InterfaceEvaluationDetails,
-	hookHints of.HookHints,
+	_ of.HookHints,
 ) error {
 	// Check if we should log this exposure
 	if !h.shouldLog(flagEvaluationDetails.FlagMetadata) {
@@ -91,8 +91,8 @@ func (h *exposureHook) After(
 		},
 		Subject: exposureSubject{
 			ID:         targetingKey,
-			Type:       "",                // Type is optional
-			Attributes: subjectAttrs,      // Flattened, primitive-only attributes
+			Type:       "",           // Type is optional
+			Attributes: subjectAttrs, // Flattened, primitive-only attributes
 		},
 	}
 
