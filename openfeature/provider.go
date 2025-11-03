@@ -171,8 +171,8 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 		}
 	}
 
+	// Start periodic flushing
 	p.exposureWriter.start()
-
 	return nil
 }
 

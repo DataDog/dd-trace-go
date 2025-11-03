@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -100,48 +101,27 @@ type exposureWriter struct {
 
 // newExposureWriter creates a new exposure writer with the given configuration
 func newExposureWriter(config ProviderConfig) *exposureWriter {
-	flushInterval := config.ExposureFlushInterval
-	if flushInterval == 0 {
-		flushInterval = defaultExposureFlushInterval
-	}
-
-	// Get agent URL from environment or default
-	agentURL := internal.AgentURLFromEnv()
-
 	// Build service context from environment variables
-	serviceName := globalconfig.ServiceName()
-	if serviceName == "" {
-		serviceName = env.Get("DD_SERVICE")
-	}
+	serviceName := cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName())
 	if serviceName == "" {
 		serviceName = "unknown"
 	}
 
 	context := exposureContext{
 		ServiceName: serviceName,
-	}
-
-	// Only include version and env if they are defined
-	if version := env.Get("DD_VERSION"); version != "" {
-		context.Version = version
-	}
-
-	if envName := env.Get("DD_ENV"); envName != "" {
-		context.Env = envName
-	}
-
-	// Create HTTP client with timeout
-	httpClient := &http.Client{
-		Timeout: defaultHTTPTimeout,
+		Version:     env.Get("DD_VERSION"),
+		Env:         env.Get("DD_ENV"),
 	}
 
 	return &exposureWriter{
 		buffer:        make([]exposureEvent, 0),
-		flushInterval: flushInterval,
-		httpClient:    httpClient,
-		agentURL:      agentURL,
-		context:       context,
-		stopChan:      make(chan struct{}),
+		flushInterval: cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
+		httpClient: &http.Client{
+			Timeout: defaultHTTPTimeout,
+		},
+		agentURL: internal.AgentURLFromEnv(),
+		context:  context,
+		stopChan: make(chan struct{}),
 	}
 }
 
@@ -149,6 +129,12 @@ func newExposureWriter(config ProviderConfig) *exposureWriter {
 func (w *exposureWriter) start() {
 	w.ticker = time.NewTicker(w.flushInterval)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("openfeature: exposure writer recovered panic: %v", r)
+			}
+		}()
+
 		for {
 			select {
 			case <-w.ticker.C:
@@ -184,7 +170,7 @@ func (w *exposureWriter) flush() {
 
 	// Move buffer to local variable and create new buffer
 	events := w.buffer
-	w.buffer = make([]exposureEvent, 0)
+	w.buffer = make([]exposureEvent, len(events)/2)
 	w.mu.Unlock()
 
 	// Build payload
@@ -257,6 +243,8 @@ func (w *exposureWriter) buildRequestURL() string {
 
 // stop stops the exposure writer and flushes any remaining events
 func (w *exposureWriter) stop() {
+	w.flush()
+
 	w.mu.Lock()
 	if w.stopped {
 		w.mu.Unlock()
@@ -265,16 +253,13 @@ func (w *exposureWriter) stop() {
 	w.stopped = true
 	w.mu.Unlock()
 
+	// Signal the goroutine to stop
+	close(w.stopChan)
+
 	// Stop the ticker
 	if w.ticker != nil {
 		w.ticker.Stop()
 	}
-
-	// Signal the goroutine to stop
-	close(w.stopChan)
-
-	// Final flush
-	w.flush()
 
 	log.Debug("openfeature: exposure writer stopped")
 }
