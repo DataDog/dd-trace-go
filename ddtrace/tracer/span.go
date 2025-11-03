@@ -408,6 +408,21 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 	s.context.setSamplingPriority(priority, sampler)
 }
 
+// forceSetSamplingPriorityLocked updates the sampling priority.
+// If the trace is locked, the sampling priority is forced to the given value.
+//
+// This function is should only be used when applying a manual keep or drop decision.
+func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
+	// We don't lock spans when flushing, so we could have a data race when
+	// modifying a span as it's being flushed. This protects us against that
+	// race, since spans are marked `finished` before we flush them.
+	if s.finished {
+		return
+	}
+	s.setMetric(keySamplingPriority, float64(priority))
+	s.context.forceSetSamplingPriority(priority, sampler)
+}
+
 // setTagError sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
 func (s *Span) setTagError(value interface{}, cfg errorConfig) {
@@ -549,11 +564,11 @@ func (s *Span) setTagBool(key string, v bool) {
 		}
 	case ext.ManualDrop:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual)
+			s.forceSetSamplingPriorityLocked(ext.PriorityUserReject, samplernames.Manual)
 		}
 	case ext.ManualKeep:
 		if v {
-			s.setSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
+			s.forceSetSamplingPriorityLocked(ext.PriorityUserKeep, samplernames.Manual)
 		}
 	default:
 		if v {

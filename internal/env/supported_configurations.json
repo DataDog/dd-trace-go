@@ -372,9 +372,6 @@
     "DD_TRACE_AGENT_PORT": [
       "A"
     ],
-    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
-      "A"
-    ],
     "DD_TRACE_AGENT_URL": [
       "A"
     ],
@@ -615,6 +612,9 @@
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_VALKEY_ANALYTICS_ENABLED": [
       "A"
     ],
@@ -622,6 +622,9 @@
       "A"
     ],
     "DD_TRACE_VAULT_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED": [
       "A"
     ],
     "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH": [
