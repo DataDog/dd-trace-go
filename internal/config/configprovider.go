@@ -18,6 +18,21 @@ type ConfigProvider struct {
 	sources []ConfigSource // In order of priority
 }
 
+type ConfigSource interface {
+	Get(key string) string
+}
+
+func DefaultConfigProvider() *ConfigProvider {
+	return &ConfigProvider{
+		sources: []ConfigSource{
+			ManagedDeclarativeConfig,
+			new(envConfigSource),
+			new(otelEnvConfigSource),
+			LocalDeclarativeConfig,
+		},
+	}
+}
+
 func (p *ConfigProvider) getString(key string, def string) string {
 	// TODO: Eventually, iterate over all sources and report telemetry
 	for _, source := range p.sources {
@@ -45,18 +60,6 @@ func (p *ConfigProvider) getInt(key string, def int) int {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
 			v, err := strconv.Atoi(v)
-			if err == nil {
-				return v
-			}
-		}
-	}
-	return def
-}
-
-func (p *ConfigProvider) getInt64(key string, def int64) int64 {
-	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
-			v, err := strconv.ParseInt(v, 10, 64)
 			if err == nil {
 				return v
 			}
@@ -111,20 +114,6 @@ func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
 		}
 	}
 	return def
-}
-
-func DefaultConfigProvider() *ConfigProvider {
-	return &ConfigProvider{
-		sources: []ConfigSource{
-			ManagedDeclarativeConfig,
-			new(envConfigSource),
-			LocalDeclarativeConfig,
-		},
-	}
-}
-
-type ConfigSource interface {
-	Get(key string) string
 }
 
 // normalizeKey is a helper function for ConfigSource implementations to normalize the key to a valid environment variable name.

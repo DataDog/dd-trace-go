@@ -360,6 +360,9 @@
     "DD_TRACE_AGENT_PROTOCOL_VERSION": [
       "A"
     ],
+    "DD_TRACE_AGENT_TIMEOUT": [
+      "A"
+    ],
     "DD_TRACE_AGENT_URL": [
       "A"
     ],

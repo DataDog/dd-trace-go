@@ -607,7 +607,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if internalconfig.GlobalConfig().IsDebugEnabled() {
+	globalConfig := internalconfig.GlobalConfig()
+	if globalConfig.IsDebugEnabled() {
 		log.SetLevel(log.LevelDebug)
 	}
 	// Check if CI Visibility mode is enabled
