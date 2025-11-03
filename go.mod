@@ -7,7 +7,7 @@ godebug x509negativeserial=1
 require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.71.0
 	github.com/DataDog/datadog-agent/pkg/proto v0.71.0
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/trace v0.71.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
 	github.com/DataDog/go-libddwaf/v4 v4.6.1
