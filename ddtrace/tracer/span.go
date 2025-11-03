@@ -462,18 +462,18 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		}
 		switch err := v.(type) {
 		case xerrors.Formatter:
-			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case *errortrace.TracerError:
 			// instrumentation/errortrace approach
-			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
-			s.setMeta(ext.ErrorHandlingStack, err.Format())
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorStack, err.Format())
 			return
 		}
 		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-		s.setMeta(ext.ErrorHandlingStack, stack)
+		s.setMeta(ext.ErrorStack, stack)
 	case nil:
 		// no error
 		setError(false)
