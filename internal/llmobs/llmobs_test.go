@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 const (
@@ -427,8 +428,8 @@ func TestSpanAnnotate(t *testing.T) {
 			kind: llmobs.SpanKindEmbedding,
 			annotations: llmobs.SpanAnnotations{
 				InputEmbeddedDocs: []llmobs.EmbeddedDocument{
-					{Text: "Document 1 content"},
-					{Text: "Document 2 content"},
+					{Text: "Document 1 content", Name: "doc1.txt", Score: 0.92, ID: "embed-1"},
+					{Text: "Document 2 content", Name: "doc2.txt", Score: 0.88, ID: "embed-2"},
 				},
 				OutputText: "embedding-vector-representation",
 			},
@@ -437,10 +438,16 @@ func TestSpanAnnotate(t *testing.T) {
 				"input": map[string]any{
 					"documents": []any{
 						map[string]any{
-							"text": "Document 1 content",
+							"text":  "Document 1 content",
+							"name":  "doc1.txt",
+							"score": 0.92,
+							"id":    "embed-1",
 						},
 						map[string]any{
-							"text": "Document 2 content",
+							"text":  "Document 2 content",
+							"name":  "doc2.txt",
+							"score": 0.88,
+							"id":    "embed-2",
 						},
 					},
 				},
@@ -695,8 +702,8 @@ func TestSpanTruncation(t *testing.T) {
 
 		span.Annotate(llmobs.SpanAnnotations{
 			InputEmbeddedDocs: []llmobs.EmbeddedDocument{
-				{Text: largeContent},
-				{Text: largeContent},
+				{Text: largeContent, Name: "large1.txt", Score: 0.95, ID: "large-1"},
+				{Text: largeContent, Name: "large2.txt", Score: 0.90, ID: "large-2"},
 			},
 			OutputText: largeContent,
 		})
@@ -983,6 +990,26 @@ func TestPropagatedInfo(t *testing.T) {
 		require.NotNil(t, childLLMSpan, "Child span should be found")
 		assert.Equal(t, "grandparent-session", childLLMSpan.SessionID, "Should inherit session ID through parent chain")
 	})
+	t.Run("session-id-tag-is-also-set", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		// Create span with session ID
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "test-span", llmobs.StartSpanConfig{
+			SessionID: "test-session-123",
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		l0 := llmSpans[0]
+
+		// Verify SessionID field is set
+		assert.Equal(t, "test-session-123", l0.SessionID, "SessionID field should be set")
+
+		// Verify the session_id tag is also present
+		sessionIDTag := findTag(l0.Tags, "session_id")
+		assert.Equal(t, "test-session-123", sessionIDTag, "session_id tag should be present in Tags array")
+	})
 	t.Run("mixed-propagation-sources", func(t *testing.T) {
 		tt, ll := testTracer(t)
 		ctx := context.Background()
@@ -1055,7 +1082,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					CategoricalValue: ptrFromVal("correct"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
-					Tags:             []string{"env:test"},
+					Tags:             []string{"env:test", "ddtrace.version:" + version.Tag},
 				}
 			},
 		},
@@ -1082,6 +1109,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					ScoreValue:  ptrFromVal(0.85),
 					MLApp:       "test-app",
 					TimestampMS: 1234567890,
+					Tags:        []string{"ddtrace.version:" + version.Tag},
 				}
 			},
 		},
@@ -1108,6 +1136,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					BooleanValue: ptrFromVal(true),
 					MLApp:        "test-app",
 					TimestampMS:  1234567890,
+					Tags:         []string{"ddtrace.version:" + version.Tag},
 				}
 			},
 		},
@@ -1134,6 +1163,7 @@ func TestSubmitEvaluation(t *testing.T) {
 					CategoricalValue: ptrFromVal("high"),
 					MLApp:            "test-app",
 					TimestampMS:      1234567890,
+					Tags:             []string{"ddtrace.version:" + version.Tag},
 				}
 			},
 		},
@@ -1177,6 +1207,90 @@ func TestSubmitEvaluation(t *testing.T) {
 			},
 			wantError: "exactly one metric value (categorical, score, or boolean) must be provided",
 		},
+		{
+			name: "ddtrace-version-auto-added",
+			config: llmobs.EvaluationConfig{
+				SpanID:           "test-span-id",
+				TraceID:          "test-trace-id",
+				Label:            "accuracy",
+				CategoricalValue: ptrFromVal("correct"),
+				MLApp:            "test-app",
+				TimestampMS:      1234567890,
+				Tags:             []string{"env:test", "team:ml"},
+			},
+			wantMetric: func() llmobstransport.LLMObsMetric {
+				return llmobstransport.LLMObsMetric{
+					JoinOn: llmobstransport.EvaluationJoinOn{
+						Span: &llmobstransport.EvaluationSpanJoin{
+							SpanID:  "test-span-id",
+							TraceID: "test-trace-id",
+						},
+					},
+					MetricType:       "categorical",
+					Label:            "accuracy",
+					CategoricalValue: ptrFromVal("correct"),
+					MLApp:            "test-app",
+					TimestampMS:      1234567890,
+					Tags:             []string{"env:test", "team:ml", "ddtrace.version:" + version.Tag},
+				}
+			},
+		},
+		{
+			name: "ddtrace-version-replaced-if-exists",
+			config: llmobs.EvaluationConfig{
+				SpanID:      "test-span-id",
+				TraceID:     "test-trace-id",
+				Label:       "rating",
+				ScoreValue:  ptrFromVal(0.95),
+				MLApp:       "test-app",
+				TimestampMS: 1234567890,
+				Tags:        []string{"env:prod", "ddtrace.version:custom-version"},
+			},
+			wantMetric: func() llmobstransport.LLMObsMetric {
+				return llmobstransport.LLMObsMetric{
+					JoinOn: llmobstransport.EvaluationJoinOn{
+						Span: &llmobstransport.EvaluationSpanJoin{
+							SpanID:  "test-span-id",
+							TraceID: "test-trace-id",
+						},
+					},
+					MetricType:  "score",
+					Label:       "rating",
+					ScoreValue:  ptrFromVal(0.95),
+					MLApp:       "test-app",
+					TimestampMS: 1234567890,
+					Tags:        []string{"env:prod", "ddtrace.version:" + version.Tag},
+				}
+			},
+		},
+		{
+			name: "ddtrace-version-added-when-no-tags",
+			config: llmobs.EvaluationConfig{
+				SpanID:       "test-span-id",
+				TraceID:      "test-trace-id",
+				Label:        "correctness",
+				BooleanValue: ptrFromVal(true),
+				MLApp:        "test-app",
+				TimestampMS:  1234567890,
+				Tags:         nil,
+			},
+			wantMetric: func() llmobstransport.LLMObsMetric {
+				return llmobstransport.LLMObsMetric{
+					JoinOn: llmobstransport.EvaluationJoinOn{
+						Span: &llmobstransport.EvaluationSpanJoin{
+							SpanID:  "test-span-id",
+							TraceID: "test-trace-id",
+						},
+					},
+					MetricType:   "boolean",
+					Label:        "correctness",
+					BooleanValue: ptrFromVal(true),
+					MLApp:        "test-app",
+					TimestampMS:  1234567890,
+					Tags:         []string{"ddtrace.version:" + version.Tag},
+				}
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1214,6 +1328,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1240,6 +1357,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt1.Stop()
 
@@ -1255,6 +1375,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt2.Stop()
 
@@ -1276,6 +1399,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1324,6 +1450,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLogStartup(false),
 				tracer.WithLLMObsAgentlessEnabled(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 
 		// Verify LLMObs is active
@@ -1367,11 +1496,12 @@ func TestLLMObsLifecycle(t *testing.T) {
 		})
 	})
 	t.Run("llmobs-enabled-without-ml-app", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", testAPIKey)
+
 		// Start tracer directly with LLMObs enabled but no ML app - should return error
 		err := tracer.Start(
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLogStartup(false),
-			tracer.WithLLMObsAgentlessEnabled(false),
 		)
 		defer tracer.Stop()
 
@@ -1384,6 +1514,21 @@ func TestLLMObsLifecycle(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "LLMObs is not enabled")
 	})
+	t.Run("agentless-disabled-without-agent-support", func(t *testing.T) {
+		// Start tracer with agentless explicitly disabled but without agent support - should return error
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithRequireNoTracerStartError(false),
+		)
+
+		require.Error(t, tt.StartError())
+		assert.Contains(t, tt.StartError().Error(), "the agent is not available or does not support LLMObs")
+	})
 	t.Run("env-vars-config", func(t *testing.T) {
 		t.Setenv("DD_LLMOBS_ENABLED", "true")
 		t.Setenv("DD_LLMOBS_ML_APP", "env-test-app")
@@ -1393,6 +1538,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 			testtracer.WithTracerStartOpts(
 				tracer.WithLogStartup(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1438,6 +1586,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsAgentlessEnabled(false),
 				tracer.WithLogStartup(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1539,6 +1690,9 @@ func TestLLMObsLifecycle(t *testing.T) {
 				tracer.WithLLMObsAgentlessEnabled(false),
 				tracer.WithLogStartup(false),
 			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
 		)
 		defer tt.Stop()
 
@@ -1550,7 +1704,7 @@ func TestLLMObsLifecycle(t *testing.T) {
 	})
 }
 
-func BenchmarkStartSpan(b *testing.B) {
+func BenchmarkLLMObsStartSpan(b *testing.B) {
 	run := func(b *testing.B, ll *llmobs.LLMObs, tt *testtracer.TestTracer, done chan struct{}) {
 		b.Log("starting benchmark")
 

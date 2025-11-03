@@ -315,6 +315,8 @@ var baseCapabilities = [...]remoteconfig.Capability{
 	remoteconfig.ASMExclusions,
 	remoteconfig.ASMCustomRules,
 	remoteconfig.ASMTrustedIPs,
+	remoteconfig.ASMProcessorOverrides,
+	remoteconfig.ASMCustomDataScanners,
 	remoteconfig.ASMExclusionData,
 	remoteconfig.ASMEndpointFingerprinting,
 	remoteconfig.ASMSessionFingerprinting,

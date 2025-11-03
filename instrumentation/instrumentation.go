@@ -102,6 +102,17 @@ func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
 	return i.telemetrylog
 }
 
+type TelemetryOrigin = telemetry.Origin
+
+const (
+	TelemetryOriginDefault = telemetry.OriginDefault
+	TelemetryOriginEnvVar  = telemetry.OriginEnvVar
+)
+
+func (i *Instrumentation) TelemetryRegisterAppConfig(key string, value any, origin TelemetryOrigin) {
+	telemetry.RegisterAppConfig(key, value, origin)
+}
+
 func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
 	if internal.BoolEnv("DD_TRACE_"+i.info.EnvVarPrefix+"_ANALYTICS_ENABLED", false) {
 		return 1.0

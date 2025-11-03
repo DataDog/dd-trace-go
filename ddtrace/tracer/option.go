@@ -334,6 +334,10 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
+
+	// isLambdaFunction, if true, indicates we are in a lambda function
+	// It is set by checking for a nonempty LAMBDA_FUNCTION_NAME env var.
+	isLambdaFunction bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -411,9 +415,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
 
-	// Set the trace protocol to use.
-	c.traceProtocol = internal.FloatEnv("DD_TRACE_AGENT_PROTOCOL_VERSION", traceProtocolV04)
-
 	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -464,10 +465,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
 	}
-	if _, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 		c.logToStdout = true
+		if v != "" {
+			c.isLambdaFunction = true
+		}
 	}
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
@@ -588,6 +592,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
+	}
+	// Set the trace protocol to use.
+	if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
+		c.traceProtocol = traceProtocolV1
+		if t, ok := c.transport.(*httpTransport); ok {
+			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
+		}
+	} else {
+		c.traceProtocol = traceProtocolV04
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -1080,16 +1093,16 @@ func WithAgentURL(agentURL string) StartOption {
 		if err != nil {
 			var urlErr *url.Error
 			if errors.As(err, &urlErr) {
-				u, err = url.Parse(urlErr.URL)
+				u, _ = url.Parse(urlErr.URL)
 				if u != nil {
 					urlErr.URL = u.Redacted()
 					log.Warn("Fail to parse Agent URL: %s", urlErr.Err)
 					return
 				}
-				log.Warn("Fail to parse Agent URL")
+				log.Warn("Fail to parse Agent URL: %s", err.Error())
 				return
 			}
-			log.Warn("Fail to parse Agent URL: %s", err.Error())
+			log.Warn("Fail to parse Agent URL")
 			return
 		}
 		switch u.Scheme {

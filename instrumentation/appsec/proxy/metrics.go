@@ -7,10 +7,12 @@ package proxy
 
 import (
 	"context"
+	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 type metrics struct {
@@ -43,4 +45,19 @@ func newMetricsReporter(ctx context.Context, logger instrumentation.Logger) *met
 
 func (m *metrics) incrementRequestCount() {
 	m.requestCounter.Add(1)
+}
+
+func EmitBodySize(bodySize int, direction string, truncated bool) {
+	telemetry.Distribution(telemetry.NamespaceAppSec, "instrum.body_size", []string{
+		"direction:" + direction,
+		"truncated:" + strconv.FormatBool(truncated),
+	}).Submit(float64(bodySize))
+}
+
+func RegisterConfig(mp *Processor) {
+	telemetry.RegisterAppConfigs(
+		telemetry.Configuration{Name: "appsec.proxy.blockingUnavailable", Value: mp.BlockingUnavailable},
+		telemetry.Configuration{Name: "appsec.proxy.bodyParsingSizeLimit", Value: mp.computedBodyParsingSizeLimit.Load()},
+		telemetry.Configuration{Name: "appsec.proxy.framework", Value: mp.Framework},
+	)
 }

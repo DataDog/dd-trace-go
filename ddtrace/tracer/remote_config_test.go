@@ -57,7 +57,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		// Telemetry
 		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig})
 
-		//Apply RC with sampling rules. Assert _dd.rule_psr shows the corresponding rule matched rate.
+		// Apply RC with sampling rules. Assert _dd.rule_psr shows the corresponding rule matched rate.
 		input = remoteconfig.ProductUpdate{
 			"path": []byte(`{"lib_config": {"tracing_sampling_rate": 0.5,
 			"tracing_sampling_rules":[{

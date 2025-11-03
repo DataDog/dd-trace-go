@@ -69,8 +69,12 @@ type startupInfo struct {
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
-func checkEndpoint(c *http.Client, endpoint string) error {
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
+func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
+	b := []byte{0x90} // empty array
+	if protocol == traceProtocolV1 {
+		b = []byte{0x80} // empty map
+	}
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(b))
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %s", err)
 	}
@@ -156,13 +160,13 @@ func logStartup(t *tracer) {
 		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err.Error())
+		info.SamplingRulesError = err.Error()
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
-		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
+		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
 			info.AgentError = fmt.Sprintf("%s", err.Error())
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
