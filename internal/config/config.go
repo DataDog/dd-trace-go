@@ -73,8 +73,6 @@ type Config struct {
 	LogDirectory string `json:"DD_TRACE_LOG_DIRECTORY"`
 
 	TraceRateLimitPerSecond float64 `json:"DD_TRACE_RATE_LIMIT"`
-
-	TraceProtocol float64 `json:"DD_TRACE_AGENT_PROTOCOL_VERSION"`
 }
 
 // loadConfig initializes and returns a new Config by reading from all configured sources.
@@ -110,7 +108,6 @@ func loadConfig() *Config {
 	cfg.CIVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.LogDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.TraceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
-	cfg.TraceProtocol = provider.getFloat("DD_TRACE_AGENT_PROTOCOL_VERSION", 0.0)
 
 	return cfg
 }
