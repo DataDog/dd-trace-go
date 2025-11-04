@@ -16,7 +16,7 @@ import (
 const (
 	// Metadata keys for exposure tracking
 	metadataAllocationKey = "dd.allocation.key"
-	metadataDoLog         = "dd.doLog"
+	metadataDoLogKey      = "dd.doLog"
 )
 
 // exposureHook implements the OpenFeature Hook interface to track feature flag exposures.
@@ -112,7 +112,7 @@ func (h *exposureHook) shouldLog(metadata of.FlagMetadata) bool {
 		return true
 	}
 
-	doLog, ok := metadata[metadataDoLog]
+	doLog, ok := metadata[metadataDoLogKey]
 	if !ok {
 		// Default to true if doLog not specified
 		return true

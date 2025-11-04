@@ -194,6 +194,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	go func() {
 		// Perform the shutdown operations
 		err := stopRemoteConfig()
+
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.configuration = nil
 		// Stop the exposure writer
 		if p.exposureWriter != nil {
 			p.exposureWriter.flush()

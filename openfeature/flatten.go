@@ -7,10 +7,13 @@ package openfeature
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// flattenAttributes recursively flattens nested attributes into a single-level map
+// flattenRecursive recursively flattens nested attributes into a single-level map
 // using dot notation for nested keys. This ensures that subject attributes in exposure
 // events comply with the EVP intake schema which does not allow nested objects.
 //
@@ -23,34 +26,87 @@ import (
 //	{"user.id": "123", "user.email": "test@example.com"}
 //
 // The flattening is applied during both flag evaluation and exposure event creation.
-func flattenAttributes(attributes map[string]any) map[string]any {
-	if attributes == nil {
-		return nil
-	}
-
-	result := make(map[string]any)
-	flattenRecursive("", attributes, result)
-	return result
-}
-
-// flattenRecursive is the recursive helper function that traverses the attribute tree
-// and builds the flattened map with dot-notation keys.
 func flattenRecursive(prefix string, value any, result map[string]any) {
 	switch v := value.(type) {
 	case map[string]any:
-		// Recursively flatten nested maps
-		for key, val := range v {
-			newPrefix := key
-			if prefix != "" {
-				newPrefix = prefix + "." + key
-			}
-			flattenRecursive(newPrefix, val, result)
-		}
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]string:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]uint:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]int:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]int64:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]int32:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]uint64:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]uint32:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]int16:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]int8:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]uint16:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]uint8:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]float64:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]bool:
+		flattenRecursiveMap(prefix, v, result)
+	case map[string]float32:
+		flattenRecursiveMap(prefix, v, result)
+	case []string:
+		flattenRecursiveArray(prefix, v, result)
+	case []int:
+		flattenRecursiveArray(prefix, v, result)
+	case []int64:
+		flattenRecursiveArray(prefix, v, result)
+	case []int32:
+		flattenRecursiveArray(prefix, v, result)
+	case []uint64:
+		flattenRecursiveArray(prefix, v, result)
+	case []uint32:
+		flattenRecursiveArray(prefix, v, result)
+	case []int16:
+		flattenRecursiveArray(prefix, v, result)
+	case []uint16:
+		flattenRecursiveArray(prefix, v, result)
+	case []float64:
+		flattenRecursiveArray(prefix, v, result)
+	case []bool:
+		flattenRecursiveArray(prefix, v, result)
+	case []float32:
+		flattenRecursiveArray(prefix, v, result)
+	case []any:
+		flattenRecursiveArray(prefix, v, result)
+	case []byte:
+		result[prefix] = string(v)
+	case fmt.Stringer:
+		result[prefix] = v.String()
+	case string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
+		result[prefix] = value
 	default:
-		// For non-map values, add them directly to the result
+		log.Debug("openfeature: skipping unsupported attribute type for key %q: %T", prefix, value)
+	}
+}
+
+func flattenRecursiveMap[T any](prefix string, v map[string]T, result map[string]any) {
+	for key, val := range v {
+		newPrefix := key
 		if prefix != "" {
-			result[prefix] = value
+			newPrefix = prefix + "." + key
 		}
+		flattenRecursive(newPrefix, val, result)
+	}
+}
+
+func flattenRecursiveArray[T any](prefix string, v []T, result map[string]any) {
+	for i, item := range v {
+		flattenKey := prefix + "." + strconv.Itoa(i)
+		flattenRecursive(flattenKey, item, result)
 	}
 }
 
@@ -65,18 +121,10 @@ func flattenContext(context map[string]any) map[string]any {
 	flattened := make(map[string]any)
 
 	// Flatten each top-level value in the context
-	for key, value := range context {
-		switch v := value.(type) {
-		case map[string]any:
-			// If the value is a nested map, flatten it with the key as prefix
-			for nestedKey, nestedValue := range flattenAttributes(v) {
-				flattenKey := key + "." + nestedKey
-				flattened[flattenKey] = nestedValue
-			}
-		default:
-			// For non-map values, keep them as-is
-			flattened[key] = value
-		}
+	flattenRecursive("", context, flattened)
+
+	if len(flattened) == 0 {
+		return nil
 	}
 
 	return flattened
@@ -112,17 +160,4 @@ func extractPrimitiveAttributes(attributes map[string]any) map[string]any {
 	}
 
 	return result
-}
-
-// convertToString attempts to convert a value to a string representation.
-// This is primarily used for ensuring consistent key formatting.
-func convertToString(value any) string {
-	switch v := value.(type) {
-	case string:
-		return v
-	case fmt.Stringer:
-		return v.String()
-	default:
-		return fmt.Sprintf("%v", v)
-	}
 }

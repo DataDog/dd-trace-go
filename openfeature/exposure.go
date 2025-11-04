@@ -9,11 +9,12 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -21,6 +22,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	jsoniter "github.com/json-iterator/go"
 )
 
 const (
@@ -75,9 +78,9 @@ type exposureSubject struct {
 
 // exposureContext represents service context metadata for the exposure payload
 type exposureContext struct {
-	ServiceName string `json:"service"`
-	Version     string `json:"version,omitempty"`
-	Env         string `json:"env,omitempty"`
+	Service string `json:"service"`
+	Version string `json:"version,omitempty"`
+	Env     string `json:"env,omitempty"`
 }
 
 // exposurePayload represents the complete payload sent to the exposure endpoint
@@ -97,31 +100,34 @@ type exposureWriter struct {
 	ticker        *time.Ticker
 	stopChan      chan struct{}
 	stopped       bool
+	jsonConfig    jsoniter.API
 }
 
 // newExposureWriter creates a new exposure writer with the given configuration
 func newExposureWriter(config ProviderConfig) *exposureWriter {
-	// Build service context from environment variables
-	serviceName := cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName())
-	if serviceName == "" {
-		serviceName = "unknown"
+	agentURL := internal.AgentURLFromEnv()
+	var httpClient *http.Client
+	if agentURL.Scheme == "unix" {
+		httpClient = internal.UDSClient(agentURL.Path, defaultHTTPTimeout)
+		agentURL = internal.UnixDataSocketURL(agentURL.Path)
+	} else {
+		httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
 	}
 
-	context := exposureContext{
-		ServiceName: serviceName,
-		Version:     env.Get("DD_VERSION"),
-		Env:         env.Get("DD_ENV"),
-	}
+	executable, _ := os.Executable()
 
 	return &exposureWriter{
-		buffer:        make([]exposureEvent, 0),
+		buffer:        make([]exposureEvent, 1<<8), // Initial capacity of 256
 		flushInterval: cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
-		httpClient: &http.Client{
-			Timeout: defaultHTTPTimeout,
+		httpClient:    httpClient,
+		agentURL:      agentURL,
+		stopChan:      make(chan struct{}),
+		jsonConfig:    jsoniter.Config{}.Froze(),
+		context: exposureContext{
+			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
+			Version: env.Get("DD_VERSION"),
+			Env:     env.Get("DD_ENV"),
 		},
-		agentURL: internal.AgentURLFromEnv(),
-		context:  context,
-		stopChan: make(chan struct{}),
 	}
 }
 
@@ -132,6 +138,13 @@ func (w *exposureWriter) start() {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Error("openfeature: exposure writer recovered panic: %v", r)
+				var errAttr slog.Attr
+				if err, ok := r.(error); ok {
+					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
+				} else {
+					errAttr = slog.Any("panic", r)
+				}
+				telemetrylog.Error("openfeature: exposure writer recovered panic", errAttr)
 			}
 			w.stop()
 		}()
@@ -171,17 +184,14 @@ func (w *exposureWriter) flush() {
 
 	// Move buffer to local variable and create new buffer
 	events := w.buffer
-	w.buffer = make([]exposureEvent, len(events)/2)
+	w.buffer = make([]exposureEvent, 0, len(events)/2)
 	w.mu.Unlock()
 
-	// Build payload
-	payload := exposurePayload{
+	// Send to agent
+	if err := w.sendToAgent(exposurePayload{
 		Context:   w.context,
 		Exposures: events,
-	}
-
-	// Send to agent
-	if err := w.sendToAgent(payload); err != nil {
+	}); err != nil {
 		log.Error("openfeature: failed to send exposure events: %v", err.Error())
 	} else {
 		log.Debug("openfeature: successfully sent %d exposure events", len(events))
@@ -191,16 +201,19 @@ func (w *exposureWriter) flush() {
 // sendToAgent sends the exposure payload to the Datadog Agent via EVP proxy
 func (w *exposureWriter) sendToAgent(payload exposurePayload) error {
 	// Serialize payload
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal exposure payload: %w", err)
+	var bytesBuffer bytes.Buffer
+	encoder := w.jsonConfig.NewEncoder(&bytesBuffer)
+	if err := encoder.Encode(payload); err != nil {
+		return fmt.Errorf("failed to encode exposure payload: %w", err)
 	}
 
 	// Build request URL
-	requestURL := w.buildRequestURL()
+	u := *w.agentURL
+	u.Path = exposureEndpoint
+	requestURL := u.String()
 
 	// Create HTTP request
-	req, err := http.NewRequestWithContext(context.Background(), "POST", requestURL, bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", requestURL, &bytesBuffer)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -225,21 +238,6 @@ func (w *exposureWriter) sendToAgent(payload exposurePayload) error {
 	}
 
 	return nil
-}
-
-// buildRequestURL constructs the full URL for the exposure endpoint
-func (w *exposureWriter) buildRequestURL() string {
-	if w.agentURL.Scheme == "unix" {
-		// For Unix domain sockets, use the HTTP adapter
-		u := internal.UnixDataSocketURL(w.agentURL.Path)
-		u.Path = exposureEndpoint
-		return u.String()
-	}
-
-	// For HTTP/HTTPS URLs, append the endpoint path
-	u := *w.agentURL
-	u.Path = exposureEndpoint
-	return u.String()
 }
 
 // stop stops the exposure writer and flushes any remaining events

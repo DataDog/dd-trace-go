@@ -77,7 +77,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 			if allocation.DoLog != nil {
 				doLog = *allocation.DoLog
 			}
-			metadata[metadataDoLog] = doLog
+			metadata[metadataDoLogKey] = doLog
 
 			return evaluationResult{
 				Value:      variant.Value,
