@@ -8,9 +8,9 @@ module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/test/inte
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.4.0-rc.3
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.4.0-rc.3
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.3
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.4.0-rc.4
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.4.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.4
 	github.com/aws/aws-lambda-go v1.46.0
 )
 
