@@ -12,7 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
+
+// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
+const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 
 type config struct {
 	analyticsRate float64
@@ -28,16 +33,22 @@ func newConfig(serviceName string) *config {
 	if serviceName == "" {
 		serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	}
-	rate := instr.AnalyticsRate(true)
-	return &config{
-		analyticsRate: rate,
+	cfg := &config{
+		analyticsRate: instr.AnalyticsRate(true),
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
-		isStatusError: isServerError,
 		useGinErrors:  false,
 		headerTags:    instr.HTTPHeadersAsTags(),
 	}
+
+	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
+		cfg.isStatusError = fn
+	} else {
+		cfg.isStatusError = isServerError
+	}
+
+	return cfg
 }
 
 // Option describes options for the Gin integration.
