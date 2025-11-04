@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.3
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.4
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/stretchr/testify v1.11.1
 )
