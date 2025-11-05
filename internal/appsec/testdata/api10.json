@@ -5,6 +5,122 @@
   },
   "rules": [
     {
+      "id": "api-010-100",
+      "name": "Collect move location",
+      "tags": {
+        "type": "api10",
+        "category": "api_security",
+        "confidence": "0",
+        "module": "business-logic"
+      },
+      "min_version": "1.25.0",
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.status"
+              }
+            ],
+            "list": [
+              301,
+              302
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "output": {
+        "event": false,
+        "keep": false,
+        "attributes": {
+          "appsec.api.redirection.move_target": {
+            "address": "server.io.net.response.headers",
+            "key_path": [
+              "location"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "api-010-110",
+      "name": "Collect redirect location",
+      "tags": {
+        "type": "api10",
+        "category": "api_security",
+        "confidence": "0",
+        "module": "business-logic"
+      },
+      "min_version": "1.25.0",
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.status"
+              }
+            ],
+            "list": [
+              307,
+              308
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "output": {
+        "event": false,
+        "keep": false,
+        "attributes": {
+          "appsec.api.redirection.redirect_target": {
+            "address": "server.io.net.response.headers",
+            "key_path": [
+              "location"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "api-010-111",
+      "name": "Collect that nothing happened",
+      "tags": {
+        "type": "api10",
+        "category": "api_security",
+        "confidence": "0",
+        "module": "business-logic"
+      },
+      "min_version": "1.25.0",
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.status"
+              }
+            ],
+            "list": [
+              200
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "output": {
+        "event": false,
+        "keep": false,
+        "attributes": {
+          "appsec.api.redirection.nothing": {
+            "value": 1
+          }
+        }
+      }
+    },
+    {
       "id": "rasp-930-111",
       "name": "Local file inclusion exploit",
       "tags": {
