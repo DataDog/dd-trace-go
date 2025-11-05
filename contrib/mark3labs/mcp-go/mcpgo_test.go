@@ -29,6 +29,75 @@ func TestNewToolHandlerMiddleware(t *testing.T) {
 	assert.NotNil(t, middleware)
 }
 
+func TestAddServerHooks(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	serverHooks := &server.Hooks{}
+	AddServerHooks(serverHooks)
+
+	assert.Len(t, serverHooks.OnBeforeInitialize, 1)
+	assert.Len(t, serverHooks.OnAfterInitialize, 1)
+	assert.Len(t, serverHooks.OnError, 1)
+}
+
+// Integration Tests
+
+func TestIntegrationSessionInitialize(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	hooks := &server.Hooks{}
+	AddServerHooks(hooks)
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		server.WithHooks(hooks))
+
+	ctx := context.Background()
+	initRequest := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
+
+	response := srv.HandleMessage(ctx, []byte(initRequest))
+	assert.NotNil(t, response)
+
+	responseBytes, err := json.Marshal(response)
+	require.NoError(t, err)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(responseBytes, &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "2.0", resp["jsonrpc"])
+	assert.Equal(t, float64(1), resp["id"])
+	assert.NotNil(t, resp["result"])
+
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	taskSpan := spans[0]
+	assert.Equal(t, "mcp.initialize", taskSpan.Name)
+	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
+
+	assert.Contains(t, taskSpan.Tags, "client_name:test-client")
+	assert.Contains(t, taskSpan.Tags, "client_version:test-client_1.0.0")
+
+	assert.Contains(t, taskSpan.Meta, "input")
+	assert.Contains(t, taskSpan.Meta, "output")
+
+	inputMeta := taskSpan.Meta["input"]
+	assert.NotNil(t, inputMeta)
+	inputJSON, err := json.Marshal(inputMeta)
+	require.NoError(t, err)
+	inputStr := string(inputJSON)
+	assert.Contains(t, inputStr, "2024-11-05")
+	assert.Contains(t, inputStr, "test-client")
+
+	outputMeta := taskSpan.Meta["output"]
+	assert.NotNil(t, outputMeta)
+	outputJSON, err := json.Marshal(outputMeta)
+	require.NoError(t, err)
+	outputStr := string(outputJSON)
+	assert.Contains(t, outputStr, "serverInfo")
+}
+
 func TestIntegrationToolCallSuccess(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
