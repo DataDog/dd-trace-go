@@ -17,11 +17,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/negasus/haproxy-spoe-go/agent"
 
 	"github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 )
 
 type haProxySpoaConfig struct {
@@ -46,11 +48,16 @@ func getDefaultEnvVars() map[string]string {
 // initializeEnvironment sets up required environment variables with their defaults
 func initializeEnvironment() {
 	for k, v := range getDefaultEnvVars() {
-		if os.Getenv(k) == "" {
+		setValue := env.Get(k)
+		if setValue == "" {
 			if err := os.Setenv(k, v); err != nil {
 				log.Error("haproxy_spoa: failed to set %s environment variable: %s\n", k, err.Error())
+				continue
 			}
+			streamprocessingoffload.Instrumentation().TelemetryRegisterAppConfig(k, v, instrumentation.TelemetryOriginDefault)
+			continue
 		}
+		streamprocessingoffload.Instrumentation().TelemetryRegisterAppConfig(k, setValue, instrumentation.TelemetryOriginEnvVar)
 	}
 }
 
@@ -59,7 +66,7 @@ func loadConfig() haProxySpoaConfig {
 	extensionHostStr := ipEnv("DD_HAPROXY_SPOA_HOST", net.IP{0, 0, 0, 0}).String()
 	extensionPortInt := intEnv("DD_HAPROXY_SPOA_PORT", 3000)
 	healthcheckPortInt := intEnv("DD_HAPROXY_SPOA_HEALTHCHECK_PORT", 3080)
-	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", 0)
+	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", proxy.DefaultBodyParsingSizeLimit)
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)

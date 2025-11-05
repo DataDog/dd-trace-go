@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -80,7 +81,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 		{
 			name: "defaults",
 			env:  nil,
-			want: want{"3000", "3080", "0.0.0.0", 0},
+			want: want{"3000", "3080", "0.0.0.0", proxy.DefaultBodyParsingSizeLimit},
 		},
 		{
 			name: "valid overrides",
@@ -102,7 +103,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 				"DD_APPSEC_BODY_PARSING_SIZE_LIMIT":       "notanint",
 				"DD_HAPROXY_SPOA_HOST":                    "notanip",
 			},
-			want: want{"3000", "3080", "0.0.0.0", 0},
+			want: want{"3000", "3080", "0.0.0.0", proxy.DefaultBodyParsingSizeLimit},
 		},
 	}
 

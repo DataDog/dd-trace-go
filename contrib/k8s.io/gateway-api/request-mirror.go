@@ -24,8 +24,7 @@ import (
 )
 
 const (
-	maxBodyBytes = 5 * 1 << 20 // 5 MB
-	framework    = "k8s.io/gateway-api"
+	framework = "k8s.io/gateway-api"
 )
 
 var (
@@ -59,10 +58,11 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 		config.Hijack = ptr.To[bool](true)
 	}
 
+	bodyProcessingMaxBytes := proxy.DefaultBodyParsingSizeLimit
 	processor := proxy.NewProcessor(proxy.ProcessorConfig{
 		Context:              context.Background(),
 		BlockingUnavailable:  true,
-		BodyParsingSizeLimit: maxBodyBytes,
+		BodyParsingSizeLimit: &bodyProcessingMaxBytes,
 		Framework:            framework,
 		ContinueMessageFunc:  func(_ context.Context, _ proxy.ContinueActionOptions) error { return nil },
 		BlockMessageFunc:     func(_ context.Context, _ proxy.BlockActionOptions) error { return nil },
@@ -86,7 +86,7 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 
 		defer reqState.Close()
 
-		body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
+		body, err := io.ReadAll(io.LimitReader(r.Body, int64(bodyProcessingMaxBytes+1)))
 		if err := processor.OnRequestBody(requestBody{body: body}, &reqState); err != nil {
 			logger.Error("Failed to process request body: %v", err)
 			return

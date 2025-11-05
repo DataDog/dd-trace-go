@@ -304,6 +304,11 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 		opt(cfg)
 	}
 
+	// Validate required fields
+	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+		return nil, errRequiresAppKey
+	}
+
 	// Determine project name: option takes precedence over global config
 	projectName := cfg.projectName
 	if projectName == "" {

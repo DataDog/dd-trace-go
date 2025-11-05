@@ -259,10 +259,11 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if p.cfg.traceConfig.Enabled {
 		types = append(types, executionTrace)
 	}
+	var pipelineBuilder compressionPipelineBuilder
 	for _, pt := range types {
 		isDelta := p.cfg.deltaProfiles && len(profileTypes[pt].DeltaValues) > 0
 		in, out := compressionStrategy(pt, isDelta, p.cfg.compressionConfig)
-		compressor, err := newCompressionPipeline(in, out)
+		compressor, err := pipelineBuilder.Build(in, out)
 		if err != nil {
 			return nil, err
 		}
