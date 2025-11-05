@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.5
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.17.0
