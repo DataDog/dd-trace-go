@@ -44,7 +44,6 @@ type LLMObsSpanEvent struct {
 	Metrics          map[string]float64 `json:"metrics,omitempty"`
 	CollectionErrors []string           `json:"collection_errors,omitempty"`
 	SpanLinks        []SpanLink         `json:"span_links,omitempty"`
-	Scope            string             `json:"-"`
 	DDAttributes     DDAttributes       `json:"_dd"`
 }
 
@@ -73,8 +72,8 @@ func (c *Transport) PushSpanEvents(
 			EventType:     "span",
 			Spans:         []*LLMObsSpanEvent{ev},
 		}
-		if ev.Scope != "" {
-			req.Scope = ev.Scope
+		if ev.DDAttributes.Scope != "" {
+			req.Scope = ev.DDAttributes.Scope
 		}
 		body = append(body, req)
 	}

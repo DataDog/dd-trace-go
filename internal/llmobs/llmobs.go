@@ -602,7 +602,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Metrics:          span.llmCtx.metrics,
 		CollectionErrors: nil,
 		SpanLinks:        span.spanLinks,
-		Scope:            span.scope,
 		DDAttributes:     ddAttrs,
 	}
 	if b, err := json.Marshal(ev); err == nil {
