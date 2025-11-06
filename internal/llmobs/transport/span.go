@@ -22,6 +22,13 @@ type SpanLink struct {
 	Flags       uint32            `json:"flags,omitempty"`
 }
 
+type DDAttributes struct {
+	SpanID     string `json:"span_id"`
+	TraceID    string `json:"trace_id"`
+	APMTraceID string `json:"apm_trace_id"`
+	Scope      string `json:"scope,omitempty"`
+}
+
 type LLMObsSpanEvent struct {
 	SpanID           string             `json:"span_id,omitempty"`
 	TraceID          string             `json:"trace_id,omitempty"`
@@ -38,6 +45,7 @@ type LLMObsSpanEvent struct {
 	CollectionErrors []string           `json:"collection_errors,omitempty"`
 	SpanLinks        []SpanLink         `json:"span_links,omitempty"`
 	Scope            string             `json:"-"`
+	DDAttributes     DDAttributes       `json:"_dd"`
 }
 
 type PushSpanEventsRequest struct {
