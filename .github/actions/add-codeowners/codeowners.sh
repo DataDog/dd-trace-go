@@ -6,21 +6,24 @@ if [ ! -d "$RESULT_PATH" ]; then
     exit 1
 fi
 
-files=(gotestsum-report*.xml)
-echo "Found ${#files[@]} JUnit file(s) to process in '$RESULT_PATH'"
-
 cd "$RESULT_PATH" || exit 1
+
+shopt -s nullglob
+files=(gotestsum-report*.xml)
+shopt -u nullglob
+
+echo "Found ${#files[@]} JUnit file(s) to process in '$RESULT_PATH'"
 
 for file in "${files[@]}"; do
     echo "Processing: $file"
-    temp_file="tempfile.xml"
+    temp_file="${file}_tmp.xml"
 
     # force write a new line at the end of the gotestsum-report.xml, or else
     # the loop will skip the last line.
     # fixes issue with a missing </testsuites>
-    echo -e "\n" >> $file
+    echo -e "\n" >> "$file"
 
-    while read p; do
+    while IFS= read -r p || [ -n "$p" ]; do
         # we might try to report gotestsum-report.xml multiple times, so don't
         # calculate codeowners more times than we need
         if [[ "$p" =~ \<testcase && ! "$p" =~ "file=" ]]; then
