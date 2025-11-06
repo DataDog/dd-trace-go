@@ -8,14 +8,10 @@ fi
 
 cd "$RESULT_PATH" || exit 1
 
-shopt -s nullglob
-files=(gotestsum-report*.xml)
-shopt -u nullglob
-
-echo "Found ${#files[@]} JUnit file(s) to process in '$RESULT_PATH'"
-
-for file in "${files[@]}"; do
-    echo "Processing: $file"
+for file in gotestsum-report*.xml; do
+    # Skip if the glob didn't match any files
+    [ -f "$file" ] || break
+    
     temp_file="${file}_tmp.xml"
 
     # force write a new line at the end of the gotestsum-report.xml, or else
@@ -37,7 +33,7 @@ for file in "${files[@]}"; do
         else 
             echo "$p" >> "$temp_file"
         fi
-    done < $file
+    done < "$file"
 
-    mv "$temp_file" $file
+    mv "$temp_file" "$file"
 done 
