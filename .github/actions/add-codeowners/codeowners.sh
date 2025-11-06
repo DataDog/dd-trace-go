@@ -1,9 +1,18 @@
 #!/bin/bash
 
 RESULT_PATH="${1:-.}"
+if [ ! -d "$RESULT_PATH" ]; then
+    echo "Error: Result path does not exist"
+    exit 1
+fi
+
+files=(gotestsum-report*.xml)
+echo "Found ${#files[@]} JUnit file(s) to process in '$RESULT_PATH'"
+
 cd "$RESULT_PATH" || exit 1
 
-for file in gotestsum-report*.xml; do
+for file in "${files[@]}"; do
+    echo "Processing: $file"
     temp_file="tempfile.xml"
 
     # force write a new line at the end of the gotestsum-report.xml, or else
