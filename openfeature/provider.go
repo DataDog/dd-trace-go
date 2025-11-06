@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -17,6 +18,7 @@ import (
 )
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
+var _ openfeature.ContextAwareStateHandler = (*DatadogProvider)(nil)
 
 // Sentinel errors for error classification
 var (
@@ -35,7 +37,8 @@ type DatadogProvider struct {
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
 
-	configChange sync.Cond
+	configReady chan struct{} // Closed when first config is loaded
+	configOnce  sync.Once     // Ensure channel is closed only once
 }
 
 type ProviderConfig struct {
@@ -61,13 +64,12 @@ func NewDatadogProvider(ProviderConfig) (openfeature.FeatureProvider, error) {
 }
 
 func newDatadogProvider() *DatadogProvider {
-	p := &DatadogProvider{
+	return &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
+		configReady: make(chan struct{}),
 	}
-	p.configChange.L = &p.mu
-	return p
 }
 
 // updateConfiguration updates the provider's flag configuration.
@@ -75,8 +77,16 @@ func newDatadogProvider() *DatadogProvider {
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	isFirstConfig := p.configuration == nil
 	p.configuration = config
-	p.configChange.Broadcast()
+
+	// Close the channel on first configuration to signal readiness
+	if isFirstConfig {
+		p.configOnce.Do(func() {
+			close(p.configReady)
+		})
+	}
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -93,30 +103,73 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 
 // Init initializes the provider. For the Datadog provider,
 // this is waiting for the first configuration to be loaded.
-func (p *DatadogProvider) Init(openfeature.EvaluationContext) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for p.configuration == nil {
-		p.configChange.Wait()
-	}
+func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
+	// Use a background context with a reasonable timeout for backward compatibility
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return p.InitWithContext(ctx, evaluationContext)
+}
 
-	return nil
+// InitWithContext initializes the provider with context support.
+// This method respects context cancellation and timeouts, allowing users
+// to cancel the initialization process if needed.
+func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
+	// Quick check if already configured
+	p.mu.RLock()
+	if p.configuration != nil {
+		p.mu.RUnlock()
+		return nil
+	}
+	readyChan := p.configReady
+	p.mu.RUnlock()
+
+	// Wait for either context cancellation or configuration
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-readyChan:
+		return nil
+	}
 }
 
 // Shutdown shuts down the provider and stops Remote Config updates.
 func (p *DatadogProvider) Shutdown() {
-	// Best effort to stop Remote Config - ignore error as we're shutting down anyway
-	_ = stopRemoteConfig()
+	// Use a background context with a reasonable timeout for backward compatibility
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = p.ShutdownWithContext(ctx)
+}
+
+// ShutdownWithContext shuts down the provider with context support.
+// This method respects context cancellation and timeouts, allowing users
+// to control how long the shutdown process should take.
+func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
+	// Create a channel to signal completion
+	done := make(chan error, 1)
+
+	go func() {
+		// Perform the shutdown operations
+		err := stopRemoteConfig()
+		done <- err
+	}()
+
+	// Wait for completion or context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
 }
 
 // BooleanEvaluation evaluates a boolean feature flag.
 func (p *DatadogProvider) BooleanEvaluation(
-	_ context.Context,
+	ctx context.Context,
 	flagKey string,
 	defaultValue bool,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.BoolResolutionDetail {
-	result := p.evaluate(flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
 
 	// Convert result to boolean
 	boolValue, ok := result.Value.(bool)
@@ -138,12 +191,12 @@ func (p *DatadogProvider) BooleanEvaluation(
 
 // StringEvaluation evaluates a string feature flag.
 func (p *DatadogProvider) StringEvaluation(
-	_ context.Context,
+	ctx context.Context,
 	flagKey string,
 	defaultValue string,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.StringResolutionDetail {
-	result := p.evaluate(flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
 
 	// Convert result to string
 	strValue, ok := result.Value.(string)
@@ -165,12 +218,12 @@ func (p *DatadogProvider) StringEvaluation(
 
 // FloatEvaluation evaluates a numeric (float) feature flag.
 func (p *DatadogProvider) FloatEvaluation(
-	_ context.Context,
+	ctx context.Context,
 	flagKey string,
 	defaultValue float64,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.FloatResolutionDetail {
-	result := p.evaluate(flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
 
 	// Convert result to float64
 	var floatValue float64
@@ -211,12 +264,12 @@ func (p *DatadogProvider) FloatEvaluation(
 
 // IntEvaluation evaluates an integer feature flag.
 func (p *DatadogProvider) IntEvaluation(
-	_ context.Context,
+	ctx context.Context,
 	flagKey string,
 	defaultValue int64,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.IntResolutionDetail {
-	result := p.evaluate(flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
 
 	// Convert result to int64
 	var intValue int64
@@ -264,12 +317,12 @@ func (p *DatadogProvider) IntEvaluation(
 
 // ObjectEvaluation evaluates a structured (JSON) feature flag.
 func (p *DatadogProvider) ObjectEvaluation(
-	_ context.Context,
+	ctx context.Context,
 	flagKey string,
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.InterfaceResolutionDetail {
-	result := p.evaluate(flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
 
 	return openfeature.InterfaceResolutionDetail{
 		Value: result.Value,
@@ -289,6 +342,7 @@ func (p *DatadogProvider) Hooks() []openfeature.Hook {
 
 // evaluate is the core evaluation method that all type-specific methods use.
 func (p *DatadogProvider) evaluate(
+	ctx context.Context,
 	flagKey string,
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
@@ -297,6 +351,18 @@ func (p *DatadogProvider) evaluate(
 	defer func() {
 		log.Debug("openfeature: evaluated flag %q: value=%v, reason=%s, error=%v", flagKey, res.Value, res.Reason, res.Error)
 	}()
+
+	// Check if context was cancelled before starting evaluation
+	select {
+	case <-ctx.Done():
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: openfeature.ErrorReason,
+			Error:  ctx.Err(),
+		}
+	default:
+	}
+
 	config := p.getConfiguration()
 
 	// Check if configuration is loaded
@@ -318,7 +384,7 @@ func (p *DatadogProvider) evaluate(
 		}
 	}
 
-	// Evaluate the flag
+	// Evaluate the flag (pass context for potential future use in evaluateFlag)
 	return evaluateFlag(flag, defaultValue, flatCtx)
 }
 
