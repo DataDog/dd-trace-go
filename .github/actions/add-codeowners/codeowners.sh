@@ -1,5 +1,8 @@
 #!/bin/bash
 
+RESULT_PATH="${1:-.}"
+cd "$RESULT_PATH" || exit 1
+
 for file in gotestsum-report*.xml; do
     temp_file="tempfile.xml"
 
