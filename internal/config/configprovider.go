@@ -49,6 +49,7 @@ func (p *ConfigProvider) getString(key string, def string) string {
 			return v
 		}
 	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
 	return def
 }
 
@@ -69,6 +70,7 @@ func (p *ConfigProvider) getBool(key string, def bool) bool {
 			}
 		}
 	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
 	return def
 }
 
@@ -87,6 +89,7 @@ func (p *ConfigProvider) getInt(key string, def int) int {
 			}
 		}
 	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
 	return def
 }
 
@@ -105,6 +108,7 @@ func (p *ConfigProvider) getMap(key string, def map[string]string) map[string]st
 			}
 		}
 	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
 	return def
 }
 
@@ -123,6 +127,7 @@ func (p *ConfigProvider) getDuration(key string, def time.Duration) time.Duratio
 			}
 		}
 	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
 	return def
 }
 
@@ -141,6 +146,7 @@ func (p *ConfigProvider) getFloat(key string, def float64) float64 {
 			}
 		}
 	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
 	return def
 }
 
@@ -159,6 +165,7 @@ func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
 			}
 		}
 	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
 	return def
 }
 
