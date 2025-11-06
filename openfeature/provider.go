@@ -37,8 +37,7 @@ type DatadogProvider struct {
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
 
-	configReady chan struct{} // Closed when first config is loaded
-	configOnce  sync.Once     // Ensure channel is closed only once
+	configChange sync.Cond
 }
 
 type ProviderConfig struct {
@@ -64,12 +63,13 @@ func NewDatadogProvider(ProviderConfig) (openfeature.FeatureProvider, error) {
 }
 
 func newDatadogProvider() *DatadogProvider {
-	return &DatadogProvider{
+	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
-		configReady: make(chan struct{}),
 	}
+	p.configChange.L = &p.mu
+	return p
 }
 
 // updateConfiguration updates the provider's flag configuration.
@@ -77,16 +77,8 @@ func newDatadogProvider() *DatadogProvider {
 func (p *DatadogProvider) updateConfiguration(config *universalFlagsConfiguration) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	isFirstConfig := p.configuration == nil
 	p.configuration = config
-
-	// Close the channel on first configuration to signal readiness
-	if isFirstConfig {
-		p.configOnce.Do(func() {
-			close(p.configReady)
-		})
-	}
+	p.configChange.Broadcast()
 }
 
 // getConfiguration returns the current configuration (for testing purposes).
@@ -105,7 +97,7 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 // this is waiting for the first configuration to be loaded.
 func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
 	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return p.InitWithContext(ctx, evaluationContext)
 }
@@ -114,28 +106,48 @@ func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) 
 // This method respects context cancellation and timeouts, allowing users
 // to cancel the initialization process if needed.
 func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.EvaluationContext) error {
-	// Quick check if already configured
-	p.mu.RLock()
-	if p.configuration != nil {
-		p.mu.RUnlock()
-		return nil
-	}
-	readyChan := p.configReady
-	p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	// Wait for either context cancellation or configuration
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-readyChan:
-		return nil
+	for p.configuration == nil {
+		// Check if context was cancelled
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Use a condition variable with context support
+		// We need to handle the case where context gets cancelled while waiting
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			p.configChange.Wait()
+		}()
+
+		// Temporarily unlock to allow the configuration update and context handling
+		p.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			// Relock before returning
+			p.mu.Lock()
+			return ctx.Err()
+		case <-done:
+			// Configuration might have been updated, relock and loop to check
+			p.mu.Lock()
+		}
 	}
+
+	return nil
 }
 
 // Shutdown shuts down the provider and stops Remote Config updates.
 func (p *DatadogProvider) Shutdown() {
 	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = p.ShutdownWithContext(ctx)
 }
