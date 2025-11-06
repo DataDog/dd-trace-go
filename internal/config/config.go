@@ -8,6 +8,7 @@ package config
 import (
 	"net/url"
 	"sync"
+	"testing"
 	"time"
 )
 
@@ -117,9 +118,13 @@ func loadConfig() *Config {
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
 func GlobalConfig() *Config {
-	configOnce.Do(func() {
+	if testing.Testing() {
 		globalConfig = loadConfig()
-	})
+	} else {
+		configOnce.Do(func() {
+			globalConfig = loadConfig()
+		})
+	}
 	return globalConfig
 }
 
