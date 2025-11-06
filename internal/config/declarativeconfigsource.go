@@ -44,6 +44,10 @@ func (d *declarativeConfigSource) GetID() string {
 	return d.config.getID()
 }
 
+func (d *declarativeConfigSource) Origin() telemetry.Origin {
+	return d.origin
+}
+
 // newDeclarativeConfigSource initializes a new declarativeConfigSource from the given file.
 func newDeclarativeConfigSource(filePath string, origin telemetry.Origin) *declarativeConfigSource {
 	return &declarativeConfigSource{

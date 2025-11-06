@@ -19,61 +19,61 @@ var (
 
 // Config represents global configuration properties.
 type Config struct {
-	// AgentURL is the URL of the Datadog agent.
-	AgentURL *url.URL `json:"DD_AGENT_URL"`
+	// agentURL is the URL of the Datadog agent.
+	agentURL *url.URL
 
-	// Debug enables debug logging.
-	Debug bool `json:"DD_TRACE_DEBUG"` // has trace in the name, but impacts all products?
+	// debug enables debug logging.
+	debug bool
 
-	LogStartup bool `json:"DD_TRACE_STARTUP_LOGS"`
+	logStartup bool
 
-	ServiceName string `json:"DD_SERVICE"`
+	serviceName string
 
-	Version string `json:"DD_VERSION"`
+	version string
 
-	Env string `json:"DD_ENV"`
+	env string
 
-	ServiceMappings map[string]string `json:"DD_SERVICE_MAPPING"`
+	serviceMappings map[string]string
 
-	Hostname string `json:"DD_TRACE_SOURCE_HOSTNAME"`
+	hostname string
 
-	RuntimeMetrics bool `json:"DD_RUNTIME_METRICS_ENABLED"`
+	runtimeMetrics bool
 
-	RuntimeMetricsV2 bool `json:"DD_RUNTIME_METRICS_V2_ENABLED"`
+	runtimeMetricsV2 bool
 
-	ProfilerHotspots bool `json:"DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED"`
+	profilerHotspots bool
 
-	ProfilerEndpoints bool `json:"DD_PROFILING_ENDPOINT_COLLECTION_ENABLED"`
+	profilerEndpoints bool
 
-	SpanAttributeSchemaVersion int `json:"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA"`
+	spanAttributeSchemaVersion int
 
-	PeerServiceDefaultsEnabled bool `json:"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED"`
+	peerServiceDefaultsEnabled bool
 
-	PeerServiceMappings map[string]string `json:"DD_TRACE_PEER_SERVICE_MAPPING"`
+	peerServiceMappings map[string]string
 
-	DebugAbandonedSpans bool `json:"DD_TRACE_DEBUG_ABANDONED_SPANS"`
+	debugAbandonedSpans bool
 
-	SpanTimeout time.Duration `json:"DD_TRACE_SPAN_TIMEOUT"`
+	spanTimeout time.Duration
 
-	PartialFlushMinSpans int `json:"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS"`
+	partialFlushMinSpans int
 
-	PartialFlushEnabled bool `json:"DD_TRACE_PARTIAL_FLUSH_ENABLED"`
+	partialFlushEnabled bool
 
-	StatsComputationEnabled bool `json:"DD_TRACE_STATS_COMPUTATION_ENABLED"`
+	statsComputationEnabled bool
 
-	DataStreamsMonitoringEnabled bool `json:"DD_DATA_STREAMS_ENABLED"`
+	dataStreamsMonitoringEnabled bool
 
-	DynamicInstrumentationEnabled bool `json:"DD_DYNAMIC_INSTRUMENTATION_ENABLED"`
+	dynamicInstrumentationEnabled bool
 
-	GlobalSampleRate float64 `json:"DD_TRACE_SAMPLE_RATE"`
+	globalSampleRate float64
 
-	CIVisibilityEnabled bool `json:"DD_CIVISIBILITY_ENABLED"`
+	ciVisibilityEnabled bool
 
-	CIVisibilityAgentless bool `json:"DD_CIVISIBILITY_AGENTLESS_ENABLED"`
+	ciVisibilityAgentless bool
 
-	LogDirectory string `json:"DD_TRACE_LOG_DIRECTORY"`
+	logDirectory string
 
-	TraceRateLimitPerSecond float64 `json:"DD_TRACE_RATE_LIMIT"`
+	traceRateLimitPerSecond float64
 }
 
 // loadConfig initializes and returns a new Config by reading from all configured sources.
@@ -82,33 +82,33 @@ func loadConfig() *Config {
 	cfg := new(Config)
 
 	// TODO: Use defaults from config json instead of hardcoding them here
-	cfg.AgentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
-	cfg.Debug = provider.getBool("DD_TRACE_DEBUG", false)
-	cfg.LogStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", false)
-	cfg.ServiceName = provider.getString("DD_SERVICE", "")
-	cfg.Version = provider.getString("DD_VERSION", "")
-	cfg.Env = provider.getString("DD_ENV", "")
-	cfg.ServiceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
-	cfg.Hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
-	cfg.RuntimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.RuntimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", false)
-	cfg.ProfilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
-	cfg.ProfilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
-	cfg.SpanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
-	cfg.PeerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	cfg.PeerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
-	cfg.DebugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	cfg.SpanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
-	cfg.PartialFlushMinSpans = provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
-	cfg.PartialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.StatsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
-	cfg.DataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
-	cfg.DynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	cfg.GlobalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
-	cfg.CIVisibilityEnabled = provider.getBool("DD_CIVISIBILITY_ENABLED", false)
-	cfg.CIVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
-	cfg.LogDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
-	cfg.TraceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
+	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
+	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", false)
+	cfg.serviceName = provider.getString("DD_SERVICE", "")
+	cfg.version = provider.getString("DD_VERSION", "")
+	cfg.env = provider.getString("DD_ENV", "")
+	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
+	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
+	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
+	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", false)
+	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
+	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
+	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
+	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
+	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
+	cfg.partialFlushMinSpans = provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
+	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
+	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
+	cfg.ciVisibilityEnabled = provider.getBool("DD_CIVISIBILITY_ENABLED", false)
+	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
+	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
 
 	return cfg
 }
@@ -129,5 +129,5 @@ func GlobalConfig() *Config {
 }
 
 func (c *Config) IsDebugEnabled() bool {
-	return c.Debug
+	return c.debug
 }

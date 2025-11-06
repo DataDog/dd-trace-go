@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 var provider = DefaultConfigProvider()
@@ -20,6 +22,7 @@ type ConfigProvider struct {
 
 type ConfigSource interface {
 	Get(key string) string
+	Origin() telemetry.Origin
 }
 
 func DefaultConfigProvider() *ConfigProvider {
@@ -37,6 +40,12 @@ func (p *ConfigProvider) getString(key string, def string) string {
 	// TODO: Eventually, iterate over all sources and report telemetry
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
+			var id string
+			// If source is a declarativeConfigSource, capture the config ID
+			if s, ok := source.(*declarativeConfigSource); ok {
+				id = s.GetID() // TODO: Store or use this config ID for telemetry
+			}
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
 			return v
 		}
 	}
@@ -46,9 +55,16 @@ func (p *ConfigProvider) getString(key string, def string) string {
 func (p *ConfigProvider) getBool(key string, def bool) bool {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
+			var id string
+			// If source is a declarativeConfigSource, capture the config ID
+			if s, ok := source.(*declarativeConfigSource); ok {
+				id = s.GetID()
+			}
 			if v == "true" {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
 				return true
 			} else if v == "false" {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
 				return false
 			}
 		}
@@ -59,9 +75,15 @@ func (p *ConfigProvider) getBool(key string, def bool) bool {
 func (p *ConfigProvider) getInt(key string, def int) int {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
-			v, err := strconv.Atoi(v)
+			var id string
+			// If source is a declarativeConfigSource, capture the config ID
+			if s, ok := source.(*declarativeConfigSource); ok {
+				id = s.GetID()
+			}
+			intVal, err := strconv.Atoi(v)
 			if err == nil {
-				return v
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				return intVal
 			}
 		}
 	}
@@ -71,8 +93,14 @@ func (p *ConfigProvider) getInt(key string, def int) int {
 func (p *ConfigProvider) getMap(key string, def map[string]string) map[string]string {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
+			var id string
+			// If source is a declarativeConfigSource, capture the config ID
+			if s, ok := source.(*declarativeConfigSource); ok {
+				id = s.GetID()
+			}
 			m := parseMapString(v)
 			if len(m) > 0 {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
 				return m
 			}
 		}
@@ -83,8 +111,14 @@ func (p *ConfigProvider) getMap(key string, def map[string]string) map[string]st
 func (p *ConfigProvider) getDuration(key string, def time.Duration) time.Duration {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
+			var id string
+			// If source is a declarativeConfigSource, capture the config ID
+			if s, ok := source.(*declarativeConfigSource); ok {
+				id = s.GetID()
+			}
 			d, err := time.ParseDuration(v)
 			if err == nil {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
 				return d
 			}
 		}
@@ -95,9 +129,15 @@ func (p *ConfigProvider) getDuration(key string, def time.Duration) time.Duratio
 func (p *ConfigProvider) getFloat(key string, def float64) float64 {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
-			v, err := strconv.ParseFloat(v, 64)
+			var id string
+			// If source is a declarativeConfigSource, capture the config ID
+			if s, ok := source.(*declarativeConfigSource); ok {
+				id = s.GetID()
+			}
+			floatVal, err := strconv.ParseFloat(v, 64)
 			if err == nil {
-				return v
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				return floatVal
 			}
 		}
 	}
@@ -107,8 +147,14 @@ func (p *ConfigProvider) getFloat(key string, def float64) float64 {
 func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
+			var id string
+			// If source is a declarativeConfigSource, capture the config ID
+			if s, ok := source.(*declarativeConfigSource); ok {
+				id = s.GetID()
+			}
 			u, err := url.Parse(v)
 			if err == nil {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
 				return u
 			}
 		}

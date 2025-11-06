@@ -5,10 +5,17 @@
 
 package config
 
-import "github.com/DataDog/dd-trace-go/v2/internal/env"
+import (
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+)
 
 type envConfigSource struct{}
 
 func (e *envConfigSource) Get(key string) string {
 	return env.Get(normalizeKey(key))
+}
+
+func (e *envConfigSource) Origin() telemetry.Origin {
+	return telemetry.OriginEnvVar
 }

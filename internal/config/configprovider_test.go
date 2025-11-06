@@ -12,7 +12,9 @@ import (
 	"net/url"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestConfigProvider(sources ...ConfigSource) *ConfigProvider {
@@ -23,14 +25,16 @@ func newTestConfigProvider(sources ...ConfigSource) *ConfigProvider {
 
 type testConfigSource struct {
 	entries map[string]string
+	origin  telemetry.Origin
 }
 
-func newTestConfigSource(entries map[string]string) *testConfigSource {
+func newTestConfigSource(entries map[string]string, origin telemetry.Origin) *testConfigSource {
 	if entries == nil {
 		entries = make(map[string]string)
 	}
 	return &testConfigSource{
 		entries: entries,
+		origin:  origin,
 	}
 }
 
@@ -38,10 +42,14 @@ func (s *testConfigSource) Get(key string) string {
 	return s.entries[key]
 }
 
+func (s *testConfigSource) Origin() telemetry.Origin {
+	return s.origin
+}
+
 func TestGetMethods(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		// Test that defaults are used when the queried key does not exist
-		provider := newTestConfigProvider(newTestConfigSource(nil))
+		provider := newTestConfigProvider(newTestConfigSource(nil, telemetry.OriginEnvVar))
 		assert.Equal(t, "value", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", true))
 		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1))
@@ -57,7 +65,7 @@ func TestGetMethods(t *testing.T) {
 			"DD_TRACE_SAMPLE_RATE":             "1.0",
 			"DD_TRACE_AGENT_URL":               "https://localhost:8126",
 		}
-		provider := newTestConfigProvider(newTestConfigSource(entries))
+		provider := newTestConfigProvider(newTestConfigSource(entries, telemetry.OriginEnvVar))
 		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
 		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
@@ -266,5 +274,129 @@ apm_configuration_default:
 		// Defaults are returned for settings not configured anywhere
 		assert.Equal(t, "default", provider.getString("DD_TRACE_AGENT_URL", "default"),
 			"Unconfigured setting should return default")
+	})
+}
+
+func TestConfigProviderTelemetryRegistration(t *testing.T) {
+	t.Run("env source reports telemetry for all getters", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		// Expectations: value is the raw string from the source; ID is empty
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "service", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "100", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.5", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://localhost:8126", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "old:new", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "10s", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		defer telemetry.MockClient(telemetryClient)()
+
+		source := newTestConfigSource(map[string]string{
+			"DD_SERVICE":                       "service",
+			"DD_TRACE_DEBUG":                   "true",
+			"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS": "100",
+			"DD_TRACE_SAMPLE_RATE":             "0.5",
+			"DD_TRACE_AGENT_URL":               "http://localhost:8126",
+			"DD_SERVICE_MAPPING":               "old:new",
+			"DD_TRACE_ABANDONED_SPAN_TIMEOUT":  "10s",
+		}, telemetry.OriginEnvVar)
+		provider := newTestConfigProvider(source)
+
+		_ = provider.getString("DD_SERVICE", "default")
+		_ = provider.getBool("DD_TRACE_DEBUG", false)
+		_ = provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
+		_ = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
+		_ = provider.getURL("DD_TRACE_AGENT_URL", nil)
+		_ = provider.getMap("DD_SERVICE_MAPPING", nil)
+		_ = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
+
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "service", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "100", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.5", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://localhost:8126", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "old:new", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "10s", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+	})
+
+	t.Run("declarative source reports telemetry with ID", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		// Values expected as raw strings, with OriginLocalStableConfig and ID from file
+		yaml := `config_id: 123
+apm_configuration_default:
+  DD_SERVICE: svc
+  DD_TRACE_DEBUG: true
+  DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: "7"
+  DD_TRACE_SAMPLE_RATE: 0.9
+  DD_TRACE_AGENT_URL: http://127.0.0.1:8126
+  DD_SERVICE_MAPPING: a:b
+  DD_TRACE_ABANDONED_SPAN_TIMEOUT: 2s
+`
+		temp := "decl.yml"
+		require.NoError(t, os.WriteFile(temp, []byte(yaml), 0644))
+		defer os.Remove(temp)
+
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "svc", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "7", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.9", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://127.0.0.1:8126", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "a:b", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "2s", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
+		defer telemetry.MockClient(telemetryClient)()
+
+		decl := newDeclarativeConfigSource(temp, telemetry.OriginLocalStableConfig)
+		provider := newTestConfigProvider(decl)
+
+		_ = provider.getString("DD_SERVICE", "default")
+		_ = provider.getBool("DD_TRACE_DEBUG", false)
+		_ = provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
+		_ = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
+		_ = provider.getURL("DD_TRACE_AGENT_URL", nil)
+		_ = provider.getMap("DD_SERVICE_MAPPING", nil)
+		_ = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
+
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "svc", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "7", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.9", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://127.0.0.1:8126", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "a:b", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "2s", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+	})
+
+	t.Run("source priority with config IDs", func(t *testing.T) {
+		// Test that when multiple sources exist, only the winning source's
+		// telemetry (including its config ID) is registered
+
+		yamlManaged := `config_id: managed-123
+apm_configuration_default:
+  DD_SERVICE: managed-service
+`
+		yamlLocal := `config_id: local-456
+apm_configuration_default:
+  DD_SERVICE: local-service
+  DD_ENV: local-env
+`
+		tempManaged := "test_managed.yml"
+		tempLocal := "test_local.yml"
+
+		require.NoError(t, os.WriteFile(tempManaged, []byte(yamlManaged), 0644))
+		require.NoError(t, os.WriteFile(tempLocal, []byte(yamlLocal), 0644))
+		defer os.Remove(tempManaged)
+		defer os.Remove(tempLocal)
+
+		managedSource := newDeclarativeConfigSource(tempManaged, telemetry.OriginManagedStableConfig)
+		localSource := newDeclarativeConfigSource(tempLocal, telemetry.OriginLocalStableConfig)
+
+		// Managed has higher priority than Local
+		provider := newTestConfigProvider(managedSource, localSource)
+
+		// For DD_SERVICE: managed wins, so telemetry gets ID "managed-123"
+		result := provider.getString("DD_SERVICE", "default")
+		assert.Equal(t, "managed-service", result)
+
+		// For DD_ENV: local wins (managed doesn't have it), so telemetry gets ID "local-456"
+		env := provider.getString("DD_ENV", "default")
+		assert.Equal(t, "local-env", env)
 	})
 }

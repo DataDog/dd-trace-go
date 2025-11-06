@@ -48,6 +48,10 @@ func (o *otelEnvConfigSource) Get(key string) string {
 	return val
 }
 
+func (o *otelEnvConfigSource) Origin() telemetry.Origin {
+	return telemetry.OriginEnvVar
+}
+
 type otelDDEnv struct {
 	ot       string
 	remapper func(string) (string, error)
