@@ -30,6 +30,13 @@ var (
 
 const ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
 
+const (
+	// Default timeout for provider initialization
+	defaultInitTimeout = 30 * time.Second
+	// Default timeout for provider shutdown
+	defaultShutdownTimeout = 30 * time.Second
+)
+
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
 // using configuration received from Datadog Remote Config.
 type DatadogProvider struct {
@@ -97,7 +104,7 @@ func (p *DatadogProvider) Metadata() openfeature.Metadata {
 // this is waiting for the first configuration to be loaded.
 func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) error {
 	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultInitTimeout)
 	defer cancel()
 	return p.InitWithContext(ctx, evaluationContext)
 }
@@ -147,7 +154,7 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 // Shutdown shuts down the provider and stops Remote Config updates.
 func (p *DatadogProvider) Shutdown() {
 	// Use a background context with a reasonable timeout for backward compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
 	defer cancel()
 	_ = p.ShutdownWithContext(ctx)
 }
