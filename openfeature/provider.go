@@ -19,6 +19,7 @@ import (
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
 var _ openfeature.ContextAwareStateHandler = (*DatadogProvider)(nil)
+var _ openfeature.StateHandler = (*DatadogProvider)(nil)
 
 // Sentinel errors for error classification
 var (
