@@ -246,9 +246,53 @@ func TestAppsecAPI10(t *testing.T) {
 	}
 }
 
-func TestAppsecHTTP30X(t *testing.T) {
+func TestAppsecAPI10Sampling(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
 	t.Setenv("DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
+
+	client := WrapRoundTripper(&emptyRoundTripper{customResponse: nil})
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	testutils.StartAppSec(t)
+	if !internal.Instrumentation.AppSecEnabled() {
+		t.Skip("appsec not enabled")
+	}
+
+	w := httptest.NewRecorder()
+	r, err := http.NewRequest("GET", "", nil)
+	require.NoError(t, err)
+
+	TraceAndServe(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+
+		// Make sure the first request is not JSON compliant to trigger body analysis but not consume the sample
+		req1 := httptest.NewRequest("GET", "/id/auth/v1/login", strings.NewReader(`<payload_in>qw2jedrkjerbgol23ewpfirj2qw3or</payload_in>`))
+		req1.Header.Set("Content-Type", "test/html")
+		req1 = req1.WithContext(r.Context())
+
+		_, _ = client.RoundTrip(req1)
+
+		req2 := httptest.NewRequest("GET", "/id/auth/v1/login", strings.NewReader(`{"payload_in":"qw2jedrkjerbgol23ewpfirj2qw3or"}`))
+		req2.Header.Set("Content-Type", "application/json")
+		req2 = req2.WithContext(r.Context())
+
+		_, _ = client.RoundTrip(req2)
+	}), w, r, &ServeConfig{
+		Service:  "service",
+		Resource: "resource",
+	})
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3)
+	serviceSpan := spans[2]
+
+	require.Contains(t, serviceSpan.Tags(), "_dd.appsec.trace.req_body")
+	require.Equal(t, serviceSpan.Tags()["_dd.appsec.trace.req_body"], "TAG_API10_REQ_BODY")
+}
+
+func TestAppsecHTTP30X(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -328,7 +372,7 @@ func TestAppsecHTTP30X(t *testing.T) {
 		})
 
 		spans := mt.FinishedSpans()
-		require.Len(t, spans, 3) // service entry serviceSpan & http request serviceSpan
+		require.Len(t, spans, 3)
 		serviceSpan := spans[2]
 
 		require.Contains(t, serviceSpan.Tags(), "appsec.api.redirection.redirect_target")
