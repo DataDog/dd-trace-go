@@ -36,6 +36,7 @@ aspects:
               resourceNamer func(*Router, *http.Request) string
               serviceName   string
               spanOpts      []tracer.StartSpanOption
+              initialized   bool
             }
 
             func ddDefaultResourceNamer(router *Router, req *http.Request) string {
@@ -53,44 +54,6 @@ aspects:
       - add-struct-field:
           name: __dd_config
           type: ddRouterConfig
-
-  - id: NewRouter
-    join-point:
-      all-of:
-        - import-path: github.com/gorilla/mux
-        - function-body:
-            function:
-              - name: NewRouter
-    advice:
-      - prepend-statements:
-          imports:
-            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
-            http: net/http
-            math: math
-            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
-            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
-          lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
-          template: |-
-            {{- $res := .Function.Result 0 -}}
-            defer func() {
-              analyticsRate := __dd_instr.AnalyticsRate(true)
-              {{ $res }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
-              {{ $res }}.__dd_config.serviceName = __dd_instr.ServiceName(instrumentation.ComponentServer, nil)
-              {{ $res }}.__dd_config.resourceNamer = ddDefaultResourceNamer
-              {{ $res }}.__dd_config.ignoreRequest = func(_ *http.Request) bool { return false }
-
-              {{ $res }}.__dd_config.spanOpts = []tracer.StartSpanOption{
-                tracer.Tag(ext.Component, instrumentation.PackageGorillaMux),
-                tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-              }
-              if !math.IsNaN(analyticsRate) {
-                {{ $res }}.__dd_config.spanOpts = append(
-                  {{ $res }}.__dd_config.spanOpts,
-                  tracer.Tag(ext.EventSampleRate, analyticsRate),
-                )
-              }
-            }()
-
   - id: Router.ServeHTTP
     join-point:
       function-body:
@@ -100,9 +63,12 @@ aspects:
     advice:
       - prepend-statements:
           imports:
+            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
             http: net/http
             httptrace: github.com/DataDog/dd-trace-go/contrib/net/http/v2
             instrhttptrace: github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            math: math
             options: github.com/DataDog/dd-trace-go/v2/instrumentation/options
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
@@ -110,6 +76,28 @@ aspects:
             {{- $r := .Function.Receiver -}}
             {{- $w := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
+
+            // Lazy-initialize dd_config on first request to handle subrouter usage
+            if !{{ $r }}.__dd_config.initialized {
+              analyticsRate := __dd_instr.AnalyticsRate(true)
+              {{ $r }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
+              {{ $r }}.__dd_config.serviceName = __dd_instr.ServiceName(instrumentation.ComponentServer, nil)
+              {{ $r }}.__dd_config.resourceNamer = ddDefaultResourceNamer
+              {{ $r }}.__dd_config.ignoreRequest = func(_ *http.Request) bool { return false }
+
+              {{ $r }}.__dd_config.spanOpts = []tracer.StartSpanOption{
+                tracer.Tag(ext.Component, instrumentation.PackageGorillaMux),
+                tracer.Tag(ext.SpanKind, ext.SpanKindServer),
+              }
+              if !math.IsNaN(analyticsRate) {
+                {{ $r }}.__dd_config.spanOpts = append(
+                  {{ $r }}.__dd_config.spanOpts,
+                  tracer.Tag(ext.EventSampleRate, analyticsRate),
+                )
+              }
+              {{ $r }}.__dd_config.initialized = true
+            }
+
             if !{{ $r }}.__dd_config.ignoreRequest({{ $req }}) {
               var (
                 match    RouteMatch

@@ -16,3 +16,7 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestSubrouter(t *testing.T) {
+	harness.Run(t, new(TestCaseSubrouter))
+}
