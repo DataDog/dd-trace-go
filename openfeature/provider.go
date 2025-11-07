@@ -110,6 +110,39 @@ func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) 
 	return p.InitWithContext(ctx, evaluationContext)
 }
 
+// waitForConfigurationUpdate waits for a configuration update or context cancellation.
+// Assumes mutex is locked on entry, temporarily unlocks during wait, relocks on exit.
+func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error {
+	defer p.mu.Lock() // Always relock when function exits
+
+	// Check if context was cancelled before waiting
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	// Create channel to signal condition variable completion
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.configChange.Wait()
+	}()
+
+	// Temporarily unlock to allow configuration update and context handling
+	p.mu.Unlock()
+
+	// Wait for either context cancellation or configuration update
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil // Configuration updated, defer will relock
+	}
+}
+
 // InitWithContext initializes the provider with context support.
 // This method respects context cancellation and timeouts, allowing users
 // to cancel the initialization process if needed.
@@ -118,34 +151,8 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	defer p.mu.Unlock()
 
 	for p.configuration == nil {
-		// Check if context was cancelled
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		// Use a condition variable with context support
-		// We need to handle the case where context gets cancelled while waiting
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			p.mu.Lock()
-			defer p.mu.Unlock()
-			p.configChange.Wait()
-		}()
-
-		// Temporarily unlock to allow the configuration update and context handling
-		p.mu.Unlock()
-
-		select {
-		case <-ctx.Done():
-			// Relock before returning
-			p.mu.Lock()
-			return ctx.Err()
-		case <-done:
-			// Configuration might have been updated, relock and loop to check
-			p.mu.Lock()
+		if err := p.waitForConfigurationUpdate(ctx); err != nil {
+			return err
 		}
 	}
 
