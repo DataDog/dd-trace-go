@@ -117,7 +117,7 @@ func newExposureWriter(config ProviderConfig) *exposureWriter {
 	executable, _ := os.Executable()
 
 	return &exposureWriter{
-		buffer:        make([]exposureEvent, 1<<8), // Initial capacity of 256
+		buffer:        make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
 		flushInterval: cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
 		httpClient:    httpClient,
 		agentURL:      agentURL,
