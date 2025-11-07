@@ -179,13 +179,83 @@ func TestError(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	// setup
-	router := gin.New()
-	router.Use(Middleware("foobar"))
 	responseErr := errors.New("oh no")
 
-	t.Run("server error", func(*testing.T) {
+	t.Run("server error - with error propagation", func(*testing.T) {
 		defer mt.Reset()
+
+		router := gin.New()
+		router.Use(Middleware("foobar", WithUseGinErrors()))
+
+		// configure a handler that returns an error and 5xx status code
+		router.GET("/server_err", func(c *gin.Context) {
+			c.AbortWithError(500, responseErr)
+		})
+		r := httptest.NewRequest("GET", "/server_err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, 500)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
+		assert.Equal("500", span.Tag(ext.HTTPCode))
+		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag("gin.errors"))
+		// server errors set the ext.ErrorMsg tag
+		assert.Equal(fmt.Sprintf("Error #01: %s\n", responseErr), span.Tag(ext.ErrorMsg))
+		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
+		assert.Equal(componentName, span.Integration())
+	})
+
+	t.Run("server error - with error propagation - nil Errors in gin context", func(*testing.T) {
+		defer mt.Reset()
+
+		router := gin.New()
+		router.Use(Middleware("foobar", WithUseGinErrors()))
+
+		// configure a handler that returns an error and 5xx status code
+		router.GET("/server_err", func(c *gin.Context) {
+			c.AbortWithStatus(500)
+		})
+		r := httptest.NewRequest("GET", "/server_err", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		response := w.Result()
+		defer response.Body.Close()
+		assert.Equal(response.StatusCode, 500)
+
+		// verify the errors and status are correct
+		spans := mt.FinishedSpans()
+		assert.Len(spans, 1)
+		if len(spans) < 1 {
+			t.Fatalf("no spans")
+		}
+		span := spans[0]
+		assert.Equal("http.request", span.OperationName())
+		assert.Equal("foobar", span.Tag(ext.ServiceName))
+		assert.Equal("500", span.Tag(ext.HTTPCode))
+		assert.Empty(span.Tag("gin.errors"))
+		// server errors set the ext.ErrorMsg tag
+		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
+		assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+		assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
+		assert.Equal(componentName, span.Integration())
+	})
+
+	t.Run("server error - without error propagation", func(*testing.T) {
+		defer mt.Reset()
+
+		router := gin.New()
+		router.Use(Middleware("foobar"))
 
 		// configure a handler that returns an error and 5xx status code
 		router.GET("/server_err", func(c *gin.Context) {
@@ -218,6 +288,9 @@ func TestError(t *testing.T) {
 
 	t.Run("client error", func(*testing.T) {
 		defer mt.Reset()
+
+		router := gin.New()
+		router.Use(Middleware("foobar"))
 
 		// configure a handler that returns an error and 4xx status code
 		router.GET("/client_err", func(c *gin.Context) {

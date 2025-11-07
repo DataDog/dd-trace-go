@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -85,13 +86,13 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 		tracer.StartSpan("operation").Finish()
 	}
 	flush(3)
-	tg.Wait(assert, 1, 10*time.Second)
 
-	counts := tg.Counts()
-	assert.Equal(int64(3), counts["datadog.tracer.queue.enqueued.traces"])
-	w, ok := tracer.traceWriter.(*agentTraceWriter)
-	assert.True(ok)
-	assert.Equal(uint32(0), w.tracesQueued)
+	assert.Eventually(func() bool {
+		return tg.Counts()["datadog.tracer.queue.enqueued.traces"] == int64(3)
+	}, 5*time.Second, 10*time.Millisecond)
+
+	w := tracer.traceWriter.(*agentTraceWriter)
+	assert.Equal(uint32(0), atomic.LoadUint32(&w.tracesQueued))
 }
 
 func TestSpansStartedTags(t *testing.T) {
