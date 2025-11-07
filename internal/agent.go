@@ -86,6 +86,7 @@ func DefaultDialer(timeout time.Duration) *net.Dialer {
 }
 
 func DefaultHTTPClient(timeout time.Duration, disableKeepAlives bool) *http.Client {
+	//orchestrion:ignore
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,

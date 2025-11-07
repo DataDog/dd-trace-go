@@ -575,7 +575,7 @@ func TestConcurrentEvaluations(t *testing.T) {
 func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 	// Create a provider that doesn't have configuration loaded
 	// This will cause InitWithContext to wait for configuration
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Use a very short timeout context (50ms)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -599,7 +599,7 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 	// Create a provider and set up its configuration immediately
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -634,7 +634,7 @@ func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 
 func TestShutdownWithContextTimeout(t *testing.T) {
 	// Create and configure a provider
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -667,7 +667,7 @@ func TestShutdownWithContextTimeout(t *testing.T) {
 
 func TestShutdownWithContextSuccess(t *testing.T) {
 	// Create and configure a provider
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
