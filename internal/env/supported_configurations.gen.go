@@ -42,6 +42,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED":                {},
 	"DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED": {},
 	"DD_CIVISIBILITY_LOGS_ENABLED":                                    {},
+	"DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED":                        {},
 	"DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT":                         {},
 	"DD_CUSTOM_TRACE_ID":                                              {},
 	"DD_DATA_STREAMS_ENABLED":                                         {},

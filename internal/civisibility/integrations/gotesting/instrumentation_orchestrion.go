@@ -140,106 +140,157 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			suiteName = testifyData.suiteName
 		}
 
-		// Increment the test count in the module.
-		addModulesCounters(moduleName, 1)
+		subtestIdentity := newTestIdentity(moduleName, suiteName, t.Name())
+		isSubtest := len(subtestIdentity.Segments) > 1
 
-		// Increment the test count in the suite.
-		addSuitesCounters(suiteName, 1)
+		var testPrivateFields *commonPrivateFields
+		var parentExecMeta *testExecutionMetadata
 
-		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModule(moduleName)
-		suite := module.GetOrCreateSuite(suiteName)
-		test := suite.CreateTest(t.Name())
-
-		// If we have testify data we use the method function from testify so the test source is properly set
-		if testifyData != nil {
-			test.SetTestFunc(testifyData.methodFunc)
-		} else {
-			// If not, let's set the original function
-			test.SetTestFunc(originalFunc)
-		}
-
-		// Get the metadata regarding the execution (in case is already created from the additional features)
-		execMeta := getTestMetadata(t)
-		if execMeta == nil {
-			// in case there's no additional features then we create the metadata for this execution and defer the disposal
-			execMeta = createTestMetadata(t, nil)
-			defer deleteTestMetadata(t)
-		}
-
-		// Because this is a subtest let's propagate some execution metadata from the parent test
-		testPrivateFields := getTestPrivateFields(t)
-		if testPrivateFields != nil && testPrivateFields.parent != nil {
-			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
-			propagateTestExecutionMetadataFlags(execMeta, parentExecMeta)
-		}
-
-		// Set some required tags from the execution metadata
-		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
-		if cancelExecution {
-			checkModuleAndSuite(module, suite)
-			return
-		}
-
-		defer func() {
-			// Collect and write logs
-			collectAndWriteLogs(t, test)
-
-			if r := recover(); r != nil {
-				// Handle panic and set error information.
-				if execMeta.isARetry && execMeta.isLastRetry {
-					if execMeta.allRetriesFailed {
-						test.SetTag(constants.TestHasFailedAllRetries, "true")
-					}
-					if execMeta.isAttemptToFix {
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
-					}
-				}
-				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
-				test.Close(integrations.ResultStatusFail)
-				checkModuleAndSuite(module, suite)
-				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
-				// so for this case we avoid closing CI Visibility, but we don't stop the panic from happening.
-				// it will be handled by `t.Run`
-				if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
-					integrations.ExitCiVisibility()
-				}
-				panic(r)
+		if isSubtest {
+			testPrivateFields = getTestPrivateFields(t)
+			if testPrivateFields != nil && testPrivateFields.parent != nil {
+				parentExecMeta = getTestMetadataFromPointer(*testPrivateFields.parent)
 			}
-			// Normal finalization: determine the test result based on its state.
-			if t.Failed() {
-				if execMeta.isARetry && execMeta.isLastRetry {
-					if execMeta.allRetriesFailed {
-						test.SetTag(constants.TestHasFailedAllRetries, "true")
-					}
-					if execMeta.isAttemptToFix {
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
-					}
+
+			settings := integrations.GetSettings()
+			shouldInstrument := settings != nil && settings.SubtestFeaturesEnabled
+			hasDirective := false
+
+			log.Debug("subtest gating module=%s suite=%s identity=%s", moduleName, suiteName, subtestIdentity.FullName)
+
+			if parentExecMeta != nil {
+				if parentExecMeta.isAttemptToFix || parentExecMeta.isDisabled || parentExecMeta.isQuarantined {
+					hasDirective = true
+					log.Debug("subtest gating parent directive for %s: attempt_to_fix=%t disabled=%t quarantined=%t",
+						subtestIdentity.FullName, parentExecMeta.isAttemptToFix, parentExecMeta.isDisabled, parentExecMeta.isQuarantined)
 				}
-				test.SetTag(ext.Error, true)
-				suite.SetTag(ext.Error, true)
-				module.SetTag(ext.Error, true)
-				test.Close(integrations.ResultStatusFail)
-			} else if t.Skipped() {
-				if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
+			}
+
+			if !hasDirective && shouldInstrument {
+				if data, matchKind, hasData := getTestManagementData(subtestIdentity); hasData && matchKind == testManagementMatchExact && data != nil {
+					if data.Disabled || data.Quarantined || data.AttemptToFix {
+						hasDirective = true
+						log.Debug("subtest gating exact match for %s: disabled=%t quarantined=%t attempt_to_fix=%t",
+							subtestIdentity.FullName, data.Disabled, data.Quarantined, data.AttemptToFix)
+					}
+				} else {
+					log.Debug("subtest gating no exact match for %s (hasData=%t matchKind=%d)", subtestIdentity.FullName, hasData, matchKind)
 				}
-				test.Close(integrations.ResultStatusSkip)
+			}
+		}
+
+		subtestInfo := &commonInfo{
+			moduleName: moduleName,
+			suiteName:  suiteName,
+			testName:   subtestIdentity.FullName,
+			identity:   subtestIdentity,
+		}
+
+		runSubtest := func(currentT *testing.T) {
+			localIdentity := subtestIdentity
+			if currentT.Name() != subtestIdentity.FullName {
+				// Nested subtests have their own full identity path.
+				localIdentity = newTestIdentity(moduleName, suiteName, currentT.Name())
+			}
+
+			addModulesCounters(moduleName, 1)
+			addSuitesCounters(suiteName, 1)
+
+			log.Debug("instrumentTestingTFunc: creating test span for %s", currentT.Name())
+
+			module := session.GetOrCreateModule(moduleName)
+			suite := module.GetOrCreateSuite(suiteName)
+			test := suite.CreateTest(currentT.Name())
+
+			if testifyData != nil {
+				// Testify-based suites expose the original method so we should record that.
+				test.SetTestFunc(testifyData.methodFunc)
 			} else {
-				if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
-					if execMeta.allAttemptsPassed {
-						test.SetTag(constants.TestAttemptToFixPassed, "true")
-					} else {
+				// Otherwise fall back to the standard testing function pointer.
+				test.SetTestFunc(originalFunc)
+			}
+
+			execMeta := getTestMetadata(currentT)
+			if execMeta == nil {
+				// Create fresh metadata when additional-feature wrappers were not executed above us.
+				execMeta = createTestMetadata(currentT, nil)
+				defer deleteTestMetadata(currentT)
+			}
+			execMeta.identity = localIdentity
+
+			currentPrivates := getTestPrivateFields(currentT)
+			if currentPrivates != nil && currentPrivates.parent != nil {
+				parentFromCurrent := getTestMetadataFromPointer(*currentPrivates.parent)
+				propagateTestExecutionMetadataFlags(execMeta, parentFromCurrent)
+			}
+
+			cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
+			if cancelExecution {
+				checkModuleAndSuite(module, suite)
+				return
+			}
+
+			defer func() {
+				collectAndWriteLogs(currentT, test)
+
+				if r := recover(); r != nil {
+					// Set failure metadata before rethrowing the panic.
+					if execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allRetriesFailed {
+							test.SetTag(constants.TestHasFailedAllRetries, "true")
+						}
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
+					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
+					test.Close(integrations.ResultStatusFail)
+					checkModuleAndSuite(module, suite)
+					if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
+						integrations.ExitCiVisibility()
+					}
+					panic(r)
+				}
+
+				if currentT.Failed() {
+					// Failure path: bubble up retry metadata so spans reflect attempts.
+					if execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allRetriesFailed {
+							test.SetTag(constants.TestHasFailedAllRetries, "true")
+						}
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
+					test.SetTag(ext.Error, true)
+					suite.SetTag(ext.Error, true)
+					module.SetTag(ext.Error, true)
+					test.Close(integrations.ResultStatusFail)
+				} else if currentT.Skipped() {
+					// Skip path still needs to communicate attempt-to-fix failure on the final run.
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						test.SetTag(constants.TestAttemptToFixPassed, "false")
 					}
+					test.Close(integrations.ResultStatusSkip)
+				} else {
+					// Success path: tag attempt-to-fix success only if all retries eventually passed.
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allAttemptsPassed {
+							test.SetTag(constants.TestAttemptToFixPassed, "true")
+						} else {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
+					test.Close(integrations.ResultStatusPass)
 				}
-				test.Close(integrations.ResultStatusPass)
-			}
-			checkModuleAndSuite(module, suite)
-		}()
+				checkModuleAndSuite(module, suite)
+			}()
 
-		// Execute the original test function.
-		f(t)
+			f(currentT)
+		}
+
+		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta)
+		wrappedFunc(t)
 	}
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
