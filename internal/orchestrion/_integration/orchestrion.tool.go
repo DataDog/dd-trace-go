@@ -13,7 +13,7 @@
 
 package tools
 
-// Imports in this file determine which tracer intergations are enabled in
+// Imports in this file determine which tracer integrations are enabled in
 // orchestrion. New integrations can be automatically discovered by running
 // `orchestrion pin` again. You can also manually add new imports here to
 // enable additional integrations. When doing so, you can run `orchestrion pin`

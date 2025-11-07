@@ -25,6 +25,7 @@ aspects:
       all-of:
         - one-of:
             - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/remoteconfig
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal
