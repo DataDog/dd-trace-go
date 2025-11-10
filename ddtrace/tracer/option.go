@@ -592,15 +592,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
 	}
-	// Set the trace protocol to use.
-	if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
-		c.traceProtocol = traceProtocolV1
-		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
-		}
-	} else {
-		c.traceProtocol = traceProtocolV04
-	}
+	c.traceProtocol = traceProtocolV04
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
 		maxLen := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
@@ -636,6 +628,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	if c.agent.v1EndpointAvailable {
+		c.traceProtocol = traceProtocolV1
+		if t, ok := c.transport.(*httpTransport); ok {
+			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
+		}
+	}
+
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		c.loadContribIntegrations([]*debug.Module{})
@@ -827,6 +826,8 @@ type agentFeatures struct {
 
 	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
 	evpProxyV2 bool
+
+	v1EndpointAvailable bool
 }
 
 // HasFlag reports whether the agent has set the feat feature flag.
@@ -885,6 +886,11 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 			features.Stats = true
 		case "/evp_proxy/v2/":
 			features.evpProxyV2 = true
+		case "/v1.0/traces":
+			// Set the trace protocol to use.
+			if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
+				features.v1EndpointAvailable = true
+			}
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
