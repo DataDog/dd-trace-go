@@ -47,11 +47,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
 
-	hooks := &server.Hooks{}
-	AddServerHooks(hooks)
-
-	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithHooks(hooks))
+	srv := server.NewMCPServer("test-server", "1.0.0", WithTracing())
 
 	ctx := context.Background()
 	initRequest := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
@@ -102,8 +98,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
 
-	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+	srv := server.NewMCPServer("test-server", "1.0.0", WithTracing())
 
 	calcTool := mcp.NewTool("calculator",
 		mcp.WithDescription("A simple calculator"))
@@ -180,8 +175,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
 
-	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+	srv := server.NewMCPServer("test-server", "1.0.0", WithTracing())
 
 	errorTool := mcp.NewTool("error_tool",
 		mcp.WithDescription("A tool that always errors"))
