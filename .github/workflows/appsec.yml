@@ -139,6 +139,7 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
+          export DD_APPSEC_WAF_TIMEOUT=1m
           cgocheck="$GOEXPERIMENT,cgocheck2"
           report_error=0
           for cgo in "0" "1"; do
