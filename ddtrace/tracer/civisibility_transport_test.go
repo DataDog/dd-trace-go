@@ -11,12 +11,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 )
 
 func TestCiVisibilityTransport(t *testing.T) {
@@ -80,7 +83,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	parsedURL, _ := url.Parse(srv.URL)
 	c := config{
 		ciVisibilityEnabled: true,
-		httpClient:          defaultHTTPClient(0),
+		httpClient:          defaultHTTPClient(0, false),
 		agentURL:            parsedURL,
 	}
 
@@ -99,7 +102,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 		p := newCiVisibilityPayload()
 		for _, t := range tc.payload {
 			for _, span := range t {
-				err := p.push(getCiVisibilityEvent(span))
+				_, err := p.push(getCiVisibilityEvent(span))
 				assert.NoError(err)
 			}
 		}
@@ -109,4 +112,45 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	}
 	assert.Equal(hits, len(testCases))
 	assert.Equal(remainingEvents, 0)
+}
+
+func TestCIVisibilityTransportSecureLogging(t *testing.T) {
+	t.Run("agentless_mode_with_credentials_in_url", func(t *testing.T) {
+		// Set environment variables with sensitive data
+		os.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
+		os.Setenv(constants.APIKeyEnvironmentVariable, "test-api-key")
+		os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, "https://user:secret@example.com/path")
+		defer func() {
+			os.Unsetenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable)
+			os.Unsetenv(constants.APIKeyEnvironmentVariable)
+			os.Unsetenv(constants.CIVisibilityAgentlessURLEnvironmentVariable)
+		}()
+
+		cfg := &config{}
+		transport := newCiVisibilityTransport(cfg)
+		assert.NotNil(t, transport)
+
+		// Verify URL still contains credentials (stored for actual use)
+		assert.Contains(t, transport.testCycleURLPath, "https://user:secret@example.com/path/api/v2/citestcycle")
+	})
+
+	t.Run("sanitize_url_function", func(t *testing.T) {
+		// Test the sanitizeURL function directly
+		tests := []struct {
+			input    string
+			expected string
+		}{
+			{"https://user:password@example.com/path", "https://user:xxxxx@example.com/path"},
+			{"http://token@example.com", "http://token@example.com"}, // no password, so username preserved
+			{"https://user:pass@example.com:8080/path", "https://user:xxxxx@example.com:8080/path"},
+			{"https://example.com/path", "https://example.com/path"},
+			{"", ""},
+			{"://invalid", "://invalid"}, // unparseable but no credentials, returned as-is
+		}
+
+		for _, test := range tests {
+			result := urlsanitizer.SanitizeURL(test.input)
+			assert.Equal(t, test.expected, result, "Failed for input: %s", test.input)
+		}
+	})
 }

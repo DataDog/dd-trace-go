@@ -45,7 +45,7 @@ func legacyCompressionStrategy(pt ProfileType, isDelta bool) (compression, compr
 }
 
 func compressionStrategy(pt ProfileType, isDelta bool, config string) (compression, compression) {
-	if config == "" {
+	if config == "" || config == "legacy" {
 		return legacyCompressionStrategy(pt, isDelta)
 	}
 	algorithm, levelStr, _ := strings.Cut(config, "-")
@@ -137,9 +137,29 @@ func getZstdLevelOrDefault(level int) zstd.EncoderLevel {
 	return zstd.SpeedDefault
 }
 
-// newCompressionPipeline returns a compressor that converts the data written to
-// it from the expected input compression to the given output compression.
-func newCompressionPipeline(in compression, out compression) (compressor, error) {
+type compressionPipelineBuilder struct {
+	zstdEncoders map[zstd.EncoderLevel]*sharedZstdEncoder
+}
+
+func (b *compressionPipelineBuilder) getZstdEncoder(level zstd.EncoderLevel) (*sharedZstdEncoder, error) {
+	if b.zstdEncoders == nil {
+		b.zstdEncoders = make(map[zstd.EncoderLevel]*sharedZstdEncoder)
+	}
+	encoder, ok := b.zstdEncoders[level]
+	if !ok {
+		var err error
+		encoder, err = newSharedZstdEncoder(level)
+		if err != nil {
+			return nil, err
+		}
+		b.zstdEncoders[level] = encoder
+	}
+	return encoder, nil
+}
+
+// Build returns a compressor that converts the data written to it from the
+// expected input compression to the given output compression.
+func (b *compressionPipelineBuilder) Build(in compression, out compression) (compressor, error) {
 	if in == out {
 		return newPassthroughCompressor(), nil
 	}
@@ -149,11 +169,15 @@ func newCompressionPipeline(in compression, out compression) (compressor, error)
 	}
 
 	if in == noCompression && out.algorithm == compressionAlgorithmZstd {
-		return zstd.NewWriter(nil, zstd.WithEncoderLevel(getZstdLevelOrDefault(out.level)))
+		return b.getZstdEncoder(getZstdLevelOrDefault(out.level))
 	}
 
 	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmZstd {
-		return newZstdRecompressor(getZstdLevelOrDefault(out.level))
+		encoder, err := b.getZstdEncoder(getZstdLevelOrDefault(out.level))
+		if err != nil {
+			return nil, err
+		}
+		return newZstdRecompressor(encoder), nil
 	}
 
 	return nil, fmt.Errorf("unsupported recompression: %s -> %s", in, out)
@@ -164,8 +188,11 @@ func newCompressionPipeline(in compression, out compression) (compressor, error)
 // the data from one format and then re-compresses it into another format.
 type compressor interface {
 	io.Writer
-	io.Closer
+	// Reset resets the compressor to the given writer. It may also acquire a
+	// shared underlying resource, so callers must always call Close().
 	Reset(w io.Writer)
+	// Close closes the compressor and releases any shared underlying resource.
+	Close() error
 }
 
 // newPassthroughCompressor returns a compressor that simply passes all data
@@ -186,12 +213,8 @@ func (r *passthroughCompressor) Close() error {
 	return nil
 }
 
-func newZstdRecompressor(level zstd.EncoderLevel) (*zstdRecompressor, error) {
-	zstdOut, err := zstd.NewWriter(io.Discard, zstd.WithEncoderLevel(level))
-	if err != nil {
-		return nil, err
-	}
-	return &zstdRecompressor{zstdOut: zstdOut, err: make(chan error)}, nil
+func newZstdRecompressor(encoder *sharedZstdEncoder) *zstdRecompressor {
+	return &zstdRecompressor{zstdOut: encoder, err: make(chan error)}
 }
 
 type zstdRecompressor struct {
@@ -199,8 +222,7 @@ type zstdRecompressor struct {
 	// error during recompression
 	err     chan error
 	pw      io.WriteCloser
-	zstdOut *zstd.Encoder
-	level   zstd.EncoderLevel
+	zstdOut *sharedZstdEncoder
 }
 
 func (r *zstdRecompressor) Reset(w io.Writer) {
@@ -226,4 +248,37 @@ func (r *zstdRecompressor) Close() error {
 	r.pw.Close()
 	err := <-r.err
 	return cmp.Or(err, r.zstdOut.Close())
+}
+
+// newSharedZstdEncoder creates a new shared Zstd encoder with the given level.
+// It expects the Reset and Close method to be used in an acquire and release
+// fashion.
+func newSharedZstdEncoder(level zstd.EncoderLevel) (*sharedZstdEncoder, error) {
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(level))
+	if err != nil {
+		return nil, err
+	}
+	return &sharedZstdEncoder{encoder: encoder, sema: make(chan struct{}, 1)}, nil
+}
+
+type sharedZstdEncoder struct {
+	encoder *zstd.Encoder
+	sema    chan struct{}
+}
+
+// Reset acquires the semaphore and resets the encoder to the given writer.
+func (s *sharedZstdEncoder) Reset(w io.Writer) {
+	s.sema <- struct{}{}
+	s.encoder.Reset(w)
+}
+
+func (s *sharedZstdEncoder) Write(p []byte) (int, error) {
+	return s.encoder.Write(p)
+}
+
+// Close releases the semaphore and closes the encoder.
+func (s *sharedZstdEncoder) Close() error {
+	err := s.encoder.Close()
+	<-s.sema
+	return err
 }

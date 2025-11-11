@@ -6,30 +6,25 @@
 package gatewayapi
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
-	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+
 	"k8s.io/utils/ptr"
 )
 
 const (
-	maxBodyBytes = 5 * 1 << 20 // 5 MB
+	framework = "k8s.io/gateway-api"
 )
 
 var (
@@ -47,8 +42,6 @@ type Config struct {
 	Hijack *bool
 }
 
-var requestsCount atomic.Uint32
-
 // HTTPRequestMirrorHandler is the handler for the request mirror server.
 // It is made to receive requests from proxies supporting the request mirror feature from the k8s gateway API specification.
 // It will parse the request body and send it to the WAF for analysis.
@@ -65,55 +58,39 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 		config.Hijack = ptr.To[bool](true)
 	}
 
+	bodyProcessingMaxBytes := proxy.DefaultBodyParsingSizeLimit
+	processor := proxy.NewProcessor(proxy.ProcessorConfig{
+		Context:              context.Background(),
+		BlockingUnavailable:  true,
+		BodyParsingSizeLimit: &bodyProcessingMaxBytes,
+		Framework:            framework,
+		ContinueMessageFunc:  func(_ context.Context, _ proxy.ContinueActionOptions) error { return nil },
+		BlockMessageFunc:     func(_ context.Context, _ proxy.BlockActionOptions) error { return nil },
+	}, instr)
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if config.Hijack != nil && *config.Hijack {
 			defer hijackConnection(w).Close()
 		}
-
-		requestsCount.Add(1)
-
-		firstRequest.Do(func() {
-			logger.Info("contrib/k8s.io/gateway-api: Configuring request mirror server: %#v", config)
-			go func() {
-				ticker := time.NewTicker(time.Minute)
-				for {
-					<-ticker.C
-					logger.Info("contrib/k8s.io/gateway-api: Analyzed %d requests last minute", requestsCount.Swap(0))
-				}
-			}()
-		})
 
 		if strings.HasSuffix(r.Host, "-shadow") && r.Header.Get("X-Envoy-Internal") != "" {
 			// Remove the -shadow suffix from the host when envoy is the one sending the request
 			r.Host = strings.TrimSuffix(r.Host, "-shadow")
 		}
 
-		config := config
-		if config.Resource == "" {
-			config.Resource = r.Method + " " + path.Clean(r.URL.Path)
-		}
-
-		_, r, _, _ = httptrace.BeforeHandle(&config.ServeConfig, w, r)
-		span, ok := tracer.SpanFromContext(r.Context())
-		if !ok {
-			logger.Error("No span found in request context")
+		reqState, err := processor.OnRequestHeaders(r.Context(), requestHeader{r, config.SpanOpts})
+		if err != nil {
+			logger.Error("Failed to process request headers: %v", err)
 			return
 		}
 
-		// We have to manually finish the span to workaround the default behaviour of gather data from the http.ResponseWriter
-		// we would make span inaccurate in this case
-		defer span.Finish(config.FinishOpts...)
+		defer reqState.Close()
 
-		op, ok := dyngo.FindOperation[httpsec.HandlerOperation](r.Context())
-		if !ok {
-			logger.Error("No operation found in request context")
+		body, err := io.ReadAll(io.LimitReader(r.Body, int64(bodyProcessingMaxBytes+1)))
+		if err := processor.OnRequestBody(requestBody{body: body}, &reqState); err != nil {
+			logger.Error("Failed to process request body: %v", err)
 			return
 		}
-
-		// Same here to bypass default behaviour of gather data from the http.ResponseWriter and send it to the WAF
-		defer op.Finish(httpsec.HandlerOperationRes{})
-
-		analyzeRequestBody(r)
 	})
 }
 
@@ -126,71 +103,8 @@ func hijackConnection(w http.ResponseWriter) net.Conn {
 
 	conn, _, err := wr.Hijack()
 	if err != nil {
-		panic(fmt.Errorf("failed to hijack connection: %v", err))
+		panic(fmt.Errorf("failed to hijack connection: %s", err.Error()))
 	}
 
 	return conn
-}
-
-// parseBody parses the request body based on the list of content types provided in the Content-Type header.
-// It returns the parsed body as an interface{} or an error if parsing fails.
-func parseBody(contentType string, reader io.Reader) (any, error) {
-	for _, typ := range strings.Split(contentType, ",") {
-		if typ == "" {
-			continue
-		}
-
-		mimeType, _, err := mime.ParseMediaType(typ)
-		if err != nil {
-			logger.Debug("Failed to parse content type: %v", err)
-			continue
-		}
-
-		var body any
-		switch {
-		// Handle cases like application/vnd.api+json: https://jsonapi.org/
-		case mimeType == "application/json" || strings.HasSuffix(mimeType, "+json"):
-			err = json.NewDecoder(reader).Decode(&body)
-		}
-
-		if body == nil {
-			continue
-		}
-
-		if err != nil {
-			logger.Debug("Failed to decode body using content-type %q: %v", mimeType, err)
-			continue
-		}
-
-		return body, nil
-	}
-
-	return nil, fmt.Errorf("unsupported content type: %s", contentType)
-}
-
-// analyzeRequestBody check if the body can be parsed and if so, parse it and send it to the WAF
-// and return if blocking was performed on the http.ResponseWriter
-func analyzeRequestBody(r *http.Request) bool {
-	if r.Body == nil {
-		logger.Debug("Request body is nil")
-		return false
-	}
-
-	body, err := parseBody(r.Header.Get("Content-Type"), io.LimitReader(r.Body, maxBodyBytes))
-
-	if err == io.EOF {
-		logger.Debug("Request body was too large to be parsed")
-		return false
-	}
-
-	if err != nil {
-		logger.Debug("Failed to parse request body: %v", err)
-		return false
-	}
-
-	if body == nil {
-		return false
-	}
-
-	return appsec.MonitorParsedHTTPBody(r.Context(), body) != nil
 }

@@ -9,10 +9,10 @@ import (
 	"net/http"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/net/http/pattern"
 )
 
 type WrappedHandler struct {
@@ -28,6 +28,11 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.Component, internal.ComponentName))
 	instr.Logger().Debug("contrib/net/http: Wrapping Handler: Service: %s, Resource: %s, %#v", service, resource, cfg)
+	// if the service provided from parameters is empty,
+	// use the one from the config (which should default to DD_SERVICE / "http.router")
+	if service == "" {
+		service = cfg.ServiceName
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if cfg.IgnoreRequest(req) {
 			h.ServeHTTP(w, req)
@@ -40,7 +45,6 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 		so := make([]tracer.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+1)
 		copy(so, cfg.SpanOpts)
 		so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
-		pttrn := getPattern(nil, req)
 		TraceAndServe(h, w, req, &httptrace.ServeConfig{
 			Framework:     "net/http",
 			Service:       service,
@@ -48,8 +52,8 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			FinishOpts:    cfg.FinishOpts,
 			SpanOpts:      so,
 			IsStatusError: cfg.IsStatusError,
-			Route:         pattern.Route(pttrn),
-			RouteParams:   pattern.PathParameters(pttrn, req),
+			Route:         pattern.Route(req.Pattern),
+			RouteParams:   pattern.PathParameters(req.Pattern, req),
 		})
 	})
 }

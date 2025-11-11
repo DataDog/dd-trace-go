@@ -9,6 +9,27 @@ meta:
   description: Package pubsub provides an easy way to publish and receive Google Cloud Pub/Sub messages, hiding the details of the underlying server RPCs
 
 aspects:
+  - id: Initialize pubsubtrace
+    join-point:
+      struct-definition: cloud.google.com/go/pubsub.Subscription
+    advice:
+      - inject-declarations:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+          lang: go1.18
+          template: |-
+            var (
+              __dd_instr *instrumentation.Instrumentation
+              __dd_pstrace *pubsubtrace.Tracer
+            )
+            
+            func init() {
+              component := instrumentation.PackageGCPPubsub
+              __dd_instr = instrumentation.Load(component)
+              __dd_pstrace = pubsubtrace.NewTracer(__dd_instr, component)
+            }
+
   ## Trace Receive ##
   - id: Subscription.Receive
     join-point:
@@ -19,14 +40,14 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
           template: |-
             {{- $subscription := .Function.Receiver -}}
             {{- $handler := .Function.Argument 1 -}}
-            __dd_traceFn := tracing.TraceReceiveFunc({{ $subscription }})
+            __dd_traceFn := __dd_pstrace.TraceReceiveFunc({{ $subscription }})
             __dd_wrapHandler := func(h func(ctx context.Context, msg *Message)) func(ctx context.Context, msg *Message) {
               return func(ctx context.Context, msg *Message) {
-                __dd_traceMsg := &tracing.Message{
+                __dd_traceMsg := &pubsubtrace.Message{
                   ID:              msg.ID,
                   Data:            msg.Data,
                   OrderingKey:     msg.OrderingKey,
@@ -42,17 +63,6 @@ aspects:
             {{ $handler }} = __dd_wrapHandler({{ $handler }})
 
   ## Trace Publish ##
-  - id: PublishResult
-    join-point:
-      struct-definition: cloud.google.com/go/internal/pubsub.PublishResult
-    advice:
-      - inject-declarations:
-          template: |-
-            type DDCloseSpanFunc = func(serverID string, err error)
-      - add-struct-field:
-          name: DDCloseSpan
-          type: DDCloseSpanFunc
-
   - id: Topic.Publish
     join-point:
       function-body:
@@ -62,13 +72,13 @@ aspects:
     advice:
       - prepend-statements:
           imports:
-            tracing: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
           template: |-
             {{- $topic := .Function.Receiver -}}
             {{- $ctx := .Function.Argument 0 -}}
             {{- $msg := .Function.Argument 1 -}}
             {{- $publishResult := .Function.Result 0 -}}
-            __dd_traceMsg := &tracing.Message{
+            __dd_traceMsg := &pubsubtrace.Message{
               ID:              {{ $msg }}.ID,
               Data:            {{ $msg }}.Data,
               OrderingKey:     {{ $msg }}.OrderingKey,
@@ -76,28 +86,10 @@ aspects:
               DeliveryAttempt: {{ $msg }}.DeliveryAttempt,
               PublishTime:     {{ $msg }}.PublishTime,
             }
-            __dd_ctx, __dd_closeSpan := tracing.TracePublish({{ $ctx }}, {{ $topic }}, __dd_traceMsg)
+            __dd_ctx, __dd_closeSpan := __dd_pstrace.TracePublish({{ $ctx }}, {{ $topic }}, __dd_traceMsg)
             {{ $ctx }} = __dd_ctx
             {{ $msg }}.Attributes = __dd_traceMsg.Attributes
 
             defer func() {
               {{ $publishResult }}.DDCloseSpan = __dd_closeSpan
-            }()
-
-  - id: PublishResult.Get
-    join-point:
-      function-body:
-        function:
-          - receiver: '*cloud.google.com/go/internal/pubsub.PublishResult'
-          - name: Get
-    advice:
-      - prepend-statements:
-          template: |-
-            {{- $publishResult := .Function.Receiver -}}
-            {{- $serverID := .Function.Result 0 -}}
-            {{- $err := .Function.Result 1 -}}
-            defer func() {
-              if {{ $publishResult }}.DDCloseSpan != nil {
-                {{ $publishResult }}.DDCloseSpan({{ $serverID }}, {{ $err }})
-              }
             }()

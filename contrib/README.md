@@ -1,8 +1,8 @@
 [![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib)
 
-The purpose of these packages is to provide tracing on top of commonly used packages from the standard library as well as the 
+The purpose of these packages is to provide tracing on top of commonly used packages from the standard library as well as the
 community in a "plug-and-play" manner. This means that by simply importing the appropriate path, functions are exposed having
- the same signature as the original package. These functions return structures that embed the original return value, allowing 
+ the same signature as the original package. These functions return structures that embed the original return value, allowing
 them to be used as they normally would with tracing activated out of the box.
 
 All of these libraries are supported by our [APM product](https://www.datadoghq.com/apm/).
@@ -24,6 +24,8 @@ First, find the library which you'd like to integrate with. The naming conventio
 
 Important: the package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`.
 
+All of these packages must be imported using an import URL following the schema `github.com/DataDog/dd-trace-go/contrib/<package path>/v2`.
+
 Second, there are a few tags that should be found in all integration spans:
 
 * The `span.kind` tag should be set in root spans with either a `client`, `server`, `producer`, or `consumer` value according to the [definitions](../ddtrace/ext/span_kind.go) found in the repository.
@@ -35,6 +37,10 @@ Third, some guidelines to follow on naming functions:
 * Use `WithService` instead of `WithServiceName` when setting the service name.
 
 Each integration comes with a thorough documentation and usage examples. A good overview can be seen on our [godoc](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib) page.
+
+### Tests
+
+Write tests for your new integration and include them in a file ``<name>_test.go``. This will cause your new tests to be automatically run by the Continuous Integration system on new pull requests.
 
 ### Instrumentation telemetry
 
@@ -50,9 +56,10 @@ Then, ensure that:
 
 * [Packages](../instrumentation/packages.go) is updated with the following information:
   * A new constant with a matching package name (eg. `PackageNetHTTP` for `net/http`).
-  * Relevant pacakge information in the `packages` map.
+  * Relevant package information in the `packages` map.
 * The `go.mod` file in your new submodule is in sync with the rest of the contrib folder.
 * `contribIntegrations` in [option.go](../ddtrace/tracer/option.go) contains your new package.
+* A corresponding PR is opened in [Datadog/documentation](https://github.com/DataDog/documentation) to update our list of [compatible integrations](https://github.com/DataDog/documentation/blob/master/content/en/tracing/trace_collection/compatibility/go.md).
 
 ### Version pinning
 

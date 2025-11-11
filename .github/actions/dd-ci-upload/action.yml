@@ -9,9 +9,9 @@ inputs:
     required: false
     default: dd-trace-go
     description: Service name to use with the uploaded test results.
-  files:
+  path:
     required: true
-    description: JUnit files to upload
+    description: Path containing the JUnit files to upload
   tags:
     required: false
     description: Datadog tags to associate with the uploaded test results.
@@ -30,7 +30,7 @@ runs:
 
     - name: Datadog CI CLI cache
       id: dd-ci-cli-cache
-      uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v3.4.3
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       with:
         path: ./datadog-ci
         key: datadog-ci-cli-${{ env.DD_CI_CLI_BUILD }}
@@ -44,7 +44,7 @@ runs:
 
     - name: Add CodeOwners to JUnit files
       shell: bash
-      run: ./.github/actions/add-codeowners/codeowners.sh ${{ inputs.files }}
+      run: ./.github/actions/add-codeowners/codeowners.sh "${{ inputs.path }}"
 
     - name: Upload the JUnit files
       shell: bash
@@ -52,4 +52,4 @@ runs:
         env DD_API_KEY=${{ inputs.dd-api-key }} ./datadog-ci junit upload \
           --service ${{ inputs.service }} \
           --tags "${{ inputs.tags }}" \
-          ${{ inputs.files }}
+          ${{ inputs.path }}

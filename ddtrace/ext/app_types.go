@@ -78,6 +78,9 @@ const (
 	// SpanTypeConsul marks a span as a Consul operation.
 	SpanTypeConsul = "consul"
 
-	// SpanTypeGraphql marks a span as a graphql operation.
+	// SpanTypeGraphQL marks a span as a graphql operation.
 	SpanTypeGraphQL = "graphql"
+
+	// SpanTypeLLM marks a span as an LLM operation.
+	SpanTypeLLM = "llm"
 )

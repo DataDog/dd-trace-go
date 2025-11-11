@@ -13,10 +13,38 @@
 # appsec
 /appsec                         @DataDog/asm-go
 /internal/appsec                @DataDog/asm-go
+/instrumentation/appsec         @DataDog/asm-go
 /contrib/**/*appsec*.go         @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
 /contrib/envoyproxy             @DataDog/asm-go
+/contrib/haproxy                @DataDog/asm-go
 /contrib/k8s.io/gateway-api     @DataDog/asm-go
+
+# capabilities - config, dynamic config, remote config
+/internal/env                        @DataDog/apm-sdk-capabilities-go
+/internal/stableconfig               @DataDog/apm-sdk-capabilities-go
+/internal/globalconfig               @DataDog/apm-sdk-capabilities-go
+/internal/remoteconfig               @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/dynamic_config.go    @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/remote_config.go     @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/otel_dd_mappings.go  @DataDog/apm-sdk-capabilities-go
+# capabilities - telemetry
+/internal/telemetry                  @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/telemetry.go         @DataDog/apm-sdk-capabilities-go
+# capabilities - sampling
+/ddtrace/tracer/tracer.go            @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/sampler.go           @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/rules_sampler.go     @DataDog/apm-sdk-capabilities-go
+/internal/samplernames               @DataDog/apm-sdk-capabilities-go
+# capabilities - context, propagation, injection/extraction
+/ddtrace/baggage                     @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/textmap.go           @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/spancontext.go       @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/context.go           @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/propagator.go        @DataDog/apm-sdk-capabilities-go
+/ddtrace/tracer/propagating_tags.go  @DataDog/apm-sdk-capabilities-go
+# capabilities- OTel integration
+/ddtrace/opentelemetry               @DataDog/apm-sdk-capabilities-go
 
 # datastreams
 /datastreams                    @Datadog/data-streams-monitoring
@@ -26,6 +54,10 @@
 /civisibility                   @DataDog/ci-app-libraries
 /internal/civisibility          @DataDog/ci-app-libraries
 
+# llm observability
+/llmobs                         @DataDog/ml-observability
+/internal/llmobs                @DataDog/ml-observability
+
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
@@ -33,6 +65,9 @@
 # Orchestrion
 /internal/orchestrion           @DataDog/apm-orchestrion
 /**/orchestrion.yml             @DataDog/apm-orchestrion
+
+# Serverless
+/contrib/aws/datadog-lambda-go  @DataDog/apm-serverless @DataDog/serverless-aws
 
 # no owner: changes to these files will not automatically ping any particular
 # team and can be reviewed by anybody with the appropriate permissions. This is

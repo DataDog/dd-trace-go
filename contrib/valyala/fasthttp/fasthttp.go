@@ -55,7 +55,7 @@ func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(fctx))
 		status := fctx.Response.StatusCode()
 		if cfg.isStatusError(status) {
-			span.SetTag(ext.Error, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
+			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
 		}
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 	}

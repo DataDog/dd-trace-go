@@ -92,7 +92,7 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 		response := responseHandler(ctx)
 		if span != nil {
 			var spanErr error
-			if len(response.Errors) > 0 {
+			if response != nil && len(response.Errors) > 0 {
 				spanErr = response.Errors
 				instrgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(response.Errors), t.cfg.errExtensions)
 			}
@@ -127,6 +127,13 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	fieldCtx := graphql.GetFieldContext(ctx)
 	isTrivial := !(fieldCtx.IsMethod || fieldCtx.IsResolver)
 	if t.cfg.withoutTraceTrivialResolvedFields && isTrivial {
+		res, err = next(ctx)
+		return
+	}
+
+	// GraphQL tracing sometimes has too many spans.
+	// So we can skip the span creation if the function is provided and returns false.
+	if t.cfg.shouldStartSpanFunc != nil && !t.cfg.shouldStartSpanFunc(ctx, fieldCtx) {
 		res, err = next(ctx)
 		return
 	}

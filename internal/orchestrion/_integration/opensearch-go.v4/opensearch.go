@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"

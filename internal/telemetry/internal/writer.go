@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -213,9 +214,12 @@ func (w *writer) newRequest(endpoint *http.Request, requestType transport.Reques
 		defer func() {
 			// This should normally never happen but since we are encoding arbitrary data in client configuration values payload we need to be careful.
 			if panicValue := recover(); panicValue != nil {
-				log.Error("telemetry/writer: panic while encoding payload: %v", panicValue)
+				log.Error("telemetry/writer: panic while encoding payload!")
 				if err == nil {
-					panicErr, _ := panicValue.(error)   // check if we can use the panic value as an error
+					panicErr, ok := panicValue.(error) // check if we can use the panic value as an error
+					if ok {
+						log.Error("telemetry/writer: panic while encoding payload: %v", panicErr.Error())
+					}
 					pipeWriter.CloseWithError(panicErr) // CloseWithError with nil as parameter is like Close()
 				}
 			}
@@ -236,12 +240,12 @@ func (w *writer) newRequest(endpoint *http.Request, requestType transport.Reques
 // SumReaderCloser is a ReadCloser that wraps another ReadCloser and counts the number of bytes read.
 type SumReaderCloser struct {
 	io.ReadCloser
-	n int
+	n atomic.Uint64
 }
 
 func (s *SumReaderCloser) Read(p []byte) (n int, err error) {
 	n, err = s.ReadCloser.Read(p)
-	s.n += n
+	s.n.Add(uint64(n))
 	return
 }
 
@@ -252,7 +256,7 @@ type WriterStatusCodeError struct {
 }
 
 func (w *WriterStatusCodeError) Error() string {
-	return fmt.Sprintf("unexpected status code: %q (received body: %q)", w.Status, w.Body)
+	return fmt.Sprintf("unexpected status code: %q (received body: %d bytes)", w.Status, len(w.Body))
 }
 
 func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, error) {
@@ -290,7 +294,7 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 		}
 
 		results = append(results, EndpointRequestResult{
-			PayloadByteSize: sumReaderCloser.n,
+			PayloadByteSize: int(sumReaderCloser.n.Load()),
 			CallDuration:    time.Since(now),
 			StatusCode:      response.StatusCode,
 		})

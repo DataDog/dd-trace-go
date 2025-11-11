@@ -22,15 +22,15 @@ aspects:
       - inject-declarations:
           imports:
             profiler: github.com/DataDog/dd-trace-go/v2/profiler
+            env: github.com/DataDog/dd-trace-go/v2/instrumentation/env
             log: log
-            os: os
           # Note: it is valid to have multiple func init() in a single compile unit (e.g, `.go` file), in which case
           # they get executed in declaration order. This means it's okay for us to add a new init function if there is
           # already one in the file, but as it currently is appended AFTER all other declarations in the file, it means
           # that it will be executed last (tracing contents of previous init functions will not be possible).
           template: |-
             func init() {
-              switch os.Getenv("DD_PROFILING_ENABLED") {
+              switch env.Get("DD_PROFILING_ENABLED") {
               case "1", "true", "auto":
                 // The "auto" value can be set if profiling is enabled via the
                 // Datadog Admission Controller. We always turn on the profiler in
@@ -52,7 +52,7 @@ aspects:
                   // The tracer and profiler already use the stdlib logger, so
                   // we're not adding anything new. But users might be using a
                   // different logger.
-                  log.Printf("failed to start profiling: %s", err)
+                  log.Printf("failed to start profiling: %s", err.Error())
                 }
               }
             }

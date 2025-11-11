@@ -152,7 +152,7 @@ func (op *ServiceEntrySpanOperation) Finish() {
 	for k, v := range op.jsonTags {
 		strValue, err := json.Marshal(v)
 		if err != nil {
-			log.Debug("appsec: failed to marshal tag %s: %v", k, err)
+			log.Debug("appsec: failed to marshal tag %q: %v", k, err.Error())
 			continue
 		}
 		span.SetTag(k, string(strValue))

@@ -9,8 +9,12 @@ package namingschema
 
 import (
 	"strings"
-	"sync"
 	"sync/atomic"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // Version represents the available naming schema versions.
@@ -23,19 +27,57 @@ const (
 	SchemaV1
 )
 
-const (
-	defaultSchemaVersion = SchemaV0
-)
+type Config struct {
+	NamingSchemaVersion           Version
+	RemoveIntegrationServiceNames bool
+	DDService                     string
+}
 
 var (
-	sv int32
-
-	useGlobalServiceName   bool
-	useGlobalServiceNameMu sync.RWMutex
+	activeNamingSchema            atomic.Int32
+	removeIntegrationServiceNames atomic.Bool
 )
 
-// ParseVersion attempts to parse the version string.
-func ParseVersion(v string) (Version, bool) {
+func LoadFromEnv() {
+	schemaVersionStr := env.Get("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA")
+	if v, ok := parseVersionStr(schemaVersionStr); ok {
+		setVersion(v)
+	} else {
+		setVersion(SchemaV0)
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, setting to default of v%d", schemaVersionStr, v)
+	}
+	// Allow DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=v0 users to disable default integration (contrib AKA v0) service names.
+	// These default service names are always disabled for v1 onwards.
+	SetRemoveIntegrationServiceNames(internal.BoolEnv("DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED", false))
+}
+
+// ReloadConfig is used to reload the configuration in tests.
+func ReloadConfig() {
+	LoadFromEnv()
+	globalconfig.SetServiceName(env.Get("DD_SERVICE"))
+}
+
+// GetConfig returns the naming schema config.
+func GetConfig() Config {
+	return Config{
+		NamingSchemaVersion:           GetVersion(),
+		RemoveIntegrationServiceNames: getRemoveIntegrationServiceNames(),
+		DDService:                     globalconfig.ServiceName(),
+	}
+}
+
+// GetVersion returns the global naming schema version used for this application.
+func GetVersion() Version {
+	return Version(activeNamingSchema.Load())
+}
+
+// setVersion sets the global naming schema version used for this application.
+func setVersion(v Version) {
+	activeNamingSchema.Store(int32(v))
+}
+
+// parseVersionStr attempts to parse the version string.
+func parseVersionStr(v string) (Version, bool) {
 	switch strings.ToLower(v) {
 	case "", "v0":
 		return SchemaV0, true
@@ -46,32 +88,11 @@ func ParseVersion(v string) (Version, bool) {
 	}
 }
 
-// GetVersion returns the global naming schema version used for this application.
-func GetVersion() Version {
-	return Version(atomic.LoadInt32(&sv))
+func getRemoveIntegrationServiceNames() bool {
+	return removeIntegrationServiceNames.Load()
 }
 
-// SetVersion sets the global naming schema version used for this application.
-func SetVersion(v Version) {
-	atomic.StoreInt32(&sv, int32(v))
-}
-
-// SetDefaultVersion sets the default global naming schema version.
-func SetDefaultVersion() Version {
-	SetVersion(defaultSchemaVersion)
-	return defaultSchemaVersion
-}
-
-// UseGlobalServiceName returns the value of the useGlobalServiceName setting for this application.
-func UseGlobalServiceName() bool {
-	useGlobalServiceNameMu.RLock()
-	defer useGlobalServiceNameMu.RUnlock()
-	return useGlobalServiceName
-}
-
-// SetUseGlobalServiceName sets the value of the useGlobalServiceName setting used for this application.
-func SetUseGlobalServiceName(v bool) {
-	useGlobalServiceNameMu.Lock()
-	defer useGlobalServiceNameMu.Unlock()
-	useGlobalServiceName = v
+// SetRemoveIntegrationServiceNames sets the value of the RemoveIntegrationServiceNames setting for this application.
+func SetRemoveIntegrationServiceNames(v bool) {
+	removeIntegrationServiceNames.Store(v)
 }

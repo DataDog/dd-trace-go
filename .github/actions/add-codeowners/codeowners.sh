@@ -1,14 +1,25 @@
 #!/bin/bash
 
-for file in "$@"; do
-    temp_file="tempfile.xml"
+RESULT_PATH="${1:-.}"
+if [ ! -d "$RESULT_PATH" ]; then
+    echo "Error: Result path does not exist"
+    exit 1
+fi
+
+cd "$RESULT_PATH" || exit 1
+
+for file in gotestsum-report*.xml; do
+    # Skip if the glob didn't match any files
+    [ -f "$file" ] || break
+    
+    temp_file="${file}_tmp.xml"
 
     # force write a new line at the end of the gotestsum-report.xml, or else
     # the loop will skip the last line.
     # fixes issue with a missing </testsuites>
-    echo -e "\n" >> $file
+    echo -e "\n" >> "$file"
 
-    while read p; do
+    while IFS= read -r p || [ -n "$p" ]; do
         # we might try to report gotestsum-report.xml multiple times, so don't
         # calculate codeowners more times than we need
         if [[ "$p" =~ \<testcase && ! "$p" =~ "file=" ]]; then
@@ -22,7 +33,7 @@ for file in "$@"; do
         else 
             echo "$p" >> "$temp_file"
         fi
-    done < $file
+    done < "$file"
 
-    mv "$temp_file" $file
+    mv "$temp_file" "$file"
 done 

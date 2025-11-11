@@ -198,6 +198,21 @@ func TestTracingDialUrl(t *testing.T) {
 	assert.True(len(spans) > 0)
 }
 
+func TestTracingDialUrlContext(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	ctx := context.Background()
+	url := "redis://127.0.0.1:6379"
+	client, err := DialURLContext(ctx, url, WithService("redis-service"))
+	assert.Nil(err)
+	client.Do("SET", "ONE", " TWO", context.Background())
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) > 0)
+}
+
 func TestTracingDialContext(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()

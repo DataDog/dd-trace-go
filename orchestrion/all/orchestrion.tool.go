@@ -28,6 +28,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws"                    // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"                       // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2"            // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2"            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2" // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2"    // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"                             // integration
@@ -38,6 +39,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2"                        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2"                           // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2/mongo"     // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2/mongo"        // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"                              // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"                         // integration

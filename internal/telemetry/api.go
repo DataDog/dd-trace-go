@@ -46,7 +46,7 @@ const (
 	NamespaceAppSec       Namespace = transport.NamespaceAppSec
 	NamespaceIAST         Namespace = transport.NamespaceIAST
 	NamespaceCIVisibility Namespace = transport.NamespaceCIVisibility
-	NamespaceMLOps        Namespace = transport.NamespaceMLOps
+	NamespaceMLObs        Namespace = transport.NamespaceMLObs
 	NamespaceRUM          Namespace = transport.NamespaceRUM
 )
 
@@ -62,6 +62,10 @@ const (
 	OriginLocalStableConfig   Origin = transport.OriginLocalStableConfig
 	OriginManagedStableConfig Origin = transport.OriginManagedStableConfig
 )
+
+// EmptyID represents the absence of a configuration ID.
+// It can be assigned to the ID field of a Configuration when no ID is available or required.
+const EmptyID = ""
 
 // LogLevel describes the level of a log message
 
@@ -103,6 +107,8 @@ type Configuration struct {
 	Value any
 	// Origin is the source of the configuration change.
 	Origin Origin
+	// ID is the config ID of the configuration change.
+	ID string
 }
 
 // LogOption is a function that modifies the log message that is sent to the telemetry.
@@ -130,11 +136,11 @@ type Client interface {
 	// Tags cannot contain commas.
 	Distribution(namespace Namespace, name string, tags []string) MetricHandle
 
-	// Log sends a telemetry log at the desired level with the given text and options.
+	// Log sends a telemetry log with the given [slog.Record] and options.
 	// Options include sending key-value pairs as tags, and a stack trace frozen from inside the Log function.
-	Log(level LogLevel, text string, options ...LogOption)
+	Log(record Record, options ...LogOption)
 
-	// ProductStarted declares a product to have started at the customer’s request
+	// ProductStarted declares a product to have started at the customer's request
 	ProductStarted(product Namespace)
 
 	// ProductStopped declares a product to have being stopped by the customer

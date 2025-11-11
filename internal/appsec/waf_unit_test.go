@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -47,14 +46,11 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 	if wafOk, err := libddwaf.Usable(); !wafOk {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
-	rules, err := internal.DefaultRulesetMap()
-	require.NoError(t, err)
-
 	builder, err := libddwaf.NewBuilder("", "")
 	require.NoError(t, err)
 	defer builder.Close()
 
-	_, err = builder.AddOrUpdateConfig("default", rules)
+	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(t, err)
 
 	handle := builder.Build()

@@ -259,19 +259,25 @@ func Reset() {
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new update request payload: %s", err.Error())
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new http request: %s", err.Error())
 		return
+	}
+	if internal.ContainerID() != "" {
+		req.Header.Set("Datadog-Container-ID", internal.ContainerID())
+	}
+	if internal.EntityID() != "" {
+		req.Header.Set("Datadog-Entity-ID", internal.EntityID())
 	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		log.Debug("remoteconfig: http request error: %v", err)
+		log.Debug("remoteconfig: http request error: %s", err.Error())
 		return
 	}
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -287,7 +293,7 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
+		log.Error("remoteconfig: http request error: could not read the response body: %s", err.Error())
 		return
 	}
 
@@ -297,7 +303,7 @@ func (c *Client) updateState() {
 
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
-		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err)
+		log.Error("remoteconfig: http request error: could not parse the json response body: %s", err.Error())
 		return
 	}
 
@@ -489,7 +495,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 
 		fileMap[f.Path] = f.Raw
 		if !slices.Contains(allProducts, path.Product) {
-			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path)
+			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path) //nolint:gocritic // Debug logging for unknown products
 		}
 		if productUpdates[path.Product] == nil {
 			productUpdates[path.Product] = make(ProductUpdate)
@@ -512,7 +518,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// are provided with this information in this case
 	stateBefore, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error: %v", err)
+		return fmt.Errorf("repository current state error: %s", err)
 	}
 	products, err := c.repository.Update(rc.Update{
 		TUFRoots:      pbUpdate.Roots,
@@ -521,11 +527,11 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	})
 	if err != nil {
-		return fmt.Errorf("repository update error: %v", err)
+		return fmt.Errorf("repository update error: %s", err)
 	}
 	stateAfter, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error after update: %v", err)
+		return fmt.Errorf("repository current state error after update: %s", err)
 	}
 
 	// Create a config files diff between before/after the update to see which config files are missing
@@ -628,6 +634,10 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	capa := c.allCapabilities()
+	var tags []string
+	for k, v := range internal.GetGitMetadataTags() {
+		tags = append(tags, k+":"+v)
+	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -648,6 +658,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 				ProcessTags:   processtags.GlobalTags().Slice(),
+				Tags:          tags,
 			},
 			Capabilities: capa.Bytes(),
 		},

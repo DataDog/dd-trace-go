@@ -1,19 +1,16 @@
 name: Main Branch and Release Tests
 
 on:
-  workflow_call: # allows to reuse this workflow
-    inputs:
-      ref:
-        description: 'The branch to run the workflow on'
-        required: true
-        type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
 
 concurrency:
   group: ${{ github.ref }}
@@ -21,24 +18,10 @@ concurrency:
 
 jobs:
   unit-integration-tests:
-    strategy:
-      matrix:
-        go-version: [ "1.23", "1.24" ]
-      fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
     with:
-      go-version: ${{ matrix.go-version }}
-      ref: ${{ inputs.ref || github.ref }}
-    secrets: inherit
-  multios-unit-tests:
-    strategy:
-      matrix:
-        runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.23", "1.24" ]
-      fail-fast: false
-    uses: ./.github/workflows/multios-unit-tests.yml
-    with:
-      go-version: ${{ matrix.go-version }}
-      runs-on: ${{ matrix.runs-on }}
-      ref: ${{ inputs.ref || github.ref }}
-    secrets: inherit
+      go-version: "1.25" # Should be the highest supported version of Go

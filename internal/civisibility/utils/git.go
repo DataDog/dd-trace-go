@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -25,12 +26,8 @@ import (
 // MaxPackFileSizeInMb is the maximum size of a pack file in megabytes.
 const MaxPackFileSizeInMb = 3
 
-// localGitData holds various pieces of information about the local Git repository,
-// including the source root, repository URL, branch, commit SHA, author and committer details, and commit message.
-type localGitData struct {
-	SourceRoot     string
-	RepositoryURL  string
-	Branch         string
+// localCommitData holds information about a single commit in the local Git repository.
+type localCommitData struct {
 	CommitSha      string
 	AuthorDate     time.Time
 	AuthorName     string
@@ -41,21 +38,55 @@ type localGitData struct {
 	CommitMessage  string
 }
 
+// localGitData holds various pieces of information about the local Git repository,
+// including the source root, repository URL, branch, commit SHA, author and committer details, and commit message.
+type localGitData struct {
+	localCommitData
+	SourceRoot    string
+	RepositoryURL string
+	Branch        string
+}
+
+// gitVersionData holds the major, minor, and patch version numbers of the Git executable.
+type gitVersionData struct {
+	major int
+	minor int
+	patch int
+	err   error
+}
+
 var (
+	// gitCommandMutex is a mutex used to synchronize access to Git commands to prevent lock errors in git
+	gitCommandMutex sync.Mutex
+
 	// regexpSensitiveInfo is a regular expression used to match and filter out sensitive information from URLs.
 	regexpSensitiveInfo = regexp.MustCompile("(https?://|ssh?://)[^/]*@")
-
-	// isGitFoundValue is a boolean flag indicating whether the Git executable is available on the system.
-	isGitFoundValue bool
-
-	// gitFinder is a sync.Once instance used to ensure that the Git executable is only checked once.
-	gitFinder sync.Once
 
 	// Constants for base branch detection algorithm
 	possibleBaseBranches = []string{"main", "master", "preprod", "prod", "dev", "development", "trunk"}
 
 	// BASE_LIKE_BRANCH_FILTER - regex to check if the branch name is similar to a possible base branch
 	baseLikeBranchFilter = regexp.MustCompile(`^(main|master|preprod|prod|dev|development|trunk|release\/.*|hotfix\/.*)$`)
+
+	// Cached data
+
+	// isGitFoundValue is a boolean flag indicating whether the Git executable is available on the system.
+	isGitFoundValue bool
+
+	// gitFinder is a sync.Once instance used to ensure that the Git executable is only checked once.
+	gitFinderOnce sync.Once
+
+	// gitVersion is a sync.Once instance used to ensure that the Git version is only retrieved once.
+	gitVersionOnce sync.Once
+
+	// gitVersionValue holds the version of the Git executable installed on the system.
+	gitVersionValue gitVersionData
+
+	// isAShallowCloneRepositoryOnce is a sync.Once instance used to ensure that the check for a shallow clone repository is only performed once.
+	isAShallowCloneRepositoryOnce atomic.Pointer[sync.Once]
+
+	// isAShallowCloneRepositoryValue is a boolean flag indicating whether the repository is a shallow clone.
+	isAShallowCloneRepositoryValue bool
 )
 
 // branchMetrics holds metrics for evaluating base branch candidates
@@ -67,7 +98,7 @@ type branchMetrics struct {
 
 // isGitFound checks if the Git executable is available on the system.
 func isGitFound() bool {
-	gitFinder.Do(func() {
+	gitFinderOnce.Do(func() {
 		_, err := exec.LookPath("git")
 		isGitFoundValue = err == nil
 		if err != nil {
@@ -79,8 +110,8 @@ func isGitFound() bool {
 
 // execGit executes a Git command with the given arguments.
 func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err error) {
+	startTime := time.Now()
 	if commandType != telemetry.NotSpecifiedCommandsType {
-		startTime := time.Now()
 		telemetry.GitCommand(commandType)
 		defer func() {
 			telemetry.GitCommandMs(commandType, float64(time.Since(startTime).Milliseconds()))
@@ -107,9 +138,21 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 			}
 		}()
 	}
+	if log.DebugEnabled() {
+		defer func() {
+			durationInMs := time.Since(startTime).Milliseconds()
+			if err != nil {
+				log.Debug("civisibility.git.command [%s][%s][%dms]: git %s", commandType, err.Error(), durationInMs, strings.Join(args, " "))
+			} else {
+				log.Debug("civisibility.git.command [%s][%dms]: git %s", commandType, durationInMs, strings.Join(args, " "))
+			}
+		}()
+	}
 	if !isGitFound() {
 		return nil, errors.New("git executable not found")
 	}
+	gitCommandMutex.Lock()
+	defer gitCommandMutex.Unlock()
 	return exec.Command("git", args...).CombinedOutput()
 }
 
@@ -122,9 +165,11 @@ func execGitString(commandType telemetry.CommandType, args ...string) (string, e
 
 // execGitStringWithInput executes a Git command with the given input and arguments and returns the output as a string.
 func execGitStringWithInput(commandType telemetry.CommandType, input string, args ...string) (val string, err error) {
+	startTime := time.Now()
 	if commandType != telemetry.NotSpecifiedCommandsType {
 		telemetry.GitCommand(commandType)
 		defer func() {
+			telemetry.GitCommandMs(commandType, float64(time.Since(startTime).Milliseconds()))
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
 				switch exitErr.ExitCode() {
@@ -148,6 +193,18 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 			}
 		}()
 	}
+	if log.DebugEnabled() {
+		defer func() {
+			durationInMs := time.Since(startTime).Milliseconds()
+			if err != nil {
+				log.Debug("civisibility.git.command [%s][%s][%dms]: git %s", commandType, err.Error(), durationInMs, strings.Join(args, " "))
+			} else {
+				log.Debug("civisibility.git.command [%s][%dms]: git %s", commandType, durationInMs, strings.Join(args, " "))
+			}
+		}()
+	}
+	gitCommandMutex.Lock()
+	defer gitCommandMutex.Unlock()
 	cmd := exec.Command("git", args...)
 	cmd.Stdin = strings.NewReader(input)
 	out, err := cmd.CombinedOutput()
@@ -157,19 +214,30 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 
 // getGitVersion retrieves the version of the Git executable installed on the system.
 func getGitVersion() (major int, minor int, patch int, err error) {
-	out, lerr := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
-	if lerr != nil {
-		return 0, 0, 0, lerr
-	}
-	out = strings.TrimSpace(strings.ReplaceAll(out, "git version ", ""))
-	versionParts := strings.Split(out, ".")
-	if len(versionParts) < 3 {
-		return 0, 0, 0, errors.New("invalid git version")
-	}
-	major, _ = strconv.Atoi(versionParts[0])
-	minor, _ = strconv.Atoi(versionParts[1])
-	patch, _ = strconv.Atoi(versionParts[2])
-	return major, minor, patch, nil
+	gitVersionOnce.Do(func() {
+		out, lerr := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+		if lerr != nil {
+			gitVersionValue = gitVersionData{err: lerr}
+			return
+		}
+		out = strings.TrimSpace(strings.ReplaceAll(out, "git version ", ""))
+		versionParts := strings.Split(out, ".")
+		if len(versionParts) < 3 {
+			gitVersionValue = gitVersionData{err: errors.New("invalid git version")}
+			return
+		}
+		major, _ = strconv.Atoi(versionParts[0])
+		minor, _ = strconv.Atoi(versionParts[1])
+		patch, _ = strconv.Atoi(versionParts[2])
+		gitVersionValue = gitVersionData{
+			major: major,
+			minor: minor,
+			patch: patch,
+			err:   nil,
+		}
+	})
+
+	return gitVersionValue.major, gitVersionValue.minor, gitVersionValue.patch, gitVersionValue.err
 }
 
 // getLocalGitData retrieves information about the local Git repository from the current HEAD.
@@ -190,8 +258,8 @@ func getLocalGitData() (localGitData, error) {
 	if currentDir, err := os.Getwd(); err == nil {
 		if gitDir, err := getParentGitFolder(currentDir); err == nil && gitDir != "" {
 			log.Debug("civisibility.git: setting permissions to git folder: %s", gitDir)
-			if out, err := execGitString(telemetry.NotSpecifiedCommandsType, "config", "--global", "--add", "safe.directory", gitDir); err != nil {
-				log.Debug("civisibility.git: error while setting permissions to git folder: %s\n%s\n%s", gitDir, err.Error(), out)
+			if out, err := execGitString(telemetry.GitAddPermissionCommandType, "config", "--global", "--add", "safe.directory", gitDir); err != nil {
+				log.Debug("civisibility.git: error while setting permissions to git folder: %s\n out: %s\n error: %s", gitDir, out, err.Error())
 			}
 		} else {
 			log.Debug("civisibility.git: error getting the parent git folder.")
@@ -202,7 +270,7 @@ func getLocalGitData() (localGitData, error) {
 
 	// Extract the absolute path to the Git directory
 	log.Debug("civisibility.git: getting the absolute path to the Git directory")
-	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--show-toplevel")
+	out, err := execGitString(telemetry.GetWorkingDirectoryCommandType, "rev-parse", "--show-toplevel")
 	if err == nil {
 		gitData.SourceRoot = out
 	}
@@ -223,7 +291,7 @@ func getLocalGitData() (localGitData, error) {
 
 	// Get commit details from the latest commit using git log (git log -1 --pretty='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
 	log.Debug("civisibility.git: getting the latest commit details")
-	out, err = execGitString(telemetry.NotSpecifiedCommandsType, "log", "-1", "--pretty=%H\",\"%at\",\"%an\",\"%ae\",\"%ct\",\"%cn\",\"%ce\",\"%B")
+	out, err = execGitString(telemetry.GetGitCommitInfoCommandType, "log", "-1", "--pretty=%H\",\"%at\",\"%an\",\"%ae\",\"%ct\",\"%cn\",\"%ce\",\"%B")
 	if err != nil {
 		return gitData, err
 	}
@@ -250,6 +318,89 @@ func getLocalGitData() (localGitData, error) {
 	return gitData, nil
 }
 
+// fetchCommitData retrieves commit data for a specific commit SHA in a shallow clone Git repository.
+func fetchCommitData(commitSha string) (localCommitData, error) {
+	commitData := localCommitData{}
+
+	// let's do a first check to see if the repository is a shallow clone
+	log.Debug("civisibility.fetchCommitData: checking if the repository is a shallow clone")
+	isAShallowClone, err := isAShallowCloneRepository()
+	if err != nil {
+		return commitData, fmt.Errorf("civisibility.fetchCommitData: error checking if the repository is a shallow clone: %s", err)
+	}
+
+	// if the git repo is a shallow clone, we try to fecth the commit sha data
+	if isAShallowClone {
+		// let's check the git version >= 2.27.0 (git --version) to see if we can unshallow the repository
+		log.Debug("civisibility.fetchCommitData: checking the git version")
+		major, minor, patch, err := getGitVersion()
+		if err != nil {
+			return commitData, fmt.Errorf("civisibility.fetchCommitData: error getting the git version: %s", err)
+		}
+		log.Debug("civisibility.fetchCommitData: git version: %d.%d.%d", major, minor, patch)
+		if major < 2 || (major == 2 && minor < 27) {
+			log.Debug("civisibility.fetchCommitData: the git version is less than 2.27.0 we cannot unshallow the repository")
+			return commitData, nil
+		}
+
+		// let's get the remote name
+		remoteName, err := getRemoteName()
+		if err != nil {
+			return commitData, fmt.Errorf("civisibility.fetchCommitData: error getting the remote name: %s\n%s", err, remoteName)
+		}
+		if remoteName == "" {
+			// if the origin name is empty, we fallback to "origin"
+			remoteName = "origin"
+		}
+		log.Debug("civisibility.fetchCommitData: remote name: %s", remoteName)
+
+		// let's fetch the missing commits and trees from a commit sha
+		// git fetch --update-shallow --filter="blob:none" --recurse-submodules=no --no-write-fetch-head <remoteName> <commitSha>
+		log.Debug("civisibility.fetchCommitData: fetching the missing commits and trees from the last month")
+		if fetchOutput, fetchErr := execGitString(
+			telemetry.FetchCommandType,
+			"fetch",
+			"--update-shallow",
+			"--filter=blob:none",
+			"--recurse-submodules=no",
+			"--no-write-fetch-head",
+			remoteName,
+			commitSha); fetchErr != nil {
+			return commitData, fmt.Errorf("civisibility.fetchCommitData: error: %s\n%s", fetchErr, fetchOutput)
+		}
+	}
+
+	// Get commit details from the latest commit using git log (git show <commitSha> -s --format='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
+	log.Debug("civisibility.git: getting the latest commit details")
+	out, err := execGitString(telemetry.GetGitCommitInfoCommandType, "show", commitSha, "-s", "--format=%H\",\"%at\",\"%an\",\"%ae\",\"%ct\",\"%cn\",\"%ce\",\"%B")
+	if err != nil {
+		return commitData, err
+	}
+
+	// Split the output into individual components
+	outArray := strings.Split(out, "\",\"")
+	if len(outArray) < 8 {
+		return commitData, errors.New("git log failed")
+	}
+
+	// Parse author and committer dates from Unix timestamp
+	authorUnixDate, _ := strconv.ParseInt(outArray[1], 10, 64)
+	committerUnixDate, _ := strconv.ParseInt(outArray[4], 10, 64)
+
+	// Populate the localGitData struct with the parsed information
+	commitData.CommitSha = outArray[0]
+	commitData.AuthorDate = time.Unix(authorUnixDate, 0)
+	commitData.AuthorName = outArray[2]
+	commitData.AuthorEmail = outArray[3]
+	commitData.CommitterDate = time.Unix(committerUnixDate, 0)
+	commitData.CommitterName = outArray[5]
+	commitData.CommitterEmail = outArray[6]
+	commitData.CommitMessage = strings.Trim(outArray[7], "\n")
+
+	log.Debug("civisibility.fetchCommitData: was completed successfully")
+	return commitData, nil
+}
+
 // GetLastLocalGitCommitShas retrieves the commit SHAs of the last 1000 commits in the local Git repository.
 func GetLastLocalGitCommitShas() []string {
 	// git log --format=%H -n 1000 --since=\"1 month ago\"
@@ -268,7 +419,7 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: checking if the repository is a shallow clone")
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err.Error())
+		return false, fmt.Errorf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err)
 	}
 
 	// if the git repo is not a shallow clone, we can return early
@@ -281,7 +432,7 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: the repository is a shallow clone, checking if there are more than one commit in the logs")
 	hasMoreThanOneCommits, err := hasTheGitLogHaveMoreThanOneCommits()
 	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err.Error())
+		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
 	}
 
 	// if there are more than 1 commits, we can return early
@@ -294,9 +445,9 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: checking the git version")
 	major, minor, patch, err := getGitVersion()
 	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error getting the git version: %s", err.Error())
+		return false, fmt.Errorf("civisibility.unshallow: error getting the git version: %s", err)
 	}
-	log.Debug("civisibility.unshallow: git version: %v.%v.%v", major, minor, patch)
+	log.Debug("civisibility.unshallow: git version: %d.%d.%d", major, minor, patch)
 	if major < 2 || (major == 2 && minor < 27) {
 		log.Debug("civisibility.unshallow: the git version is less than 2.27.0 we cannot unshallow the repository")
 		return false, nil
@@ -305,39 +456,39 @@ func UnshallowGitRepository() (bool, error) {
 	// after asking for 2 logs lines, if the git log command returns just one commit sha, we reconfigure the repo
 	// to ask for git commits and trees of the last month (no blobs)
 
-	// let's get the origin name (git config --default origin --get clone.defaultRemoteName)
-	originName, err := execGitString(telemetry.GetRemoteCommandsType, "config", "--default", "origin", "--get", "clone.defaultRemoteName")
+	// let's get the remote name
+	remoteName, err := getRemoteName()
 	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error getting the origin name: %s\n%s", err.Error(), originName)
+		return false, fmt.Errorf("civisibility.unshallow: error getting the remote name: %s\n%s", err, remoteName)
 	}
-	if originName == "" {
+	if remoteName == "" {
 		// if the origin name is empty, we fallback to "origin"
-		originName = "origin"
+		remoteName = "origin"
 	}
-	log.Debug("civisibility.unshallow: origin name: %v", originName)
+	log.Debug("civisibility.unshallow: remote name: %s", remoteName)
 
 	// let's get the sha of the HEAD (git rev-parse HEAD)
 	headSha, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD")
 	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err.Error(), headSha)
+		return false, fmt.Errorf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err, headSha)
 	}
 	if headSha == "" {
 		// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
 		headSha, err = execGitString(telemetry.GetBranchCommandsType, "branch", "--show-current")
 		if err != nil {
-			return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err.Error(), headSha)
+			return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err, headSha)
 		}
 	}
-	log.Debug("civisibility.unshallow: HEAD sha: %v", headSha)
+	log.Debug("civisibility.unshallow: HEAD sha: %s", headSha)
 
 	// let's fetch the missing commits and trees from the last month
 	// git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse HEAD)
 	log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month")
-	fetchOutput, err := execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", originName, headSha)
+	fetchOutput, err := execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, headSha)
 
 	// let's check if the last command was unsuccessful
 	if err != nil || fetchOutput == "" {
-		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err)
+		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %s", err.Error())
 		// ***
 		// The previous command has a drawback: if the local HEAD is a commit that has not been pushed to the remote, it will fail.
 		// If this is the case, we fallback to: `git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream})`
@@ -351,13 +502,13 @@ func UnshallowGitRepository() (bool, error) {
 		if err == nil {
 			// let's try the alternative: git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream})
 			log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month using the remote branch name")
-			fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", originName, remoteBranchName)
+			fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, remoteBranchName)
 		}
 	}
 
 	// let's check if the last command was unsuccessful
 	if err != nil || fetchOutput == "" {
-		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %v", err)
+		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %s", err.Error())
 		// ***
 		// It could be that the CI is working on a detached HEAD or maybe branch tracking hasn't been set up.
 		// In that case, this command will also fail, and we will finally fallback to we just unshallow all the things:
@@ -366,14 +517,16 @@ func UnshallowGitRepository() (bool, error) {
 
 		// let's try the last fallback: git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName)
 		log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month using the origin name")
-		fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", originName)
+		fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName)
 	}
 
 	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error: %s\n%s", err.Error(), fetchOutput)
+		return false, fmt.Errorf("civisibility.unshallow: error: %s\n%s", err, fetchOutput)
 	}
 
 	log.Debug("civisibility.unshallow: was completed successfully")
+	tmpso := sync.Once{}
+	isAShallowCloneRepositoryOnce.Store(&tmpso)
 	return true, nil
 }
 
@@ -387,7 +540,7 @@ func GetGitDiff(baseCommit, headCommit string) (string, error) {
 			// first let's get the remote
 			remoteOut, err := execGitString(telemetry.GetRemoteCommandsType, "remote", "show")
 			if err != nil {
-				log.Debug("civisibility.git: error on git remote show origin: %v | %s", err, remoteOut)
+				log.Debug("civisibility.git: error on git remote show origin: %s , error: %s", remoteOut, err.Error())
 			}
 			if remoteOut == "" {
 				remoteOut = "origin"
@@ -396,7 +549,7 @@ func GetGitDiff(baseCommit, headCommit string) (string, error) {
 			// let's ensure we have all the branch names from the remote
 			fetchOut, err := execGitString(telemetry.GetHeadCommandsType, "fetch", remoteOut, baseCommit, "--depth=1")
 			if err != nil {
-				log.Debug("civisibility.git: error fetching %s/%s: %v | %s", remoteOut, baseCommit, err, fetchOut)
+				log.Debug("civisibility.git: error fetching %s/%s: %s, error: %s", remoteOut, baseCommit, fetchOut, err.Error())
 			}
 
 			// then let's get the remote branch name
@@ -405,9 +558,9 @@ func GetGitDiff(baseCommit, headCommit string) (string, error) {
 	}
 
 	log.Debug("civisibility.git: getting the diff between %s and %s", baseCommit, headCommit)
-	out, err := execGitString(telemetry.Diff, "diff", "-U0", "--word-diff=porcelain", baseCommit, headCommit)
+	out, err := execGitString(telemetry.DiffCommandType, "diff", "-U0", "--word-diff=porcelain", baseCommit, headCommit)
 	if err != nil {
-		return "", fmt.Errorf("civisibility.git: error getting the diff from %s to %s: %s | %s", baseCommit, headCommit, err.Error(), out)
+		return "", fmt.Errorf("civisibility.git: error getting the diff from %s to %s: %s | %s", baseCommit, headCommit, err, out)
 	}
 	if out == "" {
 		return "", fmt.Errorf("civisibility.git: error getting the diff from %s to %s: empty output", baseCommit, headCommit)
@@ -431,13 +584,26 @@ func filterSensitiveInfo(url string) string {
 
 // isAShallowCloneRepository checks if the local Git repository is a shallow clone.
 func isAShallowCloneRepository() (bool, error) {
-	// git rev-parse --is-shallow-repository
-	out, err := execGitString(telemetry.CheckShallowCommandsType, "rev-parse", "--is-shallow-repository")
-	if err != nil {
-		return false, err
+	var fErr error
+	var sOnce *sync.Once
+	sOnce = isAShallowCloneRepositoryOnce.Load()
+	if sOnce == nil {
+		sOnce = &sync.Once{}
+		isAShallowCloneRepositoryOnce.Store(sOnce)
 	}
+	sOnce.Do(func() {
+		// git rev-parse --is-shallow-repository
+		out, err := execGitString(telemetry.CheckShallowCommandsType, "rev-parse", "--is-shallow-repository")
+		if err != nil {
+			isAShallowCloneRepositoryValue = false
+			fErr = err
+			return
+		}
 
-	return strings.TrimSpace(out) == "true", nil
+		isAShallowCloneRepositoryValue = strings.TrimSpace(out) == "true"
+	})
+
+	return isAShallowCloneRepositoryValue, fErr
 }
 
 // hasTheGitLogHaveMoreThanOneCommits checks if the local Git repository has more than one commit.
@@ -467,6 +633,7 @@ func getObjectsSha(commitsToInclude []string, commitsToExclude []string) []strin
 	return strings.Split(out, "\n")
 }
 
+// CreatePackFiles creates pack files from the given commits to include and exclude.
 func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []string {
 	// get the objects shas to send
 	objectsShas := getObjectsSha(commitsToInclude, commitsToExclude)
@@ -484,7 +651,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	// get a temporary path to store the pack files
 	temporaryPath, err := os.MkdirTemp("", "pack-objects")
 	if err != nil {
-		log.Warn("civisibility: error creating temporary directory: %s", err)
+		log.Warn("civisibility: error creating temporary directory: %s", err.Error())
 		return nil
 	}
 
@@ -492,7 +659,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	out, err := execGitStringWithInput(telemetry.PackObjectsCommandsType, objectsShasString,
 		"pack-objects", "--compression=9", "--max-pack-size="+strconv.Itoa(MaxPackFileSizeInMb)+"m", temporaryPath+"/")
 	if err != nil {
-		log.Warn("civisibility: error creating pack files: %s", err)
+		log.Warn("civisibility: error creating pack files: %s", err.Error())
 		return nil
 	}
 
@@ -549,7 +716,7 @@ func isDefaultBranch(branch, defaultBranch, remoteName string) bool {
 // detectDefaultBranch detects the default branch using git symbolic-ref
 func detectDefaultBranch(remoteName string) (string, error) {
 	// Try to get the default branch using symbolic-ref
-	defaultRef, err := execGitString(telemetry.NotSpecifiedCommandsType, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remoteName+"/HEAD")
+	defaultRef, err := execGitString(telemetry.SymbolicRefCommandType, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remoteName+"/HEAD")
 	if err == nil && defaultRef != "" {
 		// Remove the remote prefix to get just the branch name
 		defaultBranch := removeRemotePrefix(defaultRef, remoteName)
@@ -576,7 +743,7 @@ func findFallbackDefaultBranch(remoteName string) string {
 
 	for _, fallback := range fallbackBranches {
 		// Check if the remote branch exists
-		_, err := execGitString(telemetry.NotSpecifiedCommandsType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+fallback)
+		_, err := execGitString(telemetry.ShowRefCommandType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+fallback)
 		if err == nil {
 			log.Debug("civisibility.git: found fallback default branch: %s", fallback)
 			return fallback
@@ -586,7 +753,7 @@ func findFallbackDefaultBranch(remoteName string) string {
 	return ""
 }
 
-// GetBaseBranchSha detects the base branch SHA using the algorithm from algorithm.md
+// GetBaseBranchSha detects the base branch SHA using the algorithm
 func GetBaseBranchSha(defaultBranch string) (string, error) {
 	if !isGitFound() {
 		return "", errors.New("git executable not found")
@@ -656,7 +823,7 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 	// Step 3 - find the best base branch
 	if len(candidateBranches) == 1 {
 		// Step 3a - single candidate
-		baseSha, err := execGitString(telemetry.NotSpecifiedCommandsType, "merge-base", candidateBranches[0], sourceBranch)
+		baseSha, err := execGitString(telemetry.MergeBaseCommandType, "merge-base", candidateBranches[0], sourceBranch)
 		if err != nil {
 			return "", fmt.Errorf("failed to find merge base for %s and %s: %w", candidateBranches[0], sourceBranch, err)
 		}
@@ -680,7 +847,7 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 // getRemoteName determines the remote name using the algorithm from algorithm.md
 func getRemoteName() (string, error) {
 	// Try to find remote from upstream tracking
-	upstream, err := execGitString(telemetry.GetRemoteCommandsType, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	upstream, err := execGitString(telemetry.GetRemoteUpstreamTrackingCommandsType, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
 	if err == nil && upstream != "" {
 		parts := strings.Split(upstream, "/")
 		if len(parts) > 0 {
@@ -725,28 +892,28 @@ func removeRemotePrefix(branchName, remoteName string) string {
 // checkAndFetchBranch checks if a branch exists and fetches it if needed
 func checkAndFetchBranch(branch, remoteName string) {
 	// Check if branch exists locally (as remote ref)
-	_, err := execGitString(telemetry.NotSpecifiedCommandsType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+branch)
+	_, err := execGitString(telemetry.ShowRefCommandType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+branch)
 	if err == nil {
 		return // branch exists locally
 	}
 
 	// Check if branch exists in remote
-	remoteHeads, err := execGitString(telemetry.GetRemoteCommandsType, "ls-remote", "--heads", remoteName, branch)
+	remoteHeads, err := execGitString(telemetry.LsRemoteHeadsCommandType, "ls-remote", "--heads", remoteName, branch)
 	if err != nil || remoteHeads == "" {
 		return // branch doesn't exist in remote
 	}
 
 	// Fetch the latest commit for this branch from remote (without creating local branch)
-	_, err = execGitString(telemetry.NotSpecifiedCommandsType, "fetch", "--depth", "1", remoteName, branch)
+	_, err = execGitString(telemetry.FetchCommandType, "fetch", "--depth", "1", remoteName, branch)
 	if err != nil {
-		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err)
+		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err.Error())
 	}
 }
 
 // getRemoteBranches gets list of remote tracking branches only (for Step 2a in algorithm)
 func getRemoteBranches(remoteName string) ([]string, error) {
 	// Get remote tracking branches as per algorithm update
-	remoteOut, err := execGitString(telemetry.NotSpecifiedCommandsType, "for-each-ref", "--format=%(refname:short)", "refs/remotes/"+remoteName)
+	remoteOut, err := execGitString(telemetry.ForEachRefCommandType, "for-each-ref", "--format=%(refname:short)", "refs/remotes/"+remoteName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remote branches: %w", err)
 	}
@@ -770,13 +937,13 @@ func computeBranchMetrics(candidates []string, sourceBranch string) (map[string]
 
 	for _, candidate := range candidates {
 		// Find common ancestor
-		baseSha, err := execGitString(telemetry.NotSpecifiedCommandsType, "merge-base", candidate, sourceBranch)
+		baseSha, err := execGitString(telemetry.MergeBaseCommandType, "merge-base", candidate, sourceBranch)
 		if err != nil || baseSha == "" {
 			continue
 		}
 
 		// Count commits ahead/behind
-		counts, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-list", "--left-right", "--count", candidate+"..."+sourceBranch)
+		counts, err := execGitString(telemetry.RevListCommandType, "rev-list", "--left-right", "--count", candidate+"..."+sourceBranch)
 		if err != nil {
 			continue
 		}

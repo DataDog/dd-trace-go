@@ -8,7 +8,6 @@ package gotesting
 import (
 	"bufio"
 	"fmt"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"reflect"
 	"runtime"
 	"slices"
@@ -22,9 +21,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -42,11 +43,17 @@ var (
 	// benchmarkInfos holds information about the instrumented benchmarks.
 	benchmarkInfos []*testingBInfo
 
+	// modulesCountersMutex is a mutex to protect access to the modulesCounters map.
+	modulesCountersMutex sync.Mutex
+
 	// modulesCounters keeps track of the number of tests per module.
-	modulesCounters = map[string]*int32{}
+	modulesCounters = map[string]int{}
+
+	// suitesCountersMutex is a mutex to protect access to the suitesCounters map.
+	suitesCountersMutex sync.Mutex
 
 	// suitesCounters keeps track of the number of tests per suite.
-	suitesCounters = map[string]*int32{}
+	suitesCounters = map[string]int{}
 
 	// numOfTestsSkipped keeps track of the number of tests skipped by ITR.
 	numOfTestsSkipped atomic.Uint64
@@ -59,11 +66,25 @@ var (
 )
 
 type (
+	// testIdentity represents the fully-qualified identity of a Go test or subtest.
+	// It captures the module and suite where the test belongs, the base test name
+	// (top-level test), the full hierarchical name reported by Go (including subtests),
+	// and every individual path segment in order. This allows test management logic to
+	// resolve configuration at any depth while still falling back to parent segments.
+	testIdentity struct {
+		ModuleName string
+		SuiteName  string
+		BaseName   string
+		FullName   string
+		Segments   []string
+	}
+
 	// commonInfo holds common information about tests and benchmarks.
 	commonInfo struct {
 		moduleName string
 		suiteName  string
 		testName   string
+		identity   *testIdentity
 	}
 
 	// testingTInfo holds information specific to tests.
@@ -80,6 +101,33 @@ type (
 
 	// M is a wrapper around testing.M to provide instrumentation.
 	M testing.M
+)
+
+// newTestIdentity builds a testIdentity instance for the provided module, suite,
+// and fully-qualified Go test name. The base name corresponds to the first path
+// segment (the top-level test declared via testing.T.Run). The Segments slice
+// always contains at least one entry so consumers can traverse parent levels.
+func newTestIdentity(moduleName, suiteName, fullName string) *testIdentity {
+	if fullName == "" {
+		fullName = "<unknown>"
+	}
+	segments := strings.Split(fullName, "/")
+	baseName := segments[0]
+	return &testIdentity{
+		ModuleName: moduleName,
+		SuiteName:  suiteName,
+		BaseName:   baseName,
+		FullName:   fullName,
+		Segments:   segments,
+	}
+}
+
+type testManagementMatchKind int
+
+const (
+	testManagementMatchNone testManagementMatchKind = iota
+	testManagementMatchExact
+	testManagementMatchAncestor
 )
 
 // Run initializes CI Visibility, instruments tests and benchmarks, and runs them.
@@ -134,29 +182,22 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 	testInfos = make([]*testingTInfo, len(*internalTests))
 	for idx, test := range *internalTests {
 		moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(test.F)).Pointer())
+		identity := newTestIdentity(moduleName, suiteName, test.Name)
 		testInfo := &testingTInfo{
 			originalFunc: test.F,
 			commonInfo: commonInfo{
 				moduleName: moduleName,
 				suiteName:  suiteName,
 				testName:   test.Name,
+				identity:   identity,
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		addSuitesCounters(suiteName, 1)
 
 		testInfos[idx] = testInfo
 	}
@@ -213,9 +254,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		execMeta := getTestMetadata(t)
 		if execMeta == nil {
 			// in case there's no additional features then we create the metadata for this execution and defer the disposal
-			execMeta = createTestMetadata(t)
+			execMeta = createTestMetadata(t, nil)
 			defer deleteTestMetadata(t)
 		}
+		execMeta.identity = testInfo.identity
 
 		// Create or retrieve the module, suite, and test for CI visibility.
 		module := session.GetOrCreateModule(testInfo.moduleName)
@@ -305,7 +347,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					if execMeta.allRetriesFailed {
 						test.SetTag(constants.TestHasFailedAllRetries, "true")
 					}
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
+					if execMeta.isAttemptToFix {
+						test.SetTag(constants.TestAttemptToFixPassed, "false")
+					}
 				}
 				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), execMeta.panicStacktrace))
 				suite.SetTag(ext.Error, true)
@@ -325,19 +369,21 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 						if execMeta.allRetriesFailed {
 							test.SetTag(constants.TestHasFailedAllRetries, "true")
 						}
-						test.SetTag(constants.TestAttemptToFixPassed, "false")
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
 					}
 					test.SetTag(ext.Error, true)
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
 				} else if t.Skipped() {
-					if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						test.SetTag(constants.TestAttemptToFixPassed, "false")
 					}
 					test.Close(integrations.ResultStatusSkip)
 				} else {
-					if execMeta.isARetry && execMeta.isLastRetry {
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						if execMeta.allAttemptsPassed {
 							test.SetTag(constants.TestAttemptToFixPassed, "true")
 						} else {
@@ -373,7 +419,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	}
 
 	// Get the additional feature wrapper
-	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo)
+	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo, nil)
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
@@ -386,29 +432,22 @@ func (ddm *M) instrumentInternalBenchmarks(internalBenchmarks *[]testing.Interna
 	benchmarkInfos = make([]*testingBInfo, len(*internalBenchmarks))
 	for idx, benchmark := range *internalBenchmarks {
 		moduleName, suiteName := utils.GetModuleAndSuiteName(reflect.Indirect(reflect.ValueOf(benchmark.F)).Pointer())
+		identity := newTestIdentity(moduleName, suiteName, benchmark.Name)
 		benchmarkInfo := &testingBInfo{
 			originalFunc: benchmark.F,
 			commonInfo: commonInfo{
 				moduleName: moduleName,
 				suiteName:  suiteName,
 				testName:   benchmark.Name,
+				identity:   identity,
 			},
 		}
 
-		// Initialize module and suite counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		addModulesCounters(moduleName, 1)
 
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		addSuitesCounters(suiteName, 1)
 
 		benchmarkInfos[idx] = benchmarkInfo
 	}
@@ -498,7 +537,7 @@ func (ddm *M) executeInternalBenchmark(benchmarkInfo *testingBInfo) func(*testin
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
 				// in case there's no additional features then we create the metadata for this execution and defer the disposal
-				execMeta = createTestMetadata(b)
+				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
 
@@ -581,14 +620,32 @@ func RunM(m *testing.M) int {
 // checkModuleAndSuite checks and closes the modules and suites if all tests are executed.
 func checkModuleAndSuite(module integrations.TestModule, suite integrations.TestSuite) {
 	// If all tests in a suite has been executed we can close the suite
-	if atomic.AddInt32(suitesCounters[suite.Name()], -1) <= 0 {
+	if addSuitesCounters(suite.Name(), -1) <= 0 {
 		suite.Close()
 	}
 
 	// If all tests in a module has been executed we can close the module
-	if atomic.AddInt32(modulesCounters[module.Name()], -1) <= 0 {
+	if addModulesCounters(module.Name(), -1) <= 0 {
 		module.Close()
 	}
+}
+
+// addSuitesCounters increments the suite counters for a given suite name.
+func addSuitesCounters(suiteName string, delta int) int {
+	suitesCountersMutex.Lock()
+	defer suitesCountersMutex.Unlock()
+	nValue := suitesCounters[suiteName] + delta
+	suitesCounters[suiteName] = nValue
+	return nValue
+}
+
+// addModulesCounters increments the module counters for a given module name.
+func addModulesCounters(moduleName string, delta int) int {
+	modulesCountersMutex.Lock()
+	defer modulesCountersMutex.Unlock()
+	nValue := modulesCounters[moduleName] + delta
+	modulesCounters[moduleName] = nValue
+	return nValue
 }
 
 // isKnownTest checks if a test is a known test or a new one
@@ -608,23 +665,46 @@ func isKnownTest(testInfo *commonInfo) (isKnown bool, hasKnownData bool) {
 	return false, false
 }
 
-// getTestManagementData retrieves the test management data for a test
-func getTestManagementData(testInfo *commonInfo) (data *net.TestManagementTestsResponseDataTestPropertiesAttributes, hasTestManagementData bool) {
+// getTestManagementData retrieves the test management data for a test identity.
+// It returns the matched properties, the type of match, and a flag indicating whether
+// test-management data exists for the containing module/suite.
+func getTestManagementData(identity *testIdentity) (data *net.TestManagementTestsResponseDataTestPropertiesAttributes, matchKind testManagementMatchKind, hasTestManagementData bool) {
 	testManagementData := integrations.GetTestManagementTestsData()
-	if testManagementData != nil && len(testManagementData.Modules) > 0 {
-		// Check if the test is quarantined
-		if module, ok := testManagementData.Modules[testInfo.moduleName]; ok {
-			if suite, ok := module.Suites[testInfo.suiteName]; ok {
-				if test, ok := suite.Tests[testInfo.testName]; ok {
-					return &test.Properties, true
-				}
-			}
-		}
+	return matchTestManagementData(identity, testManagementData)
+}
 
-		return nil, true
+// matchTestManagementData finds the best-matching test-management directive for a given identity within the provided dataset.
+func matchTestManagementData(identity *testIdentity, modules *net.TestManagementTestsResponseDataModules) (data *net.TestManagementTestsResponseDataTestPropertiesAttributes, matchKind testManagementMatchKind, hasTestManagementData bool) {
+	if identity == nil || modules == nil || len(modules.Modules) == 0 {
+		return nil, testManagementMatchNone, false
 	}
 
-	return nil, false
+	module, ok := modules.Modules[identity.ModuleName]
+	if !ok {
+		return nil, testManagementMatchNone, true
+	}
+
+	suite, ok := module.Suites[identity.SuiteName]
+	if !ok {
+		return nil, testManagementMatchNone, true
+	}
+
+	if len(suite.Tests) == 0 {
+		return nil, testManagementMatchNone, true
+	}
+
+	for i := len(identity.Segments); i > 0; i-- {
+		candidate := strings.Join(identity.Segments[:i], "/")
+		if test, ok := suite.Tests[candidate]; ok {
+			kind := testManagementMatchExact
+			if candidate != identity.FullName {
+				kind = testManagementMatchAncestor
+			}
+			return &test.Properties, kind, true
+		}
+	}
+
+	return nil, testManagementMatchNone, true
 }
 
 // setTestTagsFromExecutionMetadata sets the test tags from the execution metadata.
@@ -633,6 +713,9 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 
 	// Set the Test Optimization test to the execution metadata
 	execMeta.test = test
+	if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+		log.Debug("setTestTagsFromExecutionMetadata assigned test for %s", execMeta.identity.FullName)
+	}
 
 	// If the execution is for a new test we tag the test event as new
 	if execMeta.isANewTest {
@@ -642,12 +725,6 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 
 	// If the execution is for a modified test
 	execMeta.isAModifiedTest = execMeta.isAModifiedTest || (settings.ImpactedTestsEnabled && test.Context().Value(constants.TestIsModified) == true)
-	if execMeta.isAModifiedTest {
-		if execMeta.isDisabled || execMeta.isQuarantined {
-			// automatic attempt to fix if a disabled or quarantined test is modified
-			execMeta.isAttemptToFix = true
-		}
-	}
 
 	// If the execution is a retry we tag the test event
 	if execMeta.isARetry {

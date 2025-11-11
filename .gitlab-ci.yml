@@ -1,15 +1,16 @@
 stages:
+  - docker-images-reliability-env
   - generate
   - benchmarks
   - macrobenchmarks
+  - gates
+  - config-validation
   - test-apps
 
 variables:
-  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/56135449
-  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-56135449
+  # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines/73663692
+  BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-73663692
   INDEX_FILE: index.txt
-  KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
-  FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
   BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics"
 
 # In order to run benchmarks in parallel, we generate a matrix of test names based on the BENCHMARK_TARGETS variable.
@@ -45,7 +46,7 @@ check-big-regressions:
   needs:
     - job: trigger_child_pipeline
   when: on_success
-  tags: 
+  tags:
     - "arch:amd64"
   image: $BASE_CI_IMAGE
   script:
@@ -53,14 +54,11 @@ check-big-regressions:
       pwd
       export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
       git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-      git clone --branch hannahkm/parallel2 https://github.com/DataDog/benchmarking-platform platform && cd platform
+      git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform platform && cd platform
       ./steps/download-child-pipeline-artifacts.sh
       pushd "${ARTIFACTS_DIR}/"
       pwd
       bp-runner ../platform/bp-runner.fail-on-regression.yml --debug
-  variables:
-    # Gitlab and BP specific env vars. Do not modify.
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: dd-trace-go
   artifacts:
     name: "artifacts"
     when: always
@@ -68,6 +66,28 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
+validate_supported_configurations_local_file:
+  stage: config-validation
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  rules:
+    - when: on_success
+  extends: .validate_supported_configurations_local_file
+  variables:
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+
+update_central_configurations_version_range:
+  stage: config-validation
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  extends: .update_central_configurations_version_range
+  variables:
+    LOCAL_REPO_NAME: "dd-trace-go"
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    LANGUAGE_NAME: "golang"
+
 include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
+  - local: ".gitlab/docker-images-reliability-env.yml"
+  - local: ".gitlab/configuration-central-validation.yml"

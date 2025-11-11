@@ -10,13 +10,21 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 )
+
+var kafkaAddr string
 
 func TestNamingSchema(t *testing.T) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
 	}
 	t.Setenv("__DD_TRACE_SQL_TEST", "true")
+
+	_, kafkaAddr = containers.StartKafkaTestContainer(
+		t,
+		[]string{segmentioTopic, confluentKafkaV2Topic, saramaTopic},
+	)
 
 	testCases := []harness.TestCase{
 		gqlgen,
@@ -47,7 +55,8 @@ func TestNamingSchema(t *testing.T) {
 		grpcClientTest,
 		fiberV2Test,
 		redigoTest,
-		netHTTPServer,
+		netHTTPServerServeMux,
+		netHTTPServerWrapHandler,
 		netHTTPClient,
 		gomemcache,
 		gcpPubsub,
