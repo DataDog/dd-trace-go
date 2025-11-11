@@ -458,6 +458,9 @@ func TestBlocking(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+				if tc.status != 200 {
+					require.Contains(t, spans[0].Tag("_dd.appsec.json"), "security_response_id")
+				}
 			}
 
 			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{

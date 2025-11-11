@@ -6,6 +6,7 @@
 package actions
 
 import (
+	"bytes"
 	_ "embed" // embed is used to embed the blocked-template.json and blocked-template.html files
 	"net/http"
 	"os"
@@ -34,6 +35,9 @@ const (
 	envBlockedTemplateJSON = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
 )
 
+// securityResponsePlaceholder is the placeholder for the security response ID in the templates.
+var securityResponsePlaceholder = []byte("[security_response_id]")
+
 func init() {
 	for key, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
 		if path, ok := env.Lookup(key); ok {
@@ -54,9 +58,10 @@ type (
 	blockActionParams struct {
 		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value is nullable to
 		// be able to distinguish between unset and defaulting to Abort (10), or set to OK (0).
-		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
-		StatusCode     int    `mapstructure:"status_code"`
-		Type           string `mapstructure:"type,omitempty"`
+		GRPCStatusCode     *int   `mapstructure:"grpc_status_code,omitempty"`
+		StatusCode         int    `mapstructure:"status_code"`
+		Type               string `mapstructure:"type,omitempty"`
+		SecurityResponseID string `mapstructure:"security_response_id,omitempty"`
 	}
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that returns a status code and an error
@@ -120,19 +125,19 @@ func NewBlockAction(params map[string]any) []Action {
 		return nil
 	}
 	return []Action{
-		newHTTPBlockRequestAction(p.StatusCode, p.Type),
+		newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID),
 		newGRPCBlockRequestAction(*p.GRPCStatusCode),
 	}
 }
 
-func newHTTPBlockRequestAction(status int, template string) *BlockHTTP {
-	return &BlockHTTP{Handler: newBlockHandler(status, template)}
+func newHTTPBlockRequestAction(status int, template string, securityResponseID string) *BlockHTTP {
+	return &BlockHTTP{Handler: newBlockHandler(status, template, securityResponseID)}
 }
 
 // newBlockHandler creates, initializes and returns a new BlockRequestAction
-func newBlockHandler(status int, template string) http.Handler {
-	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML)
-	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
+func newBlockHandler(status int, template string, securityResponseID string) http.Handler {
+	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML, securityResponseID)
+	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON, securityResponseID)
 	switch template {
 	case "json":
 		return jsonHandler
@@ -153,10 +158,22 @@ func newBlockHandler(status int, template string) http.Handler {
 	}
 }
 
-func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler {
+func newBlockRequestHandler(status int, ct string, payload []byte, securityResponseID string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", ct)
 		w.WriteHeader(status)
-		w.Write(payload)
+		body := renderSecurityResponsePayload(ct, payload, securityResponseID)
+		w.Write(body)
 	})
+}
+
+func renderSecurityResponsePayload(ct string, payload []byte, securityResponseID string) []byte {
+	var securityResponseBytes []byte
+	if ct == "application/json" {
+		securityResponseBytes = []byte(`"` + securityResponseID + `"`)
+	} else {
+		securityResponseBytes = []byte(securityResponseID)
+	}
+
+	return bytes.ReplaceAll(payload, securityResponsePlaceholder, securityResponseBytes)
 }

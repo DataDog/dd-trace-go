@@ -7,6 +7,7 @@ package actions
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
 
@@ -16,8 +17,9 @@ import (
 // redirectActionParams are the dynamic parameters to be provided to a "redirect_request"
 // action type upon invocation
 type redirectActionParams struct {
-	Location   string `mapstructure:"location,omitempty"`
-	StatusCode int    `mapstructure:"status_code"`
+	Location           string `mapstructure:"location,omitempty"`
+	StatusCode         int    `mapstructure:"status_code"`
+	SecurityResponseID string `mapstructure:"security_response_id,omitempty"`
 }
 
 func init() {
@@ -30,7 +32,7 @@ func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) 
 	return p, err
 }
 
-func newRedirectRequestAction(status int, loc string) *BlockHTTP {
+func newRedirectRequestAction(status int, loc string, securityResponseID string) *BlockHTTP {
 	// Default to 303 if status is out of redirection codes bounds
 	if status < http.StatusMultipleChoices || status >= http.StatusBadRequest {
 		status = http.StatusSeeOther
@@ -38,8 +40,9 @@ func newRedirectRequestAction(status int, loc string) *BlockHTTP {
 
 	// If location is not set we fall back on a default block action
 	if loc == "" {
-		return &BlockHTTP{Handler: newBlockHandler(http.StatusForbidden, string(blockedTemplateJSON))}
+		return &BlockHTTP{Handler: newBlockHandler(http.StatusForbidden, "auto", securityResponseID)}
 	}
+	loc = strings.ReplaceAll(loc, "[security_response_id]", securityResponseID)
 	return &BlockHTTP{Handler: http.RedirectHandler(loc, status)}
 }
 
@@ -50,5 +53,5 @@ func NewRedirectAction(params map[string]any) []Action {
 		log.Debug("appsec: couldn't decode redirect action parameters")
 		return nil
 	}
-	return []Action{newRedirectRequestAction(p.StatusCode, p.Location)}
+	return []Action{newRedirectRequestAction(p.StatusCode, p.Location, p.SecurityResponseID)}
 }
