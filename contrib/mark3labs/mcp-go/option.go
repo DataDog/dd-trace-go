@@ -6,11 +6,9 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func NewMCPServer(name, version string, opts ...server.ServerOption) *server.MCPServer {
-	srv := server.NewMCPServer(name, version, append(opts, WithTracing())...)
-	return srv
-}
+// The file contains methods for easily adding tracing to a MCP server.
 
+// Pass to server.NewMCPServer to add tracing to the server.
 func WithTracing() server.ServerOption {
 	return func(s *server.MCPServer) {
 
