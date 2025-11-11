@@ -53,6 +53,7 @@ use (
 	./contrib/net/http
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
+	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
 	./contrib/segmentio/kafka-go
 	./contrib/sirupsen/logrus

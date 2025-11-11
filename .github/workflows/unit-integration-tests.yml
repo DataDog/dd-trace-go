@@ -164,6 +164,14 @@ jobs:
           xpack.security.enabled: false
         ports:
           - 9204:9200
+      opensearch2:
+        image: public.ecr.aws/opensearchproject/opensearch:2
+        env:
+          discovery.type: single-node
+          OPENSEARCH_INITIAL_ADMIN_PASSWORD: ADMIN-passw0rd
+          DISABLE_SECURITY_PLUGIN: "true"
+        ports:
+          - 9212:9200
       mongo3:
         image: mongo:3
         ports:
