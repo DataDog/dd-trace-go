@@ -162,18 +162,12 @@ func newBlockRequestHandler(status int, ct string, payload []byte, securityRespo
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", ct)
 		w.WriteHeader(status)
-		body := renderSecurityResponsePayload(ct, payload, securityResponseID)
+		body := renderSecurityResponsePayload(payload, securityResponseID)
 		w.Write(body)
 	})
 }
 
-func renderSecurityResponsePayload(ct string, payload []byte, securityResponseID string) []byte {
-	var securityResponseBytes []byte
-	if ct == "application/json" {
-		securityResponseBytes = []byte(`"` + securityResponseID + `"`)
-	} else {
-		securityResponseBytes = []byte(securityResponseID)
-	}
-
+func renderSecurityResponsePayload(payload []byte, securityResponseID string) []byte {
+	securityResponseBytes := []byte(securityResponseID)
 	return bytes.ReplaceAll(payload, securityResponsePlaceholder, securityResponseBytes)
 }

@@ -17,7 +17,7 @@ import (
 
 func TestNewHTTPBlockRequestAction(t *testing.T) {
 	const id = "00000000-0000-0000-0000-000000000000"
-	expectedBlockedTemplateJSON := bytes.ReplaceAll(blockedTemplateJSON, securityResponsePlaceholder, []byte(`"`+id+`"`))
+	expectedBlockedTemplateJSON := bytes.ReplaceAll(blockedTemplateJSON, securityResponsePlaceholder, []byte(id))
 	expectedBlockedTemplateHTML := bytes.ReplaceAll(blockedTemplateHTML, securityResponsePlaceholder, []byte(id))
 
 	mux := http.NewServeMux()
@@ -164,7 +164,7 @@ func TestNewHTTPBlockRequestAction(t *testing.T) {
 
 func TestNewRedirectRequestAction(t *testing.T) {
 	const id = "00000000-0000-0000-0000-000000000000"
-	expectedBlockedTemplateJSON := bytes.ReplaceAll(blockedTemplateJSON, securityResponsePlaceholder, []byte(`"`+id+`"`))
+	expectedBlockedTemplateJSON := bytes.ReplaceAll(blockedTemplateJSON, securityResponsePlaceholder, []byte(id))
 
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
