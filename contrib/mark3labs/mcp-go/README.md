@@ -13,9 +13,6 @@ import (
 
 func main() {
 	tracer.Start()
-    if err := tracer.Start(); err != nil {
-       log.Fatal(err)
-    }
 	defer tracer.Stop()
 
 	srv := server.NewMCPServer("my-server", "1.0.0",
