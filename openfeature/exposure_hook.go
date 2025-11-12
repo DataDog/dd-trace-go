@@ -38,11 +38,18 @@ func newExposureHook(writer *exposureWriter) *exposureHook {
 // It extracts the necessary information from the evaluation details and sends
 // an exposure event to the writer if doLog is true.
 func (h *exposureHook) After(
-	_ context.Context,
+	ctx context.Context,
 	hookContext of.HookContext,
 	flagEvaluationDetails of.InterfaceEvaluationDetails,
 	_ of.HookHints,
 ) error {
+	// Check if context was cancelled before starting evaluation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	// Check if we should log this exposure
 	if !h.shouldLog(flagEvaluationDetails.FlagMetadata) {
 		log.Debug("openfeature: skipping exposure event (doLog=false) for flag %q", hookContext.FlagKey())
