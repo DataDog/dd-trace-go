@@ -42,7 +42,7 @@ func newRedirectRequestAction(status int, loc string, securityResponseID string)
 	if loc == "" {
 		return &BlockHTTP{Handler: newBlockHandler(http.StatusForbidden, "auto", securityResponseID)}
 	}
-	loc = strings.ReplaceAll(loc, "[security_response_id]", securityResponseID)
+	loc = strings.ReplaceAll(loc, securityResponsePlaceholder, securityResponseID)
 	return &BlockHTTP{Handler: http.RedirectHandler(loc, status)}
 }
 

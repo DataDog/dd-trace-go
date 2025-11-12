@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"unsafe"
 
 	"github.com/go-viper/mapstructure/v2"
 
@@ -31,12 +32,10 @@ var blockedTemplateJSON []byte
 var blockedTemplateHTML []byte
 
 const (
-	envBlockedTemplateHTML = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
-	envBlockedTemplateJSON = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
+	envBlockedTemplateHTML      = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
+	envBlockedTemplateJSON      = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
+	securityResponsePlaceholder = "[security_response_id]"
 )
-
-// securityResponsePlaceholder is the placeholder for the security response ID in the templates.
-var securityResponsePlaceholder = []byte("[security_response_id]")
 
 func init() {
 	for key, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
@@ -169,5 +168,6 @@ func newBlockRequestHandler(status int, ct string, payload []byte, securityRespo
 
 func renderSecurityResponsePayload(payload []byte, securityResponseID string) []byte {
 	securityResponseBytes := []byte(securityResponseID)
-	return bytes.ReplaceAll(payload, securityResponsePlaceholder, securityResponseBytes)
+	placeholderBytes := unsafe.Slice(unsafe.StringData(securityResponsePlaceholder), len(securityResponsePlaceholder))
+	return bytes.ReplaceAll(payload, placeholderBytes, securityResponseBytes)
 }
