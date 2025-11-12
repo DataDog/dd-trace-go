@@ -37,11 +37,9 @@ aspects:
             type: net/http.Transport
     advice:
       - wrap-expression:
-          imports:
-            debug: runtime/debug
           template: |-
             {{- .AST.Type -}}{
-              DD__tracer_internal: func() bool { debug.PrintStack(); return true }(),
+              DD__tracer_internal: true,
               {{ range .AST.Elts }}{{ . }},
               {{ end }}
             }
