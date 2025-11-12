@@ -72,6 +72,10 @@
 # Feature Flagging Experiments
 /openfeature                    @DataDog/feature-flagging-and-experimentation-sdk @DataDog/asm-go
 
+# Database Monitoring
+ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
+contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
+
 # no owner: changes to these files will not automatically ping any particular
 # team and can be reviewed by anybody with the appropriate permissions. This is
 # meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
