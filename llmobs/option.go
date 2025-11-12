@@ -154,3 +154,11 @@ func WithAnnotatedMetrics(metrics map[string]float64) AnnotateOption {
 		}
 	}
 }
+
+// WithIntent sets the intent for the span.
+// Intent is a description of a reason for calling an MCP tool.
+func WithIntent(intent string) AnnotateOption {
+	return func(a *illmobs.SpanAnnotations) {
+		a.Intent = intent
+	}
+}
