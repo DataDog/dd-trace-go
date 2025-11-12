@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -21,14 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewToolHandlerMiddleware(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-
-	middleware := NewToolHandlerMiddleware()
-	assert.NotNil(t, middleware)
-}
-
+// Test tool spans are recorded on a successful tool call
 func TestIntegrationToolCallSuccess(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
@@ -107,6 +99,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	assert.Contains(t, outputStr, "8")
 }
 
+// Test recording of tool spans on a failed tool call
 func TestIntegrationToolCallError(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
@@ -156,6 +149,8 @@ func TestIntegrationToolCallError(t *testing.T) {
 
 	assert.Contains(t, toolSpan.Meta, "input")
 }
+
+// Test helpers
 
 // testTracer creates a testtracer with LLMObs enabled for integration tests
 func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
