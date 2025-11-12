@@ -18,12 +18,6 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageMark3LabsMCPGo)
-}
-
 type hooks struct {
 	spanCache *sync.Map
 }
