@@ -296,6 +296,8 @@ func TestWriterParallel(t *testing.T) {
 
 	wg.Wait()
 
+	time.Sleep(50 * time.Millisecond) // ensure all marshalJSON calls are done
+
 	assert.EqualValues(t, numRequests*2, marshalJSONCalled.Load())
 	assert.EqualValues(t, numRequests*2, payloadReceived.Load())
 }
