@@ -18,7 +18,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.71.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.71.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.7.1 // indirect
-	github.com/DataDog/go-libddwaf/v4 v4.6.2-0.20251110234650-546f02ae70c2 // indirect
+	github.com/DataDog/go-libddwaf/v4 v4.7.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250806100345-ca5e7fdaf7b6 // indirect
 	github.com/DataDog/go-sqllexer v0.1.8 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
