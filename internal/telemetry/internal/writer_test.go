@@ -149,20 +149,20 @@ func TestWriter_Flush_Failure(t *testing.T) {
 	}
 
 	var (
-		marshalJSONCalled bool
-		payloadReceived   bool
+		marshalJSONCalled atomic.Bool
+		payloadReceived   atomic.Bool
 	)
 
 	payload := testPayload{
 		RequestTypeValue: "test",
 		marshalJSON: func() ([]byte, error) {
-			marshalJSONCalled = true
+			marshalJSONCalled.Store(true)
 			return []byte(`{"request_type":"test"}`), nil
 		},
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		payloadReceived = true
+		payloadReceived.Store(true)
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 	defer server.Close()
@@ -178,8 +178,8 @@ func TestWriter_Flush_Failure(t *testing.T) {
 	assert.Len(t, results, 1)
 	assert.Equal(t, http.StatusBadRequest, results[0].StatusCode)
 	assert.ErrorContains(t, err, `400 Bad Request`)
-	assert.True(t, marshalJSONCalled)
-	assert.True(t, payloadReceived)
+	assert.True(t, marshalJSONCalled.Load())
+	assert.True(t, payloadReceived.Load())
 }
 
 func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
@@ -295,6 +295,8 @@ func TestWriterParallel(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	time.Sleep(50 * time.Millisecond) // ensure all marshalJSON calls are done
 
 	assert.EqualValues(t, numRequests*2, marshalJSONCalled.Load())
 	assert.EqualValues(t, numRequests*2, payloadReceived.Load())

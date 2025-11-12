@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -551,14 +552,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if c.agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
-			c.httpClient = udsClient(c.agentURL.Path, c.httpClientTimeout)
-			// TODO(darccio): use internal.UnixDataSocketURL instead
-			c.agentURL = &url.URL{
-				Scheme: "http",
-				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(c.agentURL.Path)),
-			}
+			c.httpClient = internal.UDSClient(c.agentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
+			c.agentURL = internal.UnixDataSocketURL(c.agentURL.Path)
 		} else {
-			c.httpClient = defaultHTTPClient(c.httpClientTimeout, false)
+			c.httpClient = internal.DefaultHTTPClient(c.httpClientTimeout, false)
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
@@ -740,29 +737,6 @@ func newStatsdClient(c *config) (internal.StatsdClient, error) {
 		return c.statsdClient, nil
 	}
 	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
-}
-
-// udsClient returns a new http.Client which connects using the given UDS socket path.
-func udsClient(socketPath string, timeout time.Duration) *http.Client {
-	if timeout == 0 {
-		timeout = defaultHTTPTimeout
-	}
-	return &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return defaultDialer(timeout).DialContext(ctx, "unix", (&net.UnixAddr{
-					Name: socketPath,
-					Net:  "unix",
-				}).String())
-			},
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-		Timeout: timeout,
-	}
 }
 
 // defaultDogstatsdAddr returns the default connection address for Dogstatsd.
@@ -1203,7 +1177,7 @@ func WithSampler(s Sampler) StartOption {
 	}
 }
 
-// WithRateSampler sets the given sampler rate to be used with the tracer.
+// WithSamplerRate sets the given sampler rate to be used with the tracer.
 // The rate must be between 0 and 1. By default an all-permissive sampler rate (1) is used.
 func WithSamplerRate(rate float64) StartOption {
 	return func(c *config) {

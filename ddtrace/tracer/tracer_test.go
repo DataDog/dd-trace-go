@@ -1238,7 +1238,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultHTTPClient(0, true))
+	return newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, true))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1357,7 +1357,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultHTTPClient(0, false))),
+		withTransport(newHTTPTransport(url, internal.DefaultHTTPClient(defaultHTTPTimeout, false))),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -2350,7 +2350,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		withTransport(transport),
 		withTickChan(tick),
 		// disable keep-alives to avoid goroutine leaks between tests
-		WithHTTPClient(defaultHTTPClient(0, true)),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {
@@ -2393,7 +2393,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 // disabled. This is necessary to avoid goroutine leaks between tests, see
 // TestMain.
 func newTestConfig(opts ...StartOption) (*config, error) {
-	opts = append([]StartOption{WithHTTPClient(defaultHTTPClient(0, true))}, opts...)
+	opts = append([]StartOption{WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true))}, opts...)
 	return newConfig(opts...)
 }
 

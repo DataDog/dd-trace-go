@@ -7,8 +7,10 @@ package internal
 
 import (
 	"net"
+	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -73,4 +75,27 @@ func AgentURLFromEnv() *url.URL {
 		}
 	}
 	return httpURL
+}
+
+func DefaultDialer(timeout time.Duration) *net.Dialer {
+	return &net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: 30 * time.Second,
+		DualStack: true,
+	}
+}
+
+func DefaultHTTPClient(timeout time.Duration, disableKeepAlives bool) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           DefaultDialer(timeout).DialContext,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			DisableKeepAlives:     disableKeepAlives,
+		},
+		Timeout: timeout,
+	}
 }

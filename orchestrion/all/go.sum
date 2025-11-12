@@ -792,8 +792,8 @@ github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0
 github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.71.2/go.mod h1:XeZj0IgsiL3vgeEGTucf61JvJRh1LxWMUbZA/XJsPD0=
 github.com/DataDog/datadog-agent/pkg/proto v0.71.2 h1:WC69FCbHoYQEneHtp8cv4A71GpT/WNjv5EiYkuopvFo=
 github.com/DataDog/datadog-agent/pkg/proto v0.71.2/go.mod h1:KSn4jt3CykV6CT1C8Rknn/Nj3E+VYHK/UDWolg/+kzw=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f h1:/RFNCWeq0mD6pNmVHmGxjLNmqUa0vgO7T/eu17uYVqQ=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f/go.mod h1:lwkSvCXABHXyqy6mG9WBU6MTK9/E0i0R8JVApUtT+XA=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-rc.1 h1:fVqr9ApWmUMEExmgn8iFPfwm9ZrlEfFWgTKp1IcNH18=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-rc.1/go.mod h1:lwkSvCXABHXyqy6mG9WBU6MTK9/E0i0R8JVApUtT+XA=
 github.com/DataDog/datadog-agent/pkg/trace v0.71.2 h1:F3Zk3JxkSnQ0rs4kifZ1y94alDqo/SAT9rwQlT0Nx7c=
 github.com/DataDog/datadog-agent/pkg/trace v0.71.2/go.mod h1:cCkrxJC4m2KSDdfYlKb60W4yEguO5nBpmGquVX8Lb1w=
 github.com/DataDog/datadog-agent/pkg/util/log v0.71.2 h1:GaOMKewaJnnbaOX1cdsZbsQCmKxCNamPyxI7e7kSL6c=
