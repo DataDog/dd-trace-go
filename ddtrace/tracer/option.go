@@ -1169,7 +1169,7 @@ func WithSampler(s Sampler) StartOption {
 	}
 }
 
-// WithRateSampler sets the given sampler rate to be used with the tracer.
+// WithSamplerRate sets the given sampler rate to be used with the tracer.
 // The rate must be between 0 and 1. By default an all-permissive sampler rate (1) is used.
 func WithSamplerRate(rate float64) StartOption {
 	return func(c *config) {

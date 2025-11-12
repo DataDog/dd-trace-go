@@ -27,7 +27,6 @@ aspects:
             - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             - import-path: github.com/DataDog/dd-trace-go/v2/internal
             - import-path: github.com/DataDog/dd-trace-go/v2/openfeature
-            - import-path: github.com/DataDog/dd-trace-go/v2/*
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/remoteconfig
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal
@@ -38,9 +37,11 @@ aspects:
             type: net/http.Transport
     advice:
       - wrap-expression:
+          imports:
+            debug: runtime/debug
           template: |-
             {{- .AST.Type -}}{
-              DD__tracer_internal: true,
+              DD__tracer_internal: func() bool { debug.PrintStack(); return true }(),
               {{ range .AST.Elts }}{{ . }},
               {{ end }}
             }
