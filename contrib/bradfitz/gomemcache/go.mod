@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.5
+	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.6
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/stretchr/testify v1.11.1
 )
