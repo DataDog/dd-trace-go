@@ -176,8 +176,8 @@ func TestWriter_Flush_Failure(t *testing.T) {
 	results, err := writer.Flush(&payload)
 	require.Error(t, err)
 	assert.Len(t, results, 1)
-	assert.Equal(t, http.StatusBadRequest, results[0].StatusCode)
 	assert.ErrorContains(t, err, `400 Bad Request`)
+	assert.Equal(t, http.StatusBadRequest, results[0].StatusCode)
 	assert.True(t, marshalJSONCalled.Load())
 	assert.True(t, payloadReceived.Load())
 }
@@ -192,28 +192,28 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 	}
 
 	var (
-		marshalJSONCalled int
-		payloadReceived1  bool
-		payloadReceived2  bool
+		marshalJSONCalled atomic.Int64
+		payloadReceived1  atomic.Bool
+		payloadReceived2  atomic.Bool
 	)
 
 	payload := testPayload{
 		RequestTypeValue: "test",
 		marshalJSON: func() ([]byte, error) {
-			marshalJSONCalled++
+			marshalJSONCalled.Add(1)
 			return []byte(`{"request_type":"test"}`), nil
 		},
 	}
 
 	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		payloadReceived1 = true
+		payloadReceived1.Store(true)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server1.Close()
 
 	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		assert.True(t, payloadReceived1)
-		payloadReceived2 = true
+		assert.True(t, payloadReceived1.Load())
+		payloadReceived2.Store(true)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server2.Close()
@@ -232,8 +232,8 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Len(t, results, 2)
-	assert.Equal(t, http.StatusInternalServerError, results[0].StatusCode)
 	assert.ErrorContains(t, results[0].Error, `500 Internal Server Error`)
+	assert.Equal(t, http.StatusInternalServerError, results[0].StatusCode)
 	assert.Equal(t, time.Duration(0), results[0].CallDuration)
 	assert.Zero(t, results[0].PayloadByteSize)
 
@@ -242,8 +242,8 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 	assert.NotZero(t, results[1].PayloadByteSize)
 	assert.NoError(t, results[1].Error)
 
-	assert.Equal(t, 2, marshalJSONCalled)
-	assert.True(t, payloadReceived2)
+	assert.EqualValues(t, 2, marshalJSONCalled.Load())
+	assert.True(t, payloadReceived2.Load())
 }
 
 func TestWriterParallel(t *testing.T) {
