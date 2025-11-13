@@ -421,4 +421,3 @@ func TestGlobalDeclarativeConfigSources(t *testing.T) {
 		assert.Equal(t, telemetry.OriginManagedStableConfig, ManagedDeclarativeConfig.Origin())
 	})
 }
-
