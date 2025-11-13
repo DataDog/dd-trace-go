@@ -36,7 +36,6 @@ func (o *otelEnvConfigSource) Get(key string) string {
 		log.Warn("Both %q and %q are set, using %s=%s", entry.ot, ddKey, entry.ot, ddVal)
 		telemetryTags := []string{ddPrefix + strings.ToLower(ddKey), otelPrefix + strings.ToLower(entry.ot)}
 		telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
-		return ddVal
 	}
 	val, err := entry.remapper(otVal)
 	if err != nil {

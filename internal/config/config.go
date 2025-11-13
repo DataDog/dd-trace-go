@@ -19,10 +19,8 @@ var (
 
 // Config represents global configuration properties.
 type Config struct {
-	// agentURL is the URL of the Datadog agent.
 	agentURL *url.URL
 
-	// debug enables debug logging.
 	debug bool
 
 	logStartup bool
