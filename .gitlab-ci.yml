@@ -21,6 +21,7 @@ generate_matrix:
   image: $BASE_CI_IMAGE
   tags: ["runner:apm-k8s-tweaked-metal"]
   rules:
+    # We don't want to run benchmarks when pushing release tags for nested modules
     - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
       when: never
     - when: always
