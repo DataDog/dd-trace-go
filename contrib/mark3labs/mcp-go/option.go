@@ -16,9 +16,14 @@ type TracingConfig struct {
 }
 
 // Pass to server.NewMCPServer to add tracing to the server.
-// Do not use with `server.WithHooks(...)`, as this overwrites the hooks. Pass custom hooks in the TracingConfig instead.
+// Do not use with `server.WithHooks(...)`, as this overwrites the hooks.
+// Pass custom hooks in the TracingConfig instead, which in turn is passed to server.WithHooks(...).
 func WithTracing(options *TracingConfig) server.ServerOption {
 	return func(s *server.MCPServer) {
+		if options == nil {
+			options = new(TracingConfig)
+		}
+
 		hooks := options.Hooks
 
 		// Append hooks (hooks is a private field)

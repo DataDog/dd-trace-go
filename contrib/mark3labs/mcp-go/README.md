@@ -17,6 +17,8 @@ func main() {
 	tracer.Start()
 	defer tracer.Stop()
 
+    // Do not use with `server.WithHooks(...)`, as this overwrites the tracing hooks. 
+    // Pass custom hooks via TracingConfig.Hooks instead which in turn is passed to server.WithHooks(...).
     srv := server.NewMCPServer("my-server", "1.0.0",
 		mcpgotrace.WithTracing(&mcpgotrace.TracingConfig{}))
 }
