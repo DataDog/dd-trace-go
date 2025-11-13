@@ -34,7 +34,7 @@ func TestAddServerHooks(t *testing.T) {
 	defer mt.Stop()
 
 	serverHooks := &server.Hooks{}
-	AddServerHooks(serverHooks)
+	appendTracingHooks(serverHooks)
 
 	assert.Len(t, serverHooks.OnBeforeInitialize, 1)
 	assert.Len(t, serverHooks.OnAfterInitialize, 1)
@@ -46,7 +46,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		WithTracing(&TracingConfig{}))
+		WithTracing(nil))
 
 	ctx := context.Background()
 	sessionID := "test-session-init"
@@ -109,7 +109,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	AddServerHooks(hooks)
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		WithTracing(&TracingConfig{}))
+		WithTracing(nil))
 
 	calcTool := mcp.NewTool("calculator",
 		mcp.WithDescription("A simple calculator"))

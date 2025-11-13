@@ -30,7 +30,7 @@ func WithTracing(options *TracingConfig) server.ServerOption {
 		if hooks == nil {
 			hooks = &server.Hooks{}
 		}
-		AddServerHooks(hooks)
+		appendTracingHooks(hooks)
 
 		server.WithHooks(hooks)(s)
 

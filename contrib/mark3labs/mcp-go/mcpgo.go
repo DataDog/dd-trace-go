@@ -27,12 +27,12 @@ type hooks struct {
 	spanCache *sync.Map
 }
 
-// AddServerHooks appends Datadog tracing hooks to an existing server.Hooks object.
-func AddServerHooks(hooks *server.Hooks) {
-	ddHooks := newHooks()
-	hooks.AddBeforeInitialize(ddHooks.onBeforeInitialize)
-	hooks.AddAfterInitialize(ddHooks.onAfterInitialize)
-	hooks.AddOnError(ddHooks.onError)
+// appendTracingHooks appends Datadog tracing hooks to an existing server.Hooks object.
+func appendTracingHooks(hooks *server.Hooks) {
+	tracingHooks := newHooks()
+	hooks.AddBeforeInitialize(tracingHooks.onBeforeInitialize)
+	hooks.AddAfterInitialize(tracingHooks.onAfterInitialize)
+	hooks.AddOnError(tracingHooks.onError)
 }
 
 func NewToolHandlerMiddleware() server.ToolHandlerMiddleware {
