@@ -45,11 +45,8 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
 
-	hooks := &server.Hooks{}
-	AddServerHooks(hooks)
-
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithHooks(hooks))
+		WithTracing(&TracingConfig{}))
 
 	ctx := context.Background()
 	sessionID := "test-session-init"
@@ -112,8 +109,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	AddServerHooks(hooks)
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithHooks(hooks),
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+		WithTracing(&TracingConfig{}))
 
 	calcTool := mcp.NewTool("calculator",
 		mcp.WithDescription("A simple calculator"))
@@ -211,7 +207,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+		WithTracing(&TracingConfig{}))
 
 	errorTool := mcp.NewTool("error_tool",
 		mcp.WithDescription("A tool that always errors"))

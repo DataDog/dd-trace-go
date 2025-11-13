@@ -16,11 +16,7 @@ func Example() {
 	defer tracer.Stop()
 
 	// Create server hooks and add Datadog tracing
-	hooks := &server.Hooks{}
-	mcpgotrace.AddServerHooks(hooks)
-
 	srv := server.NewMCPServer("my-server", "1.0.0",
-		server.WithHooks(hooks),
-		server.WithToolHandlerMiddleware(mcpgotrace.NewToolHandlerMiddleware()))
+		mcpgotrace.WithTracing(&mcpgotrace.TracingConfig{}))
 	_ = srv
 }
