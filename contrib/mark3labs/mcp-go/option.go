@@ -34,6 +34,6 @@ func WithTracing(options *TracingConfig) server.ServerOption {
 
 		server.WithHooks(hooks)(s)
 
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware())(s)
+		server.WithToolHandlerMiddleware(toolHandlerMiddleware)(s)
 	}
 }

@@ -21,11 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewToolHandlerMiddleware(t *testing.T) {
+func TestToolHandlerMiddleware(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	middleware := NewToolHandlerMiddleware()
+	middleware := toolHandlerMiddleware
 	assert.NotNil(t, middleware)
 }
 
@@ -106,7 +106,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	defer tt.Stop()
 
 	hooks := &server.Hooks{}
-	AddServerHooks(hooks)
+	appendTracingHooks(hooks)
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
 		WithTracing(nil))
