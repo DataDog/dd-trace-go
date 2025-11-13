@@ -30,6 +30,8 @@ type StartSpanConfig struct {
 	MLApp string
 	// StartTime sets a custom start time for the span. If zero, uses current time.
 	StartTime time.Time
+	// Name of the tracing integration.
+	Integration string
 }
 
 // FinishSpanConfig contains configuration options for finishing an LLMObs span.

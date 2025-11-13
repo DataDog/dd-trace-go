@@ -98,6 +98,7 @@ var contribIntegrations = map[string]struct {
 	"k8s.io/client-go/kubernetes":                   {"Kubernetes", false},
 	"github.com/labstack/echo/v4":                   {"echo v4", false},
 	"log/slog":                                      {"log/slog", false},
+	"github.com/mark3labs/mcp-go":                   {"MCP", false},
 	"github.com/miekg/dns":                          {"miekg/dns", false},
 	"net/http":                                      {"HTTP", false},
 	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
