@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	globalConfig *Config
-	configOnce   sync.Once
+	config     *Config
+	configOnce sync.Once
 )
 
 // Config represents global configuration properties.
@@ -77,7 +77,7 @@ type Config struct {
 }
 
 // loadConfig initializes and returns a new Config by reading from all configured sources.
-// This function is NOT thread-safe and should only be called once through GlobalConfig's sync.Once.
+// This function is NOT thread-safe and should only be called once through GetConfig's sync.Once.
 func loadConfig() *Config {
 	cfg := new(Config)
 
@@ -113,19 +113,23 @@ func loadConfig() *Config {
 	return cfg
 }
 
-// GlobalConfig returns the global configuration singleton.
+// GetConfig returns the global configuration singleton.
 // This function is thread-safe and can be called from multiple goroutines concurrently.
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
-func GlobalConfig() *Config {
+func GetConfig() *Config {
+	configOnce.Do(func() {
+		config = loadConfig()
+	})
+	return config
+}
+
+// ResetConfigForTesting resets the global configuration state for testing purposes. It should only be called from tests.
+func ResetConfigForTesting() {
 	if testing.Testing() {
-		globalConfig = loadConfig()
-	} else {
-		configOnce.Do(func() {
-			globalConfig = loadConfig()
-		})
+		config = nil
+		configOnce = sync.Once{}
 	}
-	return globalConfig
 }
 
 func (c *Config) IsDebugEnabled() bool {

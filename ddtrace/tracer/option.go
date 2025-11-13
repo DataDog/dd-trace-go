@@ -374,7 +374,7 @@ const partialFlushMinSpansDefault = 1000
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
-	internalConfig := internalconfig.GlobalConfig()
+	internalConfig := internalconfig.GetConfig()
 
 	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
 	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
