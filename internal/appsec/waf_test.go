@@ -365,6 +365,12 @@ func TestBlocking(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
+	var payload struct {
+		Triggers []struct {
+			SecurityResponseID string `json:"security_response_id"`
+		} `json:"triggers"`
+	}
+
 	for _, tc := range []struct {
 		name      string
 		headers   map[string]string
@@ -459,7 +465,11 @@ func TestBlocking(t *testing.T) {
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
 				if tc.status != 200 {
+					securityEvent, ok := spans[0].Tag("_dd.appsec.json").(string)
+					require.True(t, ok)
 					require.Contains(t, spans[0].Tag("_dd.appsec.json"), "security_response_id")
+					require.NoError(t, json.Unmarshal([]byte(securityEvent), &payload))
+					require.Contains(t, string(b), payload.Triggers[0].SecurityResponseID)
 				}
 			}
 

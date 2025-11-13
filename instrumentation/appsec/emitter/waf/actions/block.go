@@ -161,8 +161,7 @@ func newBlockRequestHandler(status int, ct string, payload []byte, securityRespo
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", ct)
 		w.WriteHeader(status)
-		body := renderSecurityResponsePayload(payload, securityResponseID)
-		w.Write(body)
+		w.Write(renderSecurityResponsePayload(payload, securityResponseID))
 	})
 }
 
