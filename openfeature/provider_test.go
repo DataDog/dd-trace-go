@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -243,7 +244,7 @@ func createTestConfig() *universalFlagsConfiguration {
 }
 
 func TestNewDatadogProvider(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	if provider == nil {
 		t.Fatal("expected provider to be non-nil")
 	}
@@ -254,13 +255,13 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	hooks := provider.Hooks()
-	if len(hooks) != 0 {
-		t.Errorf("expected no hooks, got %d", len(hooks))
+	if len(hooks) != 1 {
+		t.Errorf("expected 1 hook, got %d", len(hooks))
 	}
 }
 
 func TestBooleanEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -332,7 +333,7 @@ func TestBooleanEvaluation(t *testing.T) {
 }
 
 func TestStringEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -373,7 +374,7 @@ func TestStringEvaluation(t *testing.T) {
 }
 
 func TestIntEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -410,7 +411,7 @@ func TestIntEvaluation(t *testing.T) {
 }
 
 func TestFloatEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -448,7 +449,7 @@ func TestFloatEvaluation(t *testing.T) {
 }
 
 func TestObjectEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -498,7 +499,7 @@ func TestObjectEvaluation(t *testing.T) {
 }
 
 func TestProviderWithoutConfiguration(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	ctx := context.Background()
 
 	flatCtx := openfeature.FlattenedContext{
@@ -521,7 +522,7 @@ func TestProviderWithoutConfiguration(t *testing.T) {
 }
 
 func TestProviderConfigurationUpdate(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Initially no config
 	if provider.getConfiguration() != nil {
@@ -543,7 +544,7 @@ func TestProviderConfigurationUpdate(t *testing.T) {
 }
 
 func TestConcurrentEvaluations(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -568,5 +569,124 @@ func TestConcurrentEvaluations(t *testing.T) {
 	// Wait for all goroutines
 	for i := 0; i < 10; i++ {
 		<-done
+	}
+}
+
+func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
+	// Create a provider that doesn't have configuration loaded
+	// This will cause InitWithContext to wait for configuration
+	provider := newDatadogProvider(ProviderConfig{})
+
+	// Use a very short timeout context (50ms)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	// Try to set the provider with context and wait - should timeout
+	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
+
+	// Verify that we get a timeout error
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	// Check that the error is due to context deadline exceeded
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded error, got: %v", err)
+	}
+
+	t.Logf("Successfully got timeout error as expected: %v", err)
+}
+
+func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
+	// Create a provider and set up its configuration immediately
+	provider := newDatadogProvider(ProviderConfig{})
+	config := createTestConfig()
+	provider.updateConfiguration(config)
+
+	// Use a reasonable timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Set the provider with context and wait - should succeed quickly
+	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
+
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// Verify the provider was set by doing a flag evaluation
+	client := openfeature.NewClient("test-client")
+	evalCtx := openfeature.NewEvaluationContext("user-123", map[string]interface{}{
+		"country": "US",
+	})
+	result, err := client.BooleanValue(context.Background(), "bool-flag", false, evalCtx)
+
+	if err != nil {
+		t.Fatalf("flag evaluation failed: %v", err)
+	}
+
+	if result != true {
+		t.Errorf("expected flag evaluation to return true, got %v", result)
+	}
+
+	t.Log("Successfully set provider with context and performed flag evaluation")
+}
+
+func TestShutdownWithContextTimeout(t *testing.T) {
+	// Create and configure a provider
+	provider := newDatadogProvider(ProviderConfig{})
+	config := createTestConfig()
+	provider.updateConfiguration(config)
+
+	// Use a very short timeout context for shutdown (1ms)
+	// This tests the timeout behavior of ShutdownWithContext
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	// Try to shutdown with context - should respect the timeout
+	err := provider.ShutdownWithContext(ctx)
+
+	// For test providers without remote config, we expect a specific error
+	// The key is that the method respects the context and doesn't hang
+	if err != nil {
+		t.Logf("Shutdown returned error: %v", err)
+
+		// We expect either a timeout error OR a remote config error (both are valid)
+		// The important thing is that the method doesn't hang and respects context
+		if errors.Is(err, context.DeadlineExceeded) {
+			t.Log("Got expected timeout error")
+		} else if err.Error() == "failed to unregister OpenFeature product: remote config client not started" {
+			t.Log("Got expected remote config error (test provider has no remote config)")
+		} else {
+			t.Errorf("unexpected error type: %v", err)
+		}
+	} else {
+		t.Log("Shutdown completed within timeout")
+	}
+}
+
+func TestShutdownWithContextSuccess(t *testing.T) {
+	// Create and configure a provider
+	provider := newDatadogProvider(ProviderConfig{})
+	config := createTestConfig()
+	provider.updateConfiguration(config)
+
+	// Use a reasonable timeout context for shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Shutdown with adequate timeout
+	err := provider.ShutdownWithContext(ctx)
+
+	// For test providers without remote config, we expect a specific error
+	// but the shutdown should complete without timing out
+	if err != nil {
+		if err.Error() == "failed to unregister OpenFeature product: remote config client not started" {
+			t.Log("Got expected remote config error (test provider has no remote config client)")
+		} else {
+			t.Errorf("unexpected error: %v", err)
+		}
+	} else {
+		t.Log("Shutdown completed successfully")
 	}
 }

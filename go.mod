@@ -7,10 +7,10 @@ godebug x509negativeserial=1
 require (
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.71.0
 	github.com/DataDog/datadog-agent/pkg/proto v0.71.0
-	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f
+	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-rc.1
 	github.com/DataDog/datadog-agent/pkg/trace v0.71.0
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/go-libddwaf/v4 v4.6.1
+	github.com/DataDog/go-libddwaf/v4 v4.7.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
@@ -23,7 +23,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
 	github.com/minio/simdjson-go v0.4.5
-	github.com/open-feature/go-sdk v1.16.0
+	github.com/open-feature/go-sdk v1.17.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
@@ -37,11 +37,11 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
-	golang.org/x/mod v0.27.0
+	golang.org/x/mod v0.29.0
 	golang.org/x/sync v0.17.0
-	golang.org/x/sys v0.35.0
+	golang.org/x/sys v0.37.0
 	golang.org/x/time v0.12.0
-	golang.org/x/tools v0.36.0
+	golang.org/x/tools v0.38.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
 	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.7
@@ -96,8 +96,8 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/net v0.43.0 // indirect
-	golang.org/x/text v0.29.0 // indirect
+	golang.org/x/net v0.46.0 // indirect
+	golang.org/x/text v0.30.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

@@ -792,8 +792,8 @@ github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0
 github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.71.2/go.mod h1:XeZj0IgsiL3vgeEGTucf61JvJRh1LxWMUbZA/XJsPD0=
 github.com/DataDog/datadog-agent/pkg/proto v0.71.2 h1:WC69FCbHoYQEneHtp8cv4A71GpT/WNjv5EiYkuopvFo=
 github.com/DataDog/datadog-agent/pkg/proto v0.71.2/go.mod h1:KSn4jt3CykV6CT1C8Rknn/Nj3E+VYHK/UDWolg/+kzw=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f h1:/RFNCWeq0mD6pNmVHmGxjLNmqUa0vgO7T/eu17uYVqQ=
-github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-devel.0.20251022090513-a6fc0902d44f/go.mod h1:lwkSvCXABHXyqy6mG9WBU6MTK9/E0i0R8JVApUtT+XA=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-rc.1 h1:fVqr9ApWmUMEExmgn8iFPfwm9ZrlEfFWgTKp1IcNH18=
+github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.73.0-rc.1/go.mod h1:lwkSvCXABHXyqy6mG9WBU6MTK9/E0i0R8JVApUtT+XA=
 github.com/DataDog/datadog-agent/pkg/trace v0.71.2 h1:F3Zk3JxkSnQ0rs4kifZ1y94alDqo/SAT9rwQlT0Nx7c=
 github.com/DataDog/datadog-agent/pkg/trace v0.71.2/go.mod h1:cCkrxJC4m2KSDdfYlKb60W4yEguO5nBpmGquVX8Lb1w=
 github.com/DataDog/datadog-agent/pkg/util/log v0.71.2 h1:GaOMKewaJnnbaOX1cdsZbsQCmKxCNamPyxI7e7kSL6c=
@@ -806,8 +806,8 @@ github.com/DataDog/datadog-go/v5 v5.8.1 h1:+GOES5W9zpKlhwHptZVW2C0NLVf7ilr7pHkDc
 github.com/DataDog/datadog-go/v5 v5.8.1/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
 github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.4.0-dev h1:srl0FPpKiginZRfuUCioeUV8gJuTLmNY7pS6AxZl4qQ=
 github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.4.0-dev/go.mod h1:rG6TpmIBAZEpcNHjD1q/4qtbWNKWw61UH3IS+FsjReQ=
-github.com/DataDog/go-libddwaf/v4 v4.6.1 h1:wGUioRkQ2a5MYr2wTn5uZfMENbLV4uKXrkr6zCVInCs=
-github.com/DataDog/go-libddwaf/v4 v4.6.1/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
+github.com/DataDog/go-libddwaf/v4 v4.7.0 h1:oF2YaaEtu7MYd5TrwceXUsJYdJ6b1kmLZsAj0up/0po=
+github.com/DataDog/go-libddwaf/v4 v4.7.0/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250806100345-ca5e7fdaf7b6 h1:rIMZ3Bqn2w8nWrAIXekOdm+sZVxUYHGX8cS7P9W06Kk=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250806100345-ca5e7fdaf7b6/go.mod h1:YFoTl1xsMzdSRFIu33oCSPS/3+HZAPGpO3oOM96wXCM=
 github.com/DataDog/go-sqllexer v0.1.8 h1:ku9DpghFHeyyviR28W/3R4cCJwzpsuC08YIoltnx5ds=
@@ -983,10 +983,10 @@ github.com/confluentinc/confluent-kafka-go/v2 v2.4.0 h1:NbOku86JJlsRJPJKE0snNsz6
 github.com/confluentinc/confluent-kafka-go/v2 v2.4.0/go.mod h1:E1dEQy50ZLfqs7T9luxz0rLxaeFZJZE92XvApJOr/Rk=
 github.com/containerd/console v1.0.3 h1:lIr7SlA5PxZyMV30bDW0MGbiOPXwc63yRuCP0ARubLw=
 github.com/containerd/console v1.0.3/go.mod h1:7LqA/THxQ86k76b8c/EMSiaJ3h1eZkMkXar0TQ1gf3U=
-github.com/containerd/containerd v1.7.27 h1:yFyEyojddO3MIGVER2xJLWoCIn+Up4GaHFquP7hsFII=
-github.com/containerd/containerd v1.7.27/go.mod h1:xZmPnl75Vc+BLGt4MIfu6bp+fy03gdHAn9bz+FreFR0=
-github.com/containerd/containerd/api v1.9.0 h1:HZ/licowTRazus+wt9fM6r/9BQO7S0vD5lMcWspGIg0=
-github.com/containerd/containerd/api v1.9.0/go.mod h1:GhghKFmTR3hNtyznBoQ0EMWr9ju5AqHjcZPsSpTKutI=
+github.com/containerd/containerd v1.7.29 h1:90fWABQsaN9mJhGkoVnuzEY+o1XDPbg9BTC9QTAHnuE=
+github.com/containerd/containerd v1.7.29/go.mod h1:azUkWcOvHrWvaiUjSQH0fjzuHIwSPg1WL5PshGP4Szs=
+github.com/containerd/containerd/api v1.10.0 h1:5n0oHYVBwN4VhoX9fFykCV9dF1/BvAXeg2F8W6UYq1o=
+github.com/containerd/containerd/api v1.10.0/go.mod h1:NBm1OAk8ZL+LG8R0ceObGxT5hbUYj7CzTmR3xh0DlMM=
 github.com/containerd/continuity v0.4.2 h1:v3y/4Yz5jwnvqPKJJ+7Wf93fyWoCB3F5EclWG023MDM=
 github.com/containerd/continuity v0.4.2/go.mod h1:F6PTNCKepoxEaXLQp3wDAjygEnImnZ/7o4JzpodfroQ=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
