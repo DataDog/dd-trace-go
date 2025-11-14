@@ -27,10 +27,6 @@ type hooks struct {
 	spanCache *sync.Map
 }
 
-type textIOAnnotator interface {
-	AnnotateTextIO(input, output string, opts ...llmobs.AnnotateOption)
-}
-
 // AddServerHooks appends Datadog tracing hooks to an existing server.Hooks object.
 func AddServerHooks(hooks *server.Hooks) {
 	ddHooks := newHooks()
@@ -100,18 +96,20 @@ func (h *hooks) onError(ctx context.Context, id any, method mcp.MCPMethod, messa
 	if !ok {
 		return
 	}
-	span, ok := value.(llmobs.Span)
+
+	span, ok := value.(*llmobs.TaskSpan)
 	if !ok {
 		return
 	}
+
+	defer span.Finish(llmobs.WithError(err))
+
 	inputJSON, marshalErr := json.Marshal(message)
 	if marshalErr != nil {
 		instr.Logger().Warn("mcp-go: failed to marshal error message: %v", marshalErr)
 	}
-	if annotator, ok := span.(textIOAnnotator); ok {
-		annotator.AnnotateTextIO(string(inputJSON), err.Error())
-	}
-	span.Finish(llmobs.WithError(err))
+	span.AnnotateTextIO(string(inputJSON), err.Error())
+
 }
 
 func finishSpanWithIO[Req any, Res any](h *hooks, id any, request Req, result Res) {
@@ -119,10 +117,13 @@ func finishSpanWithIO[Req any, Res any](h *hooks, id any, request Req, result Re
 	if !ok {
 		return
 	}
-	span, ok := value.(llmobs.Span)
+	span, ok := value.(*llmobs.TaskSpan)
 	if !ok {
 		return
 	}
+
+	defer span.Finish()
+
 	inputJSON, marshalErr := json.Marshal(request)
 	if marshalErr != nil {
 		instr.Logger().Warn("mcp-go: failed to marshal request: %v", marshalErr)
@@ -131,10 +132,6 @@ func finishSpanWithIO[Req any, Res any](h *hooks, id any, request Req, result Re
 	if marshalErr != nil {
 		instr.Logger().Warn("mcp-go: failed to marshal result: %v", marshalErr)
 	}
-	outputText := string(resultJSON)
 
-	if annotator, ok := span.(textIOAnnotator); ok {
-		annotator.AnnotateTextIO(string(inputJSON), outputText)
-	}
-	span.Finish()
+	span.AnnotateTextIO(string(inputJSON), string(resultJSON))
 }
