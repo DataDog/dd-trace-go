@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -205,13 +206,17 @@ func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 		},
 	}
 
-	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		r.Body.Close()
 		payloadReceived1.Store(true)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server1.Close()
 
-	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		r.Body.Close()
 		assert.True(t, payloadReceived1.Load())
 		payloadReceived2.Store(true)
 		w.WriteHeader(http.StatusOK)
