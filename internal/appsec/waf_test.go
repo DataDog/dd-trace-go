@@ -458,6 +458,25 @@ func TestBlocking(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+				if tc.status != 200 {
+					var payload struct {
+						Triggers []struct {
+							SecurityResponseID string `json:"security_response_id"`
+						} `json:"triggers"`
+					}
+					var blockedBody struct {
+						SecurityResponseID string `json:"security_response_id"`
+					}
+
+					securityEvent, ok := spans[0].Tag("_dd.appsec.json").(string)
+					require.True(t, ok)
+					require.Contains(t, spans[0].Tag("_dd.appsec.json"), "security_response_id")
+					require.NoError(t, json.Unmarshal([]byte(securityEvent), &payload))
+					wafSecurityResponseId := payload.Triggers[0].SecurityResponseID
+					require.Greater(t, len(wafSecurityResponseId), 0)
+					require.NoError(t, json.Unmarshal(b, &blockedBody))
+					require.Equal(t, wafSecurityResponseId, blockedBody.SecurityResponseID)
+				}
 			}
 
 			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
