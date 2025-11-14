@@ -10,11 +10,10 @@
 package internal
 
 import (
-	"encoding/binary"
 	"fmt"
 	"os"
 	"structs"
-	"sync/atomic"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -79,17 +78,22 @@ func CreateOtelProcessContextMapping(data []byte) error {
 	}
 
 	addr := uintptr(unsafe.Pointer(&mappingBytes[0]))
-	header := processContextHeader{
-		Version:     1,
-		PayloadSize: uint32(len(data)),
-		PayloadAddr: addr + uintptr(headerSize),
-	}
 
-	copy(mappingBytes[headerSize:], data)
-	copy(mappingBytes[:headerSize], unsafe.Slice((*byte)(unsafe.Pointer(&header)), headerSize))
-	// write atomically the signature last to ensure that once a process validates the signature, it can safely read the whole data
-	sig := binary.NativeEndian.Uint64(unsafe.Slice(unsafe.StringData(otelContextSignature), len(otelContextSignature)))
-	atomic.StoreUint64((*uint64)(unsafe.Pointer(&mappingBytes[0])), sig)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		header := processContextHeader{
+			Version:     1,
+			PayloadSize: uint32(len(data)),
+			PayloadAddr: addr + uintptr(headerSize),
+		}
+		copy(mappingBytes[headerSize:], data)
+		copy(mappingBytes[:headerSize], unsafe.Slice((*byte)(unsafe.Pointer(&header)), headerSize))
+	}()
+	wg.Wait()
+	// write the signature last to ensure that once a process validates the signature, it can safely read the whole data
+	copy(mappingBytes, otelContextSignature)
 
 	err = unix.Mprotect(mappingBytes, unix.PROT_READ)
 	if err != nil {
