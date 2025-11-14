@@ -171,7 +171,6 @@ func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
 
 // normalizeKey is a helper function for ConfigSource implementations to normalize the key to a valid environment variable name.
 func normalizeKey(key string) string {
-	// Try to convert key to a valid environment variable name
 	if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") {
 		return key
 	}

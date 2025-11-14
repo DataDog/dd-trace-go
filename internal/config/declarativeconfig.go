@@ -21,11 +21,6 @@ func (d *declarativeConfig) getID() string {
 	return d.ID
 }
 
-// To be used by tests
-// func (d *declarativeConfig) isEmpty() bool {
-// 	return d.ID == telemetry.EmptyID && len(d.Config) == 0
-// }
-
 // emptyDeclarativeConfig creates and returns a new, empty declarativeConfig instance.
 func emptyDeclarativeConfig() *declarativeConfig {
 	return &declarativeConfig{
