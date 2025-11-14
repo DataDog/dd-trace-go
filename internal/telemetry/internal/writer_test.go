@@ -108,20 +108,22 @@ func TestWriter_Flush_Success(t *testing.T) {
 	}
 
 	var (
-		marshalJSONCalled bool
-		payloadReceived   bool
+		marshalJSONCalled atomic.Bool
+		payloadReceived   atomic.Bool
 	)
 
 	payload := testPayload{
 		RequestTypeValue: "test",
 		marshalJSON: func() ([]byte, error) {
-			marshalJSONCalled = true
+			marshalJSONCalled.Store(true)
 			return []byte(`{"request_type":"test"}`), nil
 		},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		payloadReceived = true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		r.Body.Close()
+		payloadReceived.Store(true)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -136,8 +138,8 @@ func TestWriter_Flush_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotZero(t, bytesSent)
-	assert.True(t, marshalJSONCalled)
-	assert.True(t, payloadReceived)
+	assert.True(t, marshalJSONCalled.Load())
+	assert.True(t, payloadReceived.Load())
 }
 
 func TestWriter_Flush_Failure(t *testing.T) {
@@ -162,7 +164,9 @@ func TestWriter_Flush_Failure(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		r.Body.Close()
 		payloadReceived.Store(true)
 		w.WriteHeader(http.StatusBadRequest)
 	}))
@@ -273,7 +277,9 @@ func TestWriterParallel(t *testing.T) {
 		},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		r.Body.Close()
 		payloadReceived.Add(1)
 		w.WriteHeader(http.StatusTeapot)
 	}))
