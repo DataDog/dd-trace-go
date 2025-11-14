@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.6.0
-	github.com/DataDog/dd-trace-go/v2 v2.4.0-rc.6
+	github.com/DataDog/dd-trace-go/v2 v2.4.0
 	github.com/aws/aws-lambda-go v1.46.0
 	github.com/aws/aws-sdk-go-v2 v1.24.1
 	github.com/aws/aws-sdk-go-v2/config v1.26.6
