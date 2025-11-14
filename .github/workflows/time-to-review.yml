@@ -1,0 +1,26 @@
+name: Time to Review
+on:
+    pull_request:
+        types:
+            - opened
+            - synchronize
+permissions:
+    contents: read
+    pull-requests: write
+    id-token: write
+jobs:
+    estimate_review_time:
+        runs-on: ubuntu-latest
+        steps:
+            # Retrieve temporary github token
+            - name: Get Github token
+              uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80 # v1.0.3
+              id: octo-sts
+              with:
+                  policy: self.time-to-review
+                  scope: DataDog/dd-trace-go
+            # https://github.com/marketplace/actions/time-to-review
+            - name: Estimate Review Time
+              uses: srajasimman/time-to-review@v1.0.2
+              env:
+                  GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
