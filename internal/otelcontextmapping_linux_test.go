@@ -9,7 +9,9 @@ package internal
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -18,6 +20,7 @@ import (
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func getContextFromMapping(fields []string) []byte {
@@ -62,12 +65,12 @@ func getContextMapping(mapsFile io.Reader, useMappingNames bool) ([]byte, error)
 	for scanner.Scan() {
 
 		line := scanner.Text()
-		fields := strings.SplitN(line, " ", 6)
-		if len(fields) < 5 {
+		fields := strings.Fields(line)
+		if len(fields) < 6 {
 			continue
 		}
 
-		if (useMappingNames && fields[5] != otelContextSignature) || (!useMappingNames && fields[5] != "") {
+		if (useMappingNames && fields[5] != "[anon:OTEL_CTX]") || (!useMappingNames && fields[5] != "") {
 			continue
 		}
 
@@ -94,6 +97,17 @@ func readProcessLevelContext(useMappingNames bool) ([]byte, error) {
 	return getContextMapping(mapsFile, useMappingNames)
 }
 
+func kernelSupportsNamedAnonymousMappings() (bool, error) {
+	var uname unix.Utsname
+	if err := unix.Uname(&uname); err != nil {
+		return false, fmt.Errorf("could not get Kernel Version: %v", err)
+	}
+	var major, minor, patch uint32
+	_, _ = fmt.Fscanf(bytes.NewReader(uname.Release[:]), "%d.%d.%d", &major, &minor, &patch)
+
+	return major > 5 || (major == 5 && minor >= 17), nil
+}
+
 func TestCreateOtelProcessContextMapping(t *testing.T) {
 	RemoveOtelProcessContextMapping()
 	t.Cleanup(func() {
@@ -104,7 +118,10 @@ func TestCreateOtelProcessContextMapping(t *testing.T) {
 	err := CreateOtelProcessContextMapping(payload)
 	require.NoError(t, err)
 
-	ctx, err := readProcessLevelContext(true)
+	supportsNamedAnonymousMappings, err := kernelSupportsNamedAnonymousMappings()
+	require.NoError(t, err)
+
+	ctx, err := readProcessLevelContext(supportsNamedAnonymousMappings)
 	require.NoError(t, err)
 	require.Equal(t, payload, ctx)
 }
