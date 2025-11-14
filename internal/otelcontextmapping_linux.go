@@ -45,14 +45,10 @@ type processContextHeader struct {
 }
 
 func CreateOtelProcessContextMapping(data []byte) error {
-	if existingMappingBytes != nil && publisherPID == os.Getpid() {
-		// Unmap the previous mapping if it exists
-		err := unix.Munmap(existingMappingBytes)
-		if err != nil {
-			return fmt.Errorf("failed to munmap previous mapping: %w", err)
-		}
-		existingMappingBytes = nil
-		publisherPID = 0
+	// Clear the previous mapping if it exists
+	err := RemoveOtelProcessContextMapping()
+	if err != nil {
+		return fmt.Errorf("failed to remove previous mapping: %w", err)
 	}
 
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
@@ -114,5 +110,21 @@ func CreateOtelProcessContextMapping(data []byte) error {
 
 	existingMappingBytes = mappingBytes
 	publisherPID = os.Getpid()
+	return nil
+}
+
+func RemoveOtelProcessContextMapping() error {
+	//Check publisher PID to check that the process has not forked.
+	//It should not be necessary for Go, but just in case.
+	if existingMappingBytes == nil || publisherPID != os.Getpid() {
+		return nil
+	}
+
+	err := unix.Munmap(existingMappingBytes)
+	if err != nil {
+		return fmt.Errorf("failed to munmap: %w", err)
+	}
+	existingMappingBytes = nil
+	publisherPID = 0
 	return nil
 }
