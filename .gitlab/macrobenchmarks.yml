@@ -8,6 +8,7 @@ variables:
   timeout: 1h
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
+      interruptible: false
       when: always
     - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
       when: always

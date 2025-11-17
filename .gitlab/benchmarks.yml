@@ -5,7 +5,9 @@
   only:
     refs:
       - branches
-  interruptible: true
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "main"
+      interruptible: false
   tags: ["runner:apm-k8s-tweaked-metal"]
   variables:
     GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version
