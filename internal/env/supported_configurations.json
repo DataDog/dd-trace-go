@@ -642,7 +642,13 @@
     "OTEL_EXPORTER_OTLP_ENDPOINT": [
       "A"
     ],
+    "OTEL_EXPORTER_OTLP_METRICS_HEADERS": [
+      "A"
+    ],
     "OTEL_EXPORTER_OTLP_PROTOCOL": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": [
       "A"
     ],
     "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": [
@@ -661,6 +667,12 @@
       "A"
     ],
     "OTEL_METRICS_EXPORTER": [
+      "A"
+    ],
+    "OTEL_METRIC_EXPORT_INTERVAL": [
+      "A"
+    ],
+    "OTEL_METRIC_EXPORT_TIMEOUT": [
       "A"
     ],
     "OTEL_PROPAGATORS": [
