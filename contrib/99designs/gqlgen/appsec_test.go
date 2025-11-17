@@ -118,7 +118,7 @@ func TestAppSec(t *testing.T) {
 				}
 
 				jsonText, ok := span.Tag("_dd.appsec.json").(string)
-				require.True(t, ok, "expected _dd.appsec.json tag on span")
+				require.True(t, ok, "expected _dd.appsec.json tag on span - tags were: %v", span.Tags())
 
 				var parsed ddAppsecJSON
 				err = json.Unmarshal([]byte(jsonText), &parsed)
