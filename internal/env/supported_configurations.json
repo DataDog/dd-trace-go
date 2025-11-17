@@ -636,6 +636,24 @@
     "DD_VERSION": [
       "A"
     ],
+    "DD_METRICS_OTEL_ENABLED": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_ENDPOINT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_PROTOCOL": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": [
+      "A"
+    ],
     "OTEL_LOGS_EXPORTER": [
       "A"
     ],
