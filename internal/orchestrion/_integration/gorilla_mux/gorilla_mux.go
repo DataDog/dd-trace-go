@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -64,6 +65,89 @@ func (tc *TestCaseSubrouter) ExpectedTraces() trace.Traces {
 			},
 		},
 	}
+}
+
+type TestCaseRouterParallel struct {
+	*http.Server
+}
+
+func (tc *TestCaseRouterParallel) Setup(_ context.Context, t *testing.T) {
+	router := mux.NewRouter()
+	router.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	tc.Server = &http.Server{
+		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Handler: router,
+	}
+
+	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	t.Cleanup(func() {
+		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		assert.NoError(t, tc.Server.Shutdown(ctx))
+	})
+}
+
+func (tc *TestCaseRouterParallel) Run(_ context.Context, t *testing.T) {
+	// Test sync.Once behavior by making concurrent requests to the router
+	// This ensures initialization happens exactly once even with parallel invocations
+	const numRequests = 10
+	var wg sync.WaitGroup
+	wg.Add(numRequests)
+
+	errChan := make(chan error, numRequests)
+	statusChan := make(chan int, numRequests)
+
+	for i := 0; i < numRequests; i++ {
+		go func() {
+			defer wg.Done()
+			resp, err := http.Get(fmt.Sprintf("http://%s/ping", tc.Server.Addr))
+			if err != nil {
+				errChan <- err
+				return
+			}
+			defer resp.Body.Close()
+			statusChan <- resp.StatusCode
+		}()
+	}
+
+	wg.Wait()
+	close(errChan)
+	close(statusChan)
+
+	// Verify all requests succeeded
+	for err := range errChan {
+		require.NoError(t, err)
+	}
+
+	successCount := 0
+	for status := range statusChan {
+		require.Equal(t, http.StatusOK, status, "Expected all parallel requests to succeed")
+		successCount++
+	}
+	require.Equal(t, numRequests, successCount, "Expected all %d requests to complete", numRequests)
+}
+
+func (tc *TestCaseRouterParallel) ExpectedTraces() trace.Traces {
+	// We expect exactly numRequests traces, all for the same endpoint
+	// Each concurrent request should produce its own trace
+	const numRequests = 10
+	traces := make(trace.Traces, numRequests)
+	for i := 0; i < numRequests; i++ {
+		traces[i] = &trace.Trace{
+			Tags: map[string]any{
+				"name":     "http.request",
+				"resource": "GET /ping",
+				"type":     "http",
+				"service":  "gorilla_mux.test",
+			},
+		}
+	}
+	return traces
 }
 
 type TestCase struct {
