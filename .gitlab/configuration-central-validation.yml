@@ -67,5 +67,6 @@ variables:
   before_script:
     - *download-scripts-from-template
     - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
+    - pip3 install requests
   script:
     - scripts/config-inversion-update-supported-range.py "$LOCAL_JSON_PATH" "$LANGUAGE_NAME" "$MULTIPLE_RELEASE_LINES"

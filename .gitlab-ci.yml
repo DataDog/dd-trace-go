@@ -95,6 +95,26 @@ update_central_configurations_version_range:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
     LANGUAGE_NAME: "golang"
 
+validate_supported_configurations_v2_local_file:
+  stage: config-validation
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:82290795
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  rules:
+    - when: on_success
+  extends: .validate_supported_configurations_v2_local_file
+  variables:
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+
+update_central_configurations_version_range_v2:
+  stage: config-validation
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:82290795
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  extends: .update_central_configurations_version_range_v2
+  variables:
+    LOCAL_REPO_NAME: "dd-trace-go"
+    LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    LANGUAGE_NAME: "golang"
+
 include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/test-apps.yml"
