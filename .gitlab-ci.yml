@@ -49,6 +49,7 @@ check-big-regressions:
   tags:
     - "arch:amd64"
   image: $BASE_CI_IMAGE
+  interruptible: true
   script:
     - |
       pwd
