@@ -104,6 +104,7 @@ validate_supported_configurations_v2_local_file:
   extends: .validate_supported_configurations_v2_local_file
   variables:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    BACKFILLED: "false"
 
 update_central_configurations_version_range_v2:
   stage: config-validation
