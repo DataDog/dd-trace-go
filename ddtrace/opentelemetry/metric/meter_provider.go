@@ -101,20 +101,29 @@ func (mp *MeterProvider) ForceFlush(ctx context.Context) error {
 	return mp.MeterProvider.ForceFlush(ctx)
 }
 
-// deltaTemporalitySelector returns a temporality selector that uses delta temporality for all instruments.
-// This is the Datadog default, as delta temporality is more efficient for monitoring systems.
+// deltaTemporalitySelector returns a temporality selector configured with Datadog defaults.
+// Default temporality is Delta, but non-monotonic instruments use Cumulative per OTel spec:
+// - Monotonic counters (Counter, ObservableCounter) → Delta (differences between measurements)
+// - Non-monotonic counters (UpDownCounter, ObservableUpDownCounter) → Cumulative (absolute values)
+// - Gauges (ObservableGauge) → Cumulative (point-in-time values)
+// - Histograms → Delta (distribution of measurements)
 func deltaTemporalitySelector() metric.TemporalitySelector {
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
-		// Use delta temporality for all metric types
 		switch kind {
 		case metric.InstrumentKindCounter,
-			metric.InstrumentKindUpDownCounter,
 			metric.InstrumentKindHistogram,
-			metric.InstrumentKindObservableCounter,
+			metric.InstrumentKindObservableCounter:
+			// Monotonic instruments use delta temporality
+			return metricdata.DeltaTemporality
+
+		case metric.InstrumentKindUpDownCounter,
 			metric.InstrumentKindObservableUpDownCounter,
 			metric.InstrumentKindObservableGauge:
-			return metricdata.DeltaTemporality
+			// Non-monotonic instruments use cumulative temporality
+			return metricdata.CumulativeTemporality
+
 		default:
+			// Default to delta temporality
 			return metricdata.DeltaTemporality
 		}
 	}
