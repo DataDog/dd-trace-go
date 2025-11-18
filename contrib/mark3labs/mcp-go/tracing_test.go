@@ -254,6 +254,35 @@ func TestIntegrationToolCallError(t *testing.T) {
 	assert.Contains(t, toolSpan.Meta, "input")
 }
 
+func TestWithTracingWithCustomHooks(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	customHookCalled := false
+	customHooks := &server.Hooks{}
+	customHooks.AddBeforeInitialize(func(ctx context.Context, id any, request *mcp.InitializeRequest) {
+		customHookCalled = true
+	})
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithTracing(&TracingConfig{Hooks: customHooks}))
+
+	ctx := context.Background()
+	initRequest := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
+
+	response := srv.HandleMessage(ctx, []byte(initRequest))
+	assert.NotNil(t, response)
+
+	assert.True(t, customHookCalled, "custom hook should have been called")
+
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	taskSpan := spans[0]
+	assert.Equal(t, "mcp.initialize", taskSpan.Name)
+	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
+}
+
 // Test helpers
 
 // testTracer creates a testtracer with LLMObs enabled for integration tests
