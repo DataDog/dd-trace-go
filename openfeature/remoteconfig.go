@@ -42,7 +42,7 @@ func (p *DatadogProvider) rcCallback(update remoteconfig.ProductUpdate) map[stri
 
 	// Process each configuration file in the update
 	for path, data := range update {
-		status := processConfigUpdate(p, path, data)
+		status := p.processConfigUpdate(path, data)
 		statuses[path] = status
 	}
 
@@ -50,13 +50,18 @@ func (p *DatadogProvider) rcCallback(update remoteconfig.ProductUpdate) map[stri
 }
 
 // processConfigUpdate processes a single configuration update from Remote Config.
-func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc.ApplyStatus {
+func (p *DatadogProvider) processConfigUpdate(path string, data []byte) rc.ApplyStatus {
 	// Handle configuration deletion (nil data means the config was removed)
+	// Since we don't track configuration merging we cannot "partially remove" flags so we just ignore it
 	if data == nil {
-		log.Debug("openfeature: remote config: removing configuration %q", path)
-		// For now, we treat deletion as clearing the configuration
-		// In a multi-config scenario, we might track configs per path
-		provider.updateConfiguration(nil)
+		p.receivedRCFIlesMu.Lock()
+		defer p.receivedRCFIlesMu.Unlock()
+		delete(p.receivedRCFiles, path)
+
+		if len(p.receivedRCFiles) == 0 {
+			p.updateConfiguration(nil)
+		}
+
 		return rc.ApplyStatus{
 			State: rc.ApplyStateAcknowledged,
 		}
@@ -85,8 +90,12 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Update the provider with the new configuration
-	provider.updateConfiguration(&config)
+	p.updateConfiguration(&config)
 	log.Debug("openfeature: remote config: successfully applied configuration %q with %d flags", path, len(config.Flags))
+
+	p.receivedRCFIlesMu.Lock()
+	defer p.receivedRCFIlesMu.Unlock()
+	p.receivedRCFiles[path] = struct{}{}
 
 	return rc.ApplyStatus{
 		State: rc.ApplyStateAcknowledged,

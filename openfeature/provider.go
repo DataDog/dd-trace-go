@@ -57,6 +57,12 @@ type DatadogProvider struct {
 	// Exposure tracking
 	exposureWriter *exposureWriter
 	exposureHook   *exposureHook
+
+	// receivedRCFiles tracks which Remote Config files have been received
+	// to handle deletions appropriately, we don't support partial deletions/addition of flags
+	// but we still need to own when all files are deleted to clear the configuration
+	receivedRCFiles   map[string]struct{}
+	receivedRCFIlesMu sync.Mutex
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -88,8 +94,9 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
-		exposureWriter: writer,
-		exposureHook:   hook,
+		exposureWriter:  writer,
+		exposureHook:    hook,
+		receivedRCFiles: make(map[string]struct{}, 1),
 	}
 	p.configChange.L = &p.mu
 	return p
