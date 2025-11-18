@@ -140,14 +140,12 @@ func resolveOTLPEndpoint() (endpoint, path string, insecure bool) {
 	if host := env.Get(envDDAgentHost); host != "" {
 		endpoint = net.JoinHostPort(host, defaultOTLPPort)
 		insecure = true
-		log.Debug("Using OTLP metrics endpoint from DD_AGENT_HOST: %s", endpoint)
 		return
 	}
 
 	// Default to localhost:4318
 	endpoint = "localhost:4318"
 	insecure = true
-	log.Debug("Using default OTLP metrics endpoint: %s", endpoint)
 	return
 }
 
