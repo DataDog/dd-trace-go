@@ -6,8 +6,11 @@
 package mcpgo_test
 
 import (
+	"context"
+
 	mcpgotrace "github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -15,8 +18,21 @@ func Example() {
 	tracer.Start()
 	defer tracer.Stop()
 
-	// Create server hooks and add Datadog tracing
 	srv := server.NewMCPServer("my-server", "1.0.0",
-		mcpgotrace.WithTracing(&mcpgotrace.TracingConfig{}))
+		mcpgotrace.WithTracing(nil))
+	_ = srv
+}
+
+func Example_withCustomHooks() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	customHooks := &server.Hooks{}
+	customHooks.AddBeforeInitialize(func(ctx context.Context, id any, request *mcp.InitializeRequest) {
+		// Your custom logic here
+	})
+
+	srv := server.NewMCPServer("my-server", "1.0.0",
+		mcpgotrace.WithTracing(&mcpgotrace.TracingConfig{Hooks: customHooks}))
 	_ = srv
 }
