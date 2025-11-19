@@ -16,7 +16,9 @@ type TracingConfig struct {
 	// Hooks allows you to provide custom hooks that will be merged with Datadog tracing hooks.
 	// If nil, only Datadog tracing hooks will be added and any custom hooks provided via server.WithHooks(...) will be removed.
 	// If provided, your custom hooks will be executed alongside Datadog tracing hooks.
-	Hooks                *server.Hooks
+	Hooks *server.Hooks
+	// Enables intent capture for tool spans.
+	// This will modify the tool schemas to include a parameter for the client to provide the intent.
 	IntentCaptureEnabled bool
 }
 
@@ -55,12 +57,14 @@ func WithMCPServerTracing(options *TracingConfig) server.ServerOption {
 
 		server.WithHooks(hooks)(s)
 
+		// Register toolHandlerMiddleware first so it runs first (creates the span)
+		// Note: mcp-go middleware runs in registration order (first registered runs first)
+		server.WithToolHandlerMiddleware(toolHandlerMiddleware)(s)
+
 		if options.IntentCaptureEnabled {
 			hooks.AddAfterListTools(injectDdtraceListToolsHook)
+			// Register intent capture middleware second so it runs second (after span is created)
 			server.WithToolHandlerMiddleware(processAndRemoveDdtraceToolMiddleware)(s)
 		}
-
-		// This must be after the intent capture middleware, so that span in available. Last registered middleware is run first.
-		server.WithToolHandlerMiddleware(toolHandlerMiddleware)(s)
 	}
 }

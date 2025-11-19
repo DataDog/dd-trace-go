@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
@@ -18,10 +17,10 @@ import (
 )
 
 func TestIntentCapture(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	tt := testTracer(t)
+	defer tt.Stop()
 
-	srv := server.NewMCPServer("test-server", "1.0.0", WithTracing(&TracingConfig{IntentCaptureEnabled: true}))
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
 	var receivedArgs map[string]any
 	calcTool := mcp.NewTool("calculator",
@@ -71,7 +70,7 @@ func TestIntentCapture(t *testing.T) {
 	session.Initialize()
 	ctx = srv.WithContext(ctx, session)
 
-	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calculator","arguments":{"operation":"add","x":5,"y":3,"ddtrace":{"intent":"test"}}}}`))
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calculator","arguments":{"operation":"add","x":5,"y":3,"ddtrace":{"intent":"test intent description"}}}}`))
 
 	// Ensure ddtrace is removed in tool call
 	require.NotNil(t, receivedArgs)
@@ -79,6 +78,16 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, float64(5), receivedArgs["x"])
 	assert.Equal(t, float64(3), receivedArgs["y"])
 	assert.NotContains(t, receivedArgs, "ddtrace")
+
+	// Verify intent was recorded on the LLMObs span
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	toolSpan := spans[0]
+	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
+	assert.Equal(t, "calculator", toolSpan.Name)
+	assert.Contains(t, toolSpan.Meta, "intent")
+	assert.Equal(t, "test intent description", toolSpan.Meta["intent"])
 }
 
 func mustMarshal(v interface{}) []byte {
