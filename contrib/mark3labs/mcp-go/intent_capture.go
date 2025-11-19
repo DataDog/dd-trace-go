@@ -64,8 +64,8 @@ func injectDdtraceListToolsHook(ctx context.Context, id any, message *mcp.ListTo
 }
 
 // Removing tracing parameters from the tool call request so its not sent to the tool.
-// This must be registered before the tool handler middleware, so that the span is available.
-// This must be registered after any user-defined middleware so that it is not visible to them.
+// This must be registered after the tool handler middleware (mcp-go runs middleware in registration order).
+// This removes the ddtrace parameter before user-defined middleware or tool handlers can see it.
 var processAndRemoveDdtraceToolMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if m, ok := request.Params.Arguments.(map[string]any); ok && m != nil {
@@ -76,7 +76,6 @@ var processAndRemoveDdtraceToolMiddleware = func(next server.ToolHandlerFunc) se
 					instr.Logger().Warn("mcp-go intent capture: ddtrace value is not a map")
 				}
 				delete(m, ddtraceKey)
-				request.Params.Arguments = m
 			}
 		}
 
@@ -108,6 +107,5 @@ func processDdtrace(ctx context.Context, m map[string]any) {
 	if !ok {
 		return
 	}
-	// TODO: Add fields to toolSpan to annotate intent
-	_ = toolSpan
+	toolSpan.Annotate(llmobs.WithIntent(intent))
 }
