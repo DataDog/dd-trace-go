@@ -8,7 +8,6 @@ package config
 import (
 	"net/url"
 	"sync"
-	"testing"
 	"time"
 )
 
@@ -120,14 +119,6 @@ func GetConfig() *Config {
 		config = loadConfig()
 	})
 	return config
-}
-
-// ResetConfigForTesting resets the global configuration state for testing purposes. It should only be called from tests.
-func ResetConfigForTesting() {
-	if testing.Testing() {
-		config = nil
-		configOnce = sync.Once{}
-	}
 }
 
 func (c *Config) IsDebugEnabled() bool {
