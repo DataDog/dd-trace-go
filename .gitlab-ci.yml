@@ -75,6 +75,8 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
+
+# Config Registry CI Jobs
 validate_supported_configurations_v2_local_file:
   stage: config-validation
   image: registry.ddbuild.io/ci/libdatadog-build/packaging:82290795
