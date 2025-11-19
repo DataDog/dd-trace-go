@@ -20,6 +20,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -88,8 +89,8 @@ func TestAppSec(t *testing.T) {
 		}
 		for name, tc := range testCases {
 			t.Run(name, func(t *testing.T) {
-				val, ok := os.LookupEnv("DD_APPSEC_WAF_TIMEOUT")
-				fmt.Fprintf(os.Stderr, "DD_APPSEC_WAF_TIMEOUT: %s (%v)\n", val, ok)
+				val := os.Getenv("DD_APPSEC_WAF_TIMEOUT")
+				assert.Equal(t, "1m", val, "Expected DD_APPSEC_WAF_TIMEOUT=1m, had %v", val)
 
 				mt := mocktracer.Start()
 				defer mt.Stop()
