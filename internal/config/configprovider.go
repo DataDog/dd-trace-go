@@ -33,10 +33,10 @@ type IDAwareConfigSource interface {
 func DefaultConfigProvider() *ConfigProvider {
 	return &ConfigProvider{
 		sources: []ConfigSource{
-			ManagedDeclarativeConfig,
+			newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig),
 			new(envConfigSource),
 			new(otelEnvConfigSource),
-			LocalDeclarativeConfig,
+			newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig),
 		},
 	}
 }

@@ -409,15 +409,3 @@ func TestDeclarativeConfigConstants(t *testing.T) {
 		assert.Equal(t, 4*1024, maxFileSize)
 	})
 }
-
-func TestGlobalDeclarativeConfigSources(t *testing.T) {
-	t.Run("LocalDeclarativeConfig is initialized", func(t *testing.T) {
-		assert.NotNil(t, LocalDeclarativeConfig)
-		assert.Equal(t, telemetry.OriginLocalStableConfig, LocalDeclarativeConfig.Origin())
-	})
-
-	t.Run("ManagedDeclarativeConfig is initialized", func(t *testing.T) {
-		assert.NotNil(t, ManagedDeclarativeConfig)
-		assert.Equal(t, telemetry.OriginManagedStableConfig, ManagedDeclarativeConfig.Origin())
-	})
-}

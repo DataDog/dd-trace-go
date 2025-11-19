@@ -23,12 +23,6 @@ const (
 	maxFileSize = 4 * 1024
 )
 
-// LocalDeclarativeConfig holds the configuration loaded from the user-managed file.
-var LocalDeclarativeConfig = newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
-
-// ManagedDeclarativeConfig holds the configuration loaded from the fleet-managed file.
-var ManagedDeclarativeConfig = newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
-
 // declarativeConfigSource represents a source of declarative configuration loaded from a file.
 type declarativeConfigSource struct {
 	filePath string             // Path to the configuration file.

@@ -115,7 +115,7 @@ func TestDefaultConfigProvider(t *testing.T) {
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 		assert.Equal(t, "key1:value1,key2:value2", provider.getString("DD_TAGS", "key:value"))
 	})
-	t.Run("Settings only exist in LocalDeclarativeConfigSource", func(t *testing.T) {
+	t.Run("Settings only exist in localDeclarativeConfigSource", func(t *testing.T) {
 		const localYaml = `
 apm_configuration_default:
   DD_SERVICE: local
@@ -130,12 +130,13 @@ apm_configuration_default:
 		assert.NoError(t, err)
 		defer os.Remove(tempLocalPath)
 
-		LocalDeclarativeConfig = newDeclarativeConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
-		defer func() {
-			LocalDeclarativeConfig = newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
-		}()
-
-		provider := DefaultConfigProvider()
+		tempLocalSource := newDeclarativeConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
+		provider := newTestConfigProvider(
+			newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig),
+			new(envConfigSource),
+			new(otelEnvConfigSource),
+			tempLocalSource,
+		)
 
 		assert.Equal(t, "local", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
@@ -147,7 +148,7 @@ apm_configuration_default:
 		assert.Equal(t, "value", provider.getString("DD_ENV", "value"))
 	})
 
-	t.Run("Settings only exist in ManagedDeclarativeConfigSource", func(t *testing.T) {
+	t.Run("Settings only exist in managed declarativeConfigSource", func(t *testing.T) {
 		const managedYaml = `
 apm_configuration_default:
   DD_SERVICE: managed
@@ -161,12 +162,13 @@ apm_configuration_default:
 		assert.NoError(t, err)
 		defer os.Remove(tempManagedPath)
 
-		ManagedDeclarativeConfig = newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
-		defer func() {
-			ManagedDeclarativeConfig = newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
-		}()
-
-		provider := DefaultConfigProvider()
+		tempManagedSource := newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
+		provider := newTestConfigProvider(
+			tempManagedSource,
+			new(envConfigSource),
+			new(otelEnvConfigSource),
+			newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig),
+		)
 
 		assert.Equal(t, "managed", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
@@ -179,10 +181,10 @@ apm_configuration_default:
 	})
 	t.Run("Settings exist in all ConfigSources", func(t *testing.T) {
 		// Priority order (highest to lowest):
-		// 1. ManagedDeclarativeConfig
+		// 1. managed declarativeConfigSource
 		// 2. EnvConfigSource (DD_* env vars)
 		// 3. OtelEnvConfigSource (OTEL_* env vars)
-		// 4. LocalDeclarativeConfig
+		// 4. local declarativeConfigSource
 
 		// Setup: Configure the same keys across multiple sources with different values
 		// to verify that the correct precedence is applied
@@ -225,22 +227,21 @@ apm_configuration_default:
 		assert.NoError(t, err)
 		defer os.Remove(tempLocalPath)
 
-		LocalDeclarativeConfig = newDeclarativeConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
-		defer func() {
-			LocalDeclarativeConfig = newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig)
-		}()
+		tempLocalSource := newDeclarativeConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
 
 		tempManagedPath := "managed.yml"
 		err = os.WriteFile(tempManagedPath, []byte(managedYaml), 0644)
 		assert.NoError(t, err)
 		defer os.Remove(tempManagedPath)
 
-		ManagedDeclarativeConfig = newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
-		defer func() {
-			ManagedDeclarativeConfig = newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig)
-		}()
+		tempManagedSource := newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
 
-		provider := DefaultConfigProvider()
+		provider := newTestConfigProvider(
+			tempManagedSource,
+			new(envConfigSource),
+			new(otelEnvConfigSource),
+			tempLocalSource,
+		)
 
 		// Assertions grouped by which source should win
 
@@ -386,11 +387,11 @@ apm_configuration_default:
 		defer os.Remove(tempManaged)
 		defer os.Remove(tempLocal)
 
-		managedSource := newDeclarativeConfigSource(tempManaged, telemetry.OriginManagedStableConfig)
-		localSource := newDeclarativeConfigSource(tempLocal, telemetry.OriginLocalStableConfig)
+		tempManagedSource := newDeclarativeConfigSource(tempManaged, telemetry.OriginManagedStableConfig)
+		tempLocalSource := newDeclarativeConfigSource(tempLocal, telemetry.OriginLocalStableConfig)
 
 		// Managed has higher priority than Local
-		provider := newTestConfigProvider(managedSource, localSource)
+		provider := newTestConfigProvider(tempManagedSource, tempLocalSource)
 
 		// For DD_SERVICE: managed wins, so telemetry gets ID "managed-123"
 		result := provider.getString("DD_SERVICE", "default")
