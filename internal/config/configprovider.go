@@ -25,6 +25,11 @@ type ConfigSource interface {
 	Origin() telemetry.Origin
 }
 
+type IDAwareConfigSource interface {
+	ConfigSource
+	GetID() string
+}
+
 func DefaultConfigProvider() *ConfigProvider {
 	return &ConfigProvider{
 		sources: []ConfigSource{
@@ -41,9 +46,8 @@ func (p *ConfigProvider) getString(key string, def string) string {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
 			var id string
-			// If source is a declarativeConfigSource, capture the config ID
-			if s, ok := source.(*declarativeConfigSource); ok {
-				id = s.GetID() // TODO: Store or use this config ID for telemetry
+			if s, ok := source.(IDAwareConfigSource); ok {
+				id = s.GetID()
 			}
 			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
 			return v
@@ -57,8 +61,7 @@ func (p *ConfigProvider) getBool(key string, def bool) bool {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
 			var id string
-			// If source is a declarativeConfigSource, capture the config ID
-			if s, ok := source.(*declarativeConfigSource); ok {
+			if s, ok := source.(IDAwareConfigSource); ok {
 				id = s.GetID()
 			}
 			if v == "true" {
@@ -78,8 +81,7 @@ func (p *ConfigProvider) getInt(key string, def int) int {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
 			var id string
-			// If source is a declarativeConfigSource, capture the config ID
-			if s, ok := source.(*declarativeConfigSource); ok {
+			if s, ok := source.(IDAwareConfigSource); ok {
 				id = s.GetID()
 			}
 			intVal, err := strconv.Atoi(v)
@@ -97,8 +99,7 @@ func (p *ConfigProvider) getMap(key string, def map[string]string) map[string]st
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
 			var id string
-			// If source is a declarativeConfigSource, capture the config ID
-			if s, ok := source.(*declarativeConfigSource); ok {
+			if s, ok := source.(IDAwareConfigSource); ok {
 				id = s.GetID()
 			}
 			m := parseMapString(v)
@@ -135,8 +136,7 @@ func (p *ConfigProvider) getFloat(key string, def float64) float64 {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
 			var id string
-			// If source is a declarativeConfigSource, capture the config ID
-			if s, ok := source.(*declarativeConfigSource); ok {
+			if s, ok := source.(IDAwareConfigSource); ok {
 				id = s.GetID()
 			}
 			floatVal, err := strconv.ParseFloat(v, 64)
@@ -154,8 +154,7 @@ func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
 	for _, source := range p.sources {
 		if v := source.Get(key); v != "" {
 			var id string
-			// If source is a declarativeConfigSource, capture the config ID
-			if s, ok := source.(*declarativeConfigSource); ok {
+			if s, ok := source.(IDAwareConfigSource); ok {
 				id = s.GetID()
 			}
 			u, err := url.Parse(v)
