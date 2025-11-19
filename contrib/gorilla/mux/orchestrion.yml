@@ -37,7 +37,7 @@ aspects:
               resourceNamer func(*Router, *http.Request) string
               serviceName   string
               spanOpts      []tracer.StartSpanOption
-              initOnce      sync.Once
+              initOnce      *sync.Once
             }
 
             func ddDefaultResourceNamer(router *Router, req *http.Request) string {
@@ -72,6 +72,7 @@ aspects:
             math: math
             options: github.com/DataDog/dd-trace-go/v2/instrumentation/options
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            sync: sync
           lang: go1.18 # some parts of our codebase use generics, so ensure we can build if using old versions of gorilla/mux (e.g. if using a replace).
           template: |-
             {{- $r := .Function.Receiver -}}
@@ -79,6 +80,9 @@ aspects:
             {{- $req := .Function.Argument 1 -}}
 
             // Lazy-initialize dd_config on first request to handle subrouter usage
+            if {{ $r }}.__dd_config.initOnce == nil {
+              {{ $r }}.__dd_config.initOnce = &sync.Once{}
+            }
             {{ $r }}.__dd_config.initOnce.Do(func() {
               analyticsRate := __dd_instr.AnalyticsRate(true)
               {{ $r }}.__dd_config.headerTags = __dd_instr.HTTPHeadersAsTags()
