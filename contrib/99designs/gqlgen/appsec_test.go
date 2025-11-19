@@ -88,6 +88,9 @@ func TestAppSec(t *testing.T) {
 		}
 		for name, tc := range testCases {
 			t.Run(name, func(t *testing.T) {
+				val, ok := os.LookupEnv("DD_APPSEC_WAF_TIMEOUT")
+				fmt.Fprintf(os.Stderr, "DD_APPSEC_WAF_TIMEOUT: %s (%v)\n", val, ok)
+
 				mt := mocktracer.Start()
 				defer mt.Stop()
 
