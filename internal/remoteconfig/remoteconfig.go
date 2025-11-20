@@ -214,11 +214,15 @@ func Start(config ClientConfig) error {
 	}
 	started = true
 
+	pollInterval := client.PollInterval
 	go func() {
-		ticker := time.NewTicker(client.PollInterval)
+		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
 		for {
+			if client == nil {
+				return
+			}
 			select {
 			case <-client.stop:
 				return
@@ -263,6 +267,9 @@ func Stop() {
 // Reset destroys the client instance.
 // To be used only in tests to reset the state of the client.
 func Reset() {
+	clientMux.Lock()
+	defer clientMux.Unlock()
+
 	client = nil
 	started = false
 }
