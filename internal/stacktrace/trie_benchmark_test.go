@@ -84,18 +84,6 @@ func BenchmarkLinearSearch_BulkLookups(b *testing.B) {
 	}
 }
 
-func BenchmarkTrie_BulkLookups(b *testing.B) {
-	trie := newPrefixTrie()
-	trie.InsertAll(benchmarkPrefixes)
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		for _, testStr := range benchmarkTestStrings {
-			_ = trie.HasPrefix(testStr)
-		}
-	}
-}
-
 func BenchmarkSegmentTrie_BulkLookups(b *testing.B) {
 	trie := newSegmentPrefixTrie()
 	trie.InsertAll(benchmarkPrefixes)
@@ -118,17 +106,6 @@ func BenchmarkLinearSearch_SingleLookup_EarlyMatch(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		_ = matcher.HasPrefix(testStr)
-	}
-}
-
-func BenchmarkTrie_SingleLookup_EarlyMatch(b *testing.B) {
-	trie := newPrefixTrie()
-	trie.InsertAll(benchmarkPrefixes)
-	testStr := "cloud.google.com/go/storage/internal"
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_ = trie.HasPrefix(testStr)
 	}
 }
 
@@ -156,17 +133,6 @@ func BenchmarkLinearSearch_SingleLookup_NoMatch(b *testing.B) {
 	}
 }
 
-func BenchmarkTrie_SingleLookup_NoMatch(b *testing.B) {
-	trie := newPrefixTrie()
-	trie.InsertAll(benchmarkPrefixes)
-	testStr := "example.com/mycompany/internal/service"
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		_ = trie.HasPrefix(testStr)
-	}
-}
-
 func BenchmarkSegmentTrie_SingleLookup_NoMatch(b *testing.B) {
 	trie := newSegmentPrefixTrie()
 	trie.InsertAll(benchmarkPrefixes)
@@ -184,14 +150,6 @@ func BenchmarkLinearSearch_Construction(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = newLinearPrefixMatcher(benchmarkPrefixes)
-	}
-}
-
-func BenchmarkTrie_Construction(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		trie := newPrefixTrie()
-		trie.InsertAll(benchmarkPrefixes)
 	}
 }
 
@@ -216,18 +174,6 @@ func BenchmarkLinearSearch_LookupAllocations(b *testing.B) {
 	}
 }
 
-func BenchmarkTrie_LookupAllocations(b *testing.B) {
-	trie := newPrefixTrie()
-	trie.InsertAll(benchmarkPrefixes)
-	testStr := "github.com/test/package/internal"
-	b.ResetTimer()
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		_ = trie.HasPrefix(testStr)
-	}
-}
-
 func BenchmarkSegmentTrie_LookupAllocations(b *testing.B) {
 	trie := newSegmentPrefixTrie()
 	trie.InsertAll(benchmarkPrefixes)
@@ -238,21 +184,6 @@ func BenchmarkSegmentTrie_LookupAllocations(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = trie.HasPrefix(testStr)
 	}
-}
-
-// Concurrent access benchmark
-
-func BenchmarkTrie_Parallel(b *testing.B) {
-	trie := newPrefixTrie()
-	trie.InsertAll(benchmarkPrefixes)
-	testStr := "cloud.google.com/go/storage/internal"
-	b.ResetTimer()
-
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			_ = trie.HasPrefix(testStr)
-		}
-	})
 }
 
 // Data structure memory overhead comparison
@@ -271,21 +202,6 @@ func BenchmarkDataStructureMemoryOverhead(b *testing.B) {
 		runtime.ReadMemStats(&m2)
 		b.ReportMetric(float64(m2.Alloc-m1.Alloc), "bytes_overhead")
 		b.Logf("Linear search data structure overhead: %d bytes for %d prefixes",
-			m2.Alloc-m1.Alloc, len(benchmarkPrefixes))
-	})
-
-	b.Run("Trie_DataStructure", func(b *testing.B) {
-		var m1, m2 runtime.MemStats
-		runtime.GC()
-		runtime.ReadMemStats(&m1)
-
-		trie := newPrefixTrie()
-		trie.InsertAll(benchmarkPrefixes)
-
-		runtime.GC()
-		runtime.ReadMemStats(&m2)
-		b.ReportMetric(float64(m2.Alloc-m1.Alloc), "bytes_overhead")
-		b.Logf("Character trie data structure overhead: %d bytes for %d prefixes",
 			m2.Alloc-m1.Alloc, len(benchmarkPrefixes))
 	})
 
@@ -308,20 +224,12 @@ func BenchmarkDataStructureMemoryOverhead(b *testing.B) {
 // Test correctness - ensure all implementations return the same results
 func TestImplementationConsistency(t *testing.T) {
 	linear := newLinearPrefixMatcher(benchmarkPrefixes)
-	charTrie := newPrefixTrie()
-	charTrie.InsertAll(benchmarkPrefixes)
 	segmentTrie := newSegmentPrefixTrie()
 	segmentTrie.InsertAll(benchmarkPrefixes)
 
 	for _, testStr := range benchmarkTestStrings {
 		linearResult := linear.HasPrefix(testStr)
-		charTrieResult := charTrie.HasPrefix(testStr)
 		segmentTrieResult := segmentTrie.HasPrefix(testStr)
-
-		if linearResult != charTrieResult {
-			t.Errorf("Linear vs Character Trie mismatch for %q: linear=%v, charTrie=%v",
-				testStr, linearResult, charTrieResult)
-		}
 
 		if linearResult != segmentTrieResult {
 			t.Errorf("Linear vs Segment Trie mismatch for %q: linear=%v, segmentTrie=%v",
