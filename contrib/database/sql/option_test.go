@@ -6,11 +6,15 @@
 package sql
 
 import (
+	"context"
+	"log"
 	"testing"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -76,4 +80,31 @@ func TestCheckStatsdRequired(t *testing.T) {
 		assert.Nil(t, cfg.statsdClient)
 		assert.False(t, cfg.dbStats)
 	})
+}
+
+func TestRegisteredTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	Register("register-name", &mysql.MySQLDriver{}, WithCustomTag("test", "this-is-a-test"))
+	defer unregister("register-name")
+
+	db, err := Open("register-name", "test:test@tcp(127.0.0.1:3306)/test")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	mt.Reset()
+
+	// conduct a normal query to the database. This creates 2 spans
+	rows, err := db.QueryContext(context.Background(), "SELECT 1")
+	assert.NoError(t, err)
+	rows.Close()
+
+	// all created spans should have the tag from Register
+	spans := mt.FinishedSpans()
+	assert.Len(t, spans, 2)
+	for _, sp := range spans {
+		assert.Equal(t, "this-is-a-test", sp.Tag("test"))
+	}
+
 }
