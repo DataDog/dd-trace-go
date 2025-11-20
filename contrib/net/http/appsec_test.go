@@ -242,6 +242,9 @@ func TestAppsecAPI10(t *testing.T) {
 
 			require.Contains(t, serviceSpan.Tags(), tc.tagName)
 			require.Equal(t, serviceSpan.Tags()[tc.tagName], tc.tagValue)
+
+			require.Contains(t, serviceSpan.Tags(), "_dd.appsec.downstream_request")
+			require.Equal(t, serviceSpan.Tags()["_dd.appsec.downstream_request"], float64(1))
 		})
 	}
 }
@@ -301,6 +304,9 @@ func TestAppsecHTTP30X(t *testing.T) {
 
 		require.Contains(t, serviceSpan.Tags(), "appsec.api.redirection.nothing")
 		require.Equal(t, serviceSpan.Tags()["appsec.api.redirection.nothing"], float64(1))
+
+		require.Contains(t, serviceSpan.Tags(), "_dd.appsec.downstream_request")
+		require.Equal(t, serviceSpan.Tags()["_dd.appsec.downstream_request"], float64(2))
 	})
 
 	t.Run("redirect", func(t *testing.T) {
@@ -336,5 +342,8 @@ func TestAppsecHTTP30X(t *testing.T) {
 
 		require.Contains(t, serviceSpan.Tags(), "appsec.api.redirection.nothing")
 		require.Equal(t, serviceSpan.Tags()["appsec.api.redirection.nothing"], float64(1))
+
+		require.Contains(t, serviceSpan.Tags(), "_dd.appsec.downstream_request")
+		require.Equal(t, serviceSpan.Tags()["_dd.appsec.downstream_request"], float64(2))
 	})
 }
