@@ -8,6 +8,7 @@ package mcpgo // import "github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -58,8 +59,16 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 
 		toolSpan.AnnotateTextIO(string(inputJSON), outputText)
 
+		// There are two ways a tool can express an error.
+
+		// It can return a Go error.
 		if err != nil {
 			toolSpan.Finish(llmobs.WithError(err))
+
+			// It can return IsError: true as part of the tool result.
+		} else if result != nil && result.IsError {
+			toolSpan.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
+
 		} else {
 			toolSpan.Finish()
 		}
