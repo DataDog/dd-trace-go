@@ -6,6 +6,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
+	"github.com/cloudevents/sdk-go/v2/event"
 )
 
 // Option is a functional option for configuring CloudEvents tracing.
@@ -82,16 +83,22 @@ func TraceWrapCloudEventsHandler(originalHandler func(context.Context, cloudeven
 //	if err := InjectTraceContext(span.Context(), &event); err != nil {
 //	    return err
 //	}
-func InjectTraceContext(spanCtx *tracer.SpanContext, event *cloudevents.Event) error {
+func InjectTraceContext(spanCtx *tracer.SpanContext, e *cloudevents.Event) error {
 	carrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(spanCtx, carrier); err != nil {
 		return err
 	}
 
 	// Transfer trace headers from carrier to CloudEvent extensions
-	// CloudEvents will preserve W3C trace context headers (traceparent/tracestate)
+	// We only propagate W3C trace context headers (traceparent, tracestate)
+	// which are the standard and don't contain hyphens, making them CloudEvents-compliant.
+	// Datadog-specific headers (x-datadog-*) are proprietary and can't be reconstructed without some complicated logic
+	// from W3C headers by the Datadog agent.
 	for key, value := range carrier {
-		event.SetExtension(key, value)
+		// Only propagate W3C trace context headers
+		if event.IsExtensionNameValid(key) {
+			e.SetExtension(key, value)
+		}
 	}
 
 	return nil
