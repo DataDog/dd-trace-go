@@ -267,16 +267,18 @@ func SkipAndCapture(skip int) StackTrace {
 
 // SkipAndCaptureWithInternalFrames creates a new stack trace from the current call stack without filtering internal frames.
 // This is useful for tracer span error stacktraces where we want to capture all frames.
+// Note: This function directly implements capture logic (not using captureStack helper) so its name
+// appears in error stacktraces for debugging purposes.
 func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
 	// Use default depth if not specified
 	if depth == 0 {
 		depth = defaultMaxDepth
 	}
-	return captureStack(skip, depth, frameOptions{
+	return iterator(skip, depth, frameOptions{
 		skipInternalFrames:      false,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: nil,
-	})
+	}).capture()
 }
 
 // CaptureRaw captures only program counters without symbolication.
