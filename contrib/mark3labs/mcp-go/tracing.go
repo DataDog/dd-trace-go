@@ -40,38 +40,43 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
 
-		result, err := next(ctx, request)
+		var result *mcp.CallToolResult
+		var err error
 
-		inputJSON, marshalErr := json.Marshal(request)
-		if marshalErr != nil {
-			instr.Logger().Warn("mcp-go: failed to marshal tool request: %v", marshalErr)
-		}
-		var outputText string
-		if result != nil {
-			resultJSON, marshalErr := json.Marshal(result)
+		defer func() {
+			inputJSON, marshalErr := json.Marshal(request)
 			if marshalErr != nil {
-				instr.Logger().Warn("mcp-go: failed to marshal tool result: %v", marshalErr)
+				instr.Logger().Warn("mcp-go: failed to marshal tool request: %v", marshalErr)
 			}
-			outputText = string(resultJSON)
-		}
+			var outputText string
+			if result != nil {
+				resultJSON, marshalErr := json.Marshal(result)
+				if marshalErr != nil {
+					instr.Logger().Warn("mcp-go: failed to marshal tool result: %v", marshalErr)
+				}
+				outputText = string(resultJSON)
+			}
 
-		tagWithSessionID(ctx, toolSpan)
+			tagWithSessionID(ctx, toolSpan)
 
-		toolSpan.AnnotateTextIO(string(inputJSON), outputText)
+			toolSpan.AnnotateTextIO(string(inputJSON), outputText)
 
-		// There are two ways a tool can express an error.
+			// There are two ways a tool can express an error.
 
-		// It can return a Go error.
-		if err != nil {
-			toolSpan.Finish(llmobs.WithError(err))
+			// It can return a Go error.
+			if err != nil {
+				toolSpan.Finish(llmobs.WithError(err))
 
-			// It can return IsError: true as part of the tool result.
-		} else if result != nil && result.IsError {
-			toolSpan.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
+				// It can return IsError: true as part of the tool result.
+			} else if result != nil && result.IsError {
+				toolSpan.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
 
-		} else {
-			toolSpan.Finish()
-		}
+			} else {
+				toolSpan.Finish()
+			}
+		}()
+
+		result, err = next(ctx, request)
 
 		return result, err
 	}
