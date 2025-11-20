@@ -1,0 +1,26 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
+package mcpgo_test
+
+import (
+	mcpgotrace "github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/mark3labs/mcp-go/server"
+)
+
+func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create server hooks and add Datadog tracing
+	hooks := &server.Hooks{}
+	mcpgotrace.AddServerHooks(hooks)
+
+	srv := server.NewMCPServer("my-server", "1.0.0",
+		server.WithHooks(hooks),
+		server.WithToolHandlerMiddleware(mcpgotrace.NewToolHandlerMiddleware()))
+	_ = srv
+}
