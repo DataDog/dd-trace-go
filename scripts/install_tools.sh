@@ -98,7 +98,7 @@ run "cd \"$TOOLS_DIR_ABS\" && GOWORK=$GOWORK go mod download"
 
 # Install tools
 message "Installing tools to $BIN_DIR_ABS..."
-run "cd \"$TOOLS_DIR_ABS\" && GOWORK=$GOWORK GOBIN=\"$BIN_DIR_ABS\" go install \$(grep -E '^[[:space:]]*_[[:space:]]+\".*\"' tools.go | awk -F'\"' '{print \$2}')"
+run "cd \"$TOOLS_DIR_ABS\" && GOWORK=$GOWORK GOBIN=\"$BIN_DIR_ABS\" go install -v \$(grep -E '^[[:space:]]*_[[:space:]]+\".*\"' tools.go | awk -F'\"' '{print \$2}')"
 
 message "Tools installation completed successfully"
 message "Installed tools are available in: $BIN_DIR"

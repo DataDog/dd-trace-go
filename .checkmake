@@ -1,0 +1,11 @@
+[default]
+# Checkmake configuration for dd-trace-go
+# This file configures rules for Makefile linting
+
+# Disable minphony rule - not all utility Makefiles need standard targets
+[minphony]
+disabled = true
+
+# Increase max body length for complex targets like help
+[maxbodylength]
+maxBodyLength = 20
