@@ -188,14 +188,15 @@ func (q *queue[T]) Remove() T {
 //   - Generics: pkg.(*Type[...]).Method or pkg.Function[...]
 //
 // Examples:
-//   github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Event).NewException
-//     -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
-//     -> receiver: *Event
-//     -> function: NewException
-//   github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestFunc.func1
-//     -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
-//     -> receiver: ""
-//     -> function: TestFunc.func1
+//
+//	github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Event).NewException
+//	  -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
+//	  -> receiver: *Event
+//	  -> function: NewException
+//	github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestFunc.func1
+//	  -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
+//	  -> receiver: ""
+//	  -> function: TestFunc.func1
 func parseSymbol(name string) symbol {
 	// Check for receiver first: pkg.(*Type) or pkg.(Type)
 	// Look for ".(" which marks the start of a receiver
