@@ -24,10 +24,10 @@ generate_matrix:
     # We don't want to run benchmarks when pushing release tags for nested modules
     - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
       when: never
-    - when: always
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: always
       interruptible: false
-    - if: '$CI_COMMIT_BRANCH != "main"'
+    - when: always
       interruptible: true
   script: |
     cd .gitlab
