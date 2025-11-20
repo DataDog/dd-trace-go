@@ -6,9 +6,11 @@
     refs:
       - branches
   interruptible: true
-  tags: ["runner:apm-k8s-tweaked-metal"]
+  tags: ["runner:apm-k8s-m8g-metal"]
   variables:
     GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version
+    KUBERNETES_CPU_REQUEST: "48"
+    KUBERNETES_CPU_LIMIT: "48"
   script: |
     export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
     git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
