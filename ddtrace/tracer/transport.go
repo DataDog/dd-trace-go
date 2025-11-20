@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -30,32 +29,6 @@ const (
 	// Any non-empty value will mean 'yes'.
 	headerComputedTopLevel = "Datadog-Client-Computed-Top-Level"
 )
-
-func defaultDialer(timeout time.Duration) *net.Dialer {
-	return &net.Dialer{
-		Timeout:   timeout,
-		KeepAlive: 30 * time.Second,
-		DualStack: true,
-	}
-}
-
-func defaultHTTPClient(timeout time.Duration, disableKeepAlives bool) *http.Client {
-	if timeout == 0 {
-		timeout = defaultHTTPTimeout
-	}
-	return &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           defaultDialer(timeout).DialContext,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-			DisableKeepAlives:     disableKeepAlives,
-		},
-		Timeout: timeout,
-	}
-}
 
 const (
 	defaultHostname          = "localhost"

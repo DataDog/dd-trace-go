@@ -44,7 +44,7 @@ runs:
 
     - name: Add CodeOwners to JUnit files
       shell: bash
-      run: ./.github/actions/add-codeowners/codeowners.sh
+      run: ./.github/actions/add-codeowners/codeowners.sh "${{ inputs.path }}"
 
     - name: Upload the JUnit files
       shell: bash

@@ -147,6 +147,13 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
 		}
 
+		// determine if subtest-specific features are enabled via environment variables
+		subtestFeaturesEnabled := internal.BoolEnv(constants.CIVisibilitySubtestFeaturesEnabled, true)
+		if !subtestFeaturesEnabled {
+			log.Debug("civisibility: subtest test management features disabled by environment variable")
+		}
+		ciSettings.SubtestFeaturesEnabled = subtestFeaturesEnabled
+
 		// check if we need to wait for the upload to finish before continuing
 		if ciSettings.ImpactedTestsEnabled {
 			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
