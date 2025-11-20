@@ -244,7 +244,7 @@ func createTestConfig() *universalFlagsConfiguration {
 }
 
 func TestNewDatadogProvider(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	if provider == nil {
 		t.Fatal("expected provider to be non-nil")
 	}
@@ -255,13 +255,13 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	hooks := provider.Hooks()
-	if len(hooks) != 0 {
-		t.Errorf("expected no hooks, got %d", len(hooks))
+	if len(hooks) != 1 {
+		t.Errorf("expected 1 hook, got %d", len(hooks))
 	}
 }
 
 func TestBooleanEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -333,7 +333,7 @@ func TestBooleanEvaluation(t *testing.T) {
 }
 
 func TestStringEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -374,7 +374,7 @@ func TestStringEvaluation(t *testing.T) {
 }
 
 func TestIntEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -411,7 +411,7 @@ func TestIntEvaluation(t *testing.T) {
 }
 
 func TestFloatEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -449,7 +449,7 @@ func TestFloatEvaluation(t *testing.T) {
 }
 
 func TestObjectEvaluation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -499,7 +499,7 @@ func TestObjectEvaluation(t *testing.T) {
 }
 
 func TestProviderWithoutConfiguration(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	ctx := context.Background()
 
 	flatCtx := openfeature.FlattenedContext{
@@ -522,7 +522,7 @@ func TestProviderWithoutConfiguration(t *testing.T) {
 }
 
 func TestProviderConfigurationUpdate(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Initially no config
 	if provider.getConfiguration() != nil {
@@ -544,7 +544,7 @@ func TestProviderConfigurationUpdate(t *testing.T) {
 }
 
 func TestConcurrentEvaluations(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -575,7 +575,7 @@ func TestConcurrentEvaluations(t *testing.T) {
 func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 	// Create a provider that doesn't have configuration loaded
 	// This will cause InitWithContext to wait for configuration
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Use a very short timeout context (50ms)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -599,7 +599,7 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 	// Create a provider and set up its configuration immediately
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -634,7 +634,7 @@ func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 
 func TestShutdownWithContextTimeout(t *testing.T) {
 	// Create and configure a provider
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -667,7 +667,7 @@ func TestShutdownWithContextTimeout(t *testing.T) {
 
 func TestShutdownWithContextSuccess(t *testing.T) {
 	// Create and configure a provider
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 

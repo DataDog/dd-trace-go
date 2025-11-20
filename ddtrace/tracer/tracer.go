@@ -234,6 +234,16 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
+	if t.config.runtimeMetricsV2 {
+		l := slog.New(slogHandler{})
+		opts := &runtimemetrics.Options{Logger: l}
+		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
+			l.Debug("Runtime metrics v2 enabled.")
+		} else {
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+		}
+	}
+
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
@@ -453,15 +463,6 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			defer t.wg.Done()
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
-	}
-	if c.runtimeMetricsV2 {
-		l := slog.New(slogHandler{})
-		opts := &runtimemetrics.Options{Logger: l}
-		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
-			l.Debug("Runtime metrics v2 enabled.")
-		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
-		}
 	}
 	if c.debugAbandonedSpans {
 		log.Info("Abandoned spans logs enabled.")

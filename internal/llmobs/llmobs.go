@@ -578,6 +578,15 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		tagsSlice = append(tagsSlice, fmt.Sprintf("%s:%s", k, v))
 	}
 
+	ddAttrs := transport.DDAttributes{
+		SpanID:     spanID,
+		TraceID:    span.llmTraceID,
+		APMTraceID: span.apm.TraceID(),
+	}
+	if span.scope != "" {
+		ddAttrs.Scope = span.scope
+	}
+
 	ev := &transport.LLMObsSpanEvent{
 		SpanID:           spanID,
 		TraceID:          span.llmTraceID,
@@ -593,7 +602,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Metrics:          span.llmCtx.metrics,
 		CollectionErrors: nil,
 		SpanLinks:        span.spanLinks,
-		Scope:            span.scope,
+		DDAttributes:     ddAttrs,
 	}
 	if b, err := json.Marshal(ev); err == nil {
 		rawSize := len(b)
@@ -688,6 +697,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	span.mlApp = cfg.MLApp
 	span.spanKind = kind
 	span.sessionID = cfg.SessionID
+	span.integration = cfg.Integration
 
 	span.llmCtx = llmobsContext{
 		modelName:     cfg.ModelName,
