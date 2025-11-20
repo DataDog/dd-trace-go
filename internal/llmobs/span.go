@@ -30,6 +30,8 @@ type StartSpanConfig struct {
 	MLApp string
 	// StartTime sets a custom start time for the span. If zero, uses current time.
 	StartTime time.Time
+	// Name of the tracing integration.
+	Integration string
 }
 
 // FinishSpanConfig contains configuration options for finishing an LLMObs span.
@@ -141,11 +143,17 @@ type LLMMessage struct {
 type EmbeddedDocument struct {
 	// Text is the text content of the document.
 	Text string `json:"text"`
+	// Name is the name or title of the document.
+	Name string `json:"name,omitempty"`
+	// Score is the relevance score of the document (typically 0.0-1.0).
+	Score float64 `json:"score,omitempty"`
+	// ID is the unique identifier of the document.
+	ID string `json:"id,omitempty"`
 }
 
-// RetrievedDocument represents a document retrieved from a search operation.
+// RetrievedDocument represents a document for retrieval operations.
 type RetrievedDocument struct {
-	// Text is the text content of the retrieved document.
+	// Text is the text content of the document.
 	Text string `json:"text"`
 	// Name is the name or title of the document.
 	Name string `json:"name,omitempty"`
@@ -277,6 +285,9 @@ func (s *Span) Finish(cfg FinishSpanConfig) {
 		log.Debug("llmobs: attempted to finish an already finished span")
 		return
 	}
+	defer func() {
+		trackSpanFinished(s)
+	}()
 
 	if cfg.FinishTime.IsZero() {
 		cfg.FinishTime = time.Now()
@@ -297,8 +308,6 @@ func (s *Span) Finish(cfg FinishSpanConfig) {
 	}
 	l.submitLLMObsSpan(s)
 	s.finished = true
-
-	//TODO: telemetry.record_span_created(span)
 }
 
 // Annotate adds annotations to the span using the provided SpanAnnotations.
@@ -306,8 +315,16 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var err error
+	defer func() {
+		if err != nil {
+			log.Warn("llmobs: failed to annotate span: %v", err.Error())
+		}
+		trackSpanAnnotations(s, err)
+	}()
+
 	if s.finished {
-		log.Warn("llmobs: cannot annotate a finished span")
+		err = errFinishedSpan
 		return
 	}
 

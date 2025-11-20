@@ -9,6 +9,11 @@ import (
 	"context"
 )
 
+const (
+	// DefaultBodyParsingSizeLimit is the default number of bytes parsed for body analysis.
+	DefaultBodyParsingSizeLimit = 10 * 1 << 20 // 10MB
+)
+
 // ContinueActionOptions contains options for the continue action created through [ProcessorConfig.ContinueMessageFunc].
 type ContinueActionOptions struct {
 	// HeaderMutations are the HTTP header mutations to be applied to the message (default is empty)
@@ -34,7 +39,7 @@ type BlockActionOptions struct {
 type ProcessorConfig struct {
 	context.Context
 	BlockingUnavailable  bool
-	BodyParsingSizeLimit int
+	BodyParsingSizeLimit *int
 	Framework            string
 
 	// ContinueMessageFunc is a function that generates a continue message of type O based on the provided ContinueActionOptions.

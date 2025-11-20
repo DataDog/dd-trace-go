@@ -23,9 +23,9 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageHAProxyStreamProcessingOffload)
 }
 
-// Logger returns the integration logger for the HAProxy Stream Processing Offload package
-func Logger() instrumentation.Logger {
-	return instr.Logger()
+// Instrumentation returns the instrumentation.Instrumentation package instrumentation
+func Instrumentation() *instrumentation.Instrumentation {
+	return instr
 }
 
 // HAProxySPOA defines the AppSec HAProxy Stream Processing Offload Agent
@@ -46,7 +46,7 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 	return &HAProxySPOA{
 		messageProcessor: proxy.NewProcessor(proxy.ProcessorConfig{
 			BlockingUnavailable:  config.BlockingUnavailable,
-			BodyParsingSizeLimit: config.BodyParsingSizeLimit,
+			BodyParsingSizeLimit: &config.BodyParsingSizeLimit,
 			Framework:            "haproxy/haproxy",
 			Context:              config.Context,
 			ContinueMessageFunc:  continueActionFunc,

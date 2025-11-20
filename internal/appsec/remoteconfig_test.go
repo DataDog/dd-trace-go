@@ -6,6 +6,9 @@
 package appsec
 
 import (
+	"embed"
+	"strings"
+
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,8 +24,12 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+//go:embed "testdata/custom-data-classification/*.json"
+var customDataClassificationPayloads embed.FS
 
 func TestASMFeaturesCallback(t *testing.T) {
 	if supported, _ := libddwaf.Usable(); !supported {
@@ -521,6 +528,80 @@ func TestOnRCUpdate(t *testing.T) {
 			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 		})
 	}
+
+	t.Run("custom data classification", func(t *testing.T) {
+		if supported, _ := libddwaf.Usable(); !supported {
+			t.Skip("WAF needs to be available for this test (verifies WAF is provided correct data)")
+		}
+
+		// This test is cloned from https://github.com/DataDog/system-tests/blob/e3d14f27c6b8e2ca867cd4a4c423a30e0cde9f25/tests/appsec/api_security/test_custom_data_classification.py#L77
+
+		// RFC-1071:
+		// - Tracers MUST ensure that the `processor_overrides` and `scanners` key
+		//   provided by ASM configurations is forwarded to libddwaf without
+		//   alteration;
+		// - Tracers MUST provide the `ASM_PROCESSOR_OVERRIDES` and
+		//   `ASM_CUSTOM_DATA_SCANNERS` capabilities through remote configuration.
+
+		t.Setenv(config.EnvEnabled, "1")
+		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+
+		pathPrefix := "testdata/custom-data-classification"
+		entries, err := customDataClassificationPayloads.ReadDir(pathPrefix)
+		require.NoError(t, err)
+		rcRulesUpdate := make(map[string]remoteconfig.ProductUpdate, len(entries))
+		for _, entry := range entries {
+			product := strings.TrimSuffix(entry.Name(), ".json")
+			path := "datadog/2/" + product + "/ASM-base/config"
+			data, err := customDataClassificationPayloads.ReadFile(filepath.Join(pathPrefix, entry.Name()))
+			require.NoError(t, err)
+
+			productUpdates, found := rcRulesUpdate[product]
+			if !found {
+				productUpdates = make(remoteconfig.ProductUpdate, 1)
+				rcRulesUpdate[product] = productUpdates
+			}
+			productUpdates[path] = data
+		}
+		status := activeAppSec.onRCRulesUpdate(rcRulesUpdate)
+		for path, status := range status {
+			assert.Equal(t, state.ApplyStatus{State: state.ApplyStateAcknowledged}, status, "did not acknowledge update to %s", path)
+		}
+
+		// At this point, ASM should be fully enabled
+		require.True(t, Enabled())
+
+		handle, _ := activeAppSec.cfg.WAFManager.NewHandle()
+		require.NotNil(t, handle)
+		defer handle.Close()
+
+		ctx, err := handle.NewContext(timer.WithUnlimitedBudget())
+		require.NoError(t, err)
+		defer ctx.Close()
+
+		res, err := ctx.Run(libddwaf.RunAddressData{
+			Persistent: map[string]any{
+				"waf.context.processor": map[string]bool{"extract-schema": true},
+				addresses.ServerRequestBodyAddr: map[string]any{
+					"testcard": "1234567890",
+				},
+			},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{
+			"_dd.appsec.s.req.bodytest": []any{map[string]any{
+				"testcard": []any{
+					uint64(8),
+					map[string]any{
+						"category": "testcategory",
+						"type":     "card",
+					},
+				},
+			},
+			},
+		}, res.Derivatives)
+	})
 
 	t.Run("post-stop", func(t *testing.T) {
 		if supported, _ := libddwaf.Usable(); !supported {

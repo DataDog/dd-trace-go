@@ -11,11 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -27,25 +27,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
-
-// We copy the transport to avoid using the default one, as it might be
-// augmented with tracing and we don't want these calls to be recorded.
-// See https://golang.org/pkg/net/http/#DefaultTransport .
-var defaultHTTPClient = &http.Client{
-	Transport: &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	},
-	Timeout: 5 * time.Second,
-}
 
 func newBody(config TracerConfig, debugMode bool) *transport.Body {
 	osHostname, err := os.Hostname()
@@ -129,7 +110,7 @@ func NewWriter(config WriterConfig) (Writer, error) {
 	}
 
 	if config.HTTPClient == nil {
-		config.HTTPClient = defaultHTTPClient
+		config.HTTPClient = internal.DefaultHTTPClient(5*time.Second, true)
 	}
 
 	// Don't allow the client to have a timeout higher than 5 seconds
@@ -239,12 +220,12 @@ func (w *writer) newRequest(endpoint *http.Request, requestType transport.Reques
 // SumReaderCloser is a ReadCloser that wraps another ReadCloser and counts the number of bytes read.
 type SumReaderCloser struct {
 	io.ReadCloser
-	n int
+	n atomic.Uint64
 }
 
 func (s *SumReaderCloser) Read(p []byte) (n int, err error) {
 	n, err = s.ReadCloser.Read(p)
-	s.n += n
+	s.n.Add(uint64(n))
 	return
 }
 
@@ -293,7 +274,7 @@ func (w *writer) Flush(payload transport.Payload) ([]EndpointRequestResult, erro
 		}
 
 		results = append(results, EndpointRequestResult{
-			PayloadByteSize: sumReaderCloser.n,
+			PayloadByteSize: int(sumReaderCloser.n.Load()),
 			CallDuration:    time.Since(now),
 			StatusCode:      response.StatusCode,
 		})

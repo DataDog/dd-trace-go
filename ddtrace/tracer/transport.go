@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -31,32 +30,6 @@ const (
 	headerComputedTopLevel = "Datadog-Client-Computed-Top-Level"
 )
 
-func defaultDialer(timeout time.Duration) *net.Dialer {
-	return &net.Dialer{
-		Timeout:   timeout,
-		KeepAlive: 30 * time.Second,
-		DualStack: true,
-	}
-}
-
-func defaultHTTPClient(timeout time.Duration, disableKeepAlives bool) *http.Client {
-	if timeout == 0 {
-		timeout = defaultHTTPTimeout
-	}
-	return &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           defaultDialer(timeout).DialContext,
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-			DisableKeepAlives:     disableKeepAlives,
-		},
-		Timeout: timeout,
-	}
-}
-
 const (
 	defaultHostname          = "localhost"
 	defaultPort              = "8126"
@@ -66,8 +39,9 @@ const (
 	traceCountHeader         = "X-Datadog-Trace-Count"       // header containing the number of traces in the payload
 	obfuscationVersionHeader = "Datadog-Obfuscation-Version" // header containing the version of obfuscation used, if any
 
-	tracesAPIPath = "/v0.4/traces"
-	statsAPIPath  = "/v0.6/stats"
+	tracesAPIPath   = "/v0.4/traces"
+	tracesAPIPathV1 = "/v1.0/traces"
+	statsAPIPath    = "/v0.6/stats"
 )
 
 // transport is an interface for communicating data to the agent.

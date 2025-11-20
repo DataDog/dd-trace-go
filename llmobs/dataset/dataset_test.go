@@ -549,6 +549,34 @@ func TestDatasetPull(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "project name must be provided")
 	})
+	t.Run("pull-missing-dd-app-key-agentless", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", testAPIKey)
+		t.Setenv("DD_APP_KEY", "")
+
+		// Use agentless mode to trigger app key requirement
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
+		defer tt.Stop()
+
+		_, err := Pull(context.Background(), "existing-dataset")
+
+		// Should fail - datasets require DD_APP_KEY in agentless mode
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an app key must be provided")
+	})
+	t.Run("pull-missing-dd-app-key-agent-mode", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", "")
+
+		// Use agent mode - app key should not be required
+		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
+		defer tt.Stop()
+
+		ds, err := Pull(context.Background(), "existing-dataset")
+
+		// Should succeed - app key not required in agent mode
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, "existing-dataset", ds.Name())
+	})
 	t.Run("pull-dataset-with-non-map-input", func(t *testing.T) {
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
@@ -1146,6 +1174,9 @@ func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer 
 	}
 	defaultOpts := []testtracer.Option{
 		testtracer.WithTracerStartOpts(tracerOpts...),
+		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+			Endpoints: []string{"/evp_proxy/v2/"},
+		}),
 		testtracer.WithMockResponses(createMockHandler()),
 	}
 	allOpts := append(defaultOpts, opts...)

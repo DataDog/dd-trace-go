@@ -136,6 +136,10 @@ jobs:
             scenario: AGENT_SUPPORTING_SPAN_EVENTS
           - weblog-variant: net-http
             scenario: TELEMETRY_METRIC_GENERATION_DISABLED
+          - weblog-variant: net-http
+            scenario: APM_TRACING_EFFICIENT_PAYLOAD
+          - weblog-variant: net-http
+            scenario: FEATURE_FLAG_EXPOSURE
       fail-fast: false
     env:
       TEST_LIBRARY: golang

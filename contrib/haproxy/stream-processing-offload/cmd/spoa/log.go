@@ -17,7 +17,7 @@ type Logger struct {
 
 // NewLogger creates a new Logger instance
 func NewLogger() *Logger {
-	return &Logger{streamprocessingoffload.Logger()}
+	return &Logger{streamprocessingoffload.Instrumentation().Logger()}
 }
 
 func (l Logger) Errorf(format string, args ...interface{}) {

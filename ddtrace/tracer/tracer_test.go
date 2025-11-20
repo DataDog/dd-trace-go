@@ -1238,7 +1238,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultHTTPClient(0, true))
+	return newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, true))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1357,7 +1357,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultHTTPClient(0, false))),
+		withTransport(newHTTPTransport(url, internal.DefaultHTTPClient(defaultHTTPTimeout, false))),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -2350,7 +2350,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		withTransport(transport),
 		withTickChan(tick),
 		// disable keep-alives to avoid goroutine leaks between tests
-		WithHTTPClient(defaultHTTPClient(0, true)),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {
@@ -2393,7 +2393,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 // disabled. This is necessary to avoid goroutine leaks between tests, see
 // TestMain.
 func newTestConfig(opts ...StartOption) (*config, error) {
-	opts = append([]StartOption{WithHTTPClient(defaultHTTPClient(0, true))}, opts...)
+	opts = append([]StartOption{WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true))}, opts...)
 	return newConfig(opts...)
 }
 
@@ -2760,25 +2760,25 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 
 func wasteA(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
 func wasteB(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
 func wasteC(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
@@ -2923,4 +2923,20 @@ func TestNewUnstartedTracerDDAgentHostNotFound(t *testing.T) {
 	t.Setenv("DD_AGENT_HOST", "ddapm-test-agent-c07208")
 	_, err := newUnstartedTracer()
 	assert.NoError(t, err)
+}
+
+func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
+	// This checks that starting the tracer twice properly shuts down the
+	// previous tracer, specifically the runtime metrics emitter.
+	tp := new(log.RecordLogger)
+	err := Start(WithLogger(tp))
+	require.NoError(t, err)
+	err = Start(WithLogger(tp))
+	require.NoError(t, err)
+	Stop()
+
+	// Check that runtime metrics emitters lifetimes did not overlap.
+	for _, logMsg := range tp.Logs() {
+		assert.NotContains(t, logMsg, "runtimemetrics has already been started")
+	}
 }

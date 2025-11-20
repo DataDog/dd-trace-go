@@ -345,7 +345,7 @@ func TestSpanFinishWithError(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	errMsg, _ := getMeta(span, ext.ErrorMsg)
 	errType, _ := getMeta(span, ext.ErrorType)
-	errStack, _ := getMeta(span, ext.ErrorHandlingStack)
+	errStack, _ := getMeta(span, ext.ErrorStack)
 	assert.Equal("test error", errMsg)
 	assert.Equal("*errors.errorString", errType)
 	assert.NotEmpty(errStack)
@@ -360,7 +360,7 @@ func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 
 	errMsg, _ := getMeta(span, ext.ErrorMsg)
 	errType, _ := getMeta(span, ext.ErrorType)
-	_, hasErrStack := getMeta(span, ext.ErrorHandlingStack)
+	_, hasErrStack := getMeta(span, ext.ErrorStack)
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", errMsg)
 	assert.Equal("*errors.errorString", errType)
@@ -376,7 +376,7 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 
 	errMsg, _ := getMeta(span, ext.ErrorMsg)
 	errType, _ := getMeta(span, ext.ErrorType)
-	errStack, _ := getMeta(span, ext.ErrorHandlingStack)
+	errStack, _ := getMeta(span, ext.ErrorStack)
 
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", errMsg)
@@ -429,7 +429,7 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("abc", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEmpty(span.meta[ext.ErrorHandlingStack])
+	assert.NotEmpty(span.meta[ext.ErrorStack])
 
 	span.SetTag(ext.Error, "something else")
 	assert.Equal(int32(1), span.error)
@@ -539,7 +539,7 @@ func TestSpanSetTagError(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
-		assert.NotEmpty(t, span.meta[ext.ErrorHandlingStack])
+		assert.NotEmpty(t, span.meta[ext.ErrorStack])
 	})
 }
 
@@ -569,6 +569,52 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
+		t.Run(fmt.Sprintf("%s/upstream-drop-locked", scenario.tag), func(t *testing.T) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(t, err)
+
+			spanCtx := &SpanContext{
+				traceID: traceIDFrom64Bits(42),
+				spanID:  42,
+				trace:   newTrace(),
+			}
+
+			// Set sampling priority (0 = drop decision from upstream) & lock the trace
+			// mimicking inheriting a trace from an upstream service with a drop decision.
+			spanCtx.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
+			spanCtx.trace.setLocked(true)
+
+			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
+			span.SetTag(scenario.tag, true)
+
+			// The sampling decision should be applied as manual sampling takes
+			// precedence over propagated decision
+			assert.Equal(t, scenario.keep, shouldKeep(span))
+		})
+		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
+			tracer, err := newTracer()
+			defer tracer.Stop()
+			assert.NoError(t, err)
+
+			spanCtx := &SpanContext{
+				traceID: traceIDFrom64Bits(42),
+				spanID:  42,
+				trace:   newTrace(),
+			}
+
+			// Set sampling priority (1 = keep decision from upstream) & lock the trace
+			// mimicking inheriting a trace from an upstream service with a keep decision.
+			spanCtx.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
+			spanCtx.trace.setLocked(true)
+
+			span := tracer.StartSpan("child span with sampling decision", ChildOf(spanCtx))
+			span.SetTag(scenario.tag, true)
+
+			// The sampling decision should be applied as manual sampling takes
+			// precedence over propagated decision
 			assert.Equal(t, scenario.keep, shouldKeep(span))
 		})
 	}
@@ -702,8 +748,6 @@ func TestSpanString(t *testing.T) {
 	// don't bother checking the contents, just make sure it works.
 	assert.NotEqual("", span.String())
 	span.Finish()
-	span.mu.RLock()
-	defer span.mu.RUnlock()
 	assert.NotEqual("", span.String())
 }
 
@@ -832,7 +876,7 @@ func TestErrorStack(t *testing.T) {
 		assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 		assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
 
-		stack := span.meta[ext.ErrorHandlingStack]
+		stack := span.meta[ext.ErrorStack]
 		assert.NotEqual("", stack)
 		assert.Contains(stack, "tracer.TestErrorStack")
 		assert.NotContains(stack, "tracer.createTestError")
@@ -855,7 +899,7 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEqual("", span.meta[ext.ErrorHandlingStack])
+	assert.NotEqual("", span.meta[ext.ErrorStack])
 	span.Finish()
 
 	// operating on a finished span is a no-op
@@ -888,7 +932,7 @@ func TestSpanError_Typed(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("boom", span.meta[ext.ErrorMsg])
 	assert.Equal("*tracer.boomError", span.meta[ext.ErrorType])
-	assert.NotEqual("", span.meta[ext.ErrorHandlingStack])
+	assert.NotEqual("", span.meta[ext.ErrorStack])
 }
 
 func TestSpanErrorNil(t *testing.T) {

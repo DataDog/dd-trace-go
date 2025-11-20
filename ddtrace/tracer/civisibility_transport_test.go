@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 
@@ -83,7 +84,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	parsedURL, _ := url.Parse(srv.URL)
 	c := config{
 		ciVisibilityEnabled: true,
-		httpClient:          defaultHTTPClient(0, false),
+		httpClient:          internal.DefaultHTTPClient(defaultHTTPTimeout, false),
 		agentURL:            parsedURL,
 	}
 

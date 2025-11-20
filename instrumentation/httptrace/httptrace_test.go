@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
@@ -391,6 +393,223 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	baggageMap := baggage.All(ctx)
 	assert.Equal(t, "value1", baggageMap["key1"], "should propagate baggage from header to context")
 	assert.Equal(t, "value2", baggageMap["key2"], "should propagate baggage from header to context")
+}
+
+func TestBeforeHandleHTTPEndpoint(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	type tc struct {
+		name   string
+		trn    string // DD_TRACE_RESOURCE_RENAMING_ENABLED
+		always string // DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT
+		route  string
+		expect func(*testing.T, *mocktracer.Span, *http.Request)
+	}
+
+	route := "/api/v1/users/{id}"
+	cases := []tc{
+		{
+			name:   "no route, TRN=false, ALWAYS=false",
+			trn:    "false",
+			always: "false",
+			route:  "",
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				assert.Equal(t, nil, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+		{
+			name:   "no route, TRN=true, ALWAYS=false",
+			trn:    "true",
+			always: "false",
+			route:  "",
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				expected := simplifyHTTPUrl(URLFromRequest(r, true))
+				assert.Equal(t, expected, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+		{
+			name:   "route present, TRN=true, ALWAYS=false",
+			trn:    "true",
+			always: "false",
+			route:  route,
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				assert.Equal(t, route, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+		{
+			name:   "route present, TRN=true, ALWAYS=true",
+			trn:    "true",
+			always: "true",
+			route:  "/a/b/{id}",
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				expected := simplifyHTTPUrl(URLFromRequest(r, true))
+				assert.Equal(t, expected, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", c.trn)
+			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", c.always)
+			ResetCfg()
+
+			r := httptest.NewRequest(http.MethodGet, "https://example.com/api/v1/users/123?foo=bar", nil)
+			w := httptest.NewRecorder()
+			cfg := &ServeConfig{Route: c.route}
+
+			rw, rt, after, handled := BeforeHandle(cfg, w, r)
+			assert.False(t, handled)
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+			after()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			c.expect(t, spans[0], r)
+			mt.Reset()
+		})
+	}
+}
+
+func TestResourceRenamingActivation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	type tc struct {
+		name        string
+		trn         *string // nil => unset
+		appsecStart bool
+		expectSet   bool
+	}
+
+	makeReq := func() (*http.Request, *httptest.ResponseRecorder, *ServeConfig) {
+		r := httptest.NewRequest(http.MethodGet, "https://example.com/a/b/123", nil)
+		w := httptest.NewRecorder()
+		cfg := &ServeConfig{Route: "/a/b/{id}"}
+		return r, w, cfg
+	}
+
+	trueStr := "true"
+	falseStr := "false"
+
+	cases := []tc{
+		{name: "TRN true -> enabled", trn: &trueStr, appsecStart: false, expectSet: true},
+		{name: "TRN false -> disabled", trn: &falseStr, appsecStart: false, expectSet: false},
+		{name: "APPSEC true, TRN unset -> enabled", trn: nil, appsecStart: true, expectSet: true},
+		{name: "APPSEC false, TRN unset -> disabled", trn: nil, appsecStart: false, expectSet: false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ENABLED")
+			os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT")
+			os.Unsetenv("DD_APPSEC_ENABLED")
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			if c.trn != nil {
+				t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", *c.trn)
+			}
+
+			if c.appsecStart {
+				os.Setenv("DD_APPSEC_ENABLED", "true")
+				appsec.Start()
+			}
+			defer appsec.Stop()
+
+			ResetCfg()
+
+			r, w, cfg := makeReq()
+			rw, rt, after, handled := BeforeHandle(cfg, w, r)
+			assert.False(t, handled)
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+			after()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			if c.expectSet {
+				assert.NotEmpty(t, spans[0].Tag(ext.HTTPEndpoint))
+			} else {
+				assert.Empty(t, spans[0].Tag(ext.HTTPEndpoint))
+			}
+		})
+	}
+}
+
+// Ensure the resource renaming is enabled only if appsec was enabled at the startup with the env var.
+func TestResourceRenamingActivationAppSecNotStartup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/a/b/123", nil)
+	w := httptest.NewRecorder()
+	cfg := &ServeConfig{Route: "/a/b/{id}"}
+
+	rw, rt, after, handled := BeforeHandle(cfg, w, r)
+	assert.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Empty(t, spans[0].Tag(ext.HTTPEndpoint))
+
+	t.Setenv("DD_APPSEC_ENABLED", "true") // Force activation
+	appsec.Start()
+	defer appsec.Stop()
+
+	rw, rt, after, handled = BeforeHandle(cfg, w, r)
+	assert.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans = mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	assert.Empty(t, spans[1].Tag(ext.HTTPEndpoint))
+}
+
+func TestRenamedRouteSelection(t *testing.T) {
+	type tc struct {
+		name     string
+		route    string
+		endpoint string
+		url      string // escaped path
+		expect   string
+	}
+
+	cases := []tc{
+		{
+			name:   "route used when available",
+			route:  "/users/{id}",
+			url:    "/users/123",
+			expect: "/users/{id}",
+		},
+		{
+			name:     "endpoint used when route empty",
+			endpoint: "/users/{id}",
+			url:      "/users/123",
+			expect:   "/users/{id}",
+		},
+		{
+			name:   "fallback to simplified url when both empty",
+			url:    "/a/b/123456",
+			expect: simplifyHTTPUrl("/a/b/123456"),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := renamedRoute(c.route, c.endpoint, c.url)
+			assert.Equal(t, c.expect, got)
+		})
+	}
 }
 
 func TestStartRequestSpanMergedBaggage(t *testing.T) {

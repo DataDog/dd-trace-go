@@ -80,12 +80,12 @@ func (c *Transport) PushEvalMetrics(
 		},
 	}
 
-	status, b, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
+	result, err := c.jsonRequest(ctx, method, path, subdomainEvalMetric, body, defaultTimeout)
 	if err != nil {
-		return fmt.Errorf("post llmobs eval metrics failed: %v", err)
+		return err
 	}
-	if status != http.StatusOK && status != http.StatusAccepted {
-		return fmt.Errorf("unexpected status %d: %s", status, string(b))
+	if result.statusCode != http.StatusOK && result.statusCode != http.StatusAccepted {
+		return fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 	return nil
 }

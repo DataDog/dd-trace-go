@@ -26,20 +26,25 @@ for contrib in $CONTRIBS; do
   cd "$contrib" || exit 1
   if [[ "$1" = "smoke" ]]; then
     go get -u -t ./...
-    go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
     go get github.com/DataDog/datadog-agent/pkg/trace@v0.71.0-rc.2
+    go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
+    go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
+    go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
+    go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
+    go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
     go get github.com/DataDog/datadog-agent/pkg/util/log@v0.71.0-rc.2
     go get github.com/DataDog/datadog-agent/pkg/util/scrubber@v0.71.0-rc.2
     go get github.com/DataDog/datadog-agent/pkg/version@v0.71.0-rc.2
+    go get go.opentelemetry.io/collector/pdata@v1.39.0
   fi
   if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
     # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
+  fi
+  if [[ "$1" = "smoke" && "$contrib" = "./contrib/gin-gonic/gin/" ]]; then
+    # Temporary workaround, see: https://github.com/gin-gonic/gin/issues/4441
+    go get github.com/quic-go/qpack@v0.5.1
   fi
   go mod tidy
   gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race -coverprofile="coverage-$contrib_id.txt" -covermode=atomic

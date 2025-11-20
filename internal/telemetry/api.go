@@ -46,7 +46,7 @@ const (
 	NamespaceAppSec       Namespace = transport.NamespaceAppSec
 	NamespaceIAST         Namespace = transport.NamespaceIAST
 	NamespaceCIVisibility Namespace = transport.NamespaceCIVisibility
-	NamespaceMLOps        Namespace = transport.NamespaceMLOps
+	NamespaceMLObs        Namespace = transport.NamespaceMLObs
 	NamespaceRUM          Namespace = transport.NamespaceRUM
 )
 
