@@ -246,6 +246,12 @@ func parseSymbol(name string) symbol {
 	}
 }
 
+// captureStack is the core stack capture implementation used by all public capture functions.
+// It captures a stack trace with the given skip count, depth limit, and frame processing options.
+func captureStack(skip int, maxDepth int, opts frameOptions) StackTrace {
+	return iterator(skip, maxDepth, opts).capture()
+}
+
 // Capture create a new stack trace from the current call stack
 func Capture() StackTrace {
 	return SkipAndCapture(defaultCallerSkip)
@@ -253,11 +259,25 @@ func Capture() StackTrace {
 
 // SkipAndCapture creates a new stack trace from the current call stack, skipping the first `skip` frames
 func SkipAndCapture(skip int) StackTrace {
-	return iterator(skip, defaultMaxDepth, frameOptions{
+	return captureStack(skip, defaultMaxDepth, frameOptions{
 		skipInternalFrames:      true,
 		redactCustomerFrames:    false,
 		internalPackagePrefixes: internalSymbolPrefixes,
-	}).capture()
+	})
+}
+
+// SkipAndCaptureWithInternalFrames creates a new stack trace from the current call stack without filtering internal frames.
+// This is useful for tracer span error stacktraces where we want to capture all frames.
+func SkipAndCaptureWithInternalFrames(depth int, skip int) StackTrace {
+	// Use default depth if not specified
+	if depth == 0 {
+		depth = defaultMaxDepth
+	}
+	return captureStack(skip, depth, frameOptions{
+		skipInternalFrames:      false,
+		redactCustomerFrames:    false,
+		internalPackagePrefixes: nil,
+	})
 }
 
 // SkipAndCaptureWithInternalFrames creates a new stack trace from the current call stack without filtering internal frames.
@@ -290,11 +310,11 @@ func CaptureRaw(skip int) RawStackTrace {
 // This is designed for telemetry logging where we want to see internal frames for debugging
 // but need to redact customer code for security
 func CaptureWithRedaction(skip int) StackTrace {
-	return iterator(skip+1, defaultMaxDepth, frameOptions{
+	return captureStack(skip+1, defaultMaxDepth, frameOptions{
 		skipInternalFrames:      false, // Keep DD internal frames
 		redactCustomerFrames:    true,  // Redact customer code
 		internalPackagePrefixes: internalSymbolPrefixes,
-	}).capture()
+	})
 }
 
 // Symbolicate converts raw PCs to a full StackTrace with symbolication,
