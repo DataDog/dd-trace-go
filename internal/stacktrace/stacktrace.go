@@ -10,7 +10,6 @@ package stacktrace
 
 import (
 	"errors"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -179,28 +178,70 @@ func (q *queue[T]) Remove() T {
 	return item
 }
 
-var symbolRegex = regexp.MustCompile(`^(([^(]+/)?([^(/.]+)?)(\.\(([^/)]+)\))?\.([^/()]+)$`)
-
-// parseSymbol parses a symbol name into its package, receiver and function
-// ex: github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Event).NewException
-// -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
-// -> receiver: *Event
-// -> function: NewException
+// parseSymbol parses a symbol name into its package, receiver and function using
+// zero-allocation string operations. This is a hot path called once per stack frame.
+//
+// Handles various Go symbol formats:
+//   - Simple function: pkg.Function
+//   - Method with receiver: pkg.(*Type).Method or pkg.(Type).Method
+//   - Lambda/closure: pkg.Function.func1 or pkg.(*Type).Method.func1
+//   - Generics: pkg.(*Type[...]).Method or pkg.Function[...]
+//
+// Examples:
+//   github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(*Event).NewException
+//     -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
+//     -> receiver: *Event
+//     -> function: NewException
+//   github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestFunc.func1
+//     -> package: github.com/DataDog/dd-trace-go/v2/internal/stacktrace
+//     -> receiver: ""
+//     -> function: TestFunc.func1
 func parseSymbol(name string) symbol {
-	matches := symbolRegex.FindStringSubmatch(name)
-	if len(matches) != 7 {
-		log.Error("Failed to parse symbol for stacktrace: %s", name)
-		return symbol{
-			Package:  "",
-			Receiver: "",
-			Function: "",
+	// Check for receiver first: pkg.(*Type) or pkg.(Type)
+	// Look for ".(" which marks the start of a receiver
+	if idx := strings.Index(name, ".("); idx != -1 {
+		// Find the closing paren of the receiver
+		receiverEnd := strings.IndexByte(name[idx+2:], ')')
+		if receiverEnd != -1 {
+			pkg := name[:idx]
+			receiver := name[idx+2 : idx+2+receiverEnd]
+			// Everything after ")." is the function (which may contain dots for lambdas)
+			fn := name[idx+2+receiverEnd+2:] // +2 for ")."
+			return symbol{
+				Package:  pkg,
+				Receiver: receiver,
+				Function: fn,
+			}
 		}
 	}
 
+	// No receiver case: need to find where package ends and function begins
+	// Package path ends at the last '/' followed by a segment before first '.'
+	// Examples:
+	//   "pkg.Function" -> pkg: "pkg", fn: "Function"
+	//   "pkg.Function.func1" -> pkg: "pkg", fn: "Function.func1"
+	//   "github.com/org/pkg.Function" -> pkg: "github.com/org/pkg", fn: "Function"
+
+	// Find the last slash to identify where the package name starts
+	lastSlash := strings.LastIndexByte(name, '/')
+
+	// Find the first dot after the last slash (or from the beginning if no slash)
+	searchStart := 0
+	if lastSlash != -1 {
+		searchStart = lastSlash + 1
+	}
+
+	firstDotAfterSlash := strings.IndexByte(name[searchStart:], '.')
+	if firstDotAfterSlash == -1 {
+		// No dots after last slash, the whole thing is the function name
+		return symbol{Function: name}
+	}
+
+	// Package ends at this dot, function starts after it
+	pkgEnd := searchStart + firstDotAfterSlash
 	return symbol{
-		Package:  matches[1],
-		Receiver: matches[5],
-		Function: matches[6],
+		Package:  name[:pkgEnd],
+		Function: name[pkgEnd+1:], // Everything after the dot, including nested dots for lambdas
 	}
 }
 
