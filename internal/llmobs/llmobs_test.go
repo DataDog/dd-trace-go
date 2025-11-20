@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1843,4 +1844,118 @@ func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func ptrFromVal[T any](v T) *T {
 	return &v
+}
+
+func TestDDAttributes(t *testing.T) {
+	t.Run("regular-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "test-llm", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		apmSpans := tt.WaitForSpans(t, 1)
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+
+		apmSpan := apmSpans[0]
+		llmSpan := llmSpans[0]
+
+		assert.NotEmpty(t, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.APMTraceID, "DDAttributes.APMTraceID should be populated")
+
+		assert.Equal(t, llmSpan.SpanID, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should match SpanID")
+		assert.Equal(t, llmSpan.TraceID, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should match TraceID")
+		assert.NotEqual(t, llmSpan.DDAttributes.TraceID, llmSpan.DDAttributes.APMTraceID, "LLMObs trace ID should differ from DDAttributes.APMTraceID")
+
+		// compare only the lower 64 bits of the trace ID
+		low64Hex := llmSpan.DDAttributes.APMTraceID[len(llmSpan.DDAttributes.APMTraceID)-16:]
+		low64HexUint, err := strconv.ParseUint(low64Hex, 16, 64)
+		require.NoError(t, err)
+		assert.Equal(t, apmSpan.TraceID, low64HexUint, "APM trace ID should match DDAttributes.APMTraceID")
+
+		// Verify Scope is empty for regular spans
+		assert.Empty(t, llmSpan.DDAttributes.Scope, "DDAttributes.Scope should be empty for regular spans")
+	})
+	t.Run("experiment-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		experimentID := "test-experiment-123"
+		span, _ := ll.StartExperimentSpan(ctx, "test-experiment", experimentID, llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		apmSpans := tt.WaitForSpans(t, 1)
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+
+		apmSpan := apmSpans[0]
+		llmSpan := llmSpans[0]
+
+		assert.NotEmpty(t, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.APMTraceID, "DDAttributes.APMTraceID should be populated")
+
+		assert.Equal(t, llmSpan.SpanID, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should match SpanID")
+		assert.Equal(t, llmSpan.TraceID, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should match TraceID")
+		assert.NotEqual(t, llmSpan.DDAttributes.TraceID, llmSpan.DDAttributes.APMTraceID, "LLMObs trace ID should differ from DDAttributes.APMTraceID")
+
+		assertAPMTraceID(t, apmSpan, llmSpan)
+
+		// Verify Scope is set to "experiments"
+		assert.Equal(t, "experiments", llmSpan.DDAttributes.Scope, "DDAttributes.Scope should be 'experiments' for experiment spans")
+	})
+	t.Run("child-span-trace-ids", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent-workflow", llmobs.StartSpanConfig{})
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
+
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+		apmSpans := tt.WaitForSpans(t, 2)
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+		var parentLLM, childLLM *llmobstransport.LLMObsSpanEvent
+		for i := range llmSpans {
+			if llmSpans[i].Name == "parent-workflow" {
+				parentLLM = &llmSpans[i]
+			} else if llmSpans[i].Name == "child-llm" {
+				childLLM = &llmSpans[i]
+			}
+		}
+
+		var parentAPM, childAPM *testtracer.Span
+		for i := range apmSpans {
+			if apmSpans[i].Name == "parent-workflow" {
+				parentAPM = &apmSpans[i]
+			} else if apmSpans[i].Name == "child-llm" {
+				childAPM = &apmSpans[i]
+			}
+		}
+
+		require.NotNil(t, parentLLM, "Parent LLM span should exist")
+		require.NotNil(t, childLLM, "Child LLM span should exist")
+		require.NotNil(t, parentAPM, "Parent APM span should exist")
+		require.NotNil(t, childAPM, "Child APM span should exist")
+
+		assert.Equal(t, parentLLM.DDAttributes.TraceID, childLLM.DDAttributes.TraceID,
+			"Parent and child should have the same LLMObs trace ID in DDAttributes")
+		assert.Equal(t, parentLLM.DDAttributes.APMTraceID, childLLM.DDAttributes.APMTraceID,
+			"Parent and child should have the same APM trace ID in DDAttributes")
+		assert.NotEqual(t, parentLLM.DDAttributes.TraceID, parentLLM.DDAttributes.APMTraceID,
+			"LLMObs trace ID should differ from APM trace ID")
+
+		assertAPMTraceID(t, *parentAPM, *parentLLM)
+		assertAPMTraceID(t, *childAPM, *childLLM)
+	})
+}
+
+func assertAPMTraceID(t *testing.T, apmSpan testtracer.Span, llmSpan llmobstransport.LLMObsSpanEvent) {
+	// compare only the lower 64 bits of the trace ID
+	low64Hex := llmSpan.DDAttributes.APMTraceID[len(llmSpan.DDAttributes.APMTraceID)-16:]
+	low64HexUint, err := strconv.ParseUint(low64Hex, 16, 64)
+	require.NoError(t, err)
+	assert.Equal(t, apmSpan.TraceID, low64HexUint, "APM trace ID should match DDAttributes.APMTraceID")
 }
