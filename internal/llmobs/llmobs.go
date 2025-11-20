@@ -534,6 +534,8 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	parentID := defaultParentID
 	if span.parent != nil {
 		parentID = span.parent.apm.SpanID()
+	} else if span.propagated != nil {
+		parentID = span.propagated.SpanID
 	}
 	if span.llmTraceID == "" {
 		log.Warn("llmobs: span has no trace ID")
