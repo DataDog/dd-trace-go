@@ -23,10 +23,6 @@ func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_ENABLED", "true")
 	testutils.StartAppSec(t)
 
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
-
 	// Start and trace an HTTP server with some testing routes
 	router := chi.NewRouter().With(Middleware())
 	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/*", func(w http.ResponseWriter, _ *http.Request) {

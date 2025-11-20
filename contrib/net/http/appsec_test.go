@@ -37,9 +37,6 @@ func TestAppsec(t *testing.T) {
 			defer mt.Stop()
 
 			testutils.StartAppSec(t)
-			if !internal.Instrumentation.AppSecEnabled() {
-				t.Skip("appsec not enabled")
-			}
 
 			w := httptest.NewRecorder()
 			r, err := http.NewRequest("GET", "?value=169.254.169.254", nil)
@@ -217,9 +214,6 @@ func TestAppsecAPI10(t *testing.T) {
 			defer mt.Stop()
 
 			testutils.StartAppSec(t)
-			if !internal.Instrumentation.AppSecEnabled() {
-				t.Skip("appsec not enabled")
-			}
 
 			w := httptest.NewRecorder()
 			r, err := http.NewRequest("GET", "", nil)
@@ -276,9 +270,6 @@ func TestAppsecHTTP30X(t *testing.T) {
 		defer mt.Stop()
 
 		testutils.StartAppSec(t)
-		if !internal.Instrumentation.AppSecEnabled() {
-			t.Skip("appsec not enabled")
-		}
 
 		w := httptest.NewRecorder()
 		r, err := http.NewRequest("GET", srv.URL+"/move", nil)

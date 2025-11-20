@@ -47,10 +47,6 @@ func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
@@ -118,10 +114,6 @@ func TestUserRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
@@ -182,10 +174,6 @@ func TestUserRules(t *testing.T) {
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -332,10 +320,6 @@ func TestWAF(t *testing.T) {
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	const (
 		ipBlockingRule   = "blk-001-001"
@@ -658,10 +642,6 @@ func TestRASPLFI(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.RASPEnabled() {
-		t.Skip("RASP needs to be enabled for this test")
-	}
-
 	// Simulate what orchestrion does
 	WrappedOpen := func(ctx context.Context, path string, flags int) (file *os.File, err error) {
 		parent, _ := dyngo.FromContext(ctx)
@@ -769,10 +749,6 @@ func TestRASPLFI(t *testing.T) {
 func TestSuspiciousAttackerBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	const bodyBlockingRule = "crs-933-130-block"
 
@@ -1030,10 +1006,6 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 func TestAttackerFingerprinting(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()

@@ -25,9 +25,6 @@ import (
 
 func TestAppSec(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	e := echo.New()
@@ -238,9 +235,6 @@ func TestAppSec(t *testing.T) {
 // scenarios.
 func TestControlFlow(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
@@ -548,9 +542,6 @@ func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	e := echo.New()

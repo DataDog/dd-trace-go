@@ -279,10 +279,6 @@ func enableAppSec(t *testing.T) func() {
 	cleanup := func() {
 		_ = os.RemoveAll(tmpDir)
 	}
-	if !instr.AppSecEnabled() {
-		cleanup()
-		t.Skip("could not enable appsec: this platform is likely not supported")
-	}
 	return cleanup
 }
 

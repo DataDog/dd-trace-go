@@ -31,9 +31,6 @@ func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 0)
@@ -181,9 +178,6 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 256)
@@ -412,9 +406,6 @@ func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
 	t.Setenv("_DD_APPSEC_PROXY_ENVIRONMENT", "true") // Enable API Security proxy sampler
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 256)
@@ -586,9 +577,6 @@ func TestGeneratedSpan(t *testing.T) {
 
 func TestMalformedHAProxyProcessing(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (func(req *request.Request), mocktracer.Tracer, func()) {
 		rig := newHAProxyAppsecRig(t, false, 0)

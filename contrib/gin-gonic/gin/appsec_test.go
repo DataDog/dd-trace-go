@@ -23,9 +23,6 @@ import (
 
 func TestAppSec(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	r := gin.New()
 	r.Use(Middleware("appsec"))
@@ -401,9 +398,6 @@ func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	r := gin.New()
 	r.Use(Middleware("appsec"))

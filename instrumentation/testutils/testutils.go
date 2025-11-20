@@ -6,6 +6,7 @@
 package testutils
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 	"unsafe"
@@ -70,6 +71,16 @@ func SetGlobalHeaderTags(t *testing.T, headers ...string) {
 
 func StartAppSec(t *testing.T, opts ...config.StartOption) {
 	appsec.Start(opts...)
+
+	if !appsec.Enabled() {
+		if runtime.GOOS != "windows" {
+			t.Log("Skipping AppSec test on unsupported platform")
+			t.SkipNow()
+		}
+		t.Fatal("Failed to start AppSec while platform should be supported")
+		t.FailNow()
+	}
+
 	t.Cleanup(appsec.Stop)
 }
 

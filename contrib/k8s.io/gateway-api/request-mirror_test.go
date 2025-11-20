@@ -18,9 +18,6 @@ import (
 
 func TestRequestMirror(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	srv := httptest.NewServer(HTTPRequestMirrorHandler(Config{}))
 	defer srv.Close()
