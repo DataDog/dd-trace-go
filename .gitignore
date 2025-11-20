@@ -7,6 +7,7 @@ go.work*
 # profiling
 *.test
 *.out
+*.prof
 
 # generic
 .DS_Store
