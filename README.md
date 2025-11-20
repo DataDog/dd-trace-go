@@ -76,6 +76,7 @@ Targets:
   format               Format code
   format/shell         install shfmt
   test                 Run all tests (core, integration, contrib)
+  test/unit            Run unit tests
   test/appsec          Run tests with AppSec enabled
   test/contrib         Run contrib package tests
   test/integration     Run integration tests
