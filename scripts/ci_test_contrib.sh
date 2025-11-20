@@ -18,6 +18,9 @@ fi
 
 export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
 
+export DD_APPSEC_ENABLED=1
+export DD_APPSEC_WAF_TIMEOUT=1m
+
 report_error=0
 
 for contrib in $CONTRIBS; do
