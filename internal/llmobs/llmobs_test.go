@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -84,7 +85,6 @@ func TestStartSpan(t *testing.T) {
 		l1 := llmSpans[1]
 		l2 := llmSpans[2]
 
-		// FIXME: they are in reverse order
 		assert.Equal(t, "llm-2", l0.Name)
 		assert.Equal(t, "agent-1", l1.Name)
 		assert.Equal(t, "llm-1", l2.Name)
@@ -93,8 +93,74 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, llmobsTraceID, l1.TraceID)
 		assert.Equal(t, llmobsTraceID, l2.TraceID)
 	})
+	t.Run("distributed-context-propagation-manual", func(t *testing.T) {
+		tt, ll := testTracer(t)
 
-	t.Run("distributed-context-propagation", func(t *testing.T) {
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+			spanContext, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte(fmt.Sprintf("failed to extract span context: %v", err)))
+				return
+			}
+
+			span, ctx := tracer.StartSpanFromContext(ctx, "http.server.request", tracer.ChildOf(spanContext))
+			defer span.Finish()
+
+			agentSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindAgent, "server-agent-span", llmobs.StartSpanConfig{})
+			defer agentSpan.Finish(llmobs.FinishSpanConfig{})
+
+			w.Write([]byte("ok"))
+		})
+
+		genSpans := func() {
+			srv := httptest.NewServer(traceHandler(h))
+			defer srv.Close()
+
+			clientAgentSpan, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client-agent-span", llmobs.StartSpanConfig{})
+			defer clientAgentSpan.Finish(llmobs.FinishSpanConfig{})
+
+			clientSpan, ctx := tracer.StartSpanFromContext(ctx, "http.client.request")
+			defer clientSpan.Finish()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+
+			err = tracer.Inject(clientSpan.Context(), tracer.HTTPHeadersCarrier(req.Header))
+			require.NoError(t, err)
+
+			client := http.DefaultClient
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+		_ = tt.WaitForSpans(t, 4) // 2 for APM, 2 for LLMObs
+
+		clientAgent := llmSpans[1]
+		serverAgent := llmSpans[0]
+
+		assert.Equal(t, "client-agent-span", clientAgent.Name)
+		assert.Equal(t, "server-agent-span", serverAgent.Name)
+
+		// assert all spans have the same trace ID
+		assert.NotEmpty(t, clientAgent.TraceID, "client agent trace ID should not be empty")
+		assert.NotEmpty(t, serverAgent.TraceID, "server agent trace ID should not be empty")
+		assert.Equal(t, clientAgent.TraceID, serverAgent.TraceID, "client and server agent trace IDs should be the same")
+
+		assert.NotEmpty(t, clientAgent.SpanID, "client agent span ID should not be empty")
+		assert.NotEmpty(t, serverAgent.SpanID, "server agent span ID should not be empty")
+		assert.NotEqual(t, clientAgent.SpanID, serverAgent.SpanID, "client and server agent span IDs should not be the same")
+
+		// assert parent IDs are correct
+		assert.Equal(t, clientAgent.ParentID, "undefined", "client agent parent ID should be undefined")
+		assert.Equal(t, serverAgent.ParentID, clientAgent.SpanID, "server agent parent ID should be the client agent span ID")
+	})
+	t.Run("distributed-context-propagation-contrib", func(t *testing.T) {
 		tt, ll := testTracer(t)
 
 		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -169,22 +235,29 @@ func TestStartSpan(t *testing.T) {
 
 		llmSpans := tt.WaitForLLMObsSpans(t, 3)
 
-		l0 := llmSpans[0]
-		l1 := llmSpans[1]
-		l2 := llmSpans[2]
+		llmAgent1 := llmSpans[0]
+		llmWorkflow1 := llmSpans[1]
+		llmLLM1 := llmSpans[2]
 
-		assert.Equal(t, "agent-1", l0.Name)
-		assert.Equal(t, "custom-ml-app", findTag(l0.Tags, "ml_app"), "wrong ml_app for span agent-1")
-		assert.Equal(t, "workflow-1", l1.Name)
-		assert.Equal(t, "custom-ml-app", findTag(l1.Tags, "ml_app"), "wrong ml_app for span workflow-1")
-		assert.Equal(t, "llm-1", l2.Name)
-		assert.Equal(t, "custom-ml-app", findTag(l2.Tags, "ml_app"), "wrong ml_app for span llm-1")
+		assert.Equal(t, "agent-1", llmAgent1.Name)
+		assert.Equal(t, "custom-ml-app", findTag(llmAgent1.Tags, "ml_app"), "wrong ml_app for span agent-1")
 
-		llmTraceID := l0.TraceID
-		assert.Equal(t, llmTraceID, l0.TraceID)
-		assert.Equal(t, llmTraceID, l1.TraceID)
+		assert.Equal(t, "workflow-1", llmWorkflow1.Name)
+		assert.Equal(t, "custom-ml-app", findTag(llmWorkflow1.Tags, "ml_app"), "wrong ml_app for span workflow-1")
+
+		assert.Equal(t, "llm-1", llmLLM1.Name)
+		assert.Equal(t, "custom-ml-app", findTag(llmLLM1.Tags, "ml_app"), "wrong ml_app for span llm-1")
+
+		// assert all spans have the same trace ID
+		llmTraceID := llmAgent1.TraceID
+		assert.Equal(t, llmTraceID, llmAgent1.TraceID)
+		assert.Equal(t, llmTraceID, llmWorkflow1.TraceID)
+
+		// assert parent IDs are correct
+		assert.Equal(t, llmLLM1.ParentID, "undefined", "llm-1 parent ID should be undefined")
+		assert.Equal(t, llmWorkflow1.ParentID, llmLLM1.SpanID, "workflow-1 parent ID should be the llm-1 span ID")
+		assert.Equal(t, llmAgent1.ParentID, llmWorkflow1.SpanID, "agent-1 parent ID should be the workflow-1 span ID")
 	})
-
 	t.Run("custom-start-and-finish-times", func(t *testing.T) {
 		tt, ll := testTracer(t)
 
@@ -1843,4 +1916,118 @@ func (rt *tracedRT) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func ptrFromVal[T any](v T) *T {
 	return &v
+}
+
+func TestDDAttributes(t *testing.T) {
+	t.Run("regular-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "test-llm", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		apmSpans := tt.WaitForSpans(t, 1)
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+
+		apmSpan := apmSpans[0]
+		llmSpan := llmSpans[0]
+
+		assert.NotEmpty(t, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.APMTraceID, "DDAttributes.APMTraceID should be populated")
+
+		assert.Equal(t, llmSpan.SpanID, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should match SpanID")
+		assert.Equal(t, llmSpan.TraceID, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should match TraceID")
+		assert.NotEqual(t, llmSpan.DDAttributes.TraceID, llmSpan.DDAttributes.APMTraceID, "LLMObs trace ID should differ from DDAttributes.APMTraceID")
+
+		// compare only the lower 64 bits of the trace ID
+		low64Hex := llmSpan.DDAttributes.APMTraceID[len(llmSpan.DDAttributes.APMTraceID)-16:]
+		low64HexUint, err := strconv.ParseUint(low64Hex, 16, 64)
+		require.NoError(t, err)
+		assert.Equal(t, apmSpan.TraceID, low64HexUint, "APM trace ID should match DDAttributes.APMTraceID")
+
+		// Verify Scope is empty for regular spans
+		assert.Empty(t, llmSpan.DDAttributes.Scope, "DDAttributes.Scope should be empty for regular spans")
+	})
+	t.Run("experiment-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		experimentID := "test-experiment-123"
+		span, _ := ll.StartExperimentSpan(ctx, "test-experiment", experimentID, llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		apmSpans := tt.WaitForSpans(t, 1)
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+
+		apmSpan := apmSpans[0]
+		llmSpan := llmSpans[0]
+
+		assert.NotEmpty(t, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should be populated")
+		assert.NotEmpty(t, llmSpan.DDAttributes.APMTraceID, "DDAttributes.APMTraceID should be populated")
+
+		assert.Equal(t, llmSpan.SpanID, llmSpan.DDAttributes.SpanID, "DDAttributes.SpanID should match SpanID")
+		assert.Equal(t, llmSpan.TraceID, llmSpan.DDAttributes.TraceID, "DDAttributes.TraceID should match TraceID")
+		assert.NotEqual(t, llmSpan.DDAttributes.TraceID, llmSpan.DDAttributes.APMTraceID, "LLMObs trace ID should differ from DDAttributes.APMTraceID")
+
+		assertAPMTraceID(t, apmSpan, llmSpan)
+
+		// Verify Scope is set to "experiments"
+		assert.Equal(t, "experiments", llmSpan.DDAttributes.Scope, "DDAttributes.Scope should be 'experiments' for experiment spans")
+	})
+	t.Run("child-span-trace-ids", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		parentSpan, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "parent-workflow", llmobs.StartSpanConfig{})
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
+
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+		apmSpans := tt.WaitForSpans(t, 2)
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+		var parentLLM, childLLM *llmobstransport.LLMObsSpanEvent
+		for i := range llmSpans {
+			if llmSpans[i].Name == "parent-workflow" {
+				parentLLM = &llmSpans[i]
+			} else if llmSpans[i].Name == "child-llm" {
+				childLLM = &llmSpans[i]
+			}
+		}
+
+		var parentAPM, childAPM *testtracer.Span
+		for i := range apmSpans {
+			if apmSpans[i].Name == "parent-workflow" {
+				parentAPM = &apmSpans[i]
+			} else if apmSpans[i].Name == "child-llm" {
+				childAPM = &apmSpans[i]
+			}
+		}
+
+		require.NotNil(t, parentLLM, "Parent LLM span should exist")
+		require.NotNil(t, childLLM, "Child LLM span should exist")
+		require.NotNil(t, parentAPM, "Parent APM span should exist")
+		require.NotNil(t, childAPM, "Child APM span should exist")
+
+		assert.Equal(t, parentLLM.DDAttributes.TraceID, childLLM.DDAttributes.TraceID,
+			"Parent and child should have the same LLMObs trace ID in DDAttributes")
+		assert.Equal(t, parentLLM.DDAttributes.APMTraceID, childLLM.DDAttributes.APMTraceID,
+			"Parent and child should have the same APM trace ID in DDAttributes")
+		assert.NotEqual(t, parentLLM.DDAttributes.TraceID, parentLLM.DDAttributes.APMTraceID,
+			"LLMObs trace ID should differ from APM trace ID")
+
+		assertAPMTraceID(t, *parentAPM, *parentLLM)
+		assertAPMTraceID(t, *childAPM, *childLLM)
+	})
+}
+
+func assertAPMTraceID(t *testing.T, apmSpan testtracer.Span, llmSpan llmobstransport.LLMObsSpanEvent) {
+	// compare only the lower 64 bits of the trace ID
+	low64Hex := llmSpan.DDAttributes.APMTraceID[len(llmSpan.DDAttributes.APMTraceID)-16:]
+	low64HexUint, err := strconv.ParseUint(low64Hex, 16, 64)
+	require.NoError(t, err)
+	assert.Equal(t, apmSpan.TraceID, low64HexUint, "APM trace ID should match DDAttributes.APMTraceID")
 }
