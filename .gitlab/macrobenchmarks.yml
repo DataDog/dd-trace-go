@@ -7,6 +7,9 @@ variables:
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules:
+    # We don't want to run benchmarks on graphite commits
+    - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
+      when: never
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
     - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
@@ -257,6 +260,9 @@ notify-slo-breaches:
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules:
+    # We don't want to run benchmarks on graphite commits
+    - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
+      when: never
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
     - when: manual

@@ -24,6 +24,9 @@ generate_matrix:
     # We don't want to run benchmarks when pushing release tags for nested modules
     - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
       when: never
+    # We don't want to run benchmarks on graphite commits
+    - if: '$CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/'
+      when: never
     - when: always
     - if: '$CI_COMMIT_BRANCH == "main"'
       interruptible: false
