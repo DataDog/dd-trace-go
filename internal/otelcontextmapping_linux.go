@@ -46,7 +46,7 @@ type processContextHeader struct {
 
 func CreateOtelProcessContextMapping(data []byte) error {
 	// Clear the previous mapping if it exists
-	err := RemoveOtelProcessContextMapping()
+	err := removeOtelProcessContextMapping()
 	if err != nil {
 		return fmt.Errorf("failed to remove previous mapping: %w", err)
 	}
@@ -113,7 +113,7 @@ func CreateOtelProcessContextMapping(data []byte) error {
 	return nil
 }
 
-func RemoveOtelProcessContextMapping() error {
+func removeOtelProcessContextMapping() error {
 	//Check publisher PID to check that the process has not forked.
 	//It should not be necessary for Go, but just in case.
 	if existingMappingBytes == nil || publisherPID != os.Getpid() {

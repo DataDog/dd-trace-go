@@ -113,9 +113,9 @@ func kernelSupportsNamedAnonymousMappings() (bool, error) {
 }
 
 func TestCreateOtelProcessContextMapping(t *testing.T) {
-	RemoveOtelProcessContextMapping()
+	removeOtelProcessContextMapping()
 	t.Cleanup(func() {
-		RemoveOtelProcessContextMapping()
+		removeOtelProcessContextMapping()
 	})
 
 	payload := []byte("hello world")
@@ -131,9 +131,9 @@ func TestCreateOtelProcessContextMapping(t *testing.T) {
 }
 
 func TestCreateOtelProcessContextMappingRejectsOversizedPayload(t *testing.T) {
-	RemoveOtelProcessContextMapping()
+	removeOtelProcessContextMapping()
 	t.Cleanup(func() {
-		RemoveOtelProcessContextMapping()
+		removeOtelProcessContextMapping()
 	})
 
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
