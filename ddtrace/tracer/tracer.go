@@ -277,15 +277,20 @@ func Start(opts ...StartOption) error {
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	t.telemetry = startTelemetry(t.config)
 
-	// store the configuration in an in-memory file, allowing it to be read to
-	// determine if the process is instrumented with a tracer and to retrive
-	// relevant tracing information.
+	// store the configuration in an in-memory file and in a named anonymous mapping,
+	// allowing it to be read to determine if the process is instrumented with a tracer
+	// and to retrieve relevant tracing information.
 	storeConfig(t.config)
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
 }
 
+// storeConfig stores the process level tracing context both in an in-memory file and
+// in a named anonymous mapping.
+// This allows an external process, such as the Datadog Agent or fullhost profiler,
+// to determine if the process is instrumented with a tracer and to retrieve the process
+// level tracing context.
 func storeConfig(c *config) {
 	uuid, _ := uuid.NewRandom()
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
