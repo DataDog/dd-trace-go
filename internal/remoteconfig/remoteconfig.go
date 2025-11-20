@@ -214,19 +214,22 @@ func Start(config ClientConfig) error {
 	}
 	started = true
 
-	pollInterval := client.PollInterval
+	var (
+		pollInterval = client.PollInterval
+		stop         = client.stop
+	)
 	go func() {
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
 		for {
-			if client == nil {
-				return
-			}
 			select {
-			case <-client.stop:
+			case <-stop:
 				return
 			case <-ticker.C:
+				if client == nil {
+					return
+				}
 				client.Lock()
 				client.updateState()
 				client.Unlock()
