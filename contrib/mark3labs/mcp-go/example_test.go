@@ -19,7 +19,7 @@ func Example() {
 	defer tracer.Stop()
 
 	srv := server.NewMCPServer("my-server", "1.0.0",
-		mcpgotrace.WithTracing(nil))
+		mcpgotrace.WithMCPServerTracing(nil))
 	_ = srv
 }
 
@@ -33,6 +33,6 @@ func Example_withCustomHooks() {
 	})
 
 	srv := server.NewMCPServer("my-server", "1.0.0",
-		mcpgotrace.WithTracing(&mcpgotrace.TracingConfig{Hooks: customHooks}))
+		mcpgotrace.WithMCPServerTracing(&mcpgotrace.TracingConfig{Hooks: customHooks}))
 	_ = srv
 }

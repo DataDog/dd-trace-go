@@ -46,7 +46,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		WithTracing(nil))
+		WithMCPServerTracing(nil))
 
 	ctx := context.Background()
 	sessionID := "test-session-init"
@@ -109,7 +109,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	appendTracingHooks(hooks)
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		WithTracing(nil))
+		WithMCPServerTracing(nil))
 
 	calcTool := mcp.NewTool("calculator",
 		mcp.WithDescription("A simple calculator"))
@@ -207,7 +207,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		WithTracing(&TracingConfig{}))
+		WithMCPServerTracing(&TracingConfig{}))
 
 	errorTool := mcp.NewTool("error_tool",
 		mcp.WithDescription("A tool that always errors"))
@@ -254,7 +254,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	assert.Contains(t, toolSpan.Meta, "input")
 }
 
-func TestWithTracingWithCustomHooks(t *testing.T) {
+func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
 
@@ -265,7 +265,7 @@ func TestWithTracingWithCustomHooks(t *testing.T) {
 	})
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		WithTracing(&TracingConfig{Hooks: customHooks}))
+		WithMCPServerTracing(&TracingConfig{Hooks: customHooks}))
 
 	ctx := context.Background()
 	initRequest := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`

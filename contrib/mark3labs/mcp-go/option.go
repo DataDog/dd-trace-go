@@ -19,7 +19,7 @@ type TracingConfig struct {
 	Hooks *server.Hooks
 }
 
-// WithTracing adds Datadog tracing to an MCP server.
+// WithMCPServerTracing adds Datadog tracing to an MCP server.
 // Pass this option to server.NewMCPServer to enable tracing.
 //
 // Do not use with `server.WithHooks(...)`, as this overwrites the hooks.
@@ -29,7 +29,7 @@ type TracingConfig struct {
 //
 //	// Simple usage with only tracing hooks
 //	srv := server.NewMCPServer("my-server", "1.0.0",
-//	    WithTracing(nil))
+//	    WithMCPServerTracing(nil))
 //
 //	// With custom hooks
 //	customHooks := &server.Hooks{}
@@ -37,8 +37,8 @@ type TracingConfig struct {
 //	    // Your custom logic here
 //	})
 //	srv := server.NewMCPServer("my-server", "1.0.0",
-//	    WithTracing(&TracingConfig{Hooks: customHooks}))
-func WithTracing(options *TracingConfig) server.ServerOption {
+//	    WithMCPServerTracing(&TracingConfig{Hooks: customHooks}))
+func WithMCPServerTracing(options *TracingConfig) server.ServerOption {
 	return func(s *server.MCPServer) {
 		if options == nil {
 			options = new(TracingConfig)
