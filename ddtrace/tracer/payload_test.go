@@ -174,6 +174,32 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
 			assert.Equal(got.chunks[0].attributes["service"].value, "golden")
 		})
+
+		// Test that a span with no decision maker does not error
+		t.Run("no decision maker", func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+
+			s := newBasicSpan("span.list")
+			s.context.trace.propagatingTags = map[string]string{"keyDecisionMaker": ""}
+			p.push([]*Span{s})
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			assert.Greater(len(got.chunks), 0)
+			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
+			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+		})
 	}
 }
 
