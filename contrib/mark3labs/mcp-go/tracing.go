@@ -27,46 +27,44 @@ type hooks struct {
 	spanCache *sync.Map
 }
 
-// AddServerHooks appends Datadog tracing hooks to an existing server.Hooks object.
-func AddServerHooks(hooks *server.Hooks) {
-	ddHooks := newHooks()
-	hooks.AddBeforeInitialize(ddHooks.onBeforeInitialize)
-	hooks.AddAfterInitialize(ddHooks.onAfterInitialize)
-	hooks.AddOnError(ddHooks.onError)
+// appendTracingHooks appends Datadog tracing hooks to an existing server.Hooks object.
+func appendTracingHooks(hooks *server.Hooks) {
+	tracingHooks := newHooks()
+	hooks.AddBeforeInitialize(tracingHooks.onBeforeInitialize)
+	hooks.AddAfterInitialize(tracingHooks.onAfterInitialize)
+	hooks.AddOnError(tracingHooks.onError)
 }
 
-func NewToolHandlerMiddleware() server.ToolHandlerMiddleware {
-	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
-		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
+var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
 
-			result, err := next(ctx, request)
+		result, err := next(ctx, request)
 
-			inputJSON, marshalErr := json.Marshal(request)
-			if marshalErr != nil {
-				instr.Logger().Warn("mcp-go: failed to marshal tool request: %v", marshalErr)
-			}
-			var outputText string
-			if result != nil {
-				resultJSON, marshalErr := json.Marshal(result)
-				if marshalErr != nil {
-					instr.Logger().Warn("mcp-go: failed to marshal tool result: %v", marshalErr)
-				}
-				outputText = string(resultJSON)
-			}
-
-			tagWithSessionID(ctx, toolSpan)
-
-			toolSpan.AnnotateTextIO(string(inputJSON), outputText)
-
-			if err != nil {
-				toolSpan.Finish(llmobs.WithError(err))
-			} else {
-				toolSpan.Finish()
-			}
-
-			return result, err
+		inputJSON, marshalErr := json.Marshal(request)
+		if marshalErr != nil {
+			instr.Logger().Warn("mcp-go: failed to marshal tool request: %v", marshalErr)
 		}
+		var outputText string
+		if result != nil {
+			resultJSON, marshalErr := json.Marshal(result)
+			if marshalErr != nil {
+				instr.Logger().Warn("mcp-go: failed to marshal tool result: %v", marshalErr)
+			}
+			outputText = string(resultJSON)
+		}
+
+		tagWithSessionID(ctx, toolSpan)
+
+		toolSpan.AnnotateTextIO(string(inputJSON), outputText)
+
+		if err != nil {
+			toolSpan.Finish(llmobs.WithError(err))
+		} else {
+			toolSpan.Finish()
+		}
+
+		return result, err
 	}
 }
 

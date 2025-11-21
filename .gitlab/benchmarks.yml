@@ -2,10 +2,11 @@
   image: $BASE_CI_IMAGE
   when: on_success
   timeout: 1h
-  only:
-    refs:
-      - branches
-  interruptible: true
+  rules: 
+    - if: $CI_COMMIT_REF_NAME == "main"
+      interruptible: false
+    - if: $CI_COMMIT_BRANCH  # This fallback only runs on branch pipelines
+      interruptible: true
   tags: ["runner:apm-k8s-m8g-metal"]
   variables:
     GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version

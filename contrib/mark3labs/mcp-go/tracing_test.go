@@ -21,11 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewToolHandlerMiddleware(t *testing.T) {
+func TestToolHandlerMiddleware(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	middleware := NewToolHandlerMiddleware()
+	middleware := toolHandlerMiddleware
 	assert.NotNil(t, middleware)
 }
 
@@ -34,7 +34,7 @@ func TestAddServerHooks(t *testing.T) {
 	defer mt.Stop()
 
 	serverHooks := &server.Hooks{}
-	AddServerHooks(serverHooks)
+	appendTracingHooks(serverHooks)
 
 	assert.Len(t, serverHooks.OnBeforeInitialize, 1)
 	assert.Len(t, serverHooks.OnAfterInitialize, 1)
@@ -45,11 +45,8 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
 
-	hooks := &server.Hooks{}
-	AddServerHooks(hooks)
-
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithHooks(hooks))
+		WithMCPServerTracing(nil))
 
 	ctx := context.Background()
 	sessionID := "test-session-init"
@@ -109,11 +106,10 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	defer tt.Stop()
 
 	hooks := &server.Hooks{}
-	AddServerHooks(hooks)
+	appendTracingHooks(hooks)
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithHooks(hooks),
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+		WithMCPServerTracing(nil))
 
 	calcTool := mcp.NewTool("calculator",
 		mcp.WithDescription("A simple calculator"))
@@ -211,7 +207,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+		WithMCPServerTracing(&TracingConfig{}))
 
 	errorTool := mcp.NewTool("error_tool",
 		mcp.WithDescription("A tool that always errors"))
@@ -256,6 +252,35 @@ func TestIntegrationToolCallError(t *testing.T) {
 	assert.Contains(t, toolSpan.Meta, "error.stack")
 
 	assert.Contains(t, toolSpan.Meta, "input")
+}
+
+func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	customHookCalled := false
+	customHooks := &server.Hooks{}
+	customHooks.AddBeforeInitialize(func(ctx context.Context, id any, request *mcp.InitializeRequest) {
+		customHookCalled = true
+	})
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithMCPServerTracing(&TracingConfig{Hooks: customHooks}))
+
+	ctx := context.Background()
+	initRequest := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
+
+	response := srv.HandleMessage(ctx, []byte(initRequest))
+	assert.NotNil(t, response)
+
+	assert.True(t, customHookCalled, "custom hook should have been called")
+
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	taskSpan := spans[0]
+	assert.Equal(t, "mcp.initialize", taskSpan.Name)
+	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
 }
 
 // Test helpers

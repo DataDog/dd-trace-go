@@ -55,6 +55,10 @@ jobs:
       - name: Copyright
         run: |
           go run ./scripts/check_copyright.go
+      - name: Run miscellaneous linters (copyright, Makefiles)
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          make lint/misc
 
   check-modules:
     runs-on: ubuntu-latest
