@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -21,6 +22,7 @@ var _ io.Closer = (*RequestState)(nil)
 
 // RequestState manages the state of a single request through its lifecycle
 type RequestState struct {
+	Mu          *sync.Mutex
 	Context     context.Context
 	afterHandle func()
 
@@ -56,6 +58,7 @@ func newRequestState(request *http.Request, bodyLimit int, framework string, opt
 	}
 
 	return RequestState{
+		Mu:                    new(sync.Mutex),
 		Context:               spanRequest.Context(),
 		afterHandle:           afterHandle,
 		fakeResponseWriter:    fakeResponseWriter,
@@ -97,12 +100,11 @@ func (rs *RequestState) BlockAction() BlockActionOptions {
 
 // Close finalizes the request processing.
 func (rs *RequestState) Close() error {
-	if rs.afterHandle != nil {
-		// Avoid Complete recursion by clearing afterHandle before calling it
-		afterHandle := rs.afterHandle
-		rs.afterHandle = nil
-		afterHandle()
+	if rs.Mu.TryLock() {
+		defer rs.Mu.Unlock()
 	}
+
+	rs.afterHandle()
 
 	if rs.State.Ongoing() {
 		rs.State = MessageTypeFinished
