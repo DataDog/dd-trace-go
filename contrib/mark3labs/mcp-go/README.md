@@ -17,13 +17,11 @@ func main() {
 	tracer.Start()
 	defer tracer.Stop()
 
-    // Add tracing to your server hooks
-    hooks := &server.Hooks{}
-    mcpgotrace.AddServerHooks(hooks)
-
+    // Do not use with `server.WithHooks(...)`, as this overwrites the tracing hooks. 
+    // To add custom hooks alongside tracing, pass them via TracingConfig.Hooks, e.g.:
+    // mcpgotrace.WithMCPServerTracing(&mcpgotrace.TracingConfig{Hooks: customHooks})
     srv := server.NewMCPServer("my-server", "1.0.0",
-        server.WithHooks(hooks),
-        server.WithToolHandlerMiddleware(mcpgotrace.NewToolHandlerMiddleware()))
+		mcpgotrace.WithMCPServerTracing(nil))
 }
 ```
 
