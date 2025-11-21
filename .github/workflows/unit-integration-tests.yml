@@ -6,10 +6,6 @@ on:
       go-version:
         required: true
         type: string
-      ref:
-        description: 'The branch to run the workflow on'
-        required: true
-        type: string
 
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
@@ -20,6 +16,7 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
+  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
@@ -31,10 +28,16 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Restore repo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          clean: false
 
       - name: Compute Matrix
         id: matrix
@@ -201,11 +204,16 @@ jobs:
         ports:
           - 4566:4566
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Restore repo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          ref: ${{ inputs.ref || github.ref }}
-          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.sha }}
+          clean: false
 
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -235,6 +243,11 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
 
   test-contrib:
     needs:
@@ -273,11 +286,17 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Restore repo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          ref: ${{ inputs.ref || github.ref }}
-          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        if: always()
+        with:
+          ref: ${{ github.sha }}
+          clean: false
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
@@ -306,6 +325,11 @@ jobs:
         continue-on-error: true
         shell: bash
         run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+
+      # Check for changes in the supported_configurations.json file
+      - name: Supported Configurations Diff Check
+        if: always()
+        uses: ./.github/actions/supported_configurations_validation
 
   upload-test-results:
     needs:

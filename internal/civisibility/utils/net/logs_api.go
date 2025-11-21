@@ -38,7 +38,7 @@ func (c *client) SendLogs(logsPayload io.Reader) error {
 	response, responseErr := c.handler.SendRequest(request)
 
 	if responseErr != nil {
-		return fmt.Errorf("failed to send logs: %s", responseErr.Error())
+		return fmt.Errorf("failed to send logs: %s", responseErr)
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

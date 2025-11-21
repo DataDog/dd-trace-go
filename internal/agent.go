@@ -7,9 +7,12 @@ package internal
 
 import (
 	"net"
+	"net/http"
 	"net/url"
 	"os"
+	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -31,7 +34,7 @@ var DefaultTraceAgentUDSPath = "/var/run/datadog/apm.socket"
 //   - Then, DefaultTraceAgentUDSPath, if the path exists
 //   - Finally, localhost:8126
 func AgentURLFromEnv() *url.URL {
-	if agentURL := os.Getenv("DD_TRACE_AGENT_URL"); agentURL != "" {
+	if agentURL := env.Get("DD_TRACE_AGENT_URL"); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
 			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
@@ -45,8 +48,8 @@ func AgentURLFromEnv() *url.URL {
 		}
 	}
 
-	host, providedHost := os.LookupEnv("DD_AGENT_HOST")
-	port, providedPort := os.LookupEnv("DD_TRACE_AGENT_PORT")
+	host, providedHost := env.Lookup("DD_AGENT_HOST")
+	port, providedPort := env.Lookup("DD_TRACE_AGENT_PORT")
 	if host == "" {
 		// We treat set but empty the same as unset
 		providedHost = false
@@ -72,4 +75,27 @@ func AgentURLFromEnv() *url.URL {
 		}
 	}
 	return httpURL
+}
+
+func DefaultDialer(timeout time.Duration) *net.Dialer {
+	return &net.Dialer{
+		Timeout:   timeout,
+		KeepAlive: 30 * time.Second,
+		DualStack: true,
+	}
+}
+
+func DefaultHTTPClient(timeout time.Duration, disableKeepAlives bool) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           DefaultDialer(timeout).DialContext,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			DisableKeepAlives:     disableKeepAlives,
+		},
+		Timeout: timeout,
+	}
 }

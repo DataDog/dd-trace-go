@@ -1,0 +1,38 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
+package mcpgo_test
+
+import (
+	"context"
+
+	mcpgotrace "github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+)
+
+func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	srv := server.NewMCPServer("my-server", "1.0.0",
+		mcpgotrace.WithMCPServerTracing(nil))
+	_ = srv
+}
+
+func Example_withCustomHooks() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	customHooks := &server.Hooks{}
+	customHooks.AddBeforeInitialize(func(ctx context.Context, id any, request *mcp.InitializeRequest) {
+		// Your custom logic here
+	})
+
+	srv := server.NewMCPServer("my-server", "1.0.0",
+		mcpgotrace.WithMCPServerTracing(&mcpgotrace.TracingConfig{Hooks: customHooks}))
+	_ = srv
+}

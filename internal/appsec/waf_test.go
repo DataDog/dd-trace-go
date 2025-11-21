@@ -7,54 +7,39 @@ package appsec_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/DataDog/appsec-internal-go/apisec"
-	"github.com/DataDog/go-libddwaf/v4/timer"
-
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
-
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
-
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-
 	"github.com/DataDog/go-libddwaf/v4"
-
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/assert"
-
 	"github.com/stretchr/testify/mock"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -473,6 +458,25 @@ func TestBlocking(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+				if tc.status != 200 {
+					var payload struct {
+						Triggers []struct {
+							SecurityResponseID string `json:"security_response_id"`
+						} `json:"triggers"`
+					}
+					var blockedBody struct {
+						SecurityResponseID string `json:"security_response_id"`
+					}
+
+					securityEvent, ok := spans[0].Tag("_dd.appsec.json").(string)
+					require.True(t, ok)
+					require.Contains(t, spans[0].Tag("_dd.appsec.json"), "security_response_id")
+					require.NoError(t, json.Unmarshal([]byte(securityEvent), &payload))
+					wafSecurityResponseId := payload.Triggers[0].SecurityResponseID
+					require.Greater(t, len(wafSecurityResponseId), 0)
+					require.NoError(t, json.Unmarshal(b, &blockedBody))
+					require.Equal(t, wafSecurityResponseId, blockedBody.SecurityResponseID)
+				}
 			}
 
 			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
@@ -516,8 +520,8 @@ func TestAPISecurity(t *testing.T) {
 		}
 		sampler.On("DecisionFor", samplingKey).Return(true).Once()
 
-		t.Setenv(internal.EnvAPISecEnabled, "true")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
+		t.Setenv(config.EnvAPISecEnabled, "true")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -561,8 +565,8 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		var sampler mockSampler
 
-		t.Setenv(internal.EnvAPISecEnabled, "false")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
+		t.Setenv(config.EnvAPISecEnabled, "false")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -603,10 +607,10 @@ func TestAPISecurityProxy(t *testing.T) {
 
 	t.Run("rate-limits", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "true")
-		t.Setenv(internal.EnvAPISecEnabled, "true")
+		t.Setenv(config.EnvAPISecEnabled, "true")
 		// Set the rate to 1 schema per minute
-		t.Setenv(internal.EnvAPISecProxySampleRate, "1")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithProxy()))
+		t.Setenv(config.EnvAPISecProxySampleRate, "1")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -632,9 +636,9 @@ func TestAPISecurityProxy(t *testing.T) {
 
 	t.Run("disabled-with-rate-0", func(t *testing.T) {
 		t.Setenv(config.EnvEnabled, "true")
-		t.Setenv(internal.EnvAPISecEnabled, "true")
-		t.Setenv(internal.EnvAPISecProxySampleRate, "0")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithProxy()))
+		t.Setenv(config.EnvAPISecEnabled, "true")
+		t.Setenv(config.EnvAPISecProxySampleRate, "0")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -955,14 +959,11 @@ func TestWafEventsInMetaStruct(t *testing.T) {
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
-	rules, err := internal.DefaultRulesetMap()
-	require.NoError(b, err)
-
-	builder, err := libddwaf.NewBuilder(internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	builder, err := libddwaf.NewBuilder(config.DefaultObfuscatorKeyRegex, config.DefaultObfuscatorValueRegex)
 	require.NoError(b, err)
 	defer builder.Close()
 
-	_, err = builder.AddOrUpdateConfig("default", rules)
+	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(b, err)
 
 	handle := builder.Build()
@@ -1102,6 +1103,53 @@ func TestAttackerFingerprinting(t *testing.T) {
 	}
 }
 
+func TestAPI10ResponseBody(t *testing.T) {
+	if ok, err := libddwaf.Usable(); !ok {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+
+	builder, err := libddwaf.NewBuilder("", "")
+	require.NoError(t, err)
+
+	var ruleset any
+
+	_, thisFile, _, _ := runtime.Caller(0)
+
+	fp, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "testdata", "api10.json"))
+	require.NoError(t, err)
+
+	err = json.Unmarshal(fp, &ruleset)
+	require.NoError(t, err)
+
+	builder.AddOrUpdateConfig("/custom", ruleset)
+	defer builder.Close()
+
+	handle := builder.Build()
+	require.NotNil(t, handle)
+
+	defer handle.Close()
+
+	ctx, err := handle.NewContext(timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
+	require.NoError(t, err)
+
+	defer ctx.Close()
+
+	reader := io.NopCloser(strings.NewReader(`{"payload":{"payload_out":"kqehf09123r4lnksef"},"status":"OK"}`))
+
+	encodable, err := body.NewEncodable("application/json", &reader, 999999)
+	require.NoError(t, err)
+
+	result, err := ctx.Run(libddwaf.RunAddressData{
+		Ephemeral: map[string]any{
+			addresses.ServerIONetResponseBodyAddr: encodable,
+		},
+	})
+
+	require.NoError(t, err)
+
+	require.Contains(t, result.Derivatives, "_dd.appsec.trace.res_body")
+}
+
 type mockSampler struct {
 	mock.Mock
 }
@@ -1114,7 +1162,7 @@ func (m *mockSampler) DecisionFor(key apisec.SamplingKey) bool {
 func init() {
 	// This permits running the tests locally without defining the env var manually
 	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
-	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
-		os.Setenv(internal.EnvWAFTimeout, "1s")
+	if _, ok := os.LookupEnv(config.EnvWAFTimeout); !ok {
+		os.Setenv(config.EnvWAFTimeout, "1s")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	sqltrace "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
@@ -609,4 +610,33 @@ func TestPlugin(t *testing.T) {
 
 	assert.NotNil(t, db.Callback().Raw().Get("dd-trace-go:before_raw_query"))
 	assert.NotNil(t, db.Callback().Raw().Get("dd-trace-go:before_raw_query"))
+}
+
+func newStubDB() *gorm.DB {
+	sqlbuilder := strings.Builder{}
+	sqlbuilder.WriteString("SELECT * FROM products WHERE id = ?")
+	statement := &gorm.Statement{SQL: sqlbuilder, Context: context.Background()}
+	config := &gorm.Config{DryRun: false}
+	return &gorm.DB{Statement: statement, Config: config}
+}
+
+func TestCustomResourceName(t *testing.T) {
+	// This test is meant to ensure that the resource name can be overridden by a custom tag.
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	cfg := newConfigWithDefaults()
+	customResourceName := "custom resource name"
+	WithCustomTag(ext.ResourceName, func(db *gorm.DB) interface{} {
+		return customResourceName
+	})(cfg)
+
+	db := newStubDB()
+	before(db, "gorm.query", cfg)
+	after(db, cfg)
+
+	spans := mt.FinishedSpans()
+	assert.True(len(spans) > 0)
+	assert.Equal(customResourceName, spans[len(spans)-1].Tag(ext.ResourceName))
 }

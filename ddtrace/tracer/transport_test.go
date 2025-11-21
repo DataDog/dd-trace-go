@@ -59,10 +59,10 @@ func getTestTrace(traceN, size int) [][]*Span {
 	return traces
 }
 
-func encode(traces [][]*Span) (*payload, error) {
-	p := newPayload()
+func encode(traces [][]*Span) (payload, error) {
+	p := newPayload(traceProtocolV04)
 	for _, t := range traces {
-		if err := p.push(t); err != nil {
+		if _, err := p.push(t); err != nil {
 			return p, err
 		}
 	}
@@ -85,7 +85,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL, defaultHTTPClient(0, false))
+		transport := newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, false))
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		body, err := transport.send(p)
@@ -159,8 +159,8 @@ func TestTransportResponse(t *testing.T) {
 				w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			transport := newHTTPTransport(srv.URL, defaultHTTPClient(0, false))
-			rc, err := transport.send(newPayload())
+			transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false))
+			rc, err := transport.send(newPayload(traceProtocolV04))
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
 				return
@@ -199,7 +199,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(srv.URL, defaultHTTPClient(0, false))
+		transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false))
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -271,7 +271,7 @@ func (t *OkTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 }
 
 func TestApiErrorsMetric(t *testing.T) {
-	t.Run("error", func(t *testing.T) {
+	t.Run("traces error", func(t *testing.T) {
 		assert := assert.New(t)
 		c := &http.Client{
 			Transport: &ErrTransport{},
@@ -291,10 +291,10 @@ func TestApiErrorsMetric(t *testing.T) {
 		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
 		assert.Len(calls, 1)
 		call := calls[0]
-		assert.Equal([]string{"reason:network_failure"}, call.Tags())
+		assert.Equal([]string{"reason:network_failure", "endpoint:" + tracesAPIPath}, call.Tags())
 
 	})
-	t.Run("response with err code", func(t *testing.T) {
+	t.Run("traces response with err code", func(t *testing.T) {
 		assert := assert.New(t)
 		c := &http.Client{
 			Transport: &ErrResponseTransport{},
@@ -314,7 +314,45 @@ func TestApiErrorsMetric(t *testing.T) {
 		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
 		assert.Len(calls, 1)
 		call := calls[0]
-		assert.Equal([]string{"reason:server_response_400"}, call.Tags())
+		assert.Equal([]string{"reason:server_response_400", "endpoint:" + tracesAPIPath}, call.Tags())
+	})
+	t.Run("stats error", func(t *testing.T) {
+		assert := assert.New(t)
+		c := &http.Client{
+			Transport: &ErrTransport{},
+		}
+		var tg statsdtest.TestStatsdClient
+		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		assert.NoError(err)
+		setGlobalTracer(trc)
+		defer trc.Stop()
+
+		// We're expecting an error
+		err = trc.config.transport.sendStats(&pb.ClientStatsPayload{}, 1)
+		assert.Error(err)
+		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
+		assert.Len(calls, 1)
+		call := calls[0]
+		assert.Equal([]string{"reason:network_failure", "endpoint:" + statsAPIPath}, call.Tags())
+	})
+	t.Run("stats response with err code", func(t *testing.T) {
+		assert := assert.New(t)
+		c := &http.Client{
+			Transport: &ErrResponseTransport{},
+		}
+		var tg statsdtest.TestStatsdClient
+		trc, err := newTracer(WithHTTPClient(c), withStatsdClient(&tg))
+		assert.NoError(err)
+		setGlobalTracer(trc)
+		defer trc.Stop()
+
+		err = trc.config.transport.sendStats(&pb.ClientStatsPayload{}, 1)
+		assert.Error(err)
+
+		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
+		assert.Len(calls, 1)
+		call := calls[0]
+		assert.Equal([]string{"reason:server_response_400", "endpoint:" + statsAPIPath}, call.Tags())
 	})
 	t.Run("successful send - no metric", func(t *testing.T) {
 		assert := assert.New(t)

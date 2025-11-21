@@ -24,6 +24,8 @@ First, find the library which you'd like to integrate with. The naming conventio
 
 Important: the package itself should retain its un-versioned name. For example, the integration under `user/repo.v2` stays as `package repo`, and does not become `package repo.v2`.
 
+All of these packages must be imported using an import URL following the schema `github.com/DataDog/dd-trace-go/contrib/<package path>/v2`.
+
 Second, there are a few tags that should be found in all integration spans:
 
 * The `span.kind` tag should be set in root spans with either a `client`, `server`, `producer`, or `consumer` value according to the [definitions](../ddtrace/ext/span_kind.go) found in the repository.
@@ -57,6 +59,7 @@ Then, ensure that:
   * Relevant package information in the `packages` map.
 * The `go.mod` file in your new submodule is in sync with the rest of the contrib folder.
 * `contribIntegrations` in [option.go](../ddtrace/tracer/option.go) contains your new package.
+* A corresponding PR is opened in [Datadog/documentation](https://github.com/DataDog/documentation) to update our list of [compatible integrations](https://github.com/DataDog/documentation/blob/master/content/en/tracing/trace_collection/compatibility/go.md).
 
 ### Version pinning
 

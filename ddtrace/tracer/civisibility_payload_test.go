@@ -11,7 +11,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -55,8 +54,9 @@ func TestCiVisibilityPayloadIntegrity(t *testing.T) {
 			want.Reset()
 			err := msgp.Encode(want, allEvents)
 			assert.NoError(err)
-			assert.Equal(want.Len(), p.size())
-			assert.Equal(p.itemCount(), len(allEvents))
+			stats := p.stats()
+			assert.Equal(want.Len(), stats.size)
+			assert.Equal(len(allEvents), stats.itemCount)
 
 			got, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -152,15 +152,12 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		reset := func() {
-			p.header = make([]byte, 8)
-			p.off = 8
-			atomic.StoreUint32(&p.count, 0)
-			p.buf.Reset()
+			p = newCiVisibilityPayload()
 		}
 		for i := 0; i < b.N; i++ {
 			reset()
 			for _, event := range events {
-				for p.size() < payloadMaxLimit {
+				for p.stats().size < payloadMaxLimit {
 					p.push(event)
 				}
 			}

@@ -33,18 +33,24 @@ Targets:
   help                 Show this help message
   all                  Run complete build pipeline (tools, generate, lint, test)
   tools-install        Install development tools
+  tools-install/checkmake Install checkmake binary for Makefile linting
   clean                Clean build artifacts
   clean-all            Clean everything including tools and temporary files
   generate             Run code generation
   lint                 Run linting checks
-  lint-fix             Fix linting issues automatically
+  lint/go              Run Go linting checks
+  lint/go/fix          Fix linting issues automatically
+  lint/shell           Run shell script linting checks
+  lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
   format               Format code
+  format/shell         install shfmt
   test                 Run all tests (core, integration, contrib)
-  test-appsec          Run tests with AppSec enabled
-  test-contrib         Run contrib package tests
-  test-integration     Run integration tests
+  test/appsec          Run tests with AppSec enabled
+  test/contrib         Run contrib package tests
+  test/integration     Run integration tests
   fix-modules          Fix module dependencies and consistency
-  docs                 Update embedded documentation in README files
+  docs                 Generate and Update embedded documentation in README files
+  upgrade/orchestrion  Upgrade Orchestrion and fix modules
 ```
 
 ### Direct Execution
@@ -69,14 +75,14 @@ The test script provides many options for different testing scenarios:
 [embedmd]:# (../tmp/test-help.txt)
 ```txt
 test.sh - Run the tests for dd-trace-go
-	this script requires gotestsum, goimports, docker and docker-compose.
-	-a | --appsec		- Test with appsec enabled
-	-i | --integration	- Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
-	-c | --contrib		- Run contrib tests
-	--all			- Synonym for -l -a -i -c
-	-s | --sleep		- The amount of seconds to wait for docker containers to be ready - default: 30 seconds
-	-t | --tools		- Install gotestsum and goimports
-	-h | --help		- Print this help message
+  this script requires gotestsum, goimports, docker and docker-compose.
+  -a | --appsec      - Test with appsec enabled
+  -i | --integration - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
+  -c | --contrib     - Run contrib tests
+  --all              - Synonym for -l -a -i -c
+  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds
+  -t | --tools       - Install gotestsum and goimports
+  -h | --help        - Print this help message
 ```
 
 ### Go Programs

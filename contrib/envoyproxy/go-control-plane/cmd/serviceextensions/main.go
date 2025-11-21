@@ -24,6 +24,7 @@ import (
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc"
@@ -34,12 +35,18 @@ type AppsecCalloutExtensionService struct {
 	extproc.ExternalProcessorServer
 }
 
+type tlsConfig struct {
+	certFile string
+	keyFile  string
+}
+
 type serviceExtensionConfig struct {
 	extensionPort        string
 	extensionHost        string
 	healthcheckPort      string
 	observabilityMode    bool
-	bodyParsingSizeLimit int
+	bodyParsingSizeLimit *int
+	tls                  *tlsConfig
 }
 
 var log = NewLogger()
@@ -56,11 +63,16 @@ func getDefaultEnvVars() map[string]string {
 // initializeEnvironment sets up required environment variables with their defaults
 func initializeEnvironment() {
 	for k, v := range getDefaultEnvVars() {
-		if os.Getenv(k) == "" {
+		setValue := env.Get(k)
+		if setValue == "" {
 			if err := os.Setenv(k, v); err != nil {
 				log.Error("service_extension: failed to set %s environment variable: %s\n", k, err.Error())
+				continue
 			}
+			gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(k, v, instrumentation.TelemetryOriginDefault)
+			continue
 		}
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(k, setValue, instrumentation.TelemetryOriginEnvVar)
 	}
 }
 
@@ -73,7 +85,7 @@ func configureObservabilityMode(mode bool) error {
 	}
 	const internalBlockingUnavailableKey = "_DD_APPSEC_BLOCKING_UNAVAILABLE"
 	if err := os.Setenv(internalBlockingUnavailableKey, "true"); err != nil {
-		return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err.Error())
+		return fmt.Errorf("failed to set %s environment variable: %s", internalBlockingUnavailableKey, err)
 	}
 	log.Debug("service_extension: observability mode enabled, disabling blocking\n")
 	return nil
@@ -85,10 +97,21 @@ func loadConfig() serviceExtensionConfig {
 	healthcheckPortInt := intEnv("DD_SERVICE_EXTENSION_HEALTHCHECK_PORT", 80)
 	extensionHostStr := ipEnv("DD_SERVICE_EXTENSION_HOST", net.IP{0, 0, 0, 0}).String()
 	observabilityMode := boolEnv("DD_SERVICE_EXTENSION_OBSERVABILITY_MODE", false)
-	bodyParsingSizeLimit := intEnv("DD_APPSEC_BODY_PARSING_SIZE_LIMIT", 0)
+	bodyParsingSizeLimit := intEnvNil("DD_APPSEC_BODY_PARSING_SIZE_LIMIT")
+	enableTLS := boolEnv("DD_SERVICE_EXTENSION_TLS", true)
+	keyFile := stringEnv("DD_SERVICE_EXTENSION_TLS_KEY_FILE", "localhost.key")
+	certFile := stringEnv("DD_SERVICE_EXTENSION_TLS_CERT_FILE", "localhost.crt")
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
+
+	var tlsConf *tlsConfig
+	if enableTLS {
+		tlsConf = &tlsConfig{
+			certFile: certFile,
+			keyFile:  keyFile,
+		}
+	}
 
 	return serviceExtensionConfig{
 		extensionPort:        extensionPortStr,
@@ -96,11 +119,13 @@ func loadConfig() serviceExtensionConfig {
 		healthcheckPort:      healthcheckPortStr,
 		observabilityMode:    observabilityMode,
 		bodyParsingSizeLimit: bodyParsingSizeLimit,
+		tls:                  tlsConf,
 	}
 }
 
 func main() {
 	initializeEnvironment()
+
 	config := loadConfig()
 
 	if err := configureObservabilityMode(config.observabilityMode); err != nil {
@@ -109,7 +134,6 @@ func main() {
 
 	if err := startService(config); err != nil {
 		log.Error("service_extension: %s\n", err.Error())
-		os.Exit(1)
 	}
 
 	log.Info("service_extension: shutting down\n")
@@ -133,11 +157,7 @@ func startService(config serviceExtensionConfig) error {
 		return startHealthCheck(ctx, config)
 	})
 
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	return nil
+	return g.Wait()
 }
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
@@ -164,7 +184,7 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 
 	log.Info("service_extension: health check server started on %s:%s\n", config.extensionHost, config.healthcheckPort)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("health check http server: %s", err.Error())
+		return fmt.Errorf("health check http server: %s", err)
 	}
 
 	return nil
@@ -173,15 +193,23 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
 	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
 	if err != nil {
-		return fmt.Errorf("gRPC server: %s", err.Error())
+		return fmt.Errorf("gRPC server: %s", err)
 	}
 
-	cert, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
-	if err != nil {
-		return fmt.Errorf("failed to load key pair: %s", err.Error())
+	var serverOptions []grpc.ServerOption
+
+	if config.tls != nil {
+		cert, err := tls.LoadX509KeyPair(config.tls.certFile, config.tls.keyFile)
+		if err != nil {
+			return fmt.Errorf("failed to load key pair: %s", err)
+		}
+		serverOptions = append(serverOptions, grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
+		log.Info("service_extension: TLS enabled for gRPC server")
+		log.Info("service_extension: TLS key file path: %s\n", config.tls.keyFile)
+		log.Info("service_extension: TLS cert file path: %s\n", config.tls.certFile)
 	}
 
-	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewServerTLSFromCert(&cert)))
+	grpcServer := grpc.NewServer(serverOptions...)
 	appsecEnvoyExternalProcessorServer := gocontrolplane.AppsecEnvoyExternalProcessorServer(
 		service,
 		gocontrolplane.AppsecEnvoyConfig{
@@ -199,7 +227,7 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 	extproc.RegisterExternalProcessorServer(grpcServer, appsecEnvoyExternalProcessorServer)
 	log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 	if err := grpcServer.Serve(lis); err != nil {
-		return fmt.Errorf("error starting gRPC server: %s", err.Error())
+		return fmt.Errorf("error starting gRPC server: %s", err)
 	}
 
 	return nil

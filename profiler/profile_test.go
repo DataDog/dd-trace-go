@@ -109,6 +109,7 @@ main;bar 0 0 8 16
 		},
 	}
 
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	for _, test := range tests {
 		for _, profType := range test.Types {
 			// deltaProfiler returns an unstarted profiler that is fed prof1
@@ -171,6 +172,7 @@ main;bar 0 0 8 16
 }
 
 func TestRunProfile(t *testing.T) {
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	// TODO(felixge): These tests are directly calling the internal runProfile()
 	// function which is brittle. We should refactor them to use the public API.
 	t.Run("delta", func(t *testing.T) {
@@ -412,6 +414,41 @@ func TestProfileTypeSoundness(t *testing.T) {
 		_, err := unstartedProfiler(WithProfileTypes(ProfileType(-1)))
 		require.EqualError(t, err, "unknown profile type: -1")
 	})
+}
+
+func TestUnmarshalText(t *testing.T) {
+	tests := []struct {
+		Text            []byte
+		WantProfileType ProfileType
+	}{
+		{
+			Text:            []byte("cpu"),
+			WantProfileType: CPUProfile,
+		},
+		{
+			Text:            []byte("heap"),
+			WantProfileType: HeapProfile,
+		},
+		{
+			Text:            []byte("mutex"),
+			WantProfileType: MutexProfile,
+		},
+		{
+			Text:            []byte("goroutine"),
+			WantProfileType: GoroutineProfile,
+		},
+		{
+			Text:            []byte("block"),
+			WantProfileType: BlockProfile,
+		},
+	}
+
+	for _, test := range tests {
+		var p ProfileType
+		err := p.UnmarshalText(test.Text)
+		require.NoError(t, err)
+		assert.Equal(t, test.WantProfileType, p)
+	}
 }
 
 func requirePprofEqual(t *testing.T, a, b []byte) {

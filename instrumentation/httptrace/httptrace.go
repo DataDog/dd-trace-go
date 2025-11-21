@@ -161,14 +161,14 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 	if status == 0 {
 		if fn(status) {
 			statusStr = "0"
-			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		} else {
 			statusStr = "200"
 		}
 	} else {
 		statusStr = strconv.Itoa(status)
 		if fn(status) {
-			s.SetTag(ext.Error, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
+			s.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%s: %s", statusStr, http.StatusText(status)))
 		}
 	}
 	fc := &tracer.FinishConfig{}

@@ -23,7 +23,7 @@ secondary server where Datadog's request mirror deployment processes the request
   found [here](https://gateway-api.sigs.k8s.io/guides/#installing-gateway-api)).
 - A controller compatible with the Gateway API (list of supported controllers can be
   found [here](https://gateway-api.sigs.k8s.io/implementations)).
-- [Go](https://go.dev/doc/install) 1.23+ installed on your local machine.
+- [Go](https://go.dev/doc/install) 1.24+ installed on your local machine.
 
 ## Installation
 
@@ -37,7 +37,7 @@ secondary server where Datadog's request mirror deployment processes the request
    service:
 
   ```bash
-  kubectl apply -f https://raw.githubusercontent.com/DataDog/dd-trace-go/main/contrib/k8s.io/gateway-api/cmd/request-mirror/deployment.yaml
+  kubectl apply -f https://raw.githubusercontent.com/DataDog/dd-trace-go/refs/heads/main/contrib/k8s.io/gateway-api/cmd/request-mirror/deployment.yml
   ```
 
 4. Verify the deployment:
@@ -50,7 +50,9 @@ secondary server where Datadog's request mirror deployment processes the request
    options).
 
   ```bash
-  go run github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/cmd/patch-gateways@latest
+  git clone https://github.com/DataDog/dd-trace-go.git
+  cd dd-trace-go
+  go run ./contrib/k8s.io/gateway-api/cmd/patch-gateways
   ```
 
 6. Patch your `HTTPRoute` resources to redirect traffic to the service.
@@ -60,7 +62,7 @@ secondary server where Datadog's request mirror deployment processes the request
    filter added. Adding the resulting patch to your CI/CD where HTTPRoute are modified is recommended in the long run.
 
   ```bash
-  go run github.com/DataDog/dd-trace-go/contrib/k8s.io/gateway-api/cmd/patch-httproutes@latest
+  go run ./contrib/k8s.io/gateway-api/cmd/patch-httproutes
   ```
 
 ## Deployment Configuration

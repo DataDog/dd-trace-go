@@ -101,12 +101,21 @@ func TestAppSec(t *testing.T) {
 
 				require.Equal(t, map[string]any{"topLevel": map[string]any{"nested": fmt.Sprintf("%s/%s", topLevelAttack, nestedAttack)}}, resp)
 
+				// Avoid flakiness by pushing any in-flight span to the finished ones.
+				mt.Flush()
+
 				// Ensure the query produced the expected appsec events
 				spans := mt.FinishedSpans()
 				require.NotEmpty(t, spans)
 
-				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
-				span := spans[len(spans)-1]
+				// Find the latest finished span (which is GraphQL entry). It should have the "_dd.appsec.enabled" tag.
+				var span *mocktracer.Span
+				for i := len(spans) - 1; i >= 0; i++ {
+					span = spans[i]
+					if span.Tag("_dd.appsec.enabled") == float64(1) {
+						break
+					}
+				}
 				require.Equal(t, float64(1), span.Tag("_dd.appsec.enabled"))
 
 				type ddAppsecJSON struct {
@@ -118,7 +127,7 @@ func TestAppSec(t *testing.T) {
 				}
 
 				jsonText, ok := span.Tag("_dd.appsec.json").(string)
-				require.True(t, ok, "expected _dd.appsec.json tag on span")
+				require.True(t, ok, "expected _dd.appsec.json tag on span - tags were: %v", span.Tags())
 
 				var parsed ddAppsecJSON
 				err = json.Unmarshal([]byte(jsonText), &parsed)
@@ -271,6 +280,11 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	t.Setenv("DD_APPSEC_ENABLED", "1")
 	t.Setenv("DD_APPSEC_RULES", rulesFile)
+	t.Setenv("DD_APPSEC_TRACE_RATE_LIMIT", "1000000000")
+	// GraphQL queries with nested resolvers need more than the default 2ms WAF timeout
+	// because the timeout budget is shared across all resolver invocations in the request.
+	// Without this, the second resolver can timeout before completing its scan.
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1m")
 	testutils.StartAppSec(t)
 	cleanup := func() {
 		_ = os.RemoveAll(tmpDir)

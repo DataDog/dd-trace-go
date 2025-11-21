@@ -2,15 +2,20 @@
   image: $BASE_CI_IMAGE
   when: on_success
   timeout: 1h
-  only:
-    refs:
-      - branches
-  interruptible: true
-  tags: ["runner:apm-k8s-tweaked-metal"]
+  rules: 
+    - if: $CI_COMMIT_REF_NAME == "main"
+      interruptible: false
+    - if: $CI_COMMIT_BRANCH  # This fallback only runs on branch pipelines
+      interruptible: true
+  tags: ["runner:apm-k8s-m8g-metal"]
+  variables:
+    GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version
+    KUBERNETES_CPU_REQUEST: "48"
+    KUBERNETES_CPU_LIMIT: "48"
   script: |
     export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
     git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-    git clone --branch hannahkm/parallel2 https://github.com/DataDog/benchmarking-platform /platform && cd /platform
+    git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform /platform && cd /platform
     ./steps/capture-hardware-software-info.sh
     TEST_NAME=$BENCHMARK_NAME bp-runner "${CI_PROJECT_DIR:-.}/.gitlab/bp-runner.yml" --debug -t
     ./steps/analyze-results.sh

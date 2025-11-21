@@ -1,0 +1,610 @@
+{
+  "version": "2.1",
+  "metadata": {
+    "rules_version": "1.99.0"
+  },
+  "rules": [
+    {
+      "id": "api-010-100",
+      "name": "Collect move location",
+      "tags": {
+        "type": "api10",
+        "category": "api_security",
+        "confidence": "0",
+        "module": "business-logic"
+      },
+      "min_version": "1.25.0",
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.status"
+              }
+            ],
+            "list": [
+              301,
+              302
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "output": {
+        "event": false,
+        "keep": false,
+        "attributes": {
+          "appsec.api.redirection.move_target": {
+            "address": "server.io.net.response.headers",
+            "key_path": [
+              "location"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "api-010-110",
+      "name": "Collect redirect location",
+      "tags": {
+        "type": "api10",
+        "category": "api_security",
+        "confidence": "0",
+        "module": "business-logic"
+      },
+      "min_version": "1.25.0",
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.status"
+              }
+            ],
+            "list": [
+              307,
+              308
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "output": {
+        "event": false,
+        "keep": false,
+        "attributes": {
+          "appsec.api.redirection.redirect_target": {
+            "address": "server.io.net.response.headers",
+            "key_path": [
+              "location"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "api-010-111",
+      "name": "Collect that nothing happened",
+      "tags": {
+        "type": "api10",
+        "category": "api_security",
+        "confidence": "0",
+        "module": "business-logic"
+      },
+      "min_version": "1.25.0",
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.status"
+              }
+            ],
+            "list": [
+              200
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "transformers": [],
+      "output": {
+        "event": false,
+        "keep": false,
+        "attributes": {
+          "appsec.api.redirection.nothing": {
+            "value": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "rasp-930-111",
+      "name": "Local file inclusion exploit",
+      "tags": {
+        "type": "lfi",
+        "category": "vulnerability_trigger",
+        "cwe": "22",
+        "capec": "1000/255/153/126",
+        "confidence": "0",
+        "module": "rasp"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.query"
+              }
+            ],
+            "regex": "asdnjakslnbdklasbdkasbdkl"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "stack_trace",
+        "block"
+      ]
+    },
+    {
+      "id": "rasp-930-100",
+      "name": "Local file inclusion exploit",
+      "tags": {
+        "type": "lfi",
+        "category": "vulnerability_trigger",
+        "cwe": "22",
+        "capec": "1000/255/153/126",
+        "confidence": "0",
+        "module": "rasp"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "resource": [
+              {
+                "address": "server.io.fs.file"
+              }
+            ],
+            "params": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "grpc.server.request.message"
+              },
+              {
+                "address": "graphql.server.all_resolvers"
+              },
+              {
+                "address": "graphql.server.resolver"
+              }
+            ]
+          },
+          "operator": "lfi_detector"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "stack_trace",
+        "block"
+      ]
+    },
+    {
+      "id": "rasp-934-100",
+      "name": "Server-side request forgery exploit",
+      "tags": {
+        "type": "ssrf",
+        "category": "vulnerability_trigger",
+        "cwe": "918",
+        "capec": "1000/225/115/664",
+        "confidence": "0",
+        "module": "rasp"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "resource": [
+              {
+                "address": "server.io.net.url"
+              }
+            ],
+            "params": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "grpc.server.request.message"
+              },
+              {
+                "address": "graphql.server.all_resolvers"
+              },
+              {
+                "address": "graphql.server.resolver"
+              }
+            ]
+          },
+          "operator": "ssrf_detector"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "stack_trace",
+        "block"
+      ]
+    },
+    {
+      "id": "rasp-942-100",
+      "name": "SQL injection exploit",
+      "tags": {
+        "type": "sql_injection",
+        "category": "vulnerability_trigger",
+        "cwe": "89",
+        "capec": "1000/152/248/66",
+        "confidence": "0",
+        "module": "rasp"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "resource": [
+              {
+                "address": "server.db.statement"
+              }
+            ],
+            "params": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "graphql.server.all_resolvers"
+              },
+              {
+                "address": "graphql.server.resolver"
+              }
+            ],
+            "db_type": [
+              {
+                "address": "server.db.system"
+              }
+            ]
+          },
+          "operator": "sqli_detector"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "stack_trace",
+        "block"
+      ]
+    },
+    {
+      "id": "rasp-932-100",
+      "name": "Shell injection exploit",
+      "enabled": true,
+      "tags": {
+        "type": "command_injection",
+        "category": "vulnerability_trigger",
+        "cwe": "77",
+        "capec": "1000/152/248/88",
+        "confidence": "0",
+        "module": "rasp"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "resource": [
+              {
+                "address": "server.sys.shell.cmd"
+              }
+            ],
+            "params": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "grpc.server.request.message"
+              },
+              {
+                "address": "graphql.server.all_resolvers"
+              },
+              {
+                "address": "graphql.server.resolver"
+              }
+            ]
+          },
+          "operator": "shi_detector"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "stack_trace",
+        "block"
+      ]
+    },
+    {
+      "id": "rasp-932-110",
+      "name": "OS command injection exploit",
+      "enabled": true,
+      "tags": {
+        "type": "command_injection",
+        "category": "vulnerability_trigger",
+        "cwe": "77",
+        "capec": "1000/152/248/88",
+        "confidence": "0",
+        "module": "rasp"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "resource": [
+              {
+                "address": "server.sys.exec.cmd"
+              }
+            ],
+            "params": [
+              {
+                "address": "server.request.query"
+              },
+              {
+                "address": "server.request.body"
+              },
+              {
+                "address": "server.request.path_params"
+              },
+              {
+                "address": "grpc.server.request.message"
+              },
+              {
+                "address": "graphql.server.all_resolvers"
+              },
+              {
+                "address": "graphql.server.resolver"
+              }
+            ]
+          },
+          "operator": "cmdi_detector"
+        }
+      ],
+      "transformers": [],
+      "on_match": [
+        "stack_trace",
+        "block"
+      ]
+    },
+    {
+      "id": "apiA-100-001",
+      "name": "API 10 tag rule on request headers",
+      "tags": {
+        "type": "api10 request headers",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.request.headers",
+                "key_path": [
+                  "Witness"
+                ]
+              }
+            ],
+            "list": [
+              "pwq3ojtropiw3hjtowir"
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true,
+        "attributes": {
+          "_dd.appsec.trace.req_headers": {
+            "value": "TAG_API10_REQ_HEADERS"
+          }
+        }
+      },
+      "on_match": []
+    },
+    {
+      "id": "apiA-100-002",
+      "name": "API 10 tag rule on request body",
+      "tags": {
+        "type": "api10 request body",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.request.body",
+                "key_path": [
+                  "payload_in"
+                ]
+              }
+            ],
+            "list": [
+              "qw2jedrkjerbgol23ewpfirj2qw3or"
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true,
+        "attributes": {
+          "_dd.appsec.trace.req_body": {
+            "value": "TAG_API10_REQ_BODY"
+          }
+        }
+      },
+      "on_match": []
+    },
+    {
+      "id": "apiA-100-003",
+      "name": "API 10 tag rule on request method",
+      "tags": {
+        "type": "api10 request method",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.request.method"
+              }
+            ],
+            "list": [
+              "TRACE"
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true,
+        "attributes": {
+          "_dd.appsec.trace.req_method": {
+            "value": "TAG_API10_REQ_METHOD"
+          }
+        }
+      },
+      "on_match": []
+    },
+    {
+      "id": "apiA-100-004",
+      "name": "API 10 tag rule on response status",
+      "tags": {
+        "type": "api10 response status",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.status"
+              }
+            ],
+            "list": [
+              "201"
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true,
+        "attributes": {
+          "_dd.appsec.trace.res_status": {
+            "value": "TAG_API10_RES_STATUS"
+          }
+        }
+      },
+      "on_match": []
+    },
+    {
+      "id": "apiA-100-005",
+      "name": "API 10 tag rule on response headers",
+      "tags": {
+        "type": "api10 response headers",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.headers",
+                "key_path": [
+                  "echo-headers"
+                ]
+              }
+            ],
+            "list": [
+              "qwoierj12l3"
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true,
+        "attributes": {
+          "_dd.appsec.trace.res_headers": {
+            "value": "TAG_API10_RES_HEADERS"
+          }
+        }
+      },
+      "on_match": []
+    },
+    {
+      "id": "apiA-100-006",
+      "name": "API 10 tag rule on response body",
+      "tags": {
+        "type": "api10 reponse body",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.body"
+              }
+            ],
+            "list": [
+              "kqehf09123r4lnksef"
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true,
+        "attributes": {
+          "_dd.appsec.trace.res_body": {
+            "value": "TAG_API10_RES_BODY"
+          }
+        }
+      },
+      "on_match": []
+    }
+  ]
+}

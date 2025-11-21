@@ -7,12 +7,14 @@ package httptrace
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -35,13 +37,16 @@ const (
 var defaultQueryStringRegexp = regexp.MustCompile("(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:(?:\\s|%20)*(?:=|%3D)[^&]+|(?:\"|%22)(?:\\s|%20)*(?::|%3A)(?:\\s|%20)*(?:\"|%22)(?:%2[^2]|%[^2]|[^\"%])+(?:\"|%22))|bearer(?:\\s|%20)+[a-z0-9\\._\\-]|token(?::|%3A)[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L](?:[\\w=-]|%3D)+\\.ey[I-L](?:[\\w=-]|%3D)+(?:\\.(?:[\\w.+\\/=-]|%3D|%2F|%2B)+)?|[\\-]{5}BEGIN(?:[a-z\\s]|%20)+PRIVATE(?:\\s|%20)KEY[\\-]{5}[^\\-]+[\\-]{5}END(?:[a-z\\s]|%20)+PRIVATE(?:\\s|%20)KEY|ssh-rsa(?:\\s|%20)*(?:[a-z0-9\\/\\.+]|%2F|%5C|%2B){100,}")
 
 type config struct {
-	queryStringRegexp            *regexp.Regexp // specifies the regexp to use for query string obfuscation.
-	queryString                  bool           // reports whether the query string should be included in the URL span tag.
-	traceClientIP                bool
-	isStatusError                func(statusCode int) bool
-	inferredProxyServicesEnabled bool
-	allowAllBaggage              bool                // tag all baggage items when true (DD_TRACE_BAGGAGE_TAG_KEYS="*").
-	baggageTagKeys               map[string]struct{} // when allowAllBaggage is false, only tag baggage items whose keys are listed here.
+	queryStringRegexp                        *regexp.Regexp // specifies the regexp to use for query string obfuscation.
+	queryString                              bool           // reports whether the query string should be included in the URL span tag.
+	traceClientIP                            bool
+	isStatusError                            func(statusCode int) bool
+	inferredProxyServicesEnabled             bool
+	allowAllBaggage                          bool                // tag all baggage items when true (DD_TRACE_BAGGAGE_TAG_KEYS="*").
+	baggageTagKeys                           map[string]struct{} // when allowAllBaggage is false, only tag baggage items whose keys are listed here.
+	resourceRenamingEnabled                  *bool
+	resourceRenamingAlwaysSimplifiedEndpoint bool
+	appsecEnabledMode                        func() bool // first state of Appsec (registered at the start of the application) // TODO: remove and use the real state of appsec
 }
 
 func (c config) String() string {
@@ -55,14 +60,16 @@ func ResetCfg() {
 
 func newConfig() config {
 	c := config{
-		queryString:                  !internal.BoolEnv(envQueryStringDisabled, false),
-		queryStringRegexp:            QueryStringRegexp(),
-		traceClientIP:                internal.BoolEnv(envTraceClientIPEnabled, false),
-		isStatusError:                isServerError,
-		inferredProxyServicesEnabled: internal.BoolEnv(envInferredProxyServicesEnabled, false),
-		baggageTagKeys:               make(map[string]struct{}),
+		queryString:                              !internal.BoolEnv(envQueryStringDisabled, false),
+		queryStringRegexp:                        QueryStringRegexp(),
+		traceClientIP:                            internal.BoolEnv(envTraceClientIPEnabled, false),
+		isStatusError:                            isServerError,
+		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
+		baggageTagKeys:                           make(map[string]struct{}),
+		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
+		appsecEnabledMode:                        sync.OnceValue(appsec.Enabled),
 	}
-	if v, ok := os.LookupEnv("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
+	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
 		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
@@ -77,9 +84,12 @@ func newConfig() config {
 	} else {
 		c.baggageTagKeys = defaultBaggageTagKeys()
 	}
-	v := os.Getenv(envServerErrorStatuses)
+	v := env.Get(envServerErrorStatuses)
 	if fn := GetErrorCodesFromInput(v); fn != nil {
 		c.isStatusError = fn
+	}
+	if vv, ok := internal.BoolEnvNoDefault("DD_TRACE_RESOURCE_RENAMING_ENABLED"); ok {
+		c.resourceRenamingEnabled = &vv
 	}
 	return c
 }
@@ -89,7 +99,7 @@ func isServerError(statusCode int) bool {
 }
 
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := os.LookupEnv(EnvQueryStringRegexp); !ok {
+	if s, ok := env.Lookup(EnvQueryStringRegexp); !ok {
 		return defaultQueryStringRegexp
 	} else if s == "" {
 		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", EnvQueryStringRegexp)

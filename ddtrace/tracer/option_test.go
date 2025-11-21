@@ -293,7 +293,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 53, len(cfg.integrations))
+		assert.Equal(t, 55, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -369,11 +369,11 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
 		x := *c.httpClient
-		y := *defaultHTTPClient(0, false)
+		y := *internal.DefaultHTTPClient(defaultHTTPTimeout, false)
 		assert.Equal(10*time.Second, x.Timeout)
 		assert.Equal(x.Timeout, y.Timeout)
 		compareHTTPClients(t, x, y)
-		assert.True(getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
+		assert.True(getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
 		assert.False(c.debug)
 	})
 
@@ -381,9 +381,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c, err := newTestConfig(WithAgentTimeout(2))
 		assert.NoError(t, err)
 		x := *c.httpClient
-		y := *defaultHTTPClient(2*time.Second, false)
+		y := *internal.DefaultHTTPClient(2*time.Second, false)
 		compareHTTPClients(t, x, y)
-		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
+		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
 		client := &http.Client{}
 		WithHTTPClient(client)(c)
 		assert.Equal(t, client, c.httpClient)
@@ -817,7 +817,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(err)
 			p := c.propagator.(*chainedPropagator).injectors[0].(*propagator)
-			assert.Equal(128, p.cfg.MaxTagsHeaderLen)
+			assert.Equal(512, p.cfg.MaxTagsHeaderLen)
 		})
 
 		t.Run("clamped-to-zero", func(t *testing.T) {
@@ -942,9 +942,9 @@ func TestDefaultHTTPClient(t *testing.T) {
 	defTracerClient := func(timeout int) *http.Client {
 		if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
 			// we have the UDS socket file, use it
-			return udsClient(internal.DefaultTraceAgentUDSPath, 0)
+			return internal.UDSClient(internal.DefaultTraceAgentUDSPath, 0)
 		}
-		return defaultHTTPClient(time.Second*time.Duration(timeout), false)
+		return internal.DefaultHTTPClient(time.Second*time.Duration(timeout), false)
 	}
 	t.Run("no-socket", func(t *testing.T) {
 		// We care that whether clients are different, but doing a deep
@@ -952,9 +952,9 @@ func TestDefaultHTTPClient(t *testing.T) {
 		// just compare the pointers.
 
 		x := *defTracerClient(2)
-		y := *defaultHTTPClient(2, false)
+		y := *internal.DefaultHTTPClient(2, false)
 		compareHTTPClients(t, x, y)
-		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
+		assert.True(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
 	})
 
 	t.Run("socket", func(t *testing.T) {
@@ -969,9 +969,9 @@ func TestDefaultHTTPClient(t *testing.T) {
 		defer func(old string) { internal.DefaultTraceAgentUDSPath = old }(internal.DefaultTraceAgentUDSPath)
 		internal.DefaultTraceAgentUDSPath = f.Name()
 		x := *defTracerClient(2)
-		y := *defaultHTTPClient(2, false)
+		y := *internal.DefaultHTTPClient(2, false)
 		compareHTTPClients(t, x, y)
-		assert.False(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(defaultDialer(30*time.Second).DialContext))
+		assert.False(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
 
 	})
 }
@@ -1625,7 +1625,6 @@ func TestWithHeaderTags(t *testing.T) {
 		newTestConfig()
 
 		assert.Equal(1, globalconfig.HeaderTagsLen())
-		fmt.Println(globalconfig.HeaderTagMap())
 		assert.Equal(ext.HTTPRequestHeaders+".header1", globalconfig.HeaderTag("Header1"))
 	})
 

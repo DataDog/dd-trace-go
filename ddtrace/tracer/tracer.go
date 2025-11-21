@@ -26,7 +26,9 @@ import (
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -51,6 +53,7 @@ type TracerConf struct { //nolint:revive
 	VersionTag           string
 	ServiceTag           string
 	TracingAsTransport   bool
+	isLambdaFunction     bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -217,9 +220,6 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 	setGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -232,6 +232,16 @@ func Start(opts ...StartOption) error {
 
 		globalinternal.SetTracerInitialized(true)
 		return nil
+	}
+
+	if t.config.runtimeMetricsV2 {
+		l := slog.New(slogHandler{})
+		opts := &runtimemetrics.Options{Logger: l}
+		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
+			l.Debug("Runtime metrics v2 enabled.")
+		} else {
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+		}
 	}
 
 	// Start AppSec with remote configuration
@@ -254,6 +264,15 @@ func Start(opts ...StartOption) error {
 
 	appsec.Start(appsecopts...)
 
+	if t.config.llmobs.Enabled {
+		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+			return fmt.Errorf("failed to start llmobs: %w", err)
+		}
+	}
+	if t.config.logStartup {
+		logStartup(t)
+	}
+
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	t.telemetry = startTelemetry(t.config)
@@ -272,7 +291,7 @@ func storeConfig(c *config) {
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
 	metadata := Metadata{
-		SchemaVersion:      1,
+		SchemaVersion:      2,
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
@@ -280,6 +299,8 @@ func storeConfig(c *config) {
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
 		ServiceVersion:     c.version,
+		ProcessTags:        processtags.GlobalTags().String(),
+		ContainerID:        globalinternal.ContainerID(),
 	}
 
 	data, _ := metadata.MarshalMsg(nil)
@@ -294,6 +315,7 @@ func Stop() {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
+	llmobs.Stop()
 	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
@@ -343,7 +365,8 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
-		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
+		// We are not failing here because the error could be cause by
+		// a transitory issue.
 	}
 	defer func() {
 		if err != nil {
@@ -441,15 +464,6 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
 	}
-	if c.runtimeMetricsV2 {
-		l := slog.New(slogHandler{})
-		opts := &runtimemetrics.Options{Logger: l}
-		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
-			l.Debug("Runtime metrics v2 enabled.")
-		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
-		}
-	}
 	if c.debugAbandonedSpans {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
@@ -489,6 +503,7 @@ func Flush() {
 	if t := getGlobalTracer(); t != nil {
 		t.Flush()
 	}
+	llmobs.Flush()
 }
 
 // Flush triggers a flush and waits for it to complete.
@@ -691,6 +706,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	}
 	span.context = newSpanContext(span, context)
+	if pprofContext != nil {
+		setLLMObsPropagatingTags(pprofContext, span.context)
+	}
 	span.setMeta("language", "go")
 	// add tags from options
 	for k, v := range opts.Tags {
@@ -915,6 +933,12 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 			ctx.trace.priority = nil
 		}
 	}
+	if ctx != nil && ctx.trace != nil {
+		if _, ok := ctx.trace.samplingPriority(); ok {
+			// ensure that the trace isn't resampled
+			ctx.trace.setLocked(true)
+		}
+	}
 	return ctx, err
 }
 
@@ -932,6 +956,7 @@ func (t *tracer) TracerConf() TracerConf {
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
+		isLambdaFunction:     t.config.isLambdaFunction,
 	}
 }
 
@@ -987,10 +1012,10 @@ func (t *tracer) sample(span *Span) {
 	if sampler.Rate() < 1 {
 		span.setMetric(sampleRateMetricKey, sampler.Rate())
 	}
-	if t.rulesSampling.SampleTraceGlobalRate(span) {
+	if t.rulesSampling.SampleTrace(span) {
 		return
 	}
-	if t.rulesSampling.SampleTrace(span) {
+	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
 	t.prioritySampling.apply(span)
