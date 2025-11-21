@@ -218,10 +218,15 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	restoreDdAppsecEnabled := setEnv("DD_APPSEC_ENABLED", "1")
 	restoreDdAppsecRules := setEnv("DD_APPSEC_RULES", rulesFile)
+	// GraphQL queries with nested resolvers need more than the default 2ms WAF timeout
+	// because the timeout budget is shared across all resolver invocations in the request.
+	// Without this, the second resolver can timeout before completing its scan.
+	restoreDdAppsecWafTimeout := setEnv("DD_APPSEC_WAF_TIMEOUT", "1m")
 	testutils.StartAppSec(t)
 	restore := func() {
 		restoreDdAppsecEnabled()
 		restoreDdAppsecRules()
+		restoreDdAppsecWafTimeout()
 		_ = os.RemoveAll(tmpDir)
 	}
 	return restore
