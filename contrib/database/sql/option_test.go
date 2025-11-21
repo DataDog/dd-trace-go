@@ -83,28 +83,67 @@ func TestCheckStatsdRequired(t *testing.T) {
 }
 
 func TestRegisteredTags(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	Register("register-name", &mysql.MySQLDriver{}, WithCustomTag("test", "this-is-a-test"))
-	defer unregister("register-name")
+	t.Run("with one tag", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		Register("register-name", &mysql.MySQLDriver{}, WithCustomTag("test", "this-is-a-test"))
+		defer unregister("register-name")
 
-	db, err := Open("register-name", "test:test@tcp(127.0.0.1:3306)/test")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	mt.Reset()
+		db, err := Open("register-name", "test:test@tcp(127.0.0.1:3306)/test")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		mt.Reset()
 
-	// conduct a normal query to the database. This creates 2 spans
-	rows, err := db.QueryContext(context.Background(), "SELECT 1")
-	assert.NoError(t, err)
-	rows.Close()
+		// conduct a normal query to the database. This creates 2 spans
+		rows, err := db.QueryContext(context.Background(), "SELECT 1")
+		assert.NoError(t, err)
+		rows.Close()
 
-	// all created spans should have the tag from Register
-	spans := mt.FinishedSpans()
-	assert.Len(t, spans, 2)
-	for _, sp := range spans {
-		assert.Equal(t, "this-is-a-test", sp.Tag("test"))
-	}
+		// all created spans should have the tag from Register
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+		for _, sp := range spans {
+			assert.Equal(t, "this-is-a-test", sp.Tag("test"))
+		}
+	})
 
+	t.Run("with multiple tags", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		Register("register-name", &mysql.MySQLDriver{}, WithCustomTag("test", "this-is-a-test"), WithCustomTag("test2", "this-is-a-test2"), WithCustomTag("test3", "this-is-a-test3"))
+		defer unregister("register-name")
+
+		db, err := Open("register-name", "test:test@tcp(127.0.0.1:3306)/test")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		mt.Reset()
+
+		// conduct a normal query to the database. This creates 2 spans
+		rows, err := db.QueryContext(context.Background(), "SELECT 1")
+		assert.NoError(t, err)
+		rows.Close()
+
+		// all created spans should have the tag from Register
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 2)
+		for _, sp := range spans {
+			assert.Equal(t, "this-is-a-test", sp.Tag("test"))
+			assert.Equal(t, "this-is-a-test2", sp.Tag("test2"))
+			assert.Equal(t, "this-is-a-test3", sp.Tag("test3"))
+		}
+	})
+
+	t.Run("no tags", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		Register("register-name", &mysql.MySQLDriver{})
+		defer unregister("register-name")
+
+		cfg := registeredDrivers.configs["register-name"]
+		assert.Nil(t, cfg.tags)
+	})
 }

@@ -158,7 +158,7 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 		cfg.ignoreQueryTypes = rc.ignoreQueryTypes
 		cfg.childSpansOnly = rc.childSpansOnly
 		cfg.dbStats = rc.dbStats
-		if cfg.tags == nil {
+		if cfg.tags == nil && len(rc.tags) > 0 {
 			cfg.tags = make(map[string]interface{})
 		}
 		for k, v := range rc.tags {
