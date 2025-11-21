@@ -10,21 +10,24 @@ meta:
     Package fasthttp provides a fast HTTP implementation for Go, with a focus on performance and low memory usage.
 
 aspects:
-  # FastHTTP Server instrumentation
-  # All server startup methods (ListenAndServe, ServeTLS, etc.) eventually call Serve(ln)
-  # By targeting only Serve(), we avoid hot-path overhead and ensure complete coverage
-  - id: FastHTTPServerInstrumentation
+  - id: fasthttp.Server
     join-point:
-      function-body:
-        function:
-          - receiver: '*github.com/valyala/fasthttp.Server'
-          - name: 'Serve'  # Single entry point for all server startup methods
+      struct-definition: github.com/valyala/fasthttp.Server
     advice:
       # Add instrumentation flag to prevent double-wrapping
       - add-struct-field:
           name: '__dd_instrumented'
           type: 'bool'
-          
+  # FastHTTP Server instrumentation
+  # All server startup methods (ListenAndServe, ServeTLS, etc.) eventually call Serve(ln)
+  # By targeting only Serve(), we avoid hot-path overhead and ensure complete coverage
+  - id: Serve
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/valyala/fasthttp.Server'
+          - name: 'Serve'  # Single entry point for all server startup methods
+    advice:          
       - prepend-statements:
           imports:
             fasthttptrace: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
