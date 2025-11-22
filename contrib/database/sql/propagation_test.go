@@ -12,11 +12,14 @@ import (
 	"database/sql/driver"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"testing"
+	"time"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -254,6 +257,47 @@ func TestDBMPropagation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDBMPropagationFullOnPqCopy(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("skipping integration test")
+	}
+	tr := mocktracer.Start()
+	defer tr.Stop()
+
+	Register("postgres", &pq.Driver{}, WithDBMPropagation(tracer.DBMPropagationModeFull))
+	db, err := Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
+		_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		assert.NoError(t, db.Close())
+	})
+
+	db.Exec("DROP TABLE IF EXISTS testsql")
+	db.Exec("CREATE TABLE testsql (dn text, name text, sam_account_name text, mail text, primary_group_id text)")
+	t.Cleanup(func() {
+		db.Exec("DROP TABLE IF EXISTS testsql")
+	})
+
+	tx, err := db.Begin()
+	require.NoError(t, err)
+	defer tx.Rollback()
+
+	s := pq.CopyInSchema("public", "testsql", "dn", "name", "sam_account_name", "mail", "primary_group_id")
+	stmt, err := tx.Prepare(s)
+	require.NoError(t, err)
+	defer stmt.Close()
+
+	_, err = stmt.Exec("dn", "name0", "sam", nil, nil)
+	require.NoError(t, err)
+
+	spans := tr.FinishedSpans()
+	require.Len(t, spans, 6)
+	assert.Equal(t, `COPY "public"."testsql" ("dn", "name", "sam_account_name", "mail", "primary_group_id") FROM STDIN`, spans[5].Tags()[ext.ResourceName])
 }
 
 func TestDBMTraceContextTagging(t *testing.T) {
