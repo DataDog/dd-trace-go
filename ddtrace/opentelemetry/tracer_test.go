@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelbaggage "go.opentelemetry.io/otel/baggage"
@@ -397,4 +398,25 @@ func TestMergeOtelDDBaggage(t *testing.T) {
 		assert.True(ok)
 		assert.Equal("otelValue", value)
 	})
+}
+
+func Test_DDOpenTelemetryTracer(t *testing.T) {
+	ddOTelTracer := NewTracerProvider(
+		tracer.WithSamplingRules([]tracer.SamplingRule{
+			{Rate: 0}, // This should be applied only when a brand new root span is started and should be ignored for a non-root span
+		}),
+	).Tracer("")
+
+	parentSpanContext := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID:    oteltrace.TraceID{0xAA},
+		SpanID:     oteltrace.SpanID{0x01},
+		TraceFlags: oteltrace.FlagsSampled, // the parent span is sampled, so its child spans should be sampled too
+	})
+	ctx := oteltrace.ContextWithSpanContext(context.Background(), parentSpanContext)
+	_, span := ddOTelTracer.Start(ctx, "test")
+	span.End()
+
+	childSpanContext := span.SpanContext()
+	require.Equal(t, parentSpanContext.TraceID(), childSpanContext.TraceID())
+	require.True(t, childSpanContext.IsSampled(), "parent span is sampled, but child span is not sampled") // this test fails
 }
