@@ -36,6 +36,8 @@ func TestFire128BitDisabled(t *testing.T) {
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
 
 	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+	oldCfg := cfg
+	t.Cleanup(func() { cfg = oldCfg })
 	cfg = newConfig()
 
 	tracer.Start()
