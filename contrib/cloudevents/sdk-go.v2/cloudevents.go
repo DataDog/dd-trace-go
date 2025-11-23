@@ -67,7 +67,7 @@ func (c EventCarrier) ForeachKey(handler func(key, val string) error) error {
 		return nil
 	}
 
-	// Iterate over CloudEvent extensions and pass string values to the handler
+	// Note: CloudEvent extensions are of type map[string]interface{}
 	for key, val := range extensions {
 		if strVal, ok := val.(string); ok {
 			if err := handler(key, strVal); err != nil {
@@ -95,9 +95,6 @@ type HandlerFunc func(context.Context, cloudevents.Event) error
 // WrapHandler wraps a CloudEvents handler to enable distributed tracing.
 // It extracts trace context from the event, creates a consumer span, and propagates the
 // context to the handler.
-//
-// By default, the subject field is not included in tags as it may contain sensitive data.
-// Use WithSubject() option to include it. Use WithResourceName() to set a custom resource name.
 //
 // For more control over tracing, you can use NewEventCarrier with tracer.Extract and
 // tracer.StartSpanFromContext directly.
