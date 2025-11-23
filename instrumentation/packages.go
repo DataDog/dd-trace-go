@@ -180,6 +180,11 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV0:      staticName("cloudevents.consume"),
 				buildOpNameV1:      staticName("cloudevents.process"),
 			},
+			ComponentProducer: {
+				buildServiceNameV0: staticName("cloudevents"),
+				buildOpNameV0:      staticName("cloudevents.publish"),
+				buildOpNameV1:      staticName("cloudevents.send"),
+			},
 		},
 	},
 	PackageAWSDatadogLambdaGo: {
