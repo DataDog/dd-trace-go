@@ -91,14 +91,30 @@ func (tc *Client) Request(ctx context.Context, e event.Event) (*event.Event, pro
 // To add tracing to your receiver function, wrap it with TraceWrapCloudEventsHandler
 // before passing it to StartReceiver.
 //
-// Example:
+// Usually it will be enough to use the standard CloudEvents handler signature:
 //
-//	handler := func(ctx context.Context, e event.Event) error {
+//	handler := func(ctx context.Context, event cloudevents.Event) error {
 //	    // your event handling logic
 //	    return nil
 //	}
-//	tracedHandler := sdkgov2.WrapHandler(handler, sdkgov2.WithResourceName("my-subscription"))
-//	err := client.StartReceiver(ctx, tracedHandler)
+//	err := client.StartReceiver(ctx, sdkgov2.WrapHandler(handler))
+//
+// There are multiple valid fns signatures for CloudEvents handlers.
+//
+// Example of other signatures:
+//
+//			// Valid fn signatures are: * func() * func() error * func(context.Context)
+//	     //      * func(context.Context) error * func(event.Event) * func(event.Event) error
+//			handler := func(ctx context.Context) error {
+//			    // your event handling logic
+//		       carrier := sdkgov2.NewEventCarrier(&e)
+//
+//			   if err := tracer.Inject(span.Context(), carrier); err != nil {
+//				   return fmt.Errorf("failed to inject trace context: %w", err)
+//			   }
+//			    return nil
+//			 }
+//			err := client.StartReceiver(ctx, handler)
 func (tc *Client) StartReceiver(ctx context.Context, fn interface{}) error {
 	return tc.client.StartReceiver(ctx, fn)
 }
