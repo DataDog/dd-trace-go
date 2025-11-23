@@ -88,33 +88,39 @@ func (tc *Client) Request(ctx context.Context, e event.Event) (*event.Event, pro
 }
 
 // StartReceiver passes through to the underlying client's StartReceiver method.
-// To add tracing to your receiver function, wrap it with TraceWrapCloudEventsHandler
-// before passing it to StartReceiver.
+// To add tracing to your receiver function, wrap it with WrapHandler before passing it to StartReceiver.
 //
-// Usually it will be enough to use the standard CloudEvents handler signature:
+// The most common CloudEvents handler signature is:
 //
 //	handler := func(ctx context.Context, event cloudevents.Event) error {
 //	    // your event handling logic
 //	    return nil
 //	}
-//	err := client.StartReceiver(ctx, sdkgov2.WrapHandler(handler))
+//	tracedHandler := sdkgov2.WrapHandler(handler, sdkgov2.WithResourceName("my-subscription"))
+//	err := client.StartReceiver(ctx, tracedHandler)
 //
-// There are multiple valid fns signatures for CloudEvents handlers.
+// CloudEvents supports multiple valid handler signatures:
+//   - func()
+//   - func() error
+//   - func(context.Context)
+//   - func(context.Context) error
+//   - func(event.Event)
+//   - func(event.Event) error
+//   - func(context.Context, event.Event)
+//   - func(context.Context, event.Event) error
 //
-// Example of other signatures:
+// For other handler signatures, you can manually extract trace context using NewEventCarrier:
 //
-//			// Valid fn signatures are: * func() * func() error * func(context.Context)
-//	     //      * func(context.Context) error * func(event.Event) * func(event.Event) error
-//			handler := func(ctx context.Context) error {
-//			    // your event handling logic
-//		       carrier := sdkgov2.NewEventCarrier(&e)
-//
-//			   if err := tracer.Inject(span.Context(), carrier); err != nil {
-//				   return fmt.Errorf("failed to inject trace context: %w", err)
-//			   }
-//			    return nil
-//			 }
-//			err := client.StartReceiver(ctx, handler)
+//	handler := func(ctx context.Context) error {
+//	    // Manually extract trace context from the event
+//	    carrier := sdkgov2.NewEventCarrier(&event)
+//	    spanCtx, _ := tracer.Extract(carrier)
+//	    span, ctx := tracer.StartSpanFromContext(ctx, "process.event", tracer.ChildOf(spanCtx))
+//	    defer span.Finish()
+//	    // your event handling logic
+//	    return nil
+//	}
+//	err := client.StartReceiver(ctx, handler)
 func (tc *Client) StartReceiver(ctx context.Context, fn interface{}) error {
 	return tc.client.StartReceiver(ctx, fn)
 }
