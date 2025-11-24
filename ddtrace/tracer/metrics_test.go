@@ -195,7 +195,7 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 	tg.Reset()
 
 	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Millisecond
+	statsInterval = time.Hour
 
 	assert := assert.New(t)
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
@@ -217,16 +217,11 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 		tracer.StartSpan("operation", Tag(ext.Component, "contrib")).Finish()
 	}
 	flush(10)
-	assert.Eventually(func() bool {
-		counts := tg.Counts()
-		return counts["datadog.tracer.spans_started"] == 10 && counts["datadog.tracer.spans_finished"] == 10
-	}, 1*time.Minute, 100*time.Millisecond)
+	tracer.reportHealthMetrics()
 
-	require.Eventually(t, func() bool {
-		counts := tg.Counts()
-		return counts["datadog.tracer.spans_started"] == 10 &&
-			counts["datadog.tracer.spans_finished"] == 10
-	}, 5*time.Minute, 100*time.Millisecond)
+	counts := tg.Counts()
+	require.Equal(t, int64(10), counts["datadog.tracer.spans_started"])
+	require.Equal(t, int64(10), counts["datadog.tracer.spans_finished"])
 
 	assertSpanMetricCountsAreZero(t, tracer.spansStarted)
 	assertSpanMetricCountsAreZero(t, tracer.spansFinished)
@@ -240,7 +235,6 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 	assert.Equal(int64(5), tg.CountCallsByTag(finishedCalls, "integration:manual"))
 	assert.Equal(int64(3), tg.CountCallsByTag(finishedCalls, "integration:net/http"))
 	assert.Equal(int64(2), tg.CountCallsByTag(finishedCalls, "integration:contrib"))
-
 }
 
 func TestHealthMetricsRaceCondition(t *testing.T) {
