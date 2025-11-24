@@ -76,6 +76,10 @@ func StartAppSec(t *testing.T, opts ...config.StartOption) {
 		return
 	}
 
+	opts = append(
+		append(make([]config.StartOption, 0, len(opts)+1), config.WithEnablementMode(config.ForcedOn)),
+		opts...,
+	)
 	appsec.Start(opts...)
 	require.True(t, appsec.Enabled(), "AppSec failed to start as expected")
 	t.Cleanup(appsec.Stop)
