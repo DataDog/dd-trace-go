@@ -33,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"go.uber.org/goleak"
 
@@ -2939,4 +2940,78 @@ func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
 	for _, logMsg := range tp.Logs() {
 		assert.NotContains(t, logMsg, "runtimemetrics has already been started")
 	}
+}
+
+// TestTracerTwiceStartRemoteConfig tests how RC behaves during tracer restarts.
+func TestTracerTwiceStartRemoteConfig(t *testing.T) {
+	err := Start()
+	require.NoError(t, err)
+	err = remoteconfig.RegisterProduct("testing")
+	require.NoError(t, err)
+
+	// "testing" should be present and RC is active
+	got, err := remoteconfig.HasProduct("testing")
+	require.True(t, got)
+	require.NoError(t, err)
+
+	err = Start()
+	require.NoError(t, err)
+	got, err = remoteconfig.HasProduct("testing")
+	require.False(t, got)
+	require.NoError(t, err)
+
+	Stop()
+	// This should be noop.
+	Stop()
+}
+
+func TestTracerConcurrentStartStop(t *testing.T) {
+	const iterations = 100
+	var wg sync.WaitGroup
+
+	// Goroutine 1: Continuously start the tracer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			Start()
+		}
+	}()
+
+	// Goroutine 2: Continuously stop the tracer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			Stop()
+		}
+	}()
+
+	// Wait for both goroutines to complete
+	wg.Wait()
+
+	// Ensure the tracer is stopped before proceeding
+	Stop()
+
+	// Now verify that starting the tracer enables remote config
+	err := Start()
+	require.NoError(t, err)
+
+	// Register a remote config product
+	err = remoteconfig.RegisterProduct("testing")
+	require.NoError(t, err)
+
+	// Verify that remote config is active and product is registered
+	got, err := remoteconfig.HasProduct("testing")
+	require.NoError(t, err)
+	require.True(t, got, "remote config should be active after Start()")
+
+	// Now stop the tracer and verify remote config is disabled
+	Stop()
+
+	// After Stop(), remote config should be disabled
+	// Attempting to check for the product should indicate it's not available
+	got, err = remoteconfig.HasProduct("testing")
+	require.ErrorIs(t, err, remoteconfig.ErrClientNotStarted)
+	require.False(t, got, "remote config should be disabled after Stop()")
 }

@@ -130,6 +130,9 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
 func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
+	reqState.Mu.Lock()
+	defer reqState.Mu.Unlock()
+
 	if !reqState.State.Ongoing() {
 		return errors.New("received request body too early")
 	}
@@ -161,6 +164,9 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 // along with an optional output message of type O created by either [ProcessorConfig.ContinueMessageFunc] or [ProcessorConfig.BlockMessageFunc]
 // If the request is blocked or the message ends the stream, it returns io.EOF as error
 func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestState) error {
+	reqState.Mu.Lock()
+	defer reqState.Mu.Unlock()
+
 	if !reqState.State.Request() {
 		return fmt.Errorf("received response headers too early: %v", reqState.State)
 	}
@@ -213,6 +219,9 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
 func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error {
+	reqState.Mu.Lock()
+	defer reqState.Mu.Unlock()
+
 	if !reqState.State.Response() {
 		return fmt.Errorf("received response body too early: %v", reqState.State)
 	}

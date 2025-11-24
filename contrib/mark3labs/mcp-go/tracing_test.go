@@ -21,11 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewToolHandlerMiddleware(t *testing.T) {
+func TestToolHandlerMiddleware(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	middleware := NewToolHandlerMiddleware()
+	middleware := toolHandlerMiddleware
 	assert.NotNil(t, middleware)
 }
 
@@ -34,7 +34,7 @@ func TestAddServerHooks(t *testing.T) {
 	defer mt.Stop()
 
 	serverHooks := &server.Hooks{}
-	AddServerHooks(serverHooks)
+	appendTracingHooks(serverHooks)
 
 	assert.Len(t, serverHooks.OnBeforeInitialize, 1)
 	assert.Len(t, serverHooks.OnAfterInitialize, 1)
@@ -45,11 +45,8 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
 
-	hooks := &server.Hooks{}
-	AddServerHooks(hooks)
-
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithHooks(hooks))
+		WithMCPServerTracing(nil))
 
 	ctx := context.Background()
 	sessionID := "test-session-init"
@@ -109,11 +106,10 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	defer tt.Stop()
 
 	hooks := &server.Hooks{}
-	AddServerHooks(hooks)
+	appendTracingHooks(hooks)
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithHooks(hooks),
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+		WithMCPServerTracing(nil))
 
 	calcTool := mcp.NewTool("calculator",
 		mcp.WithDescription("A simple calculator"))
@@ -184,6 +180,11 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 
+	// Verify the span is NOT marked as an error (success case)
+	assert.NotContains(t, toolSpan.Meta, "error.message")
+	assert.NotContains(t, toolSpan.Meta, "error.type")
+	assert.NotContains(t, toolSpan.Meta, "error.stack")
+
 	assert.Contains(t, toolSpan.Meta, "input")
 	assert.Contains(t, toolSpan.Meta, "output")
 
@@ -211,7 +212,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
-		server.WithToolHandlerMiddleware(NewToolHandlerMiddleware()))
+		WithMCPServerTracing(&TracingConfig{}))
 
 	errorTool := mcp.NewTool("error_tool",
 		mcp.WithDescription("A tool that always errors"))
@@ -256,6 +257,115 @@ func TestIntegrationToolCallError(t *testing.T) {
 	assert.Contains(t, toolSpan.Meta, "error.stack")
 
 	assert.Contains(t, toolSpan.Meta, "input")
+}
+
+func TestIntegrationToolCallStructuredError(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithMCPServerTracing(&TracingConfig{}))
+
+	validationTool := mcp.NewTool("validation_tool",
+		mcp.WithDescription("A tool that returns structured error information"))
+
+	srv.AddTool(validationTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Simulate validation or business logic error by returning structured error
+		name, err := request.RequireString("name")
+		if err != nil {
+			// Return structured error result using helper function
+			return mcp.NewToolResultError(fmt.Sprintf("Validation failed: %v", err)), nil
+		}
+
+		// Additional validation check
+		if name == "invalid" {
+			// Return structured error result with custom message
+			return mcp.NewToolResultError("invalid input: name cannot be 'invalid'"), nil
+		}
+
+		// Success case (not reached in this test)
+		return mcp.NewToolResultText(fmt.Sprintf("Hello, %s!", name)), nil
+	})
+
+	ctx := context.Background()
+	sessionID := "test-session-789"
+
+	session := &mockSession{id: sessionID}
+	session.Initialize()
+	ctx = srv.WithContext(ctx, session)
+
+	// Test with missing required parameter (should trigger RequireString error)
+	toolCallRequest := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"validation_tool","arguments":{}}}`
+
+	response := srv.HandleMessage(ctx, []byte(toolCallRequest))
+	assert.NotNil(t, response)
+
+	responseBytes, err := json.Marshal(response)
+	require.NoError(t, err)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(responseBytes, &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "2.0", resp["jsonrpc"])
+
+	// The response should contain result (not error), but the result IsError is true
+	assert.NotNil(t, resp["result"])
+
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	toolSpan := spans[0]
+	assert.Equal(t, "validation_tool", toolSpan.Name)
+	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
+
+	assert.Contains(t, toolSpan.Tags, "mcp_session_id:test-session-789")
+
+	// Verify error metadata is present
+	assert.Contains(t, toolSpan.Meta, "error.message")
+	assert.Contains(t, toolSpan.Meta["error.message"], "tool resulted in an error")
+	assert.Contains(t, toolSpan.Meta, "error.type")
+	assert.Contains(t, toolSpan.Meta, "error.stack")
+
+	// Verify input and output are captured
+	assert.Contains(t, toolSpan.Meta, "input")
+	assert.Contains(t, toolSpan.Meta, "output")
+
+	// Verify the output contains the structured error message
+	outputMeta := toolSpan.Meta["output"]
+	assert.NotNil(t, outputMeta)
+	outputJSON, err := json.Marshal(outputMeta)
+	require.NoError(t, err)
+	outputStr := string(outputJSON)
+	assert.Contains(t, outputStr, "Validation failed")
+}
+
+func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	customHookCalled := false
+	customHooks := &server.Hooks{}
+	customHooks.AddBeforeInitialize(func(ctx context.Context, id any, request *mcp.InitializeRequest) {
+		customHookCalled = true
+	})
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithMCPServerTracing(&TracingConfig{Hooks: customHooks}))
+
+	ctx := context.Background()
+	initRequest := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}`
+
+	response := srv.HandleMessage(ctx, []byte(initRequest))
+	assert.NotNil(t, response)
+
+	assert.True(t, customHookCalled, "custom hook should have been called")
+
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	taskSpan := spans[0]
+	assert.Equal(t, "mcp.initialize", taskSpan.Name)
+	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
 }
 
 // Test helpers
