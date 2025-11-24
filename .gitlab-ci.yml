@@ -24,10 +24,10 @@ generate_matrix:
     # We don't want to run benchmarks when pushing release tags for nested modules
     - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
       when: never
-    - when: always
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: always
       interruptible: false
-    - if: '$CI_COMMIT_BRANCH != "main"'
+    - when: always
       interruptible: true
   script: |
     cd .gitlab
@@ -75,21 +75,24 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
-validate_supported_configurations_local_file:
+
+# Config Registry CI Jobs
+validate_supported_configurations_v2_local_file:
   stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:82290795
   tags: ["runner:apm-k8s-tweaked-metal"]
   rules:
     - when: on_success
-  extends: .validate_supported_configurations_local_file
+  extends: .validate_supported_configurations_v2_local_file
   variables:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
+    BACKFILLED: "false"
 
-update_central_configurations_version_range:
+update_central_configurations_version_range_v2:
   stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:68067123
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:82290795
   tags: ["runner:apm-k8s-tweaked-metal"]
-  extends: .update_central_configurations_version_range
+  extends: .update_central_configurations_version_range_v2
   variables:
     LOCAL_REPO_NAME: "dd-trace-go"
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"

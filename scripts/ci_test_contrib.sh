@@ -42,6 +42,10 @@ for contrib in $CONTRIBS; do
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
   fi
+  if [[ "$1" = "smoke" && "$contrib" = "./contrib/gin-gonic/gin/" ]]; then
+    # Temporary workaround, see: https://github.com/gin-gonic/gin/issues/4441
+    go get github.com/quic-go/qpack@v0.5.1
+  fi
   go mod tidy
   gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
   test_exit=$?

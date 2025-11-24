@@ -9,9 +9,12 @@ variables:
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
+      interruptible: false
     - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
       when: always
+      interruptible: false
     - when: manual
+      interruptible: true
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
   script:
@@ -259,7 +262,9 @@ notify-slo-breaches:
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
+      interruptible: false
     - when: manual
+      interruptible: true
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
   script:
