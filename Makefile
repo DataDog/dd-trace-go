@@ -13,8 +13,33 @@ help: ## Show this help message
 all: tools-install generate lint test ## Run complete build pipeline (tools, generate, lint, test)
 
 .PHONY: tools-install
-tools-install: ## Install development tools
+tools-install: tools-install/checkmake ## Install development tools
 	@./scripts/install_tools.sh --tools-dir $(TOOLS) --bin-dir $(BIN)
+
+# checkmake is installed as a pre-built binary rather than via go install
+# because it requires Go 1.25+, which would force an upgrade of our _tools module.
+# We keep the _tools module on Go 1.24.0 to match our main project requirements.
+# For platforms without pre-built binaries, we fall back to building from source.
+.PHONY: tools-install/checkmake
+tools-install/checkmake: ## Install checkmake binary for Makefile linting
+	@mkdir -p $(BIN)
+	@if [ ! -f $(BIN)/checkmake ]; then \
+		echo "Installing checkmake..."; \
+		CHECKMAKE_VERSION=0.2.2; \
+		OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+		ARCH=$$(uname -m); \
+		if [ "$$ARCH" = "x86_64" ]; then ARCH="amd64"; fi; \
+		if [ "$$ARCH" = "aarch64" ]; then ARCH="arm64"; fi; \
+		BINARY="checkmake-$$CHECKMAKE_VERSION.$$OS.$$ARCH"; \
+		if curl -sSfL -o $(BIN)/checkmake "https://github.com/checkmake/checkmake/releases/download/$$CHECKMAKE_VERSION/$$BINARY" 2>/dev/null; then \
+			chmod +x $(BIN)/checkmake; \
+			echo "checkmake $$CHECKMAKE_VERSION installed from pre-built binary"; \
+		else \
+			echo "Pre-built binary not available for $$OS/$$ARCH, building from source..."; \
+			GOBIN=$(abspath $(BIN)) go install github.com/checkmake/checkmake/cmd/checkmake@latest; \
+			echo "checkmake installed from source"; \
+		fi; \
+	fi
 
 .PHONY: clean
 clean: ## Clean build artifacts
@@ -43,6 +68,10 @@ lint/go/fix: tools-install ## Fix linting issues automatically
 .PHONY: lint/shell
 lint/shell: tools-install ## Run shell script linting checks
 	$(BIN_PATH) ./scripts/lint.sh --shell
+
+.PHONY: lint/misc
+lint/misc: tools-install ## Run miscellaneous linting checks (copyright, Makefiles)
+	$(BIN_PATH) ./scripts/lint.sh --misc
 
 .PHONY: format
 format: tools-install ## Format code

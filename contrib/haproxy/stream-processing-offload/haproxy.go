@@ -53,10 +53,8 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 			BlockMessageFunc:     blockActionFunc,
 		}, instr),
 		requestStateCache: initRequestStateCache(func(rs *proxy.RequestState) {
-			if rs.State.Ongoing() {
-				instr.Logger().Warn("haproxy_spoa: backend server timeout reached, closing the span for the request.\n")
-				_ = rs.Close()
-			}
+			_ = rs.Close()
+			instr.Logger().Warn("haproxy_spoa: backend server timeout reached, closing the span for the request.\n")
 		}),
 	}
 }
@@ -85,9 +83,16 @@ func (s *HAProxySPOA) Handler(req *request.Request) {
 		reqState, _ := getCurrentRequest(s.requestStateCache, hMsg)
 
 		err = s.processMessage(req, hMsg, reqState)
-		if err != nil && err != io.EOF {
+		if err == io.EOF {
+			// Request processing completed, remove from cache to avoid race with TTL eviction
+			if reqState != nil {
+				s.deleteRequestFromCache(reqState)
+			}
+			continue
+		}
+		if err != nil {
 			instr.Logger().Error("haproxy_spoa: error processing message %s: %v", msg.Name, err)
-			return
+			continue
 		}
 	}
 }
@@ -155,4 +160,16 @@ func (s *HAProxySPOA) cacheRequest(reqState proxy.RequestState, msg *haproxyMess
 	storeRequestState(s.requestStateCache, spanId, reqState, timeout)
 
 	return nil
+}
+
+// deleteRequestFromCache removes the request state from the cache to prevent race conditions with TTL eviction
+func (s *HAProxySPOA) deleteRequestFromCache(reqState *proxy.RequestState) {
+	span, ok := reqState.Span()
+	if !ok {
+		instr.Logger().Warn("haproxy_spoa: failed to retrieve span from request state for cache deletion")
+		return
+	}
+
+	spanId := span.Context().SpanID()
+	s.requestStateCache.Delete(spanId)
 }
