@@ -51,6 +51,11 @@ func (pr PseudoRequest) toNetHTTP(ctx context.Context) (*http.Request, error) {
 func urlParse(scheme, authority, rest string) (*url.URL, error) {
 	var escapeErr url.EscapeError
 
+	if scheme == "" {
+		// If the HTTP header doesn't contain a scheme, we assume HTTP as the default scheme. This ought
+		// to be the most frequent case (maybe?)
+		scheme = "http"
+	}
 	// Parse the URL from the scheme, authority and path
 	parsedURL, err := url.Parse(fmt.Sprintf("%s://%s%s", scheme, authority, rest))
 	for i := 0; i < 5 && errors.As(err, &escapeErr); i++ {
