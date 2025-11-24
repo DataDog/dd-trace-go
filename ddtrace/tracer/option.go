@@ -150,6 +150,9 @@ type config struct {
 	// of the behaviour of the tracer.
 	agent agentFeatures
 
+	// lastCheck records the last time the agent features were checked.
+	lastCheck time.Time
+
 	// integrations reports if the user has instrumented a Datadog integration and
 	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
@@ -622,17 +625,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.ciVisibilityAgentless = ciTransport.agentless
 	}
 
-	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
-	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	if c.agent.v1ProtocolAvailable {
-		c.traceProtocol = traceProtocolV1
-		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
-		}
-	} else {
-		c.traceProtocol = traceProtocolV04
-	}
+	c.loadFeatures()
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -813,9 +806,32 @@ func (a *agentFeatures) HasFlag(feat string) bool {
 	return ok
 }
 
+func (c *config) loadFeatures() {
+	// throttle agent features check to 10 seconds
+	if time.Since(c.lastCheck) < agentCheckInterval {
+		return
+	}
+	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
+	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
+	features, ok := loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	if !ok {
+		return
+	}
+	c.agent = features
+	c.lastCheck = time.Now()
+	if c.agent.v1ProtocolAvailable {
+		c.traceProtocol = traceProtocolV1
+		if t, ok := c.transport.(*httpTransport); ok {
+			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
+		}
+	} else {
+		c.traceProtocol = traceProtocolV04
+	}
+}
+
 // loadAgentFeatures queries the trace-agent for its capabilities and updates
 // the tracer's behaviour.
-func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
+func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures, ok bool) {
 	if agentDisabled {
 		// there is no agent; all features off
 		return
@@ -874,7 +890,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 	for _, flag := range info.FeatureFlags {
 		features.featureFlags[flag] = struct{}{}
 	}
-	return features
+	return features, true
 }
 
 // MarkIntegrationImported labels the given integration as imported

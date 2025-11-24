@@ -190,6 +190,9 @@ const (
 // statsd client; replaced in tests.
 var statsInterval = 10 * time.Second
 
+// agentCheckInterval is the interval at which the agent features will be re-checked.
+var agentCheckInterval = 10 * time.Second
+
 // startStopMu ensures that calling Start and Stop concurrently doesn't leak
 // goroutines. In particular, without this lock TestTracerCleanStop will leak
 // goroutines from the internal telemetry client.
@@ -508,6 +511,20 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		t.reportHealthMetricsAtInterval(statsInterval)
 	}()
 	t.stats.Start()
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		tick := time.NewTicker(agentCheckInterval)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				t.config.loadFeatures()
+			case <-t.stop:
+				return
+			}
+		}
+	}()
 	return t, nil
 }
 
