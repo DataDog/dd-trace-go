@@ -2007,3 +2007,38 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 		})
 	}
 }
+
+func TestInjectExtractSampling(t *testing.T) {
+	assert := assert.New(t)
+	Start(WithSamplerRate(0.999999999), WithSamplingRules(TraceSamplingRules(
+		Rule{Tags: map[string]string{"tag": "20"}, Rate: 0.999999995},
+		Rule{ResourceGlob: "root"},
+	)))
+	tr := getGlobalTracer()
+	defer tr.Stop()
+
+	root := tr.StartSpan("mysql.root", ResourceName("root"), Tag("tag", 20))
+	root.Finish()
+
+	ruleRate, _ := getMetric(root, keyRulesSamplerAppliedRate)
+	assert.Equal(0.999999995, ruleRate)
+	_, hasLimiterRate := getMetric(root, keyRulesSamplerLimiterRate)
+	assert.True(hasLimiterRate)
+	// Knuth sampling rate tag should be set with rate 1.0
+	rate, ok := getMeta(root, keyKnuthSamplingRate)
+	assert.True(ok)
+	assert.Equal("1", rate)
+
+	_, hasSampleRateMetric := getMetric(root, sampleRateMetricKey)
+	assert.True(hasSampleRateMetric)
+
+	headers := TextMapCarrier(map[string]string{})
+	err := tr.Inject(root.Context(), headers)
+	assert.NoError(err)
+
+	ctx, err := tr.Extract(headers)
+	assert.NoError(err)
+
+	p, _ := ctx.SamplingPriority()
+	assert.Equal(p, 2)
+}
