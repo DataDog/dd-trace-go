@@ -51,9 +51,6 @@ func TestReportHealthMetricsAtInterval(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
 
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Millisecond
-
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
 	assert.Nil(err)
 	defer stop()
@@ -74,9 +71,6 @@ func TestReportHealthMetricsAtInterval(t *testing.T) {
 func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	assert := assert.New(t)
 	var tg statsdtest.TestStatsdClient
-
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Nanosecond
 
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
 	assert.Nil(err)
@@ -140,9 +134,6 @@ func TestSpansStartedTags(t *testing.T) {
 func TestSpansFinishedTags(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Hour
-
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
@@ -185,9 +176,6 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 	tg.Reset()
 
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Hour
-
 	assert := assert.New(t)
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
 	assert.Nil(err)
@@ -229,9 +217,6 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 
 func TestHealthMetricsRaceCondition(t *testing.T) {
 	assert := assert.New(t)
-
-	defer func(old time.Duration) { statsInterval = old }(statsInterval)
-	statsInterval = time.Hour
 
 	var tg statsdtest.TestStatsdClient
 	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
