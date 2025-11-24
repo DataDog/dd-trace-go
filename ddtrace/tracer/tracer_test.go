@@ -2362,6 +2362,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	tracer.config.agent.DropP0s = true
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
+		tracer.reportHealthMetrics()
 		if n < 0 {
 			tick <- time.Now()
 			return
