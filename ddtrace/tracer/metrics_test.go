@@ -100,13 +100,14 @@ func TestSpansStartedTags(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg))
 		assert.Nil(err)
 		defer stop()
 
 		tracer.StartSpan("operation").Finish()
 
-		flush(0)
+		// calling flush(0) tends to flake too.
+		tracer.reportHealthMetrics()
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
@@ -118,14 +119,15 @@ func TestSpansStartedTags(t *testing.T) {
 	t.Run("custom_integration", func(t *testing.T) {
 		tg.Reset()
 		assert := assert.New(t)
-		tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+		tracer, _, _, stop, err := startTestTracer(t, withStatsdClient(&tg))
 		assert.Nil(err)
 		defer stop()
 
 		sp := tracer.StartSpan("operation", Tag(ext.Component, "contrib"))
 		defer sp.Finish()
 
-		flush(0)
+		// calling flush(0) tends to flake too.
+		tracer.reportHealthMetrics()
 		counts := tg.Counts()
 		assert.Equal(counts["datadog.tracer.spans_started"], int64(1))
 		assertSpanMetricCountsAreZero(t, tracer.spansStarted)
