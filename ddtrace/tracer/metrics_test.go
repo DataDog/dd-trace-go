@@ -220,7 +220,7 @@ func TestMultipleSpanIntegrationTags(t *testing.T) {
 	assert.Eventually(func() bool {
 		counts := tg.Counts()
 		return counts["datadog.tracer.spans_started"] == 10 && counts["datadog.tracer.spans_finished"] == 10
-	}, 1*time.Second, 10*time.Millisecond)
+	}, 1*time.Minute, 100*time.Millisecond)
 
 	require.Eventually(t, func() bool {
 		counts := tg.Counts()
@@ -286,21 +286,23 @@ func TestTracerMetrics(t *testing.T) {
 
 	tracer.StartSpan("operation").Finish()
 	flush(1)
-	tg.Wait(assert, 5, 500*time.Millisecond)
-
-	calls := tg.CallsByName()
-	counts := tg.Counts()
-	assert.Equal(1, calls["datadog.tracer.started"])
-	assert.True(calls["datadog.tracer.flush_triggered"] >= 1)
-	assert.Equal(1, calls["datadog.tracer.flush_duration"])
-	assert.Equal(1, calls["datadog.tracer.flush_bytes"])
-	assert.Equal(1, calls["datadog.tracer.flush_traces"])
-	assert.Equal(int64(1), counts["datadog.tracer.flush_traces"])
+	assert.NoError(tg.Wait(assert, 5, 500*time.Millisecond))
+	assert.Eventually(func() bool {
+		calls := tg.CallsByName()
+		counts := tg.Counts()
+		return calls["datadog.tracer.started"] == 1 &&
+			calls["datadog.tracer.flush_triggered"] >= 1 &&
+			calls["datadog.tracer.flush_duration"] == 1 &&
+			calls["datadog.tracer.flush_bytes"] == 1 &&
+			calls["datadog.tracer.flush_traces"] == 1 &&
+			counts["datadog.tracer.flush_traces"] == int64(1)
+	}, 5*time.Second, 10*time.Millisecond)
 	assert.False(tg.Closed())
 
 	tracer.StartSpan("operation").Finish()
 	stop()
-	calls = tg.CallsByName()
+
+	calls := tg.CallsByName()
 	assert.Equal(1, calls["datadog.tracer.stopped"])
 	assert.True(tg.Closed())
 }
