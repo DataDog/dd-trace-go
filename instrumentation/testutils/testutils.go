@@ -6,7 +6,6 @@
 package testutils
 
 import (
-	"runtime"
 	"sync"
 	"testing"
 	"unsafe"
@@ -18,6 +17,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/stretchr/testify/require"
 )
 
 func SetGlobalServiceName(t *testing.T, val string) {
@@ -70,17 +71,13 @@ func SetGlobalHeaderTags(t *testing.T, headers ...string) {
 }
 
 func StartAppSec(t *testing.T, opts ...config.StartOption) {
-	appsec.Start(opts...)
-
-	if !appsec.Enabled() {
-		if runtime.GOOS != "windows" {
-			t.Log("Skipping AppSec test on unsupported platform")
-			t.SkipNow()
-		}
-		t.Fatal("Failed to start AppSec while platform should be supported")
-		t.FailNow()
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("AppSec is not supported on this platform: %v", err)
+		return
 	}
 
+	appsec.Start(opts...)
+	require.True(t, appsec.Enabled(), "AppSec failed to start as expected")
 	t.Cleanup(appsec.Stop)
 }
 
