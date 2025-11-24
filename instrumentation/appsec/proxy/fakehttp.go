@@ -49,6 +49,10 @@ func (pr PseudoRequest) toNetHTTP(ctx context.Context) (*http.Request, error) {
 }
 
 func urlParse(scheme, authority, rest string) (*url.URL, error) {
+	if scheme == "" {
+		scheme = "http"
+	}
+
 	var escapeErr url.EscapeError
 
 	// Parse the URL from the scheme, authority and path

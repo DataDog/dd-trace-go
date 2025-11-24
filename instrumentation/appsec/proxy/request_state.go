@@ -15,6 +15,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
@@ -98,8 +100,33 @@ func (rs *RequestState) BlockAction() BlockActionOptions {
 	}
 }
 
+func (rs *RequestState) CloseBeforeResponse() {
+	// Allows us to be called multiple times without deadlocking
+	if rs.Mu.TryLock() {
+		defer rs.Mu.Unlock()
+	}
+
+	// We are closing the request context without having seen the response yet, make sure to finalize the span in a way that don't create the response span tags
+	// but that still add appsec data if any
+	op, ok := dyngo.FindOperation[httpsec.HandlerOperation](rs.Context)
+	if ok {
+		op.Finish(httpsec.HandlerOperationRes{})
+	}
+
+	// We have to manually finish the span to workaround the default behaviour of gather data from the http.ResponseWriter which would make span inaccurate in this case
+	span, ok := rs.Span()
+	if ok {
+		span.Finish()
+	}
+
+	if rs.State.Ongoing() {
+		rs.State = MessageTypeFinished
+	}
+}
+
 // Close finalizes the request processing.
 func (rs *RequestState) Close() error {
+	// Allows us to be called multiple times without deadlocking
 	if rs.Mu.TryLock() {
 		defer rs.Mu.Unlock()
 	}
@@ -109,6 +136,7 @@ func (rs *RequestState) Close() error {
 	if rs.State.Ongoing() {
 		rs.State = MessageTypeFinished
 	}
+
 	return nil
 }
 

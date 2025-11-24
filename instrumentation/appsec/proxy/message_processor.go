@@ -91,7 +91,7 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 
 	defer func() {
 		if err != nil {
-			reqState.Close()
+			reqState.CloseBeforeResponse()
 		}
 	}()
 
