@@ -38,12 +38,12 @@ const (
 // from DD environment variables, falling back to OTel environment variables when available.
 //
 // Priority order for each attribute:
-// - service.name: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
-// - deployment.environment: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
-// - service.version: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
-// - host.name: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest priority, always used if present)
-//              → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
-//              → Otherwise: hostname is NOT added to resource
+//   - service.name: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
+//   - deployment.environment: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
+//   - service.version: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
+//   - host.name: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest priority, always used if present)
+//     → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
+//     → Otherwise: hostname is NOT added to resource
 func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{}
 
@@ -86,14 +86,18 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	}
 
 	// 5. Add all other DD_TAGS as attributes (excluding service, env, version which were handled above)
+	// Track which custom keys are set by DD_TAGS to prevent OTEL from overriding them
+	ddCustomKeys := make(map[string]bool)
 	for key, val := range ddTags {
 		if key == "service" || key == "env" || key == "version" {
 			continue // Already handled above
 		}
 		attrs = append(attrs, attribute.String(key, val))
+		ddCustomKeys[key] = true // Track that this key is set by DD_TAGS
 	}
 
-	// 6. Add all OTEL_RESOURCE_ATTRIBUTES (excluding ones we've already set)
+	// 6. Add OTEL_RESOURCE_ATTRIBUTES (excluding reserved keys AND keys already set by DD_TAGS)
+	// DD_TAGS has higher priority than OTEL_RESOURCE_ATTRIBUTES for custom tags
 	excludeKeys := map[string]bool{
 		"service.name":           true,
 		"deployment.environment": true,
@@ -102,7 +106,10 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	}
 	for key, val := range otelAttrs {
 		if excludeKeys[key] {
-			continue
+			continue // Reserved keys already handled
+		}
+		if ddCustomKeys[key] {
+			continue // DD_TAGS takes priority over OTEL for custom keys
 		}
 		attrs = append(attrs, attribute.String(key, val))
 	}
