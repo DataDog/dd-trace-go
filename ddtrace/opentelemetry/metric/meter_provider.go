@@ -7,7 +7,10 @@ package metric
 
 import (
 	"context"
+	"strings"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
@@ -16,9 +19,16 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
+const (
+	// Environment variables for controlling metrics behavior
+	envDDMetricsOtelEnabled = "DD_METRICS_OTEL_ENABLED"
+	envOtelMetricsExporter  = "OTEL_METRICS_EXPORTER"
+)
+
 // MeterProvider is a wrapper around the OpenTelemetry MeterProvider configured with Datadog defaults.
 type MeterProvider struct {
 	*metric.MeterProvider
+	isNoop bool
 }
 
 // NewMeterProvider creates a new MeterProvider configured with Datadog-specific settings:
@@ -27,6 +37,12 @@ type MeterProvider struct {
 // - Delta temporality for all metrics (default)
 // - 60-second export interval
 //
+// Metrics can be disabled via environment variables:
+// - DD_METRICS_OTEL_ENABLED=false (default: false/disabled)
+// - OTEL_METRICS_EXPORTER=none
+//
+// When disabled, returns a no-op MeterProvider that doesn't export metrics.
+//
 // Users can override these defaults by passing additional options.
 func NewMeterProvider(opts ...Option) (*MeterProvider, error) {
 	return NewMeterProviderWithContext(context.Background(), opts...)
@@ -34,6 +50,17 @@ func NewMeterProvider(opts ...Option) (*MeterProvider, error) {
 
 // NewMeterProviderWithContext creates a new MeterProvider with a custom context.
 func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (*MeterProvider, error) {
+	// Check if metrics are enabled via environment variables
+	if !isMetricsEnabled() {
+		// Return a no-op MeterProvider that doesn't export metrics
+		return &MeterProvider{
+			MeterProvider: metric.NewMeterProvider(
+				metric.WithReader(metric.NewManualReader()),
+			),
+			isNoop: true,
+		}, nil
+	}
+
 	// Apply configuration options
 	cfg := newConfig()
 	for _, opt := range opts {
@@ -82,23 +109,67 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (*MeterPro
 
 	return &MeterProvider{
 		MeterProvider: meterProvider,
+		isNoop:        false,
 	}, nil
 }
 
+// isMetricsEnabled checks environment variables to determine if metrics should be enabled.
+// Metrics are disabled by default and can be enabled by:
+// - Setting DD_METRICS_OTEL_ENABLED=true
+//
+// Returns false (disabled) if:
+// - DD_METRICS_OTEL_ENABLED is "false" or unset (default)
+// - OTEL_METRICS_EXPORTER is set to "none"
+func isMetricsEnabled() bool {
+	// Check OTEL_METRICS_EXPORTER first - if set to "none", always disable
+	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {
+		exporter = strings.ToLower(strings.TrimSpace(exporter))
+		if exporter == "none" {
+			return false
+		}
+	}
+
+	// Check DD_METRICS_OTEL_ENABLED (default: false/disabled)
+	metricsEnabled := env.Get(envDDMetricsOtelEnabled)
+	if metricsEnabled == "" {
+		// If not set, default to disabled
+		return false
+	}
+
+	// If explicitly set, respect the value
+	metricsEnabled = strings.ToLower(strings.TrimSpace(metricsEnabled))
+	if metricsEnabled == "false" || metricsEnabled == "0" {
+		return false
+	}
+	if metricsEnabled == "true" || metricsEnabled == "1" {
+		return true
+	}
+
+	// Invalid value, default to disabled
+	return false
+}
+
 // Shutdown gracefully shuts down the MeterProvider, flushing any pending metrics.
+// For no-op providers, this is a no-op operation.
 func (mp *MeterProvider) Shutdown(ctx context.Context) error {
-	if mp.MeterProvider == nil {
+	if mp.MeterProvider == nil || mp.isNoop {
 		return nil
 	}
 	return mp.MeterProvider.Shutdown(ctx)
 }
 
 // ForceFlush flushes any pending metrics.
+// For no-op providers, this is a no-op operation.
 func (mp *MeterProvider) ForceFlush(ctx context.Context) error {
-	if mp.MeterProvider == nil {
+	if mp.MeterProvider == nil || mp.isNoop {
 		return nil
 	}
 	return mp.MeterProvider.ForceFlush(ctx)
+}
+
+// IsNoop returns true if this is a no-op MeterProvider that doesn't export metrics.
+func (mp *MeterProvider) IsNoop() bool {
+	return mp.isNoop
 }
 
 // deltaTemporalitySelector returns a temporality selector configured with Datadog defaults.
