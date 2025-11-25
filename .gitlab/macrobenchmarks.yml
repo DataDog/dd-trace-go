@@ -223,7 +223,7 @@ check-slo-breaches:
     "go-stable-trace-asm",
     "go-stable-profile-trace-asm",
   ]
-  when: on_success
+  when: always
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
     ARTIFACTS_DIR: "platform/artifacts"
@@ -245,7 +245,7 @@ notify-slo-breaches:
   extends: .notify-slo-breaches
   stage: gates
   needs: ["check-slo-breaches"]
-  when: on_failure
+  when: always
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
 
