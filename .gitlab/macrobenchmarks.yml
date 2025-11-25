@@ -236,7 +236,7 @@ check-slo-breaches:
     "go-stable-trace-asm",
     "go-stable-profile-trace-asm",
   ]
-  when: always
+  when: on_success
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
     ARTIFACTS_DIR: "platform/artifacts"
