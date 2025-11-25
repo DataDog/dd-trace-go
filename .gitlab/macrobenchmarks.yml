@@ -51,7 +51,7 @@ variables:
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
-  allow_failure: true
+  allow_failure: false
 
   retry:
     max: 2
@@ -212,12 +212,30 @@ go-stable-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+    SHOULD_FAIL: "true"
+
 # This repository is using PR-level performance quality gates.
 # Verify that the check-slo-breaches CI job has passed. If any regression happened, merging this PR will be blocked.
 # If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
 check-slo-breaches:
   extends: .check-slo-breaches
   stage: gates
+  needs: [
+    # "go-oldstable-baseline",
+    # "go-oldstable-only-trace",
+    # "go-oldstable-only-trace-with-runtime-metrics",
+    # "go-oldstable-only-profile",
+    # "go-oldstable-profile-trace",
+    # "go-oldstable-trace-asm",
+    # "go-oldstable-profile-trace-asm",
+    # "go-stable-baseline",
+    # "go-stable-only-trace",
+    # "go-stable-only-trace-with-runtime-metrics",
+    # "go-stable-only-profile",
+    # "go-stable-profile-trace",
+    # "go-stable-trace-asm",
+    "go-stable-profile-trace-asm",
+  ]
   when: always
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
