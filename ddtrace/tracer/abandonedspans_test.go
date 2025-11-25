@@ -163,7 +163,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		expectedSpan := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
 		assert.Eventually(func() bool {
 			logs := tp.Logs()
-			return assert.Contains(logs, expectedCount) && assert.Contains(logs, expectedSpan)
+			return slices.Contains(logs, expectedCount) && slices.Contains(logs, expectedSpan)
 		}, 2*time.Second, tickerInterval/10)
 	})
 
@@ -183,9 +183,9 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assertProcessedSpans(assert, tracer, 2, 1, tickerInterval/10)
 		assert.Eventually(func() bool {
 			logs := tp.Logs()
-			return assert.Contains(logs, expectedCount) &&
+			return slices.Contains(logs, expectedCount) &&
 				!slices.Contains(logs, notExpected) &&
-				assert.Contains(logs, expected)
+				slices.Contains(logs, expected)
 		}, 2*time.Second, tickerInterval/10)
 		s.Finish()
 	})
@@ -206,9 +206,9 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assertProcessedSpans(assert, tracer, 2, 0, tickerInterval/10)
 		assert.Eventually(func() bool {
 			logs := tp.Logs()
-			return assert.Contains(logs, expectedCount) &&
+			return slices.Contains(logs, expectedCount) &&
 				!slices.Contains(logs, notExpected) &&
-				assert.Contains(logs, expected)
+				slices.Contains(logs, expected)
 		}, 2*time.Second, tickerInterval/10)
 	})
 
@@ -251,7 +251,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assertProcessedSpans(assert, tracer, 10, 5, tickerInterval/10)
 		expected := sb.String()
 		assert.Eventually(func() bool {
-			return assert.Contains(tp.Logs(), expected)
+			return slices.Contains(tp.Logs(), expected)
 		}, 2*time.Second, tickerInterval/10)
 	})
 
@@ -279,7 +279,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		time.Sleep(tickerInterval + 10*time.Millisecond)
 		assert.Eventually(func() bool {
 			logs := tp.Logs()
-			return assert.Contains(logs, fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 5)) && assert.Contains(logs, sb.String())
+			return slices.Contains(logs, fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 5)) && assert.Contains(logs, sb.String())
 		}, 2*time.Second, tickerInterval/10)
 	})
 
@@ -316,7 +316,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assert.NotContains(tp.Logs(), expected)
 		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 		assert.Eventually(func() bool {
-			return assert.Contains(tp.Logs(), expected)
+			return slices.Contains(tp.Logs(), expected)
 		}, 2*time.Second, tickerInterval/10)
 		s.Finish()
 	})
