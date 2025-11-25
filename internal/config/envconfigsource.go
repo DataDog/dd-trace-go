@@ -12,10 +12,10 @@ import (
 
 type envConfigSource struct{}
 
-func (e *envConfigSource) Get(key string) string {
+func (e *envConfigSource) get(key string) string {
 	return env.Get(normalizeKey(key))
 }
 
-func (e *envConfigSource) Origin() telemetry.Origin {
+func (e *envConfigSource) origin() telemetry.Origin {
 	return telemetry.OriginEnvVar
 }

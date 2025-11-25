@@ -12,20 +12,20 @@ import (
 )
 
 var (
-	config     *Config
+	config     *configuration
 	configOnce sync.Once
 )
 
 // TODO(mtoffl01): Add fieldalignment linter to CI pipeline to enforce optimal struct packing.
 // See: https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment
 
-// Config represents global configuration properties.
+// configuration represents global configuration properties.
 //
 // IMPORTANT: Fields are ordered to minimize memory padding and optimize cache performance
 // for 64-bit systems (a common deployment target). When adding or reordering fields, add
 // them to the correct group manually or run an alignment tool (e.g., `fieldalignment -fix
 // ./internal/config`) to verify optimal packing.
-type Config struct {
+type configuration struct {
 	agentURL                      *url.URL
 	serviceMappings               map[string]string
 	peerServiceMappings           map[string]string
@@ -55,10 +55,10 @@ type Config struct {
 	ciVisibilityAgentless         bool
 }
 
-// loadConfig initializes and returns a new Config by reading from all configured sources.
-// This function is NOT thread-safe and should only be called once through GetConfig's sync.Once.
-func loadConfig() *Config {
-	cfg := new(Config)
+// loadConfig initializes and returns a new configuration by reading from all configured sources.
+// This function is NOT thread-safe and should only be called once through Get's sync.Once.
+func loadConfig() *configuration {
+	cfg := new(configuration)
 
 	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
@@ -96,13 +96,13 @@ func loadConfig() *Config {
 // This function is thread-safe and can be called from multiple goroutines concurrently.
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
-func Get() *Config {
+func Get() *configuration {
 	configOnce.Do(func() {
 		config = loadConfig()
 	})
 	return config
 }
 
-func (c *Config) Debug() bool {
+func (c *configuration) Debug() bool {
 	return c.debug
 }

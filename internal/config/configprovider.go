@@ -14,25 +14,25 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-var provider = DefaultConfigProvider()
+var provider = defaultconfigProvider()
 
-type ConfigProvider struct {
-	sources []ConfigSource // In order of priority
+type configProvider struct {
+	sources []configSource // In order of priority
 }
 
-type ConfigSource interface {
-	Get(key string) string
-	Origin() telemetry.Origin
+type configSource interface {
+	get(key string) string
+	origin() telemetry.Origin
 }
 
-type IDAwareConfigSource interface {
-	ConfigSource
-	GetID() string
+type idAwareConfigSource interface {
+	configSource
+	getID() string
 }
 
-func DefaultConfigProvider() *ConfigProvider {
-	return &ConfigProvider{
-		sources: []ConfigSource{
+func defaultconfigProvider() *configProvider {
+	return &configProvider{
+		sources: []configSource{
 			newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig),
 			new(envConfigSource),
 			new(otelEnvConfigSource),
@@ -41,15 +41,15 @@ func DefaultConfigProvider() *ConfigProvider {
 	}
 }
 
-func (p *ConfigProvider) getString(key string, def string) string {
+func (p *configProvider) getString(key string, def string) string {
 	// TODO: Eventually, iterate over all sources and report telemetry
 	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
+		if v := source.get(key); v != "" {
 			var id string
-			if s, ok := source.(IDAwareConfigSource); ok {
-				id = s.GetID()
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
 			}
-			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 			return v
 		}
 	}
@@ -57,18 +57,18 @@ func (p *ConfigProvider) getString(key string, def string) string {
 	return def
 }
 
-func (p *ConfigProvider) getBool(key string, def bool) bool {
+func (p *configProvider) getBool(key string, def bool) bool {
 	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
+		if v := source.get(key); v != "" {
 			var id string
-			if s, ok := source.(IDAwareConfigSource); ok {
-				id = s.GetID()
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
 			}
 			if v == "true" {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 				return true
 			} else if v == "false" {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 				return false
 			}
 		}
@@ -77,16 +77,16 @@ func (p *ConfigProvider) getBool(key string, def bool) bool {
 	return def
 }
 
-func (p *ConfigProvider) getInt(key string, def int) int {
+func (p *configProvider) getInt(key string, def int) int {
 	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
+		if v := source.get(key); v != "" {
 			var id string
-			if s, ok := source.(IDAwareConfigSource); ok {
-				id = s.GetID()
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
 			}
 			intVal, err := strconv.Atoi(v)
 			if err == nil {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 				return intVal
 			}
 		}
@@ -95,16 +95,16 @@ func (p *ConfigProvider) getInt(key string, def int) int {
 	return def
 }
 
-func (p *ConfigProvider) getMap(key string, def map[string]string) map[string]string {
+func (p *configProvider) getMap(key string, def map[string]string) map[string]string {
 	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
+		if v := source.get(key); v != "" {
 			var id string
-			if s, ok := source.(IDAwareConfigSource); ok {
-				id = s.GetID()
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
 			}
 			m := parseMapString(v)
 			if len(m) > 0 {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 				return m
 			}
 		}
@@ -113,17 +113,16 @@ func (p *ConfigProvider) getMap(key string, def map[string]string) map[string]st
 	return def
 }
 
-func (p *ConfigProvider) getDuration(key string, def time.Duration) time.Duration {
+func (p *configProvider) getDuration(key string, def time.Duration) time.Duration {
 	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
+		if v := source.get(key); v != "" {
 			var id string
-			// If source is a declarativeConfigSource, capture the config ID
-			if s, ok := source.(*declarativeConfigSource); ok {
-				id = s.GetID()
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
 			}
 			d, err := time.ParseDuration(v)
 			if err == nil {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 				return d
 			}
 		}
@@ -132,16 +131,16 @@ func (p *ConfigProvider) getDuration(key string, def time.Duration) time.Duratio
 	return def
 }
 
-func (p *ConfigProvider) getFloat(key string, def float64) float64 {
+func (p *configProvider) getFloat(key string, def float64) float64 {
 	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
+		if v := source.get(key); v != "" {
 			var id string
-			if s, ok := source.(IDAwareConfigSource); ok {
-				id = s.GetID()
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
 			}
 			floatVal, err := strconv.ParseFloat(v, 64)
 			if err == nil {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 				return floatVal
 			}
 		}
@@ -150,16 +149,16 @@ func (p *ConfigProvider) getFloat(key string, def float64) float64 {
 	return def
 }
 
-func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
+func (p *configProvider) getURL(key string, def *url.URL) *url.URL {
 	for _, source := range p.sources {
-		if v := source.Get(key); v != "" {
+		if v := source.get(key); v != "" {
 			var id string
-			if s, ok := source.(IDAwareConfigSource); ok {
-				id = s.GetID()
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
 			}
 			u, err := url.Parse(v)
 			if err == nil {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.Origin(), ID: id})
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
 				return u
 			}
 		}
@@ -168,7 +167,7 @@ func (p *ConfigProvider) getURL(key string, def *url.URL) *url.URL {
 	return def
 }
 
-// normalizeKey is a helper function for ConfigSource implementations to normalize the key to a valid environment variable name.
+// normalizeKey is a helper function for configSource implementations to normalize the key to a valid environment variable name.
 func normalizeKey(key string) string {
 	if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") {
 		return key

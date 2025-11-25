@@ -25,29 +25,29 @@ const (
 
 // declarativeConfigSource represents a source of declarative configuration loaded from a file.
 type declarativeConfigSource struct {
-	config   *declarativeConfig
-	filePath string
-	origin   telemetry.Origin
+	config      *declarativeConfig
+	filePath    string
+	originValue telemetry.Origin
 }
 
-func (d *declarativeConfigSource) Get(key string) string {
+func (d *declarativeConfigSource) get(key string) string {
 	return d.config.get(normalizeKey(key))
 }
 
-func (d *declarativeConfigSource) GetID() string {
+func (d *declarativeConfigSource) getID() string {
 	return d.config.getID()
 }
 
-func (d *declarativeConfigSource) Origin() telemetry.Origin {
-	return d.origin
+func (d *declarativeConfigSource) origin() telemetry.Origin {
+	return d.originValue
 }
 
 // newDeclarativeConfigSource initializes a new declarativeConfigSource from the given file.
 func newDeclarativeConfigSource(filePath string, origin telemetry.Origin) *declarativeConfigSource {
 	return &declarativeConfigSource{
-		filePath: filePath,
-		origin:   origin,
-		config:   parseFile(filePath),
+		filePath:    filePath,
+		originValue: origin,
+		config:      parseFile(filePath),
 	}
 }
 

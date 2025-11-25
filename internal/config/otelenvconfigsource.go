@@ -22,7 +22,7 @@ const (
 
 type otelEnvConfigSource struct{}
 
-func (o *otelEnvConfigSource) Get(key string) string {
+func (o *otelEnvConfigSource) get(key string) string {
 	ddKey := normalizeKey(key)
 	entry := otelConfigs[ddKey]
 	if entry == nil {
@@ -47,7 +47,7 @@ func (o *otelEnvConfigSource) Get(key string) string {
 	return val
 }
 
-func (o *otelEnvConfigSource) Origin() telemetry.Origin {
+func (o *otelEnvConfigSource) origin() telemetry.Origin {
 	return telemetry.OriginEnvVar
 }
 

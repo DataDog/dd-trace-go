@@ -334,8 +334,8 @@ func TestDeclarativeConfigSource(t *testing.T) {
 		defer os.Remove("test_source.yml")
 
 		source := newDeclarativeConfigSource("test_source.yml", telemetry.OriginLocalStableConfig)
-		assert.Equal(t, "value_1", source.Get("DD_KEY_1"))
-		assert.Equal(t, "value_2", source.Get("DD_KEY_2"))
+		assert.Equal(t, "value_1", source.get("DD_KEY_1"))
+		assert.Equal(t, "value_2", source.get("DD_KEY_2"))
 	})
 
 	t.Run("Get normalizes key", func(t *testing.T) {
@@ -345,7 +345,7 @@ func TestDeclarativeConfigSource(t *testing.T) {
 
 		source := newDeclarativeConfigSource("test_source_normalize.yml", telemetry.OriginLocalStableConfig)
 		// Should normalize "key_1" to "DD_KEY_1"
-		assert.Equal(t, "value_1", source.Get("key_1"))
+		assert.Equal(t, "value_1", source.get("key_1"))
 	})
 
 	t.Run("Get returns empty for missing key", func(t *testing.T) {
@@ -354,7 +354,7 @@ func TestDeclarativeConfigSource(t *testing.T) {
 		defer os.Remove("test_source_missing.yml")
 
 		source := newDeclarativeConfigSource("test_source_missing.yml", telemetry.OriginLocalStableConfig)
-		assert.Equal(t, "", source.Get("DD_NONEXISTENT_KEY"))
+		assert.Equal(t, "", source.get("DD_NONEXISTENT_KEY"))
 	})
 
 	t.Run("GetID returns config ID", func(t *testing.T) {
@@ -363,7 +363,7 @@ func TestDeclarativeConfigSource(t *testing.T) {
 		defer os.Remove("test_source_id.yml")
 
 		source := newDeclarativeConfigSource("test_source_id.yml", telemetry.OriginLocalStableConfig)
-		assert.Equal(t, "67890", source.GetID())
+		assert.Equal(t, "67890", source.getID())
 	})
 
 	t.Run("GetID returns empty for missing ID", func(t *testing.T) {
@@ -376,7 +376,7 @@ apm_configuration_default:
 		defer os.Remove("test_source_noid.yml")
 
 		source := newDeclarativeConfigSource("test_source_noid.yml", telemetry.OriginLocalStableConfig)
-		assert.Equal(t, "", source.GetID())
+		assert.Equal(t, "", source.getID())
 	})
 
 	t.Run("Origin returns correct origin", func(t *testing.T) {
@@ -385,17 +385,17 @@ apm_configuration_default:
 		defer os.Remove("test_source_origin.yml")
 
 		localSource := newDeclarativeConfigSource("test_source_origin.yml", telemetry.OriginLocalStableConfig)
-		assert.Equal(t, telemetry.OriginLocalStableConfig, localSource.Origin())
+		assert.Equal(t, telemetry.OriginLocalStableConfig, localSource.origin())
 
 		managedSource := newDeclarativeConfigSource("test_source_origin.yml", telemetry.OriginManagedStableConfig)
-		assert.Equal(t, telemetry.OriginManagedStableConfig, managedSource.Origin())
+		assert.Equal(t, telemetry.OriginManagedStableConfig, managedSource.origin())
 	})
 
 	t.Run("non-existent file creates empty config", func(t *testing.T) {
 		source := newDeclarativeConfigSource("nonexistent_config.yml", telemetry.OriginLocalStableConfig)
-		assert.Equal(t, "", source.Get("DD_ANY_KEY"))
-		assert.Equal(t, telemetry.EmptyID, source.GetID())
-		assert.Equal(t, telemetry.OriginLocalStableConfig, source.Origin())
+		assert.Equal(t, "", source.get("DD_ANY_KEY"))
+		assert.Equal(t, telemetry.EmptyID, source.getID())
+		assert.Equal(t, telemetry.OriginLocalStableConfig, source.origin())
 	})
 }
 

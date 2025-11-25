@@ -16,12 +16,12 @@ import (
 func TestEnvConfigSource(t *testing.T) {
 	envConfigSource := &envConfigSource{}
 	t.Setenv("DD_SERVICE", "value")
-	assert.Equal(t, "value", envConfigSource.Get("DD_SERVICE"))
-	assert.Equal(t, telemetry.OriginEnvVar, envConfigSource.Origin())
+	assert.Equal(t, "value", envConfigSource.get("DD_SERVICE"))
+	assert.Equal(t, telemetry.OriginEnvVar, envConfigSource.origin())
 }
 
 func TestNormalizedEnvConfigSource(t *testing.T) {
 	envConfigSource := &envConfigSource{}
 	t.Setenv("DD_SERVICE", "value")
-	assert.Equal(t, "value", envConfigSource.Get("service"))
+	assert.Equal(t, "value", envConfigSource.get("service"))
 }

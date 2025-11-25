@@ -18,15 +18,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestConfigProvider(sources ...ConfigSource) *ConfigProvider {
-	return &ConfigProvider{
+func newTestconfigProvider(sources ...configSource) *configProvider {
+	return &configProvider{
 		sources: sources,
 	}
 }
 
 type testConfigSource struct {
-	entries map[string]string
-	origin  telemetry.Origin
+	entries     map[string]string
+	originValue telemetry.Origin
 }
 
 func newTestConfigSource(entries map[string]string, origin telemetry.Origin) *testConfigSource {
@@ -34,23 +34,23 @@ func newTestConfigSource(entries map[string]string, origin telemetry.Origin) *te
 		entries = make(map[string]string)
 	}
 	return &testConfigSource{
-		entries: entries,
-		origin:  origin,
+		entries:     entries,
+		originValue: origin,
 	}
 }
 
-func (s *testConfigSource) Get(key string) string {
+func (s *testConfigSource) get(key string) string {
 	return s.entries[key]
 }
 
-func (s *testConfigSource) Origin() telemetry.Origin {
-	return s.origin
+func (s *testConfigSource) origin() telemetry.Origin {
+	return s.originValue
 }
 
 func TestGetMethods(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		// Test that defaults are used when the queried key does not exist
-		provider := newTestConfigProvider(newTestConfigSource(nil, telemetry.OriginEnvVar))
+		provider := newTestconfigProvider(newTestConfigSource(nil, telemetry.OriginEnvVar))
 		assert.Equal(t, "value", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", true))
 		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1))
@@ -66,7 +66,7 @@ func TestGetMethods(t *testing.T) {
 			"DD_TRACE_SAMPLE_RATE":             "1.0",
 			"DD_TRACE_AGENT_URL":               "https://localhost:8126",
 		}
-		provider := newTestConfigProvider(newTestConfigSource(entries, telemetry.OriginEnvVar))
+		provider := newTestconfigProvider(newTestConfigSource(entries, telemetry.OriginEnvVar))
 		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
 		assert.Equal(t, 1, provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0))
@@ -75,7 +75,7 @@ func TestGetMethods(t *testing.T) {
 	})
 }
 
-func TestDefaultConfigProvider(t *testing.T) {
+func TestDefaultconfigProvider(t *testing.T) {
 	t.Run("Settings only exist in EnvConfigSource", func(t *testing.T) {
 		// Setup: environment variables of each type
 		t.Setenv("DD_SERVICE", "string")
@@ -85,7 +85,7 @@ func TestDefaultConfigProvider(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_URL", "https://localhost:8126")
 		// TODO: Add more types as we go along
 
-		provider := DefaultConfigProvider()
+		provider := defaultconfigProvider()
 
 		// Configured values are returned correctly
 		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
@@ -106,7 +106,7 @@ func TestDefaultConfigProvider(t *testing.T) {
 		t.Setenv("OTEL_PROPAGATORS", "https://localhost:8126")
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "key1=value1,key2=value2")
 
-		provider := DefaultConfigProvider()
+		provider := defaultconfigProvider()
 
 		assert.Equal(t, "string", provider.getString("DD_SERVICE", "value"))
 		assert.Equal(t, true, provider.getBool("DD_TRACE_DEBUG", false))
@@ -131,7 +131,7 @@ apm_configuration_default:
 		defer os.Remove(tempLocalPath)
 
 		tempLocalSource := newDeclarativeConfigSource(tempLocalPath, telemetry.OriginLocalStableConfig)
-		provider := newTestConfigProvider(
+		provider := newTestconfigProvider(
 			newDeclarativeConfigSource(managedFilePath, telemetry.OriginManagedStableConfig),
 			new(envConfigSource),
 			new(otelEnvConfigSource),
@@ -163,7 +163,7 @@ apm_configuration_default:
 		defer os.Remove(tempManagedPath)
 
 		tempManagedSource := newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
-		provider := newTestConfigProvider(
+		provider := newTestconfigProvider(
 			tempManagedSource,
 			new(envConfigSource),
 			new(otelEnvConfigSource),
@@ -236,7 +236,7 @@ apm_configuration_default:
 
 		tempManagedSource := newDeclarativeConfigSource(tempManagedPath, telemetry.OriginManagedStableConfig)
 
-		provider := newTestConfigProvider(
+		provider := newTestconfigProvider(
 			tempManagedSource,
 			new(envConfigSource),
 			new(otelEnvConfigSource),
@@ -301,7 +301,7 @@ func TestConfigProviderTelemetryRegistration(t *testing.T) {
 			"DD_SERVICE_MAPPING":               "old:new",
 			"DD_TRACE_ABANDONED_SPAN_TIMEOUT":  "10s",
 		}, telemetry.OriginEnvVar)
-		provider := newTestConfigProvider(source)
+		provider := newTestconfigProvider(source)
 
 		_ = provider.getString("DD_SERVICE", "default")
 		_ = provider.getBool("DD_TRACE_DEBUG", false)
@@ -347,7 +347,7 @@ apm_configuration_default:
 		defer telemetry.MockClient(telemetryClient)()
 
 		decl := newDeclarativeConfigSource(temp, telemetry.OriginLocalStableConfig)
-		provider := newTestConfigProvider(decl)
+		provider := newTestconfigProvider(decl)
 
 		_ = provider.getString("DD_SERVICE", "default")
 		_ = provider.getBool("DD_TRACE_DEBUG", false)
@@ -391,7 +391,7 @@ apm_configuration_default:
 		tempLocalSource := newDeclarativeConfigSource(tempLocal, telemetry.OriginLocalStableConfig)
 
 		// Managed has higher priority than Local
-		provider := newTestConfigProvider(tempManagedSource, tempLocalSource)
+		provider := newTestconfigProvider(tempManagedSource, tempLocalSource)
 
 		// For DD_SERVICE: managed wins, so telemetry gets ID "managed-123"
 		result := provider.getString("DD_SERVICE", "default")
@@ -423,7 +423,7 @@ apm_configuration_default:
 		defer telemetry.MockClient(telemetryClient)()
 
 		// Use an empty test source to force defaults
-		provider := newTestConfigProvider(newTestConfigSource(map[string]string{}, telemetry.OriginEnvVar))
+		provider := newTestconfigProvider(newTestConfigSource(map[string]string{}, telemetry.OriginEnvVar))
 
 		// Defaults should be used and reported
 		assert.Equal(t, strDef, provider.getString(strKey, strDef))
