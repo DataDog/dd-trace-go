@@ -20,6 +20,11 @@
 /contrib/haproxy                @DataDog/asm-go
 /contrib/k8s.io/gateway-api     @DataDog/asm-go
 
+# Internal shared packages
+/internal/log                   @DataDog/dd-trace-go-guild
+/internal/stacktrace            @DataDog/dd-trace-go-guild
+/internal/synctest              @DataDog/dd-trace-go-guild
+
 # capabilities - config, dynamic config, remote config
 /internal/env                        @DataDog/apm-sdk-capabilities-go
 /internal/stableconfig               @DataDog/apm-sdk-capabilities-go
