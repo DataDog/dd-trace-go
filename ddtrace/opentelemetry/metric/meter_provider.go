@@ -178,8 +178,21 @@ func (mp *MeterProvider) IsNoop() bool {
 // - Non-monotonic counters (UpDownCounter, ObservableUpDownCounter) → Cumulative (absolute values)
 // - Gauges (ObservableGauge) → Cumulative (point-in-time values)
 // - Histograms → Delta (distribution of measurements)
+// It respects OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE if set.
 func deltaTemporalitySelector() metric.TemporalitySelector {
+	// Check if user has explicitly set temporality preference
+	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")))
+
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
+		// If user explicitly set temporality preference, honor it for all instruments
+		switch temporalityPref {
+		case "CUMULATIVE":
+			return metricdata.CumulativeTemporality
+		case "DELTA":
+			return metricdata.DeltaTemporality
+		}
+
+		// Otherwise, use Datadog defaults per OTel spec
 		switch kind {
 		case metric.InstrumentKindCounter,
 			metric.InstrumentKindHistogram,

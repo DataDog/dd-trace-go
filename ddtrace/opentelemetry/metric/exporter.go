@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -27,10 +28,11 @@ const (
 	defaultOTLPPort     = "4318"
 
 	// OTLP environment variables
-	envOTLPEndpoint        = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	envOTLPMetricsEndpoint = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
-	envOTLPProtocol        = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	envOTLPMetricsProtocol = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
+	envOTLPEndpoint           = "OTEL_EXPORTER_OTLP_ENDPOINT"
+	envOTLPMetricsEndpoint    = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
+	envOTLPProtocol           = "OTEL_EXPORTER_OTLP_PROTOCOL"
+	envOTLPMetricsProtocol    = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
+	envOTLPMetricsTemporality = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"
 
 	// DD environment variables for agent configuration
 	envDDTraceAgentURL  = "DD_TRACE_AGENT_URL"
@@ -161,13 +163,25 @@ func datadogRetryConfig() otlpmetrichttp.RetryConfig {
 }
 
 // datadogTemporalitySelector returns a temporality selector configured with Datadog defaults.
-// Default temporality is Delta, but non-monotonic instruments use Cumulative per OTel spec:
+// It respects OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE if set, otherwise:
 // - Monotonic counters (Counter, ObservableCounter) → Delta (differences between measurements)
 // - Non-monotonic counters (UpDownCounter, ObservableUpDownCounter) → Cumulative (absolute values)
 // - Gauges (ObservableGauge) → Cumulative (point-in-time values)
 // - Histograms → Delta (distribution of measurements)
 func datadogTemporalitySelector() metric.TemporalitySelector {
+	// Check if user has explicitly set temporality preference
+	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get(envOTLPMetricsTemporality)))
+
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
+		// If user explicitly set temporality preference, honor it for all instruments
+		switch temporalityPref {
+		case "CUMULATIVE":
+			return metricdata.CumulativeTemporality
+		case "DELTA":
+			return metricdata.DeltaTemporality
+		}
+
+		// Otherwise, use Datadog defaults per OTel spec
 		switch kind {
 		case metric.InstrumentKindCounter,
 			metric.InstrumentKindHistogram,
