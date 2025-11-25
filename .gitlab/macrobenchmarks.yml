@@ -4,7 +4,8 @@ variables:
 .benchmarks-default:
   stage: macrobenchmarks
   needs: []
-  tags: ["runner:apm-k8s-same-cpu"]
+  # tags: ["runner:apm-k8s-same-cpu"]
+  tags: ["arch:amd64"]
   timeout: 1h
   rules:
     - when: always
@@ -234,7 +235,7 @@ check-slo-breaches:
     "go-stable-trace-asm",
     "go-stable-profile-trace-asm",
   ]
-  when: always
+  when: on_success
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
     ARTIFACTS_DIR: "platform/artifacts"
