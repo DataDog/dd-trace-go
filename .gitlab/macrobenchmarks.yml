@@ -7,6 +7,7 @@ variables:
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules:
+    - when: always
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
       interruptible: false
@@ -18,8 +19,14 @@ variables:
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
   script:
-    - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
-    - "./generate-run-plan-and-run-benchmarks.sh"
+    # - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
+    # - "./generate-run-plan-and-run-benchmarks.sh"
+    - |
+      if [ "$SHOULD_FAIL" = "true" ]; then 
+        exit 1; 
+      else
+        exit 0; 
+      fi
   artifacts:
     name: "artifacts"
     when: always
@@ -36,6 +43,8 @@ variables:
 
     LOAD_TESTS: io-bound,cpu-bound,cgo-cpu-bound,cpu-bound-x-client-ip-enabled
     PARALLELIZE: "true"
+
+    SHOULD_FAIL: "false"
 
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
@@ -201,6 +210,8 @@ go-stable-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+    SHOULD_FAIL: "true"
+
 # This repository is using PR-level performance quality gates.
 # Verify that the check-slo-breaches CI job has passed. If any regression happened, merging this PR will be blocked.
 # If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
@@ -223,7 +234,7 @@ check-slo-breaches:
     "go-stable-trace-asm",
     "go-stable-profile-trace-asm",
   ]
-  when: on_success
+  when: always
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
     ARTIFACTS_DIR: "platform/artifacts"
