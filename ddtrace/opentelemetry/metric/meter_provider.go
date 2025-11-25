@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -73,8 +74,8 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (*MeterPro
 		return nil, err
 	}
 
-	// Create OTLP exporter with DD defaults
-	exporter, err := newDatadogOTLPExporter(ctx, cfg.exporterOptions...)
+	// Create OTLP exporter with DD defaults (supports both HTTP and gRPC)
+	exporter, err := newDatadogOTLPExporter(ctx, cfg.httpExporterOptions, cfg.grpcExporterOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +240,8 @@ func cumulativeTemporalitySelector() metric.TemporalitySelector {
 // config holds the configuration for the MeterProvider
 type config struct {
 	resourceOptions     []resource.Option
-	exporterOptions     []otlpmetrichttp.Option
+	httpExporterOptions []otlpmetrichttp.Option
+	grpcExporterOptions []otlpmetricgrpc.Option
 	exportInterval      time.Duration
 	exportTimeout       time.Duration
 	temporalitySelector metric.TemporalitySelector
@@ -272,12 +274,24 @@ func WithResource(opts ...resource.Option) Option {
 	})
 }
 
-// WithExporter adds OTLP exporter options to the MeterProvider.
-// These will override the Datadog defaults if there are conflicts.
-func WithExporter(opts ...otlpmetrichttp.Option) Option {
+// WithHTTPExporter allows customization of the OTLP HTTP exporter with additional options.
+func WithHTTPExporter(opts ...otlpmetrichttp.Option) Option {
 	return optionFunc(func(c *config) {
-		c.exporterOptions = append(c.exporterOptions, opts...)
+		c.httpExporterOptions = append(c.httpExporterOptions, opts...)
 	})
+}
+
+// WithGRPCExporter allows customization of the OTLP gRPC exporter with additional options.
+func WithGRPCExporter(opts ...otlpmetricgrpc.Option) Option {
+	return optionFunc(func(c *config) {
+		c.grpcExporterOptions = append(c.grpcExporterOptions, opts...)
+	})
+}
+
+// WithExporter adds OTLP HTTP exporter options to the MeterProvider (deprecated).
+// Use WithHTTPExporter or WithGRPCExporter instead.
+func WithExporter(opts ...otlpmetrichttp.Option) Option {
+	return WithHTTPExporter(opts...)
 }
 
 // WithExportInterval sets the interval at which metrics are exported.
