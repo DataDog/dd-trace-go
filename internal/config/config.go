@@ -92,11 +92,11 @@ func loadConfig() *Config {
 	return cfg
 }
 
-// GetConfig returns the global configuration singleton.
+// Get returns the global configuration singleton.
 // This function is thread-safe and can be called from multiple goroutines concurrently.
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
-func GetConfig() *Config {
+func Get() *Config {
 	configOnce.Do(func() {
 		config = loadConfig()
 	})
