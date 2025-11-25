@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -178,10 +179,14 @@ func TestReportAbandonedSpans(t *testing.T) {
 		s := tracer.StartSpan("op2", StartTime(spanStartTime))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(sf), formatSpanString(s))
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s))
+		expectedCount := fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1)
 		assertProcessedSpans(assert, tracer, 2, 1, tickerInterval/10)
-		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
-		assert.NotContains(tp.Logs(), notExpected)
-		assert.Contains(tp.Logs(), expected)
+		assert.Eventually(func() bool {
+			logs := tp.Logs()
+			return assert.Contains(logs, expectedCount) &&
+				!slices.Contains(logs, notExpected) &&
+				assert.Contains(logs, expected)
+		}, 2*time.Second, tickerInterval/10)
 		s.Finish()
 	})
 
@@ -197,10 +202,14 @@ func TestReportAbandonedSpans(t *testing.T) {
 		s2 := tracer.StartSpan("op2", StartTime(delayedStart))
 		notExpected := fmt.Sprintf("%s%s,%s,", warnPrefix, formatSpanString(s1), formatSpanString(s2))
 		expected := fmt.Sprintf("%s%s", warnPrefix, formatSpanString(s1))
+		expectedCount := fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1)
 		assertProcessedSpans(assert, tracer, 2, 0, tickerInterval/10)
-		assert.Contains(tp.Logs(), fmt.Sprintf("%s%d abandoned spans:", warnPrefix, 1))
-		assert.NotContains(tp.Logs(), notExpected)
-		assert.Contains(tp.Logs(), expected)
+		assert.Eventually(func() bool {
+			logs := tp.Logs()
+			return assert.Contains(logs, expectedCount) &&
+				!slices.Contains(logs, notExpected) &&
+				assert.Contains(logs, expected)
+		}, 2*time.Second, tickerInterval/10)
 	})
 
 	// This test ensures that the debug mode works as expected and returns invalid information
@@ -240,8 +249,10 @@ func TestReportAbandonedSpans(t *testing.T) {
 			}
 		}
 		assertProcessedSpans(assert, tracer, 10, 5, tickerInterval/10)
-		b := sb.String()
-		assert.Contains(tp.Logs(), b)
+		expected := sb.String()
+		assert.Eventually(func() bool {
+			return assert.Contains(tp.Logs(), expected)
+		}, 2*time.Second, tickerInterval/10)
 	})
 
 	t.Run("many buckets", func(t *testing.T) {
@@ -304,7 +315,9 @@ func TestReportAbandonedSpans(t *testing.T) {
 
 		assert.NotContains(tp.Logs(), expected)
 		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
-		assert.Contains(tp.Logs(), expected)
+		assert.Eventually(func() bool {
+			return assert.Contains(tp.Logs(), expected)
+		}, 2*time.Second, tickerInterval/10)
 		s.Finish()
 	})
 
