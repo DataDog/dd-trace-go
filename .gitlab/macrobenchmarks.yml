@@ -22,6 +22,7 @@ variables:
   script:
     # - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
     # - "./generate-run-plan-and-run-benchmarks.sh"
+    - mkdir -p platform/artifacts
     - |
       if [ "$SHOULD_FAIL" = "true" ]; then 
         exit 1; 
@@ -50,7 +51,7 @@ variables:
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
-  allow_failure: true
+  allow_failure: false
 
   retry:
     max: 2
@@ -235,7 +236,7 @@ check-slo-breaches:
     "go-stable-trace-asm",
     "go-stable-profile-trace-asm",
   ]
-  when: on_success
+  when: always
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
     ARTIFACTS_DIR: "platform/artifacts"
@@ -257,6 +258,7 @@ notify-slo-breaches:
   extends: .notify-slo-breaches
   stage: gates
   needs: ["check-slo-breaches"]
+  # TODO: Switch to always, we need warnings
   when: on_failure
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
