@@ -6,8 +6,10 @@
 package telemetrytest
 
 import (
+	"fmt"
 	"log/slog"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -93,6 +95,8 @@ func (r *RecordClient) metric(kind string, namespace telemetry.Namespace, name s
 
 func (r *RecordClient) Count(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
 	return r.metric(string(transport.CountMetric), namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
+		// DEBUG LOGGING
+		fmt.Println("Count", namespace, name, tags, value, string(debug.Stack()))
 		handle.count += value
 	}, func(handle *RecordMetricHandle) float64 {
 		return handle.count
