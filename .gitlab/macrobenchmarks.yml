@@ -53,6 +53,7 @@ variables:
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
   allow_failure: false
+  interruptible: true
 
   retry:
     max: 2
