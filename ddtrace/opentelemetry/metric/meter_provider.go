@@ -178,36 +178,39 @@ func (mp *MeterProvider) IsNoop() bool {
 // - Non-monotonic counters (UpDownCounter, ObservableUpDownCounter) → Cumulative (absolute values)
 // - Gauges (ObservableGauge) → Cumulative (point-in-time values)
 // - Histograms → Delta (distribution of measurements)
-// It respects OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE if set.
+// It respects OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE if set, with one exception:
+// UpDownCounter and ObservableUpDownCounter ALWAYS use Cumulative (even if DELTA is requested).
 func deltaTemporalitySelector() metric.TemporalitySelector {
 	// Check if user has explicitly set temporality preference
 	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")))
 
 	return func(kind metric.InstrumentKind) metricdata.Temporality {
-		// If user explicitly set temporality preference, honor it for all instruments
-		switch temporalityPref {
-		case "CUMULATIVE":
+		// UpDownCounter and Gauge ALWAYS use cumulative, regardless of preference
+		// They represent current state, not monotonic changes
+		switch kind {
+		case metric.InstrumentKindUpDownCounter,
+			metric.InstrumentKindObservableUpDownCounter,
+			metric.InstrumentKindObservableGauge:
 			return metricdata.CumulativeTemporality
-		case "DELTA":
-			return metricdata.DeltaTemporality
 		}
 
-		// Otherwise, use Datadog defaults per OTel spec
+		// For monotonic instruments, respect the user's preference if set
+		if temporalityPref != "" {
+			switch temporalityPref {
+			case "CUMULATIVE":
+				return metricdata.CumulativeTemporality
+			case "DELTA":
+				return metricdata.DeltaTemporality
+			}
+		}
+
+		// Default behavior for monotonic instruments: Delta
 		switch kind {
 		case metric.InstrumentKindCounter,
 			metric.InstrumentKindHistogram,
 			metric.InstrumentKindObservableCounter:
-			// Monotonic instruments use delta temporality
 			return metricdata.DeltaTemporality
-
-		case metric.InstrumentKindUpDownCounter,
-			metric.InstrumentKindObservableUpDownCounter,
-			metric.InstrumentKindObservableGauge:
-			// Non-monotonic instruments use cumulative temporality
-			return metricdata.CumulativeTemporality
-
 		default:
-			// Default to delta temporality
 			return metricdata.DeltaTemporality
 		}
 	}

@@ -117,6 +117,9 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	// Merge with any user-provided resource options
 	opts = append(opts, resource.WithAttributes(attrs...))
 
+	// Always include telemetry SDK info to ensure attributes field is never empty
+	opts = append(opts, resource.WithTelemetrySDK())
+
 	// Create the resource with defaults and our custom attributes
 	return resource.New(ctx, opts...)
 }
