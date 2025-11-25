@@ -51,7 +51,7 @@ variables:
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
-  allow_failure: false
+  allow_failure: true
 
   retry:
     max: 2
