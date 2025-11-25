@@ -258,6 +258,17 @@ notify-slo-breaches:
   extends: .notify-slo-breaches
   stage: gates
   needs: ["check-slo-breaches"]
+  rules:
+    - if: $CI_COMMIT_REF_NAME == "main"
+      when: always
+      interruptible: false
+    - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+      when: always
+      interruptible: false
+    # Unlike in "main" or release branches, in development branches there's
+    # no strict requirement to run the notification job unconditionally.
+    - when: on_success
+      interruptible: true
   when: always
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
