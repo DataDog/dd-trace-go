@@ -347,7 +347,7 @@ func TestBlocking(t *testing.T) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	srv := httptest.NewServer(mux)
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	for _, tc := range []struct {
 		name      string
@@ -418,10 +418,10 @@ func TestBlocking(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
-			defer mt.Stop()
+			t.Cleanup(mt.Stop)
 			telemetryClient := new(telemetrytest.RecordClient)
 			prevClient := telemetry.SwapClient(telemetryClient)
-			defer telemetry.SwapClient(prevClient)
+			t.Cleanup(func() { telemetry.SwapClient(prevClient) })
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
@@ -429,7 +429,7 @@ func TestBlocking(t *testing.T) {
 			}
 			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
-			defer res.Body.Close()
+			t.Cleanup(func() { res.Body.Close() })
 			require.Equal(t, tc.status, res.StatusCode)
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
