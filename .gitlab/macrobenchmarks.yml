@@ -227,8 +227,6 @@ check-slo-breaches:
     "go-stable-profile-trace-asm",
   ]
   rules:
-    - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
-      when: never
     - if: $CI_COMMIT_REF_NAME == "main"
       when: always
       interruptible: false
