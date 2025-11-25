@@ -10,10 +10,10 @@ import "sync"
 // ResetForTesting resets the global configuration state for testing.
 //
 // WARNING: This function is intended for use in tests only to reset state between
-// test cases. It must not be called concurrently with GetConfig() or other code that
+// test cases. It must not be called concurrently with Get() or other code that
 // accesses the global config, as it can cause race conditions and violate the
 // singleton initialization guarantee.
 func ResetForTesting() {
-	config = nil
+	instance = nil
 	configOnce = sync.Once{}
 }

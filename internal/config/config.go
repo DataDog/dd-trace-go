@@ -12,20 +12,20 @@ import (
 )
 
 var (
-	config     *configuration
+	instance   *config
 	configOnce sync.Once
 )
 
 // TODO(mtoffl01): Add fieldalignment linter to CI pipeline to enforce optimal struct packing.
 // See: https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment
 
-// configuration represents global configuration properties.
+// config represents global configuration properties.
 //
 // IMPORTANT: Fields are ordered to minimize memory padding and optimize cache performance
 // for 64-bit systems (a common deployment target). When adding or reordering fields, add
 // them to the correct group manually or run an alignment tool (e.g., `fieldalignment -fix
 // ./internal/config`) to verify optimal packing.
-type configuration struct {
+type config struct {
 	agentURL                      *url.URL
 	serviceMappings               map[string]string
 	peerServiceMappings           map[string]string
@@ -55,10 +55,10 @@ type configuration struct {
 	ciVisibilityAgentless         bool
 }
 
-// loadConfig initializes and returns a new configuration by reading from all configured sources.
+// loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
-func loadConfig() *configuration {
-	cfg := new(configuration)
+func loadConfig() *config {
+	cfg := new(config)
 
 	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
@@ -96,13 +96,13 @@ func loadConfig() *configuration {
 // This function is thread-safe and can be called from multiple goroutines concurrently.
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
-func Get() *configuration {
+func Get() *config {
 	configOnce.Do(func() {
-		config = loadConfig()
+		instance = loadConfig()
 	})
-	return config
+	return instance
 }
 
-func (c *configuration) Debug() bool {
+func (c *config) Debug() bool {
 	return c.debug
 }
