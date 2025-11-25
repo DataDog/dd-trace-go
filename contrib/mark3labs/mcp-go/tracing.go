@@ -8,6 +8,7 @@ package mcpgo // import "github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -27,21 +28,22 @@ type hooks struct {
 	spanCache *sync.Map
 }
 
-// AddServerHooks appends Datadog tracing hooks to an existing server.Hooks object.
-func AddServerHooks(hooks *server.Hooks) {
-	ddHooks := newHooks()
-	hooks.AddBeforeInitialize(ddHooks.onBeforeInitialize)
-	hooks.AddAfterInitialize(ddHooks.onAfterInitialize)
-	hooks.AddOnError(ddHooks.onError)
+// appendTracingHooks appends Datadog tracing hooks to an existing server.Hooks object.
+func appendTracingHooks(hooks *server.Hooks) {
+	tracingHooks := newHooks()
+	hooks.AddBeforeInitialize(tracingHooks.onBeforeInitialize)
+	hooks.AddAfterInitialize(tracingHooks.onAfterInitialize)
+	hooks.AddOnError(tracingHooks.onError)
 }
 
-func NewToolHandlerMiddleware() server.ToolHandlerMiddleware {
-	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
-		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
+var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
 
-			result, err := next(ctx, request)
+		var result *mcp.CallToolResult
+		var err error
 
+		defer func() {
 			inputJSON, marshalErr := json.Marshal(request)
 			if marshalErr != nil {
 				instr.Logger().Warn("mcp-go: failed to marshal tool request: %v", marshalErr)
@@ -56,17 +58,23 @@ func NewToolHandlerMiddleware() server.ToolHandlerMiddleware {
 			}
 
 			tagWithSessionID(ctx, toolSpan)
-
 			toolSpan.AnnotateTextIO(string(inputJSON), outputText)
 
+			// There are two ways a tool can express an error:
+			// 1. It can return a Go error.
+			// 2. It can return IsError: true as part of the tool result.
 			if err != nil {
 				toolSpan.Finish(llmobs.WithError(err))
+			} else if result != nil && result.IsError {
+				toolSpan.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
 			} else {
 				toolSpan.Finish()
 			}
+		}()
 
-			return result, err
-		}
+		result, err = next(ctx, request)
+
+		return result, err
 	}
 }
 
