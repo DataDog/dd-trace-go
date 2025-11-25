@@ -41,7 +41,9 @@ const (
 // - service.name: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
 // - deployment.environment: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 // - service.version: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
-// - host.name: DD_TRACE_SOURCE_HOSTNAME → DD_HOSTNAME → DD_TRACE_REPORT_HOSTNAME (if "true", use os.Hostname()) → OTEL_RESOURCE_ATTRIBUTES[host.name]
+// - host.name: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest priority, always used if present)
+//              → If DD_TRACE_REPORT_HOSTNAME="true": DD_HOSTNAME → detected hostname (os.Hostname())
+//              → Otherwise: hostname is NOT added to resource
 func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{}
 
@@ -75,9 +77,11 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 		attrs = append(attrs, semconv.ServiceVersion(version))
 	}
 
-	// 4. Hostname priority: DD_TRACE_SOURCE_HOSTNAME → DD_HOSTNAME → DD_TRACE_REPORT_HOSTNAME → OTEL_RESOURCE_ATTRIBUTES[host.name]
-	hostname := getHostname(otelAttrs)
-	if hostname != "" {
+	// 4. Hostname: Only add if OTEL sets it OR if DD_TRACE_REPORT_HOSTNAME=true
+	// Priority: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest) → DD_HOSTNAME → detected hostname
+	// If DD_TRACE_REPORT_HOSTNAME != "true" and no OTEL host.name, do NOT add hostname
+	hostname, shouldAddHostname := getHostname(otelAttrs)
+	if shouldAddHostname && hostname != "" {
 		attrs = append(attrs, semconv.HostName(hostname))
 	}
 
@@ -165,29 +169,45 @@ func getVersion(ddTags, otelAttrs map[string]string) string {
 	return ""
 }
 
-// getHostname returns the hostname from environment variables with priority order
-func getHostname(otelAttrs map[string]string) string {
-	// DD_TRACE_SOURCE_HOSTNAME has highest priority (can override DD_HOSTNAME)
-	if v := env.Get(envDDTraceSourceHostname); v != "" {
-		return v
-	}
-	// DD_HOSTNAME
-	if v := env.Get(envDDHostname); v != "" {
-		return v
-	}
-	// DD_TRACE_REPORT_HOSTNAME=true means use OS hostname
-	if v := env.Get(envDDTraceReportHostname); v == "true" {
-		if hostname, err := os.Hostname(); err == nil {
-			return hostname
-		} else {
-			log.Warn("unable to look up hostname: %s", err.Error())
-		}
-	}
-	// OTEL_RESOURCE_ATTRIBUTES[host.name]
+// getHostname returns the hostname and whether it should be added to resource attributes.
+// Returns (hostname, shouldAdd) where:
+//   - hostname: the resolved hostname value
+//   - shouldAdd: true if hostname should be added to resource, false otherwise
+//
+// Precedence (per OTel spec):
+// 1. OTEL_RESOURCE_ATTRIBUTES[host.name] - ALWAYS wins, even if DD_TRACE_REPORT_HOSTNAME=false
+// 2. If DD_TRACE_REPORT_HOSTNAME="true":
+//   - Use DD_HOSTNAME if set
+//   - Else use detected hostname (os.Hostname)
+//
+// 3. Otherwise, do NOT add hostname at all
+func getHostname(otelAttrs map[string]string) (string, bool) {
+	// 1. OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - always use if present
 	if v, ok := otelAttrs["host.name"]; ok && v != "" {
-		return v
+		return v, true
 	}
-	return ""
+
+	// 2. Check if DD_TRACE_REPORT_HOSTNAME is explicitly set to "true"
+	reportHostname := env.Get(envDDTraceReportHostname)
+	if reportHostname != "true" {
+		// If not explicitly "true", do NOT add hostname
+		return "", false
+	}
+
+	// 3. DD_TRACE_REPORT_HOSTNAME="true" - try DD_HOSTNAME first
+	if v := env.Get(envDDHostname); v != "" {
+		return v, true
+	}
+
+	// 4. Fall back to detected hostname (reusing tracer logic)
+	if hostname, err := os.Hostname(); err == nil && hostname != "" {
+		return hostname, true
+	} else if err != nil {
+		log.Warn("unable to look up hostname: %s", err.Error())
+	}
+
+	// No hostname could be determined
+	return "", false
 }
 
 // parseOtelResourceAttributes parses OTEL_RESOURCE_ATTRIBUTES string into a map.
