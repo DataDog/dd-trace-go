@@ -23,6 +23,7 @@ variables:
     # - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
     # - "./generate-run-plan-and-run-benchmarks.sh"
     - mkdir -p platform/artifacts
+    - sleep 120
     - |
       if [ "$SHOULD_FAIL" = "true" ]; then 
         exit 1; 
@@ -211,8 +212,6 @@ go-stable-profile-trace-asm:
     ENABLE_PROFILING: "true"
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
-
-    SHOULD_FAIL: "true"
 
 # This repository is using PR-level performance quality gates.
 # Verify that the check-slo-breaches CI job has passed. If any regression happened, merging this PR will be blocked.
