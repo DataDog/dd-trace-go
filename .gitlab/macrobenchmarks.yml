@@ -258,8 +258,7 @@ notify-slo-breaches:
   extends: .notify-slo-breaches
   stage: gates
   needs: ["check-slo-breaches"]
-  # TODO: Switch to always, we need warnings
-  when: on_failure
+  when: always
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
 
