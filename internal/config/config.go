@@ -103,6 +103,6 @@ func Get() *Config {
 	return config
 }
 
-func (c *Config) IsDebugEnabled() bool {
+func (c *Config) Debug() bool {
 	return c.debug
 }
