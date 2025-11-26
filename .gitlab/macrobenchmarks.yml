@@ -4,8 +4,7 @@ variables:
 .benchmarks-default:
   stage: macrobenchmarks
   needs: []
-  # tags: ["runner:apm-k8s-same-cpu"]
-  tags: ["arch:amd64"]
+  tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules:
     - when: always
