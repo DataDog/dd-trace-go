@@ -205,6 +205,12 @@ go-stable-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+include:
+  - project: 'DataDog/benchmarking-platform-tools'
+    file: 'images/templates/gitlab/check-slo-breaches.template.yml'
+  - project: 'DataDog/benchmarking-platform-tools'
+    file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
+
 # This repository is using PR-level performance quality gates.
 # Verify that the check-slo-breaches CI job has passed. If any regression happened, merging this PR will be blocked.
 # If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
@@ -238,12 +244,6 @@ check-slo-breaches:
     paths:
       - platform/artifacts/
     expire_in: 3 months
-
-include:
-  - project: 'DataDog/benchmarking-platform-tools'
-    file: 'images/templates/gitlab/check-slo-breaches.template.yml'
-  - project: 'DataDog/benchmarking-platform-tools'
-    file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
 
 notify-slo-breaches:
   extends: .notify-slo-breaches
