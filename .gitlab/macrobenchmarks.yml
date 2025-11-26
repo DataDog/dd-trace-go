@@ -41,6 +41,9 @@ variables:
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
+  # Note: Setting allow_failure to false does not stop check-slo-breaches
+  # from running if benchmarks fail, since it has "when: always". It can be 
+  # safely set to false once the workaround is removed.
   allow_failure: true
 
   retry:
