@@ -10,10 +10,7 @@ variables:
     # We don't want to run benchmarks on graphite commits
     - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
       when: never
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: always
-      interruptible: false
-    - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
       when: always
       interruptible: false
     - when: manual
@@ -236,10 +233,7 @@ check-slo-breaches:
     "go-stable-profile-trace-asm",
   ]
   rules:
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: always
-      interruptible: false
-    - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
       when: always
       interruptible: false
     # Unlike in "main" or release branches, in development branches there's
@@ -262,10 +256,7 @@ notify-slo-breaches:
   stage: gates
   needs: ["check-slo-breaches"]
   rules:
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: always
-      interruptible: false
-    - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
       when: always
       interruptible: false
     # Unlike in "main" or release branches, in development branches there's
@@ -286,7 +277,7 @@ notify-slo-breaches:
     # We don't want to run benchmarks on graphite commits
     - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
       when: never
-    - if: $CI_COMMIT_REF_NAME == "main"
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
       when: always
       interruptible: false
     - when: manual

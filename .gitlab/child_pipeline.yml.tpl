@@ -15,7 +15,7 @@ benchmark_matrix:
   extends: .benchmark
   stage: benchmark_matrix
   rules:
-    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^[0-9]+\.[0-9]+$/
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
       interruptible: false
     - interruptible: true
   parallel:
