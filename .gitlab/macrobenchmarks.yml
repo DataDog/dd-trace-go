@@ -43,6 +43,9 @@ variables:
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
+  # Note: Setting allow_failure to false does not stop check-slo-breaches
+  # from running if benchmarks fail, since it has "when: always". It can be 
+  # safely set to false once the workaround is removed.
   allow_failure: true
 
   retry:
@@ -204,6 +207,12 @@ go-stable-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
+include:
+  - project: 'DataDog/benchmarking-platform-tools'
+    file: 'images/templates/gitlab/check-slo-breaches.template.yml'
+  - project: 'DataDog/benchmarking-platform-tools'
+    file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
+
 # This repository is using PR-level performance quality gates.
 # Verify that the check-slo-breaches CI job has passed. If any regression happened, merging this PR will be blocked.
 # If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
@@ -248,12 +257,6 @@ check-slo-breaches:
       - platform/artifacts/
     expire_in: 3 months
 
-include:
-  - project: 'DataDog/benchmarking-platform-tools'
-    file: 'images/templates/gitlab/check-slo-breaches.template.yml'
-  - project: 'DataDog/benchmarking-platform-tools'
-    file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
-
 notify-slo-breaches:
   extends: .notify-slo-breaches
   stage: gates
@@ -273,11 +276,7 @@ notify-slo-breaches:
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
 
-#
-# Macro benchmarks for Service Extensions
-# (using Envoy External Processing)
-#
-
+# Macrobenchmarks for Service Extensions (using Envoy External Processing)
 .benchmarks-serviceextensions:
   stage: macrobenchmarks
   needs: []
