@@ -253,11 +253,7 @@ notify-slo-breaches:
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
 
-#
-# Macro benchmarks for Service Extensions
-# (using Envoy External Processing)
-#
-
+# Macrobenchmarks for Service Extensions (using Envoy External Processing)
 .benchmarks-serviceextensions:
   stage: macrobenchmarks
   needs: []
