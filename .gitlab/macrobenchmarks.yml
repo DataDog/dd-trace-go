@@ -212,19 +212,19 @@ check-slo-breaches:
   extends: .check-slo-breaches
   stage: gates
   needs: [
-    # "go-oldstable-baseline",
-    # "go-oldstable-only-trace",
-    # "go-oldstable-only-trace-with-runtime-metrics",
-    # "go-oldstable-only-profile",
-    # "go-oldstable-profile-trace",
-    # "go-oldstable-trace-asm",
-    # "go-oldstable-profile-trace-asm",
-    # "go-stable-baseline",
-    # "go-stable-only-trace",
-    # "go-stable-only-trace-with-runtime-metrics",
-    # "go-stable-only-profile",
-    # "go-stable-profile-trace",
-    # "go-stable-trace-asm",
+    "go-oldstable-baseline",
+    "go-oldstable-only-trace",
+    "go-oldstable-only-trace-with-runtime-metrics",
+    "go-oldstable-only-profile",
+    "go-oldstable-profile-trace",
+    "go-oldstable-trace-asm",
+    "go-oldstable-profile-trace-asm",
+    "go-stable-baseline",
+    "go-stable-only-trace",
+    "go-stable-only-trace-with-runtime-metrics",
+    "go-stable-only-profile",
+    "go-stable-profile-trace",
+    "go-stable-trace-asm",
     "go-stable-profile-trace-asm",
   ]
   when: always
