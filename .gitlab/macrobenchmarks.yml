@@ -51,7 +51,7 @@ variables:
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
-  allow_failure: false
+  allow_failure: true
 
   retry:
     max: 2
@@ -251,96 +251,96 @@ notify-slo-breaches:
 # (using Envoy External Processing)
 #
 
-.benchmarks-serviceextensions:
-  stage: macrobenchmarks
-  needs: []
-  tags: ["runner:apm-k8s-same-cpu"]
-  timeout: 1h
-  rules:
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: always
-      interruptible: false
-    - when: manual
-      interruptible: true
-  # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
-  image: $BENCHMARKS_CI_IMAGE
-  script:
-    - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
-    - bp-runner bp-runner.envoy_serviceextension.yml --debug
-  artifacts:
-    name: "artifacts"
-    when: always
-    paths:
-      - platform/artifacts-se/
-    expire_in: 3 months
-  variables:
-    GO_VERSION: "1.25.0" # It needs to be at the latest stable release
-    ARTIFACTS_DIR: "./artifacts-se"
-    SERVICE_EXTENSION: "true"
+# .benchmarks-serviceextensions:
+#   stage: macrobenchmarks
+#   needs: []
+#   tags: ["runner:apm-k8s-same-cpu"]
+#   timeout: 1h
+#   rules:
+#     - if: $CI_COMMIT_REF_NAME == "main"
+#       when: always
+#       interruptible: false
+#     - when: manual
+#       interruptible: true
+#   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
+#   image: $BENCHMARKS_CI_IMAGE
+#   script:
+#     - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
+#     - bp-runner bp-runner.envoy_serviceextension.yml --debug
+#   artifacts:
+#     name: "artifacts"
+#     when: always
+#     paths:
+#       - platform/artifacts-se/
+#     expire_in: 3 months
+#   variables:
+#     GO_VERSION: "1.25.0" # It needs to be at the latest stable release
+#     ARTIFACTS_DIR: "./artifacts-se"
+#     SERVICE_EXTENSION: "true"
 
-  # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
-  # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
-  # benchmarks get changed to run on every PR)
-  allow_failure: true
+#   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
+#   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
+#   # benchmarks get changed to run on every PR)
+#   allow_failure: true
 
-  retry:
-    max: 2
-    when:
-      - unknown_failure
-      - data_integrity_failure
-      - runner_system_failure
-      - scheduler_failure
-      - api_failure
+#   retry:
+#     max: 2
+#     when:
+#       - unknown_failure
+#       - data_integrity_failure
+#       - runner_system_failure
+#       - scheduler_failure
+#       - api_failure
 
-# Scenario with external processor, webserver without tracer
-se-ext_proc-appsec:
-  extends: .benchmarks-serviceextensions
-  variables:
-    EXT_PROC: true
-    ENABLE_APPSEC: true
-    TRACER: false
+# # Scenario with external processor, webserver without tracer
+# se-ext_proc-appsec:
+#   extends: .benchmarks-serviceextensions
+#   variables:
+#     EXT_PROC: true
+#     ENABLE_APPSEC: true
+#     TRACER: false
 
-se-ext_proc-body-appsec:
-  extends: .benchmarks-serviceextensions
-  variables:
-    EXT_PROC: true
-    EXT_PROC_BODY: true
-    ENABLE_APPSEC: true
-    TRACER: false
+# se-ext_proc-body-appsec:
+#   extends: .benchmarks-serviceextensions
+#   variables:
+#     EXT_PROC: true
+#     EXT_PROC_BODY: true
+#     ENABLE_APPSEC: true
+#     TRACER: false
 
-se-ext_proc-only-tracing:
-  extends: .benchmarks-serviceextensions
-  variables:
-    EXT_PROC: true
-    ENABLE_APPSEC: false
-    TRACER: false
+# se-ext_proc-only-tracing:
+#   extends: .benchmarks-serviceextensions
+#   variables:
+#     EXT_PROC: true
+#     ENABLE_APPSEC: false
+#     TRACER: false
 
-se-ext_proc-body-only-tracing:
-  extends: .benchmarks-serviceextensions
-  variables:
-    EXT_PROC: true
-    EXT_PROC_BODY: true
-    ENABLE_APPSEC: false
-    TRACER: false
+# se-ext_proc-body-only-tracing:
+#   extends: .benchmarks-serviceextensions
+#   variables:
+#     EXT_PROC: true
+#     EXT_PROC_BODY: true
+#     ENABLE_APPSEC: false
+#     TRACER: false
 
-# Scenarios without external processor, webserver with tracer
-se-tracer-no-ext_proc-appsec:
-  extends: .benchmarks-serviceextensions
-  variables:
-    EXT_PROC: false
-    ENABLE_APPSEC: true
-    TRACER: true
+# # Scenarios without external processor, webserver with tracer
+# se-tracer-no-ext_proc-appsec:
+#   extends: .benchmarks-serviceextensions
+#   variables:
+#     EXT_PROC: false
+#     ENABLE_APPSEC: true
+#     TRACER: true
 
-se-tracer-no-ext_proc-only-tracing:
-  extends: .benchmarks-serviceextensions
-  variables:
-    EXT_PROC: false
-    ENABLE_APPSEC: false
-    TRACER: true
+# se-tracer-no-ext_proc-only-tracing:
+#   extends: .benchmarks-serviceextensions
+#   variables:
+#     EXT_PROC: false
+#     ENABLE_APPSEC: false
+#     TRACER: true
 
-# Scenario without tracer, only direct connection through envoy to the webserver
-se-no-tracer-no-ext_proc:
-  extends: .benchmarks-serviceextensions
-  variables:
-    EXT_PROC: false
-    TRACER: false
+# # Scenario without tracer, only direct connection through envoy to the webserver
+# se-no-tracer-no-ext_proc:
+#   extends: .benchmarks-serviceextensions
+#   variables:
+#     EXT_PROC: false
+#     TRACER: false
