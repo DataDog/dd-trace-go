@@ -30,6 +30,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	newglobalconfig "github.com/DataDog/dd-trace-go/v2/instrumentation/config"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -139,6 +140,8 @@ const (
 
 // config holds the tracer configuration.
 type config struct {
+	globalConfig *newglobalconfig.Config
+
 	// debug, when true, writes details to logs.
 	debug bool
 
@@ -374,6 +377,7 @@ const partialFlushMinSpansDefault = 1000
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
+	c.globalConfig = newglobalconfig.Global()
 	internalConfig := internalconfig.Get()
 
 	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to

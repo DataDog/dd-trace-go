@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+// Package instrumentation is internal to dd-trace-go and should not be used
+// directly.
 package instrumentation
 
 import (

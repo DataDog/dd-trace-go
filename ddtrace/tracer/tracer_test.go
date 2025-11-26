@@ -30,6 +30,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	newglobalconfig "github.com/DataDog/dd-trace-go/v2/instrumentation/config"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -73,6 +74,8 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	newglobalconfig.SetUseFreshConfig(false)
+	fmt.Println("using new config")
 	if internal.BoolEnv("DD_APPSEC_ENABLED", false) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
@@ -2060,6 +2063,7 @@ func TestGitMetadata(t *testing.T) {
 		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
+		fmt.Printf("tracer.config.globalConfig: %v\n", tracer.config.globalConfig)
 		assert.Nil(t, err)
 		defer stop()
 
@@ -2077,6 +2081,7 @@ func TestGitMetadata(t *testing.T) {
 		internal.RefreshGitMetadataTags()
 
 		tracer, _, _, stop, err := startTestTracer(t)
+		fmt.Printf("tracer.config.globalConfig: %v\n", tracer.config.globalConfig)
 		require.Nil(t, err)
 		defer stop()
 
