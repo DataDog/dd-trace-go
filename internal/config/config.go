@@ -16,43 +16,35 @@ var (
 	configOnce sync.Once
 )
 
-// TODO(mtoffl01): Add fieldalignment linter to CI pipeline to enforce optimal struct packing.
-// See: https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/fieldalignment
-
-// config represents global configuration properties.
-//
-// IMPORTANT: Fields are ordered to minimize memory padding and optimize cache performance
-// for 64-bit systems (a common deployment target). When adding or reordering fields, add
-// them to the correct group manually or run an alignment tool (e.g., `fieldalignment -fix
-// ./internal/config`) to verify optimal packing.
+// Config represents global configuration properties.
 type config struct {
 	agentURL                      *url.URL
-	serviceMappings               map[string]string
-	peerServiceMappings           map[string]string
+	debug                         bool
+	logStartup                    bool
 	serviceName                   string
 	version                       string
 	env                           string
+	serviceMappings               map[string]string
 	hostname                      string
-	logDirectory                  string
-	traceRateLimitPerSecond       float64
-	spanAttributeSchemaVersion    int
-	partialFlushMinSpans          int
-	globalSampleRate              float64
-	spanTimeout                   time.Duration
-	profilerHotspots              bool
-	debugAbandonedSpans           bool
 	runtimeMetrics                bool
 	runtimeMetricsV2              bool
-	debug                         bool
+	profilerHotspots              bool
 	profilerEndpoints             bool
+	spanAttributeSchemaVersion    int
 	peerServiceDefaultsEnabled    bool
-	logStartup                    bool
+	peerServiceMappings           map[string]string
+	debugAbandonedSpans           bool
+	spanTimeout                   time.Duration
+	partialFlushMinSpans          int
 	partialFlushEnabled           bool
 	statsComputationEnabled       bool
 	dataStreamsMonitoringEnabled  bool
 	dynamicInstrumentationEnabled bool
+	globalSampleRate              float64
 	ciVisibilityEnabled           bool
 	ciVisibilityAgentless         bool
+	logDirectory                  string
+	traceRateLimitPerSecond       float64
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.

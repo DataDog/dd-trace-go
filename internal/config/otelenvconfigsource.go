@@ -52,8 +52,8 @@ func (o *otelEnvConfigSource) origin() telemetry.Origin {
 }
 
 type otelDDEnv struct {
-	remapper func(string) (string, error)
 	ot       string
+	remapper func(string) (string, error)
 }
 
 var otelConfigs = map[string]*otelDDEnv{

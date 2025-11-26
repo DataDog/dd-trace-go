@@ -25,9 +25,9 @@ const (
 
 // declarativeConfigSource represents a source of declarative configuration loaded from a file.
 type declarativeConfigSource struct {
-	config      *declarativeConfig
-	filePath    string
-	originValue telemetry.Origin
+	filePath    string             // Path to the configuration file.
+	originValue telemetry.Origin   // Origin identifier for telemetry.
+	config      *declarativeConfig // Parsed declarative configuration.
 }
 
 func (d *declarativeConfigSource) get(key string) string {
