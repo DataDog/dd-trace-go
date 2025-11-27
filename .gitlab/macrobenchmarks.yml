@@ -18,6 +18,9 @@ variables:
   # no strict requirement to run the check unconditionally with "when: always".
   - interruptible: true
 
+#
+# Default macrobenchmarks
+# 
 
 .benchmarks-default:
   stage: macrobenchmarks
@@ -64,11 +67,10 @@ variables:
       - scheduler_failure
       - api_failure
 
-
 #
-# Please read next before updating Go version in this file!
+# Please read the following before updating Go version in this file!
 #
-# In order to update Go version, you need to include it in benchmarks Docker image first:
+# In order to update the Go version, you need to include it in the benchmarks Docker image first:
 # 1. Update version in Dockerfile https://github.com/DataDog/benchmarking-platform/blob/go/go-prof-app/container/Dockerfile#L5
 # 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
 #
@@ -84,7 +86,9 @@ variables:
     GO_VERSION: "1.24.6"
 
 #
-# Specific macrobenchmark configurations are below
+# Specific macrobenchmark configurations extending 
+# .go-(stable|oldstable)-benchmarks are below
+#
 
 go-oldstable-baseline:
   extends: .go-oldstable-benchmarks
@@ -263,7 +267,10 @@ notify-slo-breaches:
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
 
+#
 # Macrobenchmarks for Service Extensions (using Envoy External Processing)
+#
+
 .benchmarks-serviceextensions:
   stage: macrobenchmarks
   needs: []
