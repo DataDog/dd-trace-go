@@ -3,12 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package tracing contains tracing logic for the segmentio/kafka-go.v0 instrumentation.
+// Package tracing contains tracing logic for the twmb/franz-go instrumentation.
 //
-// WARNING: this package SHOULD NOT import segmentio/kafka-go.
+// WARNING: this package SHOULD NOT import twmb/franz-go.
 //
 // The motivation of this package is to support orchestrion, which cannot use the main package because it imports
-// the segmentio/kafka-go package, and since orchestrion modifies the library code itself,
+// the twmb/franz-go package, and since orchestrion modifies the library code itself,
 // this would cause an import cycle.
 package tracing
 
@@ -20,7 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-const componentName = "segmentio/kafka.go.v0"
+const componentName = "twmb/franz-go"
 
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
