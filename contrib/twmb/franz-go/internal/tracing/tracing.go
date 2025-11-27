@@ -60,7 +60,6 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + r.GetTopic()),
-		// ???: What is ext?
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, r.GetPartition()),
 		tracer.Tag("offset", r.GetOffset()),
