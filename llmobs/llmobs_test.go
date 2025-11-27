@@ -346,6 +346,59 @@ func TestSpanAnnotations(t *testing.T) {
 		assert.NotEmpty(t, spans[0].Tags)
 		assert.Equal(t, "session-123", spans[0].SessionID)
 	})
+	t.Run("llm-span-with-tool-calls", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-with-tools")
+
+		input := []llmobs.LLMMessage{
+			{
+				Role:    "user",
+				Content: "What's the weather in San Francisco?",
+			},
+			{
+				Role:    "assistant",
+				Content: "",
+				ToolCalls: []llmobs.ToolCall{
+					{
+						Name:      "get_weather",
+						Arguments: []byte(`{"location": "San Francisco", "unit": "celsius"}`),
+						ToolID:    "call_123",
+						Type:      "function",
+					},
+				},
+			},
+		}
+
+		output := []llmobs.LLMMessage{
+			{
+				Role:    "tool",
+				Content: "",
+				ToolResults: []llmobs.ToolResult{
+					{
+						Result: map[string]any{"temperature": 18, "condition": "sunny"},
+						Name:   "get_weather",
+						ToolID: "call_123",
+						Type:   "function",
+					},
+				},
+			},
+			{
+				Role:    "assistant",
+				Content: "The weather in San Francisco is 18°C and sunny.",
+			},
+		}
+
+		span.AnnotateLLMIO(input, output)
+		span.Finish()
+
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, spans, 1)
+		assert.Equal(t, "test-llm-with-tools", spans[0].Name)
+		assert.Contains(t, spans[0].Meta, "input")
+		assert.Contains(t, spans[0].Meta, "output")
+	})
 	t.Run("text-io-span-annotations", func(t *testing.T) {
 		tt := testTracer(t)
 		defer tt.Stop()
