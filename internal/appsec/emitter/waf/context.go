@@ -76,6 +76,15 @@ func StartContextOperation(ctx context.Context, span trace.TagSetter) (*ContextO
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
 
+// Fork initiates a new WAF Context operation, and starts it right away.
+func (op *ContextOperation) Fork(ctx context.Context) (*ContextOperation, context.Context) {
+	childOp := &ContextOperation{
+		Operation:                 dyngo.NewOperation(op),
+		ServiceEntrySpanOperation: op.ServiceEntrySpanOperation,
+	}
+	return childOp, dyngo.StartAndRegisterOperation(ctx, childOp, ContextArgs{})
+}
+
 func (op *ContextOperation) Finish() {
 	dyngo.FinishOperation(op, ContextRes{})
 	op.ServiceEntrySpanOperation.Finish()

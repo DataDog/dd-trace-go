@@ -99,7 +99,8 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 		builder = builder.WithDownwardRequestBody(encodable)
 	}
 
-	op.HandlerOp.Run(op, builder.Build())
+	op.
+		Run(op, builder.Build())
 }
 
 func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, args httpsec.RoundTripOperationRes) {
@@ -158,5 +159,5 @@ func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, 
 		builder = builder.WithDownwardResponseBody(encodable)
 	}
 
-	op.HandlerOp.Run(op, builder.Build())
+	op.Run(op, builder.Build())
 }
