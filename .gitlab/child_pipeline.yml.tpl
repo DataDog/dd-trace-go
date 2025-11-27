@@ -4,10 +4,6 @@ include:
     ref: '{{ .CommitSHA }}'
     file: '.gitlab/benchmarks.yml'
 
-workflow:
-  auto_cancel:
-    on_new_commit: interruptible
-
 stages:
   - benchmark_matrix
 
