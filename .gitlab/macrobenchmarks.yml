@@ -1,19 +1,24 @@
 variables:
   BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:go-go-prof-app-and-serviceextensions-0001
 
-.macrobenchmarks-rules: &macrobenchmarks-rules
+.on-graphite-never: &on-graphite-never
   - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
     when: never
+
+.on-main-or-release-always-and-not-interruptible: &on-main-or-release-always-and-not-interruptible
   - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
     when: always
     interruptible: false
+
+.macrobenchmarks-rules: &macrobenchmarks-rules
+  - <<: *on-graphite-never
+  - <<: *on-main-or-release-always-and-not-interruptible
   - when: manual
     interruptible: true
 
 .pre-release-performance-quality-gates-rules: &pre-release-performance-quality-gates-rules
-  - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
-    when: always
-    interruptible: false
+  - <<: *on-graphite-never
+  - <<: *on-main-or-release-always-and-not-interruptible
   # Unlike in "main" or release branches, in development branches there's
   # no strict requirement to run the check unconditionally with "when: always".
   - interruptible: true
