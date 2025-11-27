@@ -33,18 +33,21 @@ func (c kafkaHeadersCarrier) ForeachKey(handler func(key, val string) error) err
 
 // Set implements tracer.TextMapWriter
 func (c *kafkaHeadersCarrier) Set(key, val string) {
-	// Ensure the header is not already set, if it is, overwrite it
-	for i := range c.record.GetHeaders() {
-		if c.record.GetHeaders()[i].GetKey() == key {
-			c.record.SetHeaders(append(c.record.GetHeaders(), KafkaHeader{
+	headers := c.record.GetHeaders()
+	// If header is already set, overwrite it
+	for i, h := range headers {
+		if h.GetKey() == key {
+			headers[i] = KafkaHeader{
 				Key:   key,
 				Value: []byte(val),
-			}))
+			}
+			c.record.SetHeaders(headers)
 			return
 		}
 	}
 
-	c.record.SetHeaders(append(c.record.GetHeaders(), KafkaHeader{
+	// If header is not set, append it
+	c.record.SetHeaders(append(headers, KafkaHeader{
 		Key:   key,
 		Value: []byte(val),
 	}))
