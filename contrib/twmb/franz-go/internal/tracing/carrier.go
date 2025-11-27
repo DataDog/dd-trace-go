@@ -20,9 +20,7 @@ func NewKafkaHeadersCarrier(r Record) *kafkaHeadersCarrier {
 	return &kafkaHeadersCarrier{record: r}
 }
 
-// NOTE: The way in which the propagator reads all the info it needs to read.
-// ForeachKey conforms to the TextMapReader interface.
-// https://github.com/DataDog/dd-trace-go/blob/45246a0188c9c1cd73db516229ce1e6f19c1ecac/ddtrace/tracer/textmap.go#L694
+// ForeachKey implements tracer.TextMapReader
 func (c kafkaHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
 	for _, h := range c.record.GetHeaders() {
 		err := handler(h.GetKey(), string(h.GetValue()))
@@ -33,7 +31,7 @@ func (c kafkaHeadersCarrier) ForeachKey(handler func(key, val string) error) err
 	return nil
 }
 
-// Set implements tracer.TextMapWriter - adds trace propagation headers
+// Set implements tracer.TextMapWriter
 func (c *kafkaHeadersCarrier) Set(key, val string) {
 	// Ensure the header is not already set, if it is, overwrite it
 	for i := range c.record.GetHeaders() {
@@ -52,7 +50,7 @@ func (c *kafkaHeadersCarrier) Set(key, val string) {
 	}))
 }
 
-// ExtractSpanContext retrieves the SpanContext from a kgo.Record.
+// ExtractSpanContext extracts the SpanContext from a Record
 func ExtractSpanContext(r Record) (*tracer.SpanContext, error) {
 	return tracer.Extract(NewKafkaHeadersCarrier(r))
 }
