@@ -14,21 +14,30 @@ require (
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
+	// This might be replaced by golang.org/x/mod/semver
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/cenkalti/backoff/v5 v5.0.3
+	// To be removed when datadog-agent replaces seelog with slog in https://github.com/DataDog/datadog-agent/pull/43297.
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
+	// mapstructure should be able to be replace by custom code.
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
+	// Maybe we can replace this with minio/simdjson-go or the other way around?
+	// minio/simdjson-go is v0, so we'd rather avoid it.
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
 	github.com/minio/simdjson-go v0.4.5
 	github.com/open-feature/go-sdk v1.17.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
+	// Could this one be isolated?
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
+	// spaolacci/murmur3 is from 2019?!
 	github.com/spaolacci/murmur3 v1.1.0
+	// One day we'll remove testify in favour of plain Go.
 	github.com/stretchr/testify v1.11.1
+	// From 2016, only one function used. It looks like a good candidate to absorb into dd-trace-go.
 	github.com/theckman/httpforwarded v0.4.0
 	github.com/tinylib/msgp v1.3.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
@@ -43,7 +52,10 @@ require (
 	golang.org/x/time v0.12.0
 	golang.org/x/tools v0.38.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
+	// It seems that grpc is only used by internal/traceprof/testapp.
+	// Other uses are in nested modules.
 	google.golang.org/grpc v1.75.0
+	// Like grpc, but also used by DSM. Possibly replaceable by tinylib/msgp.
 	google.golang.org/protobuf v1.36.7
 )
 
