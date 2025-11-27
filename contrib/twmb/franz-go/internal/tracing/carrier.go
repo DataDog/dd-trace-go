@@ -6,6 +6,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+// TODO: Should we rename this? It carries the record plus headers
 // kafkaHeadersCarrier implements tracer.TextMapWriter for Kafka headers
 type kafkaHeadersCarrier struct {
 	record *kgo.Record
