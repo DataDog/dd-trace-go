@@ -14,7 +14,7 @@ import (
 var instr *instrumentation.Instrumentation
 
 func init() {
-	instr = instrumentation.Load(instrumentation.PackageSegmentioKafkaGo)
+	instr = instrumentation.Load(instrumentation.PackageTwmbFranzGo)
 }
 
 type Tracer struct {
