@@ -275,7 +275,7 @@ func TestNewBlockParams(t *testing.T) {
 	}{
 		"block-1": {
 			params: map[string]any{
-				"status_code": "403",
+				"status_code": uint64(403),
 				"type":        "auto",
 			},
 			expected: blockActionParams{
@@ -285,7 +285,7 @@ func TestNewBlockParams(t *testing.T) {
 		},
 		"block-2": {
 			params: map[string]any{
-				"status_code": "405",
+				"status_code": uint64(405),
 				"type":        "html",
 			},
 			expected: blockActionParams{
