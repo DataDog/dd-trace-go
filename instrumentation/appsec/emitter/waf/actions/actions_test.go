@@ -332,7 +332,7 @@ func TestNewRedirectParams(t *testing.T) {
 	}{
 		"redirect-1": {
 			params: map[string]any{
-				"status_code": "308",
+				"status_code": uint64(308),
 				"location":    "/redirected",
 			},
 			expected: redirectActionParams{
@@ -342,7 +342,7 @@ func TestNewRedirectParams(t *testing.T) {
 		},
 		"redirect-2": {
 			params: map[string]any{
-				"status_code": "303",
+				"status_code": uint64(303),
 				"location":    "/tmp",
 			},
 			expected: redirectActionParams{
@@ -352,7 +352,7 @@ func TestNewRedirectParams(t *testing.T) {
 		},
 		"no-location": {
 			params: map[string]any{
-				"status_code": "303",
+				"status_code": uint64(303),
 			},
 			expected: redirectActionParams{
 				Location:   "",
