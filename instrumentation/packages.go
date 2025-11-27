@@ -55,6 +55,7 @@ const (
 	PackageSirupsenLogrus            Package = "sirupsen/logrus"
 	PackageShopifySarama             Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
+	PackageTwmbFranzGo               Package = "twmb/franz-go"
 	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5          Package = "olivere/elastic.v5"
 	PackageMiekgDNS                  Package = "miekg/dns"
@@ -627,6 +628,25 @@ var packages = map[Package]PackageInfo{
 	PackageSegmentioKafkaGo: {
 		TracedPackage: "github.com/segmentio/kafka-go",
 		EnvVarPrefix:  "KAFKA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
+	PackageTwmbFranzGo: {
+		TracedPackage: "github.com/twmb/franz-go",
+		// TODO: Should we change this prefix?
+		EnvVarPrefix: "KAFKA",
 		naming: map[Component]componentNames{
 			ComponentConsumer: {
 				useDDServiceV0:     true,
