@@ -27,7 +27,7 @@ type Tracer struct {
 	kafkaCfg            KafkaConfig
 }
 
-// Option describes options for the Kafka integration.
+// Option describes options for the integration
 type Option interface {
 	apply(*Tracer)
 }
@@ -48,14 +48,14 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	return tr
 }
 
-// OptionFn represents options applicable to NewReader, NewWriter, WrapReader and WrapWriter.
+// OptionFn represents options applicable to NewReader, NewWriter, WrapReader and WrapWriter
 type OptionFn func(*Tracer)
 
 func (fn OptionFn) apply(cfg *Tracer) {
 	fn(cfg)
 }
 
-// WithService sets the Tracer service name to serviceName.
+// WithService sets the Tracer service name to serviceName
 func WithService(serviceName string) Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.consumerServiceName = serviceName
@@ -63,7 +63,7 @@ func WithService(serviceName string) Option {
 	})
 }
 
-// WithAnalytics enables Trace Analytics for all started spans.
+// WithAnalytics enables Trace Analytics for all started spans
 func WithAnalytics(on bool) Option {
 	return OptionFn(func(tr *Tracer) {
 		if on {
@@ -75,7 +75,7 @@ func WithAnalytics(on bool) Option {
 }
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
-// correlated to started spans.
+// correlated to started spans
 func WithAnalyticsRate(rate float64) Option {
 	return OptionFn(func(tr *Tracer) {
 		if rate >= 0.0 && rate <= 1.0 {
