@@ -57,6 +57,9 @@ trigger_child_pipeline:
   variables:
       PARENT_PIPELINE_ID: $CI_PIPELINE_ID
 
+# This repository is using PR-level performance quality gates.
+# Verify that the check-big-regressions CI job has passed. If any regression happened, merging this PR will be blocked.
+# If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
 check-big-regressions:
   stage: benchmarks
   needs:
@@ -81,7 +84,6 @@ check-big-regressions:
     paths:
       - reports/
     expire_in: "30 days"
-
 
 # Config Registry CI Jobs
 validate_supported_configurations_v2_local_file:
