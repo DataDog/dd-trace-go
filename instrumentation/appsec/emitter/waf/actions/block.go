@@ -13,8 +13,6 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/go-viper/mapstructure/v2"
-
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
@@ -55,12 +53,12 @@ type (
 	// blockActionParams are the dynamic parameters to be provided to a "block_request"
 	// action type upon invocation
 	blockActionParams struct {
-		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value is nullable to
-		// be able to distinguish between unset and defaulting to Abort (10), or set to OK (0).
-		GRPCStatusCode     *int   `mapstructure:"grpc_status_code,omitempty"`
-		StatusCode         int    `mapstructure:"status_code"`
-		Type               string `mapstructure:"type,omitempty"`
-		SecurityResponseID string `mapstructure:"security_response_id,omitempty"`
+		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value defaults to Abort (10)
+		// if not set to OK (0).
+		GRPCStatusCode     int
+		StatusCode         int
+		Type               string
+		SecurityResponseID string
 	}
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that returns a status code and an error
@@ -76,6 +74,40 @@ type (
 		http.Handler
 	}
 )
+
+func (b *blockActionParams) Decode(p map[string]any) error {
+	for k := range p {
+		switch k {
+		case "grpc_status_code":
+			v, err := decodeInt(p, k)
+			if err != nil {
+				return err
+			}
+			b.GRPCStatusCode = v
+		case "status_code":
+			v, err := decodeInt(p, k)
+			if err != nil {
+				return err
+			}
+			b.StatusCode = v
+		case "security_response_id":
+			v, err := decodeStr(p, k)
+			if err != nil {
+				return err
+			}
+			b.SecurityResponseID = v
+		case "type":
+			v, err := decodeStr(p, k)
+			if err != nil {
+				return err
+			}
+			b.Type = v
+		default:
+			// We ignore any other field.
+		}
+	}
+	return nil
+}
 
 func (a *BlockGRPC) EmitData(op dyngo.Operation) {
 	dyngo.EmitData(op, a)
@@ -102,17 +134,11 @@ func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
 	p := blockActionParams{
 		Type:           "auto",
 		StatusCode:     403,
-		GRPCStatusCode: &grpcCode,
+		GRPCStatusCode: grpcCode,
 	}
-
-	if err := mapstructure.WeakDecode(params, &p); err != nil {
+	if err := p.Decode(params); err != nil {
 		return p, err
 	}
-
-	if p.GRPCStatusCode == nil {
-		p.GRPCStatusCode = &grpcCode
-	}
-
 	return p, nil
 }
 
@@ -125,7 +151,7 @@ func NewBlockAction(params map[string]any) []Action {
 	}
 	return []Action{
 		newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID),
-		newGRPCBlockRequestAction(*p.GRPCStatusCode),
+		newGRPCBlockRequestAction(p.GRPCStatusCode),
 	}
 }
 
