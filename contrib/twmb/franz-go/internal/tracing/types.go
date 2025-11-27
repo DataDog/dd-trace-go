@@ -27,7 +27,7 @@ type Writer interface {
 	GetTopic() string
 }
 
-type Message interface {
+type Record interface {
 	GetValue() []byte
 	GetKey() []byte
 	GetHeaders() []Header
