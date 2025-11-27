@@ -16,24 +16,25 @@ import (
 	"context"
 	"math"
 
+	// NOTE: Think of it as external constants.
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 const componentName = "twmb/franz-go"
 
-func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Record) *tracer.Span {
+func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.consumerServiceName),
-		tracer.ResourceName("Consume Topic " + msg.GetTopic()),
+		tracer.ResourceName("Consume Topic " + r.GetTopic()),
 		// ???: What is ext?
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, msg.GetPartition()),
-		tracer.Tag("offset", msg.GetOffset()),
+		tracer.Tag(ext.MessagingKafkaPartition, r.GetPartition()),
+		tracer.Tag("offset", r.GetOffset()),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, msg.GetTopic()),
+		tracer.Tag(ext.MessagingDestinationName, r.GetTopic()),
 		tracer.Measured(),
 	}
 	if tr.kafkaCfg.BootstrapServers != "" {
@@ -44,7 +45,7 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Record) *tracer.Span
 	}
 
 	// Kafka supports headers, so we try to extract a span context from them
-	carrier := NewKafkaHeadersCarrier(msg)
+	carrier := NewKafkaHeadersCarrier(r)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
@@ -57,10 +58,10 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Record) *tracer.Span
 	return span
 }
 
-func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Record, spanOpts ...tracer.StartSpanOption) *tracer.Span {
+func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, r Record, spanOpts ...tracer.StartSpanOption) *tracer.Span {
 	topic := writer.GetTopic()
 	if topic == "" {
-		topic = msg.GetTopic()
+		topic = r.GetTopic()
 	}
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.producerServiceName),
@@ -78,7 +79,7 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Recor
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 	opts = append(opts, spanOpts...)
-	carrier := NewKafkaHeadersCarrier(msg)
+	carrier := NewKafkaHeadersCarrier(r)
 	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier in writer, %s", err.Error())
