@@ -57,7 +57,7 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Record) *tracer.Span
 	return span
 }
 
-func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Message, spanOpts ...tracer.StartSpanOption) *tracer.Span {
+func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Record, spanOpts ...tracer.StartSpanOption) *tracer.Span {
 	topic := writer.GetTopic()
 	if topic == "" {
 		topic = msg.GetTopic()
@@ -78,10 +78,10 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Messa
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 	opts = append(opts, spanOpts...)
-	carrier := NewMessageCarrier(msg)
+	carrier := NewKafkaHeadersCarrier(msg)
 	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in writer, %s", err.Error())
+		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier in writer, %s", err.Error())
 	}
 	return span
 }
