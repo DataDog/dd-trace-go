@@ -303,6 +303,28 @@ func TestNewBlockParams(t *testing.T) {
 	}
 }
 
+func BenchmarkNewBlockParams(b *testing.B) {
+	params := map[string]any{
+		"status_code": uint64(403),
+		"type":        "auto",
+	}
+	for b.Loop() {
+		actionParams, err := blockParamsFromMap(params)
+		if err != nil {
+			b.Fatalf("blockParamsFromMap() error = %v", err)
+		}
+		if got, want := actionParams.GRPCStatusCode, 10; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := actionParams.StatusCode, 403; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := actionParams.Type, "auto"; got != want {
+			b.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}
+
 func TestNewRedirectParams(t *testing.T) {
 	for name, tc := range map[string]struct {
 		params   map[string]any
