@@ -19,9 +19,26 @@ import (
 	// NOTE: Think of it as external constants.
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "twmb/franz-go"
+
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageTwmbFranzGo)
+}
+
+type Tracer struct {
+	consumerServiceName string
+	producerServiceName string
+	consumerSpanName    string
+	producerSpanName    string
+	analyticsRate       float64
+	dataStreamsEnabled  bool
+	kafkaCfg            KafkaConfig
+}
 
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 	opts := []tracer.StartSpanOption{
