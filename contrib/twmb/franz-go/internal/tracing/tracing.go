@@ -22,10 +22,11 @@ import (
 
 const componentName = "twmb/franz-go"
 
-func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
+func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Record) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.consumerServiceName),
 		tracer.ResourceName("Consume Topic " + msg.GetTopic()),
+		// ???: What is ext?
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.GetPartition()),
 		tracer.Tag("offset", msg.GetOffset()),
@@ -41,15 +42,17 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
-	// kafka supports headers, so try to extract a span context
-	carrier := NewMessageCarrier(msg)
+
+	// Kafka supports headers, so we try to extract a span context from them
+	carrier := NewKafkaHeadersCarrier(msg)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, tr.consumerSpanName, opts...)
-	// reinject the span context so consumers can pick it up
+
+	// We reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/segmentio/kafka-go: Failed to inject span context into carrier in reader, %s", err.Error())
+		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier in reader, %s", err.Error())
 	}
 	return span
 }
