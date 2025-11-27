@@ -1,12 +1,12 @@
 /*
 Run this generate Go code after changing things below:
 
-protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative internal/traceprof/testapp/test_app.proto
+protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative internal/traceprof/traceproftest/testapp/test_app.proto
 */
 
 syntax = "proto3";
 
-option go_package = "github.com/DataDog/dd-trace-go/v2/internal/traceprof/testapp";
+option go_package = "github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest/testapp";
 package testapp;
 
 service TestApp {
