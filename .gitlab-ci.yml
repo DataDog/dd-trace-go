@@ -52,6 +52,11 @@ trigger_child_pipeline:
       - artifact: generated_benchmark_matrix.yml
         job: generate_matrix
     strategy: depend
+  # Are interrutible rules propagated to the child pipeline?
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+      interruptible: false
+    - interruptible: true
   needs:
     - generate_matrix
   variables:
