@@ -11,22 +11,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageTwmbFranzGo)
-}
-
-type Tracer struct {
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-	dataStreamsEnabled  bool
-	kafkaCfg            KafkaConfig
-}
-
 // Option describes options for the integration
 type Option interface {
 	apply(*Tracer)
@@ -91,8 +75,4 @@ func WithDataStreams() Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.dataStreamsEnabled = true
 	})
-}
-
-func Logger() instrumentation.Logger {
-	return instr.Logger()
 }
