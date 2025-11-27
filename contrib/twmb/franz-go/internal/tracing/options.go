@@ -7,29 +7,11 @@ package tracing
 
 import (
 	"math"
-
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 // Option describes options for the integration
 type Option interface {
 	apply(*Tracer)
-}
-
-func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
-	tr := &Tracer{
-		consumerServiceName: instr.ServiceName(instrumentation.ComponentConsumer, nil),
-		producerServiceName: instr.ServiceName(instrumentation.ComponentProducer, nil),
-		consumerSpanName:    instr.OperationName(instrumentation.ComponentConsumer, nil),
-		producerSpanName:    instr.OperationName(instrumentation.ComponentProducer, nil),
-		analyticsRate:       instr.AnalyticsRate(false),
-		dataStreamsEnabled:  instr.DataStreamsEnabled(),
-		kafkaCfg:            kafkaCfg,
-	}
-	for _, opt := range opts {
-		opt.apply(tr)
-	}
-	return tr
 }
 
 // OptionFn represents options applicable to NewReader, NewWriter, WrapReader and WrapWriter
