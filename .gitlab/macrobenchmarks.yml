@@ -224,8 +224,9 @@ include:
   - project: 'DataDog/benchmarking-platform-tools'
     file: 'images/templates/gitlab/notify-slo-breaches.template.yml'
 
-# This repository is using PR-level performance quality gates.
-# Verify that the check-slo-breaches CI job has passed. If any regression happened, merging this PR will be blocked.
+# This repository is using pre-release performance quality gates.
+# On release branches, verify that the latest CI pipeline passed the check-slo-breaches job.
+# If any SLO is breached, your release will be blocked.
 # If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
 check-slo-breaches:
   extends: .check-slo-breaches
