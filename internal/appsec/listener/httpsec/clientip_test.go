@@ -432,6 +432,18 @@ func TestParseForwardedHeader(t *testing.T) {
 	)
 }
 
+func BenchmarkParseForwardedHeader(b *testing.B) {
+	want := []string{"127.0.0.1", "127.0.0.2", "fe80::2897:fcb4:830e:9e44", "quoted\"escaped", "fe80::2897:fcb4:830e:9e45"}
+	for b.Loop() {
+		got := parseForwardedHeader(`by=unknown;FOR="127.0.0.1:443";proto="https;TLS",for=127.0.0.2,for="[fe80::2897:fcb4:830e:9e44]:443",for="quoted\"escaped",for="[fe80::2897:fcb4:830e:9e45]"`)
+		for i := range got {
+			if got[i] != want[i] {
+				b.Fatalf("got(%d) %q, want %q", i, got[i], want[i])
+			}
+		}
+	}
+}
+
 func randIPv4() netip.Addr {
 	return netip.AddrFrom4([4]byte{byte(rand.Uint32()), byte(rand.Uint32()), byte(rand.Uint32()), byte(rand.Uint32())})
 }
