@@ -37,7 +37,9 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.Server = &fasthttp.Server{Handler: fastHTTPHandler}
 	tc.Addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(tc.Addr), http.ErrServerClosed) }()
+	// Note: fasthttp.Server.ListenAndServe returns nil on graceful shutdown,
+	// not http.ErrServerClosed like net/http does.
+	go func() { _ = tc.Server.ListenAndServe(tc.Addr) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
