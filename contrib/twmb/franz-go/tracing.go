@@ -3,13 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package kafka
+package kgo
 
 import (
-	"github.com/DataDog/_personal/mentorship/dd-trace-go/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/internal/tracing"
-	"github.com/segmentio/kafka-go"
-	kgo "github.com/twmb/franz-go/pkg/kgo"
+	// TODO: Switch to the final package at some point
+	// "github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/internal/tracing"
+	"github.com/DataDog/_personal/mentorship/dd-trace-go/contrib/twmb/franz-go/internal/tracing"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 type wRecord struct {
@@ -40,9 +41,9 @@ func (w *wRecord) GetHeaders() []tracing.Header {
 }
 
 func (w *wRecord) SetHeaders(headers []tracing.Header) {
-	hs := make([]kafka.Header, 0, len(headers))
+	hs := make([]kgo.RecordHeader, 0, len(headers))
 	for _, h := range headers {
-		hs = append(hs, kafka.Header{
+		hs = append(hs, kgo.RecordHeader{
 			Key:   h.GetKey(),
 			Value: h.GetValue(),
 		})
@@ -76,14 +77,6 @@ func (w wHeader) GetKey() string {
 
 func (w wHeader) GetValue() []byte {
 	return w.Value
-}
-
-type wWriter struct {
-	*kafka.Writer
-}
-
-func (w *wWriter) GetTopic() string {
-	return w.Topic
 }
 
 func ExtractSpanContext(r *kgo.Record) (*tracer.SpanContext, error) {
