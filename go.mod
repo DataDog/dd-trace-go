@@ -14,17 +14,16 @@ require (
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
-	// This might be replaced by golang.org/x/mod/semver
+	// Replaced partially with golang.org/x/mod/semver in #4182.
 	github.com/Masterminds/semver/v3 v3.3.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	// To be removed when datadog-agent replaces seelog with slog in https://github.com/DataDog/datadog-agent/pull/43297.
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
-	// mapstructure should be able to be replace by custom code.
+	// Replaced with custom code in #4181.
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db
 	github.com/google/uuid v1.6.0
-	// Maybe we can replace this with minio/simdjson-go or the other way around?
-	// minio/simdjson-go is v0, so we'd rather avoid it.
+	// AAP has stated that they have a need for both libraries in https://github.com/DataDog/dd-trace-go/pull/4176#discussion_r2568437568.
 	github.com/json-iterator/go v1.1.12
 	github.com/klauspost/compress v1.18.0
 	github.com/minio/simdjson-go v0.4.5
@@ -33,9 +32,9 @@ require (
 	// Could this one be isolated?
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
-	// spaolacci/murmur3 is from 2019?!
+	// spaolacci/murmur3 is from 2019 but it's the most mature and used implementation. Let's keep it.
 	github.com/spaolacci/murmur3 v1.1.0
-	// One day we'll remove testify in favour of plain Go.
+	// One day we'll remove testify in favour of plain Go. One day in the future :)
 	github.com/stretchr/testify v1.11.1
 	// From 2016, only one function used. It looks like a good candidate to absorb into dd-trace-go.
 	github.com/theckman/httpforwarded v0.4.0
@@ -52,10 +51,9 @@ require (
 	golang.org/x/time v0.12.0
 	golang.org/x/tools v0.38.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
-	// It seems that grpc is only used by internal/traceprof/testapp.
-	// Other uses are in nested modules.
+	// Dependency set to indirect in #4183.
 	google.golang.org/grpc v1.75.0
-	// Like grpc, but also used by DSM. Possibly replaceable by tinylib/msgp.
+	// DSM usage makes this a required dependency.
 	google.golang.org/protobuf v1.36.7
 )
 
