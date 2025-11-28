@@ -469,7 +469,7 @@ replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../../c
 
 replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../orchestrion/all
 
-replace github.com/DataDog/dd-trace-go/v2 => github.com/DataDog/dd-trace-go/v2 v2.5.0-dev
+replace github.com/DataDog/dd-trace-go/v2 => ../../..
 
 replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
 
