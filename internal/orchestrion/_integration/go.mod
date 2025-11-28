@@ -8,7 +8,7 @@ require (
 	github.com/99designs/gqlgen v0.17.83
 	github.com/DataDog/datadog-agent/pkg/proto v0.71.2
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.4.0-dev
-	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.4.0-dev
+	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.5.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.5.0-dev
 	github.com/DataDog/go-libddwaf/v4 v4.7.0
 	github.com/DataDog/orchestrion v1.6.1
@@ -469,7 +469,7 @@ replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../../c
 
 replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../orchestrion/all
 
-replace github.com/DataDog/dd-trace-go/v2 => ../../..
+replace github.com/DataDog/dd-trace-go/v2 => github.com/DataDog/dd-trace-go/v2 v2.5.0-dev
 
 replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
 

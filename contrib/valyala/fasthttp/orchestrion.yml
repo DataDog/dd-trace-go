@@ -18,6 +18,14 @@ aspects:
       - add-struct-field:
           name: '__dd_instrumented'
           type: 'bool'
+      # We need to use go:linkname to refer to wrapHandlerWithDefaults in order to avoid creating
+      # circular dependencies, as contrib/valyala/fasthttp has a dependency on valyala/fasthttp...
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
+          template: |-
+            //go:linkname __dd_fasthttptrace_wrapHandler github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2.wrapHandlerWithDefaults
+            func __dd_fasthttptrace_wrapHandler(RequestHandler) RequestHandler
   # FastHTTP Server instrumentation
   # All server startup methods (ListenAndServe, ServeTLS, etc.) eventually call Serve(ln)
   # By targeting only Serve(), we avoid hot-path overhead and ensure complete coverage
@@ -27,14 +35,12 @@ aspects:
         function:
           - receiver: '*github.com/valyala/fasthttp.Server'
           - name: 'Serve'  # Single entry point for all server startup methods
-    advice:          
+    advice:
       - prepend-statements:
-          imports:
-            fasthttptrace: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
           template: |
             {{ $srv := .Function.Receiver }}
             // Only wrap Handler once, even if Serve() is called multiple times
             if !{{ $srv }}.__dd_instrumented && {{ $srv }}.Handler != nil {
-              {{ $srv }}.Handler = fasthttptrace.WrapHandler({{ $srv }}.Handler)
+              {{ $srv }}.Handler = __dd_fasthttptrace_wrapHandler({{ $srv }}.Handler)
               {{ $srv }}.__dd_instrumented = true
             }
