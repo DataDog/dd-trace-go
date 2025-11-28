@@ -30,8 +30,7 @@ func TestAppsec(t *testing.T) {
 	client := WrapRoundTripper(&emptyRoundTripper{})
 
 	for _, enabled := range []bool{true, false} {
-
-		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+		t.Run(fmt.Sprintf("DD_APPSEC_RASP_ENABLED=%v", enabled), func(t *testing.T) {
 			t.Setenv("DD_APPSEC_RASP_ENABLED", strconv.FormatBool(enabled))
 
 			mt := mocktracer.Start()
