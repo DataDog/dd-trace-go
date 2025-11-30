@@ -788,6 +788,26 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, c.runtimeMetrics)
 	})
+
+	t.Run("runtime-metrics-only", func(t *testing.T) {
+		Stop()
+		tp := new(log.RecordLogger)
+		tp.Ignore(commonLogIgnore...)
+		Start(WithRuntimeMetrics(), WithTraceEnabled(false), WithLogger(tp), WithDebugMode(true), withNoopStats())
+		t.Cleanup(Stop)
+		tr, ok := getGlobalTracer().(*tracer)
+		require.True(t, ok, "expected tracer instance to remain active")
+		assert.False(t, tr.config.enabled.current, "tracing should remain disabled")
+		assert.True(t, tr.config.runtimeMetrics, "runtime metrics must stay enabled")
+		found := false
+		for _, entry := range tp.Logs() {
+			if strings.Contains(entry, "Runtime metrics enabled") {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected startup log confirming runtime metrics")
+	})
 }
 
 func TestTracerStartSpanOptions(t *testing.T) {

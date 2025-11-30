@@ -207,11 +207,16 @@ func Start(opts ...StartOption) error {
 	defer func(now time.Time) {
 		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
 	}(time.Now())
-	t, err := newTracer(opts...)
+	t, err := newUnstartedTracer(opts...)
 	if err != nil {
 		return err
 	}
 	if !t.config.enabled.current {
+		if t.config.runtimeMetrics {
+			setGlobalTracer(t)
+			t.startMetricsOnly()
+			return nil
+		}
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -220,6 +225,7 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 	setGlobalTracer(t)
+	t.startBackgroundTasks()
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -232,16 +238,6 @@ func Start(opts ...StartOption) error {
 
 		globalinternal.SetTracerInitialized(true)
 		return nil
-	}
-
-	if t.config.runtimeMetricsV2 {
-		l := slog.New(slogHandler{})
-		opts := &runtimemetrics.Options{Logger: l}
-		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
-			l.Debug("Runtime metrics v2 enabled.")
-		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
-		}
 	}
 
 	// Start AppSec with remote configuration
@@ -476,8 +472,17 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := t.config
+	t.startBackgroundTasks()
+	return t, nil
+}
+
+func (t *tracer) startMetricsOnly() {
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
+	t.startRuntimeMetricsCollectors()
+}
+
+func (t *tracer) startRuntimeMetricsCollectors() {
+	c := t.config
 	if c.runtimeMetrics {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
@@ -486,7 +491,21 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
 	}
-	if c.debugAbandonedSpans {
+	if c.runtimeMetricsV2 {
+		l := slog.New(slogHandler{})
+		opts := &runtimemetrics.Options{Logger: l}
+		if emitter, err := runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
+			t.runtimeMetrics = emitter
+			l.Debug("Runtime metrics v2 enabled.")
+		} else {
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+		}
+	}
+}
+
+func (t *tracer) startBackgroundTasks() {
+	t.startMetricsOnly()
+	if t.config.debugAbandonedSpans {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
@@ -508,7 +527,6 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		t.reportHealthMetricsAtInterval(statsInterval)
 	}()
 	t.stats.Start()
-	return t, nil
 }
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer
