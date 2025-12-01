@@ -23,3 +23,17 @@ aspects:
               app.Use(fibertrace.Middleware())
               return app
             }()
+  # Prevent FastHTTP double-instrumentation by marking the underlying server
+  # as already instrumented before Fiber starts listening. This ensures that
+  # when Fiber's internal call to fasthttp.Server.Serve() happens, the
+  # DD_Instrumented flag is already set and the FastHTTP aspect will skip.
+  - id: Listen
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/gofiber/fiber/v2.App'
+          - name: Listen
+    advice:
+      - prepend-statements:
+          template: |
+            {{ .Function.Receiver }}.Server().DD_Instrumented = true
