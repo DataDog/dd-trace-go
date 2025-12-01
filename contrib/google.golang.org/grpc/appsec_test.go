@@ -31,10 +31,6 @@ func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h") // Functionally unlimited
 	testutils.StartAppSec(t)
 
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
-
 	setup := func(t *testing.T) (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
 		require.NoError(t, err)
@@ -138,9 +134,6 @@ func TestAppSec(t *testing.T) {
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newRig(false)
@@ -230,9 +223,6 @@ func TestBlocking(t *testing.T) {
 func TestUserBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (fixturepb.FixtureClient, mocktracer.Tracer, func()) {
 		rig, err := newAppsecRig(t, false)
