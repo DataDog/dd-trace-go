@@ -2,32 +2,30 @@
 # This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
 # a change is made on the one-pipeline template.
 variables:
-  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/b8fc1b7f45e49ddd65623f217f03c38def169aff6f2518380e5b415514e4cb81/scripts/
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/ef1b27c2b0cdbbfb25d185344cdb7aa6bb4feb905cb2a77fa1a5a5340b570004/scripts/
 
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
   - |
-    for script_file in "config-inversion-local-validation.sh" "config-inversion-update-supported-range.sh"
+    for script_file in "config-inversion-local-validation.py" "config-inversion-update-supported-range.py"
     do
       curl --location --fail --show-error --output "scripts/${script_file}" "${SCRIPTS_BASE_URL}/${script_file}"
-      if [[ $script_file == *sh ]]
-      then
-         chmod +x scripts/$script_file
-      fi
+      chmod +x scripts/$script_file
     done
 
-.validate_supported_configurations_local_file:
+.validate_supported_configurations_v2_local_file:
   allow_failure: false
   rules:
     - when: on_success
   variables:
     LOCAL_JSON_PATH: ""
+    BACKFILLED: ""
   before_script:
     - *download-scripts-from-template
   script:
-    - scripts/config-inversion-local-validation.sh "$LOCAL_JSON_PATH"
+    - scripts/config-inversion-local-validation.py "$LOCAL_JSON_PATH" "$BACKFILLED"
 
-.update_central_configurations_version_range:
+.update_central_configurations_version_range_v2:
   allow_failure: false
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/'
@@ -40,4 +38,4 @@ variables:
     - *download-scripts-from-template
     - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
   script:
-    - scripts/config-inversion-update-supported-range.sh "$LOCAL_JSON_PATH" "$LANGUAGE_NAME" "$MULTIPLE_RELEASE_LINES"
+    - scripts/config-inversion-update-supported-range.py "$LOCAL_JSON_PATH" "$LANGUAGE_NAME" "$MULTIPLE_RELEASE_LINES"

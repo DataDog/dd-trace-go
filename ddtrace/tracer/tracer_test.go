@@ -33,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"go.uber.org/goleak"
 
@@ -1238,7 +1239,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultHTTPClient(0, true))
+	return newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, true))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1357,7 +1358,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultHTTPClient(0, false))),
+		withTransport(newHTTPTransport(url, internal.DefaultHTTPClient(defaultHTTPTimeout, false))),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -2350,7 +2351,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		withTransport(transport),
 		withTickChan(tick),
 		// disable keep-alives to avoid goroutine leaks between tests
-		WithHTTPClient(defaultHTTPClient(0, true)),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {
@@ -2361,6 +2362,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	tracer.config.agent.DropP0s = true
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
+		tracer.reportHealthMetrics()
 		if n < 0 {
 			tick <- time.Now()
 			return
@@ -2393,7 +2395,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 // disabled. This is necessary to avoid goroutine leaks between tests, see
 // TestMain.
 func newTestConfig(opts ...StartOption) (*config, error) {
-	opts = append([]StartOption{WithHTTPClient(defaultHTTPClient(0, true))}, opts...)
+	opts = append([]StartOption{WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true))}, opts...)
 	return newConfig(opts...)
 }
 
@@ -2538,12 +2540,11 @@ func TestTakeStackTrace(t *testing.T) {
 		// top frame should be runtime.main or runtime.goexit, in case of tests that's goexit
 		assert.Contains(t, val, "runtime.goexit")
 		numFrames := strings.Count(val, "\n\t")
-		assert.Equal(t, 1, numFrames)
+		assert.Equal(t, 3, numFrames)
 	})
 
 	t.Run("n=1", func(t *testing.T) {
 		val := takeStacktrace(1, 0)
-		assert.Contains(t, val, "tracer.TestTakeStackTrace", "should contain this function")
 		// each frame consists of two strings separated by \n\t, thus number of frames == number of \n\t
 		numFrames := strings.Count(val, "\n\t")
 		assert.Equal(t, 1, numFrames)
@@ -2923,4 +2924,94 @@ func TestNewUnstartedTracerDDAgentHostNotFound(t *testing.T) {
 	t.Setenv("DD_AGENT_HOST", "ddapm-test-agent-c07208")
 	_, err := newUnstartedTracer()
 	assert.NoError(t, err)
+}
+
+func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
+	// This checks that starting the tracer twice properly shuts down the
+	// previous tracer, specifically the runtime metrics emitter.
+	tp := new(log.RecordLogger)
+	err := Start(WithLogger(tp))
+	require.NoError(t, err)
+	err = Start(WithLogger(tp))
+	require.NoError(t, err)
+	Stop()
+
+	// Check that runtime metrics emitters lifetimes did not overlap.
+	for _, logMsg := range tp.Logs() {
+		assert.NotContains(t, logMsg, "runtimemetrics has already been started")
+	}
+}
+
+// TestTracerTwiceStartRemoteConfig tests how RC behaves during tracer restarts.
+func TestTracerTwiceStartRemoteConfig(t *testing.T) {
+	err := Start()
+	require.NoError(t, err)
+	err = remoteconfig.RegisterProduct("testing")
+	require.NoError(t, err)
+
+	// "testing" should be present and RC is active
+	got, err := remoteconfig.HasProduct("testing")
+	require.True(t, got)
+	require.NoError(t, err)
+
+	err = Start()
+	require.NoError(t, err)
+	got, err = remoteconfig.HasProduct("testing")
+	require.False(t, got)
+	require.NoError(t, err)
+
+	Stop()
+	// This should be noop.
+	Stop()
+}
+
+func TestTracerConcurrentStartStop(t *testing.T) {
+	const iterations = 100
+	var wg sync.WaitGroup
+
+	// Goroutine 1: Continuously start the tracer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			Start()
+		}
+	}()
+
+	// Goroutine 2: Continuously stop the tracer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			Stop()
+		}
+	}()
+
+	// Wait for both goroutines to complete
+	wg.Wait()
+
+	// Ensure the tracer is stopped before proceeding
+	Stop()
+
+	// Now verify that starting the tracer enables remote config
+	err := Start()
+	require.NoError(t, err)
+
+	// Register a remote config product
+	err = remoteconfig.RegisterProduct("testing")
+	require.NoError(t, err)
+
+	// Verify that remote config is active and product is registered
+	got, err := remoteconfig.HasProduct("testing")
+	require.NoError(t, err)
+	require.True(t, got, "remote config should be active after Start()")
+
+	// Now stop the tracer and verify remote config is disabled
+	Stop()
+
+	// After Stop(), remote config should be disabled
+	// Attempting to check for the product should indicate it's not available
+	got, err = remoteconfig.HasProduct("testing")
+	require.ErrorIs(t, err, remoteconfig.ErrClientNotStarted)
+	require.False(t, got, "remote config should be disabled after Stop()")
 }

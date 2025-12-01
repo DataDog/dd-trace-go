@@ -21,18 +21,15 @@ const (
 	ffeCapability  = 46
 )
 
-func startWithRemoteConfig() (*DatadogProvider, error) {
-	provider := newDatadogProvider()
+func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
+	provider := newDatadogProvider(config)
 
 	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
 		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
 	}
 
-	// Create the callback that will handle Remote Config updates
-	callback := createRemoteConfigCallback(provider)
-
 	// Subscribe to Remote Config updates for the OpenFeature product
-	if err := remoteconfig.Subscribe(ffeProductName, callback, ffeCapability); err != nil {
+	if err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, ffeCapability); err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider ?)", err)
 	}
 
@@ -40,20 +37,16 @@ func startWithRemoteConfig() (*DatadogProvider, error) {
 	return provider, nil
 }
 
-// createRemoteConfigCallback creates a callback function for Remote Config updates.
-// This callback parses incoming configurations and updates the provider.
-func createRemoteConfigCallback(provider *DatadogProvider) remoteconfig.ProductCallback {
-	return func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
-		statuses := make(map[string]rc.ApplyStatus, len(update))
+func (p *DatadogProvider) rcCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	statuses := make(map[string]rc.ApplyStatus, len(update))
 
-		// Process each configuration file in the update
-		for path, data := range update {
-			status := processConfigUpdate(provider, path, data)
-			statuses[path] = status
-		}
-
-		return statuses
+	// Process each configuration file in the update
+	for path, data := range update {
+		status := processConfigUpdate(p, path, data)
+		statuses[path] = status
 	}
+
+	return statuses
 }
 
 // processConfigUpdate processes a single configuration update from Remote Config.
@@ -70,7 +63,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Parse the configuration
-	log.Debug("openfeature: remote config: processing configuration update %q: %s", path, string(data))
+	log.Debug("openfeature: remote config: processing configuration update %q", path)
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
@@ -204,12 +197,8 @@ func validateFlag(flagKey string, flag *flag) error {
 // doesn't provide an Unsubscribe method yet. The provider will continue
 // to receive updates until the Remote Config client is stopped.
 func stopRemoteConfig() error {
-	// TODO: Implement unsubscribe when available in remoteconfig package
-	// For now, we can unregister the product and the callback
-	if err := remoteconfig.UnregisterProduct(ffeProductName); err != nil {
-		return fmt.Errorf("failed to unregister OpenFeature product: %w", err)
-	}
-
 	log.Debug("openfeature: unregistered from Remote Config")
+	// For now, we can unregister the capability to stop receiving updates
+	_ = remoteconfig.UnregisterCapability(ffeCapability)
 	return nil
 }

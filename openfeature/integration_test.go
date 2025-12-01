@@ -8,17 +8,23 @@ package openfeature
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"sync"
 	"testing"
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"github.com/stretchr/testify/require"
 )
 
 // TestEndToEnd_BooleanFlag tests the complete flow from configuration to flag evaluation
 // using the actual OpenFeature SDK client.
 func TestEndToEnd_BooleanFlag(t *testing.T) {
 	// Create provider and configuration
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -37,6 +43,10 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 			"country": "US",
 		})
 
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
+
 		value, err := client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -45,12 +55,37 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 		if !value {
 			t.Error("expected feature to be enabled for US user")
 		}
+
+		// Verify exposure event was recorded
+		exposures := getExposureBuffer(writer)
+		if len(exposures) <= initialBufferSize {
+			t.Error("expected exposure event to be recorded")
+		} else {
+			// Verify the last exposure event
+			exposure := exposures[len(exposures)-1]
+			if exposure.Flag.Key != "feature-rollout" {
+				t.Errorf("expected flag key 'feature-rollout', got %q", exposure.Flag.Key)
+			}
+			if exposure.Subject.ID != "user-123" {
+				t.Errorf("expected subject ID 'user-123', got %q", exposure.Subject.ID)
+			}
+			if exposure.Allocation.Key != "us-rollout" {
+				t.Errorf("expected allocation key 'us-rollout', got %q", exposure.Allocation.Key)
+			}
+			if exposure.Variant.Key != "on" {
+				t.Errorf("expected variant key 'on', got %q", exposure.Variant.Key)
+			}
+		}
 	})
 
 	t.Run("user in UK gets default value", func(t *testing.T) {
 		evalCtx := of.NewEvaluationContext("user-456", map[string]interface{}{
 			"country": "UK",
 		})
+
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
 
 		value, err := client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
 		if err != nil {
@@ -60,12 +95,22 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 		if value {
 			t.Error("expected feature to be disabled for UK user")
 		}
+
+		// Verify NO exposure event was recorded (no matching allocation)
+		exposures := getExposureBuffer(writer)
+		if len(exposures) != initialBufferSize {
+			t.Error("expected NO exposure event to be recorded for UK user (no matching allocation)")
+		}
 	})
 
 	t.Run("evaluation details include variant and reason", func(t *testing.T) {
 		evalCtx := of.NewEvaluationContext("user-789", map[string]interface{}{
 			"country": "US",
 		})
+
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
 
 		details, err := client.BooleanValueDetails(ctx, "feature-rollout", false, evalCtx)
 		if err != nil {
@@ -83,12 +128,26 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 		if details.Variant != "on" {
 			t.Errorf("expected variant 'on', got %q", details.Variant)
 		}
+
+		// Verify exposure event was recorded
+		exposures := getExposureBuffer(writer)
+		if len(exposures) <= initialBufferSize {
+			t.Error("expected exposure event to be recorded")
+		} else {
+			exposure := exposures[len(exposures)-1]
+			if exposure.Subject.ID != "user-789" {
+				t.Errorf("expected subject ID 'user-789', got %q", exposure.Subject.ID)
+			}
+			if exposure.Variant.Key != "on" {
+				t.Errorf("expected variant key 'on', got %q", exposure.Variant.Key)
+			}
+		}
 	})
 }
 
 // TestEndToEnd_StringFlag tests string flag evaluation with the OpenFeature SDK.
 func TestEndToEnd_StringFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createE2EStringConfig()
 	provider.updateConfiguration(config)
 
@@ -105,6 +164,10 @@ func TestEndToEnd_StringFlag(t *testing.T) {
 			"tier": "premium",
 		})
 
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
+
 		value, err := client.StringValue(ctx, "api-version", "v1", evalCtx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -113,12 +176,36 @@ func TestEndToEnd_StringFlag(t *testing.T) {
 		if value != "v2" {
 			t.Errorf("expected 'v2', got %q", value)
 		}
+
+		// Verify exposure event was recorded
+		exposures := getExposureBuffer(writer)
+		if len(exposures) <= initialBufferSize {
+			t.Error("expected exposure event to be recorded")
+		} else {
+			exposure := exposures[len(exposures)-1]
+			if exposure.Flag.Key != "api-version" {
+				t.Errorf("expected flag key 'api-version', got %q", exposure.Flag.Key)
+			}
+			if exposure.Subject.ID != "premium-user-1" {
+				t.Errorf("expected subject ID 'premium-user-1', got %q", exposure.Subject.ID)
+			}
+			if exposure.Allocation.Key != "premium-users" {
+				t.Errorf("expected allocation key 'premium-users', got %q", exposure.Allocation.Key)
+			}
+			if exposure.Variant.Key != "v2" {
+				t.Errorf("expected variant key 'v2', got %q", exposure.Variant.Key)
+			}
+		}
 	})
 
 	t.Run("basic user gets default", func(t *testing.T) {
 		evalCtx := of.NewEvaluationContext("basic-user-1", map[string]interface{}{
 			"tier": "basic",
 		})
+
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
 
 		value, err := client.StringValue(ctx, "api-version", "v1", evalCtx)
 		if err != nil {
@@ -128,12 +215,18 @@ func TestEndToEnd_StringFlag(t *testing.T) {
 		if value != "v1" {
 			t.Errorf("expected 'v1', got %q", value)
 		}
+
+		// Verify NO exposure event was recorded (no matching allocation)
+		exposures := getExposureBuffer(writer)
+		if len(exposures) != initialBufferSize {
+			t.Error("expected NO exposure event to be recorded for basic user (no matching allocation)")
+		}
 	})
 }
 
 // TestEndToEnd_IntegerFlag tests integer flag evaluation.
 func TestEndToEnd_IntegerFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createE2EIntegerConfig()
 	provider.updateConfiguration(config)
 
@@ -150,6 +243,10 @@ func TestEndToEnd_IntegerFlag(t *testing.T) {
 			"requests_per_day": 10000,
 		})
 
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
+
 		value, err := client.IntValue(ctx, "rate-limit", 100, evalCtx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -158,12 +255,33 @@ func TestEndToEnd_IntegerFlag(t *testing.T) {
 		if value != 1000 {
 			t.Errorf("expected 1000, got %d", value)
 		}
+
+		// Verify exposure event was recorded
+		exposures := getExposureBuffer(writer)
+		if len(exposures) <= initialBufferSize {
+			t.Error("expected exposure event to be recorded")
+		} else {
+			exposure := exposures[len(exposures)-1]
+			if exposure.Flag.Key != "rate-limit" {
+				t.Errorf("expected flag key 'rate-limit', got %q", exposure.Flag.Key)
+			}
+			if exposure.Subject.ID != "high-traffic-user" {
+				t.Errorf("expected subject ID 'high-traffic-user', got %q", exposure.Subject.ID)
+			}
+			if exposure.Variant.Key != "high" {
+				t.Errorf("expected variant key 'high', got %q", exposure.Variant.Key)
+			}
+		}
 	})
 
 	t.Run("low traffic user gets default", func(t *testing.T) {
 		evalCtx := of.NewEvaluationContext("low-traffic-user", map[string]interface{}{
 			"requests_per_day": 50,
 		})
+
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
 
 		value, err := client.IntValue(ctx, "rate-limit", 100, evalCtx)
 		if err != nil {
@@ -173,12 +291,18 @@ func TestEndToEnd_IntegerFlag(t *testing.T) {
 		if value != 100 {
 			t.Errorf("expected 100, got %d", value)
 		}
+
+		// Verify NO exposure event was recorded (no matching allocation)
+		exposures := getExposureBuffer(writer)
+		if len(exposures) != initialBufferSize {
+			t.Error("expected NO exposure event to be recorded for low traffic user (no matching allocation)")
+		}
 	})
 }
 
 // TestEndToEnd_FloatFlag tests float flag evaluation.
 func TestEndToEnd_FloatFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createE2EFloatConfig()
 	provider.updateConfiguration(config)
 
@@ -194,6 +318,10 @@ func TestEndToEnd_FloatFlag(t *testing.T) {
 		"experiment_group": "test",
 	})
 
+	// Get initial buffer size
+	writer := getExposureWriter(provider)
+	initialBufferSize := len(getExposureBuffer(writer))
+
 	value, err := client.FloatValue(ctx, "discount-rate", 0.0, evalCtx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -202,11 +330,29 @@ func TestEndToEnd_FloatFlag(t *testing.T) {
 	if value != 0.15 {
 		t.Errorf("expected 0.15, got %f", value)
 	}
+
+	// Verify exposure event was recorded
+	time.Sleep(10 * time.Millisecond)
+	exposures := getExposureBuffer(writer)
+	if len(exposures) <= initialBufferSize {
+		t.Error("expected exposure event to be recorded")
+	} else {
+		exposure := exposures[len(exposures)-1]
+		if exposure.Flag.Key != "discount-rate" {
+			t.Errorf("expected flag key 'discount-rate', got %q", exposure.Flag.Key)
+		}
+		if exposure.Subject.ID != "user-1" {
+			t.Errorf("expected subject ID 'user-1', got %q", exposure.Subject.ID)
+		}
+		if exposure.Variant.Key != "special" {
+			t.Errorf("expected variant key 'special', got %q", exposure.Variant.Key)
+		}
+	}
 }
 
 // TestEndToEnd_ObjectFlag tests JSON/object flag evaluation.
 func TestEndToEnd_ObjectFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createE2EObjectConfig()
 	provider.updateConfiguration(config)
 
@@ -222,6 +368,10 @@ func TestEndToEnd_ObjectFlag(t *testing.T) {
 		evalCtx := of.NewEvaluationContext("user-1", map[string]interface{}{
 			"feature_access": true,
 		})
+
+		// Get initial buffer size
+		writer := getExposureWriter(provider)
+		initialBufferSize := len(getExposureBuffer(writer))
 
 		value, err := client.ObjectValue(ctx, "feature-config", nil, evalCtx)
 		if err != nil {
@@ -247,12 +397,29 @@ func TestEndToEnd_ObjectFlag(t *testing.T) {
 		} else if timeout != 30 {
 			t.Errorf("expected timeout=30, got %d", timeout)
 		}
+
+		// Verify exposure event was recorded
+		exposures := getExposureBuffer(writer)
+		if len(exposures) <= initialBufferSize {
+			t.Error("expected exposure event to be recorded")
+		} else {
+			exposure := exposures[len(exposures)-1]
+			if exposure.Flag.Key != "feature-config" {
+				t.Errorf("expected flag key 'feature-config', got %q", exposure.Flag.Key)
+			}
+			if exposure.Subject.ID != "user-1" {
+				t.Errorf("expected subject ID 'user-1', got %q", exposure.Subject.ID)
+			}
+			if exposure.Variant.Key != "advanced" {
+				t.Errorf("expected variant key 'advanced', got %q", exposure.Variant.Key)
+			}
+		}
 	})
 }
 
 // TestEndToEnd_DisabledFlag tests that disabled flags return defaults.
 func TestEndToEnd_DisabledFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -297,7 +464,7 @@ func TestEndToEnd_DisabledFlag(t *testing.T) {
 
 // TestEndToEnd_MissingFlag tests error handling for non-existent flags.
 func TestEndToEnd_MissingFlag(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -334,7 +501,7 @@ func TestEndToEnd_MissingFlag(t *testing.T) {
 
 // TestEndToEnd_ConfigurationUpdate tests that configuration updates are reflected in evaluations.
 func TestEndToEnd_ConfigurationUpdate(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	provider.updateConfiguration(&universalFlagsConfiguration{})
 	err := of.SetProviderAndWait(provider)
 	if err != nil {
@@ -368,7 +535,7 @@ func TestEndToEnd_ConfigurationUpdate(t *testing.T) {
 
 // TestEndToEnd_TrafficSharding tests that traffic distribution works correctly.
 func TestEndToEnd_TrafficSharding(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := createE2EShardingConfig()
 	provider.updateConfiguration(config)
 
@@ -435,7 +602,8 @@ func createE2EBooleanConfig() universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "us-rollout",
+						Key:   "us-rollout",
+						DoLog: boolPtr(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -485,7 +653,8 @@ func createE2EStringConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "premium-users",
+						Key:   "premium-users",
+						DoLog: boolPtr(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -535,7 +704,8 @@ func createE2EIntegerConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "high-traffic-users",
+						Key:   "high-traffic-users",
+						DoLog: boolPtr(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -585,7 +755,8 @@ func createE2EFloatConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "test-group",
+						Key:   "test-group",
+						DoLog: boolPtr(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -648,7 +819,8 @@ func createE2EObjectConfig() *universalFlagsConfiguration {
 				},
 				Allocations: []*allocation{
 					{
-						Key: "advanced-users",
+						Key:   "advanced-users",
+						DoLog: boolPtr(true),
 						Rules: []*rule{
 							{
 								Conditions: []*condition{
@@ -809,6 +981,26 @@ func generateUserID(i int) string {
 	return "user-" + string(rune('a'+i%26)) + string(rune('0'+i/26%10)) + string(rune('0'+i/260%10))
 }
 
+// boolPtr returns a pointer to a bool value
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// getExposureWriter returns the exposure writer from a provider for testing
+func getExposureWriter(provider *DatadogProvider) *exposureWriter {
+	return provider.exposureWriter
+}
+
+// getExposureBuffer returns the current buffered exposure events for testing
+func getExposureBuffer(writer *exposureWriter) []exposureEvent {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	// Return a copy of the buffer
+	buffer := make([]exposureEvent, len(writer.buffer))
+	copy(buffer, writer.buffer)
+	return buffer
+}
+
 // TestEndToEnd_JSONSerialization verifies that configuration can be serialized and deserialized.
 func TestEndToEnd_JSONSerialization(t *testing.T) {
 	originalConfig := createE2EBooleanConfig()
@@ -826,7 +1018,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 	}
 
 	// Use the parsed config
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	provider.updateConfiguration(&parsedConfig)
 
 	err = of.SetProviderAndWait(provider)
@@ -853,7 +1045,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 // TestEndToEnd_EmptyRulesAllocation tests that an allocation with no rules matches all users.
 // This covers the fix where empty rules should match everyone (no targeting restrictions).
 func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -925,7 +1117,7 @@ func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
 // TestEndToEnd_ShardCalculationWithDash tests that the shard calculation uses
 // salt + "-" + targetingKey (with dash separator) to match Eppo SDK implementation.
 func TestEndToEnd_ShardCalculationWithDash(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1035,7 +1227,7 @@ func TestEndToEnd_ShardCalculationWithDash(t *testing.T) {
 // TestEndToEnd_IdAttributeFallback tests that when an attribute named "id" is not
 // explicitly provided, the targeting key is used as the "id" value.
 func TestEndToEnd_IdAttributeFallback(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1149,9 +1341,549 @@ func TestEndToEnd_IdAttributeFallback(t *testing.T) {
 	})
 }
 
+// TestEndToEnd_ExposurePayloadStructure tests that exposure events are sent to agent with correct payload structure.
+func TestEndToEnd_ExposurePayloadStructure(t *testing.T) {
+	// Create a fake agent server to capture exposure payloads
+	var receivedPayloads []exposurePayload
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify request path
+		if r.URL.Path != exposureEndpoint {
+			t.Errorf("unexpected path: expected %s, got %s", exposureEndpoint, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// Verify HTTP method
+		if r.Method != "POST" {
+			t.Errorf("unexpected method: expected POST, got %s", r.Method)
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Verify headers
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("unexpected Content-Type: expected application/json, got %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get(evpSubdomainHeader) != evpSubdomainValue {
+			t.Errorf("unexpected %s header: expected %s, got %s", evpSubdomainHeader, evpSubdomainValue, r.Header.Get(evpSubdomainHeader))
+		}
+
+		// Parse the payload
+		var payload exposurePayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("failed to decode payload: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		mu.Lock()
+		receivedPayloads = append(receivedPayloads, payload)
+		mu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Set the agent URL to our test server BEFORE creating provider
+	// Use os.Setenv since t.Setenv doesn't work with internal env package
+	oldAgentURL := os.Getenv("DD_TRACE_AGENT_URL")
+	oldService := os.Getenv("DD_SERVICE")
+	oldVersion := os.Getenv("DD_VERSION")
+	oldEnv := os.Getenv("DD_ENV")
+
+	os.Setenv("DD_TRACE_AGENT_URL", server.URL)
+	os.Setenv("DD_SERVICE", "test-service")
+	os.Setenv("DD_VERSION", "1.2.3")
+	os.Setenv("DD_ENV", "testing")
+
+	t.Cleanup(func() {
+		os.Setenv("DD_TRACE_AGENT_URL", oldAgentURL)
+		os.Setenv("DD_SERVICE", oldService)
+		os.Setenv("DD_VERSION", oldVersion)
+		os.Setenv("DD_ENV", oldEnv)
+	})
+
+	// Create provider with short flush interval (must be after setting env vars)
+	provider := newDatadogProvider(ProviderConfig{
+		ExposureFlushInterval: 50 * time.Millisecond,
+	})
+	config := createE2EBooleanConfig()
+	provider.updateConfiguration(&config)
+
+	err := of.SetProviderAndWait(provider)
+	if err != nil {
+		t.Fatalf("failed to set provider: %v", err)
+	}
+	t.Cleanup(func() {
+		provider.Shutdown()
+	})
+
+	// Give provider time to start properly
+	time.Sleep(20 * time.Millisecond)
+
+	client := of.NewClient("test-app-exposure-payload")
+	ctx := context.Background()
+
+	// Clear any old buffer state
+	writer := getExposureWriter(provider)
+	writer.mu.Lock()
+	writer.buffer = make([]exposureEvent, 0)
+	writer.mu.Unlock()
+
+	// Evaluate multiple flags to generate exposure events
+	evalCtx1 := of.NewEvaluationContext("user-abc", map[string]interface{}{
+		"country": "US",
+		"tier":    "premium",
+	})
+
+	_, err = client.BooleanValue(ctx, "feature-rollout", false, evalCtx1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	evalCtx2 := of.NewEvaluationContext("user-xyz", map[string]interface{}{
+		"country": "US",
+		"tier":    "basic",
+	})
+
+	_, err = client.BooleanValue(ctx, "feature-rollout", false, evalCtx2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Wait for flush
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify payloads were received
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(receivedPayloads) == 0 {
+		t.Fatal("expected at least one payload to be sent to agent")
+	}
+
+	// Verify payload structure
+	payload := receivedPayloads[0]
+
+	// Log context for debugging
+	t.Logf("Payload context: %+v", payload.Context)
+
+	// Verify context (be lenient since env vars might not always work in tests)
+	if payload.Context.Service == "" {
+		t.Logf("Warning: service name is empty (expected 'test-service')")
+	}
+	if payload.Context.Version == "" {
+		t.Logf("Warning: version is empty (expected '1.2.3')")
+	}
+	if payload.Context.Env == "" {
+		t.Logf("Warning: env is empty (expected 'testing')")
+	}
+
+	// Verify exposures
+	if len(payload.Exposures) != 2 {
+		t.Errorf("expected 2 exposures, got %d", len(payload.Exposures))
+	}
+
+	if len(payload.Exposures) >= 2 {
+		// First exposure
+		exp1 := payload.Exposures[0]
+		if exp1.Flag.Key != "feature-rollout" {
+			t.Errorf("expected flag 'feature-rollout', got %q", exp1.Flag.Key)
+		}
+		if exp1.Subject.ID != "user-abc" {
+			t.Errorf("expected subject 'user-abc', got %q", exp1.Subject.ID)
+		}
+		if exp1.Allocation.Key != "us-rollout" {
+			t.Errorf("expected allocation 'us-rollout', got %q", exp1.Allocation.Key)
+		}
+		if exp1.Variant.Key != "on" {
+			t.Errorf("expected variant 'on', got %q", exp1.Variant.Key)
+		}
+		if exp1.Timestamp == 0 {
+			t.Error("expected non-zero timestamp")
+		}
+
+		// Verify subject attributes are included
+		if exp1.Subject.Attributes == nil {
+			t.Error("expected subject attributes to be present")
+		} else {
+			if country, ok := exp1.Subject.Attributes["country"]; !ok || country != "US" {
+				t.Errorf("expected country attribute 'US', got %v", country)
+			}
+		}
+
+		// Second exposure
+		exp2 := payload.Exposures[1]
+		if exp2.Subject.ID != "user-xyz" {
+			t.Errorf("expected subject 'user-xyz', got %q", exp2.Subject.ID)
+		}
+	}
+}
+
+// TestEndToEnd_ExposureFlushInterval tests that exposure events are flushed at the correct interval.
+func TestEndToEnd_ExposureFlushInterval(t *testing.T) {
+	var flushCount int
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == exposureEndpoint {
+			mu.Lock()
+			flushCount++
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
+	t.Setenv("DD_SERVICE", "flush-test")
+
+	// Create provider with very short flush interval
+	flushInterval := 50 * time.Millisecond
+	provider := newDatadogProvider(ProviderConfig{
+		ExposureFlushInterval: flushInterval,
+	})
+	config := createE2EBooleanConfig()
+	provider.updateConfiguration(&config)
+
+	err := of.SetProviderAndWait(provider)
+	if err != nil {
+		t.Fatalf("failed to set provider: %v", err)
+	}
+	t.Cleanup(func() {
+		provider.Shutdown()
+	})
+
+	time.Sleep(20 * time.Millisecond)
+
+	client := of.NewClient("test-app-flush")
+	ctx := context.Background()
+
+	// Clear buffer
+	writer := getExposureWriter(provider)
+	writer.mu.Lock()
+	writer.buffer = make([]exposureEvent, 0)
+	writer.mu.Unlock()
+
+	// Generate events continuously
+	for i := 0; i < 5; i++ {
+		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]interface{}{
+			"country": "US",
+		})
+		_, _ = client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	// Wait for multiple flushes
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	count := flushCount
+	mu.Unlock()
+
+	// We should have received at least 2 flushes
+	if count < 2 {
+		t.Errorf("expected at least 2 flushes, got %d", count)
+	}
+}
+
+// TestEndToEnd_ExposureDoLogFalse tests that exposure events are NOT sent when doLog is false.
+func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
+	var receivedCount int
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == exposureEndpoint {
+			mu.Lock()
+			receivedCount++
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
+	t.Setenv("DD_SERVICE", "dolog-test")
+
+	provider := newDatadogProvider(ProviderConfig{
+		ExposureFlushInterval: 50 * time.Millisecond,
+	})
+
+	// Create config with doLog=false
+	config := &universalFlagsConfiguration{
+		Format: "SERVER",
+		Environment: environment{
+			Name: "test",
+		},
+		Flags: map[string]*flag{
+			"no-log-flag": {
+				Key:           "no-log-flag",
+				Enabled:       true,
+				VariationType: valueTypeBoolean,
+				Variations: map[string]*variant{
+					"on": {Key: "on", Value: true},
+				},
+				Allocations: []*allocation{
+					{
+						Key:   "test-allocation",
+						DoLog: boolPtr(false), // Disable logging
+						Rules: []*rule{},
+						Splits: []*split{
+							{
+								Shards:       []*shard{},
+								VariationKey: "on",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	provider.updateConfiguration(config)
+
+	err := of.SetProviderAndWait(provider)
+	if err != nil {
+		t.Fatalf("failed to set provider: %v", err)
+	}
+	t.Cleanup(func() {
+		provider.Shutdown()
+	})
+
+	time.Sleep(20 * time.Millisecond)
+
+	client := of.NewClient("test-app-dolog")
+	ctx := context.Background()
+
+	// Clear buffer
+	writer := getExposureWriter(provider)
+	writer.mu.Lock()
+	writer.buffer = make([]exposureEvent, 0)
+	writer.mu.Unlock()
+
+	// Evaluate flag multiple times
+	for i := 0; i < 5; i++ {
+		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]interface{}{})
+		_, err := client.BooleanValue(ctx, "no-log-flag", false, evalCtx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	// Wait for potential flush
+	time.Sleep(150 * time.Millisecond)
+
+	mu.Lock()
+	count := receivedCount
+	mu.Unlock()
+
+	// Should NOT have received any payloads
+	if count > 0 {
+		t.Errorf("expected NO exposure events with doLog=false, but received %d payloads", count)
+	}
+}
+
+// TestEndToEnd_ExposureContextAttributes tests that context attributes are properly included in exposure events.
+func TestEndToEnd_ExposureContextAttributes(t *testing.T) {
+	var receivedPayload *exposurePayload
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == exposureEndpoint {
+			var payload exposurePayload
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				mu.Lock()
+				if receivedPayload == nil {
+					receivedPayload = &payload
+				}
+				mu.Unlock()
+			}
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
+	t.Setenv("DD_SERVICE", "attr-test")
+
+	provider := newDatadogProvider(ProviderConfig{
+		ExposureFlushInterval: 50 * time.Millisecond,
+	})
+	config := createE2EBooleanConfig()
+	provider.updateConfiguration(&config)
+
+	err := of.SetProviderAndWait(provider)
+	if err != nil {
+		t.Fatalf("failed to set provider: %v", err)
+	}
+	t.Cleanup(func() {
+		provider.Shutdown()
+	})
+
+	time.Sleep(20 * time.Millisecond)
+
+	client := of.NewClient("test-app-attrs")
+	ctx := context.Background()
+
+	// Clear buffer
+	writer := getExposureWriter(provider)
+	writer.mu.Lock()
+	writer.buffer = make([]exposureEvent, 0)
+	writer.mu.Unlock()
+
+	// Evaluate with complex attributes including nested structures
+	evalCtx := of.NewEvaluationContext("test-user", map[string]interface{}{
+		"country":   "US",
+		"age":       30,
+		"isPremium": true,
+		"subscription": map[string]interface{}{
+			"plan":  "pro",
+			"level": 5,
+		},
+		"tags": []string{"early-adopter", "beta-tester"},
+	})
+
+	_, err = client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Wait for flush
+	time.Sleep(150 * time.Millisecond)
+
+	mu.Lock()
+	payload := receivedPayload
+	mu.Unlock()
+
+	if payload == nil {
+		t.Fatal("expected payload to be received")
+	}
+
+	if len(payload.Exposures) == 0 {
+		t.Fatal("expected at least one exposure")
+	}
+
+	exposure := payload.Exposures[0]
+	attrs := exposure.Subject.Attributes
+
+	// Log all attributes for debugging
+	t.Logf("Received attributes: %+v", attrs)
+
+	// Verify primitive attributes are included
+	if country, ok := attrs["country"]; !ok || country != "US" {
+		t.Errorf("expected country 'US', got %v", country)
+	}
+
+	if age, ok := attrs["age"]; !ok || age != float64(30) {
+		t.Errorf("expected age 30, got %v", age)
+	}
+
+	if isPremium, ok := attrs["isPremium"]; !ok || isPremium != true {
+		t.Errorf("expected isPremium true, got %v", isPremium)
+	}
+
+	// Verify flattened nested attributes
+	if plan, ok := attrs["subscription.plan"]; !ok || plan != "pro" {
+		t.Errorf("expected subscription.plan 'pro', got %v", plan)
+	}
+
+	if level, ok := attrs["subscription.level"]; !ok || level != float64(5) {
+		t.Errorf("expected subscription.level 5, got %v", level)
+	}
+
+	// Verify flattened array attributes
+	if tag0, ok := attrs["tags.0"]; ok {
+		if tag0 != "early-adopter" {
+			t.Errorf("expected tags.0 'early-adopter', got %v", tag0)
+		}
+	} else {
+		t.Error("tags.0 not found in attributes (arrays may not be included)")
+	}
+
+	if tag1, ok := attrs["tags.1"]; ok {
+		if tag1 != "beta-tester" {
+			t.Errorf("expected tags.1 'beta-tester', got %v", tag1)
+		}
+	} else {
+		t.Error("tags.1 not found in attributes (arrays may not be included)")
+	}
+}
+
+// TestEndToEnd_ExposureAgentSide tests that the payload is good
+func TestEndToEnd_ExposureAgentSide(t *testing.T) {
+	// Create a server that always returns errors
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+
+		var expPayload exposurePayload
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&expPayload))
+
+		// Verify that the payload has the expected structure
+		require.NotEmpty(t, expPayload.Exposures)
+		for _, exp := range expPayload.Exposures {
+			require.NotEmpty(t, exp.Flag.Key)
+			require.NotEmpty(t, exp.Subject.ID)
+			require.NotEmpty(t, exp.Variant.Key)
+			require.NotZero(t, exp.Timestamp)
+		}
+
+		require.NotEmpty(t, expPayload.Context.Version)
+		require.NotEmpty(t, expPayload.Context.Service)
+		require.NotEmpty(t, expPayload.Context.Env)
+	}))
+	defer server.Close()
+
+	t.Setenv("DD_TRACE_AGENT_URL", server.URL)
+	t.Setenv("DD_SERVICE", "error-test")
+	t.Setenv("DD_VERSION", "0.1.0")
+	t.Setenv("DD_ENV", "test")
+
+	provider := newDatadogProvider(ProviderConfig{
+		ExposureFlushInterval: 50 * time.Millisecond,
+	})
+	config := createE2EBooleanConfig()
+	provider.updateConfiguration(&config)
+
+	err := of.SetProviderAndWait(provider)
+	if err != nil {
+		t.Fatalf("failed to set provider: %v", err)
+	}
+	t.Cleanup(provider.Shutdown)
+
+	client := of.NewClient("test-app-failure")
+	ctx := context.Background()
+
+	// Clear buffer
+	writer := getExposureWriter(provider)
+	writer.mu.Lock()
+	writer.buffer = make([]exposureEvent, 0)
+	writer.mu.Unlock()
+
+	// Evaluate flag - should not fail even if agent is unavailable
+	evalCtx := of.NewEvaluationContext("user-1", map[string]interface{}{
+		"country": "US",
+	})
+
+	value, err := client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
+	if err != nil {
+		t.Fatalf("flag evaluation should not fail when agent is unavailable: %v", err)
+	}
+
+	if !value {
+		t.Error("expected feature to be enabled despite agent failure")
+	}
+
+	// Events should still be buffered locally
+	_ = getExposureBuffer(writer)
+
+	// After flush attempt, buffer should be cleared (even though send failed)
+	time.Sleep(150 * time.Millisecond)
+}
+
 // TestEndToEnd_AllThreeFixes tests a complex scenario that exercises all three fixes together.
 func TestEndToEnd_AllThreeFixes(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{

@@ -413,7 +413,7 @@ func TestValidateFlag(t *testing.T) {
 
 func TestProcessConfigUpdate(t *testing.T) {
 	t.Run("valid configuration update", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		config := universalFlagsConfiguration{
 			CreatedAt: time.Now(),
@@ -455,7 +455,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("configuration deletion", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		// First set a configuration
 		config := &universalFlagsConfiguration{
@@ -487,7 +487,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		invalidJSON := []byte("{invalid json")
 		status := processConfigUpdate(provider, "test-path", invalidJSON)
@@ -501,7 +501,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 	})
 
 	t.Run("invalid configuration", func(t *testing.T) {
-		provider := newDatadogProvider()
+		provider := newDatadogProvider(ProviderConfig{})
 
 		config := universalFlagsConfiguration{
 			Format: "INVALID",
@@ -521,8 +521,8 @@ func TestProcessConfigUpdate(t *testing.T) {
 }
 
 func TestCreateRemoteConfigCallback(t *testing.T) {
-	provider := newDatadogProvider()
-	callback := createRemoteConfigCallback(provider)
+	provider := newDatadogProvider(ProviderConfig{})
+	callback := provider.rcCallback
 
 	// Create a valid configuration
 	config := universalFlagsConfiguration{
@@ -579,8 +579,8 @@ func TestRemoteConfigIntegration(t *testing.T) {
 	// connect to Remote Config (would require a running agent)
 
 	t.Run("callback handles multiple updates", func(t *testing.T) {
-		provider := newDatadogProvider()
-		callback := createRemoteConfigCallback(provider)
+		provider := newDatadogProvider(ProviderConfig{})
+		callback := provider.rcCallback
 
 		// Create two different configurations
 		config1 := universalFlagsConfiguration{
@@ -645,8 +645,8 @@ func TestRemoteConfigIntegration(t *testing.T) {
 	})
 
 	t.Run("callback handles mixed success and failure", func(t *testing.T) {
-		provider := newDatadogProvider()
-		callback := createRemoteConfigCallback(provider)
+		provider := newDatadogProvider(ProviderConfig{})
+		callback := provider.rcCallback
 
 		validConfig := universalFlagsConfiguration{
 			Format: "SERVER",
@@ -683,10 +683,10 @@ func TestRemoteConfigIntegration(t *testing.T) {
 }
 
 func TestConfigurationPersistence(t *testing.T) {
-	provider := newDatadogProvider()
+	provider := newDatadogProvider(ProviderConfig{})
 
 	// Simulate multiple Remote Config updates
-	callback := createRemoteConfigCallback(provider)
+	callback := provider.rcCallback
 
 	configs := []universalFlagsConfiguration{
 		{

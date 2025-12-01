@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 func BenchmarkHTTPTransportSend(b *testing.B) {
@@ -22,7 +24,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false))
 
 	payloadSizes := []struct {
 		name     string
@@ -67,7 +69,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, defaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false))
 	concurrencyLevels := []int{1, 2, 4, 8}
 
 	for _, concurrency := range concurrencyLevels {

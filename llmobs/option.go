@@ -68,6 +68,12 @@ func WithModelName(modelName string) StartSpanOption {
 	}
 }
 
+func WithIntegration(integration string) StartSpanOption {
+	return func(c *illmobs.StartSpanConfig) {
+		c.Integration = integration
+	}
+}
+
 // ------------- Finish options -------------
 
 // FinishSpanOption configures span finishing. Use with span.Finish().
@@ -79,7 +85,7 @@ func WithError(err error) FinishSpanOption {
 	return func(cfg *illmobs.FinishSpanConfig) {
 		var tErr *errortrace.TracerError
 		if !errors.As(err, &tErr) {
-			tErr = errortrace.WrapN(err, 0, 2)
+			tErr = errortrace.WrapN(err, 2)
 		}
 		cfg.Error = tErr
 	}

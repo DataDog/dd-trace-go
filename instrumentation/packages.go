@@ -62,6 +62,7 @@ const (
 	PackageK8SClientGo             Package = "k8s.io/client-go"
 	PackageK8SGatewayAPI           Package = "k8s.io/gateway-api"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
+	PackageMark3LabsMCPGo          Package = "mark3labs/mcp-go"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
 	PackageJackcPGXV5              Package = "jackc/pgx.v5"
 	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
@@ -831,6 +832,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageOS: {
 		TracedPackage: "os",
+	},
+	PackageMark3LabsMCPGo: {
+		TracedPackage: "github.com/mark3labs/mcp-go",
+		EnvVarPrefix:  "MCPGO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("mcp-server"),
+				buildOpNameV0:      staticName("mcp.server.request"),
+				buildOpNameV1:      staticName("mcp.server.request"),
+			},
+		},
 	},
 	PackageEmickleiGoRestful: {
 		TracedPackage: "github.com/emicklei/go-restful",

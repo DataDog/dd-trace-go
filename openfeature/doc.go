@@ -191,9 +191,47 @@
 // Configuration updates are acknowledged back to Remote Config with appropriate
 // status codes (acknowledged for success, error for validation failures).
 //
+// # Configuration
+//
+// The provider can be configured using ProviderConfig when creating a new instance:
+//
+//	config := openfeature.ProviderConfig{
+//	    ExposureFlushInterval: 5 * time.Second,  // Optional: defaults to 1 second
+//	}
+//	provider, err := openfeature.NewDatadogProvider(config)
+//
+// Configuration Options:
+//
+//   - ExposureFlushInterval: Duration between automatic flushes of exposure events
+//     to the Datadog agent. Defaults to 1 second if not specified. Exposure events
+//     track which feature flags are evaluated and by which users, providing visibility
+//     into feature flag usage. Set to 0 to disable automatic flushing (not recommended).
+//
+// # Environment Variables
+//
+// The provider requires the following environment variable to be set:
+//
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED: Must be set to "true" to enable
+//     the OpenFeature provider. This is a safety flag to ensure the feature is
+//     intentionally activated. If not set or set to false, NewDatadogProvider()
+//     will return a NoopProvider instead of the actual Datadog provider.
+//
+// Example:
+//
+//	export DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED=true
+//
+// Standard Datadog environment variables also apply:
+//
+//   - DD_AGENT_HOST: Datadog agent host (default: localhost)
+//   - DD_TRACE_AGENT_PORT: Datadog agent port (default: 8126)
+//   - DD_SERVICE: Service name for tagging
+//   - DD_ENV: Environment name (e.g., production, staging)
+//   - DD_VERSION: Application version
+//
 // # Prerequisites
 //
 // Before creating the provider, ensure that:
+//   - DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED environment variable is set to "true"
 //   - The Datadog tracer is started (tracer.Start()) OR
 //   - Remote Config client is properly configured
 //

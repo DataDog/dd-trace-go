@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -83,14 +84,33 @@ func ensureSettingsInitialization(serviceName string) {
 		// upload the repository changes
 		var uploadChannel = make(chan struct{})
 		go func() {
+			defer func() {
+				close(uploadChannel)
+			}()
 			bytes, err := uploadRepositoryChanges()
 			if err != nil {
 				log.Error("civisibility: error uploading repository changes: %s", err.Error())
 			} else {
 				log.Debug("civisibility: uploaded %d bytes in pack files", bytes)
 			}
-			uploadChannel <- struct{}{}
 		}()
+
+		//Wait for the upload with timeout func
+		waitUpload := func(timeout time.Duration) bool {
+			select {
+			case <-uploadChannel:
+				// All ok, upload succeeded
+				return true
+			case <-time.After(timeout):
+				log.Warn("civisibility: timeout waiting for upload repository changes")
+				return false
+			}
+		}
+		// returns a closure suitable for PushCiVisibilityCloseAction that will wait
+		// for the upload to complete (or time out) using the given timeout.
+		waitUploadFactory := func(timeout time.Duration) func() {
+			return func() { waitUpload(timeout) }
+		}
 
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
@@ -98,16 +118,17 @@ func ensureSettingsInitialization(serviceName string) {
 			log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
 			log.Debug("civisibility: no need to wait for the git upload to finish")
 			// Enqueue a close action to wait for the upload to finish before finishing the process
-			PushCiVisibilityCloseAction(func() {
-				<-uploadChannel
-			})
+			PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
 			return
 		}
 
 		// check if we need to wait for the upload to finish and repeat the settings request or we can just continue
 		if ciSettings.RequireGit {
 			log.Debug("civisibility: waiting for the git upload to finish and repeating the settings request")
-			<-uploadChannel
+			if !waitUpload(1 * time.Minute) {
+				log.Error("civisibility: error getting CI visibility settings due to timeout")
+				return
+			}
 			ciSettings, err = ciVisibilityClient.GetSettings()
 			if err != nil {
 				log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
@@ -147,16 +168,21 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
 		}
 
+		// determine if subtest-specific features are enabled via environment variables
+		subtestFeaturesEnabled := internal.BoolEnv(constants.CIVisibilitySubtestFeaturesEnabled, true)
+		if !subtestFeaturesEnabled {
+			log.Debug("civisibility: subtest test management features disabled by environment variable")
+		}
+		ciSettings.SubtestFeaturesEnabled = subtestFeaturesEnabled
+
 		// check if we need to wait for the upload to finish before continuing
 		if ciSettings.ImpactedTestsEnabled {
 			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
-			<-uploadChannel
+			waitUpload(30 * time.Second)
 		} else {
 			log.Debug("civisibility: no need to wait for the git upload to finish")
 			// Enqueue a close action to wait for the upload to finish before finishing the process
-			PushCiVisibilityCloseAction(func() {
-				<-uploadChannel
-			})
+			PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
 		}
 
 		// set the ciVisibilitySettings with the settings from the backend
@@ -375,7 +401,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	}
 
 	// let's check if we could retrieve commit data
-	if !initialCommitData.IsOk {
+	if !commitsData.IsOk {
 		return 0, nil
 	}
 

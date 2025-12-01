@@ -17,6 +17,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/stretchr/testify/require"
 )
 
 func SetGlobalServiceName(t *testing.T, val string) {
@@ -69,7 +71,17 @@ func SetGlobalHeaderTags(t *testing.T, headers ...string) {
 }
 
 func StartAppSec(t *testing.T, opts ...config.StartOption) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("AppSec is not supported on this platform: %v", err)
+		return
+	}
+
+	opts = append(
+		append(make([]config.StartOption, 0, len(opts)+1), config.WithEnablementMode(config.ForcedOn)),
+		opts...,
+	)
 	appsec.Start(opts...)
+	require.True(t, appsec.Enabled(), "AppSec failed to start as expected")
 	t.Cleanup(appsec.Stop)
 }
 

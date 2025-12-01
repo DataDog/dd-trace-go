@@ -49,6 +49,7 @@ use (
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
 	./contrib/log/slog
+	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns
 	./contrib/net/http
 	./contrib/olivere/elastic.v5

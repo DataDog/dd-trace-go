@@ -72,6 +72,10 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 		WithDownwardMethod(args.Method).
 		WithDownwardRequestHeaders(args.Headers)
 
+	// Increment the span metric for downward requests
+	op.HandlerOp.ContextOperation.GetMetricsInstance().SumDownstreamRequestsCalls.Add(1)
+
+	// Increment the internal sampling counter for downward requests
 	requestCount := feature.downstreamRequestAnalysis.Add(1)
 
 	// Sampling algorithm based on:

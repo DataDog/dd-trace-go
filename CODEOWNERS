@@ -20,6 +20,11 @@
 /contrib/haproxy                @DataDog/asm-go
 /contrib/k8s.io/gateway-api     @DataDog/asm-go
 
+# Internal shared packages
+/internal/log                   @DataDog/dd-trace-go-guild
+/internal/stacktrace            @DataDog/dd-trace-go-guild
+/internal/synctest              @DataDog/dd-trace-go-guild
+
 # capabilities - config, dynamic config, remote config
 /internal/env                        @DataDog/apm-sdk-capabilities-go
 /internal/stableconfig               @DataDog/apm-sdk-capabilities-go
@@ -68,6 +73,13 @@
 
 # Serverless
 /contrib/aws/datadog-lambda-go  @DataDog/apm-serverless @DataDog/serverless-aws
+
+# Feature Flagging Experiments
+/openfeature                    @DataDog/feature-flagging-and-experimentation-sdk @DataDog/asm-go
+
+# Database Monitoring
+ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
+contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
 
 # no owner: changes to these files will not automatically ping any particular
 # team and can be reviewed by anybody with the appropriate permissions. This is

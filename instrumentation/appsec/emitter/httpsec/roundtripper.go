@@ -96,10 +96,13 @@ func ProtectRoundTrip(ctx context.Context, req *http.Request) (func(*http.Respon
 	}
 
 	return func(response *http.Response) {
-		resArgs := RoundTripOperationRes{
-			StatusCode: response.StatusCode,
-			Headers:    response.Header,
-			Body:       &response.Body,
+		var resArgs RoundTripOperationRes
+		if response != nil {
+			resArgs = RoundTripOperationRes{
+				StatusCode: response.StatusCode,
+				Headers:    response.Header,
+				Body:       &response.Body,
+			}
 		}
 		dyngo.FinishOperation(op, resArgs)
 	}, nil
