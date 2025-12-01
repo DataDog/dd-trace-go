@@ -180,5 +180,10 @@ func (ps *prioritySampler) apply(spn *Span) {
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
 	// Set the Knuth sampling rate tag when sampled by agent rate
-	spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	formattedRate := formatKnuthSamplingRate(rate)
+	spn.SetTag(keyKnuthSamplingRate, formattedRate)
+	// Add propagating tag for header propagation (X-Datadog-Tags and tracestate)
+	if spn.context != nil && spn.context.trace != nil {
+		spn.context.trace.setPropagatingTag(keyKnuthSamplingRate, formattedRate)
+	}
 }

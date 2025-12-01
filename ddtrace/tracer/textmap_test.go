@@ -370,10 +370,10 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Nil(t, err)
 	child := tracer.StartSpan("test", ChildOf(ctx))
 	childSpanID := child.Context().spanID
-	assert.Equal(t, map[string]string{
-		"hello":    "world",
-		"_dd.p.dm": "-1",
-	}, ctx.trace.propagatingTags)
+	// Propagating tags include _dd.p.ksr which is set by the priority sampler
+	assert.Equal(t, "world", ctx.trace.propagatingTags["hello"])
+	assert.Equal(t, "-1", ctx.trace.propagatingTags["_dd.p.dm"])
+	assert.Equal(t, "1", ctx.trace.propagatingTags[keyKnuthSamplingRate])
 	dst := map[string]string{}
 	err = tracer.Inject(child.Context(), TextMapCarrier(dst))
 	assert.Nil(t, err)
@@ -381,7 +381,7 @@ func TestTextMapPropagatorTraceTagsWithoutPriority(t *testing.T) {
 	assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-parent-id"])
 	assert.Equal(t, "1", dst["x-datadog-trace-id"])
 	assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
-	assertTraceTags(t, "hello=world,_dd.p.dm=-1", dst["x-datadog-tags"])
+	assertTraceTags(t, "hello=world,_dd.p.dm=-1,_dd.p.ksr=1", dst["x-datadog-tags"])
 }
 
 func TestExtractOriginSynthetics(t *testing.T) {
@@ -467,29 +467,29 @@ func TestTextMapPropagator(t *testing.T) {
 			name:               "InvalidComma",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello1": "world", "_dd.p.hello2": "malformed,"},
-			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world,_dd.p.ksr=1",
 			errStr:             "encoding_error",
 		}, {
 			name:               "InvalidChar",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello": "ÜwÜ"},
-			xDatadogTagsHeader: "_dd.p.dm=-1",
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.ksr=1",
 			errStr:             "encoding_error",
 		}, {
 			name:               "Tracestate-Datadog",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=ignored"},
-			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world,_dd.p.ksr=1",
 		}, {
 			name:               "Traceparent-Datadog",
 			injectStyle:        "datadog",
 			tags:               map[string]string{"_dd.p.hello1": "world", traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01"},
-			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world,_dd.p.ksr=1",
 		}, {
 			name:               "Tracestate-Datadog",
 			injectStyle:        "datadog,tracecontext",
 			tags:               map[string]string{"_dd.p.hello1": "world", tracestateHeader: "shouldbe=kept"},
-			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world",
+			xDatadogTagsHeader: "_dd.p.dm=-1,_dd.p.hello1=world,_dd.p.ksr=1",
 		},
 	}
 	for _, tc := range tests {
@@ -3011,4 +3011,110 @@ func TestSpanContextDebugLoggingSecurity(t *testing.T) {
 
 	// This test ensures that the SafeDebugString() method is used instead of %#v
 	// to prevent sensitive baggage data from being exposed in debug logs.
+}
+
+// TestKnuthSamplingRateRoundTripPropagation tests the round-trip propagation of _dd.p.ksr tag
+// through both X-Datadog-Tags and W3C tracestate headers.
+func TestKnuthSamplingRateRoundTripPropagation(t *testing.T) {
+	t.Run("extract-from-x-datadog-tags", func(t *testing.T) {
+		t.Setenv(headerPropagationStyle, "datadog")
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+
+		headers := TextMapCarrier(map[string]string{
+			DefaultTraceIDHeader:  "12345",
+			DefaultParentIDHeader: "67890",
+			DefaultPriorityHeader: "1",
+			traceTagsHeader:       "_dd.p.ksr=0.5,_dd.p.dm=-1",
+		})
+
+		ctx, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		assert.NotNil(t, ctx)
+
+		// Verify _dd.p.ksr is extracted into propagating tags
+		assert.Equal(t, "0.5", ctx.trace.propagatingTags[keyKnuthSamplingRate])
+	})
+
+	t.Run("extract-from-tracestate", func(t *testing.T) {
+		t.Setenv(headerPropagationStyle, "tracecontext")
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+
+		headers := TextMapCarrier(map[string]string{
+			traceparentHeader: "00-00000000000000000000000000003039-0000000000010932-01",
+			tracestateHeader:  "dd=s:1;t.ksr:0.75;t.dm:-1",
+		})
+
+		ctx, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		assert.NotNil(t, ctx)
+
+		// Verify t.ksr is extracted as _dd.p.ksr in propagating tags
+		assert.Equal(t, "0.75", ctx.trace.propagatingTags[keyKnuthSamplingRate])
+	})
+
+	t.Run("round-trip-datadog", func(t *testing.T) {
+		t.Setenv(headerPropagationStyle, "datadog")
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+
+		// Create a context with ksr tag in propagating tags
+		ctx := &SpanContext{
+			traceID: traceIDFrom64Bits(12345),
+			spanID:  67890,
+			trace:   newTrace(),
+		}
+		ctx.trace.setSamplingPriority(1, samplernames.RuleRate)
+		ctx.trace.setPropagatingTag(keyKnuthSamplingRate, "0.25")
+
+		// Inject into headers
+		headers := TextMapCarrier(map[string]string{})
+		err = tracer.Inject(ctx, headers)
+		assert.NoError(t, err)
+
+		// Verify X-Datadog-Tags contains _dd.p.ksr
+		assert.Contains(t, headers[traceTagsHeader], "_dd.p.ksr=0.25")
+
+		// Extract from headers
+		extractedCtx, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+
+		// Verify round-trip preserved the ksr value
+		assert.Equal(t, "0.25", extractedCtx.trace.propagatingTags[keyKnuthSamplingRate])
+	})
+
+	t.Run("round-trip-tracecontext", func(t *testing.T) {
+		t.Setenv(headerPropagationStyle, "tracecontext")
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+
+		// Create a context with ksr tag in propagating tags
+		ctx := &SpanContext{
+			traceID: traceIDFrom64Bits(12345),
+			spanID:  67890,
+			trace:   newTrace(),
+		}
+		ctx.trace.setSamplingPriority(1, samplernames.RuleRate)
+		ctx.trace.setPropagatingTag(keyKnuthSamplingRate, "0.333333")
+
+		// Inject into headers
+		headers := TextMapCarrier(map[string]string{})
+		err = tracer.Inject(ctx, headers)
+		assert.NoError(t, err)
+
+		// Verify tracestate contains t.ksr
+		assert.Contains(t, headers[tracestateHeader], "t.ksr:0.333333")
+
+		// Extract from headers
+		extractedCtx, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+
+		// Verify round-trip preserved the ksr value
+		assert.Equal(t, "0.333333", extractedCtx.trace.propagatingTags[keyKnuthSamplingRate])
+	})
 }
