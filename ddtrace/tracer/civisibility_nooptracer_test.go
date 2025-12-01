@@ -17,17 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCiVisibilityNoopTracerImplementsTracer(t *testing.T) {
-	// Verify that CiVisibilityNoopTracer implements the Tracer interface
-	var _ Tracer = (*CiVisibilityNoopTracer)(nil)
-}
-
 func TestWrapWithCiVisibilityNoopTracer(t *testing.T) {
 	tr, _, _, stop, err := startTestTracer(t)
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 	assert.NotNil(t, wrapped)
 	assert.Equal(t, tr, wrapped.Tracer)
 }
@@ -37,7 +32,7 @@ func TestCiVisibilityNoopTracer_StartSpan_CIVisibilitySpanTypes(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	testCases := []struct {
 		name     string
@@ -76,7 +71,7 @@ func TestCiVisibilityNoopTracer_StartSpan_NonCIVisibilitySpanTypes(t *testing.T)
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	testCases := []struct {
 		name     string
@@ -111,7 +106,7 @@ func TestCiVisibilityNoopTracer_StartSpan_NoOptions(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// StartSpan with no options should return nil (noop behavior)
 	span := wrapped.StartSpan("test.operation")
@@ -123,7 +118,7 @@ func TestCiVisibilityNoopTracer_StartSpan_NoSpanType(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// StartSpan without SpanType should return nil (noop behavior)
 	span := wrapped.StartSpan("test.operation",
@@ -138,7 +133,7 @@ func TestCiVisibilityNoopTracer_StartSpan_PreservesConfig(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Create a parent span first
 	parentSpan := tr.StartSpan("parent.operation", SpanType(constants.SpanTypeTestSession))
@@ -172,7 +167,7 @@ func TestCiVisibilityNoopTracer_SetServiceInfo(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// SetServiceInfo should be a no-op and not panic
 	assert.NotPanics(t, func() {
@@ -185,7 +180,7 @@ func TestCiVisibilityNoopTracer_Extract(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Extract should always return nil, nil
 	carrier := TextMapCarrier(map[string]string{
@@ -203,7 +198,7 @@ func TestCiVisibilityNoopTracer_Inject(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Create a span context to inject
 	span := tr.StartSpan("test.operation", SpanType(constants.SpanTypeTest))
@@ -224,7 +219,7 @@ func TestCiVisibilityNoopTracer_Stop(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Stop should forward to the wrapped tracer and not panic
 	assert.NotPanics(t, func() {
@@ -237,7 +232,7 @@ func TestCiVisibilityNoopTracer_TracerConf(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// TracerConf should return the same config as the wrapped tracer
 	wrappedConf := wrapped.TracerConf()
@@ -251,7 +246,7 @@ func TestCiVisibilityNoopTracer_Flush(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Flush should forward to the wrapped tracer and not panic
 	assert.NotPanics(t, func() {
@@ -308,7 +303,7 @@ func TestCiVisibilityNoopTracer_StartSpan_EmptyOptions(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// StartSpan with empty slice of options should return nil
 	span := wrapped.StartSpan("test.operation", []StartSpanOption{}...)
@@ -321,7 +316,7 @@ func TestCiVisibilityNoopTracer_StartSpan_AllCIVisibilityTypes(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Create one of each CI Visibility span type
 	testSpan := wrapped.StartSpan("test.span", SpanType(constants.SpanTypeTest))
@@ -352,7 +347,7 @@ func TestCiVisibilityNoopTracer_MixedSpans(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Create CI Visibility spans (should work)
 	ciSpan1 := wrapped.StartSpan("ci.span1", SpanType(constants.SpanTypeTest))
@@ -402,7 +397,7 @@ func TestCiVisibilityNoopTracer_StartSpan_SpanTypeSpanIsNotCIVisibility(t *testi
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// SpanTypeSpan ("span") should be treated as non-CI Visibility
 	span := wrapped.StartSpan("test.operation", SpanType(constants.SpanTypeSpan))
@@ -414,7 +409,7 @@ func TestCiVisibilityNoopTracer_StartSpan_WithSpanLinks(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	spanLinks := []SpanLink{
 		{TraceID: 123, TraceIDHigh: 0, SpanID: 456},
@@ -437,7 +432,7 @@ func TestCiVisibilityNoopTracer_ChildSpanFiltering(t *testing.T) {
 	require.NoError(t, err)
 	defer stop()
 
-	wrapped := WrapWithCiVisibilityNoopTracer(tr)
+	wrapped := wrapWithCiVisibilityNoopTracer(tr)
 
 	// Create a CI Visibility parent span
 	parentSpan := wrapped.StartSpan("parent.operation", SpanType(constants.SpanTypeTest))

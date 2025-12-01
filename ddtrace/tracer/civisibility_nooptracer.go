@@ -11,25 +11,25 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-var _ Tracer = (*CiVisibilityNoopTracer)(nil)
+var _ Tracer = (*ciVisibilityNoopTracer)(nil)
 
-// CiVisibilityNoopTracer is an implementation of Tracer that is no-op for non CiVisibility spans
+// ciVisibilityNoopTracer is an implementation of Tracer that is no-op for non CiVisibility spans
 // the usage of this tracer is limited to scenarios where the actual noop Tracer is used in the tests.
 // For those cases we don't want to change the behaviour, so we need to act like a noop one.
 // This scenario should be opt-in because with this we loose context propagation and children spans.
-type CiVisibilityNoopTracer struct {
+type ciVisibilityNoopTracer struct {
 	Tracer
 }
 
-// WrapWithCiVisibilityNoopTracer creates a wrapped version of the Tracer that only accepts CiVisibility spans
-func WrapWithCiVisibilityNoopTracer(tracer Tracer) *CiVisibilityNoopTracer {
-	return &CiVisibilityNoopTracer{
+// wrapWithCiVisibilityNoopTracer creates a wrapped version of the Tracer that only accepts CiVisibility spans
+func wrapWithCiVisibilityNoopTracer(tracer Tracer) *ciVisibilityNoopTracer {
+	return &ciVisibilityNoopTracer{
 		Tracer: tracer,
 	}
 }
 
 // StartSpan implements Tracer.
-func (t *CiVisibilityNoopTracer) StartSpan(operationName string, opts ...StartSpanOption) *Span {
+func (t *ciVisibilityNoopTracer) StartSpan(operationName string, opts ...StartSpanOption) *Span {
 	if opts != nil {
 		cfg := NewStartSpanConfig(opts...)
 		if cfg != nil && cfg.Tags != nil {
@@ -51,26 +51,26 @@ func (t *CiVisibilityNoopTracer) StartSpan(operationName string, opts ...StartSp
 }
 
 // SetServiceInfo implements Tracer.
-func (t *CiVisibilityNoopTracer) SetServiceInfo(_, _, _ string) {}
+func (t *ciVisibilityNoopTracer) SetServiceInfo(_, _, _ string) {}
 
 // Extract implements Tracer.
-func (t *CiVisibilityNoopTracer) Extract(_ interface{}) (*SpanContext, error) {
+func (t *ciVisibilityNoopTracer) Extract(_ interface{}) (*SpanContext, error) {
 	return nil, nil
 }
 
 // Inject implements Tracer.
-func (t *CiVisibilityNoopTracer) Inject(_ *SpanContext, _ interface{}) error { return nil }
+func (t *ciVisibilityNoopTracer) Inject(_ *SpanContext, _ interface{}) error { return nil }
 
 // Stop implements Tracer.
-func (t *CiVisibilityNoopTracer) Stop() {
+func (t *ciVisibilityNoopTracer) Stop() {
 	t.Tracer.Stop()
 }
 
-func (t *CiVisibilityNoopTracer) TracerConf() TracerConf {
+func (t *ciVisibilityNoopTracer) TracerConf() TracerConf {
 	return t.Tracer.TracerConf()
 }
 
-func (t *CiVisibilityNoopTracer) Flush() {
+func (t *ciVisibilityNoopTracer) Flush() {
 	t.Tracer.Flush()
 }
 
