@@ -91,7 +91,7 @@ require (
 	github.com/urfave/negroni v1.0.0
 	go.mongodb.org/mongo-driver v1.13.1
 	google.golang.org/api v0.214.0
-	google.golang.org/grpc v1.75.0
+	google.golang.org/grpc v1.76.0
 	gopkg.in/olivere/elastic.v5 v5.0.84
 )
 
@@ -174,7 +174,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.1 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -305,9 +305,10 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/collector/component v1.39.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.39.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.46.0 // indirect
 	go.opentelemetry.io/collector/internal/telemetry v0.133.0 // indirect
-	go.opentelemetry.io/collector/pdata v1.39.0 // indirect
+	go.opentelemetry.io/collector/pdata v1.46.0 // indirect
+	go.opentelemetry.io/collector/pdata/pprofile v0.140.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelzap v0.12.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
@@ -332,8 +333,8 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto v0.0.0-20240325203815-454cdb8f5daa // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250707201910-8d1bb00bc6a7 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250804133106-a7a43d27e69b // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250804133106-a7a43d27e69b // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect

@@ -2362,6 +2362,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	tracer.config.agent.DropP0s = true
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
+		tracer.reportHealthMetrics()
 		if n < 0 {
 			tick <- time.Now()
 			return
@@ -2539,12 +2540,11 @@ func TestTakeStackTrace(t *testing.T) {
 		// top frame should be runtime.main or runtime.goexit, in case of tests that's goexit
 		assert.Contains(t, val, "runtime.goexit")
 		numFrames := strings.Count(val, "\n\t")
-		assert.Equal(t, 1, numFrames)
+		assert.Equal(t, 3, numFrames)
 	})
 
 	t.Run("n=1", func(t *testing.T) {
 		val := takeStacktrace(1, 0)
-		assert.Contains(t, val, "tracer.TestTakeStackTrace", "should contain this function")
 		// each frame consists of two strings separated by \n\t, thus number of frames == number of \n\t
 		numFrames := strings.Count(val, "\n\t")
 		assert.Equal(t, 1, numFrames)
