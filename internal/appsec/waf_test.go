@@ -47,10 +47,6 @@ func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
@@ -118,10 +114,6 @@ func TestUserRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
-
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, _ *http.Request) {
@@ -182,10 +174,6 @@ func TestUserRules(t *testing.T) {
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -333,10 +321,6 @@ func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
-
 	const (
 		ipBlockingRule   = "blk-001-001"
 		userBlockingRule = "blk-001-002"
@@ -363,7 +347,7 @@ func TestBlocking(t *testing.T) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	srv := httptest.NewServer(mux)
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	for _, tc := range []struct {
 		name      string
@@ -434,10 +418,10 @@ func TestBlocking(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
-			defer mt.Stop()
+			t.Cleanup(mt.Stop)
 			telemetryClient := new(telemetrytest.RecordClient)
 			prevClient := telemetry.SwapClient(telemetryClient)
-			defer telemetry.SwapClient(prevClient)
+			t.Cleanup(func() { telemetry.SwapClient(prevClient) })
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
@@ -445,7 +429,7 @@ func TestBlocking(t *testing.T) {
 			}
 			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
-			defer res.Body.Close()
+			t.Cleanup(func() { res.Body.Close() })
 			require.Equal(t, tc.status, res.StatusCode)
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
@@ -658,10 +642,6 @@ func TestRASPLFI(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.RASPEnabled() {
-		t.Skip("RASP needs to be enabled for this test")
-	}
-
 	// Simulate what orchestrion does
 	WrappedOpen := func(ctx context.Context, path string, flags int) (file *os.File, err error) {
 		parent, _ := dyngo.FromContext(ctx)
@@ -769,10 +749,6 @@ func TestRASPLFI(t *testing.T) {
 func TestSuspiciousAttackerBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	const bodyBlockingRule = "crs-933-130-block"
 
@@ -1030,10 +1006,6 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 func TestAttackerFingerprinting(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()

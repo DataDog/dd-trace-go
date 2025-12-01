@@ -436,10 +436,6 @@ func okHandler() http.Handler {
 func TestAppSec(t *testing.T) {
 	testutils.StartAppSec(t)
 
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
-
 	// Start and trace an HTTP server with some testing routes
 	router := NewRouter()
 	router.HandleFunc("/path0.0/{myPathParam0}/path0.1/{myPathParam1}/path0.2/{myPathParam2}/path0.3/{myPathParam3}", func(w http.ResponseWriter, _ *http.Request) {
