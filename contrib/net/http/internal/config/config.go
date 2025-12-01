@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 
+	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -49,6 +50,7 @@ type CommonConfig struct {
 }
 
 type Config struct {
+	global *config.Config
 	CommonConfig
 	FinishOpts []tracer.FinishOption
 	HeaderTags instrumentation.HeaderTags
@@ -62,6 +64,7 @@ func (c *Config) ApplyOpts(opts ...Option) {
 
 func Default(instr *instrumentation.Instrumentation) *Config {
 	cfg := new(Config)
+	cfg.global = config.Global()
 	if options.GetBoolEnv("DD_TRACE_HTTP_ANALYTICS_ENABLED", false) {
 		cfg.AnalyticsRate = 1.0
 	} else {
