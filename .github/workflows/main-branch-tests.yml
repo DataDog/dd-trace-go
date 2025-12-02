@@ -11,6 +11,8 @@ on:
       - 'internal/**'
       - 'orchestrion/**'
       - 'scripts/**'
+  schedule: # nightly
+    - cron: "0 0 * * *"
 
 concurrency:
   group: ${{ github.ref }}
