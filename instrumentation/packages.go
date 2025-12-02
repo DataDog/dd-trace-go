@@ -18,6 +18,7 @@ const (
 	Package99DesignsGQLGen      Package = "99designs/gqlgen"
 	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
+	PackageAWSDatadogLambdaGo   Package = "aws/datadog-lambda-go"
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
@@ -61,6 +62,7 @@ const (
 	PackageK8SClientGo             Package = "k8s.io/client-go"
 	PackageK8SGatewayAPI           Package = "k8s.io/gateway-api"
 	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
+	PackageMark3LabsMCPGo          Package = "mark3labs/mcp-go"
 	PackageJmoironSQLx             Package = "jmoiron/sqlx"
 	PackageJackcPGXV5              Package = "jackc/pgx.v5"
 	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
@@ -72,10 +74,11 @@ const (
 	PackageUptraceBun              Package = "uptrace/bun"
 	PackageLogSlog                 Package = "log/slog"
 
-	PackageValkeyIoValkeyGo         Package = "valkey-io/valkey-go"
-	PackageEnvoyProxyGoControlPlane Package = "envoyproxy/go-control-plane"
-	PackageOS                       Package = "os"
-	PackageRedisRueidis             Package = "redis/rueidis"
+	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
+	PackageEnvoyProxyGoControlPlane       Package = "envoyproxy/go-control-plane"
+	PackageHAProxyStreamProcessingOffload Package = "haproxy/stream-processing-offload"
+	PackageOS                             Package = "os"
+	PackageRedisRueidis                   Package = "redis/rueidis"
 )
 
 // These packages have been removed in v2, but they are kept here for the transitional version.
@@ -164,6 +167,18 @@ var packages = map[Package]PackageInfo{
 					return awsService + ".request"
 				},
 				buildOpNameV1: awsBuildOpNameV1,
+			},
+		},
+	},
+	PackageAWSDatadogLambdaGo: {
+		TracedPackage: "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go",
+		EnvVarPrefix:  "LAMBDA",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("aws.lambda"),
+				buildOpNameV0:      staticName("aws.lambda"),
+				buildOpNameV1:      staticName("aws.lambda"),
 			},
 		},
 	},
@@ -812,8 +827,23 @@ var packages = map[Package]PackageInfo{
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",
 	},
+	PackageHAProxyStreamProcessingOffload: {
+		TracedPackage: "haproxy/stream-processing-offload",
+	},
 	PackageOS: {
 		TracedPackage: "os",
+	},
+	PackageMark3LabsMCPGo: {
+		TracedPackage: "github.com/mark3labs/mcp-go",
+		EnvVarPrefix:  "MCPGO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("mcp-server"),
+				buildOpNameV0:      staticName("mcp.server.request"),
+				buildOpNameV1:      staticName("mcp.server.request"),
+			},
+		},
 	},
 	PackageEmickleiGoRestful: {
 		TracedPackage: "github.com/emicklei/go-restful",

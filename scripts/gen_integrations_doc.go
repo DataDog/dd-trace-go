@@ -124,7 +124,7 @@ func fetchIntegrationInfo(name, tracedPackage string) (integration, error) {
 
 	packages, err := parseIntegrationPackages(contribPath)
 	if err != nil {
-		return integration{}, fmt.Errorf("failed to fetch integration packages: %s", err.Error())
+		return integration{}, fmt.Errorf("failed to fetch integration packages: %s", err)
 	}
 
 	orchestrionSupported := false
@@ -144,7 +144,7 @@ func fetchIntegrationInfo(name, tracedPackage string) (integration, error) {
 	if _, ok := stdlibPackages[name]; !ok {
 		minVersion, maxVersion, repository, err = fetchVersionInfo(goModPath, tracedPackage)
 		if err != nil {
-			return integration{}, fmt.Errorf("failed to fetch version info: %s", err.Error())
+			return integration{}, fmt.Errorf("failed to fetch version info: %s", err)
 		}
 	}
 	return integration{
@@ -211,7 +211,7 @@ func fetchLatestVersion(module string) (string, error) {
 
 	var m modUpdate
 	if err := json.Unmarshal(out, &m); err != nil {
-		return "", fmt.Errorf("unexpected 'go list -m -u -json' output: %s", err.Error())
+		return "", fmt.Errorf("unexpected 'go list -m -u -json' output: %s", err)
 	}
 
 	latest := m.Version
@@ -377,7 +377,7 @@ func parseIntegrationPackages(contribPath string) (map[string]integrationPackage
 
 		apkg, err := doc.NewFromFiles(fset, files, path)
 		if err != nil {
-			return fmt.Errorf("failed to compute documentation for package: %s", err.Error())
+			return fmt.Errorf("failed to compute documentation for package: %s", err)
 		}
 
 		docStr := apkg.Doc

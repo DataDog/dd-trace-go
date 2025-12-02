@@ -93,14 +93,14 @@ func main() {
 		// 4. Get the latest version of each major. For each latest version of each major:
 		// curl https://raw.githubusercontent.com/<module>/refs/tags/v4.18.3/go.mod
 		// 5a. If request returns 404, module is not a go module. This means version belongs to the module without /v at the end.
-		// 5b. If request returns a `go.mod`, parse the modfile and extract the mod name
+		// 5b. If request returns a `go.mod`, parse the modfile.
 		// Get the latest version for each major
 
 		for major, versions := range majors {
 			latest := getLatestVersion(versions)
 
 			log.Printf("fetching go.mod for %s@%s\n", origin, latest)
-			f, err := fetchGoMod(origin, latest)
+			_, err := fetchGoMod(origin, latest)
 			if err != nil {
 				log.Printf("failed to fetch go.mod for %s@%s: %+v\n", origin, latest, err)
 				continue

@@ -68,6 +68,7 @@ type (
 			Enabled             bool `json:"enabled"`
 			AttemptToFixRetries int  `json:"attempt_to_fix_retries"`
 		} `json:"test_management"`
+		SubtestFeaturesEnabled bool `json:"-"`
 	}
 )
 
@@ -103,7 +104,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 	telemetry.GitRequestsSettingsMs(float64(time.Since(startTime).Milliseconds()))
 	if err != nil {
 		telemetry.GitRequestsSettingsErrors(telemetry.NetworkErrorType)
-		return nil, fmt.Errorf("sending get settings request: %s", err.Error())
+		return nil, fmt.Errorf("sending get settings request: %s", err)
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -117,7 +118,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 	var responseObject settingsResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshalling settings response: %s", err.Error())
+		return nil, fmt.Errorf("unmarshalling settings response: %s", err)
 	}
 
 	var settingsResponseType telemetry.SettingsResponseType

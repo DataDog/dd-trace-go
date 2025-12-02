@@ -3,6 +3,10 @@ schema-version: v1
 kind: mergequeue
 enable: true
 merge_method: squash
+branches:
+  main:
+    allow_skip_checks: true
+    require_reason_for_skip_checks: true
 ---
 schema-version: v1
 kind: mergegate

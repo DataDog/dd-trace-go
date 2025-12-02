@@ -6,15 +6,16 @@
 package actions
 
 import (
+	"bytes"
 	_ "embed" // embed is used to embed the blocked-template.json and blocked-template.html files
 	"net/http"
 	"os"
 	"strings"
-
-	"github.com/go-viper/mapstructure/v2"
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -29,13 +30,14 @@ var blockedTemplateJSON []byte
 var blockedTemplateHTML []byte
 
 const (
-	envBlockedTemplateHTML = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
-	envBlockedTemplateJSON = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
+	envBlockedTemplateHTML      = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML"
+	envBlockedTemplateJSON      = "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON"
+	securityResponsePlaceholder = "[security_response_id]"
 )
 
 func init() {
-	for env, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
-		if path, ok := os.LookupEnv(env); ok {
+	for key, template := range map[string]*[]byte{envBlockedTemplateJSON: &blockedTemplateJSON, envBlockedTemplateHTML: &blockedTemplateHTML} {
+		if path, ok := env.Lookup(key); ok {
 			if t, err := os.ReadFile(path); err != nil {
 				log.Error("Could not read template at %q: %v", path, err.Error())
 			} else {
@@ -51,11 +53,12 @@ type (
 	// blockActionParams are the dynamic parameters to be provided to a "block_request"
 	// action type upon invocation
 	blockActionParams struct {
-		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value is nullable to
-		// be able to distinguish between unset and defaulting to Abort (10), or set to OK (0).
-		GRPCStatusCode *int   `mapstructure:"grpc_status_code,omitempty"`
-		StatusCode     int    `mapstructure:"status_code"`
-		Type           string `mapstructure:"type,omitempty"`
+		// GRPCStatusCode is the gRPC status code to be returned. Since 0 is the OK status, the value defaults to Abort (10)
+		// if not set to OK (0).
+		GRPCStatusCode     int
+		StatusCode         int
+		Type               string
+		SecurityResponseID string
 	}
 	// GRPCWrapper is an opaque prototype abstraction for a gRPC handler (to avoid importing grpc)
 	// that returns a status code and an error
@@ -71,6 +74,40 @@ type (
 		http.Handler
 	}
 )
+
+func (b *blockActionParams) Decode(p map[string]any) error {
+	for k := range p {
+		switch k {
+		case "grpc_status_code":
+			v, err := decodeInt(p, k)
+			if err != nil {
+				return err
+			}
+			b.GRPCStatusCode = v
+		case "status_code":
+			v, err := decodeInt(p, k)
+			if err != nil {
+				return err
+			}
+			b.StatusCode = v
+		case "security_response_id":
+			v, err := decodeStr(p, k)
+			if err != nil {
+				return err
+			}
+			b.SecurityResponseID = v
+		case "type":
+			v, err := decodeStr(p, k)
+			if err != nil {
+				return err
+			}
+			b.Type = v
+		default:
+			// We ignore any other field.
+		}
+	}
+	return nil
+}
 
 func (a *BlockGRPC) EmitData(op dyngo.Operation) {
 	dyngo.EmitData(op, a)
@@ -93,21 +130,14 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 }
 
 func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
-	grpcCode := 10
 	p := blockActionParams{
 		Type:           "auto",
 		StatusCode:     403,
-		GRPCStatusCode: &grpcCode,
+		GRPCStatusCode: 10,
 	}
-
-	if err := mapstructure.WeakDecode(params, &p); err != nil {
+	if err := p.Decode(params); err != nil {
 		return p, err
 	}
-
-	if p.GRPCStatusCode == nil {
-		p.GRPCStatusCode = &grpcCode
-	}
-
 	return p, nil
 }
 
@@ -119,19 +149,19 @@ func NewBlockAction(params map[string]any) []Action {
 		return nil
 	}
 	return []Action{
-		newHTTPBlockRequestAction(p.StatusCode, p.Type),
-		newGRPCBlockRequestAction(*p.GRPCStatusCode),
+		newHTTPBlockRequestAction(p.StatusCode, p.Type, p.SecurityResponseID),
+		newGRPCBlockRequestAction(p.GRPCStatusCode),
 	}
 }
 
-func newHTTPBlockRequestAction(status int, template string) *BlockHTTP {
-	return &BlockHTTP{Handler: newBlockHandler(status, template)}
+func newHTTPBlockRequestAction(status int, template string, securityResponseID string) *BlockHTTP {
+	return &BlockHTTP{Handler: newBlockHandler(status, template, securityResponseID)}
 }
 
 // newBlockHandler creates, initializes and returns a new BlockRequestAction
-func newBlockHandler(status int, template string) http.Handler {
-	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML)
-	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON)
+func newBlockHandler(status int, template string, securityResponseID string) http.Handler {
+	htmlHandler := newBlockRequestHandler(status, "text/html", blockedTemplateHTML, securityResponseID)
+	jsonHandler := newBlockRequestHandler(status, "application/json", blockedTemplateJSON, securityResponseID)
 	switch template {
 	case "json":
 		return jsonHandler
@@ -152,10 +182,16 @@ func newBlockHandler(status int, template string) http.Handler {
 	}
 }
 
-func newBlockRequestHandler(status int, ct string, payload []byte) http.Handler {
+func newBlockRequestHandler(status int, ct string, payload []byte, securityResponseID string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", ct)
 		w.WriteHeader(status)
-		w.Write(payload)
+		w.Write(renderSecurityResponsePayload(payload, securityResponseID))
 	})
+}
+
+func renderSecurityResponsePayload(payload []byte, securityResponseID string) []byte {
+	securityResponseBytes := []byte(securityResponseID)
+	placeholderBytes := unsafe.Slice(unsafe.StringData(securityResponsePlaceholder), len(securityResponsePlaceholder))
+	return bytes.ReplaceAll(payload, placeholderBytes, securityResponseBytes)
 }

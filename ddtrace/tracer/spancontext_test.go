@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -145,9 +146,12 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		root, _ := StartSpanFromContext(context.Background(), "root")
 		for i := 0; i < 1000; i++ {
 			root.Finish(WithError(err))
-			assert.Equal(t, 1.0, root.metrics[keyRulesSamplerLimiterRate])
-			assert.Equal(t, 2.0, root.metrics[keySamplingPriority])
-			assert.Empty(t, root.metrics[keySamplingPriorityRate])
+			rateRule, _ := getMetric(root, keyRulesSamplerLimiterRate)
+			priority, _ := getMetric(root, keySamplingPriority)
+			assert.Equal(t, 1.0, rateRule)
+			assert.Equal(t, 2.0, priority)
+			_, hasPrioRate := getMetric(root, keySamplingPriorityRate)
+			assert.False(t, hasPrioRate)
 		}
 	})
 }
@@ -163,6 +167,15 @@ func TestAsyncSpanRacePartialFlush(t *testing.T) {
 }
 
 func testAsyncSpanRace(t *testing.T) {
+	// disabling process tags as it causes map writes on span.meta and span.metrics (due to key deletion)
+	// defeating the purpose of testAsyncSpanRace and trigerring systematically a read/write race
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+	defer func() {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		// reloading as this is a shared var process and can impact other tests
+		processtags.Reload()
+	}()
 	// This tests a regression where asynchronously finishing spans would
 	// modify a flushing root's sampling priority.
 	_, _, _, stop, err := startTestTracer(t)
@@ -518,6 +531,160 @@ func TestSpanPeerService(t *testing.T) {
 			wantPeerServiceRemappedFrom: "",
 		},
 		{
+			name: "AWS-No-Service",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("region", "us-east-2"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-No-Region",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "S3"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-Nonexistent-Service-And-Region",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "notarealservice"),
+				Tag("region", "notarealregion"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-No-Outbound-Request",
+			spanOpts: []StartSpanOption{
+				Tag("aws_service", "S3"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "",
+			wantPeerServiceSource:       "",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-S3",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "S3"),
+				Tag("region", "us-east-2"),
+				Tag("bucketname", "some-bucket"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "some-bucket.s3.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-S3-No-Bucket",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "S3"),
+				Tag("region", "us-east-2"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "s3.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-DynamoDB",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "DynamoDB"),
+				Tag("region", "us-east-2"),
+				Tag("db.system", "db-system"),
+				Tag("db.name", "db-name"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "dynamodb.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-Kinesis",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "Kinesis"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "kinesis.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-SNS",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "SNS"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "sns.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-SQS",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "SQS"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "sqs.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
+			name: "AWS-Events",
+			spanOpts: []StartSpanOption{
+				Tag("span.kind", "client"),
+				Tag("aws_service", "EventBridge"),
+				Tag("region", "us-east-2"),
+			},
+			peerServiceDefaultsEnabled:  true,
+			peerServiceMappings:         nil,
+			wantPeerService:             "events.us-east-2.amazonaws.com",
+			wantPeerServiceSource:       "peer.service",
+			wantPeerServiceRemappedFrom: "",
+		},
+		{
 			name: "DBClient",
 			spanOpts: []StartSpanOption{
 				Tag("span.kind", "client"),
@@ -646,7 +813,11 @@ func TestSpanPeerService(t *testing.T) {
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
-			tracer, transport, flush, stop, err := startTestTracer(t)
+			if strings.Contains(tc.name, "AWS-") {
+				t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "test_name")
+			}
+
+			tracer, transport, flush, stop, err := startTestTracer(t, WithLambdaMode(false))
 			assert.Nil(t, err)
 			defer stop()
 

@@ -1,0 +1,11 @@
+name: 'Supported Configurations Diff Check'
+description: 'Check for changes in supported_configurations.json file in order to detect unknown configurations'
+runs:
+  using: "composite"
+  steps:
+    - name: Supported Configurations Diff Check
+      if: always()
+      shell: bash
+      run: |-
+        git diff internal/env/supported_configurations.json
+        go run ./scripts/configinverter/main.go check

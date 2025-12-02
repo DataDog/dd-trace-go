@@ -62,7 +62,7 @@ func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int6
 	for _, file := range packFiles {
 		fileContent, fileErr := os.ReadFile(file)
 		if fileErr != nil {
-			err = fmt.Errorf("failed to read pack file: %s", fileErr.Error())
+			err = fmt.Errorf("failed to read pack file: %s", fileErr)
 			return
 		}
 
@@ -94,7 +94,7 @@ func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int6
 
 		if responseErr != nil {
 			telemetry.GitRequestsObjectsPackErrors(telemetry.NetworkErrorType)
-			err = fmt.Errorf("failed to send packfile request: %s", responseErr.Error())
+			err = fmt.Errorf("failed to send packfile request: %s", responseErr)
 			return
 		}
 

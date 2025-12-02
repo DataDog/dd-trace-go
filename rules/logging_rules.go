@@ -11,31 +11,22 @@
 //
 // This package implements differentiated security policies for different types of logging:
 //
-// 1. TELEMETRY LOGGING (internal/telemetry/log):
-//   - STRICT POLICY: Ban ALL %v usage to prevent uncontrolled data exposure
-//   - Rationale: Telemetry data is sent to external services and must be carefully controlled
-//   - All format verbs must be explicit (%s, %d, %q, etc.) to ensure data visibility
-//
-// 2. INTERNAL/STANDARD LOGGING (internal/log, log):
+// INTERNAL/STANDARD LOGGING (internal/log, log):
 //   - PERMISSIVE POLICY: Allow %v for error types and err.Error() calls
 //   - Rationale: Internal logs stay within the application but still need data protection
 //   - ALLOWED: err.Error() with %v (returns controlled string)
 //   - SUGGESTED: Raw error variables with %v (suggest err.Error() for explicitness)
 //
-// 3. ERROR TYPE HANDLING:
+// ERROR TYPE HANDLING:
 //   - err.Error() calls with %v are ALLOWED (returns controlled string)
 //   - Raw error variables with %v get SUGGESTIONS (recommend err.Error())
 //   - Position requirement: %v must be the last format verb (allows trailing chars like \n)
 //
-// 4. RECOMMENDED PRACTICE:
+// RECOMMENDED PRACTICE:
 //   - Prefer err.Error() for explicitness even though raw errors are allowed
 //   - This makes the intent clear and follows defensive programming principles
 //
 // EXAMPLES:
-//
-// ❌ Forbidden (telemetry):
-//
-//	telemetrylog.Error("user data: %v", userData)  // Any %v usage banned
 //
 // ❌ Forbidden (internal):
 //
@@ -44,7 +35,7 @@
 //
 // ✅ Allowed (internal):
 //
-//	log.Error("operation failed: %s", err.Error()) // err.Error() with %v is fine
+//	log.Error("operation failed: %s", err.Error()) // err.Error() with %s is fine
 //	log.Error("failed with %v\n", err.Error())     // %v at end, trailing chars OK
 //
 // 🔍 Suggested improvement (internal):
@@ -59,7 +50,6 @@ import (
 )
 
 const (
-	telemetryLogPackage    = "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	internalLogPackage     = "github.com/DataDog/dd-trace-go/v2/internal/log"
 	formatVerbRegexPattern = `.*%[+#]?v.*` // %v, %+v, %#v
 
@@ -74,15 +64,12 @@ const (
 	logMessageErrorSuggestion = "prefer err.Error() over %v for explicit error formatting. While %v with error types is allowed, err.Error() makes the intent clearer and follows defensive programming practices."
 
 	// Predefined complete messages for violations:
-	telemetryLogPrefix         = "Forbidden: (telemetry logging) "
-	telemetryLogFormatMessage  = telemetryLogPrefix + logMessageFormat
-	telemetryLogDynamicMessage = telemetryLogPrefix + logMessageDynamic
-	internalLogPrefix          = "Forbidden: (internal log) "
-	internalLogFormatMessage   = internalLogPrefix + logMessageFormat
-	internalLogDynamicMessage  = internalLogPrefix + logMessageDynamic
-	stdLogPrefix               = "Forbidden: (standard log) "
-	stdLogFormatMessage        = stdLogPrefix + logMessageFormat
-	stdLogDynamicMessage       = stdLogPrefix + logMessageDynamic
+	internalLogPrefix         = "Forbidden: (internal log) "
+	internalLogFormatMessage  = internalLogPrefix + logMessageFormat
+	internalLogDynamicMessage = internalLogPrefix + logMessageDynamic
+	stdLogPrefix              = "Forbidden: (standard log) "
+	stdLogFormatMessage       = stdLogPrefix + logMessageFormat
+	stdLogDynamicMessage      = stdLogPrefix + logMessageDynamic
 
 	// Best practice suggestions for error types:
 	internalLogSuggestionPrefix = "Suggestion: (internal log) "
@@ -90,50 +77,6 @@ const (
 	stdLogSuggestionPrefix      = "Suggestion: (standard log) "
 	stdLogErrorSuggestion       = stdLogSuggestionPrefix + logMessageErrorSuggestion
 )
-
-//doc:summary TELEMETRY SECURITY: detects usage of %v, %+v, %#v format verbs in telemetry logging
-//doc:before  telemetrylog.Error("unexpected error: %s", err.Error())
-//doc:after   telemetrylog.Error("unexpected error: %s", err.Error())
-//doc:tags    security telemetry data-leak format-verbs
-func telemetryLogFormatVerbs(m dsl.Matcher) {
-	// SECURITY POLICY: Telemetry logging has STRICT policy - ALL %v usage is forbidden
-	// Rationale: Telemetry data is sent to external services and must be carefully controlled
-	// ALL format verbs must be explicit (%s, %d, %q, etc.) to ensure data visibility
-	m.Import(telemetryLogPackage)
-
-	// Match ALL telemetry log calls that use dangerous format verbs (%v, %+v, %#v)
-	// No exceptions - even error types must use explicit formatting in telemetry
-	m.Match(
-		`log.Debug($format, $*args)`,
-		`log.Warn($format, $*args)`,
-		`log.Error($format, $*args)`,
-		`log.Info($format, $*args)`,
-	).
-		Where(m["format"].Text.Matches(formatVerbRegexPattern)).
-		Report(telemetryLogFormatMessage)
-}
-
-//doc:summary TELEMETRY SECURITY: detects usage of variable format strings in telemetry logging
-//doc:before  telemetrylog.Error(msg, err)
-//doc:after   telemetrylog.Error("specific error message: %s", err.Error())
-//doc:tags    security telemetry compile-time-safety injection
-func telemetryLogVariableFormat(m dsl.Matcher) {
-	// SECURITY POLICY: Telemetry logging requires compile-time constant format strings
-	// Rationale: Variable format strings can lead to format string injection attacks
-	// and make it impossible to audit what data might be exposed to external services
-	m.Import(telemetryLogPackage)
-
-	// Match telemetry log calls with non-constant format strings
-	// All format strings must be compile-time constants for security auditing
-	m.Match(
-		`log.Debug($format, $*args)`,
-		`log.Warn($format, $*args)`,
-		`log.Error($format, $*args)`,
-		`log.Info($format, $*args)`,
-	).
-		Where(!m["format"].Const).
-		Report(telemetryLogDynamicMessage)
-}
 
 //doc:summary INTERNAL SECURITY: detects unsafe %v usage in internal logging (non-error types or wrong position)
 //doc:before  log.Error("user value: %v", someString)

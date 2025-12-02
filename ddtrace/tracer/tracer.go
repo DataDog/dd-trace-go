@@ -26,7 +26,9 @@ import (
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -51,6 +53,7 @@ type TracerConf struct { //nolint:revive
 	VersionTag           string
 	ServiceTag           string
 	TracingAsTransport   bool
+	isLambdaFunction     bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -217,9 +220,6 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 	setGlobalTracer(t)
-	if t.config.logStartup {
-		logStartup(t)
-	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -232,6 +232,16 @@ func Start(opts ...StartOption) error {
 
 		globalinternal.SetTracerInitialized(true)
 		return nil
+	}
+
+	if t.config.runtimeMetricsV2 {
+		l := slog.New(slogHandler{})
+		opts := &runtimemetrics.Options{Logger: l}
+		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
+			l.Debug("Runtime metrics v2 enabled.")
+		} else {
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+		}
 	}
 
 	// Start AppSec with remote configuration
@@ -254,25 +264,39 @@ func Start(opts ...StartOption) error {
 
 	appsec.Start(appsecopts...)
 
+	if t.config.llmobs.Enabled {
+		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+			return fmt.Errorf("failed to start llmobs: %w", err)
+		}
+	}
+	if t.config.logStartup {
+		logStartup(t)
+	}
+
 	// start instrumentation telemetry unless it is disabled through the
 	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 	t.telemetry = startTelemetry(t.config)
 
-	// store the configuration in an in-memory file, allowing it to be read to
-	// determine if the process is instrumented with a tracer and to retrive
-	// relevant tracing information.
+	// store the configuration in an in-memory file and in a named anonymous mapping,
+	// allowing it to be read to determine if the process is instrumented with a tracer
+	// and to retrieve relevant tracing information.
 	storeConfig(t.config)
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
 }
 
+// storeConfig stores the process level tracing context both in an in-memory file and
+// in a named anonymous mapping.
+// This allows an external process, such as the Datadog Agent or fullhost profiler,
+// to determine if the process is instrumented with a tracer and to retrieve the process
+// level tracing context.
 func storeConfig(c *config) {
 	uuid, _ := uuid.NewRandom()
 	name := fmt.Sprintf("datadog-tracer-info-%s", uuid.String()[0:8])
 
 	metadata := Metadata{
-		SchemaVersion:      1,
+		SchemaVersion:      2,
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
@@ -280,12 +304,31 @@ func storeConfig(c *config) {
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
 		ServiceVersion:     c.version,
+		ProcessTags:        processtags.GlobalTags().String(),
+		ContainerID:        globalinternal.ContainerID(),
 	}
 
 	data, _ := metadata.MarshalMsg(nil)
 	_, err := globalinternal.CreateMemfd(name, data)
 	if err != nil {
 		log.Error("failed to store the configuration: %s", err.Error())
+	}
+
+	processContext := otelProcessContext{
+		DeploymentEnvironmentName: c.env,
+		HostName:                  c.hostname,
+		ServiceInstanceID:         globalconfig.RuntimeID(),
+		ServiceName:               c.serviceName,
+		ServiceVersion:            c.version,
+		TelemetrySDKLanguage:      "go",
+		TelemetrySDKVersion:       version.Tag,
+		TelemetrySdkName:          "dd-trace-go",
+	}
+
+	data, _ = processContext.MarshalMsg(nil)
+	err = globalinternal.CreateOtelProcessContextMapping(data)
+	if err != nil {
+		log.Error("failed to store the OTEL process context: %s", err.Error())
 	}
 }
 
@@ -294,6 +337,7 @@ func Stop() {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
+	llmobs.Stop()
 	setGlobalTracer(&NoopTracer{})
 	globalinternal.SetTracerInitialized(false)
 	log.Flush()
@@ -343,7 +387,8 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
-		return nil, fmt.Errorf("could not initialize statsd client: %s", err.Error())
+		// We are not failing here because the error could be cause by
+		// a transitory issue.
 	}
 	defer func() {
 		if err != nil {
@@ -441,15 +486,6 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
 	}
-	if c.runtimeMetricsV2 {
-		l := slog.New(slogHandler{})
-		opts := &runtimemetrics.Options{Logger: l}
-		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
-			l.Debug("Runtime metrics v2 enabled.")
-		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
-		}
-	}
 	if c.debugAbandonedSpans {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
@@ -489,6 +525,7 @@ func Flush() {
 	if t := getGlobalTracer(); t != nil {
 		t.Flush()
 	}
+	llmobs.Flush()
 }
 
 // Flush triggers a flush and waits for it to complete.
@@ -691,6 +728,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	}
 	span.context = newSpanContext(span, context)
+	if pprofContext != nil {
+		setLLMObsPropagatingTags(pprofContext, span.context)
+	}
 	span.setMeta("language", "go")
 	// add tags from options
 	for k, v := range opts.Tags {
@@ -938,6 +978,7 @@ func (t *tracer) TracerConf() TracerConf {
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
+		isLambdaFunction:     t.config.isLambdaFunction,
 	}
 }
 

@@ -31,11 +31,13 @@ func (fn OptionFn) apply(cfg *config) {
 	fn(cfg)
 }
 
-func defaults(cfg *config) {
+func newConfigWithDefaults() *config {
+	cfg := new(config)
 	cfg.serviceName = "gorm.db"
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.errCheck = func(error) bool { return true }
 	cfg.tagFns = make(map[string]func(db *gorm.DB) interface{})
+	return cfg
 }
 
 // WithService sets the given service name when registering a driver,

@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   issues: write
+  id-token: write
 jobs:
   label_issues:
     if: contains(github.event.issue.title, 'contrib')

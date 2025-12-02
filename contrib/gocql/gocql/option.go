@@ -7,11 +7,11 @@ package gocql
 
 import (
 	"math"
-	"os"
 
 	"golang.org/x/mod/semver"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 type config struct {
@@ -49,7 +49,7 @@ func defaultConfig() *config {
 		"operationType": "batch",
 	})
 	cfg.analyticsRate = instr.AnalyticsRate(false)
-	if compatMode := os.Getenv("DD_TRACE_GOCQL_COMPAT"); compatMode != "" {
+	if compatMode := env.Get("DD_TRACE_GOCQL_COMPAT"); compatMode != "" {
 		if semver.IsValid(compatMode) {
 			cfg.clusterTagLegacyMode = semver.Compare(semver.MajorMinor(compatMode), "v1.65") <= 0
 		} else {

@@ -25,11 +25,15 @@ aspects:
       all-of:
         - one-of:
             - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal
+            - import-path: github.com/DataDog/dd-trace-go/v2/openfeature
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/hostname/httputils
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/remoteconfig
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net
+            - import-path: github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem
             - import-path: github.com/DataDog/dd-trace-go/v2/profiler
+            - import-path: github.com/DataDog/dd-trace-go/v2/internal/llmobs/config
         - struct-literal:
             type: net/http.Transport
     advice:

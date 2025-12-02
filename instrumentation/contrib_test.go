@@ -25,7 +25,8 @@ func TestIntegrationEnabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = filepath.WalkDir(root, func(path string, _ fs.DirEntry, _ error) error {
-		if filepath.Base(path) != "go.mod" || strings.Contains(path, fmt.Sprintf("%cinternal", os.PathSeparator)) {
+		if filepath.Base(path) != "go.mod" || strings.Contains(path, fmt.Sprintf("%cinternal", os.PathSeparator)) ||
+			strings.Contains(path, fmt.Sprintf("%ctest%c", os.PathSeparator, os.PathSeparator)) {
 			return nil
 		}
 		rErr := testIntegrationEnabled(t, filepath.Dir(path))

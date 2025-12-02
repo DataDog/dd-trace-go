@@ -195,6 +195,11 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 	span := p.tracer.StartProduceSpan(tMsg)
 
 	var errChan chan error
+
+	if deliveryChan == nil {
+		deliveryChan = p.events
+	}
+
 	deliveryChan, errChan = kafkatrace.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
 
 	p.tracer.SetProduceCheckpoint(tMsg)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/DataDog/dd-trace-go/v2/profiler"
 )
 
@@ -38,12 +39,12 @@ func (c *Config) RunHTTP(handler func() http.Handler) {
 	flag.Parse()
 
 	// Configure non-stop execution tracing by default
-	if v := os.Getenv("DD_PROFILING_EXECUTION_TRACE_PERIOD"); v == "" && !c.DisableExecutionTracing {
+	if v := env.Get("DD_PROFILING_EXECUTION_TRACE_PERIOD"); v == "" && !c.DisableExecutionTracing {
 		os.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
 	}
 
 	// Enabled runtime metrics v2 by default
-	if v := os.Getenv("DD_RUNTIME_METRICS_V2_ENABLED"); v == "" {
+	if v := env.Get("DD_RUNTIME_METRICS_V2_ENABLED"); v == "" {
 		os.Setenv("DD_RUNTIME_METRICS_V2_ENABLED", "true")
 	}
 

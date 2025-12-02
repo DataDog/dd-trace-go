@@ -1,0 +1,35 @@
+{
+  "processor_overrides": [
+    {
+      "target": [{ "id": "extract-content" }],
+      "scanners": {
+        "include": [
+          { "id": "test-scanner-001" },
+          { "id": "test-scanner-custom-001" }
+        ],
+        "exclude": []
+      }
+    }
+  ],
+  "scanners": [
+    {
+      "id": "test-scanner-custom-001",
+      "name": "Custom scanner",
+      "key": {
+        "operator": "match_regex",
+        "parameters": {
+          "regex": "\\btestcard\\b",
+          "options": { "case_sensitive": false, "min_length": 2 }
+        }
+      },
+      "value": {
+        "operator": "match_regex",
+        "parameters": {
+          "regex": "\\b1234567890\\b",
+          "options": { "case_sensitive": false, "min_length": 5 }
+        }
+      },
+      "tags": { "type": "card", "category": "testcategory" }
+    }
+  ]
+}

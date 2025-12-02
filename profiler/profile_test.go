@@ -109,6 +109,7 @@ main;bar 0 0 8 16
 		},
 	}
 
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	for _, test := range tests {
 		for _, profType := range test.Types {
 			// deltaProfiler returns an unstarted profiler that is fed prof1
@@ -171,6 +172,7 @@ main;bar 0 0 8 16
 }
 
 func TestRunProfile(t *testing.T) {
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	// TODO(felixge): These tests are directly calling the internal runProfile()
 	// function which is brittle. We should refactor them to use the public API.
 	t.Run("delta", func(t *testing.T) {

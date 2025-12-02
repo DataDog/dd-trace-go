@@ -108,7 +108,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 
 	if err != nil {
 		telemetry.TestManagementTestsRequestErrors(telemetry.NetworkErrorType)
-		return nil, fmt.Errorf("sending known tests request: %s", err.Error())
+		return nil, fmt.Errorf("sending known tests request: %s", err)
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -123,7 +123,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 	var responseObject testManagementTestsResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshalling test management tests response: %s", err.Error())
+		return nil, fmt.Errorf("unmarshalling test management tests response: %s", err)
 	}
 
 	testCount := 0

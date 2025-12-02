@@ -25,9 +25,6 @@ import (
 
 func TestAppSec(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	e := echo.New()
@@ -238,9 +235,6 @@ func TestAppSec(t *testing.T) {
 // scenarios.
 func TestControlFlow(t *testing.T) {
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
@@ -548,9 +542,6 @@ func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	e := echo.New()
@@ -565,6 +556,16 @@ func TestBlocking(t *testing.T) {
 		}
 		return c.String(http.StatusOK, "Hello, "+userID)
 	})
+	e.Any("/body", func(c echo.Context) error {
+		type body struct {
+			Name string `json:"name"`
+		}
+		var b body
+		if err := c.Bind(&b); err != nil {
+			return err
+		}
+		return c.String(http.StatusOK, "Hello, "+b.Name)
+	})
 	srv := httptest.NewServer(e)
 	defer srv.Close()
 
@@ -572,6 +573,7 @@ func TestBlocking(t *testing.T) {
 		name        string
 		endpoint    string
 		headers     map[string]string
+		body        string
 		shouldBlock bool
 	}{
 		{
@@ -596,12 +598,34 @@ func TestBlocking(t *testing.T) {
 			endpoint: "/user",
 			headers:  map[string]string{"user-id": "legit-user-1"},
 		},
+		{
+			name:     "body/block",
+			endpoint: "/body",
+			body:     `{"name":"$globals"}`,
+			headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			shouldBlock: true,
+		},
+		{
+			name:     "body/no-block",
+			endpoint: "/body",
+			body:     `{"name":"legit"}`,
+			headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, nil)
+			var bodyReader io.Reader
+			if tc.body != "" {
+				bodyReader = strings.NewReader(tc.body)
+			}
+
+			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, bodyReader)
 			for k, v := range tc.headers {
 				req.Header.Set(k, v)
 			}

@@ -101,9 +101,10 @@ func TestProcessor(t *testing.T) {
 	assert.Len(t, got["service1"].Stats, 2)
 	assert.Equal(t, map[string]StatsPayload{
 		"service1": {
-			Env:     "env",
-			Service: "service1",
-			Version: "v1",
+			Env:         "env",
+			Service:     "service1",
+			Version:     "v1",
+			ProcessTags: processtags.GlobalTags().Slice(),
 			Stats: []StatsBucket{
 				{
 					Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
@@ -141,9 +142,10 @@ func TestProcessor(t *testing.T) {
 	got = sortedPayloads(p.flush(tp2.Add(bucketDuration)))
 	assert.Equal(t, map[string]StatsPayload{
 		"service1": {
-			Env:     "env",
-			Service: "service1",
-			Version: "v1",
+			Env:         "env",
+			Service:     "service1",
+			Version:     "v1",
+			ProcessTags: processtags.GlobalTags().Slice(),
 			Stats: []StatsBucket{
 				{
 					Start:    uint64(tp2.Add(-time.Second * 10).UnixNano()),
@@ -226,9 +228,10 @@ func TestProcessor(t *testing.T) {
 		got := sortedPayloads(p.flush(tp.Add(bucketDuration)))
 		assert.Equal(t, map[string]StatsPayload{
 			"service1": {
-				Env:     "env",
-				Service: "service1",
-				Version: "v1",
+				Env:         "env",
+				Service:     "service1",
+				Version:     "v1",
+				ProcessTags: processtags.GlobalTags().Slice(),
 				Stats: []StatsBucket{
 					{
 						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
@@ -263,9 +266,10 @@ func TestProcessor(t *testing.T) {
 				Lang:          "go",
 			},
 			"service2": {
-				Env:     "env",
-				Service: "service2",
-				Version: "v1",
+				Env:         "env",
+				Service:     "service2",
+				Version:     "v1",
+				ProcessTags: processtags.GlobalTags().Slice(),
 				Stats: []StatsBucket{
 					{
 						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
@@ -313,8 +317,9 @@ func TestSetCheckpoint(t *testing.T) {
 		env:        "env",
 		timeSource: time.Now,
 	}
-	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, nil), 0)
-	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}, nil), hash1)
+	processTags := processtags.GlobalTags().Slice()
+	hash1 := pathwayHash(nodeHash("service-1", "env", []string{"direction:in", "type:kafka"}, processTags), 0)
+	hash2 := pathwayHash(nodeHash("service-1", "env", []string{"direction:out", "type:kafka"}, processTags), hash1)
 
 	ctx := processor.SetCheckpoint(context.Background(), "direction:in", "type:kafka")
 	pathway, _ := PathwayFromContext(processor.SetCheckpoint(ctx, "direction:out", "type:kafka"))
@@ -334,7 +339,6 @@ func TestSetCheckpoint(t *testing.T) {
 }
 
 func TestSetCheckpointProcessTags(t *testing.T) {
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 	processtags.Reload()
 	pTags := processtags.GlobalTags().Slice()
 	require.NotEmpty(t, pTags)
@@ -421,7 +425,6 @@ func BenchmarkSetCheckpoint(b *testing.B) {
 }
 
 func BenchmarkSetCheckpointProcessTags(b *testing.B) {
-	b.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 	processtags.Reload()
 
 	client := &http.Client{

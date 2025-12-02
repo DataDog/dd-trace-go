@@ -9,10 +9,10 @@ package containers
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 )
@@ -20,7 +20,7 @@ import (
 // RegisterContainerCleanup registers a function to terminate the provided container to be executed after the test finishes.
 func RegisterContainerCleanup(t testing.TB, container testcontainers.Container) {
 	t.Cleanup(func() {
-		if _, ok := os.LookupEnv("CI"); ok {
+		if _, ok := env.Lookup("CI"); ok {
 			t.Log("skipping container cleanup in CI environment")
 			return
 		}

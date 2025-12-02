@@ -6,6 +6,7 @@
 package actions
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,11 +16,15 @@ import (
 )
 
 func TestNewHTTPBlockRequestAction(t *testing.T) {
+	const id = "00000000-0000-0000-0000-000000000000"
+	expectedBlockedTemplateJSON := bytes.ReplaceAll(blockedTemplateJSON, []byte(securityResponsePlaceholder), []byte(id))
+	expectedBlockedTemplateHTML := bytes.ReplaceAll(blockedTemplateHTML, []byte(securityResponsePlaceholder), []byte(id))
+
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/json", newHTTPBlockRequestAction(403, "json").ServeHTTP)
-	mux.HandleFunc("/html", newHTTPBlockRequestAction(403, "html").ServeHTTP)
-	mux.HandleFunc("/auto", newHTTPBlockRequestAction(403, "auto").ServeHTTP)
+	mux.HandleFunc("/json", newHTTPBlockRequestAction(403, "json", id).ServeHTTP)
+	mux.HandleFunc("/html", newHTTPBlockRequestAction(403, "html", id).ServeHTTP)
+	mux.HandleFunc("/auto", newHTTPBlockRequestAction(403, "auto", id).ServeHTTP)
 	defer srv.Close()
 
 	t.Run("json", func(t *testing.T) {
@@ -47,8 +52,9 @@ func TestNewHTTPBlockRequestAction(t *testing.T) {
 				require.NoError(t, err)
 				defer res.Body.Close()
 				body, err := io.ReadAll(res.Body)
+				require.NoError(t, err)
 				require.Equal(t, 403, res.StatusCode)
-				require.Equal(t, blockedTemplateJSON, body)
+				require.Equal(t, expectedBlockedTemplateJSON, body)
 			})
 		}
 	})
@@ -77,8 +83,9 @@ func TestNewHTTPBlockRequestAction(t *testing.T) {
 				require.NoError(t, err)
 				defer res.Body.Close()
 				body, err := io.ReadAll(res.Body)
+				require.NoError(t, err)
 				require.Equal(t, 403, res.StatusCode)
-				require.Equal(t, blockedTemplateHTML, body)
+				require.Equal(t, expectedBlockedTemplateHTML, body)
 			})
 		}
 	})
@@ -91,52 +98,52 @@ func TestNewHTTPBlockRequestAction(t *testing.T) {
 		}{
 			{
 				name:     "no-accept",
-				expected: blockedTemplateJSON,
+				expected: expectedBlockedTemplateJSON,
 			},
 			{
 				name:     "json-accept-1",
 				accept:   "application/json",
-				expected: blockedTemplateJSON,
+				expected: expectedBlockedTemplateJSON,
 			},
 			{
 				name:     "json-accept-2",
 				accept:   "application/json,text/html",
-				expected: blockedTemplateJSON,
+				expected: expectedBlockedTemplateJSON,
 			},
 			{
 				name:     "json-accept-3",
 				accept:   "irrelevant/content,application/json,text/html",
-				expected: blockedTemplateJSON,
+				expected: expectedBlockedTemplateJSON,
 			},
 			{
 				name:     "json-accept-4",
 				accept:   "irrelevant/content,application/json,text/html,application/json",
-				expected: blockedTemplateJSON,
+				expected: expectedBlockedTemplateJSON,
 			},
 			{
 				name:     "html-accept-1",
 				accept:   "text/html",
-				expected: blockedTemplateHTML,
+				expected: expectedBlockedTemplateHTML,
 			},
 			{
 				name:     "html-accept-2",
 				accept:   "text/html,application/json",
-				expected: blockedTemplateHTML,
+				expected: expectedBlockedTemplateHTML,
 			},
 			{
 				name:     "html-accept-3",
 				accept:   "irrelevant/content,text/html,application/json",
-				expected: blockedTemplateHTML,
+				expected: expectedBlockedTemplateHTML,
 			},
 			{
 				name:     "html-accept-4",
 				accept:   "irrelevant/content,text/html,application/json,text/html",
-				expected: blockedTemplateHTML,
+				expected: expectedBlockedTemplateHTML,
 			},
 			{
 				name:     "irrelevant-accept",
 				accept:   "irrelevant/irrelevant,application/html",
-				expected: blockedTemplateJSON,
+				expected: expectedBlockedTemplateJSON,
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
@@ -147,6 +154,7 @@ func TestNewHTTPBlockRequestAction(t *testing.T) {
 				require.NoError(t, err)
 				defer res.Body.Close()
 				body, err := io.ReadAll(res.Body)
+				require.NoError(t, err)
 				require.Equal(t, 403, res.StatusCode)
 				require.Equal(t, tc.expected, body)
 			})
@@ -155,12 +163,16 @@ func TestNewHTTPBlockRequestAction(t *testing.T) {
 }
 
 func TestNewRedirectRequestAction(t *testing.T) {
+	const id = "00000000-0000-0000-0000-000000000000"
+	expectedBlockedTemplateJSON := bytes.ReplaceAll(blockedTemplateJSON, []byte(securityResponsePlaceholder), []byte(id))
+
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
-	mux.HandleFunc("/redirect-default-status", newRedirectRequestAction(100, "/redirected").ServeHTTP)
-	mux.HandleFunc("/redirect-no-location", newRedirectRequestAction(303, "").ServeHTTP)
-	mux.HandleFunc("/redirect1", newRedirectRequestAction(http.StatusFound, "/redirect2").ServeHTTP)
-	mux.HandleFunc("/redirect2", newRedirectRequestAction(http.StatusFound, "/redirected").ServeHTTP)
+	mux.HandleFunc("/redirect-default-status", newRedirectRequestAction(100, "/redirected", id).ServeHTTP)
+	mux.HandleFunc("/redirect-no-location", newRedirectRequestAction(303, "", id).ServeHTTP)
+	mux.HandleFunc("/redirect1", newRedirectRequestAction(http.StatusFound, "/redirect2", id).ServeHTTP)
+	mux.HandleFunc("/redirect2", newRedirectRequestAction(http.StatusFound, "/redirected", id).ServeHTTP)
+	mux.HandleFunc("/redirect-with-id", newRedirectRequestAction(http.StatusFound, "/redirected?id=[security_response_id]", id).ServeHTTP)
 	mux.HandleFunc("/redirected", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK) // Shouldn't matter since we write 302 before arriving here
 		w.Write([]byte("Redirected"))
@@ -197,6 +209,7 @@ func TestNewRedirectRequestAction(t *testing.T) {
 			require.NoError(t, err)
 			defer res.Body.Close()
 			body, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, res.StatusCode)
 			require.Equal(t, "Redirected", string(body))
 		})
@@ -215,8 +228,9 @@ func TestNewRedirectRequestAction(t *testing.T) {
 		require.NoError(t, err)
 		defer res.Body.Close()
 		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
 		require.Equal(t, http.StatusForbidden, res.StatusCode)
-		require.Equal(t, blockedTemplateJSON, body)
+		require.Equal(t, expectedBlockedTemplateJSON, body)
 	})
 
 	t.Run("bad-status-code", func(t *testing.T) {
@@ -232,6 +246,24 @@ func TestNewRedirectRequestAction(t *testing.T) {
 		require.NoError(t, err)
 		defer res.Body.Close()
 		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, "Redirected", string(body))
+	})
+
+	t.Run("redirect-with-id", func(t *testing.T) {
+		srv.Client().CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			require.Equal(t, "/redirected", req.URL.Path)
+			require.Contains(t, req.URL.RawQuery, "id="+id)
+			return nil
+		}
+		req, err := http.NewRequest("POST", srv.URL+"/redirect-with-id", nil)
+		require.NoError(t, err)
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
 		require.Equal(t, "Redirected", string(body))
 	})
 }
@@ -243,7 +275,7 @@ func TestNewBlockParams(t *testing.T) {
 	}{
 		"block-1": {
 			params: map[string]any{
-				"status_code": "403",
+				"status_code": uint64(403),
 				"type":        "auto",
 			},
 			expected: blockActionParams{
@@ -253,7 +285,7 @@ func TestNewBlockParams(t *testing.T) {
 		},
 		"block-2": {
 			params: map[string]any{
-				"status_code": "405",
+				"status_code": uint64(405),
 				"type":        "html",
 			},
 			expected: blockActionParams{
@@ -271,6 +303,28 @@ func TestNewBlockParams(t *testing.T) {
 	}
 }
 
+func BenchmarkNewBlockParams(b *testing.B) {
+	params := map[string]any{
+		"status_code": uint64(403),
+		"type":        "auto",
+	}
+	for b.Loop() {
+		actionParams, err := blockParamsFromMap(params)
+		if err != nil {
+			b.Fatalf("blockParamsFromMap() error = %v", err)
+		}
+		if got, want := actionParams.GRPCStatusCode, 10; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := actionParams.StatusCode, 403; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := actionParams.Type, "auto"; got != want {
+			b.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}
+
 func TestNewRedirectParams(t *testing.T) {
 	for name, tc := range map[string]struct {
 		params   map[string]any
@@ -278,7 +332,7 @@ func TestNewRedirectParams(t *testing.T) {
 	}{
 		"redirect-1": {
 			params: map[string]any{
-				"status_code": "308",
+				"status_code": uint64(308),
 				"location":    "/redirected",
 			},
 			expected: redirectActionParams{
@@ -288,7 +342,7 @@ func TestNewRedirectParams(t *testing.T) {
 		},
 		"redirect-2": {
 			params: map[string]any{
-				"status_code": "303",
+				"status_code": uint64(303),
 				"location":    "/tmp",
 			},
 			expected: redirectActionParams{
@@ -298,7 +352,7 @@ func TestNewRedirectParams(t *testing.T) {
 		},
 		"no-location": {
 			params: map[string]any{
-				"status_code": "303",
+				"status_code": uint64(303),
 			},
 			expected: redirectActionParams{
 				Location:   "",
