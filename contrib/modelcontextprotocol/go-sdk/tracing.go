@@ -16,10 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func AddTracingMiddleware(server *mcp.Server) {
-	server.AddReceivingMiddleware(tracingMiddleware)
-}
-
 func tracingMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		switch method {
