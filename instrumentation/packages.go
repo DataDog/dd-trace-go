@@ -47,32 +47,33 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
-	PackageValyalaFastHTTP         Package = "valyala/fasthttp"
-	PackageUrfaveNegroni           Package = "urfave/negroni"
-	PackageTwitchTVTwirp           Package = "twitchtv/twirp"
-	PackageTidwallBuntDB           Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB         Package = "syndtr/goleveldb"
-	PackageSirupsenLogrus          Package = "sirupsen/logrus"
-	PackageShopifySarama           Package = "Shopify/sarama"
-	PackageSegmentioKafkaGo        Package = "segmentio/kafka-go"
-	PackageRedisGoRedisV9          Package = "redis/go-redis.v9"
-	PackageOlivereElasticV5        Package = "olivere/elastic.v5"
-	PackageMiekgDNS                Package = "miekg/dns"
-	PackageLabstackEchoV4          Package = "labstack/echo.v4"
-	PackageK8SClientGo             Package = "k8s.io/client-go"
-	PackageK8SGatewayAPI           Package = "k8s.io/gateway-api"
-	PackageJulienschmidtHTTPRouter Package = "julienschmidt/httprouter"
-	PackageMark3LabsMCPGo          Package = "mark3labs/mcp-go"
-	PackageJmoironSQLx             Package = "jmoiron/sqlx"
-	PackageJackcPGXV5              Package = "jackc/pgx.v5"
-	PackageHashicorpConsulAPI      Package = "hashicorp/consul"
-	PackageHashicorpVaultAPI       Package = "hashicorp/vault"
-	PackageGraphQLGoGraphQL        Package = "graphql-go/graphql"
-	PackageGraphGophersGraphQLGo   Package = "graph-gophers/graphql-go"
-	PackageGormIOGormV1            Package = "gorm.io/gorm.v1"
-	PackageGorillaMux              Package = "gorilla/mux"
-	PackageUptraceBun              Package = "uptrace/bun"
-	PackageLogSlog                 Package = "log/slog"
+	PackageValyalaFastHTTP           Package = "valyala/fasthttp"
+	PackageUrfaveNegroni             Package = "urfave/negroni"
+	PackageTwitchTVTwirp             Package = "twitchtv/twirp"
+	PackageTidwallBuntDB             Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB           Package = "syndtr/goleveldb"
+	PackageSirupsenLogrus            Package = "sirupsen/logrus"
+	PackageShopifySarama             Package = "Shopify/sarama"
+	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
+	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
+	PackageOlivereElasticV5          Package = "olivere/elastic.v5"
+	PackageMiekgDNS                  Package = "miekg/dns"
+	PackageLabstackEchoV4            Package = "labstack/echo.v4"
+	PackageK8SClientGo               Package = "k8s.io/client-go"
+	PackageK8SGatewayAPI             Package = "k8s.io/gateway-api"
+	PackageJulienschmidtHTTPRouter   Package = "julienschmidt/httprouter"
+	PackageMark3LabsMCPGo            Package = "mark3labs/mcp-go"
+	PackageJmoironSQLx               Package = "jmoiron/sqlx"
+	PackageJackcPGXV5                Package = "jackc/pgx.v5"
+	PackageHashicorpConsulAPI        Package = "hashicorp/consul"
+	PackageHashicorpVaultAPI         Package = "hashicorp/vault"
+	PackageGraphQLGoGraphQL          Package = "graphql-go/graphql"
+	PackageGraphGophersGraphQLGo     Package = "graph-gophers/graphql-go"
+	PackageGormIOGormV1              Package = "gorm.io/gorm.v1"
+	PackageGorillaMux                Package = "gorilla/mux"
+	PackageUptraceBun                Package = "uptrace/bun"
+	PackageLogSlog                   Package = "log/slog"
+	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
 	PackageEnvoyProxyGoControlPlane       Package = "envoyproxy/go-control-plane"
@@ -835,6 +836,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageMark3LabsMCPGo: {
 		TracedPackage: "github.com/mark3labs/mcp-go",
+		EnvVarPrefix:  "MCP",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("mcp-server"),
+				buildOpNameV0:      staticName("mcp.server.request"),
+				buildOpNameV1:      staticName("mcp.server.request"),
+			},
+		},
+	},
+	PackageModelContextProtocolGoSDK: {
+		TracedPackage: "github.com/modelcontextprotocol/go-sdk",
 		EnvVarPrefix:  "MCP",
 		naming: map[Component]componentNames{
 			ComponentServer: {
