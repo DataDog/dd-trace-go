@@ -835,7 +835,7 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageMark3LabsMCPGo: {
 		TracedPackage: "github.com/mark3labs/mcp-go",
-		EnvVarPrefix:  "MCPGO",
+		EnvVarPrefix:  "MCP",
 		naming: map[Component]componentNames{
 			ComponentServer: {
 				useDDServiceV0:     true,
