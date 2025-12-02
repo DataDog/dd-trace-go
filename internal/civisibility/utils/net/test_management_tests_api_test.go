@@ -59,6 +59,7 @@ func TestTestManagementTestsApiRequest(t *testing.T) {
 			assert.Equal(t, c.id, request.Data.ID, "ID mismatch")
 			assert.Equal(t, testManagementTestsRequestType, request.Data.Type, "Type mismatch")
 			assert.Equal(t, c.repositoryURL, request.Data.Attributes.RepositoryURL, "RepositoryURL mismatch")
+			assert.Equal(t, c.branchName, request.Data.Attributes.Branch, "Branch mismatch")
 			// Check the URL (remove the "/" prefix).
 			assert.Equal(t, testManagementTestsURLPath, r.URL.Path[1:], "URL path mismatch")
 
