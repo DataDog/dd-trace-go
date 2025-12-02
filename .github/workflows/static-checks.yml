@@ -12,8 +12,6 @@ on:
       - 'internal/**'
       - 'orchestrion/**'
       - 'scripts/**'
-  schedule: # nightly
-    - cron: "0 0 * * *"
   workflow_call:
     inputs:
       go-version:
