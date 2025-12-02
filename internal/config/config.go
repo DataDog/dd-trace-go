@@ -9,15 +9,19 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 var (
-	instance   *config
+	instance   *Config
 	configOnce sync.Once
 )
 
 // Config represents global configuration properties.
-type config struct {
+type Config struct {
+	mu sync.RWMutex
+	// Config fields are protected by the mutex.
 	agentURL                      *url.URL
 	debug                         bool
 	logStartup                    bool
@@ -49,8 +53,8 @@ type config struct {
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
-func loadConfig() *config {
-	cfg := new(config)
+func loadConfig() *Config {
+	cfg := new(Config)
 
 	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
@@ -88,13 +92,23 @@ func loadConfig() *config {
 // This function is thread-safe and can be called from multiple goroutines concurrently.
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
-func Get() *config {
+func Get() *Config {
 	configOnce.Do(func() {
 		instance = loadConfig()
 	})
 	return instance
 }
 
-func (c *config) Debug() bool {
+func (c *Config) Debug() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.debug
+}
+
+// SetDebug sets the debug flag and reports telemetry.
+func (c *Config) SetDebug(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debug = enabled
+	telemetry.RegisterAppConfig("trace_debug_enabled", enabled, telemetry.OriginCode)
 }
