@@ -110,5 +110,5 @@ func (c *Config) SetDebug(enabled bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debug = enabled
-	telemetry.RegisterAppConfig("trace_debug_enabled", enabled, telemetry.OriginCode)
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, telemetry.OriginCode)
 }
