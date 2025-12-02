@@ -76,6 +76,10 @@ var (
 
 func TestMain(m *testing.M) {
 	internalconfig.SetUseFreshConfig(true)
+<<<<<<< HEAD
+=======
+	// defer internalconfig.SetUseFreshConfig(false)
+>>>>>>> 63a09e649 (introduce usefreshconfig)
 	if internal.BoolEnv("DD_APPSEC_ENABLED", false) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
