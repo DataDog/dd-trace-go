@@ -26,7 +26,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -434,14 +433,12 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 		t.Run("env", func(t *testing.T) {
 			t.Setenv("DD_TRACE_DEBUG", "true")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
 			assert.True(t, c.internalConfig.Debug())
 		})
 		t.Run("otel-env-debug", func(t *testing.T) {
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
 			assert.True(t, c.internalConfig.Debug())
@@ -449,7 +446,6 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("otel-env-notdebug", func(t *testing.T) {
 			// any value other than debug, does nothing
 			t.Setenv("OTEL_LOG_LEVEL", "notdebug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
 			assert.False(t, c.internalConfig.Debug())
@@ -458,13 +454,11 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert := assert.New(t)
 			// option override otel
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig(WithDebugMode(false))
 			assert.NoError(err)
 			assert.False(c.internalConfig.Debug())
 			// env override otel
 			t.Setenv("DD_TRACE_DEBUG", "false")
-			internalconfig.ResetForTesting()
 			c, err = newTestConfig()
 			assert.NoError(err)
 			assert.False(c.internalConfig.Debug())

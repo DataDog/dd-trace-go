@@ -8,14 +8,15 @@ package config
 import (
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 var (
-	instance   *Config
-	configOnce sync.Once
+	useFreshConfig atomic.Bool
+	instance       atomic.Value
 )
 
 // Config represents global configuration properties.
@@ -93,10 +94,17 @@ func loadConfig() *Config {
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
 func Get() *Config {
-	configOnce.Do(func() {
-		instance = loadConfig()
-	})
-	return instance
+	v := instance.Load()
+	if v == nil || useFreshConfig.Load() {
+		cfg := loadConfig()
+		instance.Store(cfg)
+		return cfg
+	}
+	return v.(*Config)
+}
+
+func SetUseFreshConfig(use bool) {
+	useFreshConfig.Store(use)
 }
 
 func (c *Config) Debug() bool {
@@ -105,7 +113,6 @@ func (c *Config) Debug() bool {
 	return c.debug
 }
 
-// SetDebug sets the debug flag and reports telemetry.
 func (c *Config) SetDebug(enabled bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
