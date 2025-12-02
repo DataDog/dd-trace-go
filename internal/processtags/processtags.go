@@ -126,16 +126,30 @@ func collect() map[string]string {
 	} else {
 		baseDirName := filepath.Base(filepath.Dir(execPath))
 		tags[tagEntrypointName] = filepath.Base(execPath)
-		tags[tagEntrypointBasedir] = baseDirName
+		if baseDir, ok := filterDirProcessTag; ok {
+			tags[tagEntrypointBasedir] = baseDir
+		}
 		tags[tagEntrypointType] = entrypointTypeExecutable
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Debug("failed to get working directory: %s", err.Error())
-	} else {
-		tags[tagEntrypointWorkdir] = filepath.Base(wd)
+		return tags
+	}
+	if workDir, ok := filterDirProcessTag(wd); ok {
+		tags[tagEntrypointWorkdir] = workDir
 	}
 	return tags
+}
+
+func filterDirProcessTag(dir string) (string, bool) {
+	baseDir := filepath.Base(dir)
+	switch baseDir {
+	case "/", "bin", "":
+		return "", false
+	default:
+		return baseDir, true
+	}
 }
 
 // GlobalTags returns the global process tags.
