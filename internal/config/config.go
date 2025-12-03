@@ -115,11 +115,11 @@ func (c *Config) Debug() bool {
 	return c.debug
 }
 
-func (c *Config) SetDebug(enabled bool) {
+func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debug = enabled
-	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, telemetry.OriginCode)
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
 }
 
 func (c *Config) LogStartup() bool {
