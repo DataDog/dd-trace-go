@@ -116,10 +116,6 @@ func TestResolveAgentAddr(t *testing.T) {
 			if tt.envPort != "" {
 				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 			}
-
-			// Create config with optional override
-			// Note: TestMain sets SetUseFreshConfig(true), so internalConfig will reload
-			// and pick up the environment variables set above
 			var c *config
 			var err error
 			if tt.inOpt != nil {
@@ -132,15 +128,19 @@ func TestResolveAgentAddr(t *testing.T) {
 		})
 	}
 
-	// t.Run("UDS", func(t *testing.T) {
-	// 	old := internal.DefaultTraceAgentUDSPath
-	// 	d, err := os.Getwd()
-	// 	require.NoError(t, err)
-	// 	internal.DefaultTraceAgentUDSPath = d // Choose a file we know will exist
-	// 	defer func() { internal.DefaultTraceAgentUDSPath = old }()
-	// 	c.agentURL = internal.AgentURLFromEnv()
-	// 	assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.agentURL)
-	// })
+	t.Run("UDS", func(t *testing.T) {
+		old := internal.DefaultTraceAgentUDSPath
+		d, err := os.Getwd()
+		require.NoError(t, err)
+		internal.DefaultTraceAgentUDSPath = d // Choose a file we know will exist
+		defer func() { internal.DefaultTraceAgentUDSPath = old }()
+		c, err := newConfig()
+		require.NoError(t, err)
+		// In newConfig, unix:// URLs are transformed to http://UDS_... for transport compatibility
+		assert.Equal(t, internal.UnixDataSocketURL(d), c.internalConfig.AgentURL())
+		// But the original URL is preserved for logging
+		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.originalAgentURL)
+	})
 }
 
 func TestTransportResponse(t *testing.T) {
