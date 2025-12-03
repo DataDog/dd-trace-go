@@ -253,13 +253,6 @@ type config struct {
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
 
-	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
-	debugAbandonedSpans bool
-
-	// spanTimeout represents how old a span can be before it should be logged as a possible
-	// misconfiguration
-	spanTimeout time.Duration
-
 	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
 	// partial flush, or 0 if partial flushing is disabled.
 	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
@@ -458,10 +451,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		} else {
 			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
 		}
-	}
-	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	if c.debugAbandonedSpans {
-		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
@@ -1302,8 +1291,8 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 // be expensive, so it should only be enabled for debugging purposes.
 func WithDebugSpansMode(timeout time.Duration) StartOption {
 	return func(c *config) {
-		c.debugAbandonedSpans = true
-		c.spanTimeout = timeout
+		c.internalConfig.SetDebugAbandonedSpans(true, telemetry.OriginCode)
+		c.internalConfig.SetSpanTimeout(timeout, telemetry.OriginCode)
 	}
 }
 
