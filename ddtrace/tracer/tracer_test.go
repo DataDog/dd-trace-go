@@ -775,7 +775,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.runtimeMetrics)
+		assert.False(t, c.internalConfig.RuntimeMetrics())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
@@ -784,12 +784,12 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetrics())
 		// tracer option overrides dd env
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		c, err = newTestConfig(WithRuntimeMetrics())
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetrics())
 	})
 }
 

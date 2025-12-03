@@ -28,15 +28,15 @@ type Config struct {
 	agentURL                      *url.URL
 	debug                         bool
 	logStartup                    bool
+	runtimeMetrics                bool
+	runtimeMetricsV2              bool
+	profilerHotspots              bool
+	profilerEndpoints             bool
 	serviceName                   string
 	version                       string
 	env                           string
 	serviceMappings               map[string]string
 	hostname                      string
-	runtimeMetrics                bool
-	runtimeMetricsV2              bool
-	profilerHotspots              bool
-	profilerEndpoints             bool
 	spanAttributeSchemaVersion    int
 	peerServiceDefaultsEnabled    bool
 	peerServiceMappings           map[string]string
@@ -133,4 +133,17 @@ func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.logStartup = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_STARTUP_LOGS", enabled, origin)
+}
+
+func (c *Config) RuntimeMetrics() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetrics
+}
+
+func (c *Config) SetRuntimeMetrics(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runtimeMetrics = enabled
+	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
 }

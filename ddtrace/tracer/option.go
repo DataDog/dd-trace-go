@@ -218,9 +218,6 @@ type config struct {
 	// will be used.
 	logger Logger
 
-	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
-	runtimeMetrics bool
-
 	// runtimeMetricsV2 specifies whether collection of runtime metrics v2 is enabled.
 	runtimeMetricsV2 bool
 
@@ -475,7 +472,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			c.isLambdaFunction = true
 		}
 	}
-	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
@@ -690,7 +686,7 @@ func apmTracingDisabled(c *config) {
 	WithGlobalTag("_dd.apm.enabled", 0)(c)
 	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
 	// tell the agent we computed them, so it doesn't do it either.
-	c.runtimeMetrics = false
+	c.internalConfig.SetRuntimeMetrics(false, telemetry.OriginCalculated)
 	c.runtimeMetricsV2 = false
 }
 
@@ -1228,7 +1224,7 @@ func WithAnalyticsRate(rate float64) StartOption {
 func WithRuntimeMetrics() StartOption {
 	return func(cfg *config) {
 		telemetry.RegisterAppConfig("runtime_metrics_enabled", true, telemetry.OriginCode)
-		cfg.runtimeMetrics = true
+		cfg.internalConfig.SetRuntimeMetrics(true, telemetry.OriginCode)
 	}
 }
 
