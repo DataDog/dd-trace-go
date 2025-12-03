@@ -552,7 +552,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
 			c.httpClient = internal.UDSClient(c.originalAgentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
-			c.internalConfig.SetAgentURL(internal.UnixDataSocketURL(c.originalAgentURL.Path))
+			c.internalConfig.SetAgentURL(internal.UnixDataSocketURL(c.originalAgentURL.Path), telemetry.OriginCalculated)
 		} else {
 			c.httpClient = internal.DefaultHTTPClient(c.httpClientTimeout, false)
 		}
@@ -1061,7 +1061,7 @@ func WithAgentAddr(addr string) StartOption {
 		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "http",
 			Host:   addr,
-		})
+		}, telemetry.OriginCode)
 	}
 }
 
@@ -1089,9 +1089,9 @@ func WithAgentURL(agentURL string) StartOption {
 			c.internalConfig.SetAgentURL(&url.URL{
 				Scheme: u.Scheme,
 				Host:   u.Host,
-			})
+			}, telemetry.OriginCode)
 		case "unix":
-			c.internalConfig.SetAgentURL(internal.UnixDataSocketURL(u.Path))
+			c.internalConfig.SetAgentURL(internal.UnixDataSocketURL(u.Path), telemetry.OriginCode)
 		default:
 			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}
@@ -1196,7 +1196,7 @@ func WithUDS(socketPath string) StartOption {
 		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "unix",
 			Path:   socketPath,
-		})
+		}, telemetry.OriginCode)
 	}
 }
 
