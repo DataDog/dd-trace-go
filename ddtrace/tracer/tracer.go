@@ -273,7 +273,7 @@ func Start(opts ...StartOption) error {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 	}
-	if t.config.logStartup {
+	if t.config.internalConfig.LogStartup() {
 		logStartup(t)
 	}
 
