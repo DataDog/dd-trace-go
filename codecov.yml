@@ -2,7 +2,7 @@ codecov:
   branch: main
 
 comment:
-  layout: "header, condensed_files"
+  layout: "header, files"
 
 coverage:
   status:
