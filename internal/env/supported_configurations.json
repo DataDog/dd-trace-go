@@ -399,6 +399,9 @@
     "DD_TRACE_CLIENT_IP_HEADER": [
       "A"
     ],
+    "DD_TRACE_CLOUDEVENTS_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE_CONSUL_ANALYTICS_ENABLED": [
       "A"
     ],
