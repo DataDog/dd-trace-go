@@ -83,6 +83,8 @@ func resolveAgentURL() *url.URL {
 }
 
 // Config represents global configuration properties.
+// Config instances should be obtained via Get() which always returns a non-nil value.
+// Methods on Config assume a non-nil receiver and will panic if called on nil.
 type Config struct {
 	mu sync.RWMutex
 	// Config fields are protected by the mutex.
@@ -181,11 +183,11 @@ func (c *Config) Debug() bool {
 	return c.debug
 }
 
-func (c *Config) SetDebug(enabled bool) {
+func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debug = enabled
-	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, telemetry.OriginCode)
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
 }
 
 func (c *Config) AgentURL() *url.URL {

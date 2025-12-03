@@ -1002,7 +1002,7 @@ func WithDebugStack(enabled bool) StartOption {
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetDebug(enabled)
+		c.internalConfig.SetDebug(enabled, telemetry.OriginCode)
 	}
 }
 
