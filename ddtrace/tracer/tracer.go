@@ -238,7 +238,7 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	if t.config.runtimeMetricsV2 {
+	if t.config.internalConfig.RuntimeMetricsV2() {
 		l := slog.New(slogHandler{})
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {

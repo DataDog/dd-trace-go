@@ -61,19 +61,21 @@ func loadConfig() *Config {
 
 	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
+
 	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", true)
+	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
+	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
+	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
+	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
+	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+
 	cfg.serviceName = provider.getString("DD_SERVICE", "")
 	cfg.version = provider.getString("DD_VERSION", "")
 	cfg.env = provider.getString("DD_ENV", "")
 	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
 	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
-	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", false)
-	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
-	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
-	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
-	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
 	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
 	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
@@ -146,4 +148,17 @@ func (c *Config) SetRuntimeMetrics(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.runtimeMetrics = enabled
 	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
+}
+
+func (c *Config) RuntimeMetricsV2() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsV2
+}
+
+func (c *Config) SetRuntimeMetricsV2(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runtimeMetricsV2 = enabled
+	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
 }

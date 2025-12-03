@@ -218,9 +218,6 @@ type config struct {
 	// will be used.
 	logger Logger
 
-	// runtimeMetricsV2 specifies whether collection of runtime metrics v2 is enabled.
-	runtimeMetricsV2 bool
-
 	// dogstatsdAddr specifies the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
@@ -472,7 +469,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			c.isLambdaFunction = true
 		}
 	}
-	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
@@ -687,7 +683,7 @@ func apmTracingDisabled(c *config) {
 	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
 	// tell the agent we computed them, so it doesn't do it either.
 	c.internalConfig.SetRuntimeMetrics(false, telemetry.OriginCalculated)
-	c.runtimeMetricsV2 = false
+	c.internalConfig.SetRuntimeMetricsV2(false, telemetry.OriginCalculated)
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
