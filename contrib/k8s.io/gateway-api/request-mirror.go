@@ -84,7 +84,7 @@ func HTTPRequestMirrorHandler(config Config) http.Handler {
 			return
 		}
 
-		defer reqState.Close()
+		defer reqState.CloseBeforeResponse()
 
 		body, err := io.ReadAll(io.LimitReader(r.Body, int64(bodyProcessingMaxBytes+1)))
 		if err := processor.OnRequestBody(requestBody{body: body}, &reqState); err != nil {

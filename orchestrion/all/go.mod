@@ -43,6 +43,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.5.0-dev
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.5.0-dev
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.5.0-dev
+	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.5.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.5.0-dev
 	github.com/DataDog/orchestrion v1.6.0
 )
@@ -55,7 +56,7 @@ require (
 	cloud.google.com/go/iam v1.5.2 // indirect
 	cloud.google.com/go/pubsub v1.49.0 // indirect
 	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
-	github.com/99designs/gqlgen v0.17.72 // indirect
+	github.com/99designs/gqlgen v0.17.83 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.71.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.71.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.71.2 // indirect
@@ -73,7 +74,6 @@ require (
 	github.com/DataDog/gostackparse v0.7.0 // indirect
 	github.com/DataDog/sketches-go v1.4.7 // indirect
 	github.com/IBM/sarama v1.40.0 // indirect
-	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
@@ -134,7 +134,7 @@ require (
 	github.com/gin-gonic/gin v1.10.1 // indirect
 	github.com/go-chi/chi v1.5.4 // indirect
 	github.com/go-chi/chi/v5 v5.2.2 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.1 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -144,12 +144,10 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible // indirect
 	github.com/go-redis/redis/v7 v7.4.1 // indirect
 	github.com/go-redis/redis/v8 v8.11.5 // indirect
-	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gocql/gocql v1.6.0 // indirect
 	github.com/gofiber/fiber/v2 v2.52.9 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/gomodule/redigo v1.8.9 // indirect
@@ -251,7 +249,7 @@ require (
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.25 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.31 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
@@ -263,9 +261,10 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector/component v1.43.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.43.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.46.0 // indirect
 	go.opentelemetry.io/collector/internal/telemetry v0.137.0 // indirect
-	go.opentelemetry.io/collector/pdata v1.43.0 // indirect
+	go.opentelemetry.io/collector/pdata v1.46.0 // indirect
+	go.opentelemetry.io/collector/pdata/pprofile v0.140.0 // indirect
 	go.opentelemetry.io/contrib/bridges/otelzap v0.13.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.62.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0 // indirect
@@ -279,21 +278,21 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.43.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/exp v0.0.0-20251017212417-90e834f514db // indirect
-	golang.org/x/mod v0.29.0 // indirect
-	golang.org/x/net v0.46.0 // indirect
+	golang.org/x/mod v0.30.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/term v0.36.0 // indirect
-	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/term v0.37.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/api v0.239.0 // indirect
 	google.golang.org/genproto v0.0.0-20250728155136-f173205681a0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250728155136-f173205681a0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250804133106-a7a43d27e69b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251014184007-4626949a642f // indirect
 	google.golang.org/grpc v1.76.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
@@ -348,6 +347,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../contrib/sirupsen/logrus
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../contrib/twitchtv/twirp
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../contrib/valkey-io/valkey-go
+	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../contrib/valyala/fasthttp
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )
 

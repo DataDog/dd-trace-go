@@ -275,7 +275,7 @@ func TestNewBlockParams(t *testing.T) {
 	}{
 		"block-1": {
 			params: map[string]any{
-				"status_code": "403",
+				"status_code": uint64(403),
 				"type":        "auto",
 			},
 			expected: blockActionParams{
@@ -285,7 +285,7 @@ func TestNewBlockParams(t *testing.T) {
 		},
 		"block-2": {
 			params: map[string]any{
-				"status_code": "405",
+				"status_code": uint64(405),
 				"type":        "html",
 			},
 			expected: blockActionParams{
@@ -303,6 +303,28 @@ func TestNewBlockParams(t *testing.T) {
 	}
 }
 
+func BenchmarkNewBlockParams(b *testing.B) {
+	params := map[string]any{
+		"status_code": uint64(403),
+		"type":        "auto",
+	}
+	for b.Loop() {
+		actionParams, err := blockParamsFromMap(params)
+		if err != nil {
+			b.Fatalf("blockParamsFromMap() error = %v", err)
+		}
+		if got, want := actionParams.GRPCStatusCode, 10; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := actionParams.StatusCode, 403; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := actionParams.Type, "auto"; got != want {
+			b.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}
+
 func TestNewRedirectParams(t *testing.T) {
 	for name, tc := range map[string]struct {
 		params   map[string]any
@@ -310,7 +332,7 @@ func TestNewRedirectParams(t *testing.T) {
 	}{
 		"redirect-1": {
 			params: map[string]any{
-				"status_code": "308",
+				"status_code": uint64(308),
 				"location":    "/redirected",
 			},
 			expected: redirectActionParams{
@@ -320,7 +342,7 @@ func TestNewRedirectParams(t *testing.T) {
 		},
 		"redirect-2": {
 			params: map[string]any{
-				"status_code": "303",
+				"status_code": uint64(303),
 				"location":    "/tmp",
 			},
 			expected: redirectActionParams{
@@ -330,7 +352,7 @@ func TestNewRedirectParams(t *testing.T) {
 		},
 		"no-location": {
 			params: map[string]any{
-				"status_code": "303",
+				"status_code": uint64(303),
 			},
 			expected: redirectActionParams{
 				Location:   "",
