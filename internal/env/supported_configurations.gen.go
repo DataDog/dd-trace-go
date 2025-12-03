@@ -44,6 +44,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_LOGS_ENABLED":                                    {},
 	"DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED":                        {},
 	"DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT":                         {},
+	"DD_CIVISIBILITY_USE_NOOP_TRACER":                                 {},
 	"DD_CUSTOM_TRACE_ID":                                              {},
 	"DD_DATA_STREAMS_ENABLED":                                         {},
 	"DD_DBM_PROPAGATION_MODE":                                         {},

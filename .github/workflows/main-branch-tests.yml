@@ -11,6 +11,8 @@ on:
       - 'internal/**'
       - 'orchestrion/**'
       - 'scripts/**'
+  schedule: # nightly
+    - cron: "0 0 * * *"
 
 concurrency:
   group: ${{ github.ref }}
@@ -25,3 +27,28 @@ jobs:
       pull-requests: write
     with:
       go-version: "1.25" # Should be the highest supported version of Go
+
+  warm-repo-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .git
+          key: gitdb-${{ github.repository_id }}-${{ github.sha }}
+
+  multios-unit-tests:
+    needs:
+      - warm-repo-cache
+    strategy:
+      matrix:
+        runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
+        go-version: [ "1.24", "1.25" ]
+      fail-fast: false
+    uses: ./.github/workflows/multios-unit-tests.yml
+    with:
+      go-version: ${{ matrix.go-version }}
+      runs-on: ${{ matrix.runs-on }}
+    secrets: inherit
