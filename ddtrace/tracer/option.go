@@ -169,10 +169,6 @@ type config struct {
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 
-	// logStartup, when true, causes various startup info to be written
-	// when the tracer starts.
-	logStartup bool
-
 	// serviceName specifies the name of this application.
 	serviceName string
 
@@ -479,7 +475,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			c.isLambdaFunction = true
 		}
 	}
-	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
