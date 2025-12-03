@@ -182,12 +182,10 @@ func (c *Config) Debug() bool {
 }
 
 func (c *Config) SetDebug(enabled bool) {
-	if c != nil { // TODO: Is there a race condition here, checking value of c?
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		c.debug = enabled
-		telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, telemetry.OriginCode)
-	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debug = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, telemetry.OriginCode)
 }
 
 func (c *Config) AgentURL() *url.URL {
@@ -196,9 +194,9 @@ func (c *Config) AgentURL() *url.URL {
 	return c.agentURL
 }
 
-func (c *Config) SetAgentURL(url *url.URL) {
+func (c *Config) SetAgentURL(url *url.URL, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// if c not nil
 	c.agentURL = url
+	telemetry.RegisterAppConfig("DD_TRACE_AGENT_URL", url.String(), origin)
 }
