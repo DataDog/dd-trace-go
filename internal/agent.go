@@ -41,6 +41,8 @@ var DefaultTraceAgentUDSPath = "/var/run/datadog/apm.socket"
 //     defaulting to localhost and 8126, respectively
 //   - Then, DefaultTraceAgentUDSPath, if the path exists
 //   - Finally, localhost:8126
+//
+// TODO (APMAPI-1771): This function should be deleted once config migration is complete
 func AgentURLFromEnv() *url.URL {
 	if agentURL := env.Get("DD_TRACE_AGENT_URL"); agentURL != "" {
 		u, err := url.Parse(agentURL)

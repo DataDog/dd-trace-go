@@ -95,7 +95,6 @@ func TestTracesAgentIntegration(t *testing.T) {
 }
 
 func TestResolveAgentAddr(t *testing.T) {
-	c := new(config)
 	for _, tt := range []struct {
 		inOpt            StartOption
 		envHost, envPort string
@@ -117,11 +116,15 @@ func TestResolveAgentAddr(t *testing.T) {
 			if tt.envPort != "" {
 				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 			}
-			c.agentURL = internal.AgentURLFromEnv()
+			var c *config
+			var err error
 			if tt.inOpt != nil {
-				tt.inOpt(c)
+				c, err = newConfig(tt.inOpt)
+			} else {
+				c, err = newConfig()
 			}
-			assert.Equal(t, tt.out, c.agentURL)
+			require.NoError(t, err)
+			assert.Equal(t, tt.out, c.internalConfig.AgentURL())
 		})
 	}
 
@@ -131,8 +134,12 @@ func TestResolveAgentAddr(t *testing.T) {
 		require.NoError(t, err)
 		internal.DefaultTraceAgentUDSPath = d // Choose a file we know will exist
 		defer func() { internal.DefaultTraceAgentUDSPath = old }()
-		c.agentURL = internal.AgentURLFromEnv()
-		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.agentURL)
+		c, err := newConfig()
+		require.NoError(t, err)
+		// In newConfig, unix:// URLs are transformed to http://UDS_... for transport compatibility
+		assert.Equal(t, internal.UnixDataSocketURL(d), c.internalConfig.AgentURL())
+		// But the original URL is preserved for logging
+		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.originalAgentURL)
 	})
 }
 
