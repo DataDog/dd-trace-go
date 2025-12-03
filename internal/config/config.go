@@ -20,6 +20,8 @@ var (
 )
 
 // Config represents global configuration properties.
+// Config instances should be obtained via Get() which always returns a non-nil value.
+// Methods on Config assume a non-nil receiver and will panic if called on nil.
 type Config struct {
 	mu sync.RWMutex
 	// Config fields are protected by the mutex.
