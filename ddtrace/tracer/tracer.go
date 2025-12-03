@@ -801,7 +801,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, span.meta, span.metrics)
 	}
-	if t.config.profilerHotspots || t.config.profilerEndpoints {
+	if t.config.internalConfig.ProfilerHotspots() || t.config.profilerEndpoints {
 		t.applyPPROFLabels(span.pprofCtxRestore, span)
 	} else {
 		span.pprofCtxRestore = nil
@@ -835,12 +835,12 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
-	if t.config.profilerHotspots && localRootSpan != nil {
+	if t.config.internalConfig.ProfilerHotspots() && localRootSpan != nil {
 		localRootSpan.mu.RLock()
 		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
 		localRootSpan.mu.RUnlock()
 	}
-	if t.config.profilerHotspots {
+	if t.config.internalConfig.ProfilerHotspots() {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
 	if t.config.profilerEndpoints && localRootSpan != nil {

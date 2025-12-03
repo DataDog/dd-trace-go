@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
 
 var (
@@ -66,7 +67,7 @@ func loadConfig() *Config {
 	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
+	cfg.profilerHotspots = provider.getBool(traceprof.CodeHotspotsEnvVar, true)
 	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
 	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
 	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -161,4 +162,17 @@ func (c *Config) SetRuntimeMetricsV2(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.runtimeMetricsV2 = enabled
 	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
+}
+
+func (c *Config) ProfilerHotspots() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.profilerHotspots
+}
+
+func (c *Config) SetProfilerHotspots(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.profilerHotspots = enabled
+	telemetry.RegisterAppConfig("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", enabled, origin)
 }
