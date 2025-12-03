@@ -106,7 +106,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 	} else {
 		// Use agent mode with the EVP proxy.
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = TestCycleSubdomain
-		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
+		testCycleURL = fmt.Sprintf("%s/%s/%s", config.internalConfig.AgentURL().String(), EvpProxyPath, TestCyclePath)
 	}
 	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %t, testcycleurl: %s]", agentlessEnabled, urlsanitizer.SanitizeURL(testCycleURL))
 

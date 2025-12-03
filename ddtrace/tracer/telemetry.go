@@ -47,7 +47,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "universal_version", Value: c.universalVersion},
 		{Name: "env", Value: c.env},
 		{Name: "version", Value: c.version},
-		{Name: "trace_agent_url", Value: c.agentURL.String()},
+		{Name: "trace_agent_url", Value: c.internalConfig.AgentURL().String()},
 		{Name: "agent_hostname", Value: c.hostname},
 		{Name: "runtime_metrics_v2_enabled", Value: c.runtimeMetricsV2},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
@@ -108,7 +108,7 @@ func startTelemetry(c *config) telemetry.Client {
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 	cfg := telemetry.ClientConfig{
 		HTTPClient: c.httpClient,
-		AgentURL:   c.agentURL.String(),
+		AgentURL:   c.internalConfig.AgentURL().String(),
 	}
 	if c.logToStdout || c.ciVisibilityAgentless {
 		cfg.APIKey = env.Get("DD_API_KEY")

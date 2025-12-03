@@ -6,11 +6,15 @@
 package config
 
 import (
+	"net"
 	"net/url"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -18,6 +22,65 @@ var (
 	useFreshConfig atomic.Bool
 	instance       atomic.Value
 )
+
+// resolveAgentURL resolves the URL for the trace agent in the following priority order:
+// 1. DD_TRACE_AGENT_URL if set and valid
+// 2. DD_AGENT_HOST:DD_TRACE_AGENT_PORT if either is set
+// 3. UDS path if it exists
+// 4. Default http://localhost:8126
+func resolveAgentURL() *url.URL {
+	// Priority 1: DD_TRACE_AGENT_URL
+	if agentURL := provider.getString("DD_TRACE_AGENT_URL", ""); agentURL != "" {
+		u, err := url.Parse(agentURL)
+		if err != nil {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
+		} else {
+			switch u.Scheme {
+			case "unix", "http", "https":
+				return u
+			default:
+				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
+			}
+		}
+	}
+
+	// Priority 2: DD_AGENT_HOST and DD_TRACE_AGENT_PORT
+	// Check if either was explicitly provided (from any source: env, declarative config, etc.)
+	hostProvided := provider.isConfigured("DD_AGENT_HOST")
+	portProvided := provider.isConfigured("DD_TRACE_AGENT_PORT")
+
+	host := provider.getString("DD_AGENT_HOST", internal.DefaultAgentHostname)
+	port := provider.getString("DD_TRACE_AGENT_PORT", internal.DefaultTraceAgentPort)
+
+	// Treat empty values as not provided
+	if host == "" {
+		hostProvided = false
+		host = internal.DefaultAgentHostname
+	}
+	if port == "" {
+		portProvided = false
+		port = internal.DefaultTraceAgentPort
+	}
+
+	httpURL := &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(host, port),
+	}
+	if hostProvided || portProvided {
+		return httpURL
+	}
+
+	// Priority 3: UDS path if it exists
+	if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
+		return &url.URL{
+			Scheme: "unix",
+			Path:   internal.DefaultTraceAgentUDSPath,
+		}
+	}
+
+	// Priority 4: Default
+	return httpURL
+}
 
 // Config represents global configuration properties.
 type Config struct {
@@ -55,10 +118,11 @@ type Config struct {
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
 func loadConfig() *Config {
+	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg := new(Config)
 
-	// TODO: Use defaults from config json instead of hardcoding them here
-	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
+	cfg.agentURL = resolveAgentURL()
+
 	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", false)
 	cfg.serviceName = provider.getString("DD_SERVICE", "")
@@ -91,7 +155,7 @@ func loadConfig() *Config {
 
 // Get returns the global configuration singleton.
 // This function is thread-safe and can be called from multiple goroutines concurrently.
-// The configuration is lazily initialized on first access using sync.Once, ensuring
+// The configuration is lazily nitialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
 func Get() *Config {
 	v := instance.Load()
@@ -107,6 +171,10 @@ func SetUseFreshConfig(use bool) {
 	useFreshConfig.Store(use)
 }
 
+// shared logic for setting - unlock and check c not nil
+// func (c *Config) set()
+
+// TODO: Change these not to be methods on the Config struct but rather load the instance
 func (c *Config) Debug() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -114,8 +182,23 @@ func (c *Config) Debug() bool {
 }
 
 func (c *Config) SetDebug(enabled bool) {
+	if c != nil { // TODO: Is there a race condition here, checking value of c?
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.debug = enabled
+		telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, telemetry.OriginCode)
+	}
+}
+
+func (c *Config) AgentURL() *url.URL {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.agentURL
+}
+
+func (c *Config) SetAgentURL(url *url.URL) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.debug = enabled
-	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, telemetry.OriginCode)
+	// if c not nil
+	c.agentURL = url
 }

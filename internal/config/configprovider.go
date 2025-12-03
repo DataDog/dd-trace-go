@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -60,6 +61,17 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 	return def
 }
 
+// isConfigured checks if a key is explicitly set in any config source (returns true)
+// or if we would use the default (returns false).
+func (p *configProvider) isConfigured(key string) bool {
+	for _, source := range p.sources {
+		if v := source.get(key); v != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (p *configProvider) getString(key string, def string) string {
 	return get(p, key, def, func(v string) (string, bool) {
 		return v, true
@@ -105,10 +117,15 @@ func (p *configProvider) getFloat(key string, def float64) float64 {
 	})
 }
 
+// TODO: potentially delete this?
 func (p *configProvider) getURL(key string, def *url.URL) *url.URL {
 	return get(p, key, def, func(v string) (*url.URL, bool) {
 		u, err := url.Parse(v)
-		return u, err == nil
+		if err != nil {
+			log.Warn("Failed to parse %s: %s", v, err.Error())
+			return nil, false
+		}
+		return u, true
 	})
 }
 
