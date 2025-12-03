@@ -1547,11 +1547,11 @@ func TestWithTraceEnabled(t *testing.T) {
 func TestWithLogStartup(t *testing.T) {
 	c, err := newTestConfig()
 	assert.NoError(t, err)
-	assert.True(t, c.logStartup)
+	assert.True(t, c.internalConfig.LogStartup())
 	WithLogStartup(false)(c)
-	assert.False(t, c.logStartup)
+	assert.False(t, c.internalConfig.LogStartup())
 	WithLogStartup(true)(c)
-	assert.True(t, c.logStartup)
+	assert.True(t, c.internalConfig.LogStartup())
 }
 
 func TestWithHeaderTags(t *testing.T) {
