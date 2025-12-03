@@ -54,7 +54,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
 		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspots()},
-		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
+		{Name: "profiling_endpoints_enabled", Value: c.internalConfig.ProfilerEndpoints()},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},

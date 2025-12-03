@@ -68,7 +68,7 @@ func loadConfig() *Config {
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	cfg.profilerHotspots = provider.getBool(traceprof.CodeHotspotsEnvVar, true)
-	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
+	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
 	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 
@@ -175,4 +175,17 @@ func (c *Config) SetProfilerHotspots(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.profilerHotspots = enabled
 	telemetry.RegisterAppConfig("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", enabled, origin)
+}
+
+func (c *Config) ProfilerEndpoints() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.profilerEndpoints
+}
+
+func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.profilerEndpoints = enabled
+	telemetry.RegisterAppConfig("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
 }
