@@ -157,10 +157,6 @@ type config struct {
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
 
-	// logToStdout reports whether we should log all traces to the standard
-	// output instead of using the agent. This is used in Lambda environments.
-	logToStdout bool
-
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
@@ -269,15 +265,8 @@ type config struct {
 	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
 	partialFlushMinSpans int
 
-	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
-	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
-	partialFlushEnabled bool
-
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
-
-	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
-	dataStreamsMonitoringEnabled bool
 
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
@@ -291,10 +280,6 @@ type config struct {
 
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
-
-	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
-	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
-	dynamicInstrumentationEnabled bool
 
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
@@ -457,7 +442,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
 		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-		c.logToStdout = true
+		c.internalConfig.SetLogToStdout(true, telemetry.OriginCalculated)
 		if v != "" {
 			c.isLambdaFunction = true
 		}
@@ -479,8 +464,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
-	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
 		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
@@ -492,8 +475,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
-
-	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	namingschema.LoadFromEnv()
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
@@ -605,7 +586,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
+	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.current || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
@@ -995,7 +976,7 @@ func WithDebugMode(enabled bool) StartOption {
 // running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
-		c.logToStdout = enabled
+		c.internalConfig.SetLogToStdout(enabled, telemetry.OriginCode)
 	}
 }
 
@@ -1335,7 +1316,7 @@ func WithDebugSpansMode(timeout time.Duration) StartOption {
 // is disabled by default.
 func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
-		c.partialFlushEnabled = true
+		c.internalConfig.SetPartialFlushEnabled(true, telemetry.OriginCode)
 		c.partialFlushMinSpans = numSpans
 	}
 }

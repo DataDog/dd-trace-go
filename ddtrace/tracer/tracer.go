@@ -402,7 +402,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	var writer traceWriter
 	if c.ciVisibilityEnabled {
 		writer = newCiVisibilityTraceWriter(c)
-	} else if c.logToStdout {
+	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
@@ -431,7 +431,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
-	if c.dataStreamsMonitoringEnabled {
+	if c.internalConfig.DataStreamsMonitoringEnabled() {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	var logFile *log.ManagedFile
@@ -974,7 +974,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
 		Disabled:             !t.config.enabled.current,
-		PartialFlush:         t.config.partialFlushEnabled,
+		PartialFlush:         t.config.internalConfig.PartialFlushEnabled(),
 		PartialFlushMinSpans: t.config.partialFlushMinSpans,
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
 		PeerServiceMappings:  t.config.peerServiceMappings,

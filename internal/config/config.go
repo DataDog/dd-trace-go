@@ -33,24 +33,25 @@ type Config struct {
 	runtimeMetricsV2              bool
 	profilerHotspots              bool
 	profilerEndpoints             bool
+	logToStdout                   bool
+	peerServiceDefaultsEnabled    bool
+	debugAbandonedSpans           bool
+	partialFlushEnabled           bool
+	statsComputationEnabled       bool
+	dataStreamsMonitoringEnabled  bool
+	dynamicInstrumentationEnabled bool
+	ciVisibilityEnabled           bool
+	ciVisibilityAgentless         bool
 	serviceName                   string
 	version                       string
 	env                           string
 	serviceMappings               map[string]string
 	hostname                      string
 	spanAttributeSchemaVersion    int
-	peerServiceDefaultsEnabled    bool
 	peerServiceMappings           map[string]string
-	debugAbandonedSpans           bool
 	spanTimeout                   time.Duration
 	partialFlushMinSpans          int
-	partialFlushEnabled           bool
-	statsComputationEnabled       bool
-	dataStreamsMonitoringEnabled  bool
-	dynamicInstrumentationEnabled bool
 	globalSampleRate              float64
-	ciVisibilityEnabled           bool
-	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
 }
@@ -188,4 +189,121 @@ func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.profilerEndpoints = enabled
 	telemetry.RegisterAppConfig("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
+}
+
+func (c *Config) PeerServiceDefaultsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.peerServiceDefaultsEnabled
+}
+
+func (c *Config) SetPeerServiceDefaultsEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.peerServiceDefaultsEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", enabled, origin)
+}
+
+func (c *Config) DebugAbandonedSpans() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.debugAbandonedSpans
+}
+
+func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debugAbandonedSpans = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
+}
+
+func (c *Config) PartialFlushEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.partialFlushEnabled
+}
+
+func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.partialFlushEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
+}
+
+func (c *Config) StatsComputationEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsComputationEnabled
+}
+
+func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statsComputationEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
+}
+
+func (c *Config) DataStreamsMonitoringEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dataStreamsMonitoringEnabled
+}
+
+func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dataStreamsMonitoringEnabled = enabled
+	telemetry.RegisterAppConfig("DD_DATA_STREAMS_ENABLED", enabled, origin)
+}
+
+func (c *Config) DynamicInstrumentationEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dynamicInstrumentationEnabled
+}
+
+func (c *Config) SetDynamicInstrumentationEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dynamicInstrumentationEnabled = enabled
+	telemetry.RegisterAppConfig("DD_DYNAMIC_INSTRUMENTATION_ENABLED", enabled, origin)
+}
+
+func (c *Config) CiVisibilityEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled
+}
+
+func (c *Config) SetCiVisibilityEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ciVisibilityEnabled = enabled
+	telemetry.RegisterAppConfig("DD_CIVISIBILITY_ENABLED", enabled, origin)
+}
+
+func (c *Config) CiVisibilityAgentless() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentless
+}
+
+func (c *Config) SetCiVisibilityAgentless(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ciVisibilityAgentless = enabled
+	telemetry.RegisterAppConfig("DD_CIVISIBILITY_AGENTLESS_ENABLED", enabled, origin)
+}
+
+func (c *Config) LogToStdout() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logToStdout
+}
+
+func (c *Config) SetLogToStdout(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logToStdout = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_LOG_TO_STDOUT", enabled, origin)
 }

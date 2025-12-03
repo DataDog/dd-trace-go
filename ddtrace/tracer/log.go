@@ -145,11 +145,11 @@ func logStartup(t *tracer) {
 		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
-		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
+		LambdaMode:                  fmt.Sprintf("%t", t.config.internalConfig.LogToStdout()),
 		AgentFeatures:               t.config.agent,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
-		PartialFlushEnabled:         t.config.partialFlushEnabled,
+		PartialFlushEnabled:         t.config.internalConfig.PartialFlushEnabled(),
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
@@ -157,7 +157,7 @@ func logStartup(t *tracer) {
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.dogstatsdAddr,
-		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
+		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = err.Error()
@@ -165,7 +165,7 @@ func logStartup(t *tracer) {
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
-	if !t.config.logToStdout {
+	if !t.config.internalConfig.LogToStdout() {
 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
 			info.AgentError = fmt.Sprintf("%s", err.Error())
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())

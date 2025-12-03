@@ -40,7 +40,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
-		{Name: "lambda_mode", Value: c.logToStdout},
+		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
 		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "retry_interval", Value: c.retryInterval},
 		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
@@ -111,7 +111,7 @@ func startTelemetry(c *config) telemetry.Client {
 		HTTPClient: c.httpClient,
 		AgentURL:   c.agentURL.String(),
 	}
-	if c.logToStdout || c.ciVisibilityAgentless {
+	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
 		cfg.APIKey = env.Get("DD_API_KEY")
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
