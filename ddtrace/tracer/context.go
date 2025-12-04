@@ -56,6 +56,11 @@ func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
 	return propagatedLLMObs
 }
 
+// contextWithSpanContext returns a copy of the given context which includes the span context sctx.
+func contextWithSpanContext(ctx context.Context, sctx *SpanContext) context.Context {
+	return orchestrion.CtxWithValue(ctx, internal.ActiveSpanContextKey, sctx)
+}
+
 // SpanFromContext returns the span contained in the given context. A second return
 // value indicates if a span was found in the context. If no span is found, a no-op
 // span is returned.
@@ -73,6 +78,19 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	return nil, false
 }
 
+// spanContextFromContext returns the span context contained in the given context. A second return
+// value indicates if a span context was found in the context. If no span context is found, a nil is returned.
+func spanContextFromContext(ctx context.Context) (*SpanContext, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanContextKey)
+	if sctx, ok := v.(*SpanContext); ok {
+		return sctx, true
+	}
+	return nil, false
+}
+
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
 // is found in the context, it will be used as the parent of the resulting span. If the ChildOf
 // option is passed, it will only be used as the parent if there is no span found in `ctx`.
@@ -85,6 +103,8 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 		ctx = context.Background()
 	} else if s, ok := SpanFromContext(ctx); ok {
 		optsLocal = append(optsLocal, ChildOf(s.Context()))
+	} else if sctx, ok := spanContextFromContext(ctx); ok {
+		optsLocal = append(optsLocal, ChildOf(sctx))
 	}
 	optsLocal = append(optsLocal, withContext(ctx))
 	s := StartSpan(operationName, optsLocal...)
