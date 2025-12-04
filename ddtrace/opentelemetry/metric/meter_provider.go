@@ -14,6 +14,8 @@ import (
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+	otelmetric "go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -25,12 +27,6 @@ const (
 	envDDMetricsOtelEnabled = "DD_METRICS_OTEL_ENABLED"
 	envOtelMetricsExporter  = "OTEL_METRICS_EXPORTER"
 )
-
-// MeterProvider is a wrapper around the OpenTelemetry MeterProvider configured with Datadog defaults.
-type MeterProvider struct {
-	*metric.MeterProvider
-	isNoop bool
-}
 
 // NewMeterProvider creates a new MeterProvider configured with Datadog-specific settings:
 // - Resource with DD service, env, version, hostname, and tags
@@ -45,21 +41,16 @@ type MeterProvider struct {
 // When disabled, returns a no-op MeterProvider that doesn't export metrics.
 //
 // Users can override these defaults by passing additional options.
-func NewMeterProvider(opts ...Option) (*MeterProvider, error) {
+func NewMeterProvider(opts ...Option) (otelmetric.MeterProvider, error) {
 	return NewMeterProviderWithContext(context.Background(), opts...)
 }
 
 // NewMeterProviderWithContext creates a new MeterProvider with a custom context.
-func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (*MeterProvider, error) {
+func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetric.MeterProvider, error) {
 	// Check if metrics are enabled via environment variables
 	if !isMetricsEnabled() {
 		// Return a no-op MeterProvider that doesn't export metrics
-		return &MeterProvider{
-			MeterProvider: metric.NewMeterProvider(
-				metric.WithReader(metric.NewManualReader()),
-			),
-			isNoop: true,
-		}, nil
+		return noop.NewMeterProvider(), nil
 	}
 
 	// Apply configuration options
@@ -89,29 +80,11 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (*MeterPro
 		metric.WithTimeout(cfg.exportTimeout),
 	)
 
-	// Apply views if needed for temporality customization
-	providerOpts := []metric.Option{
+	// Create the MeterProvider
+	return metric.NewMeterProvider(
 		metric.WithResource(res),
 		metric.WithReader(reader),
-	}
-
-	// Add custom temporality view if specified
-	if cfg.temporalitySelector != nil {
-		// Create a view that doesn't change the instrument but allows temporality configuration
-		// Note: The actual temporality is set by the reader/exporter combination
-		// This is mainly for documentation purposes
-	} else {
-		// Default to delta temporality by adding it to exporter options
-		// This will be handled in the exporter configuration
-	}
-
-	// Create the MeterProvider
-	meterProvider := metric.NewMeterProvider(providerOpts...)
-
-	return &MeterProvider{
-		MeterProvider: meterProvider,
-		isNoop:        false,
-	}, nil
+	), nil
 }
 
 // isMetricsEnabled checks environment variables to determine if metrics should be enabled.
@@ -150,27 +123,34 @@ func isMetricsEnabled() bool {
 	return false
 }
 
+// IsNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.
+func IsNoop(mp otelmetric.MeterProvider) bool {
+	_, ok := mp.(noop.MeterProvider)
+	return ok
+}
+
 // Shutdown gracefully shuts down the MeterProvider, flushing any pending metrics.
 // For no-op providers, this is a no-op operation.
-func (mp *MeterProvider) Shutdown(ctx context.Context) error {
-	if mp.MeterProvider == nil || mp.isNoop {
+func Shutdown(ctx context.Context, mp otelmetric.MeterProvider) error {
+	if IsNoop(mp) {
 		return nil
 	}
-	return mp.MeterProvider.Shutdown(ctx)
+	if sdkMP, ok := mp.(*metric.MeterProvider); ok {
+		return sdkMP.Shutdown(ctx)
+	}
+	return nil
 }
 
 // ForceFlush flushes any pending metrics.
 // For no-op providers, this is a no-op operation.
-func (mp *MeterProvider) ForceFlush(ctx context.Context) error {
-	if mp.MeterProvider == nil || mp.isNoop {
+func ForceFlush(ctx context.Context, mp otelmetric.MeterProvider) error {
+	if IsNoop(mp) {
 		return nil
 	}
-	return mp.MeterProvider.ForceFlush(ctx)
-}
-
-// IsNoop returns true if this is a no-op MeterProvider that doesn't export metrics.
-func (mp *MeterProvider) IsNoop() bool {
-	return mp.isNoop
+	if sdkMP, ok := mp.(*metric.MeterProvider); ok {
+		return sdkMP.ForceFlush(ctx)
+	}
+	return nil
 }
 
 // deltaTemporalitySelector returns a temporality selector configured with Datadog defaults.
@@ -196,44 +176,25 @@ func deltaTemporalitySelector() metric.TemporalitySelector {
 		}
 
 		// For monotonic instruments, respect the user's preference if set
-		if temporalityPref != "" {
-			switch temporalityPref {
-			case "CUMULATIVE":
-				return metricdata.CumulativeTemporality
-			case "DELTA":
-				return metricdata.DeltaTemporality
-			}
+		switch temporalityPref {
+		case "CUMULATIVE":
+			return metricdata.CumulativeTemporality
+		case "DELTA":
+			return metricdata.DeltaTemporality
+		default:
+			// no-op
 		}
 
 		// Default behavior for monotonic instruments: Delta
-		switch kind {
-		case metric.InstrumentKindCounter,
-			metric.InstrumentKindHistogram,
-			metric.InstrumentKindObservableCounter:
-			return metricdata.DeltaTemporality
-		default:
-			return metricdata.DeltaTemporality
-		}
+		return metricdata.DeltaTemporality
 	}
 }
 
 // cumulativeTemporalitySelector returns a temporality selector that uses cumulative temporality.
 // This can be used if users need to override the default delta temporality.
 func cumulativeTemporalitySelector() metric.TemporalitySelector {
-	return func(kind metric.InstrumentKind) metricdata.Temporality {
-		switch kind {
-		case metric.InstrumentKindCounter,
-			metric.InstrumentKindUpDownCounter,
-			metric.InstrumentKindHistogram,
-			metric.InstrumentKindObservableCounter,
-			metric.InstrumentKindObservableUpDownCounter:
-			return metricdata.CumulativeTemporality
-		case metric.InstrumentKindObservableGauge:
-			// Gauges are always cumulative (represent a point-in-time value)
-			return metricdata.CumulativeTemporality
-		default:
-			return metricdata.CumulativeTemporality
-		}
+	return func(metric.InstrumentKind) metricdata.Temporality {
+		return metricdata.CumulativeTemporality
 	}
 }
 
