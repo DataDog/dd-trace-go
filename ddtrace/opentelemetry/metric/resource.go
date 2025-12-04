@@ -15,7 +15,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
 
 const (
@@ -60,7 +60,7 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	}
 
 	// 1. Service name priority: DD_SERVICE → DD_TAGS[service] → OTEL_SERVICE_NAME → OTEL_RESOURCE_ATTRIBUTES[service.name]
-	serviceName := getServiceName(ddTags, otelAttrs)
+	serviceName := serviceName(ddTags, otelAttrs)
 	if serviceName != "" {
 		attrs = append(attrs, semconv.ServiceName(serviceName))
 	}
@@ -68,11 +68,11 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
 	envName := getEnvironmentName(ddTags, otelAttrs)
 	if envName != "" {
-		attrs = append(attrs, semconv.DeploymentEnvironment(envName))
+		attrs = append(attrs, semconv.DeploymentEnvironmentNameKey.String(envName))
 	}
 
 	// 3. Version priority: DD_VERSION → DD_TAGS[version] → OTEL_RESOURCE_ATTRIBUTES[service.version]
-	version := getVersion(ddTags, otelAttrs)
+	version := version(ddTags, otelAttrs)
 	if version != "" {
 		attrs = append(attrs, semconv.ServiceVersion(version))
 	}
@@ -80,7 +80,7 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	// 4. Hostname: Only add if OTEL sets it OR if DD_TRACE_REPORT_HOSTNAME=true
 	// Priority: OTEL_RESOURCE_ATTRIBUTES[host.name] (highest) → DD_HOSTNAME → detected hostname
 	// If DD_TRACE_REPORT_HOSTNAME != "true" and no OTEL host.name, do NOT add hostname
-	hostname, shouldAddHostname := getHostname(otelAttrs)
+	hostname, shouldAddHostname := hostname(otelAttrs)
 	if shouldAddHostname && hostname != "" {
 		attrs = append(attrs, semconv.HostName(hostname))
 	}
@@ -124,8 +124,8 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	return resource.New(ctx, opts...)
 }
 
-// getServiceName returns the service name from environment variables with priority order
-func getServiceName(ddTags, otelAttrs map[string]string) string {
+// serviceName returns the service name from environment variables with priority order
+func serviceName(ddTags, otelAttrs map[string]string) string {
 	// DD_SERVICE has highest priority
 	if v := env.Get(envDDService); v != "" {
 		return v
@@ -162,8 +162,8 @@ func getEnvironmentName(ddTags, otelAttrs map[string]string) string {
 	return ""
 }
 
-// getVersion returns the version from environment variables with priority order
-func getVersion(ddTags, otelAttrs map[string]string) string {
+// version returns the version from environment variables with priority order
+func version(ddTags, otelAttrs map[string]string) string {
 	// DD_VERSION has highest priority
 	if v := env.Get(envDDVersion); v != "" {
 		return v
@@ -179,7 +179,7 @@ func getVersion(ddTags, otelAttrs map[string]string) string {
 	return ""
 }
 
-// getHostname returns the hostname and whether it should be added to resource attributes.
+// hostname returns the hostname and whether it should be added to resource attributes.
 // Returns (hostname, shouldAdd) where:
 //   - hostname: the resolved hostname value
 //   - shouldAdd: true if hostname should be added to resource, false otherwise
@@ -191,7 +191,7 @@ func getVersion(ddTags, otelAttrs map[string]string) string {
 //   - Else use detected hostname (os.Hostname)
 //
 // 3. Otherwise, do NOT add hostname at all
-func getHostname(otelAttrs map[string]string) (string, bool) {
+func hostname(otelAttrs map[string]string) (string, bool) {
 	// 1. OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - always use if present
 	if v, ok := otelAttrs["host.name"]; ok && v != "" {
 		return v, true
@@ -228,9 +228,4 @@ func parseOtelResourceAttributes(str string) map[string]string {
 		res[key] = val
 	})
 	return res
-}
-
-// cleanResourceAttributes removes any git metadata tags that shouldn't be in resource attributes
-func cleanResourceAttributes(attrs map[string]string) {
-	internal.CleanGitMetadataTags(attrs)
 }
