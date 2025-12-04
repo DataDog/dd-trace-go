@@ -234,10 +234,6 @@ type config struct {
 	// It defaults to time.Ticker; replaced in tests.
 	tickChan <-chan time.Time
 
-	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
-	// errors will record a stack trace when this option is set.
-	noDebugStack bool
-
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
 
@@ -949,7 +945,7 @@ func WithLogger(logger Logger) StartOption {
 // FinishOption.
 func WithDebugStack(enabled bool) StartOption {
 	return func(c *config) {
-		c.noDebugStack = !enabled
+		c.internalConfig.SetDebugStack(enabled, telemetry.OriginCode)
 	}
 }
 
