@@ -1146,7 +1146,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 	if err := parseTraceparent(&ctx, parentHeader); err != nil {
 		return nil, err
 	}
-	parseTracestate(&ctx, stateHeader)
+	ParseTracestate(&ctx, stateHeader)
 	return &ctx, nil
 }
 
@@ -1231,7 +1231,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 	return nil
 }
 
-// parseTracestate attempts to parse tracestateHeader which is a list
+// ParseTracestate attempts to parse tracestateHeader which is a list
 // with up to 32 comma-separated (,) list-members.
 // An example value would be: `vendorname1=opaqueValue1,vendorname2=opaqueValue2,dd=s:1;o:synthetics`,
 // Where `dd` list contains values that would be in x-datadog-tags as well as those needed for propagation information.
@@ -1240,7 +1240,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 // `origin` = `o`
 // `last parent` = `p`
 // `_dd.p.` prefix = `t.`
-func parseTracestate(ctx *SpanContext, header string) {
+func ParseTracestate(ctx *SpanContext, header string) {
 	if header == "" {
 		// The W3C spec says tracestate can be empty but should avoid sending it.
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
