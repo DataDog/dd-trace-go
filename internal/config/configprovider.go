@@ -41,18 +41,35 @@ func defaultconfigProvider() *configProvider {
 	}
 }
 
-// get is a generic helper that iterates through config sources and parses values.
-// The parse function should return the parsed value and true if parsing succeeded, or false otherwise.
-func get[T any](p *configProvider, key string, def T, parse func(string) (T, bool)) T {
+func (p *configProvider) getString(key string, def string) string {
+	// TODO: Eventually, iterate over all sources and report telemetry
 	for _, source := range p.sources {
 		if v := source.get(key); v != "" {
 			var id string
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
-			if parsed, ok := parse(v); ok {
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+			return v
+		}
+	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
+	return def
+}
+
+func (p *configProvider) getBool(key string, def bool) bool {
+	for _, source := range p.sources {
+		if v := source.get(key); v != "" {
+			var id string
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
+			}
+			if v == "true" {
 				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
-				return parsed
+				return true
+			} else if v == "false" {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+				return false
 			}
 		}
 	}
@@ -77,38 +94,93 @@ func (p *configProvider) getBool(key string, def bool) bool {
 }
 
 func (p *configProvider) getInt(key string, def int) int {
-	return get(p, key, def, func(v string) (int, bool) {
-		intVal, err := strconv.Atoi(v)
-		return intVal, err == nil
-	})
+	for _, source := range p.sources {
+		if v := source.get(key); v != "" {
+			var id string
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
+			}
+			intVal, err := strconv.Atoi(v)
+			if err == nil {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+				return intVal
+			}
+		}
+	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
+	return def
 }
 
 func (p *configProvider) getMap(key string, def map[string]string) map[string]string {
-	return get(p, key, def, func(v string) (map[string]string, bool) {
-		m := parseMapString(v)
-		return m, len(m) > 0
-	})
+	for _, source := range p.sources {
+		if v := source.get(key); v != "" {
+			var id string
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
+			}
+			m := parseMapString(v)
+			if len(m) > 0 {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+				return m
+			}
+		}
+	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
+	return def
 }
 
 func (p *configProvider) getDuration(key string, def time.Duration) time.Duration {
-	return get(p, key, def, func(v string) (time.Duration, bool) {
-		d, err := time.ParseDuration(v)
-		return d, err == nil
-	})
+	for _, source := range p.sources {
+		if v := source.get(key); v != "" {
+			var id string
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
+			}
+			d, err := time.ParseDuration(v)
+			if err == nil {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+				return d
+			}
+		}
+	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
+	return def
 }
 
 func (p *configProvider) getFloat(key string, def float64) float64 {
-	return get(p, key, def, func(v string) (float64, bool) {
-		floatVal, err := strconv.ParseFloat(v, 64)
-		return floatVal, err == nil
-	})
+	for _, source := range p.sources {
+		if v := source.get(key); v != "" {
+			var id string
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
+			}
+			floatVal, err := strconv.ParseFloat(v, 64)
+			if err == nil {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+				return floatVal
+			}
+		}
+	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
+	return def
 }
 
 func (p *configProvider) getURL(key string, def *url.URL) *url.URL {
-	return get(p, key, def, func(v string) (*url.URL, bool) {
-		u, err := url.Parse(v)
-		return u, err == nil
-	})
+	for _, source := range p.sources {
+		if v := source.get(key); v != "" {
+			var id string
+			if s, ok := source.(idAwareConfigSource); ok {
+				id = s.getID()
+			}
+			u, err := url.Parse(v)
+			if err == nil {
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+				return u
+			}
+		}
+	}
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
+	return def
 }
 
 // normalizeKey is a helper function for configSource implementations to normalize the key to a valid environment variable name.
