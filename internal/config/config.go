@@ -34,6 +34,12 @@ const (
 // Re-exported so callers don't need to import internal/telemetry.
 type Origin = telemetry.Origin
 
+// Re-exported origin constants for common configuration sources
+const (
+	OriginCode       = telemetry.OriginCode
+	OriginCalculated = telemetry.OriginCalculated
+)
+
 // Config represents global configuration properties.
 // Config instances should be obtained via Get() which always returns a non-nil value.
 // Methods on Config assume a non-nil receiver and will panic if called on nil.
