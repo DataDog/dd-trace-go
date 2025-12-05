@@ -17,6 +17,7 @@ import (
 var (
 	useFreshConfig atomic.Bool
 	instance       atomic.Value
+	once           sync.Once
 )
 
 // Config represents global configuration properties.
@@ -96,13 +97,17 @@ func loadConfig() *Config {
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
 func Get() *Config {
-	v := instance.Load()
-	if v == nil || useFreshConfig.Load() {
+	if useFreshConfig.Load() {
 		cfg := loadConfig()
 		instance.Store(cfg)
 		return cfg
 	}
-	return v.(*Config)
+
+	once.Do(func() {
+		cfg := loadConfig()
+		instance.Store(cfg)
+	})
+	return instance.Load().(*Config)
 }
 
 func SetUseFreshConfig(use bool) {
