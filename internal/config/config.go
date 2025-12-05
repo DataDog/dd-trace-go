@@ -26,23 +26,25 @@ var (
 type Config struct {
 	mu sync.RWMutex
 	// Config fields are protected by the mutex.
-	agentURL                      *url.URL
-	debug                         bool
-	logStartup                    bool
-	serviceName                   string
-	version                       string
-	env                           string
-	serviceMappings               map[string]string
-	hostname                      string
-	runtimeMetrics                bool
-	runtimeMetricsV2              bool
-	profilerHotspots              bool
-	profilerEndpoints             bool
-	spanAttributeSchemaVersion    int
-	peerServiceDefaultsEnabled    bool
-	peerServiceMappings           map[string]string
-	debugAbandonedSpans           bool
-	spanTimeout                   time.Duration
+	agentURL                   *url.URL
+	debug                      bool
+	logStartup                 bool
+	serviceName                string
+	version                    string
+	env                        string
+	serviceMappings            map[string]string
+	hostname                   string
+	runtimeMetrics             bool
+	runtimeMetricsV2           bool
+	profilerHotspots           bool
+	profilerEndpoints          bool
+	spanAttributeSchemaVersion int
+	peerServiceDefaultsEnabled bool
+	peerServiceMappings        map[string]string
+	debugAbandonedSpans        bool
+	// abandonedSpanTimeout represents how old a span can be before it should be logged as a possible
+	// misconfiguration (used only when debugAbandonedSpans is true)
+	abandonedSpanTimeout          time.Duration
 	partialFlushMinSpans          int
 	partialFlushEnabled           bool
 	statsComputationEnabled       bool
@@ -77,7 +79,7 @@ func loadConfig() *Config {
 	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
 	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
+	cfg.abandonedSpanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
@@ -125,4 +127,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) AbandonedSpanTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.abandonedSpanTimeout
+}
+
+func (c *Config) SetAbandonedSpanTimeout(timeout time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.abandonedSpanTimeout = timeout
+	telemetry.RegisterAppConfig("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
 }

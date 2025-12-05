@@ -880,7 +880,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
 			assert.Equal(t, false, c.debugAbandonedSpans)
-			assert.Equal(t, time.Duration(0), c.spanTimeout)
+			assert.Equal(t, 10*time.Minute, c.internalConfig.AbandonedSpanTimeout())
 		})
 
 		t.Run("debug-on", func(t *testing.T) {
@@ -888,7 +888,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
 			assert.Equal(t, true, c.debugAbandonedSpans)
-			assert.Equal(t, 10*time.Minute, c.spanTimeout)
+			assert.Equal(t, 10*time.Minute, c.internalConfig.AbandonedSpanTimeout())
 		})
 
 		t.Run("timeout-set", func(t *testing.T) {
@@ -897,7 +897,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
 			assert.Equal(t, true, c.debugAbandonedSpans)
-			assert.Equal(t, time.Minute, c.spanTimeout)
+			assert.Equal(t, time.Minute, c.internalConfig.AbandonedSpanTimeout())
 		})
 
 		t.Run("with-function", func(t *testing.T) {
@@ -905,7 +905,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			WithDebugSpansMode(time.Second)(c)
 			assert.Equal(t, true, c.debugAbandonedSpans)
-			assert.Equal(t, time.Second, c.spanTimeout)
+			assert.Equal(t, time.Second, c.internalConfig.AbandonedSpanTimeout())
 		})
 	})
 
