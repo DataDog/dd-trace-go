@@ -46,8 +46,9 @@ const (
 type Config struct {
 	mu sync.RWMutex
 	// Config fields are protected by the mutex.
-	agentURL                      *url.URL
-	debug                         bool
+	agentURL *url.URL
+	debug    bool
+	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup                    bool
 	serviceName                   string
 	version                       string
