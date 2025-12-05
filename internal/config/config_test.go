@@ -44,7 +44,7 @@ func TestGet(t *testing.T) {
 		cfg1 := Get()
 		require.NotNil(t, cfg1)
 
-		// Enable fresh config
+		// Enable fresh config to allow us to create new instances
 		SetUseFreshConfig(true)
 
 		// Get should now return a new instance
@@ -57,10 +57,10 @@ func TestGet(t *testing.T) {
 		require.NotNil(t, cfg3)
 		assert.NotSame(t, cfg2, cfg3, "With useFreshConfig=true, each Get() call should return a new instance")
 
-		// Disable fresh config
+		// Disable fresh config to allow us to cache the same instance
 		SetUseFreshConfig(false)
 
-		// Now it should cache again
+		// Now it should cache the same instance
 		cfg4 := Get()
 		cfg5 := Get()
 		assert.Same(t, cfg4, cfg5, "With useFreshConfig=false, Get() should cache the same instance")
@@ -102,8 +102,8 @@ func TestGet(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
+		// Enable fresh config to allow us to create new instances
 		SetUseFreshConfig(true)
-		defer SetUseFreshConfig(false)
 
 		const numGoroutines = 50
 		var wg sync.WaitGroup
@@ -210,9 +210,9 @@ func TestGet(t *testing.T) {
 	})
 }
 
-// resetGlobalState resets the global singleton state for testing
+// resetGlobalState resets all global singleton state for testing
 func resetGlobalState() {
-	// Clear any stored value
+	once = sync.Once{}
 	instance = atomic.Value{}
 	useFreshConfig.Store(false)
 }
