@@ -29,7 +29,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server)
 
 	// go-sdk only assigns session ids on streamable transports.
 	// Using a streamable http transport in this test allows testing session id tagging behavior.
@@ -91,7 +91,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server, WithIntentCapture())
 
 	type CalcArgs struct {
 		Operation string  `json:"operation"`
@@ -145,6 +145,8 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	clientSession, err := client.Connect(ctx, transport, nil)
 	require.NoError(t, err)
 	defer clientSession.Close()
+
+	clientSession.ListTools(ctx, &mcp.ListToolsParams{})
 
 	sessionID := clientSession.ID()
 	require.NotEmpty(t, sessionID)
@@ -235,7 +237,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server)
 
 	mcp.AddTool(server,
 		&mcp.Tool{
@@ -312,7 +314,7 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server)
 
 	type ValidationArgs struct {
 		Name string `json:"name"`
@@ -414,6 +416,8 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	outputStr := string(outputJSON)
 	assert.Contains(t, outputStr, "invalid input")
 }
+
+// Shared helpers
 
 // testTracer creates a testtracer with LLMObs enabled for integration tests
 func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {

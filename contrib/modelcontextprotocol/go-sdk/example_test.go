@@ -16,6 +16,6 @@ func Example() {
 	defer tracer.Stop()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "my-server", Version: "1.0.0"}, nil)
-	gosdktrace.AddTracingMiddleware(server)
+	gosdktrace.AddTracing(server, gosdktrace.WithIntentCapture())
 	_ = server
 }
