@@ -141,7 +141,7 @@ func logStartup(t *tracer) {
 		RuntimeMetricsEnabled:       t.config.runtimeMetrics,
 		RuntimeMetricsV2Enabled:     t.config.runtimeMetricsV2,
 		ApplicationVersion:          t.config.version,
-		ProfilerCodeHotspotsEnabled: t.config.profilerHotspots,
+		ProfilerCodeHotspotsEnabled: t.config.internalConfig.ProfilerHotspotsEnabled(),
 		ProfilerEndpointsEnabled:    t.config.profilerEndpoints,
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
