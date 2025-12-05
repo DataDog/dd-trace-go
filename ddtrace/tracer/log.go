@@ -130,7 +130,7 @@ func logStartup(t *tracer) {
 		Env:                         t.config.env,
 		Service:                     t.config.serviceName,
 		AgentURL:                    agentURL,
-		Debug:                       t.config.debug,
+		Debug:                       t.config.internalConfig.Debug(),
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
 		SampleRateLimit:             "disabled",
@@ -157,7 +157,7 @@ func logStartup(t *tracer) {
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.dogstatsdAddr,
-		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
+		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = err.Error()
