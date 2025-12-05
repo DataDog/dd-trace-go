@@ -125,37 +125,37 @@ func TestHasOTLPEndpointInEnv(t *testing.T) {
 // - Default: http/protobuf
 func TestGetOTLPProtocol(t *testing.T) {
 	t.Run("Default to http/protobuf", func(t *testing.T) {
-		protocol := getOTLPProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
+		protocol := otlpProtocol()
+		assert.Equal(t, defaultOTLPProtocol, protocol)
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL takes priority", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
 		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http")
 
-		protocol := getOTLPProtocol()
+		protocol := otlpProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
 
 	t.Run("OTEL_EXPORTER_OTLP_PROTOCOL as fallback", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
 
-		protocol := getOTLPProtocol()
+		protocol := otlpProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
 
 	t.Run("Case insensitive", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "GRPC")
 
-		protocol := getOTLPProtocol()
+		protocol := otlpProtocol()
 		assert.Equal(t, "grpc", protocol)
 	})
 
 	t.Run("Trim whitespace", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "  http/protobuf  ")
 
-		protocol := getOTLPProtocol()
-		assert.Equal(t, "http/protobuf", protocol)
+		protocol := otlpProtocol()
+		assert.Equal(t, defaultOTLPProtocol, protocol)
 	})
 }
 
@@ -184,13 +184,13 @@ func TestResolveOTLPEndpointGRPC(t *testing.T) {
 	})
 }
 
-// TestDatadogTemporalitySelector verifies temporality selection per OTel spec:
+// TestDeltaTemporalitySelector verifies temporality selection per OTel spec:
 // - Monotonic instruments (Counter, Histogram, ObservableCounter) → Delta
 // - Non-monotonic instruments (UpDownCounter, ObservableUpDownCounter, ObservableGauge) → Cumulative
 // - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE overrides for monotonic instruments only
-func TestDatadogTemporalitySelector(t *testing.T) {
+func TestDeltaTemporalitySelector(t *testing.T) {
 	t.Run("Default behavior (no env var set)", func(t *testing.T) {
-		selector := datadogTemporalitySelector()
+		selector := deltaTemporalitySelector()
 
 		// Test temporality for each instrument kind per OTel spec:
 		// - Monotonic instruments (Counter, ObservableCounter, Histogram) → Delta
@@ -221,7 +221,7 @@ func TestDatadogTemporalitySelector(t *testing.T) {
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=CUMULATIVE", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "CUMULATIVE")
-		selector := datadogTemporalitySelector()
+		selector := deltaTemporalitySelector()
 
 		// All instruments should use cumulative when explicitly set
 		tests := []metric.InstrumentKind{
@@ -241,7 +241,7 @@ func TestDatadogTemporalitySelector(t *testing.T) {
 
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=DELTA", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "DELTA")
-		selector := datadogTemporalitySelector()
+		selector := deltaTemporalitySelector()
 
 		// Monotonic instruments should use delta
 		deltaTests := []metric.InstrumentKind{
@@ -268,7 +268,7 @@ func TestDatadogTemporalitySelector(t *testing.T) {
 
 	t.Run("Case insensitive", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "cumulative")
-		selector := datadogTemporalitySelector()
+		selector := deltaTemporalitySelector()
 
 		got := selector(metric.InstrumentKindCounter)
 		assert.Equal(t, metricdata.CumulativeTemporality, got)
@@ -276,7 +276,7 @@ func TestDatadogTemporalitySelector(t *testing.T) {
 
 	t.Run("With whitespace", func(t *testing.T) {
 		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "  CUMULATIVE  ")
-		selector := datadogTemporalitySelector()
+		selector := deltaTemporalitySelector()
 
 		got := selector(metric.InstrumentKindCounter)
 		assert.Equal(t, metricdata.CumulativeTemporality, got)

@@ -118,8 +118,8 @@ func isMetricsEnabled() bool {
 	return false
 }
 
-// IsNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.
-func IsNoop(mp otelmetric.MeterProvider) bool {
+// isNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.
+func isNoop(mp otelmetric.MeterProvider) bool {
 	_, ok := mp.(noop.MeterProvider)
 	return ok
 }
@@ -127,7 +127,7 @@ func IsNoop(mp otelmetric.MeterProvider) bool {
 // Shutdown gracefully shuts down the MeterProvider, flushing any pending metrics.
 // For no-op providers, this is a no-op operation.
 func Shutdown(ctx context.Context, mp otelmetric.MeterProvider) error {
-	if IsNoop(mp) {
+	if isNoop(mp) {
 		return nil
 	}
 	if sdkMP, ok := mp.(*metric.MeterProvider); ok {
@@ -139,7 +139,7 @@ func Shutdown(ctx context.Context, mp otelmetric.MeterProvider) error {
 // ForceFlush flushes any pending metrics.
 // For no-op providers, this is a no-op operation.
 func ForceFlush(ctx context.Context, mp otelmetric.MeterProvider) error {
-	if IsNoop(mp) {
+	if isNoop(mp) {
 		return nil
 	}
 	if sdkMP, ok := mp.(*metric.MeterProvider); ok {

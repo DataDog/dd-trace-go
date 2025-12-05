@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 const (
@@ -27,6 +26,7 @@ const (
 	defaultOTLPEndpoint = "http://localhost:4318"
 	defaultOTLPPath     = "/v1/metrics"
 	defaultOTLPPort     = "4318"
+	defaultOTLPProtocol = "http/protobuf"
 
 	// OTLP environment variables
 	envOTLPEndpoint           = "OTEL_EXPORTER_OTLP_ENDPOINT"
@@ -60,22 +60,22 @@ const (
 // 5. localhost with default port (default)
 func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Option, grpcOpts []otlpmetricgrpc.Option) (metric.Exporter, error) {
 	// Determine protocol
-	protocol := getOTLPProtocol()
+	protocol := otlpProtocol()
 
 	switch protocol {
 	case "grpc":
 		return newDatadogOTLPGRPCExporter(ctx, grpcOpts...)
-	case "http/protobuf", "http":
+	case defaultOTLPProtocol, "http":
 		return newDatadogOTLPHTTPExporter(ctx, httpOpts...)
 	default:
-		log.Warn("Unknown OTLP protocol %q, defaulting to http/protobuf", protocol)
+		log.Warn("Unknown OTLP protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
 		return newDatadogOTLPHTTPExporter(ctx, httpOpts...)
 	}
 }
 
-// getOTLPProtocol returns the OTLP protocol from environment variables.
+// otlpProtocol returns the OTLP protocol from environment variables.
 // Priority: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL > OTEL_EXPORTER_OTLP_PROTOCOL > "http/protobuf"
-func getOTLPProtocol() string {
+func otlpProtocol() string {
 	// Check metrics-specific protocol first
 	if protocol := env.Get(envOTLPMetricsProtocol); protocol != "" {
 		return strings.ToLower(strings.TrimSpace(protocol))
@@ -85,7 +85,7 @@ func getOTLPProtocol() string {
 		return strings.ToLower(strings.TrimSpace(protocol))
 	}
 	// Default to HTTP with protobuf
-	return "http/protobuf"
+	return defaultOTLPProtocol
 }
 
 // newDatadogOTLPHTTPExporter creates an OTLP HTTP exporter configured with Datadog-specific defaults.
@@ -124,7 +124,7 @@ func buildHTTPExporterOptions(userOpts ...otlpmetrichttp.Option) []otlpmetrichtt
 		// Set timeout
 		otlpmetrichttp.WithTimeout(30 * time.Second),
 		// Set delta temporality as default (Datadog preference)
-		otlpmetrichttp.WithTemporalitySelector(datadogTemporalitySelector()),
+		otlpmetrichttp.WithTemporalitySelector(deltaTemporalitySelector()),
 	}
 
 	// Only set endpoint if not already set by OTEL environment variables
@@ -149,7 +149,7 @@ func buildGRPCExporterOptions(userOpts ...otlpmetricgrpc.Option) []otlpmetricgrp
 		// Set timeout
 		otlpmetricgrpc.WithTimeout(30 * time.Second),
 		// Set delta temporality as default (Datadog preference)
-		otlpmetricgrpc.WithTemporalitySelector(datadogTemporalitySelector()),
+		otlpmetricgrpc.WithTemporalitySelector(deltaTemporalitySelector()),
 		// Set retry config
 		otlpmetricgrpc.WithRetry(datadogGRPCRetryConfig()),
 	}
@@ -287,50 +287,5 @@ func datadogRetryConfig() otlpmetrichttp.RetryConfig {
 		InitialInterval: 1 * time.Second,
 		MaxInterval:     30 * time.Second,
 		MaxElapsedTime:  5 * time.Minute,
-	}
-}
-
-// datadogTemporalitySelector returns a temporality selector configured with Datadog defaults.
-// It respects OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE if set, with one exception:
-// UpDownCounter and ObservableUpDownCounter ALWAYS use Cumulative (even if DELTA is requested)
-// because they represent state that can go up/down, not monotonic increases.
-//
-// Behavior:
-// - UpDownCounter, ObservableUpDownCounter → Always CUMULATIVE (regardless of preference)
-// - ObservableGauge → Always CUMULATIVE (regardless of preference)
-// - Counter, ObservableCounter, Histogram → Respects preference, defaults to DELTA
-func datadogTemporalitySelector() metric.TemporalitySelector {
-	// Check if user has explicitly set temporality preference
-	temporalityPref := strings.ToUpper(strings.TrimSpace(env.Get(envOTLPMetricsTemporality)))
-
-	return func(kind metric.InstrumentKind) metricdata.Temporality {
-		// UpDownCounter and Gauge ALWAYS use cumulative, regardless of preference
-		// They represent current state, not monotonic changes
-		switch kind {
-		case metric.InstrumentKindUpDownCounter,
-			metric.InstrumentKindObservableUpDownCounter,
-			metric.InstrumentKindObservableGauge:
-			return metricdata.CumulativeTemporality
-		}
-
-		// For monotonic instruments, respect the user's preference if set
-		if temporalityPref != "" {
-			switch temporalityPref {
-			case "CUMULATIVE":
-				return metricdata.CumulativeTemporality
-			case "DELTA":
-				return metricdata.DeltaTemporality
-			}
-		}
-
-		// Default behavior for monotonic instruments: Delta
-		switch kind {
-		case metric.InstrumentKindCounter,
-			metric.InstrumentKindHistogram,
-			metric.InstrumentKindObservableCounter:
-			return metricdata.DeltaTemporality
-		default:
-			return metricdata.DeltaTemporality
-		}
 	}
 }

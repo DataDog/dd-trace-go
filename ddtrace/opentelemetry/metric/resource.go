@@ -66,7 +66,7 @@ func buildDatadogResource(ctx context.Context, opts ...resource.Option) (*resour
 	}
 
 	// 2. Environment priority: DD_ENV → DD_TAGS[env] → OTEL_RESOURCE_ATTRIBUTES[deployment.environment]
-	envName := getEnvironmentName(ddTags, otelAttrs)
+	envName := environmentName(ddTags, otelAttrs)
 	if envName != "" {
 		attrs = append(attrs, semconv.DeploymentEnvironmentNameKey.String(envName))
 	}
@@ -145,8 +145,8 @@ func serviceName(ddTags, otelAttrs map[string]string) string {
 	return ""
 }
 
-// getEnvironmentName returns the environment name from environment variables with priority order
-func getEnvironmentName(ddTags, otelAttrs map[string]string) string {
+// environmentName returns the environment name from environment variables with priority order
+func environmentName(ddTags, otelAttrs map[string]string) string {
 	// DD_ENV has highest priority
 	if v := env.Get(envDDEnv); v != "" {
 		return v
