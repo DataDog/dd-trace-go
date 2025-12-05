@@ -126,3 +126,16 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
 }
+
+func (c *Config) DebugAbandonedSpans() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.debugAbandonedSpans
+}
+
+func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debugAbandonedSpans = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
+}
