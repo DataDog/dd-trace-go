@@ -493,7 +493,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	if c.debugAbandonedSpans {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
-		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
+		t.abandonedSpansDebugger.Start(t.config.internalConfig.AbandonedSpanTimeout())
 	}
 	t.wg.Add(1)
 	go func() {

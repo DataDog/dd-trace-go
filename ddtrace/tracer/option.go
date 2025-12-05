@@ -277,10 +277,6 @@ type config struct {
 	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
 	debugAbandonedSpans bool
 
-	// spanTimeout represents how old a span can be before it should be logged as a possible
-	// misconfiguration
-	spanTimeout time.Duration
-
 	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
 	// partial flush, or 0 if partial flushing is disabled.
 	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
@@ -497,9 +493,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	c.debugAbandonedSpans = internal.BoolEnv("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	if c.debugAbandonedSpans {
-		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
-	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
@@ -1344,7 +1337,7 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 func WithDebugSpansMode(timeout time.Duration) StartOption {
 	return func(c *config) {
 		c.debugAbandonedSpans = true
-		c.spanTimeout = timeout
+		c.internalConfig.SetAbandonedSpanTimeout(timeout, telemetry.OriginCode)
 	}
 }
 
