@@ -126,3 +126,16 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
 }
+
+func (c *Config) PartialFlushEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.partialFlushEnabled
+}
+
+func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.partialFlushEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
+}

@@ -149,7 +149,7 @@ func logStartup(t *tracer) {
 		AgentFeatures:               t.config.agent,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
-		PartialFlushEnabled:         t.config.partialFlushEnabled,
+		PartialFlushEnabled:         t.config.internalConfig.PartialFlushEnabled(),
 		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,

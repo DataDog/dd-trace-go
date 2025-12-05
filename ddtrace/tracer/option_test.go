@@ -1659,28 +1659,28 @@ func TestPartialFlushing(t *testing.T) {
 	t.Run("None", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
+		assert.False(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
+		assert.False(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("Default-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
+		assert.False(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, 10, c.partialFlushMinSpans)
 	})
 	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
@@ -1688,7 +1688,7 @@ func TestPartialFlushing(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, 10, c.partialFlushMinSpans)
 	})
 	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
@@ -1696,14 +1696,14 @@ func TestPartialFlushing(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("WithPartialFlushOption", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		WithPartialFlushing(20)(c)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, 20, c.partialFlushMinSpans)
 	})
 }
