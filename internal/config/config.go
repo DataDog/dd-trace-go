@@ -126,3 +126,16 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
 }
+
+func (c *Config) DynamicInstrumentationEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dynamicInstrumentationEnabled
+}
+
+func (c *Config) SetDynamicInstrumentationEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dynamicInstrumentationEnabled = enabled
+	telemetry.RegisterAppConfig("DD_DYNAMIC_INSTRUMENTATION_ENABLED", enabled, origin)
+}

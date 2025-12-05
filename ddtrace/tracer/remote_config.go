@@ -384,7 +384,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 
 	var dynamicInstrumentationError, apmTracingError error
 
-	if t.config.dynamicInstrumentationEnabled {
+	if t.config.internalConfig.DynamicInstrumentationEnabled() {
 		liveDebuggingError := remoteconfig.Subscribe(
 			"LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate,
 		)

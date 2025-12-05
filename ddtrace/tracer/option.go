@@ -309,10 +309,6 @@ type config struct {
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
 
-	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
-	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
-	dynamicInstrumentationEnabled bool
-
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
 
@@ -514,8 +510,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
-
-	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	namingschema.LoadFromEnv()
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
