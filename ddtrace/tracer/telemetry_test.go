@@ -67,7 +67,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		defer globalconfig.SetServiceName("")
 		defer Stop()
 
-		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_debug_enabled", true)
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "DD_TRACE_DEBUG", true)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "service", "test-serv")
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "env", "test-env")
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)

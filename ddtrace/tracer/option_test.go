@@ -26,7 +26,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -375,7 +374,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(x.Timeout, y.Timeout)
 		compareHTTPClients(t, x, y)
 		assert.True(getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
-		assert.False(c.debug)
+		assert.False(c.internalConfig.Debug())
 	})
 
 	t.Run("http-client", func(t *testing.T) {
@@ -430,48 +429,43 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.True(t, c.debug)
+			assert.True(t, c.internalConfig.Debug())
 		})
 		t.Run("env", func(t *testing.T) {
 			t.Setenv("DD_TRACE_DEBUG", "true")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
-			assert.True(t, c.debug)
+			assert.True(t, c.internalConfig.Debug())
 		})
 		t.Run("otel-env-debug", func(t *testing.T) {
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
-			assert.True(t, c.debug)
+			assert.True(t, c.internalConfig.Debug())
 		})
 		t.Run("otel-env-notdebug", func(t *testing.T) {
 			// any value other than debug, does nothing
 			t.Setenv("OTEL_LOG_LEVEL", "notdebug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
-			assert.False(t, c.debug)
+			assert.False(t, c.internalConfig.Debug())
 		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
 			// option override otel
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig(WithDebugMode(false))
 			assert.NoError(err)
-			assert.False(c.debug)
+			assert.False(c.internalConfig.Debug())
 			// env override otel
 			t.Setenv("DD_TRACE_DEBUG", "false")
-			internalconfig.ResetForTesting()
 			c, err = newTestConfig()
 			assert.NoError(err)
-			assert.False(c.debug)
+			assert.False(c.internalConfig.Debug())
 			// option override env
 			c, err = newTestConfig(WithDebugMode(true))
 			assert.NoError(err)
-			assert.True(c.debug)
+			assert.True(c.internalConfig.Debug())
 		})
 	})
 
@@ -745,7 +739,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.NotNil(c.globalTags.get())
 		assert.Equal("v", c.globalTags.get()["k"])
 		assert.Equal("testEnv", c.env)
-		assert.True(c.debug)
+		assert.True(c.internalConfig.Debug())
 	})
 
 	t.Run("env-tags", func(t *testing.T) {
@@ -1665,28 +1659,28 @@ func TestPartialFlushing(t *testing.T) {
 	t.Run("None", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
+		assert.False(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
+		assert.False(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("Default-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
+		assert.False(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, 10, c.partialFlushMinSpans)
 	})
 	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
@@ -1694,7 +1688,7 @@ func TestPartialFlushing(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, 10, c.partialFlushMinSpans)
 	})
 	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
@@ -1702,14 +1696,14 @@ func TestPartialFlushing(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
 	})
 	t.Run("WithPartialFlushOption", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		WithPartialFlushing(20)(c)
-		assert.True(t, c.partialFlushEnabled)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
 		assert.Equal(t, 20, c.partialFlushMinSpans)
 	})
 }

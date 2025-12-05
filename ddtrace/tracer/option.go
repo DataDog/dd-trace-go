@@ -141,8 +141,8 @@ const (
 
 // config holds the tracer configuration.
 type config struct {
-	// debug, when true, writes details to logs.
-	debug bool
+	// internalConfig holds a reference to the global configuration singleton.
+	internalConfig *internalconfig.Config
 
 	// appsecStartOptions controls the options used when starting appsec features.
 	appsecStartOptions []appsecconfig.StartOption
@@ -286,10 +286,6 @@ type config struct {
 	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
 	partialFlushMinSpans int
 
-	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
-	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
-	partialFlushEnabled bool
-
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
 
@@ -379,7 +375,7 @@ const partialFlushMinSpansDefault = 1000
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
-	internalConfig := internalconfig.Get()
+	c.internalConfig = internalconfig.Get()
 
 	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
 	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
@@ -482,7 +478,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	c.debug = internalConfig.Debug()
 	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
@@ -503,7 +498,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
-	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
 		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
@@ -613,7 +607,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if c.debug {
+	if c.internalConfig.Debug() {
 		log.SetLevel(log.LevelDebug)
 	}
 	// Check if CI Visibility mode is enabled
@@ -1009,8 +1003,7 @@ func WithDebugStack(enabled bool) StartOption {
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
-		telemetry.RegisterAppConfig("trace_debug_enabled", enabled, telemetry.OriginCode)
-		c.debug = enabled
+		c.internalConfig.SetDebug(enabled, telemetry.OriginCode)
 	}
 }
 
@@ -1359,7 +1352,7 @@ func WithDebugSpansMode(timeout time.Duration) StartOption {
 // is disabled by default.
 func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
-		c.partialFlushEnabled = true
+		c.internalConfig.SetPartialFlushEnabled(true, telemetry.OriginCode)
 		c.partialFlushMinSpans = numSpans
 	}
 }
