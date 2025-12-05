@@ -5,8 +5,6 @@
 
 package gosdk
 
-import "github.com/modelcontextprotocol/go-sdk/mcp"
-
 type config struct {
 	intentCaptureEnabled bool
 }
@@ -17,21 +15,4 @@ func WithIntentCapture() Option {
 	return func(cfg *config) {
 		cfg.intentCaptureEnabled = true
 	}
-}
-
-func AddTracing(server *mcp.Server, opts ...Option) {
-	cfg := &config{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	// Middleware in run in the ordering in this slice.
-	middlewares := []mcp.Middleware{tracingMiddleware}
-
-	// Intent capture is added after tracing so that the intent can be annotated on the existing span.
-	if cfg.intentCaptureEnabled {
-		middlewares = append(middlewares, intentCaptureReceivingMiddleware)
-	}
-
-	server.AddReceivingMiddleware(middlewares...)
 }

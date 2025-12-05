@@ -16,6 +16,23 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func AddTracing(server *mcp.Server, opts ...Option) {
+	cfg := &config{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	// Middleware in run in the ordering in this slice.
+	middlewares := []mcp.Middleware{tracingMiddleware}
+
+	// Intent capture is added after tracing so that the intent can be annotated on the existing span.
+	if cfg.intentCaptureEnabled {
+		middlewares = append(middlewares, intentCaptureReceivingMiddleware)
+	}
+
+	server.AddReceivingMiddleware(middlewares...)
+}
+
 func tracingMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		switch method {
