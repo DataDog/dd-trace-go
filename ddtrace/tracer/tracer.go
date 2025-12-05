@@ -238,7 +238,7 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	if t.config.runtimeMetricsV2 {
+	if t.config.internalConfig.RuntimeMetricsV2Enabled() {
 		l := slog.New(slogHandler{})
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
@@ -482,7 +482,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	}
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
-	if c.runtimeMetrics {
+	if c.internalConfig.RuntimeMetricsEnabled() {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
 		go func() {
