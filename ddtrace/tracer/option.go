@@ -687,8 +687,8 @@ func apmTracingDisabled(c *config) {
 	WithGlobalTag("_dd.apm.enabled", 0)(c)
 	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
 	// tell the agent we computed them, so it doesn't do it either.
-	c.internalConfig.SetRuntimeMetricsEnabled(false, telemetry.OriginCode)
-	c.internalConfig.SetRuntimeMetricsV2Enabled(false, telemetry.OriginCode)
+	c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCalculated)
+	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
@@ -1225,7 +1225,7 @@ func WithAnalyticsRate(rate float64) StartOption {
 func WithRuntimeMetrics() StartOption {
 	return func(cfg *config) {
 		telemetry.RegisterAppConfig("runtime_metrics_enabled", true, telemetry.OriginCode)
-		cfg.internalConfig.SetRuntimeMetricsEnabled(true, telemetry.OriginCode)
+		cfg.internalConfig.SetRuntimeMetricsEnabled(true, internalconfig.OriginCode)
 	}
 }
 
