@@ -36,8 +36,9 @@ const (
 type Config struct {
 	mu sync.RWMutex
 	// Config fields are protected by the mutex.
-	agentURL                      *url.URL
-	debug                         bool
+	agentURL *url.URL
+	debug    bool
+	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup                    bool
 	serviceName                   string
 	version                       string
@@ -73,7 +74,7 @@ func loadConfig() *Config {
 	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
 	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
-	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", false)
+	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = provider.getString("DD_SERVICE", "")
 	cfg.version = provider.getString("DD_VERSION", "")
 	cfg.env = provider.getString("DD_ENV", "")
@@ -135,4 +136,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) LogStartup() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logStartup
+}
+
+func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logStartup = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_STARTUP_LOGS", enabled, origin)
 }
