@@ -778,14 +778,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.True(t, c.profilerHotspots)
+			assert.True(t, c.internalConfig.ProfilerHotspotsEnabled())
 		})
 
 		t.Run("override", func(t *testing.T) {
 			t.Setenv(traceprof.CodeHotspotsEnvVar, "false")
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.False(t, c.profilerHotspots)
+			assert.False(t, c.internalConfig.ProfilerHotspotsEnabled())
 		})
 	})
 
