@@ -142,7 +142,7 @@ func logStartup(t *tracer) {
 		RuntimeMetricsV2Enabled:     t.config.runtimeMetricsV2,
 		ApplicationVersion:          t.config.version,
 		ProfilerCodeHotspotsEnabled: t.config.profilerHotspots,
-		ProfilerEndpointsEnabled:    t.config.profilerEndpoints,
+		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),

@@ -763,14 +763,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.True(t, c.profilerEndpoints)
+			assert.True(t, c.internalConfig.ProfilerEndpoints())
 		})
 
 		t.Run("override", func(t *testing.T) {
 			t.Setenv(traceprof.EndpointEnvVar, "false")
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.False(t, c.profilerEndpoints)
+			assert.False(t, c.internalConfig.ProfilerEndpoints())
 		})
 	})
 
