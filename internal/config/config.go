@@ -126,3 +126,16 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
 }
+
+func (c *Config) DataStreamsMonitoringEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dataStreamsMonitoringEnabled
+}
+
+func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dataStreamsMonitoringEnabled = enabled
+	telemetry.RegisterAppConfig("DD_DATA_STREAMS_ENABLED", enabled, origin)
+}
