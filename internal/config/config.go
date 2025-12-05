@@ -53,6 +53,9 @@ type Config struct {
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
+	// debugStack enables the collection of debug stack traces globally. No traces reporting
+	// errors will record a stack trace when this option is disabled.
+	debugStack bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -88,6 +91,7 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
 
 	return cfg
 }
@@ -125,4 +129,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) DebugStack() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.debugStack
+}
+
+func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debugStack = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_STACK", enabled, origin)
 }
