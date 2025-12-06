@@ -525,18 +525,18 @@ func (t *trace) push(sp *Span) {
 
 // setTraceTags sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *Span) {
+func (t *trace) setTraceTags(s *Span, locked bool) {
 	for k, v := range t.tags {
-		s.setMeta(k, v)
+		s.setMeta(k, v, locked)
 	}
 	for k, v := range t.propagatingTags {
-		s.setMeta(k, v)
+		s.setMeta(k, v, locked)
 	}
 	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
-		s.setMeta(k, v)
+		s.setMeta(k, v, locked)
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		s.setMeta(keyTraceID128, s.context.traceID.UpperHex(), locked)
 	}
 }
 
@@ -584,7 +584,7 @@ func (t *trace) finishedOne(s *Span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
+		t.setTraceTags(s, false)
 	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
@@ -624,7 +624,7 @@ func (t *trace) finishedOne(s *Span) {
 	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(finishedSpans[0])
+		t.setTraceTags(finishedSpans[0], false)
 	}
 	if tr, ok := tr.(*tracer); ok {
 		t.finishChunk(tr, &chunk{
@@ -647,13 +647,13 @@ func setPeerService(s *Span, tc TracerConf) {
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
-		s.setMeta(keyPeerServiceSource, ext.PeerService)
+		s.setMeta(keyPeerServiceSource, ext.PeerService, true)
 	} else if isServerless(tc) {
 		// Set peerService only in outbound Lambda requests
 		if isOutboundRequest {
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
-				s.setMeta(ext.PeerService, ps)
-				s.setMeta(keyPeerServiceSource, ext.PeerService)
+				s.setMeta(ext.PeerService, ps, true)
+				s.setMeta(keyPeerServiceSource, ext.PeerService, true)
 			} else {
 				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
 			}
@@ -668,13 +668,13 @@ func setPeerService(s *Span, tc TracerConf) {
 			log.Debug("No source tag value could be found for span %q, peer.service not set", s.name)
 			return
 		}
-		s.setMeta(keyPeerServiceSource, source)
+		s.setMeta(keyPeerServiceSource, source, true)
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
 	if to, ok := tc.PeerServiceMappings[ps]; ok {
-		s.setMeta(keyPeerServiceRemappedFrom, ps)
-		s.setMeta(ext.PeerService, to)
+		s.setMeta(keyPeerServiceRemappedFrom, ps, true)
+		s.setMeta(ext.PeerService, to, true)
 	}
 }
 
@@ -774,7 +774,7 @@ func setPeerServiceFromSource(s *Span) string {
 	}
 	for _, source := range sources {
 		if val, ok := s.meta[source]; ok {
-			s.setMeta(ext.PeerService, val)
+			s.setMeta(ext.PeerService, val, true)
 			return source
 		}
 	}

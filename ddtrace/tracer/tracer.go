@@ -722,12 +722,12 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 			// remote parent
 			if context.origin != "" {
 				// mark origin
-				span.setMeta(keyOrigin, context.origin)
+				span.setMeta(keyOrigin, context.origin, false)
 			}
 		}
 
 		if context.reparentID != "" {
-			span.setMeta(keyReparentID, context.reparentID)
+			span.setMeta(keyReparentID, context.reparentID, false)
 		}
 
 	}
@@ -735,7 +735,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}
-	span.setMeta("language", "go")
+	span.setMeta("language", "go", false)
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -766,7 +766,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	span.noDebugStack = t.config.noDebugStack
 	if t.config.hostname != "" {
-		span.setMeta(keyHostname, t.config.hostname)
+		span.setMeta(keyHostname, t.config.hostname, false)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
@@ -781,11 +781,11 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if t.config.version != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
-			span.setMeta(ext.Version, t.config.version)
+			span.setMeta(ext.Version, t.config.version, false)
 		}
 	}
 	if t.config.env != "" {
-		span.setMeta(ext.Environment, t.config.env)
+		span.setMeta(ext.Environment, t.config.env, false)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
