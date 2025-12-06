@@ -13,7 +13,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 var badInputContextOnce sync.Once
@@ -21,9 +23,12 @@ var badInputContextOnce sync.Once
 type (
 	RoundTripOperation struct {
 		dyngo.Operation
-		HandlerOp *HandlerOperation
+		HandlerOp             *HandlerOperation
+		*waf.ContextOperation // Downstream requests are evaluated in a separate context
 
+		url         string
 		analyseBody bool
+		requestbody libddwaf.Encodable
 	}
 
 	// RoundTripOperationArgs is the round trip operation arguments.
@@ -49,6 +54,14 @@ func (r *RoundTripOperation) SetAnalyseBody() {
 
 func (r *RoundTripOperation) AnalyseBody() bool {
 	return r.analyseBody
+}
+
+func (r *RoundTripOperation) SetRequestBody(body libddwaf.Encodable) {
+	r.requestbody = body
+}
+
+func (r *RoundTripOperation) RequestBody() libddwaf.Encodable {
+	return r.requestbody
 }
 
 func (RoundTripOperationArgs) IsArgOf(*RoundTripOperation)   {}
@@ -77,9 +90,13 @@ func ProtectRoundTrip(ctx context.Context, req *http.Request) (func(*http.Respon
 		return nil, nil
 	}
 
+	wafOp, _ := handlerOp.ContextOperation.Fork(ctx)
+
 	op := &RoundTripOperation{
-		Operation: dyngo.NewOperation(handlerOp),
-		HandlerOp: handlerOp,
+		Operation:        dyngo.NewOperation(handlerOp),
+		ContextOperation: wafOp,
+		HandlerOp:        handlerOp,
+		url:              req.URL.String(),
 	}
 
 	var err *events.BlockingSecurityEvent
@@ -105,5 +122,10 @@ func ProtectRoundTrip(ctx context.Context, req *http.Request) (func(*http.Respon
 			}
 		}
 		dyngo.FinishOperation(op, resArgs)
+		dyngo.FinishOperation(wafOp, waf.ContextRes{})
 	}, nil
+}
+
+func (r *RoundTripOperation) URL() string {
+	return r.url
 }

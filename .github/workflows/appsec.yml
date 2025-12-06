@@ -143,7 +143,7 @@ jobs:
           report_error=0
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
-                for cgocheck_env in "" "$cgocheck"; do
+                for cgocheck_env in "${GOEXPERIMENT}" "$cgocheck"; do
                   if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES; then
                     echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES"
                   fi

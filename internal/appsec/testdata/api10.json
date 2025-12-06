@@ -24,7 +24,7 @@
             ],
             "list": [
               301,
-              302
+              308
             ]
           },
           "operator": "exact_match"
@@ -63,8 +63,8 @@
               }
             ],
             "list": [
-              307,
-              308
+              302,
+              307
             ]
           },
           "operator": "exact_match"
@@ -601,6 +601,44 @@
         "attributes": {
           "_dd.appsec.trace.res_body": {
             "value": "TAG_API10_RES_BODY"
+          }
+        }
+      },
+      "on_match": []
+    },
+    {
+      "id": "apiA-100-007.go",
+      "name": "API 10 tag rule on redirect response body",
+      "tags": {
+        "type": "api10",
+        "category": "api_security",
+        "confidence": "0",
+        "module": "business-logic"
+      },
+      "min_version": "1.25.0",
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.io.net.response.body",
+                "key_path": ["redirect_style"]
+              }
+            ],
+            "list": [
+              "move",
+              "redirect"
+            ]
+          },
+          "operator": "exact_match"
+        }
+      ],
+      "output": {
+        "event": false,
+        "keep": false,
+        "attributes": {
+          "_dd.appsec.trace.3xx_res_body": {
+            "value": "TAG_API10_3XX_RES_BODY"
           }
         }
       },
