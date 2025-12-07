@@ -22,6 +22,7 @@ services:
      - DD_ENV=${USER:-dev}
      - DD_HOSTNAME=${HOSTNAME:-localhost}
      - DD_APM_NON_LOCAL_TRAFFIC=true
+     - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
     volumes:
      - /var/run/docker.sock:/var/run/docker.sock
      - /proc/:/host/proc/:ro
