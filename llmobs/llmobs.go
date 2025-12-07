@@ -145,6 +145,12 @@ type (
 
 	// ToolDefinition represents the definition of a tool/function that an LLM can call.
 	ToolDefinition = illmobs.ToolDefinition
+
+	// ToolCall represents a call to a tool within an LLM message.
+	ToolCall = illmobs.ToolCall
+
+	// ToolResult represents the result of a tool call within an LLM message.
+	ToolResult = illmobs.ToolResult
 )
 
 // Span represents a generic LLMObs span that can be converted to specific span types.

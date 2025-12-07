@@ -346,6 +346,105 @@ func TestSpanAnnotations(t *testing.T) {
 		assert.NotEmpty(t, spans[0].Tags)
 		assert.Equal(t, "session-123", spans[0].SessionID)
 	})
+	t.Run("llm-span-with-tool-calls", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-with-tools")
+
+		input := []llmobs.LLMMessage{
+			{
+				Role:    "user",
+				Content: "What's the weather in San Francisco?",
+			},
+			{
+				Role:    "assistant",
+				Content: "",
+				ToolCalls: []llmobs.ToolCall{
+					{
+						Name:      "get_weather",
+						Arguments: []byte(`{"location": "San Francisco", "unit": "celsius"}`),
+						ToolID:    "call_123",
+						Type:      "function",
+					},
+				},
+			},
+		}
+
+		output := []llmobs.LLMMessage{
+			{
+				Role:    "tool",
+				Content: "",
+				ToolResults: []llmobs.ToolResult{
+					{
+						Result: map[string]any{"temperature": 18, "condition": "sunny"},
+						Name:   "get_weather",
+						ToolID: "call_123",
+						Type:   "function",
+					},
+				},
+			},
+			{
+				Role:    "assistant",
+				Content: "The weather in San Francisco is 18°C and sunny.",
+			},
+		}
+
+		span.AnnotateLLMIO(input, output)
+		span.Finish()
+
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, spans, 1)
+		assert.Equal(t, "test-llm-with-tools", spans[0].Name)
+		assert.Contains(t, spans[0].Meta, "input")
+		assert.Contains(t, spans[0].Meta, "output")
+
+		// Verify tool calls are in the payload
+		inputMeta, ok := spans[0].Meta["input"].(map[string]any)
+		require.True(t, ok, "input should be a map")
+		messages, ok := inputMeta["messages"].([]any)
+		require.True(t, ok, "input messages should be an array")
+		require.Len(t, messages, 2, "should have 2 input messages")
+
+		// Check second message has tool_calls
+		assistantMsg, ok := messages[1].(map[string]any)
+		require.True(t, ok, "assistant message should be a map")
+		assert.Equal(t, "assistant", assistantMsg["role"])
+		toolCalls, ok := assistantMsg["tool_calls"].([]any)
+		require.True(t, ok, "tool_calls should be present")
+		require.Len(t, toolCalls, 1, "should have 1 tool call")
+
+		toolCall, ok := toolCalls[0].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "get_weather", toolCall["name"])
+		assert.Equal(t, "call_123", toolCall["tool_id"])
+		assert.Equal(t, "function", toolCall["type"])
+
+		// Verify tool results are in the payload
+		outputMeta, ok := spans[0].Meta["output"].(map[string]any)
+		require.True(t, ok, "output should be a map")
+		outputMessages, ok := outputMeta["messages"].([]any)
+		require.True(t, ok, "output messages should be an array")
+		require.Len(t, outputMessages, 2, "should have 2 output messages")
+
+		// Check first message has tool_results
+		toolMsg, ok := outputMessages[0].(map[string]any)
+		require.True(t, ok, "tool message should be a map")
+		assert.Equal(t, "tool", toolMsg["role"])
+		toolResults, ok := toolMsg["tool_results"].([]any)
+		require.True(t, ok, "tool_results should be present")
+		require.Len(t, toolResults, 1, "should have 1 tool result")
+
+		toolResult, ok := toolResults[0].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "get_weather", toolResult["name"])
+		assert.Equal(t, "call_123", toolResult["tool_id"])
+		assert.Equal(t, "function", toolResult["type"])
+		result, ok := toolResult["result"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, float64(18), result["temperature"])
+		assert.Equal(t, "sunny", result["condition"])
+	})
 	t.Run("text-io-span-annotations", func(t *testing.T) {
 		tt := testTracer(t)
 		defer tt.Stop()
