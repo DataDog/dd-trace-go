@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -131,7 +132,10 @@ func (p *configProvider) getDuration(key string, def time.Duration) time.Duratio
 	return def
 }
 
-func (p *configProvider) getFloat(key string, def float64) float64 {
+// getFloat parses a float64 value from the environment, or returns the default value if not found.
+// If an additional validation function, fn, is provided, it will be called to validate the value in addition to standard float parsing.
+// If the validation function returns an error, the value is dropped and subsequent sources are checked.
+func (p *configProvider) getFloat(key string, def float64, fn func(val float64) error) float64 {
 	for _, source := range p.sources {
 		if v := source.get(key); v != "" {
 			var id string
@@ -139,10 +143,19 @@ func (p *configProvider) getFloat(key string, def float64) float64 {
 				id = s.getID()
 			}
 			floatVal, err := strconv.ParseFloat(v, 64)
-			if err == nil {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
-				return floatVal
+			if err != nil {
+				log.Warn("Invalid value for %s from source %s, dropping. Parse failed with error: %v", key, source.origin(), err.Error())
+				continue
 			}
+			if fn != nil {
+				err = fn(floatVal)
+				if err != nil {
+					log.Warn("Invalid value for %s from source %s, dropping: %w", key, source.origin(), err)
+					continue
+				}
+			}
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
+			return floatVal
 		}
 	}
 	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})

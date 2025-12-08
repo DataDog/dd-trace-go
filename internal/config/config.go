@@ -6,6 +6,7 @@
 package config
 
 import (
+	"fmt"
 	"net/url"
 	"sync"
 	"time"
@@ -28,6 +29,11 @@ type Origin = telemetry.Origin
 const (
 	OriginCode       = telemetry.OriginCode
 	OriginCalculated = telemetry.OriginCalculated
+)
+
+const (
+	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
+	DefaultTraceRateLimit = 100.0
 )
 
 // Config represents global configuration properties.
@@ -62,7 +68,8 @@ type Config struct {
 	ciVisibilityEnabled           bool
 	ciVisibilityAgentless         bool
 	logDirectory                  string
-	traceRateLimitPerSecond       float64
+	// traceRateLimitPerSecond specifies the rate limit for traces.
+	traceRateLimitPerSecond float64
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -93,11 +100,11 @@ func loadConfig() *Config {
 	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
 	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
+	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0, nil)
 	cfg.ciVisibilityEnabled = provider.getBool("DD_CIVISIBILITY_ENABLED", false)
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
-	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", DefaultTraceRateLimit, rateLimitNotNegative)
 
 	return cfg
 }
@@ -133,4 +140,24 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) TraceRateLimitPerSecond() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceRateLimitPerSecond
+}
+
+func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.traceRateLimitPerSecond = rate
+	telemetry.RegisterAppConfig("DD_TRACE_RATE_LIMIT", rate, origin)
+}
+
+func rateLimitNotNegative(val float64) error {
+	if val < 0.0 {
+		return fmt.Errorf("value must not be negative")
+	}
+	return nil
 }

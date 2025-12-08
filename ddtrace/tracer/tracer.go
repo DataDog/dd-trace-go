@@ -419,7 +419,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		c.spanRules = spans
 	}
 
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate, c.traceRateLimitPerSecond)
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate, c.internalConfig.TraceRateLimitPerSecond())
 	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
 	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
