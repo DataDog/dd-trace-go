@@ -274,7 +274,7 @@ func TestTracerLogFile(t *testing.T) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.Nil(t, err)
-		assert.Equal(t, dir, tracer.config.logDirectory)
+		assert.Equal(t, dir, tracer.config.internalConfig.LogDirectory())
 		assert.NotNil(t, tracer.logFile)
 		assert.Equal(t, dir+"/"+log.LoggerFile, tracer.logFile.Name())
 	})
@@ -283,7 +283,7 @@ func TestTracerLogFile(t *testing.T) {
 		tracer, err := newTracer()
 		assert.Nil(t, err)
 		defer tracer.Stop()
-		assert.Empty(t, tracer.config.logDirectory)
+		assert.Empty(t, tracer.config.internalConfig.LogDirectory())
 		assert.Nil(t, tracer.logFile)
 	})
 }

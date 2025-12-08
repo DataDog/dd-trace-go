@@ -61,8 +61,9 @@ type Config struct {
 	globalSampleRate              float64
 	ciVisibilityEnabled           bool
 	ciVisibilityAgentless         bool
-	logDirectory                  string
-	traceRateLimitPerSecond       float64
+	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY
+	logDirectory            string
+	traceRateLimitPerSecond float64
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -133,4 +134,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) LogDirectory() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logDirectory
+}
+
+func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logDirectory = directory
+	telemetry.RegisterAppConfig("DD_TRACE_LOG_DIRECTORY", directory, origin)
 }

@@ -435,11 +435,12 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	var logFile *log.ManagedFile
-	if v := c.logDirectory; v != "" {
+	if v := c.internalConfig.LogDirectory(); v != "" {
 		logFile, err = log.OpenFileAtPath(v)
 		if err != nil {
 			log.Warn("%s", err.Error())
-			c.logDirectory = ""
+			// TODO: Report errors to telemetry
+			c.internalConfig.SetLogDirectory("", telemetry.OriginCode)
 		}
 	}
 	t = &tracer{
