@@ -328,9 +328,6 @@ type config struct {
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
 
-	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
-	tracingAsTransport bool
-
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
 
@@ -691,7 +688,7 @@ func apmTracingDisabled(c *config) {
 	// to let the backend know that it needs to keep APM UI disabled.
 	c.globalSampleRate = 1.0
 	c.traceRateLimitPerSecond = 1.0 / 60
-	c.tracingAsTransport = true
+	c.internalConfig.SetTracingAsTransport(true)
 	WithGlobalTag("_dd.apm.enabled", 0)(c)
 	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
 	// tell the agent we computed them, so it doesn't do it either.

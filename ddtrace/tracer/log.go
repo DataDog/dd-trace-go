@@ -155,7 +155,7 @@ func logStartup(t *tracer) {
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
-		TracingAsTransport:          t.config.tracingAsTransport,
+		TracingAsTransport:          t.config.internalConfig.TracingAsTransport(),
 		DogstatsdAddr:               t.config.dogstatsdAddr,
 		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
 	}

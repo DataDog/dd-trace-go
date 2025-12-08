@@ -560,7 +560,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			t.statsd.Flush()
-			if !t.config.tracingAsTransport {
+			if !t.config.internalConfig.TracingAsTransport() {
 				t.stats.flushAndSend(time.Now(), withCurrentBucket)
 			}
 			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
@@ -905,7 +905,7 @@ func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
 		return nil
 	}
 
-	if t.config.tracingAsTransport {
+	if t.config.internalConfig.TracingAsTransport() {
 		// in tracing as transport mode, only propagate when there is an upstream appsec event
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
@@ -952,7 +952,7 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 		return nil, nil
 	}
 	ctx, err := t.config.propagator.Extract(carrier)
-	if t.config.tracingAsTransport && ctx != nil {
+	if t.config.internalConfig.TracingAsTransport() && ctx != nil {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
@@ -981,7 +981,7 @@ func (t *tracer) TracerConf() TracerConf {
 		EnvTag:               t.config.env,
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
-		TracingAsTransport:   t.config.tracingAsTransport,
+		TracingAsTransport:   t.config.internalConfig.TracingAsTransport(),
 		isLambdaFunction:     t.config.isLambdaFunction,
 	}
 }
