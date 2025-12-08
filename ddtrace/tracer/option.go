@@ -290,9 +290,6 @@ type config struct {
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
 
-	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
-	statsComputationEnabled bool
-
 	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
 	dataStreamsMonitoringEnabled bool
 
@@ -500,7 +497,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.debugAbandonedSpans {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
-	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
@@ -914,7 +910,7 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && (c.HasFeature("discovery") || c.statsComputationEnabled)
+	return c.agent.Stats && (c.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 
 func (c *config) canDropP0s() bool {
@@ -1369,7 +1365,7 @@ func WithPartialFlushing(numSpans int) StartOption {
 // Client-side stats is off by default.
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
-		c.statsComputationEnabled = enabled
+		c.internalConfig.SetStatsComputationEnabled(enabled, telemetry.OriginCode)
 	}
 }
 

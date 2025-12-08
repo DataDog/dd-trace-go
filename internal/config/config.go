@@ -36,25 +36,26 @@ const (
 type Config struct {
 	mu sync.RWMutex
 	// Config fields are protected by the mutex.
-	agentURL                      *url.URL
-	debug                         bool
-	logStartup                    bool
-	serviceName                   string
-	version                       string
-	env                           string
-	serviceMappings               map[string]string
-	hostname                      string
-	runtimeMetrics                bool
-	runtimeMetricsV2              bool
-	profilerHotspots              bool
-	profilerEndpoints             bool
-	spanAttributeSchemaVersion    int
-	peerServiceDefaultsEnabled    bool
-	peerServiceMappings           map[string]string
-	debugAbandonedSpans           bool
-	spanTimeout                   time.Duration
-	partialFlushMinSpans          int
-	partialFlushEnabled           bool
+	agentURL                   *url.URL
+	debug                      bool
+	logStartup                 bool
+	serviceName                string
+	version                    string
+	env                        string
+	serviceMappings            map[string]string
+	hostname                   string
+	runtimeMetrics             bool
+	runtimeMetricsV2           bool
+	profilerHotspots           bool
+	profilerEndpoints          bool
+	spanAttributeSchemaVersion int
+	peerServiceDefaultsEnabled bool
+	peerServiceMappings        map[string]string
+	debugAbandonedSpans        bool
+	spanTimeout                time.Duration
+	partialFlushMinSpans       int
+	partialFlushEnabled        bool
+	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled       bool
 	dataStreamsMonitoringEnabled  bool
 	dynamicInstrumentationEnabled bool
@@ -90,7 +91,7 @@ func loadConfig() *Config {
 	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 	cfg.partialFlushMinSpans = provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
@@ -133,4 +134,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) StatsComputationEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsComputationEnabled
+}
+
+func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statsComputationEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
 }

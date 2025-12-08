@@ -2845,7 +2845,7 @@ func TestEmptyChunksNotSent(t *testing.T) {
 	assert.NoError(err)
 	defer stop()
 
-	tracer.config.statsComputationEnabled = true
+	tracer.config.internalConfig.SetStatsComputationEnabled(true, internalconfig.OriginCode)
 	tracer.prioritySampling.defaultRate = 0
 	tracer.config.serviceName = "test_service"
 

@@ -1713,33 +1713,33 @@ func TestWithStatsComputation(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("enabled-via-option", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("disabled-via-option", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithStatsComputation(false))
 		assert.NoError(err)
-		assert.False(c.statsComputationEnabled)
+		assert.False(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("env-override", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 }
 
