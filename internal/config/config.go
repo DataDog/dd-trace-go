@@ -63,6 +63,8 @@ type Config struct {
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
+	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
+	tracingAsTransport bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -98,6 +100,7 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.tracingAsTransport = false // TODO: Report telemetry?
 
 	return cfg
 }
@@ -133,4 +136,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) TracingAsTransport() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tracingAsTransport
+}
+
+func (c *Config) SetTracingAsTransport(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tracingAsTransport = enabled
+	// TODO: Report telemetry?
 }
