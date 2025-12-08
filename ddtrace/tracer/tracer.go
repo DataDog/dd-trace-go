@@ -219,7 +219,7 @@ func Start(opts ...StartOption) error {
 		t.Stop()
 		return nil
 	}
-	if t.config.internalConfig.CiVisibilityEnabled() && t.config.ciVisibilityNoopTracer {
+	if t.config.internalConfig.CiVisibilityEnabled() && t.config.internalConfig.CiVisibilityNoopTracer() {
 		setGlobalTracer(wrapWithCiVisibilityNoopTracer(t))
 	} else {
 		setGlobalTracer(t)
