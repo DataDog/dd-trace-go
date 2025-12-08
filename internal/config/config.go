@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -59,10 +60,11 @@ type Config struct {
 	dataStreamsMonitoringEnabled  bool
 	dynamicInstrumentationEnabled bool
 	globalSampleRate              float64
-	ciVisibilityEnabled           bool
-	ciVisibilityAgentless         bool
-	logDirectory                  string
-	traceRateLimitPerSecond       float64
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
+	ciVisibilityEnabled     bool
+	ciVisibilityAgentless   bool
+	logDirectory            string
+	traceRateLimitPerSecond float64
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -94,8 +96,8 @@ func loadConfig() *Config {
 	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
-	cfg.ciVisibilityEnabled = provider.getBool("DD_CIVISIBILITY_ENABLED", false)
-	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.ciVisibilityEnabled = provider.getBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityAgentless = provider.getBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
 
@@ -133,4 +135,30 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) CiVisibilityEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled
+}
+
+func (c *Config) SetCiVisibilityEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ciVisibilityEnabled = enabled
+	telemetry.RegisterAppConfig(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) CiVisibilityAgentless() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentless
+}
+
+func (c *Config) SetCiVisibilityAgentless(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ciVisibilityAgentless = enabled
+	telemetry.RegisterAppConfig(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, enabled, origin)
 }

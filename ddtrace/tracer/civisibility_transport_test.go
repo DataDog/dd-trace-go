@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 
@@ -82,11 +82,6 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	defer srv.Close()
 
 	parsedURL, _ := url.Parse(srv.URL)
-	c := config{
-		ciVisibilityEnabled: true,
-		httpClient:          internal.DefaultHTTPClient(defaultHTTPTimeout, false),
-		agentURL:            parsedURL,
-	}
 
 	// Set CI Visibility environment variables for the test
 	if agentless {
@@ -97,8 +92,14 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 		}
 	}
 
+	// Use newTestConfig to get proper HTTP client setup (keep-alives disabled)
+	c, err := newTestConfig()
+	assert.NoError(err)
+	c.agentURL = parsedURL
+	c.internalConfig.SetCiVisibilityEnabled(true, internalconfig.OriginCode)
+
 	for _, tc := range testCases {
-		transport := newCiVisibilityTransport(&c)
+		transport := newCiVisibilityTransport(c)
 
 		p := newCiVisibilityPayload()
 		for _, t := range tc.payload {
@@ -127,7 +128,8 @@ func TestCIVisibilityTransportSecureLogging(t *testing.T) {
 			os.Unsetenv(constants.CIVisibilityAgentlessURLEnvironmentVariable)
 		}()
 
-		cfg := &config{}
+		cfg, err := newTestConfig()
+		assert.NoError(t, err)
 		transport := newCiVisibilityTransport(cfg)
 		assert.NotNil(t, transport)
 

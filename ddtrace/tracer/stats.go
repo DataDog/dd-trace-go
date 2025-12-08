@@ -77,7 +77,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		log.Debug("No DD Env found, normally the agent should have one")
 	}
 	gitCommitSha := ""
-	if c.ciVisibilityEnabled {
+	if c.internalConfig.CiVisibilityEnabled() {
 		// We only have this data if we're in CI Visibility
 		gitCommitSha = utils.GetCITags()[constants.GitCommitSHA]
 	}
