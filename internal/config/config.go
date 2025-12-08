@@ -30,6 +30,12 @@ const (
 	OriginCalculated = telemetry.OriginCalculated
 )
 
+// Supported trace protocols.
+const (
+	traceProtocolV04 = 0.4 // v0.4 (default)
+	traceProtocolV1  = 1.0 // v1.0
+)
+
 // Config represents global configuration properties.
 // Config instances should be obtained via Get() which always returns a non-nil value.
 // Methods on Config assume a non-nil receiver and will panic if called on nil.
@@ -63,6 +69,10 @@ type Config struct {
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
+	// traceProtocol specifies the trace protocol to use.
+	traceProtocol float64
+	// v1ProtocolEnabled reports whether the trace-agent and tracer are configured to use the v1 protocol.
+	v1ProtocolEnabled bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -98,6 +108,8 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.v1ProtocolEnabled = provider.getBool("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false)
+	cfg.traceProtocol = traceProtocolV04
 
 	return cfg
 }
@@ -133,4 +145,30 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) V1ProtocolEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.v1ProtocolEnabled
+}
+
+func (c *Config) SetV1ProtocolEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.v1ProtocolEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", enabled, origin)
+}
+
+func (c *Config) TraceProtocol() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceProtocol
+}
+
+func (c *Config) SetTraceProtocol(protocol float64, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.traceProtocol = protocol
+	// TODO: Report telemetry?
 }
