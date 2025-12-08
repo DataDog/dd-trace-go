@@ -64,12 +64,10 @@ func (p *configProvider) getBool(key string, def bool) bool {
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
-			if v == "true" {
+			boolVal, err := strconv.ParseBool(v)
+			if err == nil {
 				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
-				return true
-			} else if v == "false" {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
-				return false
+				return boolVal
 			}
 		}
 	}
