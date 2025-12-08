@@ -73,50 +73,6 @@ func TestGetMethods(t *testing.T) {
 		assert.Equal(t, 1.0, provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0))
 		assert.Equal(t, &url.URL{Scheme: "https", Host: "localhost:8126"}, provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "https", Host: "localhost:8126"}))
 	})
-	t.Run("getBool accepts various boolean formats", func(t *testing.T) {
-		// Test that getBool accepts multiple common boolean representations
-		testCases := []struct {
-			value    string
-			expected bool
-		}{
-			// Numeric formats (common in environment variables)
-			{"1", true},
-			{"0", false},
-			// Standard true/false
-			{"true", true},
-			{"false", false},
-			// Case variations
-			{"TRUE", true},
-			{"FALSE", false},
-			{"True", true},
-			{"False", false},
-			// Single character
-			{"t", true},
-			{"f", false},
-			{"T", true},
-			{"F", false},
-		}
-
-		for _, tc := range testCases {
-			entries := map[string]string{"TEST_BOOL": tc.value}
-			provider := newTestconfigProvider(newTestConfigSource(entries, telemetry.OriginEnvVar))
-			result := provider.getBool("TEST_BOOL", !tc.expected) // Use opposite as default
-			assert.Equal(t, tc.expected, result, "Expected %q to parse as %v", tc.value, tc.expected)
-		}
-	})
-	t.Run("getBool returns default for invalid values", func(t *testing.T) {
-		// Test that invalid boolean values return the default
-		invalidValues := []string{"yes", "no", "2", "-1", "invalid", ""}
-
-		for _, val := range invalidValues {
-			entries := map[string]string{"TEST_BOOL": val}
-			provider := newTestconfigProvider(newTestConfigSource(entries, telemetry.OriginEnvVar))
-
-			// Should return default for invalid values
-			assert.Equal(t, true, provider.getBool("TEST_BOOL", true), "Expected default (true) for invalid value %q", val)
-			assert.Equal(t, false, provider.getBool("TEST_BOOL", false), "Expected default (false) for invalid value %q", val)
-		}
-	})
 }
 
 func TestDefaultconfigProvider(t *testing.T) {

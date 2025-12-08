@@ -149,16 +149,3 @@ func (c *Config) SetCiVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	c.ciVisibilityEnabled = enabled
 	telemetry.RegisterAppConfig(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
 }
-
-func (c *Config) CiVisibilityAgentless() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.ciVisibilityAgentless
-}
-
-func (c *Config) SetCiVisibilityAgentless(enabled bool, origin telemetry.Origin) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.ciVisibilityAgentless = enabled
-	telemetry.RegisterAppConfig(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, enabled, origin)
-}
