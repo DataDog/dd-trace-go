@@ -8,16 +8,26 @@ package config
 import (
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 var (
-	useFreshConfig atomic.Bool
-	instance       atomic.Value
-	once           sync.Once
+	useFreshConfig bool
+	instance       *Config
+	// mu protects instance and useFreshConfig
+	mu sync.Mutex
+)
+
+// Origin represents where a configuration value came from.
+// Re-exported so callers don't need to import internal/telemetry.
+type Origin = telemetry.Origin
+
+// Re-exported origin constants for common configuration sources
+const (
+	OriginCode       = telemetry.OriginCode
+	OriginCalculated = telemetry.OriginCalculated
 )
 
 // Config represents global configuration properties.
@@ -97,21 +107,19 @@ func loadConfig() *Config {
 // The configuration is lazily initialized on first access using sync.Once, ensuring
 // loadConfig() is called exactly once even under concurrent access.
 func Get() *Config {
-	if useFreshConfig.Load() {
-		cfg := loadConfig()
-		instance.Store(cfg)
-		return cfg
+	mu.Lock()
+	defer mu.Unlock()
+	if useFreshConfig || instance == nil {
+		instance = loadConfig()
 	}
 
-	once.Do(func() {
-		cfg := loadConfig()
-		instance.Store(cfg)
-	})
-	return instance.Load().(*Config)
+	return instance
 }
 
 func SetUseFreshConfig(use bool) {
-	useFreshConfig.Store(use)
+	mu.Lock()
+	defer mu.Unlock()
+	useFreshConfig = use
 }
 
 func (c *Config) Debug() bool {

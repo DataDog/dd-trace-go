@@ -52,9 +52,11 @@ func NewHAProxySPOA(config AppsecHAProxyConfig) *HAProxySPOA {
 			ContinueMessageFunc:  continueActionFunc,
 			BlockMessageFunc:     blockActionFunc,
 		}, instr),
-		requestStateCache: initRequestStateCache(func(rs *proxy.RequestState) {
+		requestStateCache: initRequestStateCache(func(rs *proxy.RequestState, timeout bool) {
 			_ = rs.Close()
-			instr.Logger().Warn("haproxy_spoa: backend server timeout reached, closing the span for the request.\n")
+			if timeout {
+				instr.Logger().Warn("haproxy_spoa: backend server timeout reached, closing the span for the request.\n")
+			}
 		}),
 	}
 }
