@@ -166,6 +166,13 @@ type tracer struct {
 
 	// telemetry is the telemetry client for the tracer.
 	telemetry telemetry.Client
+
+	// State related to the Dynamic Instrumentation product.
+	dynInstMu struct {
+		sync.Mutex
+		ldSubscriptionToken    remoteconfig.SubscriptionToken
+		symDBSubscriptionToken remoteconfig.SubscriptionToken
+	}
 }
 
 const (
