@@ -20,6 +20,9 @@ func main() {
     // Do not use with `server.WithHooks(...)`, as this overwrites the tracing hooks. 
     // To add custom hooks alongside tracing, pass them via TracingConfig.Hooks, e.g.:
     // mcpgotrace.WithMCPServerTracing(&mcpgotrace.TracingConfig{Hooks: customHooks})
+
+    // To enable the capturing of intents on tool calls: `mcpgotrace.WithMCPServerTracing(&mcpgotrace.TracingConfig{IntentCaptureEnabled: true})`
+    // Note that intent captures modifies modifies the tools schemas with an additional parameter than is removed before the tool is called.
     srv := server.NewMCPServer("my-server", "1.0.0",
 		mcpgotrace.WithMCPServerTracing(nil))
 }
@@ -30,3 +33,6 @@ func main() {
 The integration automatically traces:
 - **Tool calls**: Creates LLMObs tool spans with input/output annotation for all tool invocations
 - **Session initialization**: Create LLMObs task spans for session initialization, including client information.
+
+The integration can optionally capture "intent" on MCP tool calls. When enabled, this adds a parameter to the schema of each tool to request that the client include an explaination.
+This can help provide context in natural language about why tools are being used.
