@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -101,6 +102,9 @@ func mergeConfigsByPriority(configs []configData) libConfig {
 		if cfg.LibConfig.Tags != nil {
 			merged.Tags = cfg.LibConfig.Tags
 		}
+		if cfg.LibConfig.LiveDebuggingEnabled != nil {
+			merged.LiveDebuggingEnabled = cfg.LibConfig.LiveDebuggingEnabled
+		}
 	}
 
 	return merged
@@ -111,11 +115,12 @@ func mergeConfigsByPriority(configs []configData) libConfig {
 // ATTENTION: When adding new fields to this struct, make sure to update
 // mergeConfigsByPriority and TestMergeHandlesAllLibConfigFields.
 type libConfig struct {
-	Enabled            *bool             `json:"tracing_enabled,omitempty"`
-	SamplingRate       *float64          `json:"tracing_sampling_rate,omitempty"`
-	TraceSamplingRules *[]rcSamplingRule `json:"tracing_sampling_rules,omitempty"`
-	HeaderTags         *headerTags       `json:"tracing_header_tags,omitempty"`
-	Tags               *tags             `json:"tracing_tags,omitempty"`
+	Enabled              *bool             `json:"tracing_enabled,omitempty"`
+	SamplingRate         *float64          `json:"tracing_sampling_rate,omitempty"`
+	TraceSamplingRules   *[]rcSamplingRule `json:"tracing_sampling_rules,omitempty"`
+	HeaderTags           *headerTags       `json:"tracing_header_tags,omitempty"`
+	Tags                 *tags             `json:"tracing_tags,omitempty"`
+	LiveDebuggingEnabled *bool             `json:"dynamic_instrumentation_enabled,omitempty"`
 }
 
 type rcTag struct {
@@ -260,6 +265,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 	}
+
+	if telem := t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled); telem != nil {
+		telemConfigs = append(telemConfigs, *telem)
+	}
+
 	if merged.Enabled != nil {
 		if t.config.enabled.current && !*merged.Enabled {
 			log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
@@ -274,6 +284,50 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		telemetry.RegisterAppConfigs(telemConfigs...)
 	}
 	return statuses
+}
+
+// Handle enabling or disabling of Dynamic Instrumentation / Live Debugger.
+//
+// Returns a telemetry configuration if the value changed.
+func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) *telemetry.Configuration {
+	// Do not overwrite a "false" value coming from the
+	// DD_DYNAMIC_INSTRUMENTATION_ENABLED env var, or from other local sources.
+	explicitOrigins := []telemetry.Origin{
+		telemetry.OriginCode,
+		telemetry.OriginDDConfig,
+		telemetry.OriginEnvVar,
+		telemetry.OriginLocalStableConfig,
+		telemetry.OriginManagedStableConfig,
+	}
+	if !t.config.dynamicInstrumentationEnabled.get() &&
+		slices.Contains(explicitOrigins, t.config.dynamicInstrumentationEnabled.cfgOrigin) {
+		return nil
+	}
+
+	if !t.config.dynamicInstrumentationEnabled.handleRC(val) {
+		return nil
+	}
+
+	// The value changed; subscribe or unsubscribe from the Live Debugging RC
+	// product.
+	if t.config.dynamicInstrumentationEnabled.get() {
+		log.Info("Dynamic Instrumentation starting through Remote Config update")
+		err := t.startDynamicInstrumentationRCSubscriptions()
+		if err != nil {
+			log.Error("failed to start Dynamic Instrumentation subscriptions: %s", err)
+			return nil
+		}
+	} else {
+		log.Info("Dynamic Instrumentation stopping through Remote Config update")
+		err := t.stopDynamicInstrumentationRCSubscriptions()
+		if err != nil {
+			log.Error("failed to stop Dynamic Instrumentation subscriptions: %s", err)
+			return nil
+		}
+	}
+
+	telem := t.config.dynamicInstrumentationEnabled.toTelemetry()
+	return &telem
 }
 
 type dynamicInstrumentationRCProbeConfig struct {
@@ -429,23 +483,8 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 
 	var dynamicInstrumentationError, apmTracingError error
 
-	if t.config.dynamicInstrumentationEnabled {
-		_, liveDebuggingError := remoteconfig.Subscribe(
-			"LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate,
-		)
-		_, liveDebuggingSymDBError := remoteconfig.Subscribe(
-			"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationSymDBRCUpdate,
-		)
-		if liveDebuggingError != nil && liveDebuggingSymDBError != nil {
-			dynamicInstrumentationError = errors.Join(
-				liveDebuggingError,
-				liveDebuggingSymDBError,
-			)
-		} else if liveDebuggingError != nil {
-			dynamicInstrumentationError = liveDebuggingError
-		} else if liveDebuggingSymDBError != nil {
-			dynamicInstrumentationError = liveDebuggingSymDBError
-		}
+	if t.config.dynamicInstrumentationEnabled.get() {
+		dynamicInstrumentationError = t.startDynamicInstrumentationRCSubscriptions()
 	}
 
 	initalizeRC.Do(initalizeDynamicInstrumentationRemoteConfigState)
@@ -459,6 +498,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingEnabled,
 		remoteconfig.APMTracingSampleRules,
 		remoteconfig.APMTracingMulticonfig,
+		remoteconfig.APMTracingEnableLiveDebugging,
 	)
 
 	if apmTracingError != nil || dynamicInstrumentationError != nil {
@@ -469,5 +509,55 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		)
 	}
 
+	return nil
+}
+
+func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
+	t.dynInstMu.Lock()
+	defer t.dynInstMu.Unlock()
+
+	if t.dynInstMu.ldSubscriptionToken != 0 || t.dynInstMu.symDBSubscriptionToken != 0 {
+		return errors.New("programming error: dynamic instrumentation RC subscriptions already started")
+	}
+
+	ldTok, liveDebuggingError := remoteconfig.Subscribe(
+		"LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate,
+	)
+	symDBTok, liveDebuggingSymDBError := remoteconfig.Subscribe(
+		"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationSymDBRCUpdate,
+	)
+	t.dynInstMu.ldSubscriptionToken = ldTok
+	t.dynInstMu.symDBSubscriptionToken = symDBTok
+	var err error
+	if liveDebuggingError != nil && liveDebuggingSymDBError != nil {
+		err = errors.Join(
+			liveDebuggingError,
+			liveDebuggingSymDBError,
+		)
+	} else if liveDebuggingError != nil {
+		err = liveDebuggingError
+	} else if liveDebuggingSymDBError != nil {
+		err = liveDebuggingSymDBError
+	}
+	return err
+}
+
+func (t *tracer) stopDynamicInstrumentationRCSubscriptions() error {
+	t.dynInstMu.Lock()
+	defer t.dynInstMu.Unlock()
+	if t.dynInstMu.ldSubscriptionToken != 0 {
+		err := remoteconfig.Unsubscribe(t.dynInstMu.ldSubscriptionToken)
+		if err != nil {
+			return err
+		}
+		t.dynInstMu.ldSubscriptionToken = 0
+	}
+	if t.dynInstMu.symDBSubscriptionToken != 0 {
+		err := remoteconfig.Unsubscribe(t.dynInstMu.symDBSubscriptionToken)
+		if err != nil {
+			return err
+		}
+		t.dynInstMu.symDBSubscriptionToken = 0
+	}
 	return nil
 }

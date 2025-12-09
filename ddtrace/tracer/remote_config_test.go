@@ -819,6 +819,109 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 	})
 
+	// Check that toggling Live Debugger through RC works.
+	t.Run("toggle Live Debugger through RC", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		startRemoteConfig := func(tracer *tracer) {
+			t.Cleanup(remoteconfig.Reset)
+			t.Cleanup(remoteconfig.Stop)
+			err := tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+			require.NoError(t, err)
+		}
+
+		tr, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
+		require.Nil(t, err)
+		defer stop()
+		startRemoteConfig(tr)
+
+		checkLiveDebuggerRemoteConfigState := func(enabled bool) {
+			found, err := remoteconfig.HasProduct(state.ProductLiveDebugging)
+			require.NoError(t, err)
+			require.Equal(t, enabled, found)
+		}
+
+		// Tracer starts off as not subscribed to the LIVE_DEBUGGING product.
+		checkLiveDebuggerRemoteConfigState(false)
+
+		// Enable Live Debugger through RC and check that we subscribe to the
+		// LIVE_DEBUGGING product.
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(
+				`{"lib_config": {"dynamic_instrumentation_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`,
+			),
+		}
+		tr.onRemoteConfigUpdate(input)
+		// Tracer is now subscribed.
+		checkLiveDebuggerRemoteConfigState(true)
+
+		// Disable Live Debugger through RC and check that we unsubscribe from the
+		// LIVE_DEBUGGING product.
+		input = remoteconfig.ProductUpdate{
+			"path": []byte(
+				`{"lib_config": {"dynamic_instrumentation_enabled": false}, "service_target": {"service": "my-service", "env": "my-env"}}`,
+			),
+		}
+		tr.onRemoteConfigUpdate(input)
+		// Tracer is back to not subscribed.
+		checkLiveDebuggerRemoteConfigState(false)
+
+		// Enable Live Debugger through RC again, and check that we re-subscribe to the
+		// LIVE_DEBUGGING product.
+		input = remoteconfig.ProductUpdate{
+			"path": []byte(
+				`{"lib_config": {"dynamic_instrumentation_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`,
+			),
+		}
+		tr.onRemoteConfigUpdate(input)
+		checkLiveDebuggerRemoteConfigState(true)
+	})
+
+	// Test that Live Debugger cannot be enabled through RC if the tracer has
+	// explicitly disabled it.
+	t.Run("enable Live Debugger through RC with tracer explicitly disabling it", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		startRemoteConfig := func(tracer *tracer) {
+			t.Cleanup(remoteconfig.Reset)
+			t.Cleanup(remoteconfig.Stop)
+			err := tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+			require.NoError(t, err)
+		}
+
+		tr, _, _, stop, err := startTestTracer(t,
+			WithService("my-service"), WithEnv("my-env"),
+			// Configure the tracer to explicitly disable dynamic instrumentation.
+			WithDynamicInstrumentationEnabled(false),
+		)
+		require.Nil(t, err)
+		defer stop()
+		startRemoteConfig(tr)
+
+		checkLiveDebuggerRemoteConfigState := func(enabled bool) {
+			found, err := remoteconfig.HasProduct(state.ProductLiveDebugging)
+			require.NoError(t, err)
+			require.Equal(t, enabled, found)
+		}
+
+		// Tracer starts off as not subscribed to the LIVE_DEBUGGING product.
+		checkLiveDebuggerRemoteConfigState(false)
+
+		// Enable Live Debugger through RC and check that we subscribe to the
+		// LIVE_DEBUGGING product.
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(
+				`{"lib_config": {"dynamic_instrumentation_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`,
+			),
+		}
+		tr.onRemoteConfigUpdate(input)
+		// Tracer is still not subscribed; the remote config update did not override
+		// the tracer's explicit configuration.
+		checkLiveDebuggerRemoteConfigState(false)
+	})
+
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
@@ -960,6 +1063,10 @@ func TestStartRemoteConfig(t *testing.T) {
 	require.True(t, found)
 
 	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingMulticonfig)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	found, err = remoteconfig.HasCapability(remoteconfig.APMTracingEnableLiveDebugging)
 	require.NoError(t, err)
 	require.True(t, found)
 }
