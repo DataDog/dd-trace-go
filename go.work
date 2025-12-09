@@ -51,6 +51,7 @@ use (
 	./contrib/log/slog
 	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns
+	./contrib/modelcontextprotocol/go-sdk
 	./contrib/net/http
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9

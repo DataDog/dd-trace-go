@@ -212,7 +212,7 @@ func TestGet(t *testing.T) {
 
 // resetGlobalState resets all global singleton state for testing
 func resetGlobalState() {
-	once = sync.Once{}
-	instance = atomic.Value{}
-	useFreshConfig.Store(false)
+	mu = sync.Mutex{}
+	instance = nil
+	useFreshConfig = false
 }

@@ -18,12 +18,6 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageMark3LabsMCPGo)
-}
-
 type hooks struct {
 	spanCache *sync.Map
 }
@@ -85,7 +79,7 @@ func newHooks() *hooks {
 }
 
 func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.InitializeRequest) {
-	taskSpan, _ := llmobs.StartTaskSpan(ctx, "mcp.initialize", llmobs.WithIntegration("mark3labs/mcp-go"))
+	taskSpan, _ := llmobs.StartTaskSpan(ctx, "mcp.initialize", llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
 
 	clientName := request.Params.ClientInfo.Name
 	clientVersion := request.Params.ClientInfo.Version
