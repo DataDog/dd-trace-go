@@ -8,16 +8,18 @@ package chi
 import (
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/go-chi/chi"
 )
 
-func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handler {
+func withAppsec(next http.Handler, r *http.Request, span trace.TagSetter) http.Handler {
 	rctx := chi.RouteContext(r.Context())
 	if rctx == nil {
-		return httpsec.WrapHandler(next, span, nil, nil)
+		return httpsec.WrapHandler(next, span, &httpsec.Config{
+			Framework: "github.com/go-chi/chi",
+		})
 	}
 	var pathParams map[string]string
 	keys := rctx.URLParams.Keys
@@ -28,5 +30,10 @@ func withAppsec(next http.Handler, r *http.Request, span tracer.Span) http.Handl
 			pathParams[key] = values[i]
 		}
 	}
-	return httpsec.WrapHandler(next, span, pathParams, nil)
+
+	return httpsec.WrapHandler(next, span, &httpsec.Config{
+		Framework:   "github.com/go-chi/chi",
+		Route:       rctx.RoutePattern(),
+		RouteParams: pathParams,
+	})
 }

@@ -9,7 +9,7 @@ import (
 	"context"
 	"log"
 
-	pgxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/jackc/pgx.v5"
+	pgxtrace "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -45,7 +45,7 @@ func ExampleConnect() {
 	}
 }
 
-func ExamplePool() {
+func ExampleNewPool() {
 	ctx := context.TODO()
 
 	// The pgxpool uses the same tracer and is exposed the same way.

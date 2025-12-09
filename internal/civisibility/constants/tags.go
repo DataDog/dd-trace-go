@@ -10,6 +10,10 @@ const (
 	// This tag helps in identifying the source of the trace data.
 	Origin = "_dd.origin"
 
+	// LogicalCPUCores is a tag used to indicate the number of logical cpu cores
+	// This tag is used by the backend to perform calculations
+	LogicalCPUCores = "_dd.host.vcpu_count"
+
 	// CIAppTestOrigin defines the CIApp test origin value.
 	// This constant is used to tag traces that originate from CIApp test executions.
 	CIAppTestOrigin = "ciapp-test"
@@ -29,6 +33,9 @@ const (
 	// ItrCorrelationIDTag defines the correlation ID for the intelligent test runner tag for the CI Visibility Protocol.
 	// This constant is used to tag traces with the correlation ID for intelligent test runs.
 	ItrCorrelationIDTag string = "itr_correlation_id"
+
+	// UserProvidedTestServiceTag defines if the user provided the test service.
+	UserProvidedTestServiceTag string = "_dd.test.is_user_provided_service"
 )
 
 // Coverage tags
@@ -40,4 +47,25 @@ const (
 	// CodeCoveragePercentageOfTotalLines defines the percentage of total code coverage by a session.
 	// This constant is used to tag traces with the percentage of code lines covered during the test session.
 	CodeCoveragePercentageOfTotalLines string = "test.code_coverage.lines_pct"
+)
+
+// Capabilities
+const (
+	// LibraryCapabilitiesTestImpactAnalysis is a tag used to indicate the test impact analysis capability of the library.
+	LibraryCapabilitiesTestImpactAnalysis = "_dd.library_capabilities.test_impact_analysis"
+
+	// LibraryCapabilitiesEarlyFlakeDetection is a tag used to indicate the early flake detection capability of the library.
+	LibraryCapabilitiesEarlyFlakeDetection = "_dd.library_capabilities.early_flake_detection"
+
+	// LibraryCapabilitiesAutoTestRetries is a tag used to indicate the auto test retries capability of the library.
+	LibraryCapabilitiesAutoTestRetries = "_dd.library_capabilities.auto_test_retries"
+
+	// LibraryCapabilitiesTestManagementQuarantine is a tag used to indicate the quarantine capability of the library.
+	LibraryCapabilitiesTestManagementQuarantine = "_dd.library_capabilities.test_management.quarantine"
+
+	// LibraryCapabilitiesTestManagementDisable is a tag used to indicate the disable capability of the library.
+	LibraryCapabilitiesTestManagementDisable = "_dd.library_capabilities.test_management.disable"
+
+	// LibraryCapabilitiesTestManagementAttemptToFix is a tag used to indicate the attempt to fix capability of the library.
+	LibraryCapabilitiesTestManagementAttemptToFix = "_dd.library_capabilities.test_management.attempt_to_fix"
 )

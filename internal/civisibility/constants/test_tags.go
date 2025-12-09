@@ -46,6 +46,10 @@ const (
 	// This constant is used to tag traces with the line number in the source file where the test starts.
 	TestSourceStartLine = "test.source.start"
 
+	// TestSourceEndLine indicates the line of the source file where the test ends.
+	// This constant is used to tag traces with the line number in the source file where the test ends.
+	TestSourceEndLine = "test.source.end"
+
 	// TestCodeOwners indicates the test code owners.
 	// This constant is used to tag traces with the code owners responsible for the test.
 	TestCodeOwners = "test.codeowners"
@@ -61,6 +65,72 @@ const (
 	// TestCommandWorkingDirectory indicates the test command working directory relative to the source root.
 	// This constant is used to tag traces with the working directory path relative to the source root.
 	TestCommandWorkingDirectory = "test.working_directory"
+
+	// TestSessionName indicates the test session name
+	// This constant is used to tag traces with the test session name
+	TestSessionName = "test_session.name"
+
+	// TestIsNew indicates a new test
+	// This constant is used to tag test events that are detected as new by early flake detection
+	TestIsNew = "test.is_new"
+
+	// TestIsRetry indicates a retry execution
+	// This constant is used to tag test events that are part of a retry execution
+	TestIsRetry = "test.is_retry"
+
+	// TestRetryReason indicates the reason for retrying the test
+	TestRetryReason = "test.retry_reason"
+
+	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
+	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
+
+	// TestSkippedByITR indicates a test skipped by the ITR feature
+	TestSkippedByITR = "test.skipped_by_itr"
+
+	// SkippedByITRReason indicates the reason why the test was skipped by the ITR feature
+	SkippedByITRReason = "Skipped by Datadog Intelligent Test Runner"
+
+	// ITRTestsSkipped indicates that tests were skipped by the ITR feature
+	ITRTestsSkipped = "_dd.ci.itr.tests_skipped"
+
+	// ITRTestsSkippingEnabled indicates that the ITR test skipping feature is enabled
+	ITRTestsSkippingEnabled = "test.itr.tests_skipping.enabled"
+
+	// ITRTestsSkippingType indicates the type of ITR test skipping
+	ITRTestsSkippingType = "test.itr.tests_skipping.type"
+
+	// ITRTestsSkippingCount indicates the number of tests skipped by the ITR feature
+	ITRTestsSkippingCount = "test.itr.tests_skipping.count"
+
+	// CodeCoverageEnabled indicates that code coverage is enabled
+	CodeCoverageEnabled = "test.code_coverage.enabled"
+
+	// TestUnskippable indicates that the test is unskippable
+	TestUnskippable = "test.itr.unskippable"
+
+	// TestForcedToRun indicates that the test is forced to run because is unskippable
+	TestForcedToRun = "test.itr.forced_run"
+
+	// TestIsQuarantined indicates that the test is quarantined
+	TestIsQuarantined = "test.test_management.is_quarantined"
+
+	// TestIsDisabled indicates that the test is disabled
+	TestIsDisabled = "test.test_management.is_test_disabled"
+
+	// TestIsAttempToFix indicates that the test is an attempt to fix
+	TestIsAttempToFix = "test.test_management.is_attempt_to_fix"
+
+	// TestHasFailedAllRetries indicates that the test has failed all retries
+	TestHasFailedAllRetries = "test.has_failed_all_retries"
+
+	// TestAttemptToFixPassed indicates that the attempt to fix has passed
+	TestAttemptToFixPassed = "test.test_management.attempt_to_fix_passed"
+
+	// TestManagementEnabled indicates that the test management feature is enabled
+	TestManagementEnabled = "test.test_management.enabled"
+
+	// TestIsModified indicates that the test is modified
+	TestIsModified = "test.is_modified"
 )
 
 // Define valid test status types.
@@ -87,4 +157,24 @@ const (
 	// TestTypeBenchmark defines test type as benchmark.
 	// This constant is used to tag traces indicating that the type of test is a benchmark.
 	TestTypeBenchmark = "benchmark"
+)
+
+// Retry reasons
+const (
+	// AttemptToFixRetryReason indicates that the test is retried due to an attempt to fix.
+	AttemptToFixRetryReason = "attempt_to_fix"
+
+	// EarlyFlakeDetectionRetryReason indicates that the test is retried due to early flake detection.
+	EarlyFlakeDetectionRetryReason = "early_flake_detection"
+
+	// AutoTestRetriesRetryReason indicates that the test is retried due to auto test retries.
+	AutoTestRetriesRetryReason = "auto_test_retry"
+
+	// ExternalRetryReason indicates that the test is retried due to an external reason.
+	ExternalRetryReason = "external"
+)
+
+const (
+	// TestDisabledSkipReason indicates the skip reason for a test that is disabled.
+	TestDisabledSkipReason = "Flaky test is disabled by Datadog"
 )

@@ -10,55 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
-
-// toFloat64 attempts to convert value into a float64. If the value is an integer
-// greater or equal to 2^53 or less than or equal to -2^53, it will not be converted
-// into a float64 to avoid losing precision. If it succeeds in converting, toFloat64
-// returns the value and true, otherwise 0 and false.
-func toFloat64(value interface{}) (f float64, ok bool) {
-	const max = (int64(1) << 53) - 1
-	const min = -max
-	// If any other type is added here, remember to add it to the type switch in
-	// the `span.SetTag` function to handle pointers to these supported types.
-	switch i := value.(type) {
-	case byte:
-		return float64(i), true
-	case float32:
-		return float64(i), true
-	case float64:
-		return i, true
-	case int:
-		return float64(i), true
-	case int8:
-		return float64(i), true
-	case int16:
-		return float64(i), true
-	case int32:
-		return float64(i), true
-	case int64:
-		if i > max || i < min {
-			return 0, false
-		}
-		return float64(i), true
-	case uint:
-		return float64(i), true
-	case uint16:
-		return float64(i), true
-	case uint32:
-		return float64(i), true
-	case uint64:
-		if i > uint64(max) {
-			return 0, false
-		}
-		return float64(i), true
-	case samplernames.SamplerName:
-		return float64(i), true
-	default:
-		return 0, false
-	}
-}
 
 // parseUint64 parses a uint64 from either an unsigned 64 bit base-10 string
 // or a signed 64 bit base-10 string representing an unsigned integer
@@ -128,38 +81,37 @@ func parsePropagatableTraceTags(s string) (map[string]string, error) {
 func dereference(value any) any {
 	// Falling into one of the cases will dereference the pointer and return the
 	// value of the pointer. It adds one allocation due to casting.
-	switch value.(type) {
+	switch v := value.(type) {
 	case *bool:
-		return dereferenceGeneric(value.(*bool))
+		return dereferenceGeneric(v)
 	case *string:
-		return dereferenceGeneric(value.(*string))
+		return dereferenceGeneric(v)
 	// Supported type by toFloat64
 	case *byte:
-		return dereferenceGeneric(value.(*byte))
+		return dereferenceGeneric(v)
 	case *float32:
-		return dereferenceGeneric(value.(*float32))
+		return dereferenceGeneric(v)
 	case *float64:
-		return dereferenceGeneric(value.(*float64))
+		return dereferenceGeneric(v)
 	case *int:
-		return dereferenceGeneric(value.(*int))
+		return dereferenceGeneric(v)
 	case *int8:
-		return dereferenceGeneric(value.(*int8))
+		return dereferenceGeneric(v)
 	case *int16:
-		return dereferenceGeneric(value.(*int16))
+		return dereferenceGeneric(v)
 	case *int32:
-		return dereferenceGeneric(value.(*int32))
+		return dereferenceGeneric(v)
 	case *int64:
-		return dereferenceGeneric(value.(*int64))
+		return dereferenceGeneric(v)
 	case *uint:
-		return dereferenceGeneric(value.(*uint))
+		return dereferenceGeneric(v)
 	case *uint16:
-		return dereferenceGeneric(value.(*uint16))
+		return dereferenceGeneric(v)
 	case *uint32:
-		return dereferenceGeneric(value.(*uint32))
+		return dereferenceGeneric(v)
 	case *uint64:
-		return dereferenceGeneric(value.(*uint64))
+		return dereferenceGeneric(v)
 	case *samplernames.SamplerName:
-		v := value.(*samplernames.SamplerName)
 		if v == nil {
 			return samplernames.Unknown
 		}

@@ -12,11 +12,11 @@ import (
 	"net/http"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,7 +73,7 @@ func TestClient(t *testing.T) {
 		assert.NoError(err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal("twirp.request", span.OperationName())
@@ -83,6 +83,7 @@ func TestClient(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -104,7 +105,7 @@ func TestClient(t *testing.T) {
 		assert.NoError(err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal("twirp.request", span.OperationName())
@@ -113,8 +114,9 @@ func TestClient(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.Equal(true, span.Tag(ext.Error).(bool))
+		assert.Equal("500: Internal Server Error", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -136,7 +138,7 @@ func TestClient(t *testing.T) {
 		assert.Equal(context.DeadlineExceeded, err)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeHTTP, span.Tag(ext.SpanType))
 		assert.Equal("twirp.request", span.OperationName())
@@ -144,8 +146,9 @@ func TestClient(t *testing.T) {
 		assert.Equal("twirp.test", span.Tag("twirp.package"))
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
-		assert.Equal(context.DeadlineExceeded, span.Tag(ext.Error))
+		assert.Equal(context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
@@ -178,7 +181,7 @@ func mockServer(hooks *twirp.ServerHooks, assert *assert.Assertions, twerr twirp
 func TestServerHooks(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	hooks := NewServerHooks(WithServiceName("twirp-test"), WithAnalytics(true))
+	hooks := NewServerHooks(WithService("twirp-test"), WithAnalytics(true))
 
 	t.Run("success", func(t *testing.T) {
 		defer mt.Reset()
@@ -187,7 +190,7 @@ func TestServerHooks(t *testing.T) {
 		mockServer(hooks, assert, nil)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
@@ -197,6 +200,7 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("200", span.Tag(ext.HTTPCode))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
 		assert.Equal("Method", span.Tag(ext.RPCMethod))
@@ -209,7 +213,7 @@ func TestServerHooks(t *testing.T) {
 		mockServer(hooks, assert, twirp.InternalError("something bad or unexpected happened"))
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
@@ -218,8 +222,9 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
+		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
 		assert.Equal("Method", span.Tag(ext.RPCMethod))
@@ -245,7 +250,7 @@ func TestServerHooks(t *testing.T) {
 		mockServer(twirp.ChainHooks(hooks, otherHooks), assert, twirp.InternalError("something bad or unexpected happened"))
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 2)
+		require.Len(t, spans, 2)
 		span := spans[0]
 		assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
 		assert.Equal("twirp-test", span.Tag(ext.ServiceName))
@@ -254,8 +259,9 @@ func TestServerHooks(t *testing.T) {
 		assert.Equal("Example", span.Tag("twirp.service"))
 		assert.Equal("Method", span.Tag("twirp.method"))
 		assert.Equal("500", span.Tag(ext.HTTPCode))
-		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.Error).(error).Error())
+		assert.Equal("twirp error internal: something bad or unexpected happened", span.Tag(ext.ErrorMsg))
 		assert.Equal("twitchtv/twirp", span.Tag(ext.Component))
+		assert.Equal(string(instrumentation.PackageTwitchTVTwirp), span.Integration())
 		assert.Equal("twirp", span.Tag(ext.RPCSystem))
 		assert.Equal("Example", span.Tag(ext.RPCService))
 		assert.Equal("Method", span.Tag(ext.RPCMethod))
@@ -272,7 +278,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mockServer(hooks, assert, nil)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 		assert.Equal(rate, s.Tag(ext.EventSampleRate))
 	}
@@ -288,10 +294,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.4)
 	})
 
@@ -313,10 +316,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
@@ -328,7 +328,7 @@ func TestServiceNameSettings(t *testing.T) {
 		mockServer(hooks, assert, nil)
 
 		spans := mt.FinishedSpans()
-		assert.Len(spans, 1)
+		require.Len(t, spans, 1)
 		s := spans[0]
 		assert.Equal(serviceName, s.Tag(ext.ServiceName))
 	}
@@ -344,10 +344,7 @@ func TestServiceNameSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		svc := globalconfig.ServiceName()
-		defer globalconfig.SetServiceName(svc)
-		globalconfig.SetServiceName("service.global")
-
+		testutils.SetGlobalServiceName(t, "service.global")
 		assertServiceName(t, mt, "service.global")
 	})
 
@@ -355,11 +352,8 @@ func TestServiceNameSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		svc := globalconfig.ServiceName()
-		defer globalconfig.SetServiceName(svc)
-		globalconfig.SetServiceName("service.global")
-
-		assertServiceName(t, mt, "service.local", WithServiceName("service.local"))
+		testutils.SetGlobalServiceName(t, "service.global")
+		assertServiceName(t, mt, "service.local", WithService("service.local"))
 	})
 }
 
@@ -393,45 +387,6 @@ func TestHaberdash(t *testing.T) {
 	assert.Equal(ext.SpanTypeWeb, spans[0].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeWeb, spans[1].Tag(ext.SpanType))
 	assert.Equal(ext.SpanTypeHTTP, spans[2].Tag(ext.SpanType))
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client, cleanup := startIntegrationTestServer(t, opts...)
-		defer cleanup()
-		_, err := client.MakeHat(context.Background(), &example.Size{Inches: 6})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 3)
-		assert.Equal(t, "twirp.Haberdasher", spans[0].OperationName())
-		assert.Equal(t, "twirp.handler", spans[1].OperationName())
-		assert.Equal(t, "twirp.request", spans[2].OperationName())
-	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 3)
-		assert.Equal(t, "twirp.server.request", spans[0].OperationName())
-		assert.Equal(t, "twirp.handler", spans[1].OperationName())
-		assert.Equal(t, "twirp.client.request", spans[2].OperationName())
-	}
-	ddService := namingschematest.TestDDService
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"twirp-server", "twirp-server", "twirp-client"},
-		WithDDService:            []string{ddService, ddService, ddService},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
 type haberdasher int32

@@ -15,8 +15,9 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestAppSec(t *testing.T) {
@@ -78,7 +79,7 @@ func TestAppSec(t *testing.T) {
 			},
 		},
 	})
-	opts := []Option{WithServiceName("test-graphql-service")}
+	opts := []Option{WithService("test-graphql-service")}
 	schema, err := NewSchema(graphql.SchemaConfig{Query: rootQuery}, opts...)
 	require.NoError(t, err)
 	restore := enableAppSec(t)
@@ -92,7 +93,6 @@ func TestAppSec(t *testing.T) {
 		testCases := map[string]struct {
 			query     string
 			variables map[string]any
-			events    map[string]string
 		}{
 			"basic": {
 				query: `query TestQuery($topLevelId: String!, $nestedId: String!) { topLevel(id: $topLevelId) { nested(id: $nestedId) } }`,
@@ -100,20 +100,12 @@ func TestAppSec(t *testing.T) {
 					"topLevelId": topLevelAttack,
 					"nestedId":   nestedAttack,
 				},
-				events: map[string]string{
-					"test-rule-001": "graphql.resolve(topLevel)",
-					"test-rule-002": "graphql.resolve(nested)",
-				},
 			},
 			"with-default-parameter": {
 				query: fmt.Sprintf(`query TestQuery($topLevelId: String = %#v, $nestedId: String!) { topLevel(id: $topLevelId) { nested(id: $nestedId) } }`, topLevelAttack),
 				variables: map[string]any{
 					// "topLevelId" omitted (default value used)
 					"nestedId": nestedAttack,
-				},
-				events: map[string]string{
-					"test-rule-001": "graphql.resolve(topLevel)",
-					"test-rule-002": "graphql.resolve(nested)",
 				},
 			},
 			"embedded-variable": {
@@ -125,10 +117,6 @@ func TestAppSec(t *testing.T) {
 				variables: map[string]any{
 					"topLevelId": topLevelAttack,
 					"nestedId":   nestedAttack,
-				},
-				events: map[string]string{
-					"test-rule-001": "graphql.resolve(topLevelMapped)",
-					"test-rule-002": "graphql.resolve(nested)",
 				},
 			},
 		}
@@ -151,8 +139,8 @@ func TestAppSec(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.NotEmpty(t, spans)
 				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
-				require.Equal(t, 1, spans[len(spans)-1].Tag("_dd.appsec.enabled"))
-				events := make(map[string]string)
+				span := spans[len(spans)-1]
+				require.Equal(t, float64(1), span.Tag("_dd.appsec.enabled"))
 				type ddAppsecJSON struct {
 					Triggers []struct {
 						Rule struct {
@@ -160,34 +148,20 @@ func TestAppSec(t *testing.T) {
 						} `json:"rule"`
 					} `json:"triggers"`
 				}
-				// Search for AppSec events in the set of spans
-				for _, span := range spans {
-					jsonText, ok := span.Tag("_dd.appsec.json").(string)
-					if !ok || jsonText == "" {
-						continue
-					}
-					var parsed ddAppsecJSON
-					err := json.Unmarshal([]byte(jsonText), &parsed)
-					require.NoError(t, err)
 
-					require.Len(t, parsed.Triggers, 1, "expected exactly 1 trigger on %s span", span.OperationName())
-					ruleID := parsed.Triggers[0].Rule.ID
-					_, duplicate := events[ruleID]
-					require.False(t, duplicate, "found duplicated hit for rule %s", ruleID)
-					var origin string
-					switch name := span.OperationName(); name {
-					case spanResolve:
-						field := span.Tag(tagGraphqlField).(string)
-						origin = fmt.Sprintf("%s(%s)", spanResolve, field)
-					case spanExecute:
-						origin = spanExecute
-					default:
-						require.Fail(t, "rule trigger recorded on unecpected span", "rule %s recorded a hit on unexpected span %s", ruleID, name)
-					}
-					events[ruleID] = origin
+				jsonText, ok := span.Tag("_dd.appsec.json").(string)
+				require.True(t, ok, "expected _dd.appsec.json tag on span")
+
+				var parsed ddAppsecJSON
+				err = json.Unmarshal([]byte(jsonText), &parsed)
+				require.NoError(t, err)
+
+				ids := make([]string, 0, len(parsed.Triggers))
+				for _, trigger := range parsed.Triggers {
+					ids = append(ids, trigger.Rule.ID)
 				}
-				// Ensure they match the expected outcome
-				require.Equal(t, tc.events, events)
+
+				require.ElementsMatch(t, ids, []string{"test-rule-001", "test-rule-002"})
 			})
 		}
 	})
@@ -262,16 +236,16 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	restoreDdAppsecEnabled := setEnv("DD_APPSEC_ENABLED", "1")
 	restoreDdAppsecRules := setEnv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	// GraphQL queries with nested resolvers need more than the default 2ms WAF timeout
+	// because the timeout budget is shared across all resolver invocations in the request.
+	// Without this, the second resolver can timeout before completing its scan.
+	restoreDdAppsecWafTimeout := setEnv("DD_APPSEC_WAF_TIMEOUT", "1m")
+	testutils.StartAppSec(t)
 	restore := func() {
-		appsec.Stop()
 		restoreDdAppsecEnabled()
 		restoreDdAppsecRules()
+		restoreDdAppsecWafTimeout()
 		_ = os.RemoveAll(tmpDir)
-	}
-	if !appsec.Enabled() {
-		restore()
-		t.Skip("could not enable appsec: this platform is likely not supported")
 	}
 	return restore
 }

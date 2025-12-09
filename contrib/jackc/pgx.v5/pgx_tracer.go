@@ -8,9 +8,9 @@ package pgx
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,7 +36,7 @@ const (
 )
 
 type tracedBatchQuery struct {
-	span tracer.Span
+	span *tracer.Span
 	data pgx.TraceBatchQueryData
 }
 
@@ -44,52 +44,95 @@ func (tb *tracedBatchQuery) finish() {
 	tb.span.Finish(tracer.WithError(tb.data.Err))
 }
 
+type allPgxTracers interface {
+	pgx.QueryTracer
+	pgx.BatchTracer
+	pgx.ConnectTracer
+	pgx.PrepareTracer
+	pgx.CopyFromTracer
+	pgxpool.AcquireTracer
+}
+
+type wrappedPgxTracer struct {
+	query       pgx.QueryTracer
+	batch       pgx.BatchTracer
+	connect     pgx.ConnectTracer
+	prepare     pgx.PrepareTracer
+	copyFrom    pgx.CopyFromTracer
+	poolAcquire pgxpool.AcquireTracer
+}
+
 type pgxTracer struct {
 	cfg            *config
 	prevBatchQuery *tracedBatchQuery
+	wrapped        wrappedPgxTracer
 }
 
 var (
-	_ pgx.QueryTracer       = (*pgxTracer)(nil)
-	_ pgx.BatchTracer       = (*pgxTracer)(nil)
-	_ pgx.ConnectTracer     = (*pgxTracer)(nil)
-	_ pgx.PrepareTracer     = (*pgxTracer)(nil)
-	_ pgx.CopyFromTracer    = (*pgxTracer)(nil)
-	_ pgxpool.AcquireTracer = (*pgxTracer)(nil)
+	_ allPgxTracers = (*pgxTracer)(nil)
 )
 
-func newPgxTracer(opts ...Option) *pgxTracer {
+func wrapPgxTracer(prev pgx.QueryTracer, opts ...Option) *pgxTracer {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
 	cfg.checkStatsdRequired()
-	return &pgxTracer{cfg: cfg}
+	tr := &pgxTracer{cfg: cfg}
+	if prev != nil {
+		tr.wrapped.query = prev
+		if batchTr, ok := prev.(pgx.BatchTracer); ok {
+			tr.wrapped.batch = batchTr
+		}
+		if connTr, ok := prev.(pgx.ConnectTracer); ok {
+			tr.wrapped.connect = connTr
+		}
+		if prepareTr, ok := prev.(pgx.PrepareTracer); ok {
+			tr.wrapped.prepare = prepareTr
+		}
+		if copyFromTr, ok := prev.(pgx.CopyFromTracer); ok {
+			tr.wrapped.copyFrom = copyFromTr
+		}
+		if poolAcquireTr, ok := prev.(pgxpool.AcquireTracer); ok {
+			tr.wrapped.poolAcquire = poolAcquireTr
+		}
+	}
+
+	return tr
 }
 
 func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
 	if !t.cfg.traceQuery {
 		return ctx
 	}
+	if t.wrapped.query != nil {
+		ctx = t.wrapped.query.TraceQueryStart(ctx, conn, data)
+	}
 	opts := t.spanOptions(conn.Config(), operationTypeQuery, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.query", opts...)
 	return ctx
 }
 
-func (t *pgxTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryEndData) {
+func (t *pgxTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
 	if !t.cfg.traceQuery {
 		return
+	}
+	if t.wrapped.query != nil {
+		t.wrapped.query.TraceQueryEnd(ctx, conn, data)
 	}
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
 		span.SetTag(tagRowsAffected, data.CommandTag.RowsAffected())
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchStartData) context.Context {
 	if !t.cfg.traceBatch {
 		return ctx
+	}
+	if t.wrapped.batch != nil {
+		ctx = t.wrapped.batch.TraceBatchStart(ctx, conn, data)
 	}
 	opts := t.spanOptions(conn.Config(), operationTypeBatch, "",
 		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
@@ -101,6 +144,9 @@ func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pg
 func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
 	if !t.cfg.traceBatch {
 		return
+	}
+	if t.wrapped.batch != nil {
+		t.wrapped.batch.TraceBatchQuery(ctx, conn, data)
 	}
 	// Finish the previous batch query span before starting the next one, since pgx doesn't provide hooks or timestamp
 	// information about when the actual operation started or finished.
@@ -118,20 +164,26 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	}
 }
 
-func (t *pgxTracer) TraceBatchEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceBatchEndData) {
+func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
 	if !t.cfg.traceBatch {
 		return
+	}
+	if t.wrapped.batch != nil {
+		t.wrapped.batch.TraceBatchEnd(ctx, conn, data)
 	}
 	if t.prevBatchQuery != nil {
 		t.prevBatchQuery.finish()
 		t.prevBatchQuery = nil
 	}
-	finishSpan(ctx, data.Err)
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceCopyFromStartData) context.Context {
 	if !t.cfg.traceCopyFrom {
 		return ctx
+	}
+	if t.wrapped.copyFrom != nil {
+		ctx = t.wrapped.copyFrom.TraceCopyFromStart(ctx, conn, data)
 	}
 	opts := t.spanOptions(conn.Config(), operationTypeCopyFrom, "",
 		tracer.Tag(tagCopyFromTables, data.TableName),
@@ -141,32 +193,44 @@ func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data
 	return ctx
 }
 
-func (t *pgxTracer) TraceCopyFromEnd(ctx context.Context, _ *pgx.Conn, data pgx.TraceCopyFromEndData) {
+func (t *pgxTracer) TraceCopyFromEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceCopyFromEndData) {
 	if !t.cfg.traceCopyFrom {
 		return
 	}
-	finishSpan(ctx, data.Err)
+	if t.wrapped.copyFrom != nil {
+		t.wrapped.copyFrom.TraceCopyFromEnd(ctx, conn, data)
+	}
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
 	if !t.cfg.tracePrepare {
 		return ctx
 	}
+	if t.wrapped.prepare != nil {
+		ctx = t.wrapped.prepare.TracePrepareStart(ctx, conn, data)
+	}
 	opts := t.spanOptions(conn.Config(), operationTypePrepare, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.prepare", opts...)
 	return ctx
 }
 
-func (t *pgxTracer) TracePrepareEnd(ctx context.Context, _ *pgx.Conn, data pgx.TracePrepareEndData) {
+func (t *pgxTracer) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareEndData) {
 	if !t.cfg.tracePrepare {
 		return
 	}
-	finishSpan(ctx, data.Err)
+	if t.wrapped.prepare != nil {
+		t.wrapped.prepare.TracePrepareEnd(ctx, conn, data)
+	}
+	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
 	if !t.cfg.traceConnect {
 		return ctx
+	}
+	if t.wrapped.connect != nil {
+		ctx = t.wrapped.connect.TraceConnectStart(ctx, data)
 	}
 	opts := t.spanOptions(data.ConnConfig, operationTypeConnect, "")
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.connect", opts...)
@@ -177,32 +241,40 @@ func (t *pgxTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEn
 	if !t.cfg.traceConnect {
 		return
 	}
-	finishSpan(ctx, data.Err)
+	if t.wrapped.connect != nil {
+		t.wrapped.connect.TraceConnectEnd(ctx, data)
+	}
+	t.finishSpan(ctx, data.Err)
 }
 
-func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, _ pgxpool.TraceAcquireStartData) context.Context {
+func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireStartData) context.Context {
 	if !t.cfg.traceAcquire {
 		return ctx
+	}
+	if t.wrapped.poolAcquire != nil {
+		ctx = t.wrapped.poolAcquire.TraceAcquireStart(ctx, pool, data)
 	}
 	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeAcquire, "")
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.pool.acquire", opts...)
 	return ctx
 }
 
-func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, _ *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
+func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
 	if !t.cfg.traceAcquire {
 		return
 	}
-
-	finishSpan(ctx, data.Err)
+	if t.wrapped.poolAcquire != nil {
+		t.wrapped.poolAcquire.TraceAcquireEnd(ctx, pool, data)
+	}
+	t.finishSpan(ctx, data.Err)
 }
 
-func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...ddtrace.StartSpanOption) []ddtrace.StartSpanOption {
-	opts := []ddtrace.StartSpanOption{
+func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(t.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageJackcPGXV5),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(tagOperation, string(op)),
 	}
@@ -228,10 +300,13 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 	return opts
 }
 
-func finishSpan(ctx context.Context, err error) {
+func (t *pgxTracer) finishSpan(ctx context.Context, err error) {
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		return
 	}
-	span.Finish(tracer.WithError(err))
+	if err != nil && (t.cfg.errCheck == nil || t.cfg.errCheck(err)) {
+		span.SetTag(ext.Error, err)
+	}
+	span.Finish()
 }

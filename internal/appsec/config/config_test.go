@@ -6,10 +6,12 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestSCAEnabled(t *testing.T) {
@@ -17,6 +19,7 @@ func TestSCAEnabled(t *testing.T) {
 		name              string
 		envVarVal         string
 		telemetryExpected bool
+		telemetryLog      string
 		expectedValue     bool
 	}{
 		{
@@ -41,6 +44,7 @@ func TestSCAEnabled(t *testing.T) {
 			name:              "parsing error",
 			envVarVal:         "not a boolean string representation [at {all!}]",
 			telemetryExpected: false,
+			telemetryLog:      "appsec: failed to get SCA config",
 			expectedValue:     false,
 		},
 	} {
@@ -50,15 +54,28 @@ func TestSCAEnabled(t *testing.T) {
 			}
 
 			telemetryClient := new(telemetrytest.MockClient)
+			telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar}}).Return()
 			telemetryClient.On("RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar).Return()
 
-			registerSCAAppConfigTelemetry(telemetryClient)
+			var logMatcher any
+			if tc.telemetryLog != "" {
+				logMatcher = mock.MatchedBy(func(record telemetry.Record) bool {
+					return strings.HasPrefix(record.Message, tc.telemetryLog)
+				})
+				telemetryClient.On("Log", logMatcher, []telemetry.LogOption(nil)).Return()
+			}
+			defer telemetry.MockClient(telemetryClient)()
+
+			registerSCAAppConfigTelemetry()
 
 			if tc.telemetryExpected {
-				telemetryClient.AssertCalled(t, "RegisterAppConfig", EnvSCAEnabled, tc.expectedValue, telemetry.OriginEnvVar)
-				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 1)
+				telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: EnvSCAEnabled, Value: tc.expectedValue, Origin: telemetry.OriginEnvVar}})
+				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 1)
 			} else {
-				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfig", 0)
+				telemetryClient.AssertNumberOfCalls(t, "RegisterAppConfigs", 0)
+			}
+			if tc.telemetryLog != "" {
+				telemetryClient.AssertCalled(t, "Log", logMatcher, []telemetry.LogOption(nil))
 			}
 		})
 	}

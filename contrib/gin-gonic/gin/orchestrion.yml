@@ -1,0 +1,123 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+  description: Gin is a web framework written in Go.
+
+aspects:
+  - id: New
+    join-point:
+      one-of:
+        - function-call: github.com/gin-gonic/gin.Default
+        - function-call: github.com/gin-gonic/gin.New
+    advice:
+      - wrap-expression:
+          imports:
+            gin: github.com/gin-gonic/gin
+            gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+          template: |-
+            func() *gin.Engine {
+              e := {{ . }}
+              e.Use(gintrace.Middleware(""))
+              return e
+            }()
+
+  - id: gin.Context.[Must]Bind
+    join-point:
+      function-body:
+        one-of:
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: Bind
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBind
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBindJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindTOML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBindTOML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindYAML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBindYAML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: BindXML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ShouldBindXML
+    advice:
+      - prepend-statements:
+          imports:
+            appsec: github.com/DataDog/dd-trace-go/v2/appsec
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $i := .Function.Argument 0 -}}
+            {{- $err := .Function.Result 0 -}}
+            defer func() {
+              if {{ $err }} != nil {
+                return
+              }
+              {{ $err }} = appsec.MonitorParsedHTTPBody({{ $c }}.Request.Context(), {{ $i }})
+            }()
+
+  - id: Response.Body
+    join-point:
+      function-body:
+        one-of:
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: AsciiJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: IndentedJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: JSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: JSONP
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: PureJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: SecureJSON
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: XML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: YAML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: TOML
+          - function:
+              - receiver: '*github.com/gin-gonic/gin.Context'
+              - name: ProtoBuf
+    advice:
+      - prepend-statements:
+          imports:
+            appsec: github.com/DataDog/dd-trace-go/v2/appsec
+          template: |-
+            {{- $c := .Function.Receiver -}}
+            {{- $i := .Function.Argument 1 -}}
+            if __err__ := appsec.MonitorHTTPResponseBody({{ $c }}.Request.Context(), {{ $i }}); __err__ != nil {
+              // Request has been blocked by AppSec; aborting this handler right away. The AppSec
+              // handlers in the middleware chain will send the configured blocking response.
+              return
+            }

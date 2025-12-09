@@ -1,0 +1,31 @@
+-- a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal --
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
+package main
+
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+)
+
+func tags() map[string]string {
+	return map[string]string{"hostname": "hn-*", "another": "value"}
+}
+
+func main() {
+	_ = tracer.TraceSamplingRules(Rule{ServiceGlob: "test-service", Rate: 1.0})                                                                         // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{NameGlob: "http.request", Rate: 1.0})                                                                            // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{NameGlob: "http.request", ServiceGlob: "test-service", Rate: 1.0})                                               // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{NameGlob: "http.*", ServiceGlob: "test-*", Rate: 1.0})                                                           // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{ServiceGlob: "other-service-1", Rate: 0.0})                                                                      // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{ServiceGlob: "other-service-2", Rate: 0.0})                                                                      // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{ServiceGlob: "test-service", Rate: 1.0})                                                                         // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{Tags: tags(), ResourceGlob: "", NameGlob: "", ServiceGlob: "", Rate: 1.0})                                       // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{Tags: map[string]string{"hostname": "hn-3*"}, ResourceGlob: "res-1*", NameGlob: "", ServiceGlob: "", Rate: 1.0}) // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.TraceSamplingRules(Rule{Tags: map[string]string{"hostname": "hn-*"}, ResourceGlob: "", NameGlob: "", ServiceGlob: "", Rate: 1.0})        // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.SpanSamplingRules(Rule{NameGlob: "http.request", ServiceGlob: "test-service", Rate: 1.0, MaxPerSecond: 2.0})                             // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.SpanSamplingRules(Rule{Tags: tags(), ResourceGlob: "", NameGlob: "", ServiceGlob: "", Rate: 1.0})                                        // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+	_ = tracer.SpanSamplingRules(Rule{NameGlob: "http.request", ServiceGlob: "test-service", Rate: 1.0})                                                // want `a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal`
+}

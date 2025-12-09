@@ -1,0 +1,33 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
+  description: The fantastic ORM library for Golang.
+
+aspects:
+  - id: Open
+    join-point:
+      function-call: gorm.io/gorm.Open
+    advice:
+      - wrap-expression:
+          imports:
+            gorm: gorm.io/gorm
+            gormtrace: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
+          template: |-
+            func() (*gorm.DB, error) {
+              db, err := {{ . }}
+              if err != nil {
+                return nil, err
+              }
+              if _, ok := db.Plugins["DDTracePlugin"]; ok {
+                return db, nil
+              }
+              if err := db.Use(gormtrace.NewTracePlugin()); err != nil {
+                return nil, err
+              }
+              return db, nil
+            }()

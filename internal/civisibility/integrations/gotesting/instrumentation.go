@@ -7,35 +7,89 @@ package gotesting
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// The following functions are being used by the gotesting package for manual instrumentation and the orchestrion
-// automatic instrumentation
-
 type (
+	// instrumentationMetadata contains the internal instrumentation metadata
 	instrumentationMetadata struct {
 		IsInternal bool
 	}
 
-	ddTestItem struct {
-		test    integrations.DdTest
-		error   atomic.Int32
-		skipped atomic.Int32
+	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
+	testExecutionMetadata struct {
+		test                         integrations.Test // internal CI Visibility test event
+		originalTest                 *testing.T        // original test that was executed
+		error                        atomic.Int32      // flag to check if the test event has error data already
+		skipped                      atomic.Int32      // flag to check if the test event has skipped data already
+		panicData                    any               // panic data recovered from an internal test execution when using an additional feature wrapper
+		panicStacktrace              string            // stacktrace from the panic recovered from an internal test
+		isARetry                     bool              // flag to tag if a current test execution is a retry
+		isANewTest                   bool              // flag to tag if a current test a new test
+		isAModifiedTest              bool              // flag to tag if a current test a modified test
+		isEarlyFlakeDetectionEnabled bool              // flag to tag if Early Flake Detection is enabled for this execution
+		isFlakyTestRetriesEnabled    bool              // flag to tag if Flaky Test Retries is enabled for this execution
+		isQuarantined                bool              // flag to check if the test is quarantined
+		isDisabled                   bool              // flag to check if the test is disabled
+		isAttemptToFix               bool              // flag to check if the test is marked as attempt to fix
+		isLastRetry                  bool              // flag to check if the current execution is the last retry
+		allAttemptsPassed            bool              // flag to check if all attempts passed for a test marked as attempt to fix
+		allRetriesFailed             bool              // flag to check if all retries failed for a test
+		hasAdditionalFeatureWrapper  bool              // flag to check if the current execution is part of an additional feature wrapper
+		identity                     *testIdentity     // identity of the current execution (test or subtest)
+		hasExplicitQuarantined       bool              // flag to mark if quarantine state comes from explicit configuration
+		hasExplicitDisabled          bool              // flag to mark if disabled state comes from explicit configuration
+		hasExplicitAttemptToFix      bool              // flag to mark if attempt-to-fix state comes from explicit configuration
+	}
+
+	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
+	runTestWithRetryOptions struct {
+		targetFunc      func(t *testing.T) // target function to retry
+		t               *testing.T         // test to be executed
+		isEfdInParallel bool               // flag to check if the test is running in parallel
+
+		// function to modify the execution metadata before each execution (first callback executed). It's also called before postOnRetryEnd to do a final sync
+		preExecMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int)
+
+		// function to decide whether we are in the last retry (second callback executed if we are in a retry execution)
+		preIsLastRetry func(execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool
+
+		// adjust retry count function depending on the duration of the first execution (first callback executed post test execution only in the first execution of the test)
+		postAdjustRetryCount func(execMeta *testExecutionMetadata, duration time.Duration) int64
+
+		// function to run after each test execution (second callback executed after test execution)
+		postPerExecution func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, duration time.Duration)
+
+		// function to decide whether we want to perform a retry (third callback executed after test execution)
+		postShouldRetry func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool
+
+		// function executed when all execution have finished (last callback executed after all test executions(+retries))
+		postOnRetryEnd func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T)
+	}
+
+	// executionOptions holds the execution options for the test
+	executionOptions struct {
+		mutex                     sync.Locker              // mutex for synchronizing test iterations
+		options                   *runTestWithRetryOptions // options for the test execution
+		executionIndex            int                      // current execution index
+		retryCount                int64                    // remaining retry count
+		originalExecutionMetadata *testExecutionMetadata   // original test execution metadata
+		panicExecutionMetadata    *testExecutionMetadata   // panicked execution metadata
+		ptrToLocalT               *testing.T               // pointer to the local test instance
+		executionMetadata         *testExecutionMetadata   // current test execution metadata
+		module                    integrations.TestModule  // module associated with the test
+		suite                     integrations.TestSuite   // suite associated with the test
 	}
 )
 
@@ -49,11 +103,11 @@ var (
 	// instrumentationMapMutex is a read-write mutex for synchronizing access to instrumentationMap.
 	instrumentationMapMutex sync.RWMutex
 
-	// ciVisibilityTests holds a map of *testing.T or *testing.B to civisibility.DdTest for tracking tests.
-	ciVisibilityTests = map[unsafe.Pointer]*ddTestItem{}
+	// ciVisibilityTests holds a map of *testing.T or *testing.B to execution metadata for tracking tests.
+	ciVisibilityTestMetadata = map[unsafe.Pointer]*testExecutionMetadata{}
 
-	// ciVisibilityTestsMutex is a read-write mutex for synchronizing access to ciVisibilityTests.
-	ciVisibilityTestsMutex sync.RWMutex
+	// ciVisibilityTestMetadataMutex is a read-write mutex for synchronizing access to ciVisibilityTestMetadata.
+	ciVisibilityTestMetadataMutex sync.RWMutex
 )
 
 // isCiVisibilityEnabled gets if CI Visibility has been enabled or disabled by the "DD_CIVISIBILITY_ENABLED" environment variable
@@ -61,17 +115,18 @@ func isCiVisibilityEnabled() bool {
 	// let's check if the value has already been loaded from the env-vars
 	enabledValue := atomic.LoadInt32(&ciVisibilityEnabledValue)
 	if enabledValue == -1 {
-		// Get the DD_CIVISIBILITY_ENABLED env var, if not present we default to true. This is because if we are here, it means
+		// Get the DD_CIVISIBILITY_ENABLED env var, if not present we default to false (for now). This is because if we are here, it means
 		// that the process was instrumented for ci visibility or by using orchestrion.
 		// So effectively this env-var will act as a kill switch for cases where the code is instrumented, but
 		// we don't want the civisibility instrumentation to be enabled.
-		if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, true) {
+		// *** For preview releases we will default to false, meaning that the use of ci visibility must be opt-in ***
+		if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
 			atomic.StoreInt32(&ciVisibilityEnabledValue, 1)
 			return true
-		} else {
-			atomic.StoreInt32(&ciVisibilityEnabledValue, 0)
-			return false
 		}
+		atomic.StoreInt32(&ciVisibilityEnabledValue, 0)
+		return false
+
 	}
 
 	return enabledValue == 1
@@ -89,332 +144,686 @@ func getInstrumentationMetadata(fn *runtime.Func) *instrumentationMetadata {
 
 // setInstrumentationMetadata stores an instrumentation metadata for a given *runtime.Func.
 func setInstrumentationMetadata(fn *runtime.Func, metadata *instrumentationMetadata) {
-	instrumentationMapMutex.RLock()
-	defer instrumentationMapMutex.RUnlock()
+	instrumentationMapMutex.Lock()
+	defer instrumentationMapMutex.Unlock()
 	instrumentationMap[fn] = metadata
 }
 
-// getCiVisibilityTest retrieves the CI visibility test associated with a given *testing.T, *testing.B, *testing.common
-func getCiVisibilityTest(tb testing.TB) *ddTestItem {
-	ciVisibilityTestsMutex.RLock()
-	defer ciVisibilityTestsMutex.RUnlock()
-	if v, ok := ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()]; ok {
+// createTestMetadata creates the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
+func createTestMetadata(tb testing.TB, originalTest *testing.T) *testExecutionMetadata {
+	ciVisibilityTestMetadataMutex.Lock()
+	defer ciVisibilityTestMetadataMutex.Unlock()
+	execMetadata := &testExecutionMetadata{originalTest: originalTest}
+	ciVisibilityTestMetadata[reflect.ValueOf(tb).UnsafePointer()] = execMetadata
+	return execMetadata
+}
+
+// getTestMetadata retrieves the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
+func getTestMetadata(tb testing.TB) *testExecutionMetadata {
+	return getTestMetadataFromPointer(reflect.ValueOf(tb).UnsafePointer())
+}
+
+// getTestMetadataFromPointer retrieves the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common using a pointer
+func getTestMetadataFromPointer(ptr unsafe.Pointer) *testExecutionMetadata {
+	ciVisibilityTestMetadataMutex.RLock()
+	defer ciVisibilityTestMetadataMutex.RUnlock()
+	if v, ok := ciVisibilityTestMetadata[ptr]; ok {
 		return v
 	}
 	return nil
 }
 
-// setCiVisibilityTest associates a CI visibility test with a given *testing.T, *testing.B, *testing.common
-func setCiVisibilityTest(tb testing.TB, ciTest integrations.DdTest) {
-	ciVisibilityTestsMutex.Lock()
-	defer ciVisibilityTestsMutex.Unlock()
-	ciVisibilityTests[reflect.ValueOf(tb).UnsafePointer()] = &ddTestItem{test: ciTest}
+// deleteTestMetadata delete the CI visibility test metadata associated with a given *testing.T, *testing.B, *testing.common
+func deleteTestMetadata(tb testing.TB) {
+	ciVisibilityTestMetadataMutex.Lock()
+	defer ciVisibilityTestMetadataMutex.Unlock()
+	delete(ciVisibilityTestMetadata, reflect.ValueOf(tb).UnsafePointer())
 }
 
-// instrumentTestingM helper function to instrument internalTests and internalBenchmarks in a `*testing.M` instance.
-func instrumentTestingM(m *testing.M) func(exitCode int) {
-	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
-	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
-	if !isCiVisibilityEnabled() {
-		return func(exitCode int) {}
-	}
+// checkIfCIVisibilityExitIsRequiredByPanic checks the additional features settings to decide if we allow individual tests to panic or not
+func checkIfCIVisibilityExitIsRequiredByPanic() bool {
+	// Apply additional features
+	settings := integrations.GetSettings()
 
-	// Initialize CI Visibility
-	integrations.EnsureCiVisibilityInitialization()
-
-	// Create a new test session for CI visibility.
-	session = integrations.CreateTestSession()
-
-	ddm := (*M)(m)
-
-	// Instrument the internal tests for CI visibility.
-	ddm.instrumentInternalTests(getInternalTestArray(m))
-
-	// Instrument the internal benchmarks for CI visibility.
-	for _, v := range os.Args {
-		// check if benchmarking is enabled to instrument
-		if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
-			ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m))
-			break
-		}
-	}
-
-	return func(exitCode int) {
-		// Check for code coverage if enabled.
-		if testing.CoverMode() != "" {
-			coveragePercentage := testing.Coverage() * 100
-			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
-		}
-
-		// Close the session and return the exit code.
-		session.Close(exitCode)
-
-		// Finalize CI Visibility
-		integrations.ExitCiVisibility()
-	}
+	// If we don't plan to do retries then we allow to panic
+	return !settings.FlakyTestRetriesEnabled && !settings.EarlyFlakeDetection.Enabled
 }
 
-// instrumentTestingTFunc helper function to instrument a testing function func(*testing.T)
-func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
-	// Check if CI Visibility was disabled using the kill switch before instrumenting
-	if !isCiVisibilityEnabled() {
+// applyAdditionalFeaturesToTestFunc applies all the additional features as wrapper of a func(*testing.T).
+// parentExecMeta is optional and allows subtests to inherit behaviour from their parent test when needed.
+func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo, parentExecMeta *testExecutionMetadata) func(*testing.T) {
+	// Apply additional features
+	settings := integrations.GetSettings()
+
+	// ensure that the additional features are initialized
+	_ = integrations.GetKnownTests()
+
+	// If none of the additional features are enabled, return the original function.
+	if !settings.TestManagement.Enabled && !settings.EarlyFlakeDetection.Enabled && !settings.FlakyTestRetriesEnabled {
 		return f
 	}
 
-	// Reflect the function to obtain its pointer.
-	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-	originalFunc := runtime.FuncForPC(fReflect.Pointer())
+	identity := testInfo.identity
+	if identity == nil {
+		// Derive an identity for tests that did not populate it (such as subtests discovered at runtime).
+		identity = newTestIdentity(testInfo.moduleName, testInfo.suiteName, testInfo.testName)
+	}
+	isSubtest := len(identity.Segments) > 1
 
-	// Avoid instrumenting twice
-	metadata := getInstrumentationMetadata(originalFunc)
-	if metadata != nil && metadata.IsInternal {
-		// If is an internal test, we don't instrument because f is already the instrumented func by executeInternalTest
-		return f
+	var meta struct {
+		identity                      *testIdentity
+		isTestManagementEnabled       bool
+		isEarlyFlakeDetectionEnabled  bool
+		isFlakyTestRetriesEnabled     bool
+		isQuarantined                 bool
+		isDisabled                    bool
+		isAttemptToFix                bool
+		isNew                         bool
+		isModified                    bool
+		hasExplicitQuarantined        bool
+		hasExplicitDisabled           bool
+		hasExplicitAttemptToFix       bool
+		managementMatchKind           testManagementMatchKind
+		shouldOrchestrateAttemptToFix bool
 	}
 
-	instrumentedFn := func(t *testing.T) {
-		// Initialize module counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
-		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+	// init metadata
+	meta.identity = identity
+	meta.isTestManagementEnabled = settings.TestManagement.Enabled
+	meta.isEarlyFlakeDetectionEnabled = settings.EarlyFlakeDetection.Enabled
+	meta.isFlakyTestRetriesEnabled = settings.FlakyTestRetriesEnabled
+	meta.isQuarantined = false
+	meta.isDisabled = false
+	meta.isAttemptToFix = false
+	meta.isNew = false
+	meta.isModified = false
+	meta.hasExplicitQuarantined = false
+	meta.hasExplicitDisabled = false
+	meta.hasExplicitAttemptToFix = false
+	meta.managementMatchKind = testManagementMatchNone
+	meta.shouldOrchestrateAttemptToFix = false
 
-		// Initialize suite counters if not already present.
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
+	// Test Management feature
+	if meta.isTestManagementEnabled {
+		// Pull the most specific directives available for the current identity.
+		if data, matchKind, ok := getTestManagementData(identity); ok && data != nil {
+			meta.managementMatchKind = matchKind
+			meta.isQuarantined = data.Quarantined
+			meta.isDisabled = data.Disabled
+			meta.isAttemptToFix = data.AttemptToFix
+			if matchKind == testManagementMatchExact {
+				meta.hasExplicitQuarantined = true
+				meta.hasExplicitDisabled = true
+				meta.hasExplicitAttemptToFix = true
+			}
 		}
-		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+	}
 
-		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModuleWithFramework(moduleName, testFramework, runtime.Version())
-		suite := module.GetOrCreateSuite(suiteName)
-		test := suite.CreateTest(t.Name())
-		test.SetTestFunc(originalFunc)
-		setCiVisibilityTest(t, test)
-		defer func() {
-			if r := recover(); r != nil {
-				// Handle panic and set error information.
-				test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
-				test.Close(integrations.ResultStatusFail)
-				checkModuleAndSuite(module, suite)
-				integrations.ExitCiVisibility()
-				panic(r)
-			} else {
-				// Normal finalization: determine the test result based on its state.
-				if t.Failed() {
-					test.SetTag(ext.Error, true)
-					suite.SetTag(ext.Error, true)
-					module.SetTag(ext.Error, true)
-					test.Close(integrations.ResultStatusFail)
-				} else if t.Skipped() {
-					test.Close(integrations.ResultStatusSkip)
+	// determine whether attempt-to-fix retries should be orchestrated at this level
+	meta.shouldOrchestrateAttemptToFix = meta.isAttemptToFix
+	if parentExecMeta != nil && parentExecMeta.isAttemptToFix {
+		// The parent already controls the attempt-to-fix loop; subtests should only orchestrate if explicitly requested.
+		meta.shouldOrchestrateAttemptToFix = meta.hasExplicitAttemptToFix && meta.isAttemptToFix && !parentExecMeta.isAttemptToFix
+	}
+
+	if isSubtest {
+		if !settings.SubtestFeaturesEnabled {
+			// Feature gate keeps legacy behaviour when subtests support is disabled.
+			return f
+		}
+		// Require an exact match before applying subtest-specific directives; fallbacks remain parent-scoped.
+		if meta.managementMatchKind != testManagementMatchExact {
+			return f
+		}
+		shouldWrap := meta.isQuarantined || meta.isDisabled || meta.isAttemptToFix ||
+			meta.hasExplicitQuarantined || meta.hasExplicitDisabled || meta.hasExplicitAttemptToFix
+		if !shouldWrap {
+			return f
+		}
+		// Subtests currently inherit parent EFD/flaky retry behaviour; disable here to avoid double wrapping.
+		meta.isEarlyFlakeDetectionEnabled = false
+		meta.isFlakyTestRetriesEnabled = false
+	}
+
+	// Early Flake Detection feature
+	if meta.isEarlyFlakeDetectionEnabled {
+		// Record whether the test is new so we can surface it in spans later.
+		isKnown, hasKnownData := isKnownTest(testInfo)
+		meta.isNew = hasKnownData && !isKnown
+	}
+
+	// get the pointer to use the reference in the wrapper
+	ptrMeta := &meta
+
+	// Create a unified wrapper that will use a single runTestWithRetry call.
+	wrapper := func(t *testing.T) {
+		t.Helper()
+		originalExecMeta := getTestMetadata(t)
+
+		// For Early Flake Detection: counters used to collect test results.
+		var testPassCount, testSkipCount, testFailCount int
+		// For Test Management and auto retries.
+		var allAttemptsPassed int32 = 1
+		var allRetriesFailed int32 = 1
+
+		runTestWithRetry(&runTestWithRetryOptions{
+			targetFunc:      f,
+			t:               t,
+			isEfdInParallel: internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false),
+			preExecMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
+				// Synchronize the test execution metadata with the original test execution metadata.
+
+				execMeta.identity = ptrMeta.identity
+				if ptrMeta.hasExplicitQuarantined {
+					// Honour the explicitly requested quarantine flag for this execution.
+					execMeta.isQuarantined = ptrMeta.isQuarantined
+					execMeta.hasExplicitQuarantined = true
 				} else {
-					test.Close(integrations.ResultStatusPass)
+					// Otherwise accumulate quarantine state from earlier runs.
+					execMeta.isQuarantined = execMeta.isQuarantined || ptrMeta.isQuarantined
 				}
-				checkModuleAndSuite(module, suite)
+				if ptrMeta.hasExplicitDisabled {
+					// Apply the disabled directive exactly as configured.
+					execMeta.isDisabled = ptrMeta.isDisabled
+					execMeta.hasExplicitDisabled = true
+				} else {
+					// Merge prior disabled state from parent/wrappers.
+					execMeta.isDisabled = execMeta.isDisabled || ptrMeta.isDisabled
+				}
+				if ptrMeta.hasExplicitAttemptToFix {
+					// Only explicit attempt-to-fix should override propagated state.
+					execMeta.isAttemptToFix = ptrMeta.isAttemptToFix
+					execMeta.hasExplicitAttemptToFix = true
+				} else {
+					// Otherwise inherit whether previous owners already requested attempt-to-fix.
+					execMeta.isAttemptToFix = execMeta.isAttemptToFix || ptrMeta.isAttemptToFix
+				}
+				execMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled || ptrMeta.isEarlyFlakeDetectionEnabled
+				execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || ptrMeta.isFlakyTestRetriesEnabled
+				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
+				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
+				execMeta.isANewTest = execMeta.isANewTest || ptrMeta.isNew
+				execMeta.isAModifiedTest = execMeta.isAModifiedTest || ptrMeta.isModified
+
+				// Propagate flags from the original test metadata.
+				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
+
+				ptrMeta.identity = execMeta.identity
+				ptrMeta.isQuarantined = execMeta.isQuarantined
+				ptrMeta.isDisabled = execMeta.isDisabled
+				ptrMeta.isAttemptToFix = execMeta.isAttemptToFix
+				ptrMeta.hasExplicitQuarantined = execMeta.hasExplicitQuarantined
+				ptrMeta.hasExplicitDisabled = execMeta.hasExplicitDisabled
+				ptrMeta.hasExplicitAttemptToFix = execMeta.hasExplicitAttemptToFix
+				ptrMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled
+				ptrMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled
+				ptrMeta.isNew = execMeta.isANewTest
+				ptrMeta.isModified = execMeta.isAModifiedTest
+			},
+			preIsLastRetry: func(execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
+				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
+					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
+					return remainingRetries == 1
+				}
+
+				if isAnEfdExecution(execMeta) {
+					// For EFD, the last retry is when remaining retries == 1.
+					return remainingRetries == 1
+				}
+
+				// FlakyTestRetries also considers the global remaining retry count.
+				if execMeta.isFlakyTestRetriesEnabled {
+					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 1
+				}
+
+				return false
+			},
+			postAdjustRetryCount: func(execMeta *testExecutionMetadata, duration time.Duration) int64 {
+				// adjust retry count only runs after the first run
+
+				// Attempt To Fix retries are always set to the configured value.
+				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
+					if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+						log.Debug("postAdjustRetryCount attempt_to_fix identity=%s setting=%d", execMeta.identity.FullName, settings.TestManagement.AttemptToFixRetries)
+					}
+					return int64(settings.TestManagement.AttemptToFixRetries)
+				}
+
+				// Early Flake Detection adjusts the retry count based on test duration.
+				if isAnEfdExecution(execMeta) {
+					slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
+					secs := duration.Seconds()
+					if secs < 5 {
+						return int64(slowTestRetries.FiveS)
+					} else if secs < 10 {
+						return int64(slowTestRetries.TenS)
+					} else if secs < 30 {
+						return int64(slowTestRetries.ThirtyS)
+					} else if duration.Minutes() < 5 {
+						return int64(slowTestRetries.FiveM)
+					}
+				}
+
+				// Automatic flaky tests retries are set to the configured value.
+				if execMeta.isFlakyTestRetriesEnabled {
+					return integrations.GetFlakyRetriesSettings().RetryCount
+				}
+
+				// No retries
+				return 0
+			},
+			postPerExecution: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, _ time.Duration) {
+				failed := ptrToLocalT.Failed()
+				skipped := ptrToLocalT.Skipped()
+				log.Debug("applyAdditionalFeaturesToTestFunc: postPerExecution called for execution %d, failed: %t, skipped: %t", executionIndex, failed, skipped)
+
+				if failed || skipped {
+					atomic.StoreInt32(&allAttemptsPassed, 0)
+				}
+				if !failed {
+					atomic.StoreInt32(&allRetriesFailed, 0)
+				}
+
+				if execMeta.isAttemptToFix {
+					status := "PASS"
+					if failed {
+						status = "FAIL"
+					} else if skipped {
+						status = "SKIP"
+					}
+					if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
+						log.Debug("postPerExecution attempt_to_fix identity=%s orchestrate=%t run=%d status=%s", execMeta.identity.FullName, ptrMeta.shouldOrchestrateAttemptToFix, executionIndex, status)
+					}
+
+					if ptrMeta.shouldOrchestrateAttemptToFix {
+						isSubtest := execMeta.identity != nil && len(execMeta.identity.Segments) > 1
+						if !isSubtest {
+							ptrToLocalT.Logf("  [attempt to fix retry: %d (%s)]", executionIndex+1, status)
+						}
+					}
+					return
+				}
+
+				if isAnEfdExecution(execMeta) {
+					if skipped {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test skipped, incrementing skip count")
+						testSkipCount++
+					} else if failed {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test failed, incrementing fail count")
+						testFailCount++
+					} else {
+						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test passed, incrementing pass count")
+						testPassCount++
+					}
+					return
+				}
+
+				if execMeta.isFlakyTestRetriesEnabled {
+					if executionIndex > 0 {
+						atomic.AddInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount, -1)
+					}
+					return
+				}
+			},
+			postShouldRetry: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
+				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
+					// For attempt-to-fix tests, retry if remaining retries > 0.
+					return remainingRetries > 0
+				}
+
+				if isAnEfdExecution(execMeta) {
+					// For EFD, retry if remaining retries >= 0.
+					return remainingRetries >= 0
+				}
+
+				if execMeta.isFlakyTestRetriesEnabled {
+					// For flaky test retries, retry if the test failed and remaining retries >= 0.
+					return ptrToLocalT.Failed() && remainingRetries >= 0 &&
+						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) >= 0
+				}
+
+				// No retries for other cases.
+				return false
+			},
+			postOnRetryEnd: func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T) {
+				// if the test is disabled or quarantined, skip the test result to the testing framework
+				if ptrMeta.isDisabled || ptrMeta.isQuarantined {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Skipping test result for disabled or quarantined test")
+					t.SkipNow()
+					return
+				}
+
+				// get the test common privates
+				tCommonPrivates := getTestPrivateFields(t)
+				if tCommonPrivates == nil {
+					panic("getting test private fields failed")
+				}
+
+				// if early flake detection is enabled, we need to set the test status
+				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew
+				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified && !ptrMeta.isAttemptToFix
+				if efdOnNewTest || efdOnModifiedTest {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Early Flake Detection")
+					status := "passed"
+					if testPassCount == 0 {
+						if testSkipCount > 0 {
+							status = "skipped"
+							tCommonPrivates.SetSkipped(true)
+						}
+						if testFailCount > 0 {
+							status = "failed"
+							tCommonPrivates.SetFailed(true)
+							tParentCommonPrivates := getTestParentPrivateFields(t)
+							if tParentCommonPrivates == nil {
+								panic("getting test parent private fields failed")
+							}
+							tParentCommonPrivates.SetFailed(true)
+						}
+					}
+					if executionIndex > 0 {
+						fmt.Printf("  [ %v after %v retries by Datadog's early flake detection ]\n", status, executionIndex)
+					}
+					return
+				}
+
+				// if the test is a flaky test retries test, we need to set the test status
+				if ptrMeta.isFlakyTestRetriesEnabled {
+					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Flaky Test Retries")
+					tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
+					tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
+					if lastPtrToLocalT.Failed() {
+						tParentCommonPrivates := getTestParentPrivateFields(t)
+						if tParentCommonPrivates == nil {
+							panic("getting test parent private fields failed")
+						}
+						tParentCommonPrivates.SetFailed(true)
+					}
+					if executionIndex > 0 {
+						status := "passed"
+						if t.Failed() {
+							status = "failed"
+						} else if t.Skipped() {
+							status = "skipped"
+						}
+						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
+						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 1 {
+							fmt.Println("    the maximum number of total retries was exceeded.")
+						}
+					}
+					return
+				}
+
+				log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for regular test execution")
+				tCommonPrivates.SetFailed(lastPtrToLocalT.Failed())
+				tCommonPrivates.SetSkipped(lastPtrToLocalT.Skipped())
+				if lastPtrToLocalT.Failed() {
+					tParentCommonPrivates := getTestParentPrivateFields(t)
+					if tParentCommonPrivates == nil {
+						panic("getting test parent private fields failed")
+					}
+					tParentCommonPrivates.SetFailed(true)
+				}
+			},
+		})
+	}
+
+	// Mark the wrapper as instrumented.
+	setInstrumentationMetadata(runtime.FuncForPC(reflect.ValueOf(wrapper).Pointer()), &instrumentationMetadata{IsInternal: true})
+	return wrapper
+}
+
+// runTestWithRetry encapsulates the common retry logic for test functions.
+func runTestWithRetry(options *runTestWithRetryOptions) {
+	// Set this func as a helper func of t
+	options.t.Helper()
+
+	// Initialize execution options variables
+	execOpts := &executionOptions{
+		mutex:                     &noopMutex{},
+		options:                   options,
+		executionIndex:            -1,
+		retryCount:                int64(0),
+		originalExecutionMetadata: getTestMetadata(options.t),
+	}
+
+	// Create a mutex for synchronizing test iterations
+	if options.isEfdInParallel {
+		execOpts.mutex = &sync.Mutex{}
+	}
+
+	// Execute the test function for the first time
+	if executeTestIteration(execOpts) {
+		// retry is required
+		if options.isEfdInParallel && isAnEfdExecution(execOpts.executionMetadata) {
+			// In parallel, we use the retry count set in the first execution
+			calculatedRetryCount := execOpts.retryCount
+			log.Debug("runTestWithRetry: executing test in parallel with retry count: %d", calculatedRetryCount)
+			var wg sync.WaitGroup
+			wg.Add(int(calculatedRetryCount + 1))
+			for i := int64(0); i <= calculatedRetryCount; i++ {
+				go func(_ int64) {
+					defer wg.Done()
+					executeTestIteration(execOpts)
+				}(i)
+			}
+			wg.Wait()
+		} else {
+			// Execute retries sequentially
+			for {
+				if !executeTestIteration(execOpts) {
+					break
+				}
+			}
+		}
+	}
+
+	// Adjust execution metadata
+	if options.preExecMetaAdjust != nil {
+		options.preExecMetaAdjust(execOpts.executionMetadata, execOpts.executionIndex)
+	}
+
+	// Call onRetryEnd
+	if options.postOnRetryEnd != nil {
+		options.postOnRetryEnd(options.t, execOpts.executionIndex, execOpts.ptrToLocalT)
+	}
+
+	// After all test executions, check if we need to close the suite and the module
+	if execOpts.originalExecutionMetadata == nil {
+		checkModuleAndSuite(execOpts.module, execOpts.suite)
+	}
+
+	// Re-panic if test failed and panic data exists
+	if options.t.Failed() && execOpts.panicExecutionMetadata != nil {
+		// Ensure we flush all CI visibility data and close the session event
+		integrations.ExitCiVisibility()
+		panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", execOpts.executionIndex, execOpts.panicExecutionMetadata.panicData, execOpts.panicExecutionMetadata.panicStacktrace))
+	}
+}
+
+// executeTestIteration runs a single attempt of the test (or subtest), recording metadata and
+// ensuring the retry orchestration has the latest execution context.
+func executeTestIteration(execOpts *executionOptions) bool {
+	// Iteration lock
+	execOpts.mutex.Lock()
+	defer execOpts.mutex.Unlock()
+
+	// Clear the matcher subnames map before each execution to avoid subname tests being called "parent/subname#NN" due to retries
+	matcher := getTestContextMatcherPrivateFields(execOpts.options.t)
+	if matcher != nil {
+		matcher.ClearSubNames()
+	}
+
+	// Increment execution index
+	execOpts.executionIndex++
+	currentIndex := execOpts.executionIndex
+
+	// Create a new local copy of `t` to isolate execution results
+	ptrToLocalT := createNewTest()
+	copyTestWithoutParent(execOpts.options.t, ptrToLocalT)
+	ptrToLocalT.Helper()
+	execOpts.options.t.Helper()
+
+	// Create a dummy parent so we can run the test using this local copy
+	// without affecting the test parent
+	localTPrivateFields := getTestPrivateFields(ptrToLocalT)
+	if localTPrivateFields == nil {
+		panic("getting test private fields failed")
+	}
+	if localTPrivateFields.parent == nil {
+		panic("parent of the test is nil")
+	}
+	dummyParent := &testing.T{}
+	copyTestWithoutParent(execOpts.options.t, dummyParent)
+	*localTPrivateFields.parent = unsafe.Pointer(dummyParent)
+
+	// Create an execution metadata instance
+	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
+	execMeta.hasAdditionalFeatureWrapper = true
+
+	// Propagate set tags from a parent wrapper
+	propagateTestExecutionMetadataFlags(execMeta, execOpts.originalExecutionMetadata)
+
+	// If we are in a retry execution, set the `isARetry` flag
+	execMeta.isARetry = currentIndex > 0
+
+	// Adjust execution metadata
+	if execOpts.options.preExecMetaAdjust != nil {
+		execOpts.options.preExecMetaAdjust(execMeta, currentIndex)
+	}
+
+	// Set if we are in the last retry
+	if execMeta.isARetry {
+		execMeta.isLastRetry = execOpts.options.preIsLastRetry(execMeta, currentIndex, execOpts.retryCount)
+	}
+
+	// unlock the mutex
+	execOpts.mutex.Unlock()
+
+	// Run original func similar to how it gets run internally in tRunner
+	startTime := time.Now()
+	duration := time.Duration(0)
+	chn := make(chan struct{}, 1)
+	go func(pLocalT *testing.T, opts *runTestWithRetryOptions, cn *chan struct{}) {
+		defer func() {
+			*cn <- struct{}{}
+		}()
+		defer func() {
+			// handle parallel sub tests execution
+			if localTPrivateFields.sub != nil {
+				if len(*localTPrivateFields.sub) > 0 {
+					if localTPrivateFields.barrier != nil {
+						close(*localTPrivateFields.barrier)
+					}
+					for _, sub := range *localTPrivateFields.sub {
+						pvSub := getTestPrivateFields(sub)
+						if pvSub.signal != nil {
+							<-*pvSub.signal
+						}
+					}
+				}
 			}
 		}()
+		defer func() {
+			duration = time.Since(startTime)
+		}()
+		pLocalT.Helper()
+		opts.t.Helper()
+		opts.targetFunc(pLocalT)
+	}(ptrToLocalT, execOpts.options, &chn)
+	<-chn
 
-		// Execute the original test function.
-		f(t)
+	// Call cleanup functions after this execution
+	if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {
+		fmt.Printf("cleanup error: %v\n", err)
 	}
-	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
-	return instrumentedFn
+
+	// Lock mutex
+	execOpts.mutex.Lock()
+
+	// Copy the current test to the wrapper if necessary
+	if execOpts.originalExecutionMetadata != nil {
+		execOpts.originalExecutionMetadata.test = execMeta.test
+	}
+
+	// Extract module and suite if present
+	if execMeta.test == nil && execMeta.identity != nil {
+		log.Debug("execMeta.test nil for %s", execMeta.identity.FullName)
+	}
+	var currentSuite integrations.TestSuite
+	if execMeta.test != nil {
+		currentSuite = execMeta.test.Suite()
+	}
+	if execOpts.suite == nil && currentSuite != nil {
+		execOpts.suite = currentSuite
+	}
+	if execOpts.module == nil && currentSuite != nil && currentSuite.Module() != nil {
+		execOpts.module = currentSuite.Module()
+	}
+
+	// Remove execution metadata
+	deleteTestMetadata(ptrToLocalT)
+
+	// Handle panic data
+	if execMeta.panicData != nil {
+		ptrToLocalT.Fail()
+		if execOpts.panicExecutionMetadata == nil {
+			execOpts.panicExecutionMetadata = execMeta
+		}
+	}
+
+	// Adjust retry count after first execution if necessary
+	if execOpts.options.postAdjustRetryCount != nil && currentIndex == 0 {
+		execOpts.retryCount = execOpts.options.postAdjustRetryCount(execMeta, duration)
+	}
+
+	// Decrement retry count
+	execOpts.retryCount--
+
+	// Call perExecution function
+	if execOpts.options.postPerExecution != nil {
+		execOpts.options.postPerExecution(ptrToLocalT, execMeta, currentIndex, duration)
+	}
+
+	// Update lastPtrToLocalT and lastExecMeta
+	execOpts.ptrToLocalT = ptrToLocalT
+	execOpts.executionMetadata = execMeta
+
+	// Decide whether to continue
+	return execOpts.options.postShouldRetry(ptrToLocalT, execMeta, currentIndex, execOpts.retryCount)
 }
 
-// instrumentSetErrorInfo helper function to set an error in the `*testing.T, *testing.B, *testing.common` CI Visibility span
-func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
-	// Check if CI Visibility was disabled using the kill switch before
-	if !isCiVisibilityEnabled() {
+// propagateTestExecutionMetadataFlags propagates the test execution metadata flags from the original test execution metadata to the current one.
+func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, originalExecMeta *testExecutionMetadata) {
+	if execMeta == nil || originalExecMeta == nil {
 		return
 	}
 
-	// Get the CI Visibility span and check if we can set the error type, message and stack
-	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && ciTestItem.error.CompareAndSwap(0, 1) && ciTestItem.test != nil {
-		ciTestItem.test.SetErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip))
+	// Propagate the test execution metadata
+	execMeta.isANewTest = execMeta.isANewTest || originalExecMeta.isANewTest
+	execMeta.isAModifiedTest = execMeta.isAModifiedTest || originalExecMeta.isAModifiedTest
+	execMeta.isARetry = execMeta.isARetry || originalExecMeta.isARetry
+	execMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled || originalExecMeta.isEarlyFlakeDetectionEnabled
+	execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || originalExecMeta.isFlakyTestRetriesEnabled
+	execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
+	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
+	if !execMeta.hasExplicitAttemptToFix && originalExecMeta.isAttemptToFix {
+		// Preserve attempt-to-fix inheritance only when the child didn't explicitly override it.
+		execMeta.isAttemptToFix = true
 	}
 }
 
-// instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
-func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
-	// Check if CI Visibility was disabled using the kill switch before
-	if !isCiVisibilityEnabled() {
-		return
-	}
-
-	// Get the CI Visibility span and check if we can mark it as skipped and close it
-	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
-		ciTestItem.test.CloseWithFinishTimeAndSkipReason(integrations.ResultStatusSkip, time.Now(), skipReason)
-	}
+// isAnEfdExecution checks if the current test execution is an Early Flake Detection execution.
+func isAnEfdExecution(execMeta *testExecutionMetadata) bool {
+	isANewTest := execMeta.isANewTest
+	isAModifiedTest := execMeta.isAModifiedTest && !execMeta.isAttemptToFix
+	return execMeta.isEarlyFlakeDetectionEnabled && (isANewTest || isAModifiedTest)
 }
 
-// instrumentSkipNow helper function to close and skip a `*testing.T, *testing.B, *testing.common` CI Visibility span
-func instrumentSkipNow(tb testing.TB) {
-	// Check if CI Visibility was disabled using the kill switch before
-	if !isCiVisibilityEnabled() {
-		return
-	}
+type noopMutex struct{}
 
-	// Get the CI Visibility span and check if we can mark it as skipped and close it
-	ciTestItem := getCiVisibilityTest(tb)
-	if ciTestItem != nil && ciTestItem.skipped.CompareAndSwap(0, 1) && ciTestItem.test != nil {
-		ciTestItem.test.Close(integrations.ResultStatusSkip)
-	}
-}
+func (m *noopMutex) Lock()         {}
+func (m *noopMutex) Unlock()       {}
+func (m *noopMutex) TryLock() bool { return true }
 
-// instrumentTestingBFunc helper function to instrument a benchmark function func(*testing.B)
-func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (string, func(*testing.B)) {
-	// Check if CI Visibility was disabled using the kill switch before instrumenting
-	if !isCiVisibilityEnabled() {
-		return name, f
-	}
-
-	// Reflect the function to obtain its pointer.
-	fReflect := reflect.Indirect(reflect.ValueOf(f))
-	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
-	originalFunc := runtime.FuncForPC(fReflect.Pointer())
-
-	// Avoid instrumenting twice
-	if hasCiVisibilityBenchmarkFunc(originalFunc) {
-		return name, f
-	}
-
-	instrumentedFunc := func(b *testing.B) {
-		// The sub-benchmark implementation relies on creating a dummy sub benchmark (called [DD:TestVisibility]) with
-		// a Run over the original sub benchmark function to get the child results without interfering measurements
-		// By doing this the name of the sub-benchmark are changed
-		// from:
-		// 		benchmark/child
-		// to:
-		//		benchmark/[DD:TestVisibility]/child
-		// We use regex and decrement the depth level of the benchmark to restore the original name
-
-		// Initialize module counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
-		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
-
-		// Initialize suite counters if not already present.
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
-		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
-
-		// Decrement level.
-		bpf := getBenchmarkPrivateFields(b)
-		bpf.AddLevel(-1)
-
-		startTime := time.Now()
-		module := session.GetOrCreateModuleWithFrameworkAndStartTime(moduleName, testFramework, runtime.Version(), startTime)
-		suite := module.GetOrCreateSuiteWithStartTime(suiteName, startTime)
-		test := suite.CreateTestWithStartTime(fmt.Sprintf("%s/%s", pb.Name(), name), startTime)
-		test.SetTestFunc(originalFunc)
-
-		// Restore the original name without the sub-benchmark auto name.
-		*bpf.name = subBenchmarkAutoNameRegex.ReplaceAllString(*bpf.name, "")
-
-		// Run original benchmark.
-		var iPfOfB *benchmarkPrivateFields
-		var recoverFunc *func(r any)
-		instrumentedFunc := func(b *testing.B) {
-			// Stop the timer to do the initialization and replacements.
-			b.StopTimer()
-
-			defer func() {
-				if r := recover(); r != nil {
-					if recoverFunc != nil {
-						fn := *recoverFunc
-						fn(r)
-					}
-					panic(r)
-				}
-			}()
-
-			// First time we get the private fields of the inner testing.B.
-			iPfOfB = getBenchmarkPrivateFields(b)
-			// Replace this function with the original one (executed only once - the first iteration[b.run1]).
-			*iPfOfB.benchFunc = f
-			// Set b to the CI visibility test.
-			setCiVisibilityTest(b, test)
-
-			// Enable the timer again.
-			b.ResetTimer()
-			b.StartTimer()
-
-			// Execute original func
-			f(b)
-		}
-
-		setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
-		b.Run(name, instrumentedFunc)
-
-		endTime := time.Now()
-		results := iPfOfB.result
-
-		// Set benchmark data for CI visibility.
-		test.SetBenchmarkData("duration", map[string]any{
-			"run":  results.N,
-			"mean": results.NsPerOp(),
-		})
-		test.SetBenchmarkData("memory_total_operations", map[string]any{
-			"run":            results.N,
-			"mean":           results.AllocsPerOp(),
-			"statistics.max": results.MemAllocs,
-		})
-		test.SetBenchmarkData("mean_heap_allocations", map[string]any{
-			"run":  results.N,
-			"mean": results.AllocedBytesPerOp(),
-		})
-		test.SetBenchmarkData("total_heap_allocations", map[string]any{
-			"run":  results.N,
-			"mean": iPfOfB.result.MemBytes,
-		})
-		if len(results.Extra) > 0 {
-			mapConverted := map[string]any{}
-			for k, v := range results.Extra {
-				mapConverted[k] = v
-			}
-			test.SetBenchmarkData("extra", mapConverted)
-		}
-
-		// Define a function to handle panic during benchmark finalization.
-		panicFunc := func(r any) {
-			test.SetErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1))
-			suite.SetTag(ext.Error, true)
-			module.SetTag(ext.Error, true)
-			test.Close(integrations.ResultStatusFail)
-			checkModuleAndSuite(module, suite)
-			integrations.ExitCiVisibility()
-		}
-		recoverFunc = &panicFunc
-
-		// Normal finalization: determine the benchmark result based on its state.
-		if iPfOfB.B.Failed() {
-			test.SetTag(ext.Error, true)
-			suite.SetTag(ext.Error, true)
-			module.SetTag(ext.Error, true)
-			test.CloseWithFinishTime(integrations.ResultStatusFail, endTime)
-		} else if iPfOfB.B.Skipped() {
-			test.CloseWithFinishTime(integrations.ResultStatusSkip, endTime)
-		} else {
-			test.CloseWithFinishTime(integrations.ResultStatusPass, endTime)
-		}
-
-		checkModuleAndSuite(module, suite)
-	}
-	setCiVisibilityBenchmarkFunc(originalFunc)
-	setCiVisibilityBenchmarkFunc(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()))
-	return subBenchmarkAutoName, instrumentedFunc
-}
+//go:linkname testingTRunCleanup testing.(*common).runCleanup
+func testingTRunCleanup(c *testing.T, ph int) (panicVal any)

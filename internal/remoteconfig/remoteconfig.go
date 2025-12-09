@@ -13,16 +13,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"net/http"
 	"reflect"
-	"strings"
+	"slices"
 	"sync"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // Callback represents a function that can process a remote config update.
@@ -86,12 +88,46 @@ const (
 	ASMRASPLFI
 	// ASMRASPSSRF enables ASM support for runtime protection against SSRF attacks
 	ASMRASPSSRF
-)
-
-// Additional capability bit index values that are non-consecutive from above.
-const (
+	// ASMRASPSHI enables ASM support for runtime protection against XSS attacks
+	ASMRASPSHI
+	// ASMRASPXXE enables ASM support for runtime protection against XXE attacks
+	ASMRASPXXE
+	// ASMRASPRCE enables ASM support for runtime protection against Remote Code Execution
+	ASMRASPRCE
+	// ASMRASPNOSQLI enables ASM support for runtime protection against NoSQL Injection attacks
+	ASMRASPNOSQLI
+	// ASMRASPXSS enables ASM support for runtime protection against Cross Site Scripting attacks
+	ASMRASPXSS
 	// APMTracingSampleRules represents the sampling rate using matching rules from APM client libraries
-	APMTracingSampleRules = 29
+	APMTracingSampleRules
+	// CSMActivation represents the capability to activate CSM through remote configuration
+	CSMActivation
+	// ASMAutoUserInstrumMode represents the capability to enable the automatic user instrumentation mode
+	ASMAutoUserInstrumMode
+	// ASMEndpointFingerprinting represents the capability to enable endpoint fingerprinting
+	ASMEndpointFingerprinting
+	// ASMSessionFingerprinting represents the capability to enable session fingerprinting
+	ASMSessionFingerprinting
+	// ASMNetworkFingerprinting represents the capability to enable network fingerprinting
+	ASMNetworkFingerprinting
+	// ASMHeaderFingerprinting represents the capability to enable header fingerprinting
+	ASMHeaderFingerprinting
+	// ASMTruncationRules is the support for truncation payload rules
+	ASMTruncationRules
+	// ASMRASPCommandInjection represents the capability for ASM's RASP Command Injection prevention
+	ASMRASPCommandInjection
+	// APMTracingEnableDynamicInstrumentation represents the capability to enable dynamic instrumentation
+	APMTracingEnableDynamicInstrumentation
+	// APMTracingEnableExceptionReplay represents the capability to enable exception replay
+	APMTracingEnableExceptionReplay
+	// APMTracingEnableCodeOrigin represents the capability to enable code origin
+	APMTracingEnableCodeOrigin
+	// APMTracingEnableLiveDebugging represents the capability to enable live debugging
+	APMTracingEnableLiveDebugging
+	// ASMDDMultiConfig represents the capability to handle multiple ASM_DD configuration objects
+	ASMDDMultiConfig
+	// ASMTraceTaggingRules represents the capability to honor trace tagging rules
+	ASMTraceTaggingRules
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.
@@ -125,13 +161,12 @@ type Client struct {
 	lastError error
 }
 
-// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
-// Using a single RC client instance in the tracer is a requirement for remote configuration.
-var client *Client
-
 var (
-	startOnce sync.Once
-	stopOnce  sync.Once
+	// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
+	// Using a single RC client instance in the tracer is a requirement for remote configuration.
+	client    *Client
+	clientMux sync.Mutex
+	started   bool
 )
 
 // newClient creates a new remoteconfig Client
@@ -161,30 +196,47 @@ func newClient(config ClientConfig) (*Client, error) {
 // Start starts the client's update poll loop in a fresh goroutine.
 // Noop if the client has already started.
 func Start(config ClientConfig) error {
-	var err error
-	startOnce.Do(func() {
-		client, err = newClient(config)
-		if err != nil {
-			return
-		}
-		go func() {
-			ticker := time.NewTicker(client.PollInterval)
-			defer ticker.Stop()
+	if !internal.BoolEnv("DD_REMOTE_CONFIGURATION_ENABLED", true) {
+		// Don't start polling if the feature is disabled explicitly
+		return nil
+	}
+	clientMux.Lock()
+	defer clientMux.Unlock()
 
-			for {
-				select {
-				case <-client.stop:
-					close(client.stop)
+	if started {
+		// Return early if already started.
+		return nil
+	}
+	var err error
+	client, err = newClient(config)
+	if err != nil {
+		return err
+	}
+	started = true
+
+	var (
+		pollInterval = client.PollInterval
+		stop         = client.stop
+	)
+	go func() {
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				if client == nil {
 					return
-				case <-ticker.C:
-					client.Lock()
-					client.updateState()
-					client.Unlock()
 				}
+				client.Lock()
+				client.updateState()
+				client.Unlock()
 			}
-		}()
-	})
-	return err
+		}
+	}()
+	return nil
 }
 
 // Stop stops the client's update poll loop.
@@ -192,46 +244,61 @@ func Start(config ClientConfig) error {
 // The remote config client is supposed to have the same lifecycle as the tracer.
 // It can't be restarted after a call to Stop() unless explicitly calling Reset().
 func Stop() {
+	clientMux.Lock()
+	defer clientMux.Unlock()
+
 	if client == nil {
 		// In case Stop() is called before Start()
 		return
 	}
-	stopOnce.Do(func() {
-		log.Debug("remoteconfig: gracefully stopping the client")
-		client.stop <- struct{}{}
-		select {
-		case <-client.stop:
-			log.Debug("remoteconfig: client stopped successfully")
-		case <-time.After(time.Second):
-			log.Debug("remoteconfig: client stopping timeout")
-		}
-	})
+	if !started {
+		// Return early if already stopped.
+		return
+	}
+	log.Debug("remoteconfig: gracefully stopping the client")
+	close(client.stop)
+	select {
+	case <-client.stop:
+		log.Debug("remoteconfig: client stopped successfully")
+	case <-time.After(time.Second):
+		log.Debug("remoteconfig: client stopping timeout")
+	}
+	client = nil
+	started = false
 }
 
 // Reset destroys the client instance.
 // To be used only in tests to reset the state of the client.
 func Reset() {
+	clientMux.Lock()
+	defer clientMux.Unlock()
+
 	client = nil
-	startOnce = sync.Once{}
-	stopOnce = sync.Once{}
+	started = false
 }
 
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new update request payload: %s", err.Error())
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new http request: %s", err.Error())
 		return
+	}
+	if internal.ContainerID() != "" {
+		req.Header.Set("Datadog-Container-ID", internal.ContainerID())
+	}
+	if internal.EntityID() != "" {
+		req.Header.Set("Datadog-Entity-ID", internal.EntityID())
 	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		log.Debug("remoteconfig: http request error: %v", err)
+		log.Debug("remoteconfig: http request error: %s", err.Error())
 		return
 	}
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -247,7 +314,7 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
+		log.Error("remoteconfig: http request error: could not read the response body: %s", err.Error())
 		return
 	}
 
@@ -257,7 +324,7 @@ func (c *Client) updateState() {
 
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
-		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err)
+		log.Error("remoteconfig: http request error: could not parse the json response body: %s", err.Error())
 		return
 	}
 
@@ -309,13 +376,11 @@ func UnregisterCallback(f Callback) error {
 	}
 	client._callbacksMu.Lock()
 	defer client._callbacksMu.Unlock()
-	fValue := reflect.ValueOf(f)
-	for i, callback := range client.callbacks {
-		if reflect.ValueOf(callback) == fValue {
-			client.callbacks = append(client.callbacks[:i], client.callbacks[i+1:]...)
-			break
-		}
-	}
+
+	toRemove := reflect.ValueOf(f).Pointer()
+	client.callbacks = slices.DeleteFunc(client.callbacks, func(cb Callback) bool {
+		return reflect.ValueOf(cb).Pointer() == toRemove
+	})
 	return nil
 }
 
@@ -362,36 +427,36 @@ func HasProduct(p string) (bool, error) {
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
-func RegisterCapability(cap Capability) error {
+func RegisterCapability(cpb Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	client.capabilities[cap] = struct{}{}
+	client.capabilities[cpb] = struct{}{}
 	return nil
 }
 
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
-func UnregisterCapability(cap Capability) error {
+func UnregisterCapability(cpb Capability) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
-	delete(client.capabilities, cap)
+	delete(client.capabilities, cpb)
 	return nil
 }
 
 // HasCapability returns whether a given capability was registered
-func HasCapability(cap Capability) (bool, error) {
+func HasCapability(cpb Capability) (bool, error) {
 	if client == nil {
 		return false, ErrClientNotStarted
 	}
 	client.capabilitiesMu.RLock()
 	defer client.capabilitiesMu.RUnlock()
-	_, found := client.capabilities[cap]
+	_, found := client.capabilities[cpb]
 	return found, nil
 }
 
@@ -442,17 +507,21 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	fileMap := make(map[string][]byte, len(pbUpdate.TargetFiles))
 	allProducts := c.allProducts()
 	productUpdates := make(map[string]ProductUpdate, len(allProducts))
-	for _, p := range allProducts {
-		productUpdates[p] = make(ProductUpdate)
-	}
 	for _, f := range pbUpdate.TargetFiles {
-		fileMap[f.Path] = f.Raw
-		for _, p := range allProducts {
-			// Check the config file path to make sure it belongs to the right product
-			if strings.Contains(f.Path, "/"+p+"/") {
-				productUpdates[p][f.Path] = f.Raw
-			}
+		path, valid := ParsePath(f.Path)
+		if !valid {
+			log.Warn("remoteconfig: ignoring invalid target file path: %s", f.Path)
+			continue
 		}
+
+		fileMap[f.Path] = f.Raw
+		if !slices.Contains(allProducts, path.Product) {
+			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path) //nolint:gocritic // Debug logging for unknown products
+		}
+		if productUpdates[path.Product] == nil {
+			productUpdates[path.Product] = make(ProductUpdate)
+		}
+		productUpdates[path.Product][f.Path] = f.Raw
 	}
 
 	mapify := func(s *rc.RepositoryState) map[string]string {
@@ -470,7 +539,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// are provided with this information in this case
 	stateBefore, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error: %v", err)
+		return fmt.Errorf("repository current state error: %s", err)
 	}
 	products, err := c.repository.Update(rc.Update{
 		TUFRoots:      pbUpdate.Roots,
@@ -479,11 +548,11 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	})
 	if err != nil {
-		return fmt.Errorf("repository update error: %v", err)
+		return fmt.Errorf("repository update error: %s", err)
 	}
 	stateAfter, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error after update: %v", err)
+		return fmt.Errorf("repository current state error after update: %s", err)
 	}
 
 	// Create a config files diff between before/after the update to see which config files are missing
@@ -517,8 +586,8 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// 3 - ApplyStateAcknowledged
 	// This makes sure that any product that would need to re-receive the config in a subsequent update will be allowed to
 	statuses := make(map[string]rc.ApplyStatus)
-	for _, fn := range c.globalCallbacks() {
-		for path, status := range fn(productUpdates) {
+	for _, cb := range c.globalCallbacks() {
+		for path, status := range cb(productUpdates) {
 			if s, ok := statuses[path]; !ok || status.State == rc.ApplyStateError ||
 				s.State == rc.ApplyStateAcknowledged && status.State == rc.ApplyStateUnacknowledged {
 				statuses[path] = status
@@ -529,9 +598,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	productCallbacks := c.productCallbacks()
 	for product, update := range productUpdates {
 		if fn, ok := productCallbacks[product]; ok {
-			for path, status := range fn(update) {
-				statuses[path] = status
-			}
+			maps.Copy(statuses, fn(update))
 		}
 	}
 	for p, s := range statuses {
@@ -588,6 +655,10 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	capa := c.allCapabilities()
+	var tags []string
+	for k, v := range internal.GetGitMetadataTags() {
+		tags = append(tags, k+":"+v)
+	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -607,6 +678,8 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Service:       c.ServiceName,
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
+				ProcessTags:   processtags.GlobalTags().Slice(),
+				Tags:          tags,
 			},
 			Capabilities: capa.Bytes(),
 		},

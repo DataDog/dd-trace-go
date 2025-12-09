@@ -4,7 +4,7 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package elastic provides functions to trace the github.com/elastic/go-elasticsearch packages.
-package elastic // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/elastic/go-elasticsearch
+package elastic // import "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch/v2
 
 import (
 	"bufio"
@@ -18,17 +18,17 @@ import (
 	"regexp"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "elastic/go-elasticsearch.v6"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/elastic/go-elasticsearch/v6")
+	instr = instrumentation.Load(instrumentation.PackageGoElasticSearchV6)
 }
 
 // NewRoundTripper returns a new http.Client which traces requests under the given service name.
@@ -36,7 +36,7 @@ func NewRoundTripper(opts ...ClientOption) http.RoundTripper {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &roundTripper{config: *cfg}
 }
@@ -58,7 +58,7 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	url := req.URL.Path
 	method := req.Method
 	resource := t.config.resourceNamer(url, method)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(t.config.serviceName),
 		tracer.SpanType(ext.SpanTypeElasticSearch),
 		tracer.ResourceName(resource),

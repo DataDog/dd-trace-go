@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package sql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/database/sql"
+package sql // import "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
 
 import (
 	"context"
@@ -11,14 +11,11 @@ import (
 	"math"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/appsec/events"
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/options"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/sqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 var _ driver.Conn = (*TracedConn)(nil)
@@ -60,7 +57,7 @@ type TracedConn struct {
 // checkQuerySafety runs ASM RASP SQLi checks on the query to verify if it can safely be run.
 // If it's unsafe to run, an *events.BlockingSecurityEvent is returned
 func checkQuerySecurity(ctx context.Context, query, driver string) error {
-	if !appsec.Enabled() {
+	if !instr.AppSecEnabled() {
 		return nil
 	}
 	return sqlsec.ProtectSQLOperation(ctx, query, driver)
@@ -292,7 +289,7 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 	// when a driver returns driver.ErrSkip. In order to work with those constraints, a new span id is generated and
 	// used during SQL comment injection and returned for the sql span to be used later when/if the span
 	// gets created.
-	var spanCtx ddtrace.SpanContext
+	var spanCtx *tracer.SpanContext
 	if span, ok := tracer.SpanFromContext(ctx); ok {
 		spanCtx = span.Context()
 	}
@@ -300,7 +297,7 @@ func (tc *TracedConn) injectComments(ctx context.Context, query string, mode tra
 	carrier := tracer.SQLCommentCarrier{Query: query, Mode: mode, DBServiceName: tc.cfg.serviceName, PeerDBHostname: tc.meta[ext.TargetHost], PeerDBName: tc.meta[ext.DBName], PeerService: tc.providedPeerService(ctx)}
 	if err := carrier.Inject(spanCtx); err != nil {
 		// this should never happen
-		log.Warn("contrib/database/sql: failed to inject query comments: %v", err)
+		instr.Logger().Warn("contrib/database/sql: failed to inject query comments: %s", err.Error())
 	}
 	return carrier.Query, carrier.SpanID
 }
@@ -313,7 +310,7 @@ func withDBMTraceInjectedTag(mode tracer.DBMPropagationMode) []tracer.StartSpanO
 }
 
 // tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.
-func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query string, startTime time.Time, err error, spanOpts ...ddtrace.StartSpanOption) {
+func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query string, startTime time.Time, err error, spanOpts ...tracer.StartSpanOption) {
 	if err == driver.ErrSkip {
 		// Not a user error: driver is telling sql package that an
 		// optional interface method is not implemented. There is
@@ -330,7 +327,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 		return
 	}
 	dbSystem, _ := normalizeDBSystem(tp.driverName)
-	opts := options.Copy(spanOpts...)
+	opts := options.Expand(spanOpts, 0, 6+len(tp.cfg.tags)+1)
 	opts = append(opts,
 		tracer.ServiceName(tp.cfg.serviceName),
 		tracer.SpanType(ext.SpanTypeSQL),

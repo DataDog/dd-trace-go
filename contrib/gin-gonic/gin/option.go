@@ -9,46 +9,62 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/normalizer"
-
 	"github.com/gin-gonic/gin"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
-const defaultServiceName = "gin.router"
+// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
+const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 
 type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
 	ignoreRequest func(c *gin.Context) bool
-	headerTags    *internal.LockMap
+	isStatusError func(statusCode int) bool
+	useGinErrors  bool
+	headerTags    instrumentation.HeaderTags
 }
 
 func newConfig(serviceName string) *config {
 	if serviceName == "" {
-		serviceName = namingschema.ServiceName(defaultServiceName)
+		serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	}
-	rate := globalconfig.AnalyticsRate()
-	if internal.BoolEnv("DD_TRACE_GIN_ANALYTICS_ENABLED", false) {
-		rate = 1.0
-	}
-	return &config{
-		analyticsRate: rate,
+	cfg := &config{
+		analyticsRate: instr.AnalyticsRate(true),
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
-		headerTags:    globalconfig.HeaderTagMap(),
+		useGinErrors:  false,
+		headerTags:    instr.HTTPHeadersAsTags(),
 	}
+
+	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
+		cfg.isStatusError = fn
+	} else {
+		cfg.isStatusError = isServerError
+	}
+
+	return cfg
 }
 
-// Option specifies instrumentation configuration options.
-type Option func(*config)
+// Option describes options for the Gin integration.
+type Option interface {
+	apply(*config)
+}
+
+// OptionFn represents options applicable to Middleware.
+type OptionFn func(*config)
+
+func (fn OptionFn) apply(cfg *config) {
+	fn(cfg)
+}
 
 // WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) Option {
+func WithAnalytics(on bool) OptionFn {
 	return func(cfg *config) {
 		if on {
 			cfg.analyticsRate = 1.0
@@ -60,7 +76,7 @@ func WithAnalytics(on bool) Option {
 
 // WithAnalyticsRate sets the sampling rate for Trace Analytics events
 // correlated to started spans.
-func WithAnalyticsRate(rate float64) Option {
+func WithAnalyticsRate(rate float64) OptionFn {
 	return func(cfg *config) {
 		if rate >= 0.0 && rate <= 1.0 {
 			cfg.analyticsRate = rate
@@ -72,9 +88,29 @@ func WithAnalyticsRate(rate float64) Option {
 
 // WithResourceNamer specifies a function which will be used to obtain a resource name for a given
 // gin request, using the request's context.
-func WithResourceNamer(namer func(c *gin.Context) string) Option {
+func WithResourceNamer(namer func(c *gin.Context) string) OptionFn {
 	return func(cfg *config) {
 		cfg.resourceNamer = namer
+	}
+}
+
+// WithStatusCheck specifies a function fn which reports whether the passed
+// statusCode should be considered an error.
+func WithStatusCheck(fn func(statusCode int) bool) OptionFn {
+	return func(cfg *config) {
+		cfg.isStatusError = fn
+	}
+}
+
+func isServerError(statusCode int) bool {
+	return statusCode >= 500 && statusCode < 600
+}
+
+// WithUseGinErrors enables the usage of gin's errors for the span instead of crafting generic errors from the status code.
+// If there are multiple errors in the gin context, they will be all added to the span.
+func WithUseGinErrors() OptionFn {
+	return func(cfg *config) {
+		cfg.useGinErrors = true
 	}
 }
 
@@ -82,16 +118,15 @@ func WithResourceNamer(namer func(c *gin.Context) string) Option {
 // Warning:
 // Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
-func WithHeaderTags(headers []string) Option {
-	headerTagsMap := normalizer.HeaderTagSlice(headers)
+func WithHeaderTags(headers []string) OptionFn {
 	return func(cfg *config) {
-		cfg.headerTags = internal.NewLockMap(headerTagsMap)
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 
 // WithIgnoreRequest specifies a function to use for determining if the
 // incoming HTTP request tracing should be skipped.
-func WithIgnoreRequest(f func(c *gin.Context) bool) Option {
+func WithIgnoreRequest(f func(c *gin.Context) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
 	}

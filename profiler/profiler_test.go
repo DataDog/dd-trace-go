@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,18 +23,20 @@ import (
 	"runtime/trace"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/orchestrion"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/traceprof"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
+	pprofile "github.com/google/pprof/profile"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,8 +63,8 @@ func TestStart(t *testing.T) {
 		// that we log some default configuration, e.g. enabled profiles
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
 		startupLog := strings.Join(rl.Logs(), " ")
-		assert.Contains(t, startupLog, "\"cpu\"")
-		assert.Contains(t, startupLog, "\"heap\"")
+		assert.Contains(t, startupLog, "cpu_profile_enabled")
+		assert.Contains(t, startupLog, "heap_profile_enabled")
 
 		mu.Lock()
 		require.NotNil(t, activeProfiler)
@@ -83,6 +86,20 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
+	t.Run("dd_profiling_not_enabled", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_ENABLED", "false")
+		if err := Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer Stop()
+
+		mu.Lock()
+		// if DD_PROFILING_ENABLED is false, the profiler should not be started even if Start() is called
+		// So we should not have an activeProfiler
+		assert.Nil(t, activeProfiler)
+		mu.Unlock()
+	})
+
 	t.Run("options", func(t *testing.T) {
 		if err := Start(); err != nil {
 			t.Fatal(err)
@@ -95,44 +112,58 @@ func TestStart(t *testing.T) {
 		mu.Unlock()
 	})
 
-	t.Run("options/GoodAPIKey/Agent", func(t *testing.T) {
+	t.Run("Agent/GoodAPIKey", func(t *testing.T) {
+		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
-		err := Start(WithAPIKey("12345678901234567890123456789012"))
+		err := Start()
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.agentURL, activeProfiler.cfg.targetURL)
 		// The package should log a warning that using an API has no
 		// effect unless uploading directly to Datadog (i.e. agentless)
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAPIKey")
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "DD_API_KEY")
 	})
 
-	t.Run("options/GoodAPIKey/Agentless", func(t *testing.T) {
+	t.Run("Agentless/GoodAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "12345678901234567890123456789012")
 		rl := &log.RecordLogger{}
 		defer log.UseLogger(rl)()
 
-		err := Start(
-			WithAPIKey("12345678901234567890123456789012"),
-			WithAgentlessUpload(),
-		)
+		err := Start()
 		defer Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, activeProfiler.cfg.apiURL, activeProfiler.cfg.targetURL)
 		// The package should log a warning that agentless upload is not
 		// officially supported, so prefer not to use it
 		assert.LessOrEqual(t, 1, len(rl.Logs()))
-		assert.Contains(t, strings.Join(rl.Logs(), " "), "profiler.WithAgentlessUpload")
+		assert.Contains(t, strings.Join(rl.Logs(), " "), "Agentless")
 	})
 
-	t.Run("options/BadAPIKey", func(t *testing.T) {
-		err := Start(WithAPIKey("aaaa"), WithAgentlessUpload())
+	t.Run("Agentless/NoAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "") // In case one is present in the environment...
+		err := Start()
 		defer Stop()
-		assert.NotNil(t, err)
+		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
 
 		// Check that mu gets unlocked, even if newProfiler() returns an error.
-		mu.Lock()
+		require.True(t, mu.TryLock())
+		mu.Unlock()
+	})
+
+	t.Run("Agentless/BadAPIKey", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_AGENTLESS", "True")
+		t.Setenv("DD_API_KEY", "aaaa")
+		err := Start()
+		defer Stop()
+		assert.ErrorIs(t, err, errAgentlessUploadRequiresAPIKey)
+
+		// Check that mu gets unlocked, even if newProfiler() returns an error.
+		require.True(t, mu.TryLock())
 		mu.Unlock()
 	})
 
@@ -140,7 +171,7 @@ func TestStart(t *testing.T) {
 		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function-name")
 		err := Start()
 		defer Stop()
-		assert.NotNil(t, err)
+		assert.ErrorIs(t, err, errProfilingNotSupportedInAWSLambda)
 	})
 }
 
@@ -183,7 +214,7 @@ func TestStartWithoutStopReconfigures(t *testing.T) {
 func TestStopLatency(t *testing.T) {
 	received := make(chan struct{})
 	stop := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		select {
 		case received <- struct{}{}:
 		default:
@@ -216,6 +247,59 @@ func TestStopLatency(t *testing.T) {
 	elapsed := time.Since(start)
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("profiler took %v to stop", elapsed)
+	}
+}
+
+func TestFlushAndStop(t *testing.T) {
+	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	received := startTestProfiler(t, 1,
+		WithProfileTypes(CPUProfile, HeapProfile),
+		WithPeriod(time.Hour),
+		WithUploadTimeout(time.Hour))
+
+	Stop()
+
+	select {
+	case prof := <-received:
+		if len(prof.attachments["cpu.pprof"]) == 0 {
+			t.Errorf("expected CPU profile, got none")
+		}
+		if len(prof.attachments["delta-heap.pprof"]) == 0 {
+			t.Errorf("expected heap profile, got none")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("profiler did not flush")
+	}
+}
+
+func TestFlushAndStopTimeout(t *testing.T) {
+	uploadTimeout := 1 * time.Second
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
+			return
+		}
+		requests.Add(1)
+		time.Sleep(2 * uploadTimeout)
+	}))
+	defer server.Close()
+
+	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
+	Start(
+		WithAgentAddr(server.Listener.Addr().String()),
+		WithPeriod(time.Hour),
+		WithUploadTimeout(uploadTimeout),
+	)
+
+	start := time.Now()
+	Stop()
+
+	elapsed := time.Since(start)
+	if elapsed > (maxRetries*uploadTimeout)+1*time.Second {
+		t.Errorf("profiler took %v to stop", elapsed)
+	}
+	if requests.Load() != maxRetries {
+		t.Errorf("expected %d requests, got %d", maxRetries, requests.Load())
 	}
 }
 
@@ -378,6 +462,7 @@ func TestAllUploaded(t *testing.T) {
 			"delta-mutex.pprof",
 			"goroutines.pprof",
 			"goroutineswait.pprof",
+			"metrics.json",
 		}
 		if executionTraceEnabledDefault {
 			expected = append(expected, "go.trace")
@@ -448,6 +533,19 @@ func TestImmediateProfile(t *testing.T) {
 	}
 }
 
+func TestEnabledFalse(t *testing.T) {
+	t.Setenv("DD_PROFILING_ENABLED", "false")
+	ch := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
+	select {
+	case <-ch:
+		t.Fatal("received profile when profiler should have been disabled")
+	case <-time.After(time.Second):
+		// This test might succeed incorrectly on an overloaded
+		// CI server, but is very likely to fail locally given a
+		// buggy implementation
+	}
+}
+
 func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// cpuProfileRate is picked randomly so we can check for it in the trace
 	// data to reduce the chance that it occurs in the trace data for some other
@@ -458,6 +556,7 @@ func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	// fatal error: runtime: netpoll failed
 	cpuProfileRate := int(9999 + rand.Int63n(9999))
 
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
 	profile := <-startTestProfiler(t, 1,
@@ -777,5 +876,70 @@ func TestOrchestrionProfileInfo(t *testing.T) {
 				t.Errorf("wanted profiler injected = %v, got %v", want, got)
 			}
 		})
+	}
+}
+
+func TestShortMetricsProfile(t *testing.T) {
+	profiles := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes(MetricsProfile))
+	for range 3 {
+		p := <-profiles
+		if _, ok := p.attachments["metrics.json"]; !ok {
+			t.Errorf("didn't get metrics profile, got %v", p.event.Attachments)
+		}
+	}
+}
+
+func TestMetricsProfileStopEarlyNoLog(t *testing.T) {
+	rl := new(log.RecordLogger)
+	defer log.UseLogger(rl)()
+	startTestProfiler(t, 1, WithPeriod(2*time.Second), WithProfileTypes(MetricsProfile))
+	// Stop the profiler immediately
+	Stop()
+	log.Flush()
+	for _, msg := range rl.Logs() {
+		// We should not see any error about stopping the metrics profile short
+		if strings.Contains(msg, "ERROR:") {
+			t.Errorf("unexpected error log: %s", msg)
+		}
+	}
+}
+
+func gzipDecompress(data []byte) ([]byte, error) {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(r)
+}
+
+func TestHeapProfileCompression(t *testing.T) {
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
+	t.Run("delta", func(t *testing.T) { testHeapProfileCompression(t, true) })
+	t.Run("non-delta", func(t *testing.T) { testHeapProfileCompression(t, false) })
+}
+
+func testHeapProfileCompression(t *testing.T, delta bool) {
+	profiles := startTestProfiler(t, 1,
+		WithPeriod(10*time.Millisecond), WithProfileTypes(HeapProfile), WithDeltaProfiles(delta),
+	)
+	p := <-profiles
+	attachment := "heap.pprof"
+	if delta {
+		attachment = "delta-heap.pprof"
+	}
+	data, ok := p.attachments[attachment]
+	if !ok {
+		t.Fatalf("no heap profile, got %s", p.event.Attachments)
+	}
+	decompressed, err := gzipDecompress(data)
+	if err != nil {
+		t.Fatalf("decompressing the heap profile failed: %s", err)
+	}
+	t.Logf("%x", decompressed[:16])
+	// We assume the profile is gzip compressed. The pprof pacakge
+	// can parse gzip-compressed profiles (it checks for the magic number).
+	// So we should be able to parse the original data
+	if _, err := pprofile.ParseData(data); err != nil {
+		t.Fatalf("parsing profile data failed: %s", err)
 	}
 }

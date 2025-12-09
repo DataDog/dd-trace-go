@@ -900,5 +900,28 @@
       "ci.provider.name": "jenkins",
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123"
     }
+  ],
+  [
+    {
+      "BUILD_NUMBER": "jenkins-pipeline-number",
+      "BUILD_TAG": "jenkins-pipeline-id",
+      "BUILD_URL": "https://jenkins.com/pipeline",
+      "CHANGE_ID": 42,
+      "CHANGE_TARGET": "target-branch",
+      "DD_CUSTOM_TRACE_ID": "jenkins-custom-trace-id",
+      "GIT_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "JENKINS_URL": "jenkins",
+      "JOB_URL": "https://jenkins.com/job"
+    },
+    {
+      "_dd.ci.env_vars": "{\"DD_CUSTOM_TRACE_ID\":\"jenkins-custom-trace-id\"}",
+      "ci.pipeline.id": "jenkins-pipeline-id",
+      "ci.pipeline.number": "jenkins-pipeline-number",
+      "ci.pipeline.url": "https://jenkins.com/pipeline",
+      "ci.provider.name": "jenkins",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.pull_request.base_branch": "target-branch",
+      "pr.number": "42"
+    }
   ]
 ]

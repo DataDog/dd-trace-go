@@ -7,11 +7,11 @@ package internal
 
 import (
 	"net/url"
-	"os"
 	"runtime/debug"
 	"sync"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -59,14 +59,14 @@ func updateAllTags(tags map[string]string, newtags map[string]string) {
 // Get git metadata from environment variables
 func getTagsFromEnv() map[string]string {
 	return map[string]string{
-		TagRepositoryURL: removeCredentials(os.Getenv(EnvGitRepositoryURL)),
-		TagCommitSha:     os.Getenv(EnvGitCommitSha),
+		TagRepositoryURL: removeCredentials(env.Get(EnvGitRepositoryURL)),
+		TagCommitSha:     env.Get(EnvGitCommitSha),
 	}
 }
 
 // Get git metadata from DD_TAGS
 func getTagsFromDDTags() map[string]string {
-	etags := ParseTagString(os.Getenv(EnvDDTags))
+	etags := ParseTagString(env.Get(EnvDDTags))
 
 	return map[string]string{
 		TagRepositoryURL: removeCredentials(etags[TagRepositoryURL]),

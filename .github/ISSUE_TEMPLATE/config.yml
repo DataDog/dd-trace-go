@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Bug Report (High Priority)
+    url: https://help.datadoghq.com/hc/en-us/requests/new?tf_1260824651490=pt_product_type:apm&tf_1900004146284=pt_apm_language:go
+    about: Create an expedited Bug Report via the helpdesk (no login required). This will allow us to look up your account and allows you to provide additional information in private.
+  - name: Feature Request (High Priority)
+    url: https://help.datadoghq.com/hc/en-us/requests/new?tf_1260824651490=pt_product_type:apm&tf_1900004146284=pt_apm_language:go&tf_1260825272270=pt_apm_category_feature_request
+    about: Create an expedited Feature Request via the helpdesk (no login required). This helps with prioritization and allows you to provide additional information in private.
+  - name: Feature Request (Low Priority)
+    url: https://github.com/DataDog/dd-trace-go/discussions/new?category=feature-request
+    about: Start a discussion about a Feature Request in GitHub discussions. This helps prioritization and allows you to provide additional information in public.
+  - name: Other Discussion (Low Priority)
+    url: https://github.com/DataDog/dd-trace-go/discussions/new
+    about: Start a new GitHub discussions about any other topic.

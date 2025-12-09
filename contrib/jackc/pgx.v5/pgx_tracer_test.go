@@ -8,17 +8,20 @@ package pgx
 import (
 	"context"
 	"fmt"
-
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,26 +72,56 @@ func TestMain(m *testing.M) {
 }
 
 func TestConnect(t *testing.T) {
-	mt := mocktracer.Start()
-	defer mt.Stop()
+	testCases := []struct {
+		name           string
+		newConnCreator func(t *testing.T, prev *pgxMockTracer) createConnFn
+	}{
+		{
+			name: "pool",
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+				opts := append(tracingAllDisabled(), WithTraceConnect(true))
+				return newPoolCreator(nil, opts...)
+			},
+		},
+		{
+			name: "conn",
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+				opts := append(tracingAllDisabled(), WithTraceConnect(true))
+				return newConnCreator(nil, nil, opts...)
+			},
+		},
+		{
+			name: "conn_with_options",
+			newConnCreator: func(_ *testing.T, _ *pgxMockTracer) createConnFn {
+				opts := append(tracingAllDisabled(), WithTraceConnect(true))
+				return newConnCreator(nil, &pgx.ParseConfigOptions{}, opts...)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-	opts := append(tracingAllDisabled(), WithTraceConnect(true))
-	runAllOperations(t, opts...)
+			opts := append(tracingAllDisabled(), WithTraceConnect(true))
+			runAllOperations(t, newPoolCreator(nil, opts...))
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 2)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
 
-	ps := spans[1]
-	assert.Equal(t, "parent", ps.OperationName())
-	assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
+			ps := spans[1]
+			assert.Equal(t, "parent", ps.OperationName())
+			assert.Equal(t, "parent", ps.Tag(ext.ResourceName))
 
-	s := spans[0]
-	assertCommonTags(t, s)
-	assert.Equal(t, "pgx.connect", s.OperationName())
-	assert.Equal(t, "Connect", s.Tag(ext.ResourceName))
-	assert.Equal(t, "Connect", s.Tag("db.operation"))
-	assert.Equal(t, nil, s.Tag(ext.DBStatement))
-	assert.Equal(t, ps.SpanID(), s.ParentID())
+			s := spans[0]
+			assertCommonTags(t, s)
+			assert.Equal(t, "pgx.connect", s.OperationName())
+			assert.Equal(t, "Connect", s.Tag(ext.ResourceName))
+			assert.Equal(t, "Connect", s.Tag("db.operation"))
+			assert.Equal(t, nil, s.Tag(ext.DBStatement))
+			assert.Equal(t, ps.SpanID(), s.ParentID())
+		})
+	}
 }
 
 func TestQuery(t *testing.T) {
@@ -96,7 +129,7 @@ func TestQuery(t *testing.T) {
 	defer mt.Stop()
 
 	opts := append(tracingAllDisabled(), WithTraceQuery(true))
-	runAllOperations(t, opts...)
+	runAllOperations(t, newPoolCreator(nil, opts...))
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 3)
@@ -124,12 +157,44 @@ func TestQuery(t *testing.T) {
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
+func TestIgnoreError(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceQuery(true), WithErrCheck(func(err error) bool {
+		// Filter out errors that are not SQL error - undefined column or parameter name detected
+		return strings.Contains(err.Error(), "SQLSTATE 42703")
+	}))
+
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
+	// Connect
+	conn := newPoolCreator(nil, opts...)(t, ctx)
+
+	// Query
+	var x int
+	err := conn.QueryRow(ctx, `SELECT 1`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
+
+	err = conn.QueryRow(ctx, `SELECT unexisting_column`).Scan(x)
+	require.Error(t, err)
+	require.Equal(t, 0, x)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+
+	require.Equal(t, nil, spans[0].Tag(ext.ErrorMsg))
+	require.Equal(t, "ERROR: column \"unexisting_column\" does not exist (SQLSTATE 42703)", spans[1].Tag(ext.ErrorMsg))
+}
+
 func TestPrepare(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
 	opts := append(tracingAllDisabled(), WithTracePrepare(true))
-	runAllOperations(t, opts...)
+	runAllOperations(t, newPoolCreator(nil, opts...))
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 3)
@@ -162,7 +227,7 @@ func TestBatch(t *testing.T) {
 	defer mt.Stop()
 
 	opts := append(tracingAllDisabled(), WithTraceBatch(true))
-	runAllOperations(t, opts...)
+	runAllOperations(t, newPoolCreator(nil, opts...))
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 5)
@@ -211,7 +276,7 @@ func TestCopyFrom(t *testing.T) {
 	defer mt.Stop()
 
 	opts := append(tracingAllDisabled(), WithTraceCopyFrom(true))
-	runAllOperations(t, opts...)
+	runAllOperations(t, newPoolCreator(nil, opts...))
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
@@ -226,8 +291,8 @@ func TestCopyFrom(t *testing.T) {
 	assert.Equal(t, "Copy From", s.Tag(ext.ResourceName))
 	assert.Equal(t, "Copy From", s.Tag("db.operation"))
 	assert.Equal(t, nil, s.Tag(ext.DBStatement))
-	assert.EqualValues(t, []string{"numbers"}, s.Tag("db.copy_from.tables"))
-	assert.EqualValues(t, []string{"number"}, s.Tag("db.copy_from.columns"))
+	assert.EqualValues(t, "numbers", s.Tag("db.copy_from.tables.0"))
+	assert.EqualValues(t, "number", s.Tag("db.copy_from.columns.0"))
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
@@ -236,7 +301,7 @@ func TestAcquire(t *testing.T) {
 	defer mt.Stop()
 
 	opts := append(tracingAllDisabled(), WithTraceAcquire(true))
-	runAllOperations(t, opts...)
+	runAllOperations(t, newPoolCreator(nil, opts...))
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 5)
@@ -254,6 +319,54 @@ func TestAcquire(t *testing.T) {
 	assert.Equal(t, ps.SpanID(), s.ParentID())
 }
 
+// https://github.com/DataDog/dd-trace-go/issues/2908
+func TestWrapTracer(t *testing.T) {
+	testCases := []struct {
+		name           string
+		newConnCreator func(t *testing.T, prev *pgxMockTracer) createConnFn
+		wantSpans      int
+		wantHooks      int
+	}{
+		{
+			name: "pool",
+			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+				cfg, err := pgxpool.ParseConfig(postgresDSN)
+				require.NoError(t, err)
+				cfg.ConnConfig.Tracer = prev
+				return newPoolCreator(cfg)
+			},
+			wantSpans: 15,
+			wantHooks: 13,
+		},
+		{
+			name: "conn",
+			newConnCreator: func(t *testing.T, prev *pgxMockTracer) createConnFn {
+				cfg, err := pgx.ParseConfig(postgresDSN)
+				require.NoError(t, err)
+				cfg.Tracer = prev
+				return newConnCreator(cfg, nil)
+			},
+			wantSpans: 11,
+			wantHooks: 11, // 13 - 2 pool tracer hooks
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			prevTracer := &pgxMockTracer{
+				called: make(map[string]bool),
+			}
+			runAllOperations(t, tc.newConnCreator(t, prevTracer))
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, tc.wantSpans)
+			assert.Len(t, prevTracer.called, tc.wantHooks, "some hook(s) on the previous tracer were not called")
+		})
+	}
+}
+
 func tracingAllDisabled() []Option {
 	return []Option{
 		WithTraceConnect(false),
@@ -262,21 +375,69 @@ func tracingAllDisabled() []Option {
 		WithTraceBatch(false),
 		WithTraceCopyFrom(false),
 		WithTraceAcquire(false),
+		WithErrCheck(nil),
 	}
 }
 
-func runAllOperations(t *testing.T, opts ...Option) {
+type pgxConn interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	CopyFrom(ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource) (int64, error)
+}
+
+type createConnFn func(t *testing.T, ctx context.Context) pgxConn
+
+func newPoolCreator(cfg *pgxpool.Config, opts ...Option) createConnFn {
+	return func(t *testing.T, ctx context.Context) pgxConn {
+		var (
+			pool *pgxpool.Pool
+			err  error
+		)
+		if cfg == nil {
+			pool, err = NewPool(ctx, postgresDSN, opts...)
+		} else {
+			pool, err = NewPoolWithConfig(ctx, cfg, opts...)
+		}
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			pool.Close()
+		})
+		return pool
+	}
+}
+
+func newConnCreator(cfg *pgx.ConnConfig, connOpts *pgx.ParseConfigOptions, opts ...Option) createConnFn {
+	return func(t *testing.T, ctx context.Context) pgxConn {
+		var (
+			conn *pgx.Conn
+			err  error
+		)
+		if cfg != nil {
+			conn, err = ConnectConfig(ctx, cfg, opts...)
+		} else if connOpts != nil {
+			conn, err = ConnectWithOptions(ctx, postgresDSN, *connOpts, opts...)
+		} else {
+			conn, err = Connect(ctx, postgresDSN, opts...)
+		}
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			assert.NoError(t, conn.Close(ctx))
+		})
+		return conn
+	}
+}
+
+func runAllOperations(t *testing.T, createConn createConnFn) {
 	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
 	defer parent.Finish()
 
 	// Connect
-	conn, err := NewPool(ctx, postgresDSN, opts...)
-	require.NoError(t, err)
-	defer conn.Close()
+	conn := createConn(t, ctx)
 
 	// Query
 	var x int
-	err = conn.QueryRow(ctx, `SELECT 1`).Scan(&x)
+	err := conn.QueryRow(ctx, `SELECT 1`).Scan(&x)
 	require.NoError(t, err)
 	require.Equal(t, 1, x)
 
@@ -316,14 +477,81 @@ func runAllOperations(t *testing.T, opts ...Option) {
 	require.NoError(t, err)
 }
 
-func assertCommonTags(t *testing.T, s mocktracer.Span) {
+func assertCommonTags(t *testing.T, s *mocktracer.Span) {
 	assert.Equal(t, defaultServiceName, s.Tag(ext.ServiceName))
 	assert.Equal(t, ext.SpanTypeSQL, s.Tag(ext.SpanType))
 	assert.Equal(t, ext.DBSystemPostgreSQL, s.Tag(ext.DBSystem))
-	assert.Equal(t, componentName, s.Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageJackcPGXV5), s.Integration())
 	assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 	assert.Equal(t, "127.0.0.1", s.Tag(ext.NetworkDestinationName))
-	assert.Equal(t, 5432, s.Tag(ext.NetworkDestinationPort))
+	assert.Equal(t, float64(5432), s.Tag(ext.NetworkDestinationPort))
 	assert.Equal(t, "postgres", s.Tag(ext.DBName))
 	assert.Equal(t, "postgres", s.Tag(ext.DBUser))
+}
+
+type pgxMockTracer struct {
+	called map[string]bool
+}
+
+var (
+	_ allPgxTracers = (*pgxMockTracer)(nil)
+)
+
+func (p *pgxMockTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
+	p.called["query.start"] = true
+	return ctx
+}
+
+func (p *pgxMockTracer) TraceQueryEnd(_ context.Context, _ *pgx.Conn, _ pgx.TraceQueryEndData) {
+	p.called["query.end"] = true
+}
+
+func (p *pgxMockTracer) TraceBatchStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceBatchStartData) context.Context {
+	p.called["batch.start"] = true
+	return ctx
+}
+
+func (p *pgxMockTracer) TraceBatchQuery(_ context.Context, _ *pgx.Conn, _ pgx.TraceBatchQueryData) {
+	p.called["batch.query"] = true
+}
+
+func (p *pgxMockTracer) TraceBatchEnd(_ context.Context, _ *pgx.Conn, _ pgx.TraceBatchEndData) {
+	p.called["batch.end"] = true
+}
+
+func (p *pgxMockTracer) TraceConnectStart(ctx context.Context, _ pgx.TraceConnectStartData) context.Context {
+	p.called["connect.start"] = true
+	return ctx
+}
+
+func (p *pgxMockTracer) TraceConnectEnd(_ context.Context, _ pgx.TraceConnectEndData) {
+	p.called["connect.end"] = true
+}
+
+func (p *pgxMockTracer) TracePrepareStart(ctx context.Context, _ *pgx.Conn, _ pgx.TracePrepareStartData) context.Context {
+	p.called["prepare.start"] = true
+	return ctx
+}
+
+func (p *pgxMockTracer) TracePrepareEnd(_ context.Context, _ *pgx.Conn, _ pgx.TracePrepareEndData) {
+	p.called["prepare.end"] = true
+}
+
+func (p *pgxMockTracer) TraceCopyFromStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceCopyFromStartData) context.Context {
+	p.called["copyfrom.start"] = true
+	return ctx
+}
+
+func (p *pgxMockTracer) TraceCopyFromEnd(_ context.Context, _ *pgx.Conn, _ pgx.TraceCopyFromEndData) {
+	p.called["copyfrom.end"] = true
+}
+
+func (p *pgxMockTracer) TraceAcquireStart(ctx context.Context, _ *pgxpool.Pool, _ pgxpool.TraceAcquireStartData) context.Context {
+	p.called["pool.acquire.start"] = true
+	return ctx
+}
+
+func (p *pgxMockTracer) TraceAcquireEnd(_ context.Context, _ *pgxpool.Pool, _ pgxpool.TraceAcquireEndData) {
+	p.called["pool.acquire.end"] = true
 }

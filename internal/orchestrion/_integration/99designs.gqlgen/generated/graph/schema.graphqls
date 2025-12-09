@@ -1,0 +1,7 @@
+type Query {
+  topLevel(id: String!): TopLevel!
+}
+
+type TopLevel {
+  nested(id: String!): String!
+}

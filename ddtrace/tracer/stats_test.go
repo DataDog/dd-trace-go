@@ -11,22 +11,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-)
+	"github.com/stretchr/testify/require"
 
-// waitForBuckets reports whether concentrator c contains n buckets within a 5ms
-// period.
-func waitForBuckets(c *concentrator, n int) bool {
-	for i := 0; i < 5; i++ {
-		time.Sleep(time.Millisecond * timeMultiplicator)
-		c.mu.Lock()
-		if len(c.buckets) == n {
-			c.mu.Unlock()
-			return true
-		}
-		c.mu.Unlock()
-	}
-	return false
-}
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
+	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+)
 
 func TestAlignTs(t *testing.T) {
 	now := time.Now().UnixNano()
@@ -36,37 +30,22 @@ func TestAlignTs(t *testing.T) {
 }
 
 func TestConcentrator(t *testing.T) {
-	key1 := aggregation{
-		Name: "http.request",
+	bucketSize := int64(500_000)
+	s1 := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	ss1 := &aggregableSpan{
-		key:      key1,
-		Start:    time.Now().UnixNano() + 2*defaultStatsBucketSize,
-		Duration: (2 * time.Second).Nanoseconds(),
+	s2 := Span{
+		name:     "sql.query",
+		start:    time.Now().UnixNano() + 4*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
 	}
-	key2 := aggregation{
-		Name: "sql.query",
-	}
-	ss2 := &aggregableSpan{
-		key:      key2,
-		Start:    time.Now().UnixNano() + 3*defaultStatsBucketSize,
-		Duration: (3 * time.Second).Nanoseconds(),
-	}
-
-	t.Run("new", func(t *testing.T) {
-		assert := assert.New(t)
-		cfg := &config{version: "1.2.3"}
-		c := newConcentrator(cfg, defaultStatsBucketSize)
-		assert.Equal(cap(c.In), 10000)
-		assert.Nil(c.stop)
-		assert.NotNil(c.buckets)
-		assert.Equal(c.cfg, cfg)
-		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
-	})
-
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
+		c := newConcentrator(&config{}, bucketSize, &statsd.NoOpClientDirect{})
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
@@ -82,98 +61,252 @@ func TestConcentrator(t *testing.T) {
 		c.Stop()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 	})
-
-	t.Run("valid", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
-		btime := alignTs(ss1.Start+ss1.Duration, defaultStatsBucketSize)
-		c.add(ss1)
-		assert.Len(t, c.buckets, 1)
-		b, ok := c.buckets[btime]
-		assert.True(t, ok)
-		assert.Equal(t, b.start, uint64(btime))
-		assert.Equal(t, b.duration, uint64(defaultStatsBucketSize))
-	})
-
-	t.Run("grouping", func(t *testing.T) {
-		c := newConcentrator(&config{}, defaultStatsBucketSize)
-		c.add(ss1)
-		c.add(ss1)
-		assert.Len(t, c.buckets, 1)
-		_, ok := c.buckets[alignTs(ss1.Start+ss1.Duration, defaultStatsBucketSize)]
-		assert.True(t, ok)
-		c.add(ss2)
-		assert.Len(t, c.buckets, 2)
-		_, ok = c.buckets[alignTs(ss2.Start+ss2.Duration, defaultStatsBucketSize)]
-		assert.True(t, ok)
-	})
-
-	t.Run("ingester", func(t *testing.T) {
-		transport := newDummyTransport()
-		c := newConcentrator(&config{transport: transport}, defaultStatsBucketSize)
-		c.Start()
-		assert.Len(t, c.buckets, 0)
-		c.In <- ss1
-		if !waitForBuckets(c, 1) {
-			t.Fatal("sending to channel did not work")
-		}
-		c.Stop()
-	})
-
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
 			c.Start()
-			c.In <- &aggregableSpan{
-				key: key2,
-				// Start must be older than latest bucket to get flushed
-				Start:    time.Now().UnixNano() - 3*500000,
-				Duration: 1,
-			}
-			c.In <- &aggregableSpan{
-				key: key2,
-				// Start must be older than latest bucket to get flushed
-				Start:    time.Now().UnixNano() - 4*500000,
-				Duration: 1,
-			}
+			c.In <- ss1
 			time.Sleep(2 * time.Millisecond * timeMultiplicator)
 			c.Stop()
-			assert.NotZero(t, transport.Stats())
+			actualStats := transport.Stats()
+			assert.Len(t, actualStats, 1)
+			assert.Len(t, actualStats[0].Stats, 1)
+			assert.Len(t, actualStats[0].Stats[0].Stats, 1)
+			assert.Equal(t, "http.request", actualStats[0].Stats[0].Stats[0].Name)
 		})
 
-		t.Run("recent", func(t *testing.T) {
+		t.Run("recent+stats", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
+			testStats := &statsdtest.TestStatsdClient{}
+			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), testStats)
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			ss2, ok := c.newTracerStatSpan(&s2, nil)
+			assert.True(t, ok)
 			c.Start()
-			c.In <- &aggregableSpan{
-				key:      key2,
-				Start:    time.Now().UnixNano() + 5*500000,
-				Duration: 1,
-			}
-			c.In <- &aggregableSpan{
-				key:      key1,
-				Start:    time.Now().UnixNano() + 6*500000,
-				Duration: 1,
-			}
+			c.In <- ss1
+			c.In <- ss2
 			c.Stop()
-			assert.NotEmpty(t, transport.Stats())
+			actualStats := transport.Stats()
+			assert.Len(t, actualStats, 1)
+			assert.Len(t, actualStats[0].Stats, 1)
+			assert.Len(t, actualStats[0].Stats[0].Stats, 2)
+			names := map[string]struct{}{}
+			for _, stat := range actualStats[0].Stats[0].Stats {
+				names[stat.Name] = struct{}{}
+			}
+			assert.Len(t, names, 2)
+			assert.NotNil(t, names["http.request"])
+			assert.NotNil(t, names["potato"])
+			assert.Contains(t, testStats.CallNames(), "datadog.tracer.stats.spans_in")
+		})
+
+		t.Run("ciGitSha", func(t *testing.T) {
+			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport, env: "someEnv", ciVisibilityEnabled: true}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+			actualStats := transport.Stats()
+			assert.Equal(t, "DEADBEEF", actualStats[0].GitCommitSha)
 		})
 
 		// stats should be sent if the concentrator is stopped
 		t.Run("stop", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500000)
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
 			c.Start()
-			c.In <- &aggregableSpan{
-				key:      key1,
-				Start:    time.Now().UnixNano(),
-				Duration: 1,
-			}
+			c.In <- ss1
 			c.Stop()
 			assert.NotEmpty(t, transport.Stats())
 		})
+
+		t.Run("processTagsEnabled", func(t *testing.T) {
+			processtags.Reload()
+
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+
+			gotStats := transport.Stats()
+			require.Len(t, gotStats, 1)
+			assert.NotEmpty(t, gotStats[0].ProcessTags)
+		})
+		t.Run("processTagsDisabled", func(t *testing.T) {
+			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+			processtags.Reload()
+
+			transport := newDummyTransport()
+			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			assert.Len(t, transport.Stats(), 0)
+			ss1, ok := c.newTracerStatSpan(&s1, nil)
+			assert.True(t, ok)
+			c.Start()
+			c.In <- ss1
+			c.Stop()
+
+			gotStats := transport.Stats()
+			require.Len(t, gotStats, 1)
+			assert.Empty(t, gotStats[0].ProcessTags)
+		})
 	})
+}
+
+func TestShouldObfuscate(t *testing.T) {
+	bucketSize := int64(500_000)
+	tsp := newDummyTransport()
+	for _, params := range []struct {
+		name                    string
+		tracerVersion           int
+		agentVersion            int
+		expectedShouldObfuscate bool
+	}{
+		{name: "version equal", tracerVersion: 2, agentVersion: 2, expectedShouldObfuscate: true},
+		{name: "agent version missing", tracerVersion: 2, agentVersion: 0, expectedShouldObfuscate: false},
+		{name: "agent version older", tracerVersion: 2, agentVersion: 1, expectedShouldObfuscate: true},
+		{name: "agent version newer", tracerVersion: 2, agentVersion: 3, expectedShouldObfuscate: false},
+	} {
+		t.Run(params.name, func(t *testing.T) {
+			c := newConcentrator(&config{transport: tsp, env: "someEnv", agent: agentFeatures{obfuscationVersion: params.agentVersion}}, bucketSize, &statsd.NoOpClientDirect{})
+			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
+			tracerObfuscationVersion = params.tracerVersion
+			assert.Equal(t, params.expectedShouldObfuscate, c.shouldObfuscate())
+		})
+	}
+}
+
+func TestObfuscation(t *testing.T) {
+	bucketSize := int64(500_000)
+	s1 := Span{
+		name:     "redis-query",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
+		spanType: "redis",
+		resource: "GET somekey",
+	}
+	tsp := newDummyTransport()
+	c := newConcentrator(&config{transport: tsp, env: "someEnv", agent: agentFeatures{obfuscationVersion: 2}}, bucketSize, &statsd.NoOpClientDirect{})
+	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
+	tracerObfuscationVersion = 2
+
+	assert.Len(t, tsp.Stats(), 0)
+	ss1, ok := c.newTracerStatSpan(&s1, obfuscate.NewObfuscator(obfuscate.Config{}))
+	assert.True(t, ok)
+	c.Start()
+	c.In <- ss1
+	c.Stop()
+	actualStats := tsp.Stats()
+	assert.Len(t, actualStats, 1)
+	assert.Len(t, actualStats[0].Stats, 1)
+	assert.Len(t, actualStats[0].Stats[0].Stats, 1)
+	assert.Equal(t, 2, tsp.obfVersion)
+	assert.Equal(t, "GET", actualStats[0].Stats[0].Stats[0].Resource)
+}
+
+func TestStatsByKind(t *testing.T) {
+	s1 := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano(),
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 0},
+	}
+	s2 := Span{
+		name:     "sql.query",
+		start:    time.Now().UnixNano(),
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 0},
+	}
+	s1.SetTag("span.kind", "client")
+	s2.SetTag("span.kind", "invalid")
+
+	c := newConcentrator(&config{transport: newDummyTransport(), env: "someEnv"}, 100, &statsd.NoOpClientDirect{})
+	_, ok := c.newTracerStatSpan(&s1, nil)
+	assert.True(t, ok)
+
+	_, ok = c.newTracerStatSpan(&s2, nil)
+	assert.False(t, ok)
+}
+
+func TestConcentratorDefaultEnv(t *testing.T) {
+	assert := assert.New(t)
+
+	t.Run("uses-agent-default-env-when-no-tracer-env", func(t *testing.T) {
+		cfg := &config{
+			transport: newDummyTransport(),
+			agent:     agentFeatures{defaultEnv: "agent-prod"},
+		}
+		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
+		assert.Equal("agent-prod", c.aggregationKey.Env)
+	})
+
+	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
+		cfg := &config{
+			transport: newDummyTransport(),
+			env:       "tracer-staging",
+			agent:     agentFeatures{defaultEnv: "agent-prod"},
+		}
+		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
+		assert.Equal("tracer-staging", c.aggregationKey.Env)
+	})
+
+	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
+		cfg := &config{
+			transport: newDummyTransport(),
+			agent:     agentFeatures{},
+		}
+		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
+		assert.Equal("unknown-env", c.aggregationKey.Env)
+	})
+}
+
+func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
+	uniqueMethod := "POST"
+	uniqueEndpoint := "/__unique_endpoint__"
+
+	bucketSize := int64(500_000)
+	s := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano(),
+		duration: int64(time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+		meta: map[string]string{
+			ext.HTTPMethod:   uniqueMethod,
+			ext.HTTPEndpoint: uniqueEndpoint,
+		},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(&config{transport: transport, env: "someEnv"}, bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+
+	// Assert via typed fields in the aggregation key
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
+	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
 }

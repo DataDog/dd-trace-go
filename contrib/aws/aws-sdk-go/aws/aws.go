@@ -4,7 +4,10 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package aws provides functions to trace aws/aws-sdk-go (https://github.com/aws/aws-sdk-go).
-package aws // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
+//
+// Deprecated: The AWS SDK for Go v1 is deprecated. Please migrate to github.com/aws/aws-sdk-go-v2 and use the corresponding integration.
+// This integration will be removed in a future release.
+package aws // import "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws"
 
 import (
 	"errors"
@@ -13,14 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/internal/tags"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -30,20 +27,23 @@ import (
 	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
 	"github.com/aws/aws-sdk-go/service/sqs"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "aws/aws-sdk-go/aws"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/aws/aws-sdk-go")
+	instr = instrumentation.Load(instrumentation.PackageAWSSDKGo)
 }
 
 const (
 	// SendHandlerName is the name of the Datadog NamedHandler for the Send phase of an awsv1 request
-	SendHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Send"
+	SendHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws/handlers.Send"
 	// CompleteHandlerName is the name of the Datadog NamedHandler for the Complete phase of an awsv1 request
-	CompleteHandlerName = "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws/handlers.Complete"
+	CompleteHandlerName = "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws/handlers.Complete"
 )
 
 type handlers struct {
@@ -55,9 +55,9 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	cfg := new(config)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	log.Debug("contrib/aws/aws-sdk-go/aws: Wrapping Session: %#v", cfg)
+	instr.Logger().Debug("contrib/aws/aws-sdk-go/aws: Wrapping Session: %#v", cfg)
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{
@@ -81,15 +81,16 @@ func (h *handlers) Send(req *request.Request) {
 
 	region := awsRegion(req)
 
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
 		tracer.ServiceName(h.serviceName(req)),
 		tracer.ResourceName(resourceName(req)),
-		tracer.Tag(tags.AWSAgent, awsAgent(req)),
-		tracer.Tag(tags.AWSOperation, awsOperation(req)),
-		tracer.Tag(tags.OldAWSRegion, region),
-		tracer.Tag(tags.AWSRegion, region),
-		tracer.Tag(tags.AWSService, awsService(req)),
+		tracer.Tag(ext.AWSAgent, awsAgent(req)),
+		tracer.Tag(ext.AWSOperation, awsOperation(req)),
+		tracer.Tag(ext.AWSRegionLegacy, region),
+		tracer.Tag(ext.AWSRegion, region),
+		tracer.Tag(ext.AWSPartition, awsPartition(req)),
+		tracer.Tag(ext.AWSService, awsService(req)),
 		tracer.Tag(ext.HTTPMethod, req.Operation.HTTPMethod),
 		tracer.Tag(ext.HTTPURL, url.String()),
 		tracer.Tag(ext.Component, componentName),
@@ -110,8 +111,8 @@ func (h *handlers) Complete(req *request.Request) {
 	if !ok {
 		return
 	}
-	span.SetTag(tags.AWSRetryCount, req.RetryCount)
-	span.SetTag(tags.AWSRequestID, req.RequestID)
+	span.SetTag(ext.AWSRetryCount, req.RetryCount)
+	span.SetTag(ext.AWSRequestID, req.RequestID)
 	if req.HTTPResponse != nil {
 		span.SetTag(ext.HTTPCode, strconv.Itoa(req.HTTPResponse.StatusCode))
 	}
@@ -125,14 +126,22 @@ func (h *handlers) serviceName(req *request.Request) string {
 	if h.cfg.serviceName != "" {
 		return h.cfg.serviceName
 	}
-	defaultName := "aws." + awsService(req)
-	return namingschema.ServiceNameOverrideV0(defaultName, defaultName)
+	return instr.ServiceName(
+		instrumentation.ComponentDefault,
+		instrumentation.OperationContext{
+			ext.AWSService: awsService(req),
+		},
+	)
 }
 
 func spanName(req *request.Request) string {
-	svc := awsService(req)
-	op := awsOperation(req)
-	return namingschema.AWSOpName(svc, op, svc+".command")
+	return instr.OperationName(
+		instrumentation.ComponentDefault,
+		instrumentation.OperationContext{
+			ext.AWSService:   awsService(req),
+			ext.AWSOperation: awsOperation(req),
+		},
+	)
 }
 
 func awsService(req *request.Request) string {
@@ -158,6 +167,27 @@ func awsRegion(req *request.Request) string {
 	return req.ClientInfo.SigningRegion
 }
 
+func awsPartition(req *request.Request) string {
+	partition := req.ClientInfo.PartitionID
+
+	if partition != "" {
+		return partition
+	}
+
+	// if partition ID isn't set, derive partition from region
+	region := awsRegion(req)
+	switch {
+	case strings.HasPrefix(region, "cn-"):
+		partition = "aws-cn"
+	case strings.HasPrefix(region, "us-gov-"):
+		partition = "aws-us-gov"
+	default:
+		partition = "aws"
+	}
+
+	return partition
+}
+
 func extraTagsForService(req *request.Request) map[string]interface{} {
 	service := awsService(req)
 	var (
@@ -166,7 +196,7 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 	)
 	switch service {
 	case sqs.ServiceName:
-		extraTags, err = sqsTags(req.Params)
+		extraTags, err = sqsTags(req.Params, awsRegion(req), awsPartition(req))
 	case s3.ServiceName:
 		extraTags, err = s3Tags(req.Params)
 	case sns.ServiceName:
@@ -183,13 +213,13 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 		return nil
 	}
 	if err != nil {
-		log.Debug("failed to extract tags for AWS service %q: %v", service, err)
+		instr.Logger().Debug("failed to extract tags for AWS service %q: %v", service, err)
 		return nil
 	}
 	return extraTags
 }
 
-func sqsTags(params interface{}) (map[string]interface{}, error) {
+func sqsTags(params interface{}, region string, partition string) (map[string]interface{}, error) {
 	var queueURL string
 	switch input := params.(type) {
 	case *sqs.SendMessageInput:
@@ -205,15 +235,37 @@ func sqsTags(params interface{}) (map[string]interface{}, error) {
 	default:
 		return nil, nil
 	}
-	parts := strings.Split(queueURL, "/")
-	if len(parts) < 2 {
+
+	queueName, arn := extractSQSMetadata(queueURL, region, partition)
+	if queueName == "" {
 		return nil, fmt.Errorf("got unexpected queue URL format: %q", queueURL)
 	}
-	queueName := parts[len(parts)-1]
 
-	return map[string]interface{}{
-		tags.SQSQueueName: queueName,
-	}, nil
+	tags := map[string]interface{}{
+		ext.SQSQueueName:    queueName,
+		ext.CloudResourceID: arn,
+	}
+
+	return tags, nil
+}
+
+func extractSQSMetadata(queueURL string, region string, partition string) (queueName string, arn string) {
+	// Remove trailing slash if present
+	if len(queueURL) > 0 && queueURL[len(queueURL)-1] == '/' {
+		queueURL = queueURL[:len(queueURL)-1]
+	}
+
+	// *.amazonaws.com/{accountID}/{queueName}
+	parts := strings.Split(queueURL, "/")
+	if len(parts) < 2 {
+		return "", ""
+	}
+
+	queueName = parts[len(parts)-1]
+	accountID := parts[len(parts)-2]
+
+	arn = strings.Join([]string{"arn", partition, "sqs", region, accountID, queueName}, ":")
+	return queueName, arn
 }
 
 func s3Tags(params interface{}) (map[string]interface{}, error) {
@@ -235,7 +287,7 @@ func s3Tags(params interface{}) (map[string]interface{}, error) {
 		return nil, nil
 	}
 	return map[string]interface{}{
-		tags.S3BucketName: bucket,
+		ext.S3BucketName: bucket,
 	}, nil
 }
 
@@ -244,22 +296,22 @@ func snsTags(params interface{}) (map[string]interface{}, error) {
 	switch input := params.(type) {
 	case *sns.PublishInput:
 		if input.TopicArn != nil {
-			destTag, destARN = tags.SNSTopicName, *input.TopicArn
+			destTag, destARN = ext.SNSTopicName, *input.TopicArn
 		} else {
-			destTag, destARN = tags.SNSTargetName, *input.TargetArn
+			destTag, destARN = ext.SNSTargetName, *input.TargetArn
 		}
 	case *sns.GetTopicAttributesInput:
-		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, *input.TopicArn
 	case *sns.ListSubscriptionsByTopicInput:
-		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, *input.TopicArn
 	case *sns.RemovePermissionInput:
-		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, *input.TopicArn
 	case *sns.SetTopicAttributesInput:
-		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, *input.TopicArn
 	case *sns.SubscribeInput:
-		destTag, destARN = tags.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, *input.TopicArn
 	case *sns.CreateTopicInput:
-		destTag, destName = tags.SNSTopicName, *input.Name
+		destTag, destName = ext.SNSTopicName, *input.Name
 	default:
 		return nil, nil
 	}
@@ -292,7 +344,7 @@ func dynamoDBTags(params interface{}) (map[string]interface{}, error) {
 		return nil, nil
 	}
 	return map[string]interface{}{
-		tags.DynamoDBTableName: tableName,
+		ext.DynamoDBTableName: tableName,
 	}, nil
 }
 
@@ -321,7 +373,7 @@ func kinesisTags(params interface{}) (map[string]interface{}, error) {
 		return nil, nil
 	}
 	return map[string]interface{}{
-		tags.KinesisStreamName: streamName,
+		ext.KinesisStreamName: streamName,
 	}, nil
 }
 
@@ -346,7 +398,7 @@ func eventBridgeTags(params interface{}) (map[string]interface{}, error) {
 		return nil, nil
 	}
 	return map[string]interface{}{
-		tags.EventBridgeRuleName: ruleName,
+		ext.EventBridgeRuleName: ruleName,
 	}, nil
 }
 
@@ -383,7 +435,7 @@ func sfnTags(params interface{}) (map[string]interface{}, error) {
 		stateMachineName = parts[len(parts)-1]
 	}
 	return map[string]interface{}{
-		tags.SFNStateMachineName: stateMachineName,
+		ext.SFNStateMachineName: stateMachineName,
 	}, nil
 }
 

@@ -8,30 +8,39 @@ on:
         type: string
   push:
     branches:
-      - main
       - release-v*
+      - mq-working-branch-**
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'scripts/**'
   schedule:
     - cron: '00 00 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   govulncheck-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - name: Checkout Go
-        uses: actions/setup-go@v3
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
         with:
-          go-version: 'stable'
-      - name: Install govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - name: Run govulncheck
-        run: govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/...
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
       - name: Run govulncheck-contribs
-        run: |
-          go list -f '{{.Dir}}' ./contrib/... | while read dir ; do
-            govulncheck -C $dir .
-          done
+        run: |-
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ./.github/workflows/apps/govulncheck-contribs-v2.sh

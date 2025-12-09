@@ -1,0 +1,10 @@
+{
+  "my-custom-event": {
+    "hello": 100
+  },
+  "fake-id": "12345678910",
+  "headers": {
+    "X-Datadog-Trace-Id": "1231452342",
+    "X-Datadog-Parent-Id": "45678910"
+  }
+}

@@ -1,0 +1,94 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2
+  description: Redigo is a Go client for the Redis database.
+
+aspects:
+  ##############################################################################
+  # Dial
+  - id: Dial
+    join-point:
+      function-call: github.com/gomodule/redigo/redis.Dial
+    advice:
+      - wrap-expression:
+          imports:
+            redigo: github.com/gomodule/redigo/redis
+            redigotrace: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2
+          template: |-
+            func() (redigo.Conn, error) {
+              {{ if .AST.Ellipsis }}
+                opts := {{ index .AST.Args 2 }}
+                anyOpts := make([]interface{}, len(opts))
+                for i, v := range opts {
+                  anyOpts[i] = v
+                }
+                return redigotrace.Dial({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }}, anyOpts...)
+              {{ else }}
+                return redigotrace.Dial(
+                  {{- range .AST.Args -}}
+                    {{ . }},
+                  {{- end -}}
+                )
+              {{ end }}
+            }()
+
+  ##############################################################################
+  # DialContext
+  - id: DialContext
+    join-point:
+      function-call: github.com/gomodule/redigo/redis.DialContext
+    advice:
+      - wrap-expression:
+          imports:
+            redigo: github.com/gomodule/redigo/redis
+            redigotrace: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2
+          template: |-
+            func() (redigo.Conn, error) {
+              {{ if .AST.Ellipsis }}
+                opts := {{ index .AST.Args 3 }}
+                anyOpts := make([]interface{}, len(opts))
+                for i, v := range opts {
+                  anyOpts[i] = v
+                }
+                return redigotrace.DialContext({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }}, {{ index .AST.Args 2 }}, anyOpts...)
+              {{ else }}
+                return redigotrace.DialContext(
+                  {{- range .AST.Args -}}
+                    {{ . }},
+                  {{- end -}}
+                )
+              {{ end }}
+            }()
+
+  ##############################################################################
+  # DialURL
+  - id: DialURL
+    join-point:
+      function-call: github.com/gomodule/redigo/redis.DialURL
+    advice:
+      - wrap-expression:
+          imports:
+            redigo: github.com/gomodule/redigo/redis
+            redigotrace: github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2
+          template: |-
+            func() (redigo.Conn, error) {
+              {{ if .AST.Ellipsis }}
+                opts := {{ index .AST.Args 1 }}
+                anyOpts := make([]interface{}, len(opts))
+                for i, v := range opts {
+                  anyOpts[i] = v
+                }
+                return redigotrace.DialURL({{ index .AST.Args 0 }}, anyOpts...)
+              {{ else }}
+                return redigotrace.DialURL(
+                  {{- range .AST.Args -}}
+                    {{ . }},
+                  {{- end -}}
+                )
+              {{ end }}
+            }()

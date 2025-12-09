@@ -8,10 +8,8 @@ package pgx
 import (
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
 )
 
 const tracerPrefix = "datadog.tracer."
@@ -34,10 +32,11 @@ const (
 var interval = 10 * time.Second
 
 // pollPoolStats calls (*pgxpool).Stats on the pool at a predetermined interval. It pushes the pool Stats off to the statsd client.
-func pollPoolStats(statsd internal.StatsdClient, pool *pgxpool.Pool) {
-	log.Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
+func pollPoolStats(statsd instrumentation.StatsdClient, pool *pgxpool.Pool) {
+	// TODO: Create stop condition for pgx on db.Close
+	instr.Logger().Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
 	for range time.NewTicker(interval).C {
-		log.Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
+		instr.Logger().Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
 		stat := pool.Stat()
 		statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), []string{}, 1)
 		statsd.Timing(AcquireDuration, stat.AcquireDuration(), []string{}, 1)
@@ -55,7 +54,7 @@ func pollPoolStats(statsd internal.StatsdClient, pool *pgxpool.Pool) {
 }
 
 func statsTags(c *config) []string {
-	tags := globalconfig.StatsTags()
+	tags := []string{}
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}

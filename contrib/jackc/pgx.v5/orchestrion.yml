@@ -1,0 +1,58 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
+  description: PostgreSQL driver and toolkit for Go.
+
+aspects:
+  - id: Connect
+    join-point:
+      all-of:
+        - function-call: github.com/jackc/pgx/v5.Connect
+        - not:
+            one-of:
+              - import-path: github.com/jackc/pgx/v5
+              - import-path: github.com/jackc/pgx/v5/pgxpool
+    advice:
+      - replace-function:
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.Connect
+
+  - id: ConnectConfig
+    join-point:
+      all-of:
+        - function-call: github.com/jackc/pgx/v5.ConnectConfig
+        - not:
+            one-of:
+              - import-path: github.com/jackc/pgx/v5
+              - import-path: github.com/jackc/pgx/v5/pgxpool
+    advice:
+      - replace-function:
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.ConnectConfig
+
+  - id: pgxpool.New
+    join-point:
+      all-of:
+        - function-call: github.com/jackc/pgx/v5/pgxpool.New
+        - not:
+            one-of:
+              - import-path: github.com/jackc/pgx/v5
+              - import-path: github.com/jackc/pgx/v5/pgxpool
+    advice:
+      - replace-function:
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.NewPool
+
+  - id: pgxpool.NewWithConfig
+    join-point:
+      all-of:
+        - function-call: github.com/jackc/pgx/v5/pgxpool.NewWithConfig
+        - not:
+            one-of:
+              - import-path: github.com/jackc/pgx/v5
+              - import-path: github.com/jackc/pgx/v5/pgxpool
+    advice:
+      - replace-function:
+          github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2.NewPoolWithConfig

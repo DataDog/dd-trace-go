@@ -13,9 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func TestObserver_Query(t *testing.T) {
@@ -25,7 +26,7 @@ func TestObserver_Query(t *testing.T) {
 		updateQuery      func(cluster *gocql.ClusterConfig, sess *gocql.Session, q *gocql.Query) *gocql.Query
 		wantServiceName  string
 		wantResourceName string
-		wantRowCount     int
+		wantRowCount     float64
 		wantErr          bool
 		wantErrTag       bool
 	}{
@@ -37,7 +38,7 @@ func TestObserver_Query(t *testing.T) {
 		{
 			name: "service_and_resource_name",
 			opts: []WrapOption{
-				WithServiceName("test-service"),
+				WithService("test-service"),
 				WithResourceName("test-resource"),
 			},
 			wantRowCount:     1,
@@ -80,7 +81,7 @@ func TestObserver_Query(t *testing.T) {
 				WithTraceQuery(false),
 			},
 			updateQuery: func(cluster *gocql.ClusterConfig, _ *gocql.Session, q *gocql.Query) *gocql.Query {
-				obs := NewObserver(cluster, WithResourceName("test resource"), WithServiceName("test service"))
+				obs := NewObserver(cluster, WithResourceName("test resource"), WithService("test service"))
 				return q.Observer(obs)
 			},
 			wantServiceName:  "test service",
@@ -154,9 +155,9 @@ func TestObserver_Query(t *testing.T) {
 			assert.Equal(t, wantRowCount, querySpan.Tag(ext.CassandraRowCount))
 
 			if tc.wantErrTag {
-				assert.NotNil(t, querySpan.Tag(ext.Error))
+				assert.NotNil(t, querySpan.Tag(ext.ErrorMsg))
 			} else {
-				assert.Nil(t, querySpan.Tag(ext.Error))
+				assert.Nil(t, querySpan.Tag(ext.ErrorMsg))
 			}
 		})
 	}
@@ -179,7 +180,7 @@ func TestObserver_Batch(t *testing.T) {
 		{
 			name: "service_and_resource_name",
 			opts: []WrapOption{
-				WithServiceName("test-service"),
+				WithService("test-service"),
 				WithResourceName("test-resource"),
 			},
 			wantServiceName:  "test-service",
@@ -223,7 +224,7 @@ func TestObserver_Batch(t *testing.T) {
 				WithTraceBatch(false),
 			},
 			updateBatch: func(cluster *gocql.ClusterConfig, _ *gocql.Session, b *gocql.Batch) *gocql.Batch {
-				obs := NewObserver(cluster, WithResourceName("test resource"), WithServiceName("test service"))
+				obs := NewObserver(cluster, WithResourceName("test resource"), WithService("test service"))
 				return b.Observer(obs)
 			},
 			wantServiceName:  "test service",
@@ -298,9 +299,9 @@ func TestObserver_Batch(t *testing.T) {
 			assert.Nil(t, batchSpan.Tag(ext.CassandraRowCount))
 
 			if tc.wantErrTag {
-				assert.NotNil(t, batchSpan.Tag(ext.Error))
+				assert.NotNil(t, batchSpan.Tag(ext.ErrorMsg))
 			} else {
-				assert.Nil(t, batchSpan.Tag(ext.Error))
+				assert.Nil(t, batchSpan.Tag(ext.ErrorMsg))
 			}
 		})
 	}
@@ -322,7 +323,7 @@ func TestObserver_Connect(t *testing.T) {
 		{
 			name: "service_and_resource_name",
 			opts: []WrapOption{
-				WithServiceName("test-service"),
+				WithService("test-service"),
 				WithResourceName("test-resource"),
 			},
 			wantServiceName:  "test-service",
@@ -362,9 +363,9 @@ func TestObserver_Connect(t *testing.T) {
 
 			spans := mt.FinishedSpans()
 
-			var okSpans []mocktracer.Span
-			var okSpansHostInfo []mocktracer.Span
-			var errSpans []mocktracer.Span
+			var okSpans []*mocktracer.Span
+			var okSpansHostInfo []*mocktracer.Span
+			var errSpans []*mocktracer.Span
 
 			for _, span := range spans {
 				port := span.Tag(ext.TargetPort)
@@ -390,6 +391,7 @@ func TestObserver_Connect(t *testing.T) {
 				assert.Equal(t, wantService, span.Tag(ext.ServiceName))
 
 				assert.Equal(t, "gocql/gocql", span.Tag(ext.Component))
+				assert.Equal(t, string(instrumentation.PackageGoCQL), span.Integration())
 				assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 				assert.Equal(t, "cassandra", span.Tag(ext.DBSystem))
 				assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))
@@ -397,7 +399,7 @@ func TestObserver_Connect(t *testing.T) {
 			}
 			for _, span := range okSpans {
 				assert.Equal(t, "9042", span.Tag(ext.TargetPort))
-				assert.Nil(t, span.Tag(ext.Error))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
 
 				if span.Tag(ext.CassandraHostID) != nil {
 					okSpansHostInfo = append(okSpansHostInfo, span)
@@ -413,7 +415,7 @@ func TestObserver_Connect(t *testing.T) {
 			}
 			for _, span := range errSpans {
 				assert.Equal(t, "9043", span.Tag(ext.TargetPort))
-				assert.NotNil(t, span.Tag(ext.Error))
+				assert.NotNil(t, span.Tag(ext.ErrorMsg))
 
 				// since this node does not exist, this information should not be present.
 				assert.Nil(t, span.Tag(ext.CassandraCluster))
@@ -424,11 +426,12 @@ func TestObserver_Connect(t *testing.T) {
 	}
 }
 
-func assertCommonTags(t *testing.T, span mocktracer.Span) {
+func assertCommonTags(t *testing.T, span *mocktracer.Span) {
 	t.Helper()
 
 	assert.Equal(t, "trace", span.Tag(ext.CassandraKeyspace))
 	assert.Equal(t, "gocql/gocql", span.Tag(ext.Component))
+	assert.Equal(t, string(instrumentation.PackageGoCQL), span.Integration())
 	assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal(t, "cassandra", span.Tag(ext.DBSystem))
 	assert.Equal(t, "127.0.0.1:9042,127.0.0.1:9043", span.Tag(ext.CassandraContactPoints))

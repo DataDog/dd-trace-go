@@ -11,7 +11,7 @@
 // in some tag values like service.name and resource.name, depending on the google.golang.org/api that you are using in your
 // project. If this is not an acceptable behavior for your use-case, you can disable this feature using the
 // WithEndpointMetadataDisabled option.
-package api // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api"
+package api // import "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2"
 
 //go:generate go run ./internal/gen_endpoints -o gen_endpoints.json
 
@@ -21,13 +21,11 @@ import (
 	"math"
 	"net/http"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/api/internal/tree"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2/internal/tree"
+	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"golang.org/x/oauth2/google"
 )
@@ -37,15 +35,16 @@ var endpointBytes []byte
 
 const componentName = "google.golang.org/api"
 
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageGoogleAPI)
+	initAPIEndpointsTree()
+}
+
 // apiEndpoints are the defined endpoints for the Google API; it is populated
 // by "go generate".
 var apiEndpointsTree *tree.Tree
-
-func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
-	initAPIEndpointsTree()
-}
 
 func loadEndpointsFromJSON() ([]*tree.Endpoint, error) {
 	var apiEndpoints []*tree.Endpoint
@@ -58,12 +57,12 @@ func loadEndpointsFromJSON() ([]*tree.Endpoint, error) {
 func initAPIEndpointsTree() {
 	apiEndpoints, err := loadEndpointsFromJSON()
 	if err != nil {
-		log.Warn("contrib/google.golang.org/api: failed load json endpoints: %v", err)
+		instr.Logger().Warn("contrib/google.golang.org/api: failed load json endpoints: %s", err.Error())
 		return
 	}
 	tr, err := tree.New(apiEndpoints...)
 	if err != nil {
-		log.Warn("contrib/google.golang.org/api: failed to create endpoints tree: %v", err)
+		instr.Logger().Warn("contrib/google.golang.org/api: failed to create endpoints tree: %s", err.Error())
 		return
 	}
 	apiEndpointsTree = tr
@@ -73,7 +72,7 @@ func initAPIEndpointsTree() {
 // APIs with all requests traced automatically.
 func NewClient(options ...Option) (*http.Client, error) {
 	cfg := newConfig(options...)
-	log.Debug("contrib/google.golang.org/api: Creating Client: %#v", cfg)
+	instr.Logger().Debug("contrib/google.golang.org/api: Creating Client: %#v", cfg)
 	client, err := google.DefaultClient(cfg.ctx, cfg.scopes...)
 	if err != nil {
 		return nil, err
@@ -86,9 +85,9 @@ func NewClient(options ...Option) (*http.Client, error) {
 // Google APIs and traces all requests.
 func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.RoundTripper {
 	cfg := newConfig(options...)
-	log.Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
+	instr.Logger().Debug("contrib/google.golang.org/api: Wrapping RoundTripper: %#v", cfg)
 	rtOpts := []httptrace.RoundTripperOption{
-		httptrace.WithBefore(func(req *http.Request, span ddtrace.Span) {
+		httptrace.WithBefore(func(req *http.Request, span *tracer.Span) {
 			if !cfg.endpointMetadataDisabled {
 				setTagsWithEndpointMetadata(req, span)
 			} else {
@@ -102,12 +101,12 @@ func WrapRoundTripper(transport http.RoundTripper, options ...Option) http.Round
 		}),
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
-		rtOpts = append(rtOpts, httptrace.RTWithAnalyticsRate(cfg.analyticsRate))
+		rtOpts = append(rtOpts, httptrace.WithAnalyticsRate(cfg.analyticsRate))
 	}
 	return httptrace.WrapRoundTripper(transport, rtOpts...)
 }
 
-func setTagsWithEndpointMetadata(req *http.Request, span ddtrace.Span) {
+func setTagsWithEndpointMetadata(req *http.Request, span *tracer.Span) {
 	e, ok := apiEndpointsTree.Get(req.URL.Hostname(), req.Method, req.URL.Path)
 	if ok {
 		span.SetTag(ext.ServiceName, e.ServiceName)
@@ -117,7 +116,7 @@ func setTagsWithEndpointMetadata(req *http.Request, span ddtrace.Span) {
 	}
 }
 
-func setTagsWithoutEndpointMetadata(req *http.Request, span ddtrace.Span) {
+func setTagsWithoutEndpointMetadata(req *http.Request, span *tracer.Span) {
 	span.SetTag(ext.ServiceName, "google")
 	span.SetTag(ext.ResourceName, req.Method+" "+req.URL.Hostname())
 }

@@ -1,10 +1,15 @@
 ---
 schema-version: v1
 kind: mergequeue
-github_teams_restrictions:
-  - apm-ecosystems
-  - apm-go
-  - asm-go
-  - profiling-go
-github_users_restrictions:
-  - dbenamydd
+enable: true
+merge_method: squash
+branches:
+  main:
+    allow_skip_checks: true
+    require_reason_for_skip_checks: true
+---
+schema-version: v1
+kind: mergegate
+rules:
+  - require: commit-signatures
+    allow_unsigned_external: true

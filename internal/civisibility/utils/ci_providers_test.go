@@ -13,11 +13,28 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 )
 
-func setEnvs(t *testing.T, env map[string]string) {
+func setEnvs(t *testing.T, env map[string]any) {
 	for key, value := range env {
-		t.Setenv(key, value)
+		if strValue, ok := value.(string); ok {
+			t.Setenv(key, strValue)
+		}
+		if intValue, ok := value.(int); ok {
+			t.Setenv(key, fmt.Sprintf("%d", intValue))
+		}
+		if boolValue, ok := value.(bool); ok {
+			if boolValue {
+				t.Setenv(key, "true")
+			} else {
+				t.Setenv(key, "false")
+			}
+		}
+		if floatValue, ok := value.(float64); ok {
+			t.Setenv(key, fmt.Sprintf("%d", int(floatValue)))
+		}
 	}
 }
 
@@ -62,7 +79,7 @@ func TestTags(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			var examples [][]map[string]string
+			var examples [][]map[string]any
 			if err := json.Unmarshal(data, &examples); err != nil {
 				t.Fatal(err)
 			}
@@ -96,9 +113,12 @@ func TestTags(t *testing.T) {
 					for expectedKey, expectedValue := range tags {
 						if actualValue, ok := providerTags[expectedKey]; ok {
 							if expectedKey == "_dd.ci.env_vars" {
-								expectedValue = sortJSONKeys(expectedValue)
+								expectedValue = sortJSONKeys(expectedValue.(string))
 							}
-							if expectedValue != actualValue {
+							if providerName == "github" && expectedKey == constants.GitPrBaseBranch || expectedKey == constants.GitPrBaseCommit || expectedKey == constants.GitHeadCommit {
+								continue
+							}
+							if fmt.Sprintln(expectedValue) != actualValue {
 								if expectedValue == strings.ReplaceAll(actualValue, "\\", "/") {
 									continue
 								}
@@ -113,4 +133,46 @@ func TestTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGitHubEventFile(t *testing.T) {
+	originalEventPath := os.Getenv("GITHUB_EVENT_PATH")
+	originalBaseRef := os.Getenv("GITHUB_BASE_REF")
+	defer func() {
+		os.Setenv("GITHUB_EVENT_PATH", originalEventPath)
+		os.Setenv("GITHUB_BASE_REF", originalBaseRef)
+	}()
+
+	os.Unsetenv("GITHUB_EVENT_PATH")
+	os.Unsetenv("GITHUB_BASE_REF")
+
+	checkValue := func(tags map[string]string, key, expectedValue string) {
+		if tags[key] != expectedValue {
+			t.Fatalf("Key: %s, the actual value (%s) is different to the expected value (%s)", key, tags[key], expectedValue)
+		}
+	}
+
+	t.Run("with event file", func(t *testing.T) {
+		eventFile := "testdata/fixtures/github-event.json"
+		t.Setenv("GITHUB_EVENT_PATH", eventFile)
+		t.Setenv("GITHUB_BASE_REF", "my-base-ref") // this should be ignored in favor of the event file value
+
+		tags := extractGithubActions()
+		expectedHeadCommit := "df289512a51123083a8e6931dd6f57bb3883d4c4"
+		expectedBaseCommit := "52e0974c74d41160a03d59ddc73bb9f5adab054b"
+		expectedBaseRef := "main"
+		expectedPrNumber := "1"
+
+		checkValue(tags, constants.GitHeadCommit, expectedHeadCommit)
+		checkValue(tags, constants.GitPrBaseHeadCommit, expectedBaseCommit)
+		checkValue(tags, constants.GitPrBaseBranch, expectedBaseRef)
+		checkValue(tags, constants.PrNumber, expectedPrNumber)
+	})
+
+	t.Run("no event file", func(t *testing.T) {
+		t.Setenv("GITHUB_BASE_REF", "my-base-ref") // this should be ignored in favor of the event file value
+
+		tags := extractGithubActions()
+		checkValue(tags, constants.GitPrBaseBranch, "my-base-ref")
+	})
 }

@@ -8,8 +8,8 @@ package grpc
 import (
 	"context"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"google.golang.org/grpc/stats"
 )
@@ -19,7 +19,7 @@ func NewServerStatsHandler(opts ...Option) stats.Handler {
 	cfg := new(config)
 	serverDefaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &serverStatsHandler{
 		cfg: cfg,
@@ -41,7 +41,7 @@ func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		ctx,
 		rti.FullMethodName,
 		h.cfg.spanName,
-		h.cfg.serviceName,
+		h.cfg.serviceName.String(),
 		spanOpts...,
 	)
 	return ctx

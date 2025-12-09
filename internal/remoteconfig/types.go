@@ -25,11 +25,7 @@ type clientTracer struct {
 	Env           string   `json:"env,omitempty"`
 	AppVersion    string   `json:"app_version,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
-}
-
-type clientAgent struct {
-	Name    string `json:"name,omitempty"`
-	Version string `json:"version,omitempty"`
+	ProcessTags   []string `json:"process_tags,omitempty"`
 }
 
 type configState struct {
@@ -75,9 +71,4 @@ type clientGetConfigsResponse struct {
 type file struct {
 	Path string `json:"path,omitempty"`
 	Raw  []byte `json:"raw,omitempty"`
-}
-
-type fileMetaState struct {
-	Version uint64 `json:"version,omitempty"`
-	Hash    string `json:"hash,omitempty"`
 }

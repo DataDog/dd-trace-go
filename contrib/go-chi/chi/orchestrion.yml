@@ -1,0 +1,33 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+  description: chi is a lightweight, idiomatic and composable router for building Go HTTP services.
+
+aspects:
+  - id: NewMux
+    join-point:
+      all-of:
+        - one-of:
+            - function-call: github.com/go-chi/chi.NewMux
+            - function-call: github.com/go-chi/chi.NewRouter
+        # No instrumenting github.com/go-chi/chi as this causes a circular dependency.
+        - not:
+            one-of:
+              - import-path: github.com/go-chi/chi
+              - import-path: github.com/go-chi/chi/middleware
+    advice:
+      - wrap-expression:
+          imports:
+            chi: github.com/go-chi/chi
+            chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+          template: |-
+            func() *chi.Mux {
+              mux := {{ . }}
+              mux.Use(chitrace.Middleware())
+              return mux
+            }()

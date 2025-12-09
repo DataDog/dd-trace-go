@@ -115,6 +115,10 @@ env: {
   DD_TAGS: "github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs['arg: tags'] }}",
 }
 
+permissions: {
+    contents: "read",
+}
+
 jobs: {
     for i, scenario in #scenarios {
         for j, env in #envs {

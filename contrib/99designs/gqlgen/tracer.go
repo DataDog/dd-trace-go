@@ -11,33 +11,6 @@
 // any sensitive data in the query will be sent to Datadog as the resource name
 // of the span. To ensure no sensitive data is included in your spans, always
 // use parameterized graphql queries with sensitive data in variables.
-//
-// Usage example:
-//
-//	import (
-//		"log"
-//		"net/http"
-//
-//		"github.com/99designs/gqlgen/_examples/todo"
-//		"github.com/99designs/gqlgen/graphql/handler"
-//
-//		"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-//		gqlgentrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/99designs/gqlgen"
-//	)
-//
-//	func Example() {
-//		tracer.Start()
-//		defer tracer.Stop()
-//
-//		t := gqlgentrace.NewTracer(
-//			gqlgentrace.WithAnalytics(true),
-//			gqlgentrace.WithServiceName("todo.server"),
-//		)
-//		h := handler.NewDefaultServer(todo.NewExecutableSchema(todo.New()))
-//		h.Use(t)
-//		http.Handle("/query", h)
-//		log.Fatal(http.ListenAndServe(":8080", nil))
-//	}
 package gqlgen
 
 import (
@@ -46,23 +19,23 @@ import (
 	"math"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/namingschema"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-const componentName = "99designs/gqlgen"
+const componentName = instrumentation.Package99DesignsGQLGen
+
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/99designs/gqlgen")
+	instr = instrumentation.Load(instrumentation.Package99DesignsGQLGen)
 }
 
 const (
@@ -88,7 +61,7 @@ func NewTracer(opts ...Option) graphql.HandlerExtension {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &gqlTracer{cfg: cfg}
 }
@@ -104,12 +77,12 @@ func (t *gqlTracer) Validate(_ graphql.ExecutableSchema) error {
 func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	span, ctx := t.createRootSpan(ctx, opCtx)
-	ctx, req := graphqlsec.StartRequestOperation(ctx, span, types.RequestOperationArgs{
+	ctx, req := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
 	})
-	ctx, query := graphqlsec.StartExecutionOperation(ctx, span, types.ExecutionOperationArgs{
+	ctx, query := graphqlsec.StartExecutionOperation(ctx, graphqlsec.ExecutionOperationArgs{
 		Query:         opCtx.RawQuery,
 		OperationName: opCtx.OperationName,
 		Variables:     opCtx.Variables,
@@ -118,27 +91,35 @@ func (t *gqlTracer) InterceptOperation(ctx context.Context, next graphql.Operati
 	return func(ctx context.Context) *graphql.Response {
 		response := responseHandler(ctx)
 		if span != nil {
-			var err error
-			if len(response.Errors) > 0 {
-				err = response.Errors
+			var spanErr error
+			if response != nil && len(response.Errors) > 0 {
+				spanErr = response.Errors
+				instrgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(response.Errors), t.cfg.errExtensions)
 			}
-			defer span.Finish(tracer.WithError(err))
+			defer span.Finish(tracer.WithError(spanErr))
 		}
-		query.Finish(types.ExecutionOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
-		req.Finish(types.RequestOperationRes{
-			Data:  response.Data, // NB - This is raw data, but rather not parse it (possibly expensive).
-			Error: response.Errors,
-		})
+
+		var (
+			executionOperationRes graphqlsec.ExecutionOperationRes
+			requestOperationRes   graphqlsec.RequestOperationRes
+		)
+		if response != nil {
+			executionOperationRes.Data = response.Data
+			executionOperationRes.Error = response.Errors
+
+			requestOperationRes.Data = response.Data
+			requestOperationRes.Error = response.Errors
+		}
+
+		query.Finish(executionOperationRes)
+		req.Finish(requestOperationRes)
 		return response
 	}
 }
 
 func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (res any, err error) {
 	opCtx := graphql.GetOperationContext(ctx)
-	if t.cfg.withoutTraceIntrospectionQuery && opCtx.OperationName == "IntrospectionQuery" {
+	if t.cfg.withoutTraceIntrospectionQuery && isIntrospectionQuery(opCtx) {
 		res, err = next(ctx)
 		return
 	}
@@ -146,6 +127,13 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 	fieldCtx := graphql.GetFieldContext(ctx)
 	isTrivial := !(fieldCtx.IsMethod || fieldCtx.IsResolver)
 	if t.cfg.withoutTraceTrivialResolvedFields && isTrivial {
+		res, err = next(ctx)
+		return
+	}
+
+	// GraphQL tracing sometimes has too many spans.
+	// So we can skip the span creation if the function is provided and returns false.
+	if t.cfg.shouldStartSpanFunc != nil && !t.cfg.shouldStartSpanFunc(ctx, fieldCtx) {
 		res, err = next(ctx)
 		return
 	}
@@ -167,13 +155,13 @@ func (t *gqlTracer) InterceptField(ctx context.Context, next graphql.Resolver) (
 
 	span, ctx := tracer.StartSpanFromContext(ctx, fieldOp, opts...)
 	defer func() { span.Finish(tracer.WithError(err)) }()
-	ctx, op := graphqlsec.StartResolveOperation(ctx, span, types.ResolveOperationArgs{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.ResolveOperationArgs{
 		Arguments: fieldCtx.Args,
 		TypeName:  fieldCtx.Object,
 		FieldName: fieldCtx.Field.Name,
 		Trivial:   isTrivial,
 	})
-	defer func() { op.Finish(types.ResolveOperationRes{Data: res, Error: err}) }()
+	defer func() { op.Finish(graphqlsec.ResolveOperationRes{Data: res, Error: err}) }()
 
 	res, err = next(ctx)
 	return
@@ -188,7 +176,7 @@ func (*gqlTracer) InterceptResponse(ctx context.Context, next graphql.ResponseHa
 // returned as those may run indefinitely and would be problematic. This function
 // also creates child spans (orphans in the case of a subscription) for the
 // read, parsing and validation phases of the operation.
-func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.OperationContext) (ddtrace.Span, context.Context) {
+func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.OperationContext) (*tracer.Span, context.Context) {
 	opts := make([]tracer.StartSpanOption, 0, 7+len(t.cfg.tags))
 	for k, v := range t.cfg.tags {
 		opts = append(opts, tracer.Tag(k, v))
@@ -204,14 +192,14 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 	if !math.IsNaN(t.cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, t.cfg.analyticsRate))
 	}
-	var rootSpan ddtrace.Span
+	var rootSpan *tracer.Span
 	if opCtx.Operation.Operation != ast.Subscription {
 		// Subscriptions are long running queries which may remain open indefinitely
 		// until the subscription ends. We do not create the root span for these.
 		rootSpan, ctx = tracer.StartSpanFromContext(ctx, serverSpanName(opCtx), opts...)
 	}
 	createChildSpan := func(name string, start, finish time.Time) {
-		childOpts := []ddtrace.StartSpanOption{
+		childOpts := []tracer.StartSpanOption{
 			tracer.StartTime(start),
 			tracer.ResourceName(name),
 			tracer.Tag(ext.Component, componentName),
@@ -220,7 +208,7 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 			// If there is no root span, decorate the orphan spans with more information
 			childOpts = append(childOpts, opts...)
 		}
-		var childSpan ddtrace.Span
+		var childSpan *tracer.Span
 		childSpan, _ = tracer.StartSpanFromContext(ctx, name, childOpts...)
 		childSpan.Finish(tracer.FinishTime(finish))
 	}
@@ -231,11 +219,23 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 }
 
 func serverSpanName(octx *graphql.OperationContext) string {
-	nameV0 := "graphql.request"
+	graphqlOperation := ""
 	if octx != nil && octx.Operation != nil {
-		nameV0 = fmt.Sprintf("%s.%s", ext.SpanTypeGraphQL, octx.Operation.Operation)
+		graphqlOperation = string(octx.Operation.Operation)
 	}
-	return namingschema.OpNameOverrideV0(namingschema.GraphqlServer, nameV0)
+
+	return instr.OperationName(
+		instrumentation.ComponentDefault,
+		instrumentation.OperationContext{
+			"graphql.operation": graphqlOperation,
+		})
+}
+
+func isIntrospectionQuery(octx *graphql.OperationContext) bool {
+	if octx.Operation != nil {
+		return octx.Operation.Name == "IntrospectionQuery"
+	}
+	return octx.OperationName == "IntrospectionQuery"
 }
 
 // Ensure all of these interfaces are implemented.
@@ -245,3 +245,28 @@ var _ interface {
 	graphql.FieldInterceptor
 	graphql.ResponseInterceptor
 } = &gqlTracer{}
+
+func toGraphqlErrors(errs gqlerror.List) []instrgraphql.Error {
+	res := make([]instrgraphql.Error, 0, len(errs))
+	for _, err := range errs {
+		locs := make([]instrgraphql.ErrorLocation, 0, len(err.Locations))
+		for _, loc := range err.Locations {
+			locs = append(locs, instrgraphql.ErrorLocation{
+				Line:   loc.Line,
+				Column: loc.Column,
+			})
+		}
+		errPath := make([]any, 0, len(err.Path))
+		for _, p := range err.Path {
+			errPath = append(errPath, p)
+		}
+		res = append(res, instrgraphql.Error{
+			OriginalErr: err,
+			Message:     err.Message,
+			Locations:   locs,
+			Path:        errPath,
+			Extensions:  err.Extensions,
+		})
+	}
+	return res
+}

@@ -1,0 +1,47 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2
+  description: |-
+    A simple RPC framework with protobuf service definitions.
+
+    ### Details & Caveats
+    - This instrumentation currently uses the wrappers from the dd-trace-go `contrib/net/http` package, not the
+    ones from `contrib/twitchtv/twirp`.
+    - The server-side instrumentation additionally adds rpc / twirp specific spans using `*twirp.ServerHooks`.
+    - Currently, the `*twirp.ClientHooks` implementation is not available in dd-trace-go, so the only generated spans are
+    the ones from `net/http`.
+
+aspects:
+  # TODO: Client Instrumentation - dd-trace-go does not have a *twirp.ClientHooks implementation for now.
+
+  # Server Instrumentation
+  - id: Server
+    join-point:
+      struct-literal:
+        type: github.com/twitchtv/twirp.ServerOptions
+        match: any
+    advice:
+      - wrap-expression:
+          imports:
+            twirp: github.com/twitchtv/twirp
+            twirptrace: github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2
+          template: |-
+            {{- .AST.Type -}}{
+              {{- $hasField := false -}}
+              {{ range .AST.Elts }}
+              {{- if eq .Key.Name "Hooks" }}
+              {{- $hasField = true -}}
+              Hooks: twirp.ChainHooks(twirptrace.NewServerHooks(), {{ .Value }}),
+              {{- else -}}
+              {{ . }},
+              {{ end -}}
+              {{ end }}
+              {{- if not $hasField -}}
+              Hooks: twirptrace.NewServerHooks(),
+              {{- end }}
+            }

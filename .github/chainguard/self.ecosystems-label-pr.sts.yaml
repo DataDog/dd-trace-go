@@ -1,0 +1,9 @@
+issuer: https://token.actions.githubusercontent.com
+subject: repo:DataDog/dd-trace-go:pull_request
+claim_pattern:
+  event_name: pull_request
+  repository: DataDog/dd-trace-go
+  job_workflow_ref: DataDog/dd-trace-go/.github/workflows/ecosystems-label-pr.yml@.*
+permissions:
+  contents: read
+  pull_requests: write

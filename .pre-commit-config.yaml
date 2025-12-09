@@ -1,0 +1,21 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.2.0
+    hooks:
+      - id: trailing-whitespace
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: check-json
+  - repo: https://github.com/golangci/golangci-lint/
+    rev: v2.3.0 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
+    hooks:
+      - id: golangci-lint
+        args:
+          - --timeout=1h
+      - id: golangci-lint-config-verify
+  - repo: https://github.com/python-jsonschema/check-jsonschema/
+    rev: 0.27.0
+    hooks:
+      - id: check-github-workflows

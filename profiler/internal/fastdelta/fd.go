@@ -65,8 +65,8 @@ import (
 	"fmt"
 	"io"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pproflite"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pproflite"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pprofutils"
 
 	"github.com/spaolacci/murmur3"
 )

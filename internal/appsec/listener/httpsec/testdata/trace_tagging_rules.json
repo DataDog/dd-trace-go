@@ -1,0 +1,156 @@
+{
+  "rules_compat": [
+    {
+      "id": "ttr-000-001",
+      "name": "Trace Tagging Rule: Attributes, No Keep, No Event",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^TraceTagging\\/v1"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+          "event": false,
+          "keep": false,
+          "attributes": {
+              "_dd.appsec.trace.integer": {
+                  "value": 662607015
+              },
+              "_dd.appsec.trace.agent": {
+                "address": "server.request.headers.no_cookies",
+                "key_path": ["user-agent"]
+              }
+          }
+      },
+      "on_match": []
+    },
+    {
+      "id": "ttr-000-002",
+      "name": "Trace Tagging Rule: Attributes, Keep, No Event",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^TraceTagging\\/v2"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+          "event": false,
+          "keep": true,
+          "attributes": {
+              "_dd.appsec.trace.integer": {
+                  "value": 602214076
+              },
+              "_dd.appsec.trace.agent": {
+                "address": "server.request.headers.no_cookies",
+                "key_path": ["user-agent"]
+              }
+          }
+      },
+      "on_match": []
+    },
+    {
+      "id": "ttr-000-003",
+      "name": "Trace Tagging Rule: Attributes, Keep, Event",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^TraceTagging\\/v3"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+          "event": true,
+          "keep": true,
+          "attributes": {
+              "_dd.appsec.trace.integer": {
+                  "value": 299792458
+              },
+              "_dd.appsec.trace.agent": {
+                "address": "server.request.headers.no_cookies",
+                "key_path": ["user-agent"]
+              }
+          }
+      },
+      "on_match": []
+    },
+    {
+      "id": "ttr-000-004",
+      "name": "Trace Tagging Rule: Attributes, No Keep, Event",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^TraceTagging\\/v4"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+          "event": true,
+          "keep": false,
+          "attributes": {
+              "_dd.appsec.trace.integer": {
+                  "value": 1729
+              },
+              "_dd.appsec.trace.agent": {
+                "address": "server.request.headers.no_cookies",
+                "key_path": ["user-agent"]
+              }
+          }
+      },
+      "on_match": []
+    }
+  ]
+}

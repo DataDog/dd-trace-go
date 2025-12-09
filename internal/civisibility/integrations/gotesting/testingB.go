@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 )
 
 var (
@@ -54,7 +54,7 @@ func (ddb *B) Run(name string, f func(*testing.B)) bool {
 // integration tests.
 func (ddb *B) Context() context.Context {
 	b := (*testing.B)(ddb)
-	ciTestItem := getCiVisibilityTest(b)
+	ciTestItem := getTestMetadata(b)
 	if ciTestItem != nil && ciTestItem.test != nil {
 		return ciTestItem.test.Context()
 	}

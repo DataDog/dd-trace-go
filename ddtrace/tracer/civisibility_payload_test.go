@@ -7,12 +7,16 @@ package tracer
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 )
@@ -21,7 +25,7 @@ func newCiVisibilityEventsList(n int) []*ciVisibilityEvent {
 	list := make([]*ciVisibilityEvent, n)
 	for i := 0; i < n; i++ {
 		s := newBasicSpan("span.list." + strconv.Itoa(i%5+1))
-		s.Start = fixedTime
+		s.start = fixedTime
 		list[i] = getCiVisibilityEvent(s)
 	}
 
@@ -50,8 +54,9 @@ func TestCiVisibilityPayloadIntegrity(t *testing.T) {
 			want.Reset()
 			err := msgp.Encode(want, allEvents)
 			assert.NoError(err)
-			assert.Equal(want.Len(), p.size())
-			assert.Equal(p.itemCount(), len(allEvents))
+			stats := p.stats()
+			assert.Equal(want.Len(), stats.size)
+			assert.Equal(len(allEvents), stats.itemCount)
 
 			got, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -63,9 +68,9 @@ func TestCiVisibilityPayloadIntegrity(t *testing.T) {
 // TestCiVisibilityPayloadDecode ensures that whatever we push into the payload can
 // be decoded by the codec.
 func TestCiVisibilityPayloadDecode(t *testing.T) {
-	assert := assert.New(t)
 	for _, n := range []int{10, 1 << 10} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			assert := assert.New(t)
 			p := newCiVisibilityPayload()
 			for i := 0; i < n; i++ {
 				list := newCiVisibilityEventsList(i%5 + 1)
@@ -78,6 +83,50 @@ func TestCiVisibilityPayloadDecode(t *testing.T) {
 			assert.NoError(err)
 		})
 	}
+}
+
+func TestCiVisibilityPayloadEnvelope(t *testing.T) {
+	assert := assert.New(t)
+	p := newCiVisibilityPayload()
+	payload := p.writeEnvelope("none", []byte{})
+
+	// Encode the payload to message pack
+	encodedBuf := new(bytes.Buffer)
+	err := msgp.Encode(encodedBuf, payload)
+	assert.NoError(err)
+
+	// Convert the message pack to json
+	jsonBuf := new(bytes.Buffer)
+	_, err = msgp.CopyToJSON(jsonBuf, encodedBuf)
+	assert.NoError(err)
+
+	// Decode the json payload
+	var testCyclePayload ciTestCyclePayload
+	err = json.Unmarshal(jsonBuf.Bytes(), &testCyclePayload)
+	assert.NoError(err)
+
+	// Now let's assert the decoded envelope metadata
+	assert.Contains(testCyclePayload.Metadata, "*")
+	assert.Subset(testCyclePayload.Metadata["*"], map[string]string{
+		"language":        "go",
+		"runtime-id":      globalconfig.RuntimeID(),
+		"library_version": version.Tag,
+	})
+
+	testSessionName := utils.GetCITags()[constants.TestSessionName]
+	testSessionMap := map[string]string{constants.TestSessionName: testSessionName}
+
+	assert.Contains(testCyclePayload.Metadata, "test_session_end")
+	assert.Subset(testCyclePayload.Metadata["test_session_end"], testSessionMap)
+
+	assert.Contains(testCyclePayload.Metadata, "test_module_end")
+	assert.Subset(testCyclePayload.Metadata["test_module_end"], testSessionMap)
+
+	assert.Contains(testCyclePayload.Metadata, "test_suite_end")
+	assert.Subset(testCyclePayload.Metadata["test_suite_end"], testSessionMap)
+
+	assert.Contains(testCyclePayload.Metadata, "test")
+	assert.Subset(testCyclePayload.Metadata["test"], testSessionMap)
 }
 
 func BenchmarkCiVisibilityPayloadThroughput(b *testing.B) {
@@ -93,7 +142,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newCiVisibilityPayload()
 		s := newBasicSpan("X")
-		s.Meta["key"] = strings.Repeat("X", 10*1024)
+		s.meta["key"] = strings.Repeat("X", 10*1024)
 		e := getCiVisibilityEvent(s)
 		events := make(ciVisibilityEvents, count)
 		for i := 0; i < count; i++ {
@@ -103,15 +152,12 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		reset := func() {
-			p.header = make([]byte, 8)
-			p.off = 8
-			atomic.StoreUint32(&p.count, 0)
-			p.buf.Reset()
+			p = newCiVisibilityPayload()
 		}
 		for i := 0; i < b.N; i++ {
 			reset()
 			for _, event := range events {
-				for p.size() < payloadMaxLimit {
+				for p.stats().size < payloadMaxLimit {
 					p.push(event)
 				}
 			}

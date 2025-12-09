@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package graphql // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/graph-go/graphql"
+package graphql // import "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2"
 
 import (
 	"context"
@@ -11,12 +11,11 @@ import (
 	"math"
 	"reflect"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/emitter/graphqlsec/types"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/graphqlsec"
+	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
@@ -24,16 +23,14 @@ import (
 	"github.com/hashicorp/go-multierror"
 )
 
-const componentName = "graphql-go/graphql"
-
 var (
+	instr       *instrumentation.Instrumentation
 	spanTagKind = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	spanTagType = tracer.Tag(ext.SpanType, ext.SpanTypeGraphQL)
 )
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/graphql-go/graphql")
+	instr = instrumentation.Load(instrumentation.PackageGraphQLGoGraphQL)
 }
 
 const (
@@ -53,7 +50,7 @@ func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, 
 	extension := datadogExtension{}
 	defaults(&extension.config)
 	for _, opt := range options {
-		opt(&extension.config)
+		opt.apply(&extension.config)
 	}
 	config.Extensions = append(config.Extensions, extension)
 	return graphql.NewSchema(config)
@@ -63,8 +60,8 @@ type datadogExtension struct{ config }
 
 type contextKey struct{}
 type contextData struct {
-	serverSpan    tracer.Span
-	requestOp     *types.RequestOperation
+	serverSpan    *tracer.Span
+	requestOp     *graphqlsec.RequestOperation
 	variables     map[string]any
 	query         string
 	operationName string
@@ -73,7 +70,7 @@ type contextData struct {
 // finish closes the top-level request operation, as well as the server span.
 func (c *contextData) finish(data any, err error) {
 	defer c.serverSpan.Finish(tracer.WithError(err))
-	c.requestOp.Finish(types.RequestOperationRes{Data: data, Error: err})
+	c.requestOp.Finish(graphqlsec.RequestOperationRes{Data: data, Error: err})
 }
 
 var extensionName = reflect.TypeOf((*datadogExtension)(nil)).Elem().Name()
@@ -95,10 +92,10 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	)
-	ctx, request := graphqlsec.StartRequestOperation(ctx, span, types.RequestOperationArgs{
+	ctx, request := graphqlsec.StartRequestOperation(ctx, span, graphqlsec.RequestOperationArgs{
 		RawQuery:      params.RequestString,
 		Variables:     params.VariableValues,
 		OperationName: params.OperationName,
@@ -120,12 +117,12 @@ func (i datadogExtension) Name() string {
 // ParseDidStart is being called before starting the parse
 func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, graphql.ParseFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -147,12 +144,12 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 // ValidationDidStart is called just before the validation begins
 func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Context, graphql.ValidationFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -178,12 +175,12 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 // ExecutionDidStart notifies about the start of the execution
 func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Context, graphql.ExecutionFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Measured(),
 	}
 	if data.operationName != "" {
@@ -193,18 +190,19 @@ func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Contex
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanExecute, opts...)
-	ctx, op := graphqlsec.StartExecutionOperation(ctx, span, types.ExecutionOperationArgs{
+	ctx, op := graphqlsec.StartExecutionOperation(ctx, graphqlsec.ExecutionOperationArgs{
 		Query:         data.query,
 		OperationName: data.operationName,
 		Variables:     data.variables,
 	})
 	return ctx, func(result *graphql.Result) {
 		err := toError(result.Errors)
+		instrgraphql.AddErrorsAsSpanEvents(span, toGraphqlErrors(result.Errors), i.config.errExtensions)
 		defer func() {
 			defer data.finish(result.Data, err)
 			span.Finish(tracer.WithError(err))
 		}()
-		op.Finish(types.ExecutionOperationRes{Data: result.Data, Error: err})
+		op.Finish(graphqlsec.ExecutionOperationRes{Data: result.Data, Error: err})
 	}
 }
 
@@ -223,13 +221,13 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 	default:
 		operationName = info.FieldName
 	}
-	opts := []ddtrace.StartSpanOption{
+	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(i.config.serviceName),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlField, info.FieldName),
 		tracer.Tag(tagGraphqlOperationType, info.Operation.GetOperation()),
-		tracer.Tag(ext.Component, componentName),
+		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
 		tracer.Tag(ext.ResourceName, fmt.Sprintf("%s.%s", info.ParentType.Name(), info.FieldName)),
 		tracer.Measured(),
 	}
@@ -240,14 +238,14 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
 	span, ctx := tracer.StartSpanFromContext(ctx, spanResolve, opts...)
-	ctx, op := graphqlsec.StartResolveOperation(ctx, span, types.ResolveOperationArgs{
+	ctx, op := graphqlsec.StartResolveOperation(ctx, graphqlsec.ResolveOperationArgs{
 		TypeName:  info.ParentType.Name(),
 		FieldName: info.FieldName,
 		Arguments: collectArguments(info),
 	})
 	return ctx, func(result any, err error) {
 		defer span.Finish(tracer.WithError(err))
-		op.Finish(types.ResolveOperationRes{Error: err, Data: result})
+		op.Finish(graphqlsec.ResolveOperationRes{Error: err, Data: result})
 	}
 }
 
@@ -308,4 +306,25 @@ func toError(errs []gqlerrors.FormattedError) error {
 	default:
 		return fmt.Errorf("%w (and %d more errors)", errs[0], count-1)
 	}
+}
+
+func toGraphqlErrors(errs []gqlerrors.FormattedError) []instrgraphql.Error {
+	res := make([]instrgraphql.Error, 0, len(errs))
+	for _, err := range errs {
+		locs := make([]instrgraphql.ErrorLocation, 0, len(err.Locations))
+		for _, loc := range err.Locations {
+			locs = append(locs, instrgraphql.ErrorLocation{
+				Line:   loc.Line,
+				Column: loc.Column,
+			})
+		}
+		res = append(res, instrgraphql.Error{
+			OriginalErr: err,
+			Message:     err.Message,
+			Locations:   locs,
+			Path:        err.Path,
+			Extensions:  err.Extensions,
+		})
+	}
+	return res
 }

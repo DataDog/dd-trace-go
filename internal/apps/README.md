@@ -39,6 +39,7 @@ docker-compose run --build scenario memory-leak/heap$
 ```
 
 Note:
+* Datadog employees should prefer using [dd-auth](https://datadoghq.atlassian.net/wiki/spaces/COBS/pages/4094591351/Datadog+Authentication+CLI+dd-auth-cli+dd-auth) over setting `DD_API_KEY` manually.
 * The default destination site is prod. Set `export DD_SITE=datad0g.com` to send the data to staging.
 * You can pass `-e DD_TEST_APPS_TOTAL_DURATION=120s` and similar vars to `docker-compose`, see [scenario_test.go](./scenario_test.go) for the available vars.
 

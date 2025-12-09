@@ -7,8 +7,14 @@ package orchestrion
 
 // Orchestrion will change this at build-time
 //
-//dd:orchestrion-enabled
+//orchestrion:enabled
 var enabled = false
+
+// The version of the orchestrion binary used to build the current binray, or
+// blank if the current binary was not built using orchestrion.
+//
+//orchestrion:version
+const Version = ""
 
 // Enabled returns whether the current build was compiled with orchestrion or not.
 func Enabled() bool {

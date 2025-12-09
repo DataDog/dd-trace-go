@@ -7,8 +7,8 @@ package negroni_test
 import (
 	"net/http"
 
-	negronitrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/urfave/negroni"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	negronitrace "github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/urfave/negroni"
 )
@@ -47,7 +47,7 @@ func Example_withServiceName() {
 	n := negroni.New()
 
 	// Use the tracer middleware with your desired service name.
-	n.Use(negronitrace.Middleware(negronitrace.WithServiceName("negroni-server")))
+	n.Use(negronitrace.Middleware(negronitrace.WithService("negroni-server")))
 
 	// Set up some endpoints.
 	mux := http.NewServeMux()

@@ -15,8 +15,9 @@ import (
 	"os/signal"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+	"github.com/DataDog/dd-trace-go/v2/profiler"
 )
 
 // Config is the configuration for a test app used by RunHTTP.
@@ -25,9 +26,11 @@ type Config struct {
 	// default we configure non-stop execution tracing for the test apps unless
 	// a DD_PROFILING_EXECUTION_TRACE_PERIOD env is set or this option is true.
 	DisableExecutionTracing bool
+
+	httpAddr net.Addr
 }
 
-func (c Config) RunHTTP(handler func() http.Handler) {
+func (c *Config) RunHTTP(handler func() http.Handler) {
 	// Parse common test app flags
 	var (
 		httpF   = flag.String("http", "localhost:8080", "HTTP addr to listen on.")
@@ -36,8 +39,13 @@ func (c Config) RunHTTP(handler func() http.Handler) {
 	flag.Parse()
 
 	// Configure non-stop execution tracing by default
-	if v := os.Getenv("DD_PROFILING_EXECUTION_TRACE_PERIOD"); v == "" && !c.DisableExecutionTracing {
+	if v := env.Get("DD_PROFILING_EXECUTION_TRACE_PERIOD"); v == "" && !c.DisableExecutionTracing {
 		os.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
+	}
+
+	// Enabled runtime metrics v2 by default
+	if v := env.Get("DD_RUNTIME_METRICS_V2_ENABLED"); v == "" {
+		os.Setenv("DD_RUNTIME_METRICS_V2_ENABLED", "true")
 	}
 
 	// Setup context that gets canceled on receiving SIGINT
@@ -59,16 +67,17 @@ func (c Config) RunHTTP(handler func() http.Handler) {
 			profiler.GoroutineProfile,
 		),
 	); err != nil {
-		log.Fatalf("failed to start profiler: %s", err)
+		log.Fatalf("failed to start profiler: %s", err.Error())
 	}
 	defer profiler.Stop()
 
 	// Start http server
 	l, err := net.Listen("tcp", *httpF)
 	if err != nil {
-		log.Fatalf("failed to listen: %s", err)
+		log.Fatalf("failed to listen: %s", err.Error())
 	}
 	defer l.Close()
+	c.httpAddr = l.Addr()
 	log.Printf("Listening on: http://%s", *httpF)
 	// handler is a func, because if we create a traced handler before starting
 	// the tracer, the service name will default to http.router.
@@ -78,4 +87,8 @@ func (c Config) RunHTTP(handler func() http.Handler) {
 	// Wait until SIGINT is received, then shut down
 	<-ctx.Done()
 	log.Printf("Received interrupt, shutting down")
+}
+
+func (c Config) HTTPAddr() net.Addr {
+	return c.httpAddr
 }

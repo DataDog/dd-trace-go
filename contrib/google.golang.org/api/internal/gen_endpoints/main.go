@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/yosida95/uritemplate/v3"
 	"io"
 	"log"
 	"net/http"
@@ -24,11 +23,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/yosida95/uritemplate/v3"
 )
 
 const (
 	// The github.com/googleapis/google-api-go-client version to use.
-	version = "v0.121.0"
+	version = "v0.192.0"
 )
 
 var (
@@ -195,6 +196,7 @@ func downloadGoogleAPISrc() (string, error) {
 	log.Printf("Downloading %s into %s...\n", zipURL, dst)
 
 	out, err := os.Create(zipFile)
+	assertNoError(err)
 	defer out.Close()
 	resp, err := http.Get(zipURL)
 	assertNoError(err)

@@ -8,9 +8,9 @@ package profiler
 import (
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -18,8 +18,8 @@ import (
 // Test that the profiler sends the correct telemetry information
 func TestTelemetryEnabled(t *testing.T) {
 	t.Run("tracer start, profiler start", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
 
 		tracer.Start()
 		defer tracer.Stop()
@@ -31,13 +31,12 @@ func TestTelemetryEnabled(t *testing.T) {
 		)
 		defer Stop()
 
-		assert.True(t, telemetryClient.ProfilerEnabled)
-		telemetry.Check(t, telemetryClient.Configuration, "heap_profile_enabled", true)
-		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 2)
+		assert.True(t, telemetryClient.Products[telemetry.NamespaceProfilers])
+		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "heap_profile_enabled", Value: true})
 	})
 	t.Run("only profiler start", func(t *testing.T) {
-		telemetryClient := new(telemetrytest.MockClient)
-		defer telemetry.MockGlobalClient(telemetryClient)()
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
 		Start(
 			WithProfileTypes(
 				HeapProfile,
@@ -45,8 +44,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		)
 		defer Stop()
 
-		assert.True(t, telemetryClient.ProfilerEnabled)
-		telemetry.Check(t, telemetryClient.Configuration, "heap_profile_enabled", true)
-		telemetryClient.AssertNumberOfCalls(t, "ApplyOps", 1)
+		assert.True(t, telemetryClient.Products[telemetry.NamespaceProfilers])
+		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "heap_profile_enabled", Value: true})
 	})
 }

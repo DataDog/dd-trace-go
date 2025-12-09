@@ -9,23 +9,17 @@ package bun
 import (
 	"context"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
 )
 
-const (
-	componentName      = "uptrace/bun"
-	defaultServiceName = "bun.db"
-)
+var instr *instrumentation.Instrumentation
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/uptrace/bun")
+	instr = instrumentation.Load(instrumentation.PackageUptraceBun)
 }
 
 // Wrap augments the given DB with tracing.
@@ -35,7 +29,7 @@ func Wrap(db *bun.DB, opts ...Option) {
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	log.Debug("contrib/uptrace/bun: Wrapping Database")
+	instr.Logger().Debug("contrib/uptrace/bun: Wrapping Database")
 	db.AddQueryHook(&queryHook{cfg: cfg})
 }
 
@@ -60,11 +54,11 @@ func (qh *queryHook) BeforeQuery(ctx context.Context, qe *bun.QueryEvent) contex
 	}
 	var (
 		query = qe.Query
-		opts  = []ddtrace.StartSpanOption{
+		opts  = []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeSQL),
 			tracer.ResourceName(string(query)),
 			tracer.ServiceName(qh.cfg.serviceName),
-			tracer.Tag(ext.Component, componentName),
+			tracer.Tag(ext.Component, instrumentation.PackageUptraceBun),
 			tracer.Tag(ext.DBSystem, dbSystem),
 		}
 	)

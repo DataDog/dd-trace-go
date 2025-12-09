@@ -17,10 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/httpmem"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
@@ -104,7 +103,7 @@ func TestSpanResourceNameDefault(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal("internal", p[0]["name"])
@@ -127,7 +126,7 @@ func TestSpanSetName(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal(strings.ToLower("NewName"), p[0]["name"])
@@ -165,13 +164,14 @@ func TestSpanLink(t *testing.T) {
 	tracer.Flush()
 	payload, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	assert.NotNil(payload)
 	assert.Len(payload, 1)    // only one trace
 	assert.Len(payload[0], 1) // only one span
 
-	var spanLinks []ddtrace.SpanLink
+	// Convert the span_links field from type []map[string]interface{} to a struct
+	var spanLinks []tracer.SpanLink
 	spanLinkBytes, _ := json.Marshal(payload[0][0]["span_links"])
 	json.Unmarshal(spanLinkBytes, &spanLinks)
 	assert.Len(spanLinks, 1) // only one span link
@@ -222,7 +222,7 @@ func TestSpanEnd(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 
@@ -285,7 +285,7 @@ func TestSpanSetStatus(t *testing.T) {
 				tracer.Flush()
 				traces, err := waitForPayload(payloads)
 				if err != nil {
-					t.Fatalf(err.Error())
+					t.Fatal(err.Error())
 				}
 				p := traces[0]
 				// An error description is set IFF the span has an error
@@ -313,12 +313,12 @@ func TestSpanSetStatus(t *testing.T) {
 }
 
 func TestSpanAddEvent(t *testing.T) {
-	assert := assert.New(t)
 	_, _, cleanup := mockTracerProvider(t)
 	tr := otel.Tracer("")
 	defer cleanup()
 
 	t.Run("event with attributes", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "span_event")
 		// When no timestamp option is provided, otel will generate a timestamp for the event
 		// We can't know the exact time that the event is added, but we can create start and end "bounds" and assert
@@ -338,11 +338,16 @@ func TestSpanAddEvent(t *testing.T) {
 		// Assert event exists under span events
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
-		assert.Equal(e.Name, "My event!")
+		assert.Equal(e.name, "My event!")
+
+		cfg := tracer.SpanEventConfig{}
+		for _, opt := range e.options {
+			opt(&cfg)
+		}
 		// assert event timestamp is [around] the expected time
-		assert.True((e.TimeUnixNano) >= timeStartBound && e.TimeUnixNano <= timeEndBound)
+		assert.True((cfg.Time.UnixNano()) >= timeStartBound && cfg.Time.UnixNano() <= timeEndBound)
 		// Assert both attributes exist on the event
-		assert.Len(e.Attributes, 3)
+		assert.Len(cfg.Attributes, 3)
 		// Assert attribute key-value fields
 		// note that attribute.Int("pid", 4328) created an attribute with value int64(4328), hence why the `want` is in int64 format
 		wantAttrs := map[string]interface{}{
@@ -351,10 +356,11 @@ func TestSpanAddEvent(t *testing.T) {
 			"condition": false,
 		}
 		for k, v := range wantAttrs {
-			assert.True(attributesContains(e.Attributes, k, v))
+			assert.True(attributesContains(cfg.Attributes, k, v))
 		}
 	})
 	t.Run("event with timestamp", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "span_event")
 		// generate micro and nano second timestamps
 		now := time.Now()
@@ -366,10 +372,16 @@ func TestSpanAddEvent(t *testing.T) {
 		dd := sp.(*span)
 		assert.Len(dd.events, 1)
 		e := dd.events[0]
+
+		cfg := tracer.SpanEventConfig{}
+		for _, opt := range e.options {
+			opt(&cfg)
+		}
 		// assert resulting timestamp is in nanoseconds
-		assert.Equal(timeMicro*1000, e.TimeUnixNano)
+		assert.Equal(timeMicro*1000, cfg.Time.UnixNano())
 	})
 	t.Run("mulitple events", func(t *testing.T) {
+		assert := assert.New(t)
 		_, sp := tr.Start(context.Background(), "sp")
 		now := time.Now()
 		sp.AddEvent("evt1", oteltrace.WithTimestamp(now))
@@ -425,7 +437,7 @@ func TestSpanContextWithStartOptions(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	t.Logf("%v", p[0])
@@ -463,7 +475,7 @@ func TestSpanContextWithStartOptionsPriorityOrder(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal("persisted_srv", p[0]["service"])
@@ -502,7 +514,7 @@ func TestSpanEndOptionsPriorityOrder(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal(float64(duration.Nanoseconds()), p[0]["duration"])
@@ -531,7 +543,7 @@ func TestSpanEndOptions(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal("ctx_srv", p[0]["service"])
@@ -579,7 +591,7 @@ func TestSpanSetAttributes(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	meta := fmt.Sprintf("%v", p[0]["meta"])
@@ -620,7 +632,7 @@ func TestSpanSetAttributesWithRemapping(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal("graphql.server.request", p[0]["name"])
@@ -638,7 +650,7 @@ func TestTracerStartOptions(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal("test_serv", p[0]["service"])
@@ -661,7 +673,7 @@ func TestOperationNameRemapping(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal("graphql.server.request", p[0]["name"])
@@ -788,7 +800,7 @@ func TestRemapName(t *testing.T) {
 			tracer.Flush()
 			traces, err := waitForPayload(payloads)
 			if err != nil {
-				t.Fatalf(err.Error())
+				t.Fatal(err.Error())
 			}
 			p := traces[0]
 			assert.Equal(test.out, p[0]["name"])
@@ -818,7 +830,7 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	tracer.Flush()
 	traces, err := waitForPayload(payloads)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	p := traces[0]
 	assert.Equal("overriden.name", p[0]["name"])

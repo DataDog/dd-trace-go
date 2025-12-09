@@ -8,11 +8,14 @@ package leveldb_test
 import (
 	"context"
 
-	leveldbtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/syndtr/goleveldb/leveldb"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	leveldbtrace "github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2/leveldb"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	db, _ := leveldbtrace.OpenFile("/tmp/example.leveldb", nil)
 
 	// Create a root span, giving name, server and resource.

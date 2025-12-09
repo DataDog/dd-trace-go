@@ -12,17 +12,18 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
 )
 
 func TestAppSec(t *testing.T) {
@@ -58,7 +59,6 @@ func TestAppSec(t *testing.T) {
 		testCases := map[string]struct {
 			query     string
 			variables map[string]any
-			events    map[string]string
 		}{
 			"basic": {
 				query: `query TestQuery($topLevelId: String!, $nestedId: String!) { topLevel(id: $topLevelId) { nested(id: $nestedId) } }`,
@@ -66,20 +66,12 @@ func TestAppSec(t *testing.T) {
 					"topLevelId": topLevelAttack,
 					"nestedId":   nestedAttack,
 				},
-				events: map[string]string{
-					"test-rule-001": "graphql.resolve(topLevel)",
-					"test-rule-002": "graphql.resolve(nested)",
-				},
 			},
 			"with-default-parameter": {
 				query: fmt.Sprintf(`query TestQuery($topLevelId: String = %#v, $nestedId: String!) { topLevel(id: $topLevelId) { nested(id: $nestedId) } }`, topLevelAttack),
 				variables: map[string]any{
 					// "topLevelId" omitted (default value used)
 					"nestedId": nestedAttack,
-				},
-				events: map[string]string{
-					"test-rule-001": "graphql.resolve(topLevel)",
-					"test-rule-002": "graphql.resolve(nested)",
 				},
 			},
 			"embedded-variable": {
@@ -91,10 +83,6 @@ func TestAppSec(t *testing.T) {
 				variables: map[string]any{
 					"topLevelId": topLevelAttack,
 					"nestedId":   nestedAttack,
-				},
-				events: map[string]string{
-					"test-rule-001": "graphql.resolve(topLevelMapped)",
-					"test-rule-002": "graphql.resolve(nested)",
 				},
 			},
 		}
@@ -113,14 +101,23 @@ func TestAppSec(t *testing.T) {
 
 				require.Equal(t, map[string]any{"topLevel": map[string]any{"nested": fmt.Sprintf("%s/%s", topLevelAttack, nestedAttack)}}, resp)
 
+				// Avoid flakiness by pushing any in-flight span to the finished ones.
+				mt.Flush()
+
 				// Ensure the query produced the expected appsec events
 				spans := mt.FinishedSpans()
 				require.NotEmpty(t, spans)
 
-				// The last finished span (which is GraphQL entry) should have the "_dd.appsec.enabled" tag.
-				require.Equal(t, 1, spans[len(spans)-1].Tag("_dd.appsec.enabled"))
+				// Find the latest finished span (which is GraphQL entry). It should have the "_dd.appsec.enabled" tag.
+				var span *mocktracer.Span
+				for i := len(spans) - 1; i >= 0; i++ {
+					span = spans[i]
+					if span.Tag("_dd.appsec.enabled") == float64(1) {
+						break
+					}
+				}
+				require.Equal(t, float64(1), span.Tag("_dd.appsec.enabled"))
 
-				events := make(map[string]string)
 				type ddAppsecJSON struct {
 					Triggers []struct {
 						Rule struct {
@@ -129,36 +126,59 @@ func TestAppSec(t *testing.T) {
 					} `json:"triggers"`
 				}
 
-				// Search for AppSec events in the set of spans
-				for _, span := range spans {
-					jsonText, ok := span.Tag("_dd.appsec.json").(string)
-					if !ok || jsonText == "" {
-						continue
-					}
-					var parsed ddAppsecJSON
-					err := json.Unmarshal([]byte(jsonText), &parsed)
-					require.NoError(t, err)
+				jsonText, ok := span.Tag("_dd.appsec.json").(string)
+				require.True(t, ok, "expected _dd.appsec.json tag on span - tags were: %v", span.Tags())
 
-					require.Len(t, parsed.Triggers, 1, "expected exactly 1 trigger on %s span", span.OperationName())
-					ruleID := parsed.Triggers[0].Rule.ID
-					_, duplicate := events[ruleID]
-					require.False(t, duplicate, "found duplicated hit for rule %s", ruleID)
-					var origin string
-					switch name := span.OperationName(); name {
-					case "graphql.field":
-						field := span.Tag(tagGraphqlField).(string)
-						origin = fmt.Sprintf("%s(%s)", "graphql.resolve", field)
-					case "graphql.query":
-						origin = "graphql.execute"
-					default:
-						require.Fail(t, "rule trigger recorded on unecpected span", "rule %s recorded a hit on unexpected span %s", ruleID, name)
-					}
-					events[ruleID] = origin
+				var parsed ddAppsecJSON
+				err = json.Unmarshal([]byte(jsonText), &parsed)
+				require.NoError(t, err)
+
+				ids := make([]string, 0, len(parsed.Triggers))
+				for _, trigger := range parsed.Triggers {
+					ids = append(ids, trigger.Rule.ID)
 				}
-				// Ensure they match the expected outcome
-				require.Equal(t, tc.events, events)
+
+				require.ElementsMatch(t, ids, []string{"test-rule-001", "test-rule-002"})
 			})
 		}
+	})
+
+	t.Run("subscription", func(t *testing.T) {
+		schema := gqlparser.MustLoadSchema(&ast.Source{Input: `type Time {
+			unixTime: Int!
+		}
+		type Subscription {
+			currentTime: Time!
+		}`})
+
+		server := handler.New(&graphql.ExecutableSchemaMock{
+			ExecFunc:   execSubscriptionFunc,
+			SchemaFunc: func() *ast.Schema { return schema },
+		})
+		server.Use(NewTracer())
+		server.AddTransport(transport.Websocket{})
+
+		client := client.New(server)
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		now := time.Now().Unix()
+		sub := client.Websocket(`subscription { currentTime { unixTime } }`)
+		var resp struct {
+			CurrentTime struct {
+				UnixTime int64 `json:"unixTime"`
+			} `json:"currentTime"`
+		}
+		require.NoError(t, sub.Next(&resp))
+		require.LessOrEqual(t, now, resp.CurrentTime.UnixTime)
+		require.NoError(t, sub.Close())
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+		require.Equal(t, "graphql.read", spans[0].OperationName())
+		require.Equal(t, "graphql.parse", spans[1].OperationName())
+		require.Equal(t, "graphql.validate", spans[2].OperationName())
 	})
 }
 
@@ -260,14 +280,14 @@ func enableAppSec(t *testing.T) func() {
 	require.NoError(t, err)
 	t.Setenv("DD_APPSEC_ENABLED", "1")
 	t.Setenv("DD_APPSEC_RULES", rulesFile)
-	appsec.Start()
+	t.Setenv("DD_APPSEC_TRACE_RATE_LIMIT", "1000000000")
+	// GraphQL queries with nested resolvers need more than the default 2ms WAF timeout
+	// because the timeout budget is shared across all resolver invocations in the request.
+	// Without this, the second resolver can timeout before completing its scan.
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1m")
+	testutils.StartAppSec(t)
 	cleanup := func() {
-		appsec.Stop()
 		_ = os.RemoveAll(tmpDir)
-	}
-	if !appsec.Enabled() {
-		cleanup()
-		t.Skip("could not enable appsec: this platform is likely not supported")
 	}
 	return cleanup
 }
@@ -291,7 +311,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 					Field:  field,
 					Args:   field.ArgumentMap(op.Variables),
 				})
-				fieldVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+				fieldVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 					switch field.Name {
 					case "topLevel":
 						arg := field.Arguments.ForName("id")
@@ -326,7 +346,7 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 							Field:  nested,
 							Args:   nested.ArgumentMap(op.Variables),
 						})
-						nestedVal, err := op.ResolverMiddleware(ctx, func(ctx context.Context) (any, error) {
+						nestedVal, err := op.ResolverMiddleware(ctx, func(_ context.Context) (any, error) {
 							switch nested.Name {
 							case "nested":
 								arg := nested.Arguments.ForName("id")
@@ -356,5 +376,34 @@ func execFunc(ctx context.Context) graphql.ResponseHandler {
 		}
 	default:
 		return graphql.OneShot(graphql.ErrorResponse(ctx, "not implemented"))
+	}
+}
+
+func execSubscriptionFunc(ctx context.Context) graphql.ResponseHandler {
+	op := graphql.GetOperationContext(ctx)
+
+	if op.Operation.Operation != ast.Subscription {
+		return graphql.OneShot(graphql.ErrorResponse(ctx, "not implemented"))
+	}
+
+	return func(ctx context.Context) *graphql.Response {
+		fields := graphql.CollectFields(op, op.Operation.SelectionSet, []string{"Subscription"})
+		resp := make(map[string]any)
+		for _, field := range fields {
+			switch field.Name {
+			case "currentTime":
+				resp["currentTime"] = map[string]int64{
+					"unixTime": time.Now().Unix(),
+				}
+			default:
+				return graphql.ErrorResponse(ctx, "unknown field: %s", field.Name)
+			}
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return graphql.ErrorResponse(ctx, "failed to marshal response: %v", err)
+		}
+		return &graphql.Response{Data: data}
 	}
 }

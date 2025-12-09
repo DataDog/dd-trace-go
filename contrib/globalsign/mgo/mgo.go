@@ -3,28 +3,30 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package mgo provides functions and types which allow tracing of the MGO MongoDB client (https://github.com/globalsign/mgo)
-package mgo // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/globalsign/mgo"
+// Package mgo provides functions and types which allow tracing of the MGO MongoDB client (https://github.com/globalsign/mgo).
+//
+// Deprecated: github.com/globalsign/mgo is unmaintained, please migrate to the official MongoDB driver
+// https://github.com/mongodb/mongo-go-driver. This integration will be removed in a future release.
+package mgo // import "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
 
 import (
 	"math"
 	"net"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
 	"github.com/globalsign/mgo"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "globalsign/mgo"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/globalsign/mgo")
+	instr = instrumentation.Load(instrumentation.PackageGlobalsignMgo)
 }
 
 // Dial opens a connection to a MongoDB server and configures it
@@ -60,9 +62,9 @@ func Dial(url string, opts ...DialOption) (*Session, error) {
 		tags:    tags,
 	}
 	for _, fn := range opts {
-		fn(s.cfg)
+		fn.apply(s.cfg)
 	}
-	log.Debug("contrib/globalsign/mgo: Dialing: %s, %#v", url, s.cfg)
+	instr.Logger().Debug("contrib/globalsign/mgo: Dialing: %s, %#v", url, s.cfg)
 	return s, err
 }
 
@@ -73,8 +75,8 @@ type Session struct {
 	tags map[string]string
 }
 
-func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) ddtrace.Span {
-	opts := []ddtrace.StartSpanOption{
+func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) *tracer.Span {
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
 		tracer.ServiceName(cfg.serviceName),
 		tracer.ResourceName(cfg.spanName),

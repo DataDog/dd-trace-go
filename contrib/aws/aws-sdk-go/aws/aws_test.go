@@ -17,12 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/endpoints"
@@ -39,6 +33,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func newIntegrationTestSession(t *testing.T, opts ...Option) *session.Session {
@@ -83,6 +82,7 @@ func TestAWS(t *testing.T) {
 		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
 		assert.Equal(t, "CreateBucket", s.Tag("aws.operation"))
 		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
+		assert.Equal(t, "aws", s.Tag("aws.partition"))
 		assert.Equal(t, "s3.CreateBucket", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.s3", s.Tag(ext.ServiceName))
 		assert.Equal(t, "403", s.Tag(ext.HTTPCode))
@@ -91,6 +91,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 		assert.NotNil(t, s.Tag("aws.request_id"))
+		assert.Equal(t, componentName, s.Integration())
 	})
 
 	t.Run("ec2", func(t *testing.T) {
@@ -111,6 +112,7 @@ func TestAWS(t *testing.T) {
 		assert.Contains(t, s.Tag("aws.agent"), "aws-sdk-go")
 		assert.Equal(t, "DescribeInstances", s.Tag("aws.operation"))
 		assert.Equal(t, "us-west-2", s.Tag("aws.region"))
+		assert.Equal(t, "aws", s.Tag("aws.partition"))
 		assert.Equal(t, "ec2.DescribeInstances", s.Tag(ext.ResourceName))
 		assert.Equal(t, "aws.ec2", s.Tag(ext.ServiceName))
 		assert.Equal(t, "400", s.Tag(ext.HTTPCode))
@@ -118,6 +120,7 @@ func TestAWS(t *testing.T) {
 		assert.Equal(t, "http://ec2.us-west-2.amazonaws.com/", s.Tag(ext.HTTPURL))
 		assert.Equal(t, "aws/aws-sdk-go/aws", s.Tag(ext.Component))
 		assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
+		assert.Equal(t, componentName, s.Integration())
 	})
 }
 
@@ -144,18 +147,6 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, nil)
 	})
 
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
-		assertRate(t, mt, 0.4)
-	})
-
 	t.Run("enabled", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -174,10 +165,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
-
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
 }
@@ -211,7 +199,7 @@ func TestRetries(t *testing.T) {
 	assert.Same(t, expectedError, err)
 	assert.Len(t, mt.OpenSpans(), 0)
 	assert.Len(t, mt.FinishedSpans(), 1)
-	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), 3)
+	assert.Equal(t, mt.FinishedSpans()[0].Tag("aws.retry_count"), float64(3))
 }
 
 func TestHTTPCredentials(t *testing.T) {
@@ -239,7 +227,7 @@ func TestHTTPCredentials(t *testing.T) {
 	require.NoError(t, err)
 	u.User = url.UserPassword("myuser", "mypassword")
 
-	resolver := endpoints.ResolverFunc(func(service, region string, opts ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+	resolver := endpoints.ResolverFunc(func(_, _ string, _ ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
 		return endpoints.ResolvedEndpoint{
 			PartitionID:   "aws",
 			URL:           u.String(),
@@ -293,14 +281,54 @@ func TestWithErrorCheck(t *testing.T) {
 
 			spans := mt.FinishedSpans()
 			assert.True(t, len(spans) > 0)
-			assert.Equal(t, errExist, spans[0].Tag(ext.Error) != nil)
+			assert.Equal(t, errExist, spans[0].Tag(ext.ErrorMsg) != nil)
 		}
 	}
 
 	t.Run("defaults", testOpts(true))
-	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
+	t.Run("errcheck", testOpts(false, WithErrorCheck(func(_ error) bool {
 		return false
 	})))
+}
+
+func TestPartitionTag(t *testing.T) {
+	tests := []struct {
+		region    string
+		partition string
+	}{
+		{"us-east-1", "aws"},
+		{"eu-west-1", "aws"},
+		{"cn-north-1", "aws-cn"},
+		{"us-gov-east-1", "aws-us-gov"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.region, func(t *testing.T) {
+			cfg := aws.NewConfig().
+				WithRegion(tt.region).
+				WithDisableSSL(true).
+				WithCredentials(credentials.AnonymousCredentials)
+
+			session := WrapSession(session.Must(session.NewSession(cfg)))
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			root, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+			s3api := s3.New(session)
+			s3api.CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+				Bucket: aws.String("my-test-bucket"),
+			})
+			root.Finish()
+
+			spans := mt.FinishedSpans()
+			assert.Len(t, spans, 2)
+
+			s := spans[0]
+			assert.Equal(t, tt.partition, s.Tag("aws.partition"))
+			assert.Equal(t, tt.region, s.Tag("aws.region"))
+		})
+	}
 }
 
 func TestExtraTagsForService(t *testing.T) {
@@ -338,6 +366,11 @@ func TestExtraTagsForService(t *testing.T) {
 		assert.Equal(t, "sqs", s0.Tag("aws_service"))
 		assert.Equal(t, "SendMessage", s0.Tag("aws.operation"))
 		assert.Equal(t, sqsQueueName, s0.Tag("queuename"))
+		// Extract account ID from the queue URL
+		urlParts := strings.Split(sqsQueueURL, "/")
+		accountID := urlParts[len(urlParts)-2]
+		expectedARN := "arn:aws:sqs:us-east-1:" + accountID + ":test-queue-name"
+		assert.Equal(t, expectedARN, s0.Tag("cloud.resource_id"))
 	})
 	t.Run("S3", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -507,125 +540,117 @@ func TestExtraTagsForService(t *testing.T) {
 	})
 }
 
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		s := newIntegrationTestSession(t, opts...)
-		ec2Client := ec2.New(s)
-		s3Client := s3.New(s)
-		sqsClient := sqs.New(s)
-		snsClient := sns.New(s)
-
-		_, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{})
-		require.NoError(t, err)
-		_, err = s3Client.ListBuckets(&s3.ListBucketsInput{})
-		require.NoError(t, err)
-		_, err = sqsClient.ListQueues(&sqs.ListQueuesInput{})
-		require.NoError(t, err)
-		_, err = snsClient.ListTopics(&sns.ListTopicsInput{})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "ec2.command", spans[0].OperationName())
-		assert.Equal(t, "s3.command", spans[1].OperationName())
-		assert.Equal(t, "sqs.command", spans[2].OperationName())
-		assert.Equal(t, "sns.command", spans[3].OperationName())
+func TestExtractSQSMetadata(t *testing.T) {
+	tests := []struct {
+		name              string
+		queueURL          string
+		region            string
+		partition         string
+		expectedQueueName string
+		expectedARN       string
+	}{
+		{
+			name:              "normal URL",
+			queueURL:          "https://sqs.us-east-1.amazonaws.com/123456789012/MyQueue",
+			region:            "us-east-1",
+			partition:         "aws",
+			expectedQueueName: "MyQueue",
+			expectedARN:       "arn:aws:sqs:us-east-1:123456789012:MyQueue",
+		},
+		{
+			name:              "URL with trailing slash",
+			queueURL:          "https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueue/",
+			region:            "eu-west-1",
+			partition:         "aws",
+			expectedQueueName: "MyQueue",
+			expectedARN:       "arn:aws:sqs:eu-west-1:123456789012:MyQueue",
+		},
+		{
+			name:              "URL with trailing slash - different region",
+			queueURL:          "https://sqs.eu-west-2.amazonaws.com/987654321098/TestQueue/",
+			region:            "eu-west-2",
+			partition:         "aws",
+			expectedQueueName: "TestQueue",
+			expectedARN:       "arn:aws:sqs:eu-west-2:987654321098:TestQueue",
+		},
+		{
+			name:              "China region with trailing slash",
+			queueURL:          "https://sqs.cn-north-1.amazonaws.com.cn/123456789012/ChinaQueue/",
+			region:            "cn-north-1",
+			partition:         "aws-cn",
+			expectedQueueName: "ChinaQueue",
+			expectedARN:       "arn:aws-cn:sqs:cn-north-1:123456789012:ChinaQueue",
+		},
+		{
+			name:              "GovCloud region with trailing slash",
+			queueURL:          "https://sqs.us-gov-west-1.amazonaws.com/123456789012/GovQueue/",
+			region:            "us-gov-west-1",
+			partition:         "aws-us-gov",
+			expectedQueueName: "GovQueue",
+			expectedARN:       "arn:aws-us-gov:sqs:us-gov-west-1:123456789012:GovQueue",
+		},
+		{
+			name:              "malformed URL - just slash",
+			queueURL:          "/",
+			region:            "us-east-1",
+			partition:         "aws",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+		{
+			name:              "malformed URL - empty",
+			queueURL:          "",
+			region:            "us-east-1",
+			partition:         "aws",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
+		{
+			name:              "malformed URL - single part",
+			queueURL:          "invalidurl",
+			region:            "us-east-1",
+			partition:         "aws",
+			expectedQueueName: "",
+			expectedARN:       "",
+		},
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 4)
-		assert.Equal(t, "aws.ec2.request", spans[0].OperationName())
-		assert.Equal(t, "aws.s3.request", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.request", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queueName, arn := extractSQSMetadata(tt.queueURL, tt.region, tt.partition)
+			assert.Equal(t, tt.expectedQueueName, queueName)
+			assert.Equal(t, tt.expectedARN, arn)
+		})
 	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
-		WithDDService:            []string{"aws.ec2", "aws.s3", "aws.sqs", "aws.sns"},
-		WithDDServiceAndOverride: []string{serviceOverride, serviceOverride, serviceOverride, serviceOverride},
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
 }
 
-func TestMessagingNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []Option
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		s := newIntegrationTestSession(t, opts...)
-		resourceName := "test-naming-schema-aws-v1"
-		sqsClient := sqs.New(s)
-		snsClient := sns.New(s)
-
-		// create a SQS queue
-		sqsResp, err := sqsClient.CreateQueue(&sqs.CreateQueueInput{QueueName: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		msg := &sqs.SendMessageInput{QueueUrl: sqsResp.QueueUrl, MessageBody: aws.String("body")}
-		_, err = sqsClient.SendMessage(msg)
-		require.NoError(t, err)
-
-		batchMsg := &sqs.SendMessageBatchInput{QueueUrl: sqsResp.QueueUrl}
-		entry := &sqs.SendMessageBatchRequestEntry{Id: aws.String("1"), MessageBody: aws.String("body")}
-		batchMsg.SetEntries([]*sqs.SendMessageBatchRequestEntry{entry})
-		_, err = sqsClient.SendMessageBatch(batchMsg)
-		require.NoError(t, err)
-
-		// create an SNS topic
-		snsResp, err := snsClient.CreateTopic(&sns.CreateTopicInput{Name: aws.String(resourceName)})
-		require.NoError(t, err)
-
-		_, err = snsClient.Publish(&sns.PublishInput{TopicArn: snsResp.TopicArn, Message: aws.String("message")})
-		require.NoError(t, err)
-
-		return mt.FinishedSpans()
-	})
-	assertOpV0 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "sqs.command", spans[0].OperationName())
-		assert.Equal(t, "sqs.command", spans[1].OperationName())
-		assert.Equal(t, "sqs.command", spans[2].OperationName())
-		assert.Equal(t, "sns.command", spans[3].OperationName())
-		assert.Equal(t, "sns.command", spans[4].OperationName())
+func TestAwsPartition(t *testing.T) {
+	tests := []struct {
+		name      string
+		partition string
+	}{
+		{
+			name:      "AWS standard partition",
+			partition: "aws",
+		},
+		{
+			name:      "AWS China partition",
+			partition: "aws-cn",
+		},
+		{
+			name:      "AWS GovCloud partition",
+			partition: "aws-us-gov",
+		},
 	}
-	assertOpV1 := func(t *testing.T, spans []mocktracer.Span) {
-		require.Len(t, spans, 5)
-		assert.Equal(t, "aws.sqs.request", spans[0].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[1].OperationName())
-		assert.Equal(t, "aws.sqs.send", spans[2].OperationName())
-		assert.Equal(t, "aws.sns.request", spans[3].OperationName())
-		assert.Equal(t, "aws.sns.send", spans[4].OperationName())
-	}
-	serviceOverride := namingschematest.TestServiceOverride
-	wantServiceNameV0 := namingschematest.ServiceNameAssertions{
-		WithDefaults:             []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
-		WithDDService:            []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
-		WithDDServiceAndOverride: repeat(serviceOverride, 5),
-	}
-	t.Run("ServiceName", namingschematest.NewServiceNameTest(genSpans, wantServiceNameV0))
-	t.Run("SpanName", namingschematest.NewSpanNameTest(genSpans, assertOpV0, assertOpV1))
-}
 
-func repeat(s string, n int) []string {
-	r := make([]string, n)
-	for i := 0; i < n; i++ {
-		r[i] = s
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &request.Request{}
+			req.ClientInfo.PartitionID = tt.partition
+			partition := awsPartition(req)
+			assert.Equal(t, tt.partition, partition)
+		})
 	}
-	return r
 }
 
 func prepareSQS(t *testing.T, sess *session.Session, queueName string) string {

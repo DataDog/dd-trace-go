@@ -1,0 +1,49 @@
+name: "Bug Report (Low Priority)"
+description: "Create a public Bug Report. Note that these may not be addressed as quickly as the helpdesk and that looking up account information will be difficult."
+title: "[BUG]: "
+labels: [bug]
+body:
+  - type: input
+    attributes:
+      label: Tracer Version(s)
+      description: "Version(s) of the tracer affected by this bug. If you aren't using the [latest version](https://github.com/DataDog/dd-trace-go/releases) of dd-trace-go, try upgrading first to see if your issue has already been resolved."
+      placeholder: 1.70.0
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: Go Version(s)
+      description: "Version(s) of Go (`go version`) that you've encountered this bug with."
+      placeholder: "go version go1.23.2 darwin/arm64"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Bug Report
+      description: Please add a clear and concise description of the bug here
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Reproduction Code
+      description: Please add code here to help us reproduce the problem
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: Error Logs
+      description: "Please provide any error logs from the tracer (`DD_TRACE_DEBUG=true` can help)"
+    validations:
+      required: false
+
+  - type: input
+    attributes:
+      label: Go Env Output
+      description: "Provide the output from `go env`"
+      placeholder: "GOARCH='arm64' ... GOVERSION='go1.23.2' ..."
+    validations:
+      required: false

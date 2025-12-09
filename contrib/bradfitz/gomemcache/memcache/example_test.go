@@ -8,13 +8,16 @@ package memcache_test
 import (
 	"context"
 
-	memcachetrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gomemcache/memcache"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	memcachetrace "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/bradfitz/gomemcache/memcache"
 )
 
 func Example() {
+	tracer.Start()
+	defer tracer.Stop()
+
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
 		tracer.ServiceName("web"),
 		tracer.ResourceName("/home"),

@@ -93,7 +93,7 @@ func TestReadEntityIDPrioritizeCID(t *testing.T) {
 
 	containerID = "fakeContainerID"
 	eid := readEntityID("", "", true)
-	assert.Equal(t, "cid-fakeContainerID", eid)
+	assert.Equal(t, "ci-fakeContainerID", eid)
 }
 
 func TestReadEntityIDFallbackOnInode(t *testing.T) {

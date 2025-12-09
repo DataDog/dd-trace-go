@@ -13,21 +13,16 @@ import (
 	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
-
+	"github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
+	testutils.StartAppSec(t)
 
 	r := gin.New()
 	r.Use(Middleware("appsec"))
@@ -38,8 +33,13 @@ func TestAppSec(t *testing.T) {
 		c.String(200, "Hello Params!\n")
 	})
 	r.Any("/body", func(c *gin.Context) {
-		pappsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
+		appsec.MonitorParsedHTTPBody(c.Request.Context(), "$globals")
 		c.String(200, "Hello Body!\n")
+	})
+	r.Any("/response-body", func(c *gin.Context) {
+		body := map[string]string{"hello": "world"}
+		appsec.MonitorHTTPResponseBody(c.Request.Context(), body)
+		c.JSON(200, body)
 	})
 
 	srv := httptest.NewServer(r)
@@ -121,36 +121,59 @@ func TestAppSec(t *testing.T) {
 
 	})
 
-	// Test a PHP injection attack via request parsed body
-	t.Run("SDK-body", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+	t.Run("SDK", func(t *testing.T) {
+		// Test a PHP injection attack via request parsed body
+		t.Run("parsed-body", func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
 
-		req, err := http.NewRequest("POST", srv.URL+"/body", nil)
-		if err != nil {
-			panic(err)
-		}
-		res, err := srv.Client().Do(req)
-		require.NoError(t, err)
-		defer res.Body.Close()
+			req, err := http.NewRequest("POST", srv.URL+"/body", nil)
+			require.NoError(t, err)
 
-		// Check that the handler was properly called
-		b, err := io.ReadAll(res.Body)
-		require.NoError(t, err)
-		require.Equal(t, "Hello Body!\n", string(b))
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
 
-		finished := mt.FinishedSpans()
-		require.Len(t, finished, 1)
+			// Check that the handler was properly called
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			require.Equal(t, "Hello Body!\n", string(b))
 
-		event := finished[0].Tag("_dd.appsec.json")
-		require.NotNil(t, event)
-		require.True(t, strings.Contains(event.(string), "crs-933-130"))
+			finished := mt.FinishedSpans()
+			require.Len(t, finished, 1)
+
+			event := finished[0].Tag("_dd.appsec.json")
+			require.NotNil(t, event)
+			require.True(t, strings.Contains(event.(string), "crs-933-130"))
+		})
+
+		t.Run("response-body", func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", srv.URL+"/response-body", nil)
+			require.NoError(t, err)
+
+			res, err := srv.Client().Do(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+
+			// Check that the handler was properly called
+			b, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+			require.Equal(t, `{"hello":"world"}`, string(b))
+
+			// Verify the WAF has indeed been able to see the response body, which means it produced the
+			// response body schema derivative.
+			finished := mt.FinishedSpans()
+			require.Len(t, finished, 1)
+			require.Equal(t, `[{"hello":[8]}]`, finished[0].Tag("_dd.appsec.s.res.body"))
+		})
 	})
 }
 
 func TestControlFlow(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
+	testutils.StartAppSec(t)
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
 	handlerResponseBody := "Hello Handler"
@@ -239,7 +262,7 @@ func TestControlFlow(t *testing.T) {
 					c.Abort()
 				},
 			},
-			handler: func(c *gin.Context) {
+			handler: func(_ *gin.Context) {
 				// Do nothing so that the calling middleware can handle the response.
 			},
 			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer) {
@@ -351,6 +374,7 @@ func TestControlFlow(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
+			defer mt.Stop()
 			// Create a Gin router
 			router := gin.New()
 			// Setup the middleware
@@ -373,16 +397,22 @@ func TestControlFlow(t *testing.T) {
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
+	testutils.StartAppSec(t)
 
 	r := gin.New()
 	r.Use(Middleware("appsec"))
-	r.Any("/", func(c *gin.Context) {
+	r.Any("/test", func(c *gin.Context) {
 		c.String(200, "Hello World!\n")
+	})
+	r.Any("/body", func(c *gin.Context) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := c.Bind(&body); err != nil {
+			c.AbortWithError(400, err) // Should be ignored
+			return
+		}
+		c.String(200, "Hello %s!\n", body.Name)
 	})
 	srv := httptest.NewServer(r)
 	defer srv.Close()
@@ -391,7 +421,7 @@ func TestBlocking(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("POST", srv.URL, nil)
+		req, err := http.NewRequest("POST", srv.URL+"/test", nil)
 		if err != nil {
 			panic(err)
 		}
@@ -408,29 +438,54 @@ func TestBlocking(t *testing.T) {
 		require.Equal(t, 403, res.StatusCode)
 	})
 
+	t.Run("body-block", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srv.URL+"/body", strings.NewReader(`{"name":"$globals"}`))
+		if err != nil {
+			panic(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// Hardcoded IP header holding an IP that is blocked
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		// Check that the request was blocked
+		b, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.NotContains(t, string(b), "Hello")
+		require.Equal(t, 403, res.StatusCode)
+	})
+
 	t.Run("no-block", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req1, err := http.NewRequest("POST", srv.URL, nil)
+		req1, err := http.NewRequest("POST", srv.URL+"/test", nil)
 		if err != nil {
 			panic(err)
 		}
-		req2, err := http.NewRequest("POST", srv.URL, nil)
+		req2, err := http.NewRequest("POST", srv.URL+"/test", nil)
 		if err != nil {
 			panic(err)
 		}
 		req2.Header.Set("x-forwarded-for", "1.2.3.5")
+		req3, err := http.NewRequest("POST", srv.URL+"/body", strings.NewReader(`{"name":"toto"}`))
+		if err != nil {
+			panic(err)
+		}
+		req3.Header.Set("Content-Type", "application/json")
 
-		for _, r := range []*http.Request{req1, req2} {
+		for _, r := range []*http.Request{req1, req2, req3} {
 			res, err := srv.Client().Do(r)
 			require.NoError(t, err)
 			defer res.Body.Close()
 			// Check that the request was not blocked
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
-			require.Equal(t, "Hello World!\n", string(b))
-
+			require.Contains(t, string(b), "Hello")
 		}
 	})
 }

@@ -14,15 +14,16 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	globalinternal "gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 type traceWriter interface {
 	// add adds traces to be sent by the writer.
-	add([]*span)
+	add([]*Span)
 
 	// flush causes the writer to send any buffered traces.
 	flush()
@@ -35,8 +36,11 @@ type agentTraceWriter struct {
 	// config holds the tracer configuration
 	config *config
 
+	// mu synchronizes access to payload operations
+	mu sync.Mutex
+
 	// payload encodes and buffers traces in msgpack format
-	payload *payload
+	payload payload
 
 	// climit limits the number of concurrent outgoing connections
 	climit chan struct{}
@@ -50,24 +54,37 @@ type agentTraceWriter struct {
 
 	// statsd is used to send metrics
 	statsd globalinternal.StatsdClient
+
+	tracesQueued uint32
 }
 
 func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient) *agentTraceWriter {
-	return &agentTraceWriter{
+	tw := &agentTraceWriter{
 		config:           c,
-		payload:          newPayload(),
 		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: s,
 		statsd:           statsdClient,
 	}
+	tw.payload = tw.newPayload()
+	return tw
 }
 
-func (h *agentTraceWriter) add(trace []*span) {
-	if err := h.payload.push(trace); err != nil {
+func (h *agentTraceWriter) add(trace []*Span) {
+	h.mu.Lock()
+	stats, err := h.payload.push(trace)
+	if err != nil {
+		h.mu.Unlock()
 		h.statsd.Incr("datadog.tracer.traces_dropped", []string{"reason:encoding_error"}, 1)
-		log.Error("Error encoding msgpack: %v", err)
+		log.Error("Error encoding msgpack: %s", err.Error())
+		return
 	}
-	if h.payload.size() > payloadSizeLimit {
+	// TODO: This does not differentiate between complete traces and partial chunks
+	atomic.AddUint32(&h.tracesQueued, 1)
+
+	needsFlush := stats.size > payloadSizeLimit
+	h.mu.Unlock()
+
+	if needsFlush {
 		h.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:size"}, 1)
 		h.flush()
 	}
@@ -79,21 +96,32 @@ func (h *agentTraceWriter) stop() {
 	h.wg.Wait()
 }
 
+// newPayload returns a new payload based on the trace protocol.
+func (h *agentTraceWriter) newPayload() payload {
+	return newPayload(h.config.traceProtocol)
+}
+
 // flush will push any currently buffered traces to the server.
 func (h *agentTraceWriter) flush() {
-	if h.payload.itemCount() == 0 {
+	h.mu.Lock()
+	oldp := h.payload
+	// Check after acquiring lock
+	if oldp.itemCount() == 0 {
+		h.mu.Unlock()
 		return
 	}
-	h.wg.Add(1)
+	h.payload = h.newPayload()
+	h.mu.Unlock()
+
 	h.climit <- struct{}{}
-	oldp := h.payload
-	h.payload = newPayload()
-	go func(p *payload) {
+	h.wg.Add(1)
+	go func(p payload) {
 		defer func(start time.Time) {
 			// Once the payload has been used, clear the buffer for garbage
 			// collection to avoid a memory leak when references to this object
 			// may still be kept by faulty transport implementations or the
 			// standard library. See dd-trace-go#976
+			h.statsd.Count("datadog.tracer.queue.enqueued.traces", int64(atomic.SwapUint32(&h.tracesQueued, 0)), nil, 1)
 			p.clear()
 
 			<-h.climit
@@ -101,28 +129,30 @@ func (h *agentTraceWriter) flush() {
 			h.wg.Done()
 		}(time.Now())
 
-		var count, size int
+		stats := p.stats()
 		var err error
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
-			size, count = p.size(), p.itemCount()
-			log.Debug("Sending payload: size: %d traces: %d\n", size, count)
+			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
 			var rc io.ReadCloser
 			rc, err = h.config.transport.send(p)
 			if err == nil {
 				log.Debug("sent traces after %d attempts", attempt+1)
-				h.statsd.Count("datadog.tracer.flush_bytes", int64(size), nil, 1)
-				h.statsd.Count("datadog.tracer.flush_traces", int64(count), nil, 1)
+				h.statsd.Count("datadog.tracer.flush_bytes", int64(stats.size), nil, 1)
+				h.statsd.Count("datadog.tracer.flush_traces", int64(stats.itemCount), nil, 1)
 				if err := h.prioritySampling.readRatesJSON(rc); err != nil {
 					h.statsd.Incr("datadog.tracer.decode_error", nil, 1)
 				}
 				return
 			}
-			log.Error("failure sending traces (attempt %d), will retry: %v", attempt+1, err)
+
+			if attempt+1%5 == 0 {
+				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+			}
 			p.reset()
-			time.Sleep(time.Millisecond)
+			time.Sleep(h.config.retryInterval)
 		}
-		h.statsd.Count("datadog.tracer.traces_dropped", int64(count), []string{"reason:send_failed"}, 1)
-		log.Error("lost %d traces: %v", count, err)
+		h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:send_failed"}, 1)
+		log.Error("lost %d traces: %v", stats.itemCount, err.Error())
 	}(oldp)
 }
 
@@ -193,23 +223,23 @@ func encodeFloat(p []byte, f float64) []byte {
 	return p
 }
 
-func (h *logTraceWriter) encodeSpan(s *span) {
+func (h *logTraceWriter) encodeSpan(s *Span) {
 	var scratch [maxFloatLength]byte
 	h.buf.WriteString(`{"trace_id":"`)
-	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.TraceID), 16))
+	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.traceID), 16))
 	h.buf.WriteString(`","span_id":"`)
-	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.SpanID), 16))
+	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.spanID), 16))
 	h.buf.WriteString(`","parent_id":"`)
-	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.ParentID), 16))
+	h.buf.Write(strconv.AppendUint(scratch[:0], uint64(s.parentID), 16))
 	h.buf.WriteString(`","name":`)
-	h.marshalString(s.Name)
+	h.marshalString(s.name)
 	h.buf.WriteString(`,"resource":`)
-	h.marshalString(s.Resource)
+	h.marshalString(s.resource)
 	h.buf.WriteString(`,"error":`)
-	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.Error), 10))
+	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.error), 10))
 	h.buf.WriteString(`,"meta":{`)
 	first := true
-	for k, v := range s.Meta {
+	for k, v := range s.meta {
 		if first {
 			first = false
 		} else {
@@ -220,7 +250,7 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 		h.marshalString(v)
 	}
 	// We cannot pack messagepack into JSON, so we need to marshal the meta struct as JSON, and send them through the `meta` field
-	for k, v := range s.MetaStruct {
+	for k, v := range s.metaStruct {
 		if first {
 			first = false
 		} else {
@@ -230,14 +260,14 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 		h.buf.WriteString(":")
 		jsonValue, err := json.Marshal(v)
 		if err != nil {
-			log.Error("Error marshaling value %q: %v", v, err)
+			log.Error("Error marshaling value %q: %v", v, err.Error())
 			continue
 		}
 		h.marshalString(string(jsonValue))
 	}
 	h.buf.WriteString(`},"metrics":{`)
 	first = true
-	for k, v := range s.Metrics {
+	for k, v := range s.metrics {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			// The trace forwarder does not support infinity or nan, so we do not send metrics with those values.
 			continue
@@ -252,11 +282,11 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 		h.buf.Write(encodeFloat(scratch[:0], v))
 	}
 	h.buf.WriteString(`},"start":`)
-	h.buf.Write(strconv.AppendInt(scratch[:0], s.Start, 10))
+	h.buf.Write(strconv.AppendInt(scratch[:0], s.start, 10))
 	h.buf.WriteString(`,"duration":`)
-	h.buf.Write(strconv.AppendInt(scratch[:0], s.Duration, 10))
+	h.buf.Write(strconv.AppendInt(scratch[:0], s.duration, 10))
 	h.buf.WriteString(`,"service":`)
-	h.marshalString(s.Service)
+	h.marshalString(s.service)
 	h.buf.WriteString(`}`)
 }
 
@@ -265,7 +295,7 @@ func (h *logTraceWriter) encodeSpan(s *span) {
 func (h *logTraceWriter) marshalString(str string) {
 	m, err := json.Marshal(str)
 	if err != nil {
-		log.Error("Error marshaling value %q: %v", str, err)
+		log.Error("Error marshaling value %q: %v", str, err.Error())
 	} else {
 		h.buf.Write(m)
 	}
@@ -283,7 +313,7 @@ type encodingError struct {
 // from the trace can be retried.
 // An error, if one is returned, indicates that a span in the trace is too large
 // to fit in one buffer, and the trace cannot be written.
-func (h *logTraceWriter) writeTrace(trace []*span) (n int, err *encodingError) {
+func (h *logTraceWriter) writeTrace(trace []*Span) (n int, err *encodingError) {
 	startn := h.buf.Len()
 	if !h.hasTraces {
 		h.buf.WriteByte('[')
@@ -323,7 +353,7 @@ func (h *logTraceWriter) writeTrace(trace []*span) (n int, err *encodingError) {
 }
 
 // add adds a trace to the writer's buffer.
-func (h *logTraceWriter) add(trace []*span) {
+func (h *logTraceWriter) add(trace []*Span) {
 	// Try adding traces to the buffer until we flush them all or encounter an error.
 	for len(trace) > 0 {
 		n, err := h.writeTrace(trace)

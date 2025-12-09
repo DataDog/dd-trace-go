@@ -6,12 +6,13 @@ package tracer
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // otelDDEnv contains env vars from both dd (DD) and ot (OTEL) that map to the same tracer configuration
@@ -20,6 +21,7 @@ type otelDDEnv struct {
 	dd       string
 	ot       string
 	remapper func(string) (string, error)
+	handsOff bool // if true, check for configuration set in application_monitoring.yaml file
 }
 
 var otelDDConfigs = map[string]*otelDDEnv{
@@ -27,36 +29,43 @@ var otelDDConfigs = map[string]*otelDDEnv{
 		dd:       "DD_SERVICE",
 		ot:       "OTEL_SERVICE_NAME",
 		remapper: mapService,
+		handsOff: false,
 	},
 	"metrics": {
 		dd:       "DD_RUNTIME_METRICS_ENABLED",
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapMetrics,
+		handsOff: true,
 	},
 	"debugMode": {
 		dd:       "DD_TRACE_DEBUG",
 		ot:       "OTEL_LOG_LEVEL",
 		remapper: mapLogLevel,
+		handsOff: true,
 	},
 	"enabled": {
 		dd:       "DD_TRACE_ENABLED",
 		ot:       "OTEL_TRACES_EXPORTER",
 		remapper: mapEnabled,
+		handsOff: false,
 	},
 	"sampleRate": {
 		dd:       "DD_TRACE_SAMPLE_RATE",
 		ot:       "OTEL_TRACES_SAMPLER",
 		remapper: mapSampleRate,
+		handsOff: false,
 	},
 	"propagationStyle": {
 		dd:       "DD_TRACE_PROPAGATION_STYLE",
 		ot:       "OTEL_PROPAGATORS",
 		remapper: mapPropagationStyle,
+		handsOff: false,
 	},
 	"resourceAttributes": {
 		dd:       "DD_TAGS",
 		ot:       "OTEL_RESOURCE_ATTRIBUTES",
 		remapper: mapDDTags,
+		handsOff: false,
 	},
 }
 
@@ -84,28 +93,54 @@ var propagationMapping = map[string]string{
 func getDDorOtelConfig(configName string) string {
 	config, ok := otelDDConfigs[configName]
 	if !ok {
-		panic(fmt.Sprintf("Programming Error: %v not found in supported configurations", configName))
+		log.Debug("Programming Error: %v not found in supported configurations", configName)
+		return ""
 	}
 
-	val := os.Getenv(config.dd)
-	if otVal := os.Getenv(config.ot); otVal != "" {
+	// 1. Check managed stable config if handsOff
+	if config.handsOff {
+		if v := stableconfig.ManagedConfig.Get(config.dd); v != "" {
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: telemetry.EnvToTelemetryName(config.dd), Value: v, Origin: telemetry.OriginManagedStableConfig, ID: stableconfig.ManagedConfig.GetID()})
+			return v
+		}
+	}
+
+	// 2. Check environment variables (DD or OT)
+	val := env.Get(config.dd)
+	key := config.dd // Store the environment variable that will be used to set the config
+	if otVal := env.Get(config.ot); otVal != "" {
 		ddPrefix := "config_datadog:"
 		otelPrefix := "config_opentelemetry:"
 		if val != "" {
-			log.Warn("Both %v and %v are set, using %v=%v", config.ot, config.dd, config.dd, val)
+			log.Warn("Both %q and %q are set, using %s=%s", config.ot, config.dd, config.dd, val)
 			telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
-			telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.hiding", 1.0, telemetryTags, true)
+			telemetry.Count(telemetry.NamespaceTracers, "otel.env.hiding", telemetryTags).Submit(1)
 		} else {
 			v, err := config.remapper(otVal)
 			if err != nil {
-				log.Warn(err.Error())
+				log.Warn("%s", err.Error())
 				telemetryTags := []string{ddPrefix + strings.ToLower(config.dd), otelPrefix + strings.ToLower(config.ot)}
-				telemetry.GlobalClient.Count(telemetry.NamespaceTracers, "otel.env.invalid", 1.0, telemetryTags, true)
+				telemetry.Count(telemetry.NamespaceTracers, "otel.env.invalid", telemetryTags).Submit(1)
 			}
+			key = config.ot
 			val = v
 		}
 	}
-	return val
+	if val != "" {
+		telemetry.RegisterAppConfig(telemetry.EnvToTelemetryName(key), val, telemetry.OriginEnvVar)
+		return val
+	}
+
+	// 3. If handsOff, check local stable config
+	if config.handsOff {
+		if v := stableconfig.LocalConfig.Get(config.dd); v != "" {
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: telemetry.EnvToTelemetryName(config.dd), Value: v, Origin: telemetry.OriginLocalStableConfig, ID: stableconfig.LocalConfig.GetID()})
+			return v
+		}
+	}
+
+	// 4. Not found, return empty string
+	return ""
 }
 
 // mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
@@ -122,7 +157,7 @@ func mapDDTags(ot string) (string, error) {
 	})
 
 	if len(ddTags) > 10 {
-		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %v", ddTags[10:], ddTags[:10])
+		log.Warn("The following resource attributes have been dropped: %v. Only the first 10 resource attributes will be applied: %s", ddTags[10:], ddTags[:10]) //nolint:gocritic // Slice logging for debugging
 		ddTags = ddTags[:10]
 	}
 
@@ -140,7 +175,7 @@ func mapMetrics(ot string) (string, error) {
 	if ot == "none" {
 		return "false", nil
 	}
-	return "", fmt.Errorf("The following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
 // mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
@@ -148,7 +183,7 @@ func mapLogLevel(ot string) (string, error) {
 	if strings.TrimSpace(strings.ToLower(ot)) == "debug" {
 		return "true", nil
 	}
-	return "", fmt.Errorf("The following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
+	return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 }
 
 // mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED
@@ -156,12 +191,12 @@ func mapEnabled(ot string) (string, error) {
 	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
 		return "false", nil
 	}
-	return "", fmt.Errorf("The following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
 // mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE
 func otelTraceIDRatio() string {
-	if v := os.Getenv("OTEL_TRACES_SAMPLER_ARG"); v != "" {
+	if v := env.Get("OTEL_TRACES_SAMPLER_ARG"); v != "" {
 		return v
 	}
 	return "1.0"
@@ -171,7 +206,7 @@ func otelTraceIDRatio() string {
 func mapSampleRate(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if v, ok := unsupportedSamplerMapping[ot]; ok {
-		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%v. %v will be used", ot, v)
+		log.Warn("The following configuration is not supported: OTEL_TRACES_SAMPLER=%s. %s will be used", ot, v)
 		ot = v
 	}
 
@@ -195,7 +230,7 @@ func mapPropagationStyle(ot string) (string, error) {
 		if _, ok := propagationMapping[otStyle]; ok {
 			supportedStyles = append(supportedStyles, propagationMapping[otStyle])
 		} else {
-			log.Warn("Invalid configuration: %v is not supported. This propagation style will be ignored.", otStyle)
+			log.Warn("Invalid configuration: %q is not supported. This propagation style will be ignored.", otStyle)
 		}
 	}
 	return strings.Join(supportedStyles, ","), nil

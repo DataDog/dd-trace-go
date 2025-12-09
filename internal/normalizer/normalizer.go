@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // headerTagRegexp is used to replace all invalid characters in the config. Only alphanumerics, whitespaces and dashes allowed.
@@ -43,7 +43,7 @@ func HeaderTagSlice(headers []string) map[string]string {
 		header, tag := HeaderTag(h)
 		// If `header` or `tag` is just the empty string, we don't want to set it.
 		if len(header) == 0 || len(tag) == 0 {
-			log.Debug("Header-tag input is in unsupported format; dropping input value %v", h)
+			log.Debug("Header-tag input is in unsupported format; dropping input value %s", h)
 			continue
 		}
 		headerTagsMap[header] = tag

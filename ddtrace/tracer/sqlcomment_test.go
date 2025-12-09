@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -171,25 +171,25 @@ func TestSQLCommentCarrier(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// the test service name includes all RFC3986 reserved characters to make sure all of them are url encoded
 			// as per the sqlcommenter spec
-			tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+			tracer, err := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
 			defer globalconfig.SetServiceName("")
 			defer tracer.Stop()
+			assert.NoError(t, err)
 
-			var spanCtx ddtrace.SpanContext
+			var spanCtx *SpanContext
 			var traceID uint64
 			if tc.injectSpan {
 				traceID = uint64(10)
-				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID)).(*span)
-				root.SetTag(ext.SamplingPriority, tc.samplingPriority)
+				root := tracer.StartSpan("service.calling.db", WithSpanID(traceID))
+				root.setSamplingPriority(tc.samplingPriority, samplernames.Default)
 				spanCtx = root.Context()
 			}
 
 			carrier := SQLCommentCarrier{Query: tc.query, Mode: tc.mode, DBServiceName: "whiskey-db", PeerDBHostname: tc.peerDBHostname, PeerDBName: tc.peerDBName, PeerService: tc.peerServiceName}
-			err := carrier.Inject(spanCtx)
+			err = carrier.Inject(spanCtx)
 			require.NoError(t, err)
 			expected := strings.ReplaceAll(tc.expectedQuery, "<span_id>", fmt.Sprintf("%016s", strconv.FormatUint(carrier.SpanID, 16)))
 			assert.Equal(t, expected, carrier.Query)
-
 			if !tc.injectSpan {
 				traceID = carrier.SpanID
 			}
@@ -199,18 +199,45 @@ func TestSQLCommentCarrier(t *testing.T) {
 			assert.Equal(t, tc.expectedExtractErr, err)
 
 			if tc.expectedExtractErr == nil {
-				xctx, ok := sctx.(*spanContext)
-				require.True(t, ok)
+				assert.Equal(t, carrier.SpanID, sctx.spanID)
+				assert.Equal(t, traceID, sctx.traceID.Lower())
 
-				assert.Equal(t, carrier.SpanID, xctx.spanID)
-				assert.Equal(t, traceID, xctx.traceID.Lower())
-
-				p, ok := xctx.SamplingPriority()
+				p, ok := sctx.SamplingPriority()
 				assert.True(t, ok)
 				assert.Equal(t, tc.samplingPriority, p)
 			}
 		})
 	}
+}
+
+// https://github.com/DataDog/dd-trace-go/issues/2837
+func TestSQLCommentCarrierInjectNilSpan(t *testing.T) {
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		originHeader:          "synthetics",
+		b3TraceIDHeader:       "0021dc1807524785",
+		traceparentHeader:     "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:      "dd=s:2;o:rum;p:0000000000000001;t.tid:1230000000000000~~,othervendor=t61rcWkgMzE",
+	})
+
+	spanCtx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	carrier := SQLCommentCarrier{
+		Query:          "SELECT * from FOO",
+		Mode:           DBMPropagationModeFull,
+		DBServiceName:  "whiskey-db",
+		PeerDBHostname: "",
+		PeerDBName:     "",
+		PeerService:    "",
+	}
+	err = carrier.Inject(spanCtx)
+	require.NoError(t, err)
 }
 
 func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
@@ -231,14 +258,12 @@ func TestExtractOpenTelemetryTraceInformation(t *testing.T) {
 	carrier := SQLCommentCarrier{Query: q}
 	sctx, err := carrier.Extract()
 	require.NoError(t, err)
-	xctx, ok := sctx.(*spanContext)
-	assert.True(t, ok)
 
-	assert.Equal(t, spanID, xctx.spanID)
-	assert.Equal(t, lower, xctx.traceID.Lower())
-	assert.Equal(t, upper, xctx.traceID.Upper())
+	assert.Equal(t, spanID, sctx.spanID)
+	assert.Equal(t, lower, sctx.traceID.Lower())
+	assert.Equal(t, upper, sctx.traceID.Upper())
 
-	p, ok := xctx.SamplingPriority()
+	p, ok := sctx.SamplingPriority()
 	assert.True(t, ok)
 	assert.Equal(t, priority, p)
 }
@@ -257,7 +282,7 @@ func FuzzExtract(f *testing.F) {
 	for _, tc := range testCases {
 		f.Add(tc.query)
 	}
-	f.Fuzz(func(t *testing.T, q string) {
+	f.Fuzz(func(_ *testing.T, q string) {
 		carrier := SQLCommentCarrier{Query: q}
 		carrier.Extract() // make sure it doesn't panic
 	})
@@ -349,10 +374,10 @@ func BenchmarkSQLCommentExtraction(b *testing.B) {
 	}
 }
 
-func setupBenchmark() (*tracer, ddtrace.SpanContext, SQLCommentCarrier) {
-	tracer := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
-	root := tracer.StartSpan("service.calling.db", WithSpanID(10)).(*span)
-	root.SetTag(ext.SamplingPriority, 2)
+func setupBenchmark() (*tracer, *SpanContext, SQLCommentCarrier) {
+	tracer, _ := newTracer(WithService("whiskey-service !#$%&'()*+,/:;=?@[]"), WithEnv("test-env"), WithServiceVersion("1.0.0"))
+	root := tracer.StartSpan("service.calling.db", WithSpanID(10))
+	root.SetTag(ext.ManualKeep, true)
 	spanCtx := root.Context()
 	carrier := SQLCommentCarrier{Query: "SELECT 1 FROM dual", Mode: DBMPropagationModeFull, DBServiceName: "whiskey-db"}
 	return tracer, spanCtx, carrier

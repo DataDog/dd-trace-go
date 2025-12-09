@@ -1,0 +1,34 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
+  description: Official package for interacting with a Vault server.
+
+aspects:
+  - id: Config
+    join-point:
+      struct-literal:
+        type: github.com/hashicorp/vault/api.Config
+    advice:
+      - wrap-expression:
+          imports:
+            vaulttrace: github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
+          template: |-
+            {{- .AST.Type -}}{
+              {{- $hasField := false -}}
+              {{ range .AST.Elts }}
+              {{- if eq .Key.Name "HttpClient" }}
+              {{- $hasField = true -}}
+              HttpClient: vaulttrace.WrapHTTPClient({{ .Value }}),
+              {{- else -}}
+              {{ . }},
+              {{ end -}}
+              {{ end }}
+              {{- if not $hasField -}}
+              HttpClient: vaulttrace.NewHTTPClient(),
+              {{- end }}
+            }

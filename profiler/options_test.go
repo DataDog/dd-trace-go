@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -93,21 +93,6 @@ func TestOptions(t *testing.T) {
 		var cfg config
 		WithUploadTimeout(5 * time.Second)(&cfg)
 		assert.Equal(t, 5*time.Second, cfg.uploadTimeout)
-	})
-
-	t.Run("WithAPIKey", func(t *testing.T) {
-		var cfg config
-		WithAPIKey(testAPIKey)(&cfg)
-		assert.Equal(t, testAPIKey, cfg.apiKey)
-		assert.Equal(t, cfg.apiURL, cfg.targetURL)
-	})
-
-	t.Run("WithAPIKey/override", func(t *testing.T) {
-		t.Setenv("DD_API_KEY", "apikey")
-		var testAPIKey = "12345678901234567890123456789012"
-		var cfg config
-		WithAPIKey(testAPIKey)(&cfg)
-		assert.Equal(t, testAPIKey, cfg.apiKey)
 	})
 
 	t.Run("WithURL", func(t *testing.T) {
@@ -262,6 +247,21 @@ func TestEnvVars(t *testing.T) {
 		cfg, err := defaultConfig()
 		require.NoError(t, err)
 		assert.Equal(t, "http://localhost:6218/profiling/v1/input", cfg.agentURL)
+	})
+
+	t.Run("DD_PROFILING_ENABLED", func(t *testing.T) {
+		t.Run("default", func(t *testing.T) {
+			cfg, err := defaultConfig()
+			require.NoError(t, err)
+			assert.Equal(t, true, cfg.enabled)
+		})
+
+		t.Run("override", func(t *testing.T) {
+			t.Setenv("DD_PROFILING_ENABLED", "false")
+			cfg, err := defaultConfig()
+			require.NoError(t, err)
+			assert.Equal(t, false, cfg.enabled)
+		})
 	})
 
 	t.Run("DD_PROFILING_UPLOAD_TIMEOUT", func(t *testing.T) {

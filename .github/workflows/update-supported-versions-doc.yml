@@ -1,0 +1,47 @@
+name: Update supported integration versions doc
+on:
+  workflow_run:
+    # Every time we run smoke tests, we check what version of each library was used to run the tests and this will
+    # be used as the latest supported version in our docs.
+    workflows: ["Smoke Tests"]
+    branches:
+      - mq-working-branch-**
+    types:
+      - completed
+
+concurrency:
+  # Automatically cancel previous runs if a new one is triggered to conserve resources.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  on-smoke-tests-success:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      id-token: write
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - run: echo 'Smoke Tests workflow passed'
+      - run: go run ./scripts/gen_integrations_doc.go
+      - run: git diff
+      # note: This will only run when there *are* changes to integration versions
+      - name: Get GitHub token
+        uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80 # v1.0.3
+        id: octo-sts
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.update-supported-versions-doc.create-pr
+      - name: Create Pull Request
+        id: pr
+        uses: peter-evans/create-pull-request@84ae59a2cdc2258d6fa0732dd66352dddae2a412
+        with:
+          token: ${{ steps.octo-sts.outputs.token }}
+          branch: "update-latest-supported-versions"
+          commit-message: "docs: update supported integrations documentation"
+          base: main
+          title: "docs: update supported integrations documentation"
+          labels: changelog/no-changelog,docs
+          body: "Update supported integrations documentation"
+          sign-commits: true

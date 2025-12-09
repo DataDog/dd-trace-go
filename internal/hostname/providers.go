@@ -13,12 +13,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/azure"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ec2"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/ecs"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/gce"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/hostname/validate"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/azure"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/ec2"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/ecs"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/gce"
+	"github.com/DataDog/dd-trace-go/v2/internal/hostname/validate"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // For testing purposes
@@ -150,7 +151,7 @@ func updateHostname(now time.Time) {
 	for _, p := range providerCatalog {
 		detectedHostname, err := p.pf(ctx, hostname)
 		if err != nil {
-			log.Debug("Unable to get hostname from provider %s: %v", p.name, err)
+			log.Debug("Unable to get hostname from provider %q: %v", p.name, err.Error())
 			continue
 		}
 		hostname = detectedHostname
@@ -171,7 +172,7 @@ func updateHostname(now time.Time) {
 }
 
 func fromConfig(_ context.Context, _ string) (string, error) {
-	hn := os.Getenv("DD_HOSTNAME")
+	hn := env.Get("DD_HOSTNAME")
 	err := validate.ValidHostname(hn)
 	if err != nil {
 		return "", err
@@ -184,7 +185,7 @@ func fromFargate(ctx context.Context, _ string) (string, error) {
 }
 
 func fargate(ctx context.Context) (string, error) {
-	if _, ok := os.LookupEnv("ECS_CONTAINER_METADATA_URI_V4"); !ok {
+	if _, ok := env.Lookup("ECS_CONTAINER_METADATA_URI_V4"); !ok {
 		return "", fmt.Errorf("not running in fargate")
 	}
 	launchType, err := ecs.GetLaunchType(ctx)

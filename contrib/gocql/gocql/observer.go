@@ -11,8 +11,8 @@ import (
 
 	"github.com/gocql/gocql"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // CreateTracedSession returns a new session augmented with tracing.
@@ -38,7 +38,7 @@ func CreateTracedSession(cluster *gocql.ClusterConfig, opts ...WrapOption) (*goc
 func NewObserver(cluster *gocql.ClusterConfig, opts ...WrapOption) *Observer {
 	cfg := defaultConfig()
 	for _, fn := range opts {
-		fn(cfg)
+		fn.apply(cfg)
 	}
 	return &Observer{
 		cfg:                  cfg,

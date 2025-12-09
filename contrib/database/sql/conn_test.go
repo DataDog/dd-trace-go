@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
@@ -27,7 +27,7 @@ func TestWithSpanTags(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
-		opts   []RegisterOption
+		opts   []Option
 	}
 	type want struct {
 		opName   string
@@ -45,7 +45,7 @@ func TestWithSpanTags(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts:   []RegisterOption{},
+				opts:   []Option{},
 			},
 			want: want{
 				opName: "mysql.query",
@@ -63,8 +63,8 @@ func TestWithSpanTags(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
-				opts: []RegisterOption{
-					WithServiceName("postgres-test"),
+				opts: []Option{
+					WithService("postgres-test"),
 					WithAnalyticsRate(0.2),
 				},
 			},
@@ -108,6 +108,7 @@ func TestWithSpanTags(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, string(componentName), connectSpan.Integration())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
@@ -117,6 +118,7 @@ func TestWithSpanTags(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", span.Tag(ext.Component))
+			assert.Equal(t, string(componentName), connectSpan.Integration())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 		})
 	}
@@ -127,7 +129,7 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
-		opts   []RegisterOption
+		opts   []Option
 	}
 	testcases := []struct {
 		name         string
@@ -141,7 +143,7 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithIgnoreQueryTypes(QueryTypeConnect),
 				},
 			},
@@ -159,7 +161,7 @@ func TestWithIgnoreQueryTypes(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithIgnoreQueryTypes(QueryTypeConnect),
 				},
 			},
@@ -196,7 +198,7 @@ func TestWithChildSpansOnly(t *testing.T) {
 		name   string
 		dsn    string
 		driver driver.Driver
-		opts   []RegisterOption
+		opts   []Option
 	}
 	testcases := []struct {
 		name        string
@@ -208,7 +210,7 @@ func TestWithChildSpansOnly(t *testing.T) {
 				name:   "mysql",
 				dsn:    "test:test@tcp(127.0.0.1:3306)/test",
 				driver: &mysql.MySQLDriver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithChildSpansOnly(),
 				},
 			},
@@ -219,9 +221,9 @@ func TestWithChildSpansOnly(t *testing.T) {
 				name:   "postgres",
 				dsn:    "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
 				driver: &pq.Driver{},
-				opts: []RegisterOption{
+				opts: []Option{
 					WithChildSpansOnly(),
-					WithServiceName("postgres-test"),
+					WithService("postgres-test"),
 					WithAnalyticsRate(0.2),
 				},
 			},
@@ -271,13 +273,13 @@ func TestWithErrorCheck(t *testing.T) {
 			assert.True(t, len(spans) > 0)
 
 			s := spans[len(spans)-1]
-			assert.Equal(t, errExist, s.Tag(ext.Error) != nil)
+			assert.Equal(t, errExist, s.Tag(ext.ErrorMsg) != nil)
 		}
 	}
 
 	t.Run("defaults", testOpts(true))
 	t.Run("errcheck", testOpts(false, WithErrorCheck(func(err error) bool {
-		return !strings.Contains(err.Error(), `Error 1054: Unknown column 'a' in 'field list'`)
+		return !strings.Contains(err.Error(), `Unknown column 'a' in 'field list'`)
 	})))
 
 }
@@ -310,7 +312,7 @@ func TestWithCustomTag(t *testing.T) {
 				opName: "mysql.query",
 				customTags: map[string]interface{}{
 					"foo": "bar",
-					"baz": 123,
+					"baz": float64(123),
 				},
 				dbSystem: ext.DBSystemMySQL,
 			},
@@ -330,7 +332,7 @@ func TestWithCustomTag(t *testing.T) {
 				opName: "postgres.query",
 				customTags: map[string]interface{}{
 					"foo": "bar",
-					"baz": 123,
+					"baz": float64(123),
 				},
 				dbSystem: "postgresql",
 			},
@@ -368,6 +370,7 @@ func TestWithCustomTag(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, string(componentName), connectSpan.Integration())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 
 			span := spans[1]
@@ -377,6 +380,7 @@ func TestWithCustomTag(t *testing.T) {
 			}
 			assert.Equal(t, ext.SpanKindClient, connectSpan.Tag(ext.SpanKind))
 			assert.Equal(t, "database/sql", connectSpan.Tag(ext.Component))
+			assert.Equal(t, string(componentName), connectSpan.Integration())
 			assert.Equal(t, tt.want.dbSystem, connectSpan.Tag(ext.DBSystem))
 		})
 	}

@@ -1,0 +1,27 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
+  description: The official AWS SDK for Go
+
+aspects:
+  - id: session.NewSession
+    join-point:
+      function-call: github.com/aws/aws-sdk-go/aws/session.NewSession
+    advice:
+      - wrap-expression:
+          imports:
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
+            session: github.com/aws/aws-sdk-go/aws/session
+          template: |-
+            func(sess *session.Session, err error) (*session.Session, error) {
+              if sess != nil {
+                sess = awstrace.WrapSession(sess)
+              }
+              return sess, err
+            }({{ . }})
+

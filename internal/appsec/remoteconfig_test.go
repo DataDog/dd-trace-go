@@ -6,33 +6,41 @@
 package appsec
 
 import (
-	"encoding/json"
-	"errors"
-	"os"
-	"reflect"
-	"sort"
+	"embed"
 	"strings"
+
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
 	"testing"
+	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/config"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/sharedsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/remoteconfig"
-
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	waf "github.com/DataDog/go-libddwaf/v3"
+	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+//go:embed "testdata/custom-data-classification/*.json"
+var customDataClassificationPayloads embed.FS
+
 func TestASMFeaturesCallback(t *testing.T) {
-	if supported, _ := waf.Health(); !supported {
+	if supported, _ := libddwaf.Usable(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 	enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 	disabledPayload := []byte(`{"asm":{"enabled":false}}`)
-	cfg, err := config.NewConfig()
+	cfg, err := config.NewStartConfig().NewConfig()
 	require.NoError(t, err)
+	defer cfg.WAFManager.Close()
+
 	a := newAppSec(cfg)
 	err = a.startRC()
 	require.NoError(t, err)
@@ -87,7 +95,7 @@ func TestASMFeaturesCallback(t *testing.T) {
 			defer a.stop()
 			require.NotNil(t, a)
 			if tc.startBefore {
-				a.start(nil)
+				require.NoError(t, a.start())
 			}
 			require.Equal(t, tc.startBefore, a.started)
 			a.handleASMFeatures(tc.update)
@@ -115,216 +123,9 @@ func TestASMFeaturesCallback(t *testing.T) {
 	})
 }
 
-func TestMergeRulesData(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		update   remoteconfig.ProductUpdate
-		expected []config.RuleDataEntry
-		statuses map[string]rc.ApplyStatus
-	}{
-		{
-			name:     "empty-rule-data",
-			update:   map[string][]byte{},
-			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
-		},
-		{
-			name: "bad-json",
-			update: map[string][]byte{
-				"some/path": []byte(`[}]`),
-			},
-			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateError}},
-		},
-		{
-			name: "single-value",
-			update: map[string][]byte{
-				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"}]}]}`),
-			},
-			expected: []config.RuleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
-				{Expiration: 3494138481, Value: "user1"},
-			}}},
-			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
-		},
-		{
-			name: "multiple-values",
-			update: map[string][]byte{
-				"some/path": []byte(`{"rules_data":[{"id":"test","type":"data_with_expiration","data":[{"expiration":3494138481,"value":"user1"},{"expiration":3494138441,"value":"user2"}]}]}`),
-			},
-			expected: []config.RuleDataEntry{{ID: "test", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
-				{Expiration: 3494138481, Value: "user1"},
-				{Expiration: 3494138441, Value: "user2"},
-			}}},
-			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
-		},
-		{
-			name: "multiple-entries",
-			update: map[string][]byte{
-				"some/path": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
-			},
-			expected: []config.RuleDataEntry{
-				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
-					{Expiration: 3494138444, Value: "user3"},
-				}}, {ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
-					{Expiration: 3495138481, Value: "user4"},
-				}},
-			},
-			statuses: map[string]rc.ApplyStatus{"some/path": {State: rc.ApplyStateAcknowledged}},
-		},
-		{
-			name: "merging-entries",
-			update: map[string][]byte{
-				"some/path/1": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138444,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":3495138481,"value":"user4"}]}]}`),
-				"some/path/2": []byte(`{"rules_data":[{"id":"test1","type":"data_with_expiration","data":[{"expiration":3494138445,"value":"user3"}]},{"id":"test2","type":"data_with_expiration","data":[{"expiration":0,"value":"user5"}]}]}`),
-			},
-			expected: []config.RuleDataEntry{
-				{ID: "test1", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
-					{Expiration: 3494138445, Value: "user3"},
-				}},
-				{ID: "test2", Type: "data_with_expiration", Data: []rc.ASMDataRuleDataEntry{
-					{Expiration: 3495138481, Value: "user4"},
-					{Expiration: 0, Value: "user5"},
-				}},
-			},
-			statuses: map[string]rc.ApplyStatus{
-				"some/path/1": {State: rc.ApplyStateAcknowledged},
-				"some/path/2": {State: rc.ApplyStateAcknowledged},
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			merged, statuses := mergeRulesData(tc.update)
-			// Sort the compared elements since ordering is not guaranteed and the slice hold types that embed
-			// more slices
-			require.Len(t, merged, len(tc.expected))
-			sort.Slice(merged, func(i, j int) bool {
-				return strings.Compare(merged[i].ID, merged[j].ID) < 0
-			})
-			sort.Slice(tc.expected, func(i, j int) bool {
-				return strings.Compare(merged[i].ID, merged[j].ID) < 0
-			})
-
-			for i := range tc.expected {
-				require.Equal(t, tc.expected[i].ID, merged[i].ID)
-				require.Equal(t, tc.expected[i].Type, merged[i].Type)
-				require.ElementsMatch(t, tc.expected[i].Data, merged[i].Data)
-			}
-			for k := range statuses {
-				require.Equal(t, tc.statuses[k].State, statuses[k].State)
-				if statuses[k].State == rc.ApplyStateError {
-					require.NotEmpty(t, statuses[k].Error)
-				} else {
-					require.Empty(t, statuses[k].Error)
-				}
-			}
-		})
-	}
-}
-
-// This test makes sure that the merging behavior for rule data entries follows what is described in the ASM blocking RFC
-func TestMergeRulesDataEntries(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		in1  []rc.ASMDataRuleDataEntry
-		in2  []rc.ASMDataRuleDataEntry
-		out  []rc.ASMDataRuleDataEntry
-	}{
-		{
-			name: "empty",
-			out:  []rc.ASMDataRuleDataEntry{},
-		},
-		{
-			name: "no-collision-1",
-			in1: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 1,
-				},
-			},
-			out: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 1,
-				},
-			},
-		},
-		{
-			name: "no-collision-2",
-			in1: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 1,
-				},
-			},
-			in2: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.8",
-					Expiration: 1,
-				},
-			},
-			out: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 1,
-				},
-				{
-					Value:      "127.0.0.8",
-					Expiration: 1,
-				},
-			},
-		},
-		{
-			name: "collision",
-			in1: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 1,
-				},
-			},
-			in2: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 2,
-				},
-			},
-			out: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 2,
-				},
-			},
-		},
-		{
-			name: "collision-no-expiration",
-			in1: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 1,
-				},
-			},
-			in2: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 0,
-				},
-			},
-			out: []rc.ASMDataRuleDataEntry{
-				{
-					Value:      "127.0.0.1",
-					Expiration: 0,
-				},
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			res := mergeRulesDataEntries(tc.in1, tc.in2)
-			require.ElementsMatch(t, tc.out, res)
-		})
-	}
-
-}
-
 // This test ensures that the remote activation capabilities are only set if DD_APPSEC_ENABLED is not set in the env.
 func TestRemoteActivationScenarios(t *testing.T) {
-	if supported, _ := waf.Health(); !supported {
+	if supported, _ := libddwaf.Usable(); !supported {
 		t.Skip("WAF cannot be used")
 	}
 
@@ -339,7 +140,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
 		require.NoError(t, err)
 		require.True(t, found)
-		found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
+		found, err = remoteconfig.HasProduct(state.ProductASMFeatures)
 		require.NoError(t, err)
 		require.True(t, found)
 	})
@@ -354,9 +155,29 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
 		require.NoError(t, err)
 		require.False(t, found)
-		found, err = remoteconfig.HasProduct(rc.ProductASMFeatures)
+		found, err = remoteconfig.HasProduct(state.ProductASMFeatures)
 		require.NoError(t, err)
 		require.False(t, found)
+	})
+
+	t.Run("WithEnablementMode(EnabledModeForcedOn)", func(t *testing.T) {
+		for _, envVal := range []string{"", "true", "false"} {
+			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+				t.Setenv(config.EnvEnabled, envVal)
+
+				remoteconfig.Reset()
+				Start(config.WithEnablementMode(config.ForcedOn), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+				defer Stop()
+
+				require.True(t, Enabled())
+				found, err := remoteconfig.HasCapability(remoteconfig.ASMActivation)
+				require.NoError(t, err)
+				require.False(t, found)
+				found, err = remoteconfig.HasProduct(state.ProductASMFeatures)
+				require.NoError(t, err)
+				require.False(t, found)
+			})
+		}
 	})
 
 	t.Run("DD_APPSEC_ENABLED=false", func(t *testing.T) {
@@ -365,6 +186,19 @@ func TestRemoteActivationScenarios(t *testing.T) {
 		defer Stop()
 		require.Nil(t, activeAppSec)
 		require.False(t, Enabled())
+	})
+
+	t.Run("WithEnablementMode(EnabledModeForcedOff)", func(t *testing.T) {
+		for _, envVal := range []string{"", "true", "false"} {
+			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+				t.Setenv(config.EnvEnabled, envVal)
+
+				Start(config.WithEnablementMode(config.ForcedOff), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+				defer Stop()
+				require.Nil(t, activeAppSec)
+				require.False(t, Enabled())
+			})
+		}
 	})
 }
 
@@ -378,17 +212,22 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 		{
 			name:      "appsec-unspecified",
 			expectedC: []remoteconfig.Capability{remoteconfig.ASMActivation},
-			expectedP: []string{rc.ProductASMFeatures},
+			expectedP: []string{state.ProductASMFeatures},
 		},
 		{
-			name:      "appsec-enabled/default-RulesManager",
-			env:       map[string]string{config.EnvEnabled: "1"},
-			expectedC: blockingCapabilities[:],
-			expectedP: []string{rc.ProductASM, rc.ProductASMData, rc.ProductASMDD},
+			name: "appsec-enabled/default-RulesManager",
+			env:  map[string]string{config.EnvEnabled: "1"},
+			expectedC: func() []remoteconfig.Capability {
+				result := make([]remoteconfig.Capability, 0, len(baseCapabilities)+len(blockingCapabilities))
+				result = append(result, baseCapabilities[:]...)
+				result = append(result, blockingCapabilities[:]...)
+				return result
+			}(),
+			expectedP: []string{state.ProductASM, state.ProductASMData, state.ProductASMDD},
 		},
 		{
 			name:      "appsec-enabled/RulesManager-from-env",
-			env:       map[string]string{config.EnvEnabled: "1", internal.EnvRules: "testdata/blocking.json"},
+			env:       map[string]string{config.EnvEnabled: "1", config.EnvRules: "testdata/blocking.json"},
 			expectedC: []remoteconfig.Capability{},
 			expectedP: []string{},
 		},
@@ -420,28 +259,84 @@ func TestCapabilitiesAndProducts(t *testing.T) {
 	}
 }
 
-func craftRCUpdates(fragments map[string]config.RulesFragment) map[string]remoteconfig.ProductUpdate {
+func TestCapabilitiesAndProductsBlockingUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		env       map[string]string
+		expectedC []remoteconfig.Capability
+		excludedC []remoteconfig.Capability
+		expectedP []string
+	}{
+		{
+			name:      "appsec-enabled/default-RulesManager",
+			env:       map[string]string{config.EnvEnabled: "1"},
+			expectedC: baseCapabilities[:],
+			excludedC: blockingCapabilities[:],
+			expectedP: []string{state.ProductASM, state.ProductASMData, state.ProductASMDD},
+		},
+	} {
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(config.EnvEnabled, "")
+			os.Unsetenv(config.EnvEnabled)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()), config.WithBlockingUnavailable(true))
+			defer Stop()
+			if !Enabled() && activeAppSec == nil {
+				t.Skip()
+			}
+
+			for _, cap := range tc.expectedC {
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.True(t, found)
+			}
+			for _, cap := range tc.excludedC {
+				found, err := remoteconfig.HasCapability(cap)
+				require.NoError(t, err)
+				require.False(t, found)
+			}
+			for _, p := range tc.expectedP {
+				found, err := remoteconfig.HasProduct(p)
+				require.NoError(t, err)
+				require.True(t, found)
+			}
+		})
+	}
+}
+
+func craftRCUpdates(fragments map[string]*RulesFragment) map[string]remoteconfig.ProductUpdate {
 	update := make(map[string]remoteconfig.ProductUpdate)
 	for path, frag := range fragments {
+		if frag == nil {
+			if _, ok := update[state.ProductASMDD]; !ok {
+				update[state.ProductASMDD] = make(remoteconfig.ProductUpdate)
+			}
+			update[state.ProductASMDD][path] = nil
+			continue
+		}
+
 		data, err := json.Marshal(frag)
 		if err != nil {
 			panic(err)
 		}
 		if len(frag.Rules) > 0 {
-			if _, ok := update[rc.ProductASMDD]; !ok {
-				update[rc.ProductASMDD] = make(remoteconfig.ProductUpdate)
+			if _, ok := update[state.ProductASMDD]; !ok {
+				update[state.ProductASMDD] = make(remoteconfig.ProductUpdate)
 			}
-			update[rc.ProductASMDD][path] = data
+			update[state.ProductASMDD][path] = data
 		} else if len(frag.Overrides) > 0 || len(frag.Exclusions) > 0 || len(frag.Actions) > 0 {
-			if _, ok := update[rc.ProductASM]; !ok {
-				update[rc.ProductASM] = make(remoteconfig.ProductUpdate)
+			if _, ok := update[state.ProductASM]; !ok {
+				update[state.ProductASM] = make(remoteconfig.ProductUpdate)
 			}
-			update[rc.ProductASM][path] = data
-		} else if len(frag.RulesData) > 0 {
-			if _, ok := update[rc.ProductASMData]; !ok {
-				update[rc.ProductASMData] = make(remoteconfig.ProductUpdate)
+			update[state.ProductASM][path] = data
+		} else if len(frag.RulesData) > 0 || len(frag.ExclusionData) > 0 {
+			if _, ok := update[state.ProductASMData]; !ok {
+				update[state.ProductASMData] = make(remoteconfig.ProductUpdate)
 			}
-			update[rc.ProductASMData][path] = data
+			update[state.ProductASMData][path] = data
 		}
 	}
 
@@ -449,30 +344,32 @@ func craftRCUpdates(fragments map[string]config.RulesFragment) map[string]remote
 }
 
 type testRulesOverrideEntry struct {
-	ID          string        `json:"id,omitempty"`
-	RulesTarget []interface{} `json:"rules_target,omitempty"`
-	Enabled     interface{}   `json:"enabled,omitempty"`
-	OnMatch     interface{}   `json:"on_match,omitempty"`
+	ID          string `json:"id,omitempty"`
+	RulesTarget []any  `json:"rules_target,omitempty"`
+	Enabled     any    `json:"enabled,omitempty"`
+	OnMatch     any    `json:"on_match,omitempty"`
 }
 
 func TestOnRCUpdate(t *testing.T) {
-
-	BaseRuleset, err := config.NewRulesManeger(nil)
+	_, thisFile, _, _ := runtime.Caller(0)
+	bytes, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "testdata", "custom_rules.json"))
 	require.NoError(t, err)
-	BaseRuleset.Compile()
 
-	rules := config.RulesFragment{
-		Version:  BaseRuleset.Latest.Version,
-		Metadata: BaseRuleset.Latest.Metadata,
-		Rules: []interface{}{
-			BaseRuleset.Base.Rules[0],
+	var defaultRules RulesFragment
+	require.NoError(t, json.Unmarshal(bytes, &defaultRules))
+
+	rules := RulesFragment{
+		Version:  defaultRules.Version,
+		Metadata: defaultRules.Metadata,
+		Rules: []any{
+			defaultRules.Rules[0],
 		},
 	}
 
 	// Test rules overrides
 	t.Run("Overrides", func(t *testing.T) {
-		overrides1 := config.RulesFragment{
-			Overrides: []interface{}{
+		overrides1 := RulesFragment{
+			Overrides: []any{
 				testRulesOverrideEntry{
 					ID:      "crs-941-290",
 					Enabled: false,
@@ -483,8 +380,8 @@ func TestOnRCUpdate(t *testing.T) {
 				},
 			},
 		}
-		overrides2 := config.RulesFragment{
-			Overrides: []interface{}{
+		overrides2 := RulesFragment{
+			Overrides: []any{
 				testRulesOverrideEntry{
 					ID:      "crs-941-300",
 					Enabled: false,
@@ -498,31 +395,31 @@ func TestOnRCUpdate(t *testing.T) {
 
 		for _, tc := range []struct {
 			name     string
-			edits    map[string]config.RulesFragment
-			statuses map[string]rc.ApplyStatus
+			edits    map[string]*RulesFragment
+			statuses map[string]state.ApplyStatus
 		}{
 			{
 				name:     "no-updates",
-				statuses: map[string]rc.ApplyStatus{},
+				statuses: map[string]state.ApplyStatus{},
 			},
 			{
 				name: "ASM/overrides/1-config",
-				edits: map[string]config.RulesFragment{
-					"overrides1/path": overrides1,
+				edits: map[string]*RulesFragment{
+					"overrides1/path": &overrides1,
 				},
-				statuses: map[string]rc.ApplyStatus{
-					"overrides1/path": genApplyStatus(true, nil),
+				statuses: map[string]state.ApplyStatus{
+					"overrides1/path": {State: state.ApplyStateAcknowledged},
 				},
 			},
 			{
 				name: "ASM/overrides/2-configs",
-				edits: map[string]config.RulesFragment{
-					"overrides1/path": overrides1,
-					"overrides2/path": overrides2,
+				edits: map[string]*RulesFragment{
+					"overrides1/path": &overrides1,
+					"overrides2/path": &overrides2,
 				},
-				statuses: map[string]rc.ApplyStatus{
-					"overrides1/path": genApplyStatus(true, nil),
-					"overrides2/path": genApplyStatus(true, nil),
+				statuses: map[string]state.ApplyStatus{
+					"overrides1/path": {State: state.ApplyStateAcknowledged},
+					"overrides2/path": {State: state.ApplyStateAcknowledged},
 				},
 			},
 		} {
@@ -539,10 +436,14 @@ func TestOnRCUpdate(t *testing.T) {
 				require.Equal(t, tc.statuses, statuses)
 
 				// Make sure edits are added to the active ruleset
-				require.Equal(t, len(tc.edits), len(activeAppSec.cfg.RulesManager.Edits))
-				for cfg := range tc.edits {
-					require.Contains(t, activeAppSec.cfg.RulesManager.Edits, cfg)
+				expected := []string{"::/go-libddwaf/default/recommended.json"}
+				for path := range tc.statuses {
+					expected = append(expected, path)
 				}
+				slices.Sort(expected)
+				actual := activeAppSec.cfg.WAFManager.ConfigPaths("")
+				slices.Sort(actual)
+				require.Equal(t, expected, actual)
 			})
 		}
 
@@ -550,60 +451,58 @@ func TestOnRCUpdate(t *testing.T) {
 
 	// Test rules update (ASM_DD)
 	for _, tc := range []struct {
-		name             string
-		initialBasePath  string
-		expectedBasePath string
-		edits            map[string]config.RulesFragment
-		statuses         map[string]rc.ApplyStatus
-		removal          string
+		name                string
+		initialBasePath     string
+		expectedConfigPaths []string
+		edits               map[string]*RulesFragment
+		statuses            map[string]state.ApplyStatus
 	}{
 		{
 			name:     "no-updates",
-			statuses: map[string]rc.ApplyStatus{},
+			statuses: map[string]state.ApplyStatus{},
 		},
 		{
-			name:             "ASM_DD/1-config",
-			expectedBasePath: "rules/path",
-			edits: map[string]config.RulesFragment{
-				"rules/path": rules,
+			name:                "ASM_DD/1-config",
+			expectedConfigPaths: []string{"datadog/2/ASM_DD/rules/config"},
+			edits: map[string]*RulesFragment{
+				"datadog/2/ASM_DD/rules/config": &rules,
 			},
-			statuses: map[string]rc.ApplyStatus{
-				"rules/path": genApplyStatus(true, nil),
-			},
-		},
-		{
-			name: "ASM_DD/2-configs (invalid)",
-			edits: map[string]config.RulesFragment{
-				"rules/path1": rules,
-				"rules/path2": rules,
-			},
-			statuses: map[string]rc.ApplyStatus{
-				"rules/path1": genApplyStatus(true, errors.New("more than one config switch received for ASM_DD")),
-				"rules/path2": genApplyStatus(true, errors.New("more than one config switch received for ASM_DD")),
+			statuses: map[string]state.ApplyStatus{
+				"datadog/2/ASM_DD/rules/config": {State: state.ApplyStateAcknowledged},
 			},
 		},
 		{
-			name:             "ASM_DD/1-config-1-removal",
-			expectedBasePath: "rules/path1",
-			edits: map[string]config.RulesFragment{
-				"rules/path1": rules,
+			name:                "ASM_DD/2-configs",
+			expectedConfigPaths: []string{"datadog/2/ASM_DD/rules-1/config"},
+			edits: map[string]*RulesFragment{
+				"datadog/2/ASM_DD/rules-1/config": &rules,
+				"datadog/2/ASM_DD/rules-2/config": &rules,
 			},
-			statuses: map[string]rc.ApplyStatus{
-				"rules/path1": genApplyStatus(true, nil),
-				"rules/v1":    genApplyStatus(true, nil),
+			statuses: map[string]state.ApplyStatus{
+				"datadog/2/ASM_DD/rules-1/config": {State: state.ApplyStateAcknowledged},
+				"datadog/2/ASM_DD/rules-2/config": {State: state.ApplyStateError, Error: `{"rules":{"errors":{"duplicate rule":["custom-001"]}}}`},
 			},
-			removal: "rules/v1",
 		},
 		{
-			name:            "ASM_DD/1-removal",
-			initialBasePath: "rules/path",
-			edits: map[string]config.RulesFragment{
-				"rules/path": rules,
+			name:                "ASM_DD/1-config-1-removal",
+			expectedConfigPaths: []string{"datadog/2/ASM_DD/rules/config"},
+			edits: map[string]*RulesFragment{
+				"datadog/2/ASM_DD/rules/config":    &rules,
+				"datadog/2/ASM_DD/rules-v1/config": nil,
 			},
-			statuses: map[string]rc.ApplyStatus{
-				"rules/path": genApplyStatus(true, nil),
+			statuses: map[string]state.ApplyStatus{
+				"datadog/2/ASM_DD/rules/config":    {State: state.ApplyStateAcknowledged},
+				"datadog/2/ASM_DD/rules-v1/config": {State: state.ApplyStateAcknowledged},
 			},
-			removal: "rules/path",
+		},
+		{
+			name: "ASM_DD/1-removal",
+			edits: map[string]*RulesFragment{
+				"datadog/2/ASM_DD/rules/config": nil,
+			},
+			statuses: map[string]state.ApplyStatus{
+				"datadog/2/ASM_DD/rules/config": {State: state.ApplyStateAcknowledged},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -613,33 +512,99 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			activeAppSec.cfg.RulesManager.BasePath = tc.initialBasePath
-			activeAppSec.cfg.RulesManager.Compile()
+			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
-			if tc.removal != "" {
-				updates[rc.ProductASMDD][tc.removal] = nil
-			}
 
 			statuses := activeAppSec.onRCRulesUpdate(updates)
 			require.Equal(t, tc.statuses, statuses)
 
 			// Compare rulesets base paths to make sure the updates were processed correctly
-			require.Equal(t, tc.expectedBasePath, activeAppSec.cfg.RulesManager.BasePath)
-
-			if len(tc.edits) == 1 {
-				if _, ok := tc.edits[tc.removal]; ok {
-					require.Equal(t, BaseRuleset.Base.Rules, activeAppSec.cfg.RulesManager.Base.Rules)
-				} else {
-					require.Equal(t, tc.edits[tc.expectedBasePath].Rules, activeAppSec.cfg.RulesManager.Base.Rules)
-				}
+			expected := tc.expectedConfigPaths
+			if expected == nil {
+				expected = []string{"::/go-libddwaf/default/recommended.json"}
 			}
+			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 		})
 	}
 
+	t.Run("custom data classification", func(t *testing.T) {
+		if supported, _ := libddwaf.Usable(); !supported {
+			t.Skip("WAF needs to be available for this test (verifies WAF is provided correct data)")
+		}
+
+		// This test is cloned from https://github.com/DataDog/system-tests/blob/e3d14f27c6b8e2ca867cd4a4c423a30e0cde9f25/tests/appsec/api_security/test_custom_data_classification.py#L77
+
+		// RFC-1071:
+		// - Tracers MUST ensure that the `processor_overrides` and `scanners` key
+		//   provided by ASM configurations is forwarded to libddwaf without
+		//   alteration;
+		// - Tracers MUST provide the `ASM_PROCESSOR_OVERRIDES` and
+		//   `ASM_CUSTOM_DATA_SCANNERS` capabilities through remote configuration.
+
+		t.Setenv(config.EnvEnabled, "1")
+		Start(config.WithRCConfig(remoteconfig.DefaultClientConfig()))
+		defer Stop()
+
+		pathPrefix := "testdata/custom-data-classification"
+		entries, err := customDataClassificationPayloads.ReadDir(pathPrefix)
+		require.NoError(t, err)
+		rcRulesUpdate := make(map[string]remoteconfig.ProductUpdate, len(entries))
+		for _, entry := range entries {
+			product := strings.TrimSuffix(entry.Name(), ".json")
+			path := "datadog/2/" + product + "/ASM-base/config"
+			data, err := customDataClassificationPayloads.ReadFile(filepath.Join(pathPrefix, entry.Name()))
+			require.NoError(t, err)
+
+			productUpdates, found := rcRulesUpdate[product]
+			if !found {
+				productUpdates = make(remoteconfig.ProductUpdate, 1)
+				rcRulesUpdate[product] = productUpdates
+			}
+			productUpdates[path] = data
+		}
+		status := activeAppSec.onRCRulesUpdate(rcRulesUpdate)
+		for path, status := range status {
+			assert.Equal(t, state.ApplyStatus{State: state.ApplyStateAcknowledged}, status, "did not acknowledge update to %s", path)
+		}
+
+		// At this point, ASM should be fully enabled
+		require.True(t, Enabled())
+
+		handle, _ := activeAppSec.cfg.WAFManager.NewHandle()
+		require.NotNil(t, handle)
+		defer handle.Close()
+
+		ctx, err := handle.NewContext(timer.WithUnlimitedBudget())
+		require.NoError(t, err)
+		defer ctx.Close()
+
+		res, err := ctx.Run(libddwaf.RunAddressData{
+			Persistent: map[string]any{
+				"waf.context.processor": map[string]bool{"extract-schema": true},
+				addresses.ServerRequestBodyAddr: map[string]any{
+					"testcard": "1234567890",
+				},
+			},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, map[string]any{
+			"_dd.appsec.s.req.bodytest": []any{map[string]any{
+				"testcard": []any{
+					uint64(8),
+					map[string]any{
+						"category": "testcategory",
+						"type":     "card",
+					},
+				},
+			},
+			},
+		}, res.Derivatives)
+	})
+
 	t.Run("post-stop", func(t *testing.T) {
-		if supported, _ := waf.Health(); !supported {
+		if supported, _ := libddwaf.Usable(); !supported {
 			t.Skip("WAF needs to be available for this test (remote activation requirement)")
 		}
 
@@ -651,31 +616,28 @@ func TestOnRCUpdate(t *testing.T) {
 
 		enabledPayload := []byte(`{"asm":{"enabled":true}}`)
 		// Activate appsec
-		updates := map[string]remoteconfig.ProductUpdate{rc.ProductASMFeatures: map[string][]byte{"features/config": enabledPayload}}
-		activeAppSec.onRemoteActivation(updates)
+		status := activeAppSec.handleASMFeatures(map[string][]byte{"features/config": enabledPayload})
 		require.True(t, Enabled())
+		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
 
-		// Deactivate and try to update the rules. The rules update should not happen
-		updates = map[string]remoteconfig.ProductUpdate{
-			rc.ProductASMFeatures: map[string][]byte{"features/config": nil},
-			rc.ProductASM:         map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
-		}
-		activeAppSec.onRemoteActivation(updates)
+		// Deactivate appsec
+		status = activeAppSec.handleASMFeatures(map[string][]byte{"features/config": nil})
 		require.False(t, Enabled())
-		// Make sure rules did not get updated (callback gets short circuited when activeAppsec.started == false)
-		statuses := activeAppSec.onRCRulesUpdate(updates)
-		require.Empty(t, statuses)
-		require.NotContains(t, activeAppSec.cfg.RulesManager.Edits, "irrelevant/config")
+		require.Equal(t, map[string]state.ApplyStatus{"features/config": {State: state.ApplyStateAcknowledged}}, status)
 
+		status = activeAppSec.onRCRulesUpdate(map[string]remoteconfig.ProductUpdate{
+			state.ProductASMDD: map[string][]byte{"irrelevant/config": []byte("random payload that shouldn't even get unmarshalled")},
+		})
+		require.Equal(t, map[string]state.ApplyStatus{"irrelevant/config": {State: state.ApplyStateUnacknowledged}}, status)
+		require.NotContains(t, activeAppSec.cfg.WAFManager.ConfigPaths(""), "irrelevant/config")
 	})
 }
 
 func TestOnRCUpdateStatuses(t *testing.T) {
-	invalidRuleset, err := config.NewRulesManeger([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`))
-	require.NoError(t, err)
-	invalidRules := invalidRuleset.Base
-	overrides := config.RulesFragment{
-		Overrides: []interface{}{
+	var invalidRules RulesFragment
+	require.NoError(t, json.Unmarshal([]byte(`{"version": "2.2", "metadata": {"rules_version": "1.4.2"}, "rules": [{"id": "id","name":"name","tags":{},"conditions":[],"transformers":[],"on_match":[]}]}`), &invalidRules))
+	overrides := RulesFragment{
+		Overrides: []any{
 			testRulesOverrideEntry{
 				ID:      "rule-1",
 				Enabled: true,
@@ -686,8 +648,8 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			},
 		},
 	}
-	overrides2 := config.RulesFragment{
-		Overrides: []interface{}{
+	overrides2 := RulesFragment{
+		Overrides: []any{
 			testRulesOverrideEntry{
 				ID:      "rule-3",
 				Enabled: true,
@@ -698,44 +660,46 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			},
 		},
 	}
-	invalidOverrides := config.RulesFragment{
-		Overrides: []interface{}{1, 2, 3, 4, "random data"},
+	invalidOverrides := RulesFragment{
+		Overrides: []any{1, 2, 3, 4, "random data"},
 	}
-	ackStatus := genApplyStatus(true, nil)
+	ackStatus := state.ApplyStatus{State: state.ApplyStateAcknowledged}
 
 	for _, tc := range []struct {
-		name        string
-		updates     map[string]remoteconfig.ProductUpdate
-		expected    map[string]rc.ApplyStatus
-		updateError bool
+		name     string
+		updates  map[string]remoteconfig.ProductUpdate
+		expected map[string]state.ApplyStatus
 	}{
 		{
 			name:     "single/ack",
-			updates:  craftRCUpdates(map[string]config.RulesFragment{"overrides": overrides}),
-			expected: map[string]rc.ApplyStatus{"overrides": ackStatus},
+			updates:  craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides}),
+			expected: map[string]state.ApplyStatus{"overrides": ackStatus},
 		},
 		{
 			name:     "single/error",
-			updates:  craftRCUpdates(map[string]config.RulesFragment{"invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{"invalid": ackStatus}, // Success, as there exists at least 1 usable rule in the whole set
+			updates:  craftRCUpdates(map[string]*RulesFragment{"invalid": &invalidOverrides}),
+			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
 		},
 		{
 			name:     "multiple/ack",
-			updates:  craftRCUpdates(map[string]config.RulesFragment{"overrides": overrides, "overrides2": overrides2}),
-			expected: map[string]rc.ApplyStatus{"overrides": ackStatus, "overrides2": ackStatus},
+			updates:  craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides, "overrides2": &overrides2}),
+			expected: map[string]state.ApplyStatus{"overrides": ackStatus, "overrides2": ackStatus},
 		},
 		{
 			name:    "multiple/single-error",
-			updates: craftRCUpdates(map[string]config.RulesFragment{"overrides": overrides, "invalid": invalidOverrides}),
-			expected: map[string]rc.ApplyStatus{
-				"overrides": ackStatus, // Success, as there exists at least 1 usable rule in the whole set
-				"invalid":   ackStatus, // Success, as there exists at least 1 usable rule in the whole set
+			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides, "invalid": &invalidOverrides}),
+			expected: map[string]state.ApplyStatus{
+				"overrides": ackStatus,
+				"invalid":   {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 			},
 		},
 		{
-			name:        "multiple/all-errors",
-			updates:     craftRCUpdates(map[string]config.RulesFragment{"overrides": overrides, "invalid": invalidRules}),
-			updateError: true,
+			name:    "multiple/all-errors",
+			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &invalidOverrides, "invalid": &invalidRules}),
+			expected: map[string]state.ApplyStatus{
+				"overrides": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"invalid":   {State: state.ApplyStateError, Error: `{"rules":{"errors":{"rule has no valid conditions":["id"]}}}`},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -747,15 +711,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			}
 
 			statuses := activeAppSec.onRCRulesUpdate(tc.updates)
-			if tc.updateError {
-				for _, status := range statuses {
-					require.NotEmpty(t, status.Error)
-					require.Equal(t, rc.ApplyStateError, status.State)
-				}
-			} else {
-				require.Len(t, statuses, len(tc.expected))
-				require.True(t, reflect.DeepEqual(tc.expected, statuses), "expected: %#v\nactual:   %#v", tc.expected, statuses)
-			}
+			require.Equal(t, tc.expected, statuses)
 		})
 	}
 }
@@ -763,9 +719,9 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 // TestWafUpdate tests that the WAF behaves correctly after the WAF handle gets updated with a new set of security rules
 // through remote configuration
 func TestWafRCUpdate(t *testing.T) {
-	override := config.RulesFragment{
+	override := RulesFragment{
 		// Override the already existing and enabled rule crs-913-120 with the "block" action
-		Overrides: []interface{}{
+		Overrides: []any{
 			testRulesOverrideEntry{
 				ID:      "crs-913-120",
 				OnMatch: []string{"block"},
@@ -773,41 +729,43 @@ func TestWafRCUpdate(t *testing.T) {
 		},
 	}
 
-	if supported, _ := waf.Health(); !supported {
+	if supported, _ := libddwaf.Usable(); !supported {
 		t.Skip("WAF needs to be available for this test")
 	}
 
 	t.Run("toggle-blocking", func(t *testing.T) {
-		cfg, err := config.NewConfig()
+		cfg, err := config.NewStartConfig().NewConfig()
 		require.NoError(t, err)
-		wafHandle, err := waf.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
-		require.NoError(t, err)
+		appsec := appsec{cfg: cfg, started: true}
+
+		wafHandle, _ := appsec.cfg.NewHandle()
+		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		wafCtx, err := wafHandle.NewContext()
+		wafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
 		require.NoError(t, err)
 		defer wafCtx.Close()
-		values := map[string]interface{}{
-			httpsec.ServerRequestPathParamsAddr: "/rfiinc.txt",
+		values := map[string]any{
+			addresses.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
+
 		// Make sure the rule matches as expected
-		result := sharedsec.RunWAF(wafCtx, waf.RunAddressData{Persistent: values})
+		result, err := wafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
+
 		// Simulate an RC update that disables the rule
-		statuses, err := combineRCRulesUpdates(cfg.RulesManager, craftRCUpdates(map[string]config.RulesFragment{"override": override}))
-		require.NoError(t, err)
-		for _, status := range statuses {
-			require.Equal(t, status.State, rc.ApplyStateAcknowledged)
-		}
-		cfg.RulesManager.Compile()
-		newWafHandle, err := waf.NewHandle(cfg.RulesManager.Latest, cfg.Obfuscator.KeyRegex, cfg.Obfuscator.ValueRegex)
-		require.NoError(t, err)
-		defer newWafHandle.Close()
-		newWafCtx, err := newWafHandle.NewContext()
+		statuses := appsec.onRCRulesUpdate(craftRCUpdates(map[string]*RulesFragment{"override": &override}))
+		require.Subset(t, statuses, map[string]state.ApplyStatus{"override": {State: state.ApplyStateAcknowledged}})
+		wafHandle, _ = appsec.cfg.NewHandle()
+		require.NotNil(t, wafHandle)
+		defer wafHandle.Close()
+		newWafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result = sharedsec.RunWAF(newWafCtx, waf.RunAddressData{Persistent: values})
+		result, err = newWafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block_request")
 	})
@@ -817,4 +775,19 @@ func jsonString(t *testing.T, v any) string {
 	bytes, err := json.Marshal(v)
 	require.NoError(t, err)
 	return string(bytes)
+}
+
+// RulesFragment can represent a full ruleset or a fragment of it.
+type RulesFragment struct {
+	Version       string                  `json:"version,omitempty"`
+	Metadata      any                     `json:"metadata,omitempty"`
+	Rules         []any                   `json:"rules,omitempty"`
+	Overrides     []any                   `json:"rules_override,omitempty"`
+	Exclusions    []any                   `json:"exclusions,omitempty"`
+	ExclusionData []state.ASMDataRuleData `json:"exclusion_data,omitempty"`
+	RulesData     []state.ASMDataRuleData `json:"rules_data,omitempty"`
+	Actions       []any                   `json:"actions,omitempty"`
+	CustomRules   []any                   `json:"custom_rules,omitempty"`
+	Processors    []any                   `json:"processors,omitempty"`
+	Scanners      []any                   `json:"scanners,omitempty"`
 }

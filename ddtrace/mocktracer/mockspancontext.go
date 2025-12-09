@@ -6,10 +6,12 @@
 package mocktracer
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 var _ ddtrace.SpanContext = (*spanContext)(nil)
@@ -22,10 +24,14 @@ type spanContext struct {
 
 	spanID  uint64
 	traceID uint64
-	span    *mockspan // context owner
+	span    *tracer.Span
 }
 
-func (sc *spanContext) TraceID() uint64 { return sc.traceID }
+func (sc *spanContext) TraceID() string { return strconv.FormatUint(sc.traceID, 10) }
+
+func (sc *spanContext) TraceIDBytes() [16]byte { return [16]byte{} }
+
+func (sc *spanContext) TraceIDLower() uint64 { return sc.traceID }
 
 func (sc *spanContext) SpanID() uint64 { return sc.spanID }
 

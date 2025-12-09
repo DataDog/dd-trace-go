@@ -3,10 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:generate sh gen_proto.sh
-
 // Package grpc provides functions to trace the google.golang.org/grpc package v1.2.
-package grpc // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/grpc"
+package grpc // import "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
 
 import (
 	"context"
@@ -15,11 +13,10 @@ import (
 	"io"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/google.golang.org/internal/grpcutil"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -30,9 +27,10 @@ import (
 
 const componentName = "google.golang.org/grpc"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageGRPC)
 }
 
 // cache a constant option: saves one allocation per call
@@ -57,11 +55,11 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 }
 
 func startSpanFromContext(
-	ctx context.Context, method, operation string, serviceFn func() string, opts ...tracer.StartSpanOption,
-) (ddtrace.Span, context.Context) {
+	ctx context.Context, method, operation string, serviceName string, opts ...tracer.StartSpanOption,
+) (*tracer.Span, context.Context) {
 	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	opts = append(opts,
-		tracer.ServiceName(serviceFn()),
+		tracer.ServiceName(serviceName),
 		tracer.ResourceName(method),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
@@ -71,13 +69,17 @@ func startSpanFromContext(
 	)
 	md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 	if sctx, err := tracer.Extract(grpcutil.MDCarrier(md)); err == nil {
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		if sctx != nil && sctx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithSpanLinks(sctx.SpanLinks()))
+		}
 		opts = append(opts, tracer.ChildOf(sctx))
 	}
 	return tracer.StartSpanFromContext(ctx, operation, opts...)
 }
 
 // finishWithError applies finish option and a tag with gRPC status code, disregarding OK, EOF and Canceled errors.
-func finishWithError(span ddtrace.Span, err error, cfg *config) {
+func finishWithError(span *tracer.Span, err error, cfg *config) {
 	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		err = nil
 	}

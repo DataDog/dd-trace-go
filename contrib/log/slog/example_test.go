@@ -10,8 +10,8 @@ import (
 	"log/slog"
 	"os"
 
-	slogtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/log/slog"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	slogtrace "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func ExampleNewJSONHandler() {

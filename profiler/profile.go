@@ -7,6 +7,7 @@ package profiler
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -16,8 +17,8 @@ import (
 	"runtime/trace"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/fastdelta"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler/internal/pprofutils"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/fastdelta"
+	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pprofutils"
 
 	"github.com/DataDog/gostackparse"
 	pprofile "github.com/google/pprof/profile"
@@ -88,6 +89,7 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "cpu.pprof",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
+			var outBuf bytes.Buffer
 			// Start the CPU profiler at the end of the profiling
 			// period so that we're sure to capture the CPU usage of
 			// this library, which mostly happens at the end
@@ -100,7 +102,7 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			if err := p.startCPUProfile(&buf); err != nil {
+			if err := p.startCPUProfile(&outBuf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
@@ -110,7 +112,12 @@ var profileTypes = map[ProfileType]profileType{
 			// the other profile types
 			p.pendingProfiles.Wait()
 			p.stopCPUProfile()
-			return buf.Bytes(), nil
+
+			c := p.compressors[CPUProfile]
+			c.Reset(&buf)
+			_, writeErr := outBuf.WriteTo(c)
+			closeErr := c.Close()
+			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
 	},
 	// HeapProfile is complex due to how the Go runtime exposes it. It contains 4
@@ -168,7 +175,11 @@ var profileTypes = map[ProfileType]profileType{
 			if err := p.lookupProfile("goroutine", text, 2); err != nil {
 				return nil, err
 			}
-			err := goroutineDebug2ToPprof(text, pprof, now)
+
+			c := p.compressors[expGoroutineWaitProfile]
+			c.Reset(pprof)
+			err := goroutineDebug2ToPprof(text, c, now)
+			err = cmp.Or(err, c.Close())
 			return pprof.Bytes(), err
 		},
 	},
@@ -177,8 +188,14 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "metrics.json",
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
-			p.interruptibleSleep(p.cfg.period)
-			err := p.met.report(now(), &buf)
+			c := p.compressors[MetricsProfile]
+			c.Reset(&buf)
+			interrupted := p.interruptibleSleep(p.cfg.period)
+			err := p.met.report(now(), c)
+			err = cmp.Or(err, c.Close())
+			if err != nil && interrupted {
+				err = errProfilerStopped
+			}
 			return buf.Bytes(), err
 		},
 	},
@@ -188,7 +205,8 @@ var profileTypes = map[ProfileType]profileType{
 		Collect: func(p *profiler) ([]byte, error) {
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
-			lt := newLimitedTraceCollector(buf, int64(p.cfg.traceConfig.Limit))
+			outBuf := new(bytes.Buffer)
+			lt := newLimitedTraceCollector(outBuf, int64(p.cfg.traceConfig.Limit))
 			if err := trace.Start(lt); err != nil {
 				return nil, err
 			}
@@ -199,7 +217,12 @@ var profileTypes = map[ProfileType]profileType{
 			case <-lt.done: // The trace size limit was exceeded
 			}
 			trace.Stop()
-			return buf.Bytes(), nil
+
+			c := p.compressors[executionTrace]
+			c.Reset(buf)
+			_, writeErr := outBuf.WriteTo(c)
+			closeErr := c.Close()
+			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
 	},
 }
@@ -261,19 +284,25 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 		p.interruptibleSleep(p.cfg.period)
 
 		var buf bytes.Buffer
-		err := p.lookupProfile(name, &buf, 0)
-		data := buf.Bytes()
 		dp, ok := p.deltas[pt]
 		if !ok || !p.cfg.deltaProfiles {
-			return data, err
+			c := p.compressors[pt]
+			c.Reset(&buf)
+			err := p.lookupProfile(name, c, 0)
+			err = cmp.Or(err, c.Close())
+			return buf.Bytes(), err
+		}
+
+		if err := p.lookupProfile(name, &buf, 0); err != nil {
+			return nil, err
 		}
 
 		start := time.Now()
-		delta, err := dp.Delta(data)
+		delta, err := dp.Delta(buf.Bytes())
 		tags := append(p.cfg.tags.Slice(), fmt.Sprintf("profile_type:%s", name))
 		p.cfg.statsd.Timing("datadog.profiling.go.delta_time", time.Since(start), tags, 1)
 		if err != nil {
-			return nil, fmt.Errorf("delta profile error: %s", err)
+			return nil, fmt.Errorf("delta profile error: %s", err.Error())
 		}
 		return delta, err
 	}
@@ -309,6 +338,26 @@ func (t ProfileType) Filename() string {
 // Tag used on profile metadata
 func (t ProfileType) Tag() string {
 	return fmt.Sprintf("profile_type:%s", t)
+}
+
+// UnmarshalText parses a profile type from text.
+func (t *ProfileType) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "cpu":
+		*t = CPUProfile
+	case "heap":
+		*t = HeapProfile
+	case "block":
+		*t = BlockProfile
+	case "mutex":
+		*t = MutexProfile
+	case "goroutine":
+		*t = GoroutineProfile
+	default:
+		return fmt.Errorf("unknown profile type: %s", text)
+	}
+
+	return nil
 }
 
 // profile specifies a profiles data (gzipped protobuf, json), and the types contained within it.
@@ -358,17 +407,17 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 }
 
 type fastDeltaProfiler struct {
-	dc  *fastdelta.DeltaComputer
-	buf bytes.Buffer
-	gzr gzip.Reader
-	gzw *gzip.Writer
+	dc         *fastdelta.DeltaComputer
+	buf        bytes.Buffer
+	gzr        gzip.Reader
+	compressor compressor
 }
 
-func newFastDeltaProfiler(v ...pprofutils.ValueType) *fastDeltaProfiler {
+func newFastDeltaProfiler(compressor compressor, v ...pprofutils.ValueType) *fastDeltaProfiler {
 	fd := &fastDeltaProfiler{
-		dc: fastdelta.NewDeltaComputer(v...),
+		dc:         fastdelta.NewDeltaComputer(v...),
+		compressor: compressor,
 	}
-	fd.gzw = gzip.NewWriter(&fd.buf)
 	return fd
 }
 
@@ -383,18 +432,20 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 		}
 		data, err = io.ReadAll(&fdp.gzr)
 		if err != nil {
-			return nil, fmt.Errorf("decompressing profile: %v", err)
+			return nil, fmt.Errorf("decompressing profile: %s", err.Error())
 		}
 	}
 
 	fdp.buf.Reset()
-	fdp.gzw.Reset(&fdp.buf)
+	c := fdp.compressor
+	c.Reset(&fdp.buf)
 
-	if err = fdp.dc.Delta(data, fdp.gzw); err != nil {
-		return nil, fmt.Errorf("error computing delta: %v", err)
-	}
-	if err = fdp.gzw.Close(); err != nil {
-		return nil, fmt.Errorf("error flushing gzip writer: %v", err)
+	deltaErr := fdp.dc.Delta(data, c)
+	closeErr := c.Close()
+	if deltaErr != nil {
+		return nil, fmt.Errorf("error computing delta: %w", deltaErr)
+	} else if closeErr != nil {
+		return nil, fmt.Errorf("error flushing compressor: %w", closeErr)
 	}
 	// The returned slice will be retained in case the profile upload fails,
 	// so we need to return a copy of the buffer's bytes to avoid a data
@@ -494,9 +545,9 @@ func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
 	}
 
 	if err := p.CheckValid(); err != nil {
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
-	} else if err := p.Write(w); err != nil {
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err)
+		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err.Error())
+	} else if err := p.WriteUncompressed(w); err != nil {
+		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err.Error())
 	}
 	return nil
 }

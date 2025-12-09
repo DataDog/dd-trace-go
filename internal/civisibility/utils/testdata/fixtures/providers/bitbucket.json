@@ -591,5 +591,28 @@
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "git.repository_url": "ssh://host.xz:54321/path/to/repo.git/"
     }
+  ],
+  [
+    {
+      "BITBUCKET_BUILD_NUMBER": "bitbucket-build-num",
+      "BITBUCKET_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "BITBUCKET_GIT_HTTP_ORIGIN": "https://bitbucket-repo-url.com/repo.git",
+      "BITBUCKET_PIPELINE_UUID": "{bitbucket-uuid}",
+      "BITBUCKET_PR_DESTINATION_BRANCH": "target-branch",
+      "BITBUCKET_PR_ID": 42,
+      "BITBUCKET_REPO_FULL_NAME": "bitbucket-repo"
+    },
+    {
+      "ci.job.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.pipeline.id": "bitbucket-uuid",
+      "ci.pipeline.name": "bitbucket-repo",
+      "ci.pipeline.number": "bitbucket-build-num",
+      "ci.pipeline.url": "https://bitbucket.org/bitbucket-repo/addon/pipelines/home#!/results/bitbucket-build-num",
+      "ci.provider.name": "bitbucket",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.pull_request.base_branch": "target-branch",
+      "git.repository_url": "https://bitbucket-repo-url.com/repo.git",
+      "pr.number": "42"
+    }
   ]
 ]

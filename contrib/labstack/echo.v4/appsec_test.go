@@ -14,22 +14,17 @@ import (
 	"strings"
 	"testing"
 
-	pappsec "gopkg.in/DataDog/dd-trace-go.v1/appsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec"
+	pappsec "github.com/DataDog/dd-trace-go/v2/appsec"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAppSec(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
+	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server
 	e := echo.New()
@@ -127,8 +122,8 @@ func TestAppSec(t *testing.T) {
 			// The span should contain the security event
 			finished := mt.FinishedSpans()
 			require.Len(t, finished, 1)
-			event := finished[0].Tag("_dd.appsec.json").(string)
-			require.NotNil(t, event)
+			event, ok := finished[0].Tag("_dd.appsec.json").(string)
+			require.True(t, ok, "expected string, found %T", finished[0].Tag("_dd.appsec.json"))
 			require.True(t, strings.Contains(event, "crs-913-120"))
 			// Wildcards are not named in echo
 			require.False(t, strings.Contains(event, "myPathParam3"))
@@ -140,7 +135,7 @@ func TestAppSec(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("POST", srv.URL+"/etc/", nil)
+		req, err := http.NewRequest("POST", srv.URL+"/etc/passwd", nil)
 		if err != nil {
 			panic(err)
 		}
@@ -151,8 +146,8 @@ func TestAppSec(t *testing.T) {
 
 		finished := mt.FinishedSpans()
 		require.Len(t, finished, 1)
-		event := finished[0].Tag("_dd.appsec.json").(string)
-		require.NotNil(t, event)
+		event, ok := finished[0].Tag("_dd.appsec.json").(string)
+		require.True(t, ok, "expected string, found %T", finished[0].Tag("_dd.appsec.json"))
 		require.True(t, strings.Contains(event, "server.response.status"))
 		require.True(t, strings.Contains(event, "nfd-000-001"))
 	})
@@ -239,11 +234,7 @@ func TestAppSec(t *testing.T) {
 // TestControlFlow ensures that the AppSec middleware behaves correctly in various execution flows and wrapping
 // scenarios.
 func TestControlFlow(t *testing.T) {
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
+	testutils.StartAppSec(t)
 
 	middlewareResponseBody := "Hello Middleware"
 	middlewareResponseStatus := 433
@@ -262,7 +253,7 @@ func TestControlFlow(t *testing.T) {
 			name: "middleware-first/middleware-aborts-before-handler",
 			middlewares: []echo.MiddlewareFunc{
 				Middleware(),
-				func(next echo.HandlerFunc) echo.HandlerFunc {
+				func(_ echo.HandlerFunc) echo.HandlerFunc {
 					return func(c echo.Context) error {
 						c.String(middlewareResponseStatus, middlewareResponseBody)
 						return echo.NewHTTPError(middlewareResponseStatus, "middleware abort")
@@ -271,7 +262,6 @@ func TestControlFlow(t *testing.T) {
 			},
 			handler: func(echo.Context) error {
 				panic("unexpected control flow")
-				return nil
 			},
 			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
 				require.Error(t, err)
@@ -366,7 +356,7 @@ func TestControlFlow(t *testing.T) {
 					}
 				},
 			},
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				return nil
 			},
 			test: func(t *testing.T, rec *httptest.ResponseRecorder, mt mocktracer.Tracer, err error) {
@@ -399,7 +389,7 @@ func TestControlFlow(t *testing.T) {
 				},
 				Middleware(),
 			},
-			handler: func(c echo.Context) error {
+			handler: func(_ echo.Context) error {
 				// Do nothing so that the calling middleware can handle the response.
 				return nil
 			},
@@ -428,7 +418,7 @@ func TestControlFlow(t *testing.T) {
 					}
 				},
 				func(echo.HandlerFunc) echo.HandlerFunc {
-					return func(c echo.Context) error {
+					return func(_ echo.Context) error {
 						// Make sure echo doesn't call the next middleware when the
 						// previous one returns an error.
 						panic("unexpected control flow")
@@ -551,11 +541,7 @@ func TestControlFlow(t *testing.T) {
 func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 
-	appsec.Start()
-	defer appsec.Stop()
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
+	testutils.StartAppSec(t)
 
 	// Start and trace an HTTP server
 	e := echo.New()
@@ -570,6 +556,16 @@ func TestBlocking(t *testing.T) {
 		}
 		return c.String(http.StatusOK, "Hello, "+userID)
 	})
+	e.Any("/body", func(c echo.Context) error {
+		type body struct {
+			Name string `json:"name"`
+		}
+		var b body
+		if err := c.Bind(&b); err != nil {
+			return err
+		}
+		return c.String(http.StatusOK, "Hello, "+b.Name)
+	})
 	srv := httptest.NewServer(e)
 	defer srv.Close()
 
@@ -577,6 +573,7 @@ func TestBlocking(t *testing.T) {
 		name        string
 		endpoint    string
 		headers     map[string]string
+		body        string
 		shouldBlock bool
 	}{
 		{
@@ -601,12 +598,34 @@ func TestBlocking(t *testing.T) {
 			endpoint: "/user",
 			headers:  map[string]string{"user-id": "legit-user-1"},
 		},
+		{
+			name:     "body/block",
+			endpoint: "/body",
+			body:     `{"name":"$globals"}`,
+			headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			shouldBlock: true,
+		},
+		{
+			name:     "body/no-block",
+			endpoint: "/body",
+			body:     `{"name":"legit"}`,
+			headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, nil)
+			var bodyReader io.Reader
+			if tc.body != "" {
+				bodyReader = strings.NewReader(tc.body)
+			}
+
+			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, bodyReader)
 			for k, v := range tc.headers {
 				req.Header.Set(k, v)
 			}
@@ -619,7 +638,7 @@ func TestBlocking(t *testing.T) {
 
 			if tc.shouldBlock {
 				require.Equal(t, http.StatusForbidden, res.StatusCode)
-				require.Equal(t, spans[0].Tag("appsec.blocked"), true)
+				require.Equal(t, spans[0].Tag("appsec.blocked"), "true")
 			} else {
 				require.Equal(t, http.StatusOK, res.StatusCode)
 				require.NotContains(t, spans[0].Tags(), "appsec.blocked")

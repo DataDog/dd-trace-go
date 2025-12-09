@@ -3,13 +3,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package statsdtest // import "gopkg.in/DataDog/dd-trace-go.v1/internal/statsdtest"
+package statsdtest // import "github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,10 +19,14 @@ type callType int64
 
 const (
 	callTypeGauge callType = iota
+	callTypeGaugeWithTimestamp
 	callTypeIncr
 	callTypeCount
+	callTypeCountWithTimestamp
 	callTypeTiming
 )
+
+var _ internal.StatsdClient = &TestStatsdClient{}
 
 type TestStatsdClient struct {
 	mu          sync.RWMutex
@@ -44,6 +50,18 @@ type TestStatsdCall struct {
 	rate     float64
 }
 
+func (t TestStatsdCall) Name() string {
+	return t.name
+}
+
+func (t TestStatsdCall) Tags() []string {
+	return t.tags
+}
+
+func (t TestStatsdCall) IntVal() int64 {
+	return t.intVal
+}
+
 func (tg *TestStatsdClient) addCount(name string, value int64) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
@@ -55,6 +73,16 @@ func (tg *TestStatsdClient) addCount(name string, value int64) {
 
 func (tg *TestStatsdClient) Gauge(name string, value float64, tags []string, rate float64) error {
 	return tg.addMetric(callTypeGauge, tags, TestStatsdCall{
+		name:     name,
+		floatVal: value,
+		tags:     make([]string, len(tags)),
+		rate:     rate,
+	})
+}
+
+func (tg *TestStatsdClient) GaugeWithTimestamp(name string, value float64, tags []string, rate float64, _ time.Time) error {
+	// TODO: handle timestamp argument
+	return tg.addMetric(callTypeGaugeWithTimestamp, tags, TestStatsdCall{
 		name:     name,
 		floatVal: value,
 		tags:     make([]string, len(tags)),
@@ -79,6 +107,21 @@ func (tg *TestStatsdClient) Count(name string, value int64, tags []string, rate 
 		tags:   make([]string, len(tags)),
 		rate:   rate,
 	})
+}
+
+func (tg *TestStatsdClient) CountWithTimestamp(name string, value int64, tags []string, rate float64, _ time.Time) error {
+	// TODO: handle timestamp argument
+	tg.addCount(name, value)
+	return tg.addMetric(callTypeCountWithTimestamp, tags, TestStatsdCall{
+		name:   name,
+		intVal: value,
+		tags:   make([]string, len(tags)),
+		rate:   rate,
+	})
+}
+
+func (tg *TestStatsdClient) DistributionSamples(_ string, _ []float64, _ []string, _ float64) error {
+	panic("not implemented")
 }
 
 func (tg *TestStatsdClient) Timing(name string, value time.Duration, tags []string, rate float64) error {
@@ -189,6 +232,57 @@ func (tg *TestStatsdClient) CallsByName() map[string]int {
 		counts[c.name]++
 	}
 	return counts
+}
+
+// GetCallsByName returns a slice of TestStatsdCalls with the provided name on the TestStatsdClient
+// It's useful if you want to use any TestStatsdCall method calls on the result(s)
+func (tg *TestStatsdClient) GetCallsByName(name string) (calls []TestStatsdCall) {
+	tg.mu.RLock()
+	defer tg.mu.RUnlock()
+	for _, c := range tg.gaugeCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	for _, c := range tg.incrCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	for _, c := range tg.countCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	for _, c := range tg.timingCalls {
+		if c.Name() == name {
+			calls = append(calls, c)
+		}
+	}
+	return calls
+}
+
+// FilterCallsByName returns a slice of TestStatsdCalls with the provided name, from the list of provided TestStatsdCalls
+func FilterCallsByName(calls []TestStatsdCall, name string) []TestStatsdCall {
+	var matches []TestStatsdCall
+	for _, c := range calls {
+		if c.name == name {
+			matches = append(matches, c)
+		}
+	}
+	return matches
+}
+
+func (tg *TestStatsdClient) CountCallsByTag(calls []TestStatsdCall, tag string) int64 {
+	tg.mu.RLock()
+	defer tg.mu.RUnlock()
+	var count int64
+	for _, c := range calls {
+		if slices.Equal(c.tags, []string{tag}) {
+			count += c.intVal
+		}
+	}
+	return count
 }
 
 func (tg *TestStatsdClient) Counts() map[string]int64 {

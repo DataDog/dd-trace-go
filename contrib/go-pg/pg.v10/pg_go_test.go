@@ -11,10 +11,10 @@ import (
 	"os"
 	"testing"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/go-pg/pg/v10"
 	"github.com/stretchr/testify/assert"
@@ -68,6 +68,7 @@ func TestSelect(t *testing.T) {
 	assert.Equal("go-pg", spans[0].OperationName())
 	assert.Equal("http.request", spans[1].OperationName())
 	assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+	assert.Equal(componentName, spans[0].Integration())
 	assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 }
 
@@ -108,12 +109,12 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("gopg.db", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+		assert.Equal(componentName, spans[0].Integration())
 		assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 	})
 
 	t.Run("global", func(t *testing.T) {
-		globalconfig.SetServiceName("global-service")
-		defer globalconfig.SetServiceName("")
+		testutils.SetGlobalServiceName(t, "global-service")
 
 		assert := assert.New(t)
 		mt := mocktracer.Start()
@@ -150,6 +151,7 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("global-service", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+		assert.Equal(componentName, spans[0].Integration())
 		assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 	})
 
@@ -164,7 +166,7 @@ func TestServiceName(t *testing.T) {
 			Database: "postgres",
 		})
 
-		Wrap(conn, WithServiceName("my-service-name"))
+		Wrap(conn, WithService("my-service-name"))
 
 		parentSpan, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
 			tracer.ServiceName("fake-http-server"),
@@ -189,6 +191,7 @@ func TestServiceName(t *testing.T) {
 		assert.Equal("my-service-name", spans[0].Tag(ext.ServiceName))
 		assert.Equal("fake-http-server", spans[1].Tag(ext.ServiceName))
 		assert.Equal("go-pg/pg.v10", spans[0].Tag(ext.Component))
+		assert.Equal(componentName, spans[0].Integration())
 		assert.Equal("postgresql", spans[0].Tag(ext.DBSystem))
 	})
 }
@@ -232,9 +235,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -257,9 +258,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})

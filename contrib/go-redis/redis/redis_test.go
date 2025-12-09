@@ -13,15 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/contrib/internal/namingschematest"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 
 	"github.com/go-redis/redis"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const debug = false
@@ -41,7 +39,7 @@ func TestClientEvalSha(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 
 	sha1 := client.ScriptLoad("return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}").Val()
 	mt.Reset()
@@ -59,16 +57,17 @@ func TestClientEvalSha(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("evalsha", span.Tag(ext.ResourceName))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 }
 
 // https://github.com/DataDog/dd-trace-go/issues/387
 func TestIssue387(_ *testing.T) {
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	n := 1000
 
 	client.Set("test_key", "test_value", 0)
@@ -92,7 +91,7 @@ func TestClient(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	client.Set("test_key", "test_value", 0)
 
 	spans := mt.FinishedSpans()
@@ -107,10 +106,11 @@ func TestClient(t *testing.T) {
 	assert.Equal("set test_key test_value: ", span.Tag("redis.raw_command"))
 	assert.Equal("3", span.Tag("redis.args_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("15", span.Tag("out.db"))
-	assert.Equal(15, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(15), span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestPipeline(t *testing.T) {
@@ -119,7 +119,7 @@ func TestPipeline(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	pipeline := client.Pipeline()
 	pipeline.Expire("pipeline_counter", time.Hour)
 
@@ -138,10 +138,11 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 
 	mt.Reset()
 	pipeline.Expire("pipeline_counter", time.Hour)
@@ -160,10 +161,11 @@ func TestPipeline(t *testing.T) {
 	assert.Equal("expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n", span.Tag(ext.ResourceName))
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestPipelined(t *testing.T) {
@@ -172,7 +174,7 @@ func TestPipelined(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	_, err := client.Pipelined(func(p redis.Pipeliner) error {
 		p.Expire("pipeline_counter", time.Hour)
 		return nil
@@ -191,10 +193,11 @@ func TestPipelined(t *testing.T) {
 	assert.Equal("6379", span.Tag(ext.TargetPort))
 	assert.Equal("1", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 
 	mt.Reset()
 	_, err = client.Pipelined(func(p redis.Pipeliner) error {
@@ -214,10 +217,11 @@ func TestPipelined(t *testing.T) {
 	assert.Equal("expire pipeline_counter 3600: false\nexpire pipeline_counter_1 60: false\n", span.Tag(ext.ResourceName))
 	assert.Equal("2", span.Tag("redis.pipeline_length"))
 	assert.Equal("go-redis/redis", span.Tag(ext.Component))
+	assert.Equal(componentName, span.Integration())
 	assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 	assert.Equal("redis", span.Tag(ext.DBSystem))
 	assert.Equal("0", span.Tag("out.db"))
-	assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+	assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 }
 
 func TestChildSpan(t *testing.T) {
@@ -227,7 +231,7 @@ func TestChildSpan(t *testing.T) {
 	defer mt.Stop()
 
 	// Parent span
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	root, ctx := tracer.StartSpanFromContext(context.Background(), "parent.span")
 	client = client.WithContext(ctx)
 	client.Set("test_key", "test_value", 0)
@@ -236,7 +240,7 @@ func TestChildSpan(t *testing.T) {
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 2)
 
-	var child, parent mocktracer.Span
+	var child, parent *mocktracer.Span
 	for _, s := range spans {
 		// order of traces in buffer is not garanteed
 		switch s.OperationName() {
@@ -260,7 +264,7 @@ func TestMultipleCommands(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client := NewClient(opts, WithServiceName("my-redis"))
+	client := NewClient(opts, WithService("my-redis"))
 	client.Set("test_key", "test_value", 0)
 	client.Get("test_key")
 	client.Incr("int_key")
@@ -287,7 +291,7 @@ func TestError(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := NewClient(opts, WithServiceName("my-redis"))
+		client := NewClient(opts, WithService("my-redis"))
 		_, err := client.Get("key").Result()
 
 		spans := mt.FinishedSpans()
@@ -296,15 +300,16 @@ func TestError(t *testing.T) {
 
 		assert.Equal("redis.command", span.OperationName())
 		assert.NotNil(err)
-		assert.Equal(err, span.Tag(ext.Error))
+		assert.Equal(err.Error(), span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6378", span.Tag(ext.TargetPort))
 		assert.Equal("get key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis", span.Tag(ext.Component))
+		assert.Equal(componentName, span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 		assert.Equal("0", span.Tag("out.db"))
-		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+		assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 	})
 
 	t.Run("nil", func(t *testing.T) {
@@ -313,7 +318,7 @@ func TestError(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		client := NewClient(opts, WithServiceName("my-redis"))
+		client := NewClient(opts, WithService("my-redis"))
 		_, err := client.Get("non_existent_key").Result()
 
 		spans := mt.FinishedSpans()
@@ -322,15 +327,16 @@ func TestError(t *testing.T) {
 
 		assert.Equal(redis.Nil, err)
 		assert.Equal("redis.command", span.OperationName())
-		assert.Empty(span.Tag(ext.Error))
+		assert.Zero(span.Tag(ext.ErrorMsg))
 		assert.Equal("127.0.0.1", span.Tag(ext.TargetHost))
 		assert.Equal("6379", span.Tag(ext.TargetPort))
 		assert.Equal("get non_existent_key: ", span.Tag("redis.raw_command"))
 		assert.Equal("go-redis/redis", span.Tag(ext.Component))
+		assert.Equal(componentName, span.Integration())
 		assert.Equal(ext.SpanKindClient, span.Tag(ext.SpanKind))
 		assert.Equal("redis", span.Tag(ext.DBSystem))
 		assert.Equal("0", span.Tag("out.db"))
-		assert.Equal(0, span.Tag(ext.RedisDatabaseIndex))
+		assert.Equal(float64(0), span.Tag(ext.RedisDatabaseIndex))
 	})
 }
 func TestAnalyticsSettings(t *testing.T) {
@@ -360,9 +366,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.4)
 	})
@@ -385,9 +389,7 @@ func TestAnalyticsSettings(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		rate := globalconfig.AnalyticsRate()
-		defer globalconfig.SetAnalyticsRate(rate)
-		globalconfig.SetAnalyticsRate(0.4)
+		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		assertRate(t, mt, 0.23, WithAnalyticsRate(0.23))
 	})
@@ -406,7 +408,7 @@ func TestWithContext(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	client1 := NewClient(opts, WithServiceName("my-redis"))
+	client1 := NewClient(opts, WithService("my-redis"))
 	s1, ctx1 := tracer.StartSpanFromContext(context.Background(), "span1.name")
 	client1 = client1.WithContext(ctx1)
 	s2, ctx2 := tracer.StartSpanFromContext(context.Background(), "span2.name")
@@ -418,7 +420,7 @@ func TestWithContext(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(spans, 4)
-	var span1, span2, setSpan, getSpan mocktracer.Span
+	var span1, span2, setSpan, getSpan *mocktracer.Span
 	for _, s := range spans {
 		switch s.Tag(ext.ResourceName) {
 		case "span1.name":
@@ -439,22 +441,4 @@ func TestWithContext(t *testing.T) {
 	assert.NotNil(getSpan)
 	assert.Equal(span1.SpanID(), setSpan.ParentID())
 	assert.Equal(span2.SpanID(), getSpan.ParentID())
-}
-
-func TestNamingSchema(t *testing.T) {
-	genSpans := namingschematest.GenSpansFn(func(t *testing.T, serviceOverride string) []mocktracer.Span {
-		var opts []ClientOption
-		if serviceOverride != "" {
-			opts = append(opts, WithServiceName(serviceOverride))
-		}
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		client := NewClient(&redis.Options{Addr: "127.0.0.1:6379"}, opts...)
-		st := client.Set("test_key", "test_value", 0)
-		require.NoError(t, st.Err())
-
-		return mt.FinishedSpans()
-	})
-	namingschematest.NewRedisTest(genSpans, "redis.client")(t)
 }

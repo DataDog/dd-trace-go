@@ -1,0 +1,29 @@
+module github.com/DataDog/dd-trace-go/orchestrion/all/v2
+
+go {{ .GoVersion }}
+
+require (
+{{- range .Modules }}
+	{{ index . 0 }} {{ $.VersionTag }}
+{{- end }}
+	github.com/DataDog/orchestrion {{ .OrchestrionLatest }}
+)
+
+{{/*
+This is a placeholder to make sure go mod tidy produces things nice & clean, and
+also serves to ensure we get the right version of certain touchy dependencies
+when doing "go mod tidy" here...
+*/ -}}
+require (
+	k8s.io/apimachinery v0.26.7 // indirect
+	k8s.io/client-go v0.26.7 // indirect
+  k8s.io/api v0.26.7 // indirect
+)
+
+replace (
+{{- range .Modules }}
+	{{ index . 0 }} => {{ index . 1 }}
+{{- end }}
+)
+
+replace google.golang.org/grpc => google.golang.org/grpc v1.70.0

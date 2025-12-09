@@ -9,26 +9,25 @@
 // the same methods, so should be seamless for existing applications. It also
 // has an additional `WithContext` method which can be used to connect a span
 // to an existing trace.
-package memcache // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/bradfitz/gomemcache/memcache"
+package memcache // import "github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2/memcache"
 
 import (
 	"context"
 	"math"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
-
 	"github.com/bradfitz/gomemcache/memcache"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "bradfitz/gomemcache/memcache"
 
+var instr *instrumentation.Instrumentation
+
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported("github.com/bradfitz/gomemcache")
+	instr = instrumentation.Load(instrumentation.PackageBradfitzGoMemcache)
 }
 
 // WrapClient wraps a memcache.Client so that all requests are traced using the
@@ -37,9 +36,9 @@ func WrapClient(client *memcache.Client, opts ...ClientOption) *Client {
 	cfg := new(clientConfig)
 	defaults(cfg)
 	for _, opt := range opts {
-		opt(cfg)
+		opt.apply(cfg)
 	}
-	log.Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
+	instr.Logger().Debug("contrib/bradfitz/gomemcache/memcache: Wrapping Client: %#v", cfg)
 	return &Client{
 		Client:  client,
 		cfg:     cfg,
@@ -72,8 +71,8 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 }
 
 // startSpan starts a span from the context set with WithContext.
-func (c *Client) startSpan(resourceName string) ddtrace.Span {
-	opts := []ddtrace.StartSpanOption{
+func (c *Client) startSpan(resourceName string) *tracer.Span {
+	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMemcached),
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(resourceName),

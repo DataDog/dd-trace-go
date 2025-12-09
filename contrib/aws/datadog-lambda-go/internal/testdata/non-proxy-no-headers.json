@@ -1,0 +1,6 @@
+{
+    "my-custom-event": {
+        "hello": 100
+    },
+    "fake-id": "12345678910"
+}

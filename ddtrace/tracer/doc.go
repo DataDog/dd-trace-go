@@ -67,7 +67,7 @@
 // not approach this limit as traces of this size are not useful and impossible to
 // visualize.
 //
-// See the contrib package ( https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib )
+// See the contrib package ( https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib )
 // for integrating datadog with various libraries, frameworks and clients.
 //
 // All spans created by the tracer contain a context hereby referred to as the span
@@ -86,7 +86,7 @@
 // interfaces. An example alternate implementation is the MDCarrier in our gRPC integration.
 //
 // As an example, injecting a span's context into an HTTP request would look like this.
-// (See the net/http contrib package for more examples https://pkg.go.dev/gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http):
+// (See the net/http contrib package for more examples https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http/v2):
 //
 //	req, err := http.NewRequest("GET", "http://example.com", nil)
 //	// ...
@@ -106,5 +106,5 @@
 //
 // Some libraries and frameworks are supported out-of-the-box by using one
 // of our integrations. You can see a list of supported integrations here:
-// https://godoc.org/gopkg.in/DataDog/dd-trace-go.v1/contrib
-package tracer // import "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+// https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib
+package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

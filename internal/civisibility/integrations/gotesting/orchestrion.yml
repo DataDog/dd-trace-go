@@ -1,0 +1,250 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
+  description: Testing instrumentation
+
+aspects:
+  - id: M.Run
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Run
+              - receiver: '*testing.M'
+    advice:
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
+          template: |-
+            //go:linkname __dd_civisibility_instrumentTestingM github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingM
+            func __dd_civisibility_instrumentTestingM(*M) func(int)
+      - prepend-statements:
+          template: |-
+            exitFunc := __dd_civisibility_instrumentTestingM({{ .Function.Receiver }})
+            defer func() { exitFunc({{ .Function.Receiver }}.exitCode) }()
+
+  - id: T.Run
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Run
+              - receiver: '*testing.T'
+    advice:
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations
+          template: |-
+            //go:linkname __dd_civisibility_instrumentTestingTFunc github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingTFunc
+            func __dd_civisibility_instrumentTestingTFunc(func(*T)) func(*T)
+
+            //go:linkname __dd_civisibility_instrumentSetErrorInfo github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentSetErrorInfo
+            func __dd_civisibility_instrumentSetErrorInfo(tb TB, errType string, errMessage string, skip int)
+
+            //go:linkname __dd_civisibility_instrumentCloseAndSkip github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentCloseAndSkip
+            func __dd_civisibility_instrumentCloseAndSkip(tb TB, skipReason string)
+
+            //go:linkname __dd_civisibility_instrumentSkipNow github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentSkipNow
+            func __dd_civisibility_instrumentSkipNow(tb TB)
+            
+            //go:linkname __dd_civisibility_instrumentTestingParallel github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingParallel
+            func __dd_civisibility_instrumentTestingParallel(t *T) bool
+
+            //go:linkname __dd_civisibility_ExitCiVisibility github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations.ExitCiVisibility
+            func __dd_civisibility_ExitCiVisibility()
+
+      - prepend-statements:
+          template: |-
+            {{ .Function.Argument 1 }} = __dd_civisibility_instrumentTestingTFunc({{ .Function.Argument 1 }})
+
+  - id: B.Run
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Run
+              - receiver: '*testing.B'
+    advice:
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
+          template: |-
+            //go:linkname __dd_civisibility_instrumentTestingBFunc github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingBFunc
+            func __dd_civisibility_instrumentTestingBFunc(*B, string, func(*B)) (string, func(*B))
+      - prepend-statements:
+          template: |-
+            {{ .Function.Argument 0 }}, {{ .Function.Argument 1 }} = __dd_civisibility_instrumentTestingBFunc({{ .Function.Receiver }}, {{ .Function.Argument 0 }}, {{ .Function.Argument 1 }})
+
+  - id: common.Fail
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Fail
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          template: |-
+            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Fail", "failed test", 0)
+
+  - id: common.FailNow
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: FailNow
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          template: |-
+            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "FailNow", "failed test", 0)
+            defer __dd_civisibility_ExitCiVisibility()
+
+  - id: common.Error
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Error
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          imports:
+            fmt: fmt
+          template: |-
+            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Error", fmt.Sprint({{ .Function.Argument 0 }}...), 0)
+
+  - id: common.Errorf
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Errorf
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          imports:
+            fmt: fmt
+          template: |-
+            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Errorf", fmt.Sprintf({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }}...), 0)
+
+  - id: common.Fatal
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Fatal
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          imports:
+            fmt: fmt
+          template: |-
+            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Fatal", fmt.Sprint({{ .Function.Argument 0 }}...), 0)
+
+  - id: common.Fatalf
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Fatalf
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          imports:
+            fmt: fmt
+          template: |-
+            __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "Fatalf", fmt.Sprintf({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }}...), 0)
+
+  - id: common.Skip
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Skip
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          imports:
+            fmt: fmt
+          template: |-
+            __dd_civisibility_instrumentCloseAndSkip({{ .Function.Receiver }}, fmt.Sprint({{ .Function.Argument 0 }}...))
+
+  - id: common.Skipf
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Skipf
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          imports:
+            fmt: fmt
+          template: |-
+            __dd_civisibility_instrumentCloseAndSkip({{ .Function.Receiver }}, fmt.Sprintf({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }}...))
+
+  - id: common.SkipNow
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: SkipNow
+              - receiver: '*testing.common'
+    advice:
+      - prepend-statements:
+          template: |-
+            __dd_civisibility_instrumentSkipNow({{ .Function.Receiver }})
+
+  - id: common.Parallel
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Parallel
+              - receiver: '*testing.T'
+    advice:
+      - prepend-statements:
+          template: |-
+            defer func() { _ = __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }}) }()
+
+  - id: testify.suite.Run
+    join-point:
+      all-of:
+        - import-path: github.com/stretchr/testify/suite
+        - function-body:
+            function:
+              - name: Run
+              - signature:
+                  args: ['*testing.T' , 'TestingSuite']
+    advice:
+      - inject-declarations:
+          imports:
+            testing: testing
+          links:
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
+          template: |-
+            //go:linkname __dd_civisibility_instrumentTestifySuiteRun github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestifySuiteRun
+            func __dd_civisibility_instrumentTestifySuiteRun(*testing.T, interface{})
+      - prepend-statements:
+          template: |-
+            __dd_civisibility_instrumentTestifySuiteRun({{ .Function.Argument 0 }}, {{ .Function.Argument 1 }})

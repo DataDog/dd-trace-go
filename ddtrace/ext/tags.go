@@ -9,7 +9,8 @@ package ext
 
 const (
 	// TargetHost sets the target host address.
-	// Deprecated: Use NetworkDestinationName instead for hostname and NetworkDestinationIP for IP addresses
+	// Legacy: Kept for backwards compatibility. Use NetworkDestinationName for hostname
+	// and NetworkDestinationIP for IP addresses
 	TargetHost = "out.host"
 
 	// NetworkDestinationName is the remote hostname or similar where the outbound connection is being made to.
@@ -18,16 +19,18 @@ const (
 	// NetworkDestinationIP is the remote address where the outbound connection is being made to.
 	NetworkDestinationIP = "network.destination.ip"
 
+	// NetworkClientIP is the client IP address.
+	NetworkClientIP = "network.client.ip"
+
 	// TargetPort sets the target host port.
-	// Deprecated: Use NetworkDestinationPort instead.
+	// Legacy: Kept for backwards compatability. Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
+
+	// TargetDB sets the target db.
+	TargetDB = "out.db"
 
 	// NetworkDestinationPort is the remote port number of the outbound connection.
 	NetworkDestinationPort = "network.destination.port"
-
-	// SamplingPriority is the tag that marks the sampling priority of a span.
-	// Deprecated in favor of ManualKeep and ManualDrop.
-	SamplingPriority = "sampling.priority"
 
 	// SQLType sets the sql type tag.
 	SQLType = "sql"
@@ -58,6 +61,9 @@ const (
 	// See https://docs.datadoghq.com/tracing/trace_collection/tracing_naming_convention/#http-requests
 	HTTPRequestHeaders = "http.request.headers"
 
+	// HTTPEndpoint sets the HTTP endpoint tag.
+	HTTPEndpoint = "http.endpoint"
+
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
 	// and OpenCensus.
@@ -84,11 +90,18 @@ const (
 	// ErrorType specifies the error type.
 	ErrorType = "error.type"
 
-	// ErrorStack specifies the stack dump.
+	// ErrorStack specifies the stack dump when the error is thrown.
 	ErrorStack = "error.stack"
 
+	// ErrorHandlingStack specifies the stack dump when the error is captured.
+	ErrorHandlingStack = "error.handling_stack"
+
 	// ErrorDetails holds details about an error which implements a formatter.
+	// Deprecated: Use ErrorStack instead. This tag is not supported by Error Tracking.
 	ErrorDetails = "error.details"
+
+	// ErrorNoStackTrace is a tag that specifies that the error stack trace should not be captured.
+	ErrorNoStackTrace = "error.no_stack_trace"
 
 	// Environment specifies the environment to use with a trace.
 	Environment = "env"
@@ -117,4 +130,28 @@ const (
 
 	// SpanKind defines the kind of span based on Otel requirements (client, server, producer, consumer).
 	SpanKind = "span.kind"
+
+	// MapSpanStart is used by Span.AsMap to store the span start.
+	MapSpanStart = "_ddtrace.span_start"
+
+	// MapSpanDuration is used by Span.AsMap to store the span duration.
+	MapSpanDuration = "_ddtrace.span_duration"
+
+	// MapSpanSpanID is used by Span.AsMap to store the span id.
+	MapSpanID = "_ddtrace.span_id"
+
+	// MapSpanTraceID is used by Span.AsMap to store the span trace id.
+	MapSpanTraceID = "_ddtrace.span_traceid"
+
+	// MapSpanParentID is used by Span.AsMap to store the span parent id.
+	MapSpanParentID = "_ddtrace.span_parentid"
+
+	// MapSpanError is used by Span.AsMap to store the span error value.
+	MapSpanError = "_ddtrace.span_error"
+
+	// MapSpanEvents is used by Span.AsMap to store the spanEvents value.
+	MapSpanEvents = "_ddtrace.span_events"
+
+	// CloudResourceID is the cloud provider resource identifier.
+	CloudResourceID = "cloud.resource_id"
 )

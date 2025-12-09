@@ -11,15 +11,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"runtime"
-	"strconv"
 	"strings"
+	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/internal"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/civisibility/constants"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/log"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/version"
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // Constants for CI Visibility API paths and subdomains.
@@ -74,7 +78,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 	testCycleURL := ""
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		APIKeyValue := os.Getenv(constants.APIKeyEnvironmentVariable)
+		APIKeyValue := env.Get(constants.APIKeyEnvironmentVariable)
 		if APIKeyValue == "" {
 			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
 		}
@@ -83,14 +87,14 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := os.Getenv(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
 			agentlessURL = v
 		}
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
 			site := "datadoghq.com"
-			if v := os.Getenv("DD_SITE"); v != "" {
+			if v := env.Get("DD_SITE"); v != "" {
 				site = v
 			}
 
@@ -104,8 +108,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["X-Datadog-EVP-Subdomain"] = TestCycleSubdomain
 		testCycleURL = fmt.Sprintf("%s/%s/%s", config.agentURL.String(), EvpProxyPath, TestCyclePath)
 	}
-
-	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %v, testcycleurl: %v]", agentlessEnabled, testCycleURL)
+	log.Debug("ciVisibilityTransport: creating transport instance [agentless: %t, testcycleurl: %s]", agentlessEnabled, urlsanitizer.SanitizeURL(testCycleURL))
 
 	return &ciVisibilityTransport{
 		config:           config,
@@ -125,8 +128,8 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 // Returns:
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
-func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error) {
-	ciVisibilityPayload := &ciVisibilityPayload{p}
+func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) {
+	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
 		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
@@ -138,29 +141,31 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 		gzipWriter := gzip.NewWriter(&gzipBuffer)
 		_, err = io.Copy(gzipWriter, buffer)
 		if err != nil {
-			return nil, fmt.Errorf("cannot compress request body: %v", err)
+			return nil, fmt.Errorf("cannot compress request body: %s", err.Error())
 		}
 		err = gzipWriter.Close()
 		if err != nil {
-			return nil, fmt.Errorf("cannot compress request body: %v", err)
+			return nil, fmt.Errorf("cannot compress request body: %s", err.Error())
 		}
 		buffer = &gzipBuffer
 	}
 
 	req, err := http.NewRequest("POST", t.testCycleURLPath, buffer)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create http request: %v", err)
+		return nil, fmt.Errorf("cannot create http request: %s", err.Error())
 	}
+	req.ContentLength = int64(buffer.Len())
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set("Content-Length", strconv.Itoa(buffer.Len()))
 	if t.agentless {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
+	log.Debug("ciVisibilityTransport: sending transport request: %d bytes", buffer.Len())
 
-	log.Debug("ciVisibilityTransport: sending transport request: %v bytes", buffer.Len())
+	startTime := time.Now()
 	response, err := t.config.httpClient.Do(req)
+	telemetry.EndpointPayloadRequestsMs(telemetry.TestCycleEndpointType, float64(time.Since(startTime).Milliseconds()))
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +176,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 		n, _ := response.Body.Read(msg)
 		_ = response.Body.Close()
 		txt := http.StatusText(code)
+		telemetry.EndpointPayloadRequestsErrors(telemetry.TestCycleEndpointType, telemetry.GetErrorTypeFromStatusCode(code))
 		if n > 0 {
 			return nil, fmt.Errorf("%s (Status: %s)", msg[:n], txt)
 		}
@@ -188,7 +194,7 @@ func (t *ciVisibilityTransport) send(p *payload) (body io.ReadCloser, err error)
 // Returns:
 //
 //	An error indicating that stats are not supported.
-func (t *ciVisibilityTransport) sendStats(*statsPayload) error {
+func (t *ciVisibilityTransport) sendStats(*pb.ClientStatsPayload, int) error {
 	// Stats are not supported by CI Visibility agentless / EVP proxy.
 	return nil
 }

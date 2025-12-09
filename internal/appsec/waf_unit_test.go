@@ -7,23 +7,54 @@ package appsec
 
 import (
 	"encoding/json"
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-	waf "github.com/DataDog/go-libddwaf/v3"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/listener/httpsec"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/appsec/trace"
+	"runtime"
 	"testing"
+	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/require"
 )
 
+func TestDetectLibDL(t *testing.T) {
+	client := new(telemetrytest.RecordClient)
+	restore := telemetry.MockClient(client)
+	defer restore()
+
+	prevLevel := log.GetLevel()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(prevLevel)
+
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF is not usable, skipping test")
+	}
+
+	if runtime.GOOS != "linux" {
+		t.Skip("This test is only relevant for Linux")
+	}
+
+	detectLibDL()
+
+	telemetrytest.CheckConfig(t, client.Configuration, "libdl_present", true)
+}
+
 func TestAPISecuritySchemaCollection(t *testing.T) {
-	if wafOk, err := waf.Health(); !wafOk {
+	if wafOk, err := libddwaf.Usable(); !wafOk {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
-	rules, err := internal.DefaultRulesetMap()
+	builder, err := libddwaf.NewBuilder("", "")
 	require.NoError(t, err)
-	handle, err := waf.NewHandle(rules, "", "")
+	defer builder.Close()
+
+	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(t, err)
+
+	handle := builder.Build()
+	require.NotNil(t, handle)
 	defer handle.Close()
 
 	for _, tc := range []struct {
@@ -82,10 +113,10 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext()
+			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
 			require.NoError(t, err)
 			defer wafCtx.Close()
-			runData := waf.RunAddressData{
+			runData := libddwaf.RunAddressData{
 				Persistent: map[string]any{
 					"waf.context.processor":      map[string]any{"extract-schema": true},
 					"server.request.path_params": tc.pathParams,
@@ -112,7 +143,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "headers",
 			addresses: map[string]any{
-				httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+				addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
 					"my-header": {"is-beautiful"},
 				},
 			},
@@ -123,7 +154,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "path-params",
 			addresses: map[string]any{
-				httpsec.ServerRequestPathParamsAddr: map[string]string{
+				addresses.ServerRequestPathParamsAddr: map[string]string{
 					"my-path-param": "is-beautiful",
 				},
 			},
@@ -134,7 +165,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "query",
 			addresses: map[string]any{
-				httpsec.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
+				addresses.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
 			},
 			tags: map[string]string{
 				"_dd.appsec.s.req.query": `[{"my-query":[[[8]],{"len":1}],"my-query-2":[[[8]],{"len":1}]}]`,
@@ -143,13 +174,13 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		{
 			name: "combined",
 			addresses: map[string]any{
-				httpsec.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+				addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
 					"my-header": {"is-beautiful"},
 				},
-				httpsec.ServerRequestPathParamsAddr: map[string]string{
+				addresses.ServerRequestPathParamsAddr: map[string]string{
 					"my-path-param": "is-beautiful",
 				},
-				httpsec.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
+				addresses.ServerRequestQueryAddr: map[string][]string{"my-query": {"is-beautiful"}, "my-query-2": {"so-pretty"}},
 			},
 			tags: map[string]string{
 				"_dd.appsec.s.req.headers": `[{"my-header":[[[8]],{"len":1}]}]`,
@@ -159,11 +190,11 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run("tags/"+tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext()
+			wafCtx, err := handle.NewContext(timer.WithBudget(time.Second))
 			require.NoError(t, err)
 			defer wafCtx.Close()
 
-			runData := waf.RunAddressData{
+			runData := libddwaf.RunAddressData{
 				Ephemeral: map[string]any{
 					"waf.context.processor": map[string]any{"extract-schema": true},
 				},
@@ -175,13 +206,14 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			wafRes, err := wafCtx.Run(runData)
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
-			tagsHolder := trace.NewTagsHolder()
 			for k, v := range wafRes.Derivatives {
-				tagsHolder.AddSerializableTag(k, v)
-			}
-
-			for tag, val := range tagsHolder.Tags() {
-				require.Equal(t, tc.tags[tag], val)
+				expected, checked := tc.tags[k]
+				if !checked {
+					continue
+				}
+				res, err := json.Marshal(v)
+				require.NoError(t, err)
+				require.Equal(t, expected, string(res))
 			}
 		})
 	}
