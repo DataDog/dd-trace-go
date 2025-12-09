@@ -63,6 +63,8 @@ type Config struct {
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
+	retryInterval time.Duration
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -98,7 +100,7 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
-
+	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	return cfg
 }
 
@@ -133,4 +135,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) RetryInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.retryInterval
+}
+
+func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.retryInterval = interval
+	telemetry.RegisterAppConfig("DD_TRACE_RETRY_INTERVAL", interval, origin)
 }
