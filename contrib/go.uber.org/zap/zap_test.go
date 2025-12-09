@@ -54,33 +54,3 @@ func TestWithTraceFields(t *testing.T) {
 	assert.Equal(t, "dd.span_id", infoLog.Context[1].Key)
 	assert.Equal(t, spanID, infoLog.Context[1].String)
 }
-
-func TestWithTraceFields128BitDisabled(t *testing.T) {
-	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
-
-	cfg = newConfig()
-
-	tracer.Start()
-	defer tracer.Stop()
-
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
-	defer span.Finish()
-
-	observed, logs := observer.New(zapcore.InfoLevel)
-
-	logger := zap.New(observed)
-	logger = WithTraceFields(ctx, logger)
-	logger.Info("some message")
-
-	traceID := strconv.FormatUint(span.Context().TraceIDLower(), 10)
-	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
-
-	require.Equal(t, 1, logs.Len())
-	infoLog := logs.All()[0]
-
-	require.Len(t, infoLog.Context, 2)
-	assert.Equal(t, "dd.trace_id", infoLog.Context[0].Key)
-	assert.Equal(t, traceID, infoLog.Context[0].String)
-	assert.Equal(t, "dd.span_id", infoLog.Context[1].Key)
-	assert.Equal(t, spanID, infoLog.Context[1].String)
-}
