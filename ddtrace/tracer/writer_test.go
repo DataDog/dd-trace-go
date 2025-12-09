@@ -20,8 +20,12 @@ import (
 	"testing"
 	"time"
 
+<<<<<<< HEAD
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
+=======
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+>>>>>>> ff034e34a (migrate retryInterval)
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -375,6 +379,8 @@ func (t *failingTransport) send(p payload) (io.ReadCloser, error) {
 }
 
 func TestTraceWriterFlushRetries(t *testing.T) {
+	// Reload process tags to ensure consistent state (previous tests may have disabled them)
+	processtags.Reload()
 	testcases := []struct {
 		configRetries int
 		retryInterval time.Duration
@@ -398,6 +404,15 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 		{configRetries: 2, retryInterval: 2 * time.Millisecond, failCount: 2, tracesSent: true, expAttempts: 3},
 	}
 
+<<<<<<< HEAD
+=======
+	sentCounts := map[string]int64{
+		"datadog.tracer.decode_error":          1,
+		"datadog.tracer.flush_bytes":           308,
+		"datadog.tracer.flush_traces":          1,
+		"datadog.tracer.queue.enqueued.traces": 1,
+	}
+>>>>>>> ff034e34a (migrate retryInterval)
 	droppedCounts := map[string]int64{
 		"datadog.tracer.queue.enqueued.traces": 1,
 		"datadog.tracer.traces_dropped":        1,
@@ -415,7 +430,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			c, err := newTestConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
-				c.retryInterval = test.retryInterval
+				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 			})
 			assert.Nil(err)
 			var statsd statsdtest.TestStatsdClient

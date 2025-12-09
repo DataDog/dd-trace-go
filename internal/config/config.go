@@ -97,6 +97,8 @@ type Config struct {
 	reportHostname bool
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
+	retryInterval time.Duration
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -133,6 +135,7 @@ func loadConfig() *Config {
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
+	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -535,4 +538,17 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
 	}
 	c.serviceMappings[from] = to
 	telemetry.RegisterAppConfig("DD_SERVICE_MAPPING", fmt.Sprintf("%s:%s", from, to), origin)
+}
+
+func (c *Config) RetryInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.retryInterval
+}
+
+func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.retryInterval = interval
+	telemetry.RegisterAppConfig("DD_TRACE_RETRY_INTERVAL", interval, origin)
 }
