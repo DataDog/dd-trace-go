@@ -920,7 +920,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("trace-retries", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.Equal(t, 0, c.sendRetries)
+		assert.Equal(t, 0, c.internalConfig.SendRetries())
 		assert.Equal(t, time.Millisecond, c.retryInterval)
 	})
 }
@@ -929,7 +929,7 @@ func TestTraceRetry(t *testing.T) {
 	t.Run("sendRetries", func(t *testing.T) {
 		c, err := newTestConfig(WithSendRetries(10))
 		assert.NoError(t, err)
-		assert.Equal(t, 10, c.sendRetries)
+		assert.Equal(t, 10, c.internalConfig.SendRetries())
 	})
 	t.Run("retryInterval", func(t *testing.T) {
 		c, err := newTestConfig(WithRetryInterval(10))

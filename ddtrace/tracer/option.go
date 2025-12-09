@@ -162,10 +162,6 @@ type config struct {
 	// output instead of using the agent. This is used in Lambda environments.
 	logToStdout bool
 
-	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
-	// failure.
-	sendRetries int
-
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 
@@ -1026,7 +1022,7 @@ func WithLambdaMode(enabled bool) StartOption {
 // most `retries` times.
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
-		c.sendRetries = retries
+		c.internalConfig.SetSendRetries(retries, telemetry.OriginCode)
 	}
 }
 

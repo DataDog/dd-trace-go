@@ -131,7 +131,8 @@ func (h *agentTraceWriter) flush() {
 
 		stats := p.stats()
 		var err error
-		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
+		sendRetries := h.config.internalConfig.SendRetries()
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
 			var rc io.ReadCloser
 			rc, err = h.config.transport.send(p)
@@ -146,7 +147,7 @@ func (h *agentTraceWriter) flush() {
 			}
 
 			if attempt+1%5 == 0 {
-				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error())
 			}
 			p.reset()
 			time.Sleep(h.config.retryInterval)

@@ -20,7 +20,9 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
@@ -372,6 +374,9 @@ func (t *failingTransport) send(p payload) (io.ReadCloser, error) {
 }
 
 func TestTraceWriterFlushRetries(t *testing.T) {
+	// Reload process tags to ensure consistent state (previous tests may have disabled them)
+	processtags.Reload()
+
 	testcases := []struct {
 		configRetries int
 		retryInterval time.Duration
@@ -397,7 +402,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 	sentCounts := map[string]int64{
 		"datadog.tracer.decode_error":          1,
-		"datadog.tracer.flush_bytes":           185,
+		"datadog.tracer.flush_bytes":           308,
 		"datadog.tracer.flush_traces":          1,
 		"datadog.tracer.queue.enqueued.traces": 1,
 	}
@@ -417,7 +422,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			}
 			c, err := newTestConfig(func(c *config) {
 				c.transport = p
-				c.sendRetries = test.configRetries
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.retryInterval = test.retryInterval
 			})
 			assert.Nil(err)
