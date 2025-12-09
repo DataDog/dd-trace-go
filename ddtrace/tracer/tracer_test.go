@@ -390,18 +390,16 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
 		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -412,18 +410,16 @@ func TestSamplingDecision(t *testing.T) {
 		// client-side stats are also enabled.
 		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false))
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -432,12 +428,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -445,6 +435,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
@@ -453,12 +447,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -466,6 +454,10 @@ func TestSamplingDecision(t *testing.T) {
 		child.SetTag(ext.EventSampleRate, 1)
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -474,12 +466,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -491,6 +477,10 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, ext.PriorityAutoReject, p)
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
@@ -504,12 +494,6 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
@@ -518,7 +502,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
@@ -532,12 +519,6 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
@@ -546,7 +527,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
@@ -560,12 +544,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be dropped. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
@@ -574,7 +552,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.NotContains(t, parent.metrics, keySpanSamplingMechanism)
@@ -588,12 +569,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
@@ -602,7 +577,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		// single span sampling should only run on dropped traces
 		assert.Equal(t, float64(ext.PriorityAutoKeep), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionKeep, parent.context.trace.samplingDecision)
