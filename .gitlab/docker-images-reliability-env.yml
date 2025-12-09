@@ -23,6 +23,10 @@ wait_for_github_workflow:
       when: on_success
     - if: '$CI_COMMIT_TAG =~ /^contrib\/envoyproxy\/go-control-plane\/v[0-9]+\.[0-9]+\.[0-9]+-docker\.[0-9]+/'
       when: on_success
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/haproxy\/stream-processing-offload\/v[0-9]+\.[0-9]+\.[0-9]+/'
+      when: on_success
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/haproxy\/stream-processing-offload\/v[0-9]+\.[0-9]+\.[0-9]+-docker\.[0-9]+/'
+      when: on_success
     - when: manual
       allow_failure: true
 
@@ -87,7 +91,10 @@ prepare_release_tag:
 
   script:
     - |
-      echo "ENVOY_RELEASE_TAG=${CI_COMMIT_TAG#contrib/envoyproxy/go-control-plane/}" > release_tag.env
+      cat > release_tag.env <<EOF
+      ENVOY_RELEASE_TAG=${CI_COMMIT_TAG#contrib/envoyproxy/go-control-plane/}
+      HAPROXY_SPOA_RELEASE_TAG=${CI_COMMIT_TAG#contrib/haproxy/stream-processing-offload/}
+      EOF
 
   artifacts:
     reports:
@@ -99,6 +106,13 @@ deploy_new_release_service_extensions:
   needs:
     - prepare_release_tag
 
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/envoyproxy\/go-control-plane\/v[0-9]+\.[0-9]+\.[0-9]+/'
+      when: always
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/envoyproxy\/go-control-plane\/v[0-9]+\.[0-9]+\.[0-9]+-docker\.[0-9]+/'
+      when: always
+    - when: never
+
   trigger:
     project: DataDog/apm-reliability/datadog-reliability-env
     branch: master
@@ -109,3 +123,27 @@ deploy_new_release_service_extensions:
     UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA
     ENVOY_EXT_PROC_RELEASED: "true"
     ENVOY_RELEASE_TAG: $ENVOY_RELEASE_TAG
+
+deploy_new_release_haproxy_spoa:
+  stage: docker-images-reliability-env
+
+  needs:
+    - prepare_release_tag
+
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/haproxy\/stream-processing-offload\/v[0-9]+\.[0-9]+\.[0-9]+/'
+      when: always
+    - if: '$CI_COMMIT_TAG =~ /^contrib\/haproxy\/stream-processing-offload\/v[0-9]+\.[0-9]+\.[0-9]+-docker\.[0-9]+/'
+      when: always
+    - when: never
+
+  trigger:
+    project: DataDog/apm-reliability/datadog-reliability-env
+    branch: master
+  variables:
+    UPSTREAM_SUB_PROJECT_NAME: "haproxy"
+    UPSTREAM_PIPELINE_ID: $CI_PIPELINE_ID
+    UPSTREAM_BRANCH: $CI_COMMIT_REF_NAME
+    UPSTREAM_COMMIT_SHA: $CI_COMMIT_SHA
+    HAPROXY_SPOA_RELEASED: "true"
+    HAPROXY_SPOA_RELEASE_TAG: $HAPROXY_SPOA_RELEASE_TAG
