@@ -7,6 +7,7 @@ package zap
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"testing"
 
@@ -16,12 +17,11 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	internallog "gopkg.in/DataDog/dd-trace-go.v1/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestWithTraceFields(t *testing.T) {
-	tracer.Start(tracer.WithLogger(internallog.DiscardLogger{}))
+	tracer.Start()
 	defer tracer.Stop()
 
 	// start a new span
@@ -34,7 +34,45 @@ func TestWithTraceFields(t *testing.T) {
 	logger = WithTraceFields(ctx, logger)
 	logger.Info("some message")
 
-	traceID := strconv.FormatUint(span.Context().TraceID(), 10)
+	var traceID string
+	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
+
+	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+	if os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") == "false" {
+		cfg = newConfig()
+		traceID = strconv.FormatUint(span.Context().TraceIDLower(), 10)
+	} else {
+		traceID = span.Context().TraceID()
+	}
+
+	require.Equal(t, 1, logs.Len())
+	infoLog := logs.All()[0]
+
+	require.Len(t, infoLog.Context, 2)
+	assert.Equal(t, "dd.trace_id", infoLog.Context[0].Key)
+	assert.Equal(t, traceID, infoLog.Context[0].String)
+	assert.Equal(t, "dd.span_id", infoLog.Context[1].Key)
+	assert.Equal(t, spanID, infoLog.Context[1].String)
+}
+
+func TestWithTraceFields128BitDisabled(t *testing.T) {
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+
+	cfg = newConfig()
+
+	tracer.Start()
+	defer tracer.Stop()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	defer span.Finish()
+
+	observed, logs := observer.New(zapcore.InfoLevel)
+
+	logger := zap.New(observed)
+	logger = WithTraceFields(ctx, logger)
+	logger.Info("some message")
+
+	traceID := strconv.FormatUint(span.Context().TraceIDLower(), 10)
 	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
 	require.Equal(t, 1, logs.Len())

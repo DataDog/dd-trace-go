@@ -7,9 +7,11 @@ package zap_test
 
 import (
 	"context"
+
 	"go.uber.org/zap"
-	zaptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/go.uber.org/zap"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	zaptrace "github.com/DataDog/dd-trace-go/v2/contrib/go.uber.org/zap"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func ExampleWithTraceFields() {

@@ -4,37 +4,57 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package zap provides functions to correlate logs and traces using go.uber.org/zap package (https://github.com/uber-go/zap).
-package zap // import "gopkg.in/DataDog/dd-trace-go.v1/contrib/go.uber.org/zap"
+package zap // import "github.com/DataDog/dd-trace-go/v2/contrib/go.uber.org/zap"
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"strconv"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+
+	"go.uber.org/zap"
 )
 
-const componentName = "go.uber.org/zap"
+var instr *instrumentation.Instrumentation
+
+type config struct {
+	log128bits bool
+}
+
+var cfg = newConfig()
+
+func newConfig() *config {
+	return &config{
+		log128bits: options.GetBoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true),
+	}
+}
 
 func init() {
-	telemetry.LoadIntegration(componentName)
-	tracer.MarkIntegrationImported(componentName)
+	instr = instrumentation.Load(instrumentation.PackageUberZap)
 }
 
 // WithTraceFields looks for an active span in the provided context and if found, it returns a new *zap.Logger with
 // traceID and spanID keys set.
 func WithTraceFields(ctx context.Context, logger *zap.Logger) *zap.Logger {
 	span, ok := tracer.SpanFromContext(ctx)
-	if ok {
-		traceID := strconv.FormatUint(span.Context().TraceID(), 10)
-		spanID := strconv.FormatUint(span.Context().SpanID(), 10)
-
-		return logger.With(
-			zap.String(ext.LogKeyTraceID, traceID),
-			zap.String(ext.LogKeySpanID, spanID),
-		)
+	if !ok {
+		return logger
 	}
-	return logger
+
+	var traceID string
+	if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
+		traceID = span.Context().TraceID()
+	} else {
+		traceID = strconv.FormatUint(span.Context().TraceIDLower(), 10)
+	}
+
+	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
+
+	return logger.With(
+		zap.String(ext.LogKeyTraceID, traceID),
+		zap.String(ext.LogKeySpanID, spanID),
+	)
 }
