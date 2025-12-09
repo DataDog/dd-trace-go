@@ -8,7 +8,6 @@ package config
 import (
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
