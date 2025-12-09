@@ -39,7 +39,7 @@ jobs:
       sha: ${{ steps.pin.outputs.sha }}
     steps:
       - name: Checkout system-tests
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
@@ -162,7 +162,7 @@ jobs:
           git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
@@ -268,7 +268,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: docker load -i ${{ matrix.image_artifact }}.tar
       - name: Checkout system tests
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
@@ -277,7 +277,7 @@ jobs:
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
