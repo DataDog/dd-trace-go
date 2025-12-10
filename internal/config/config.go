@@ -63,6 +63,9 @@ type Config struct {
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
+	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
+	// failure.
+	sendRetries int
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -98,6 +101,7 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.sendRetries = provider.getInt("DD_TRACE_SEND_RETRIES", 0)
 
 	return cfg
 }
@@ -133,4 +137,17 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) SendRetries() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sendRetries
+}
+
+func (c *Config) SetSendRetries(retries int, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sendRetries = retries
+	telemetry.RegisterAppConfig("DD_TRACE_SEND_RETRIES", retries, origin)
 }
