@@ -1268,7 +1268,7 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
-		cfg.universalVersion = false
+		cfg.internalConfig.SetServiceVersion(version, telemetry.OriginCode)
 	}
 }
 
@@ -1278,7 +1278,7 @@ func WithServiceVersion(version string) StartOption {
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
 		c.version = version
-		c.universalVersion = true
+		c.internalConfig.SetUniversalVersion(version, telemetry.OriginCode)
 	}
 }
 

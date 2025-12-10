@@ -81,7 +81,6 @@ func loadConfig() *Config {
 	cfg.env = provider.getString("DD_ENV", "")
 
 	// Version configuration with priority: universal > service > DD_VERSION
-	// Check all env vars to ensure telemetry is reported for each
 	universalVer := provider.getString("DD_TRACE_UNIVERSAL_VERSION", "")
 	serviceVer := provider.getString("DD_TRACE_SERVICE_VERSION", "")
 	ddVer := provider.getString("DD_VERSION", "")
@@ -96,7 +95,7 @@ func loadConfig() *Config {
 		cfg.version = ddVer
 		cfg.universalVersion = false
 	}
-	// else: version = "", universalVersion = false (both defaults)
+
 	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
 	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)

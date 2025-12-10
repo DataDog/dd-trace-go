@@ -780,7 +780,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		}
 	}
 	if t.config.version != "" {
-		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
+		if t.config.internalConfig.UniversalVersion() || (!t.config.internalConfig.UniversalVersion() && span.service == t.config.serviceName) {
 			span.setMeta(ext.Version, t.config.version)
 		}
 	}
