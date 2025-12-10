@@ -316,9 +316,6 @@ type config struct {
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
 
-	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
-	ciVisibilityAgentless bool
-
 	// ciVisibilityNoopTracer controls if CI Visibility must set a wrapper to behave like a noop tracer. default false
 	ciVisibilityNoopTracer bool
 
@@ -618,12 +615,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
 		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
 		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
-		c.ciVisibilityAgentless = ciTransport.agentless
 		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
+	agentDisabled := c.logToStdout || !c.enabled.current || c.internalConfig.CiVisibilityAgentless()
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1

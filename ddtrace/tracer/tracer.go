@@ -227,7 +227,7 @@ func Start(opts ...StartOption) error {
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
-	if t.config.ciVisibilityAgentless {
+	if t.config.internalConfig.CiVisibilityAgentless() {
 		// CI Visibility agentless mode doesn't require remote configuration.
 
 		// start instrumentation telemetry unless it is disabled through the

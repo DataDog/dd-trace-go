@@ -110,7 +110,7 @@ func startTelemetry(c *config) telemetry.Client {
 		HTTPClient: c.httpClient,
 		AgentURL:   c.agentURL.String(),
 	}
-	if c.logToStdout || c.ciVisibilityAgentless {
+	if c.logToStdout || c.internalConfig.CiVisibilityAgentless() {
 		cfg.APIKey = env.Get("DD_API_KEY")
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
