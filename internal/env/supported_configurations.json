@@ -597,6 +597,9 @@
     "DD_TRACE_SARAMA_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_SERVICE_VERSION": [
+      "A"
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       "A"
     ],
@@ -616,6 +619,9 @@
       "A"
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_UNIVERSAL_VERSION": [
       "A"
     ],
     "DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED": [

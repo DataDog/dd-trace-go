@@ -176,10 +176,6 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
-	// universalVersion, reports whether span service name and config service name
-	// should match to set application version tag. False by default
-	universalVersion bool
-
 	// version specifies the version of this application
 	version string
 
@@ -1272,7 +1268,7 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.version = version
-		cfg.universalVersion = false
+		cfg.internalConfig.SetServiceVersion(version, telemetry.OriginCode)
 	}
 }
 
@@ -1282,7 +1278,7 @@ func WithServiceVersion(version string) StartOption {
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
 		c.version = version
-		c.universalVersion = true
+		c.internalConfig.SetUniversalVersion(version, telemetry.OriginCode)
 	}
 }
 

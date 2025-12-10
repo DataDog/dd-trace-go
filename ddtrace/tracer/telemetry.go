@@ -44,7 +44,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "retry_interval", Value: c.retryInterval},
 		{Name: "trace_startup_logs_enabled", Value: c.logStartup},
 		{Name: "service", Value: c.serviceName},
-		{Name: "universal_version", Value: c.universalVersion},
+		{Name: "universal_version", Value: c.internalConfig.UniversalVersion()},
 		{Name: "env", Value: c.env},
 		{Name: "version", Value: c.version},
 		{Name: "trace_agent_url", Value: c.agentURL.String()},
