@@ -63,6 +63,9 @@ type Config struct {
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
+	// universalVersion, reports whether span service name and config service name
+	// should match to set application version tag.
+	universalVersion bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -75,8 +78,25 @@ func loadConfig() *Config {
 	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", false)
 	cfg.serviceName = provider.getString("DD_SERVICE", "")
-	cfg.version = provider.getString("DD_VERSION", "")
 	cfg.env = provider.getString("DD_ENV", "")
+
+	// Version configuration with priority: universal > service > DD_VERSION
+	// Check all env vars to ensure telemetry is reported for each
+	universalVer := provider.getString("DD_TRACE_UNIVERSAL_VERSION", "")
+	serviceVer := provider.getString("DD_TRACE_SERVICE_VERSION", "")
+	ddVer := provider.getString("DD_VERSION", "")
+
+	if universalVer != "" {
+		cfg.version = universalVer
+		cfg.universalVersion = true
+	} else if serviceVer != "" {
+		cfg.version = serviceVer
+		cfg.universalVersion = false
+	} else if ddVer != "" {
+		cfg.version = ddVer
+		cfg.universalVersion = false
+	}
+	// else: version = "", universalVersion = false (both defaults)
 	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
 	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
@@ -133,4 +153,36 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) Version() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.version
+}
+
+func (c *Config) UniversalVersion() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.universalVersion
+}
+
+// SetUniversalVersion sets a universal version that applies to all spans,
+// regardless of whether span service name and config service name match.
+func (c *Config) SetUniversalVersion(version string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.version = version
+	c.universalVersion = true
+	telemetry.RegisterAppConfig("version", version, origin)
+}
+
+// SetServiceVersion sets a service-specific version that only applies to spans
+// where the span service name matches the config service name.
+func (c *Config) SetServiceVersion(version string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.version = version
+	c.universalVersion = false
+	telemetry.RegisterAppConfig("version", version, origin)
 }

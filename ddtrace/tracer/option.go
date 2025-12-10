@@ -176,10 +176,6 @@ type config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 
-	// universalVersion, reports whether span service name and config service name
-	// should match to set application version tag. False by default
-	universalVersion bool
-
 	// version specifies the version of this application
 	version string
 
