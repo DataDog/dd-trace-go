@@ -7,7 +7,6 @@ package zap
 
 import (
 	"context"
-	"os"
 	"strconv"
 	"testing"
 
@@ -37,16 +36,44 @@ func TestWithTraceFields(t *testing.T) {
 	logger = WithTraceFields(ctx, logger)
 	logger.Info("some message")
 
-	var traceID string
+	// By default, 128-bit trace IDs are enabled
+	traceID := span.Context().TraceID()
 	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
+	require.Equal(t, 1, logs.Len())
+	infoLog := logs.All()[0]
+
+	require.Len(t, infoLog.Context, 2)
+	assert.Equal(t, "dd.trace_id", infoLog.Context[0].Key)
+	assert.Equal(t, traceID, infoLog.Context[0].String)
+	assert.Equal(t, "dd.span_id", infoLog.Context[1].Key)
+	assert.Equal(t, spanID, infoLog.Context[1].String)
+}
+
+func TestWithTraceFields128BitDisabled(t *testing.T) {
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "false")
+
 	// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
-	if os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") == "false" {
-		cfg = newConfig()
-		traceID = strconv.FormatUint(span.Context().TraceIDLower(), 10)
-	} else {
-		traceID = span.Context().TraceID()
-	}
+	cfg = newConfig()
+
+	tracer.Start(
+		tracer.WithLogger(testutils.DiscardLogger()),
+	)
+	defer tracer.Stop()
+
+	// start a new span
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test")
+	defer span.Finish()
+
+	observed, logs := observer.New(zapcore.InfoLevel)
+
+	logger := zap.New(observed)
+	logger = WithTraceFields(ctx, logger)
+	logger.Info("some message")
+
+	// With 128-bit disabled, should use 64-bit trace ID
+	traceID := strconv.FormatUint(span.Context().TraceIDLower(), 10)
+	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 
 	require.Equal(t, 1, logs.Len())
 	infoLog := logs.All()[0]
