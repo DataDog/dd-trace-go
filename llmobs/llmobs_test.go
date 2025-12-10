@@ -445,6 +445,60 @@ func TestSpanAnnotations(t *testing.T) {
 		assert.Equal(t, float64(18), result["temperature"])
 		assert.Equal(t, "sunny", result["condition"])
 	})
+	t.Run("llm-span-with-tool-definitions", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-with-tool-definitions")
+
+		toolDefs := []llmobs.ToolDefinition{
+			{
+				Name:        "add_numbers",
+				Description: "Add two numbers",
+				Schema:      []byte(`{"type": "object", "properties": {"location": {"type": "string"}}}`),
+			},
+			{
+				Name:        "subtract_numbers",
+				Description: "Subtract two numbers",
+				Schema:      []byte(`{"type": "object", "properties": {"expression": {"type": "string"}}}`),
+			},
+		}
+
+		input := []llmobs.LLMMessage{
+			{Role: "user", Content: "Add 2 and 3"},
+		}
+		output := []llmobs.LLMMessage{
+			{Role: "assistant", Content: "5"},
+		}
+
+		span.AnnotateLLMIO(input, output,
+			llmobs.WithToolDefinitions(toolDefs),
+		)
+		span.Finish()
+
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, spans, 1)
+		assert.Equal(t, "test-llm-with-tool-definitions", spans[0].Name)
+
+		// Verify tool_definitions are in the metadata
+		toolDefinitions, ok := spans[0].Meta["tool_definitions"].([]any)
+		require.True(t, ok, "tool_definitions should be present in meta")
+		require.Len(t, toolDefinitions, 2, "should have 2 tool definitions")
+
+		// Check first tool definition
+		firstTool, ok := toolDefinitions[0].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "add_numbers", firstTool["name"])
+		assert.Equal(t, "Add two numbers", firstTool["description"])
+		assert.NotNil(t, firstTool["schema"])
+
+		// Check second tool definition
+		secondTool, ok := toolDefinitions[1].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "subtract_numbers", secondTool["name"])
+		assert.Equal(t, "Subtract two numbers", secondTool["description"])
+		assert.NotNil(t, secondTool["schema"])
+	})
 	t.Run("text-io-span-annotations", func(t *testing.T) {
 		tt := testTracer(t)
 		defer tt.Stop()

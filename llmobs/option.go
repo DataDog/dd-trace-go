@@ -162,3 +162,12 @@ func WithIntent(intent string) AnnotateOption {
 		a.Intent = intent
 	}
 }
+
+// WithToolDefinitions sets the tool definitions for the span.
+// Tool definitions describe the tools/functions available to an LLM.
+// This is only applicable to LLM spans and will be ignored for other span types.
+func WithToolDefinitions(toolDefinitions []ToolDefinition) AnnotateOption {
+	return func(a *illmobs.SpanAnnotations) {
+		a.ToolDefinitions = toolDefinitions
+	}
+}
