@@ -316,9 +316,6 @@ type config struct {
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
 
-	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
-	ciVisibilityEnabled bool
-
 	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
 	ciVisibilityAgentless bool
 
@@ -616,8 +613,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		log.SetLevel(log.LevelDebug)
 	}
 	// Check if CI Visibility mode is enabled
-	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
+	if c.internalConfig.CiVisibilityEnabled() {
 		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
 		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
 		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
