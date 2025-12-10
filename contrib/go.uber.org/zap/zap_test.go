@@ -18,10 +18,13 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 func TestWithTraceFields(t *testing.T) {
-	tracer.Start()
+	tracer.Start(
+		tracer.WithLogger(testutils.DiscardLogger()),
+	)
 	defer tracer.Stop()
 
 	// start a new span
