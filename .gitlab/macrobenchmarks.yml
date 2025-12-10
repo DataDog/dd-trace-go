@@ -1,5 +1,5 @@
 variables:
-  BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:go-go-prof-app-and-serviceextensions-0001
+  BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:go-go-prof-app-and-serviceextensions-and-haproxy-0003
 
 .benchmarks-default:
   stage: macrobenchmarks
@@ -350,6 +350,106 @@ se-tracer-no-ext_proc-only-tracing:
 # Scenario without tracer, only direct connection through envoy to the webserver
 se-no-tracer-no-ext_proc:
   extends: .benchmarks-serviceextensions
+  variables:
+    EXT_PROC: false
+    TRACER: false
+
+#
+# Macro benchmarks for HAProxy
+# (using Stream Processing Offload Agent)
+#
+.benchmarks-haproxy_spoa:
+  stage: macrobenchmarks
+  needs: []
+  tags: ["runner:apm-k8s-same-cpu"]
+  timeout: 1h
+  rules:
+    # We don't want to run benchmarks on graphite commits
+    - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
+      when: never
+    - if: $CI_COMMIT_REF_NAME == "main"
+      when: always
+      interruptible: false
+    - when: manual
+      interruptible: true
+  # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
+  image: $BENCHMARKS_CI_IMAGE
+  script:
+    - git clone --branch go/go-prof-app https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/benchmarking-platform platform && cd platform
+    - bp-runner bp-runner.haproxy_spoa.yml --debug
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - platform/artifacts-haproxy_spoa/
+    expire_in: 3 months
+  variables:
+    GO_VERSION: "1.25.0" # It needs to be at the latest stable release
+    ARTIFACTS_DIR: "./artifacts-haproxy_spoa"
+    HAPROXY_SPOA: "true"
+
+  # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
+  # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
+  # benchmarks get changed to run on every PR)
+  allow_failure: true
+
+  retry:
+    max: 2
+    when:
+      - unknown_failure
+      - data_integrity_failure
+      - runner_system_failure
+      - scheduler_failure
+      - api_failure
+
+# Scenario with SPOA, webserver without tracer
+haproxy-spoa-appsec:
+  extends: .benchmarks-haproxy_spoa
+  variables:
+    EXT_PROC: true
+    EXT_PROC_BODY: false
+    ENABLE_APPSEC: true
+    TRACER: false
+
+haproxy-spoa-body-appsec:
+  extends: .benchmarks-haproxy_spoa
+  variables:
+    EXT_PROC: true
+    ENABLE_APPSEC: true
+    TRACER: false
+
+haproxy-spoa-only-tracing:
+  extends: .benchmarks-haproxy_spoa
+  variables:
+    EXT_PROC: true
+    ENABLE_APPSEC: false
+    TRACER: false
+
+haproxy-spoa-body-only-tracing:
+  extends: .benchmarks-haproxy_spoa
+  variables:
+    EXT_PROC: true
+    ENABLE_APPSEC: false
+    TRACER: false
+
+# Scenarios without SPOA, webserver with tracer
+haproxy-tracer-no-spoa-appsec:
+  extends: .benchmarks-haproxy_spoa
+  variables:
+    EXT_PROC: false
+    ENABLE_APPSEC: true
+    TRACER: true
+
+haproxy-tracer-no-spoa-only-tracing:
+  extends: .benchmarks-haproxy_spoa
+  variables:
+    EXT_PROC: false
+    ENABLE_APPSEC: false
+    TRACER: true
+
+# Scenario without tracer, only direct connection through HAProxy to the webserver
+haproxy-no-tracer-no-spoa:
+  extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: false
     TRACER: false
