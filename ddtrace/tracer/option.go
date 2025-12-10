@@ -334,9 +334,6 @@ type config struct {
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
 
-	// traceProtocol specifies the trace protocol to use.
-	traceProtocol float64
-
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
 
@@ -629,13 +626,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	if c.agent.v1ProtocolAvailable {
-		c.traceProtocol = traceProtocolV1
+	if c.internalConfig.V1ProtocolEnabled() && c.agent.v1ProtocolAvailable {
+		c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCalculated)
 		if t, ok := c.transport.(*httpTransport); ok {
 			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
 		}
-	} else {
-		c.traceProtocol = traceProtocolV04
 	}
 
 	info, ok := debug.ReadBuildInfo()
@@ -806,7 +801,6 @@ type agentFeatures struct {
 
 	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
 	evpProxyV2 bool
-
 	// v1ProtocolAvailable reports whether the trace-agent and tracer are configured to use the v1 protocol.
 	v1ProtocolAvailable bool
 }
@@ -868,10 +862,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		case "/evp_proxy/v2/":
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
-			// Set the trace protocol to use.
-			if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
-				features.v1ProtocolAvailable = true
-			}
+			features.v1ProtocolAvailable = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
