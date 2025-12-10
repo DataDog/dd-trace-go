@@ -221,6 +221,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_VALKEY_RAW_COMMAND":                                     {},
 	"DD_TRACE_VAULT_ANALYTICS_ENABLED":                                {},
 	"DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH":                              {},
+	"DD_TRACE_ZAP_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE__ANALYTICS_ENABLED":                                     {},
 	"DD_VERSION":                                                      {},
 	"OTEL_EXPORTER_OTLP_ENDPOINT":                                     {},
