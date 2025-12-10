@@ -20,7 +20,7 @@ import (
 type configuration struct {
 	mu     sync.Mutex
 	config map[string]transport.ConfKeyValue
-	seqID  uint64
+	seqID  uint64 // TODO: remove this
 }
 
 func idOrEmpty(id string) string {
@@ -45,6 +45,7 @@ func (c *configuration) Add(kv Configuration) {
 		Value:  kv.Value,
 		Origin: kv.Origin,
 		ID:     ID,
+		SeqID:  kv.SeqID,
 	}
 }
 
