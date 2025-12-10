@@ -42,9 +42,15 @@ func defaultconfigProvider() *configProvider {
 	}
 }
 
-// get is a generic helper that iterates through config sources and parses values.
+// get is a generic helper that iterates through config sources and parses values, returning the first successfully parsed value.
 // The parse function should return the parsed value and true if parsing succeeded, or false otherwise.
+//
+// Telemetry Reporting:
+//   - Reports telemetry for ALL non-empty values found across ALL sources, regardless of priority
+//   - SeqID reflects priority: highest priority source gets len(sources), decreasing to 1 for lowest priority
 func get[T any](p *configProvider, key string, def T, parse func(string) (T, bool)) T {
+	var final *T
+	seqId := uint64(len(p.sources))
 	for _, source := range p.sources {
 		if v := source.get(key); v != "" {
 			var id string
@@ -52,12 +58,18 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 				id = s.getID()
 			}
 			if parsed, ok := parse(v); ok {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id})
-				return parsed
+				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id, SeqID: seqId})
+				if final == nil {
+					final = &parsed
+				}
 			}
 		}
+		seqId--
 	}
-	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID})
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: 0})
+	if final != nil {
+		return *final
+	}
 	return def
 }
 
