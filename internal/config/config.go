@@ -61,8 +61,10 @@ type Config struct {
 	dynamicInstrumentationEnabled bool
 	globalSampleRate              float64
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
-	ciVisibilityEnabled     bool
-	ciVisibilityAgentless   bool
+	ciVisibilityEnabled   bool
+	ciVisibilityAgentless bool
+	// ciVisibilityNoopTracer controls if CI Visibility must set a wrapper to behave like a noop tracer
+	ciVisibilityNoopTracer  bool
 	logDirectory            string
 	traceRateLimitPerSecond float64
 }
@@ -98,6 +100,7 @@ func loadConfig() *Config {
 	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
 	cfg.ciVisibilityEnabled = provider.getBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = provider.getBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityNoopTracer = provider.getBool(constants.CIVisibilityUseNoopTracer, false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
 
@@ -148,4 +151,17 @@ func (c *Config) SetCiVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.ciVisibilityEnabled = enabled
 	telemetry.RegisterAppConfig(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) CiVisibilityNoopTracer() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityNoopTracer
+}
+
+func (c *Config) SetCiVisibilityNoopTracer(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ciVisibilityNoopTracer = enabled
+	telemetry.RegisterAppConfig(constants.CIVisibilityUseNoopTracer, enabled, origin)
 }
