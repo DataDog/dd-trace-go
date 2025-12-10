@@ -407,7 +407,6 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 	}
 
 	ss := []*Span{makeSpan(0)}
-
 	for _, test := range testcases {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
 		t.Run(name, func(t *testing.T) {
