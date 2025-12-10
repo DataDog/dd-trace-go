@@ -128,9 +128,9 @@ func (feature *DownwardRequestFeature) OnFinish(op *httpsec.RoundTripOperation, 
 	}
 
 	if isRedirect {
-		opUrl, err := url.Parse(op.URL())
+		opURL, err := url.Parse(op.URL())
 		if err == nil {
-			url, err := opUrl.Parse(location)
+			url, err := opURL.Parse(location)
 			if err == nil {
 				event := httpsec.DownstreamRequestOverride{
 					DownstreamURL: url.String(),
