@@ -147,3 +147,16 @@ func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin) {
 	c.profilerEndpoints = enabled
 	telemetry.RegisterAppConfig("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
 }
+
+func (c *Config) DataStreamsMonitoringEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dataStreamsMonitoringEnabled
+}
+
+func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dataStreamsMonitoringEnabled = enabled
+	telemetry.RegisterAppConfig("DD_DATA_STREAMS_ENABLED", enabled, origin)
+}
