@@ -157,7 +157,7 @@ func logStartup(t *tracer) {
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.dogstatsdAddr,
-		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
+		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = err.Error()
