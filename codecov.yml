@@ -1,14 +1,17 @@
 codecov:
   branch: main
 
-# Disable PR comments
-comment: false
+comment:
+  layout: "header, files"
 
-# Disable CI status checks
 coverage:
   status:
-    project: off
-    patch: off
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
 
 flags:
   core:
@@ -22,5 +25,6 @@ flags:
     paths:
       - contrib/*
 
+# disable annotations as they can be noisy
 github_checks:
   annotations: false
