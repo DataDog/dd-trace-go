@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
 
 var (
@@ -81,7 +82,7 @@ func loadConfig() *Config {
 	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", false)
-	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
+	cfg.profilerHotspots = provider.getBool(traceprof.CodeHotspotsEnvVar, true)
 	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
 	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
 	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -145,5 +146,5 @@ func (c *Config) SetProfilerHotspotsEnabled(enabled bool, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.profilerHotspots = enabled
-	telemetry.RegisterAppConfig("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", enabled, origin)
+	telemetry.RegisterAppConfig(traceprof.CodeHotspotsEnvVar, enabled, origin)
 }
