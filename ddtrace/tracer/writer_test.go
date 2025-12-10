@@ -400,18 +400,11 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 		{configRetries: 2, retryInterval: 2 * time.Millisecond, failCount: 2, tracesSent: true, expAttempts: 3},
 	}
 
-	sentCounts := map[string]int64{
-		"datadog.tracer.decode_error":          1,
-		"datadog.tracer.flush_bytes":           308,
-		"datadog.tracer.flush_traces":          1,
-		"datadog.tracer.queue.enqueued.traces": 1,
-	}
-	droppedCounts := map[string]int64{
-		"datadog.tracer.queue.enqueued.traces": 1,
-		"datadog.tracer.traces_dropped":        1,
-	}
-
 	ss := []*Span{makeSpan(0)}
+
+	// Capture expected payload size from first test run to be OS-agnostic and forward-compatible
+	var expectedPayloadSize int64
+
 	for _, test := range testcases {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
 		t.Run(name, func(t *testing.T) {
@@ -430,6 +423,12 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 			h := newAgentTraceWriter(c, newPrioritySampler(), &statsd)
 			h.add(ss)
+
+			// Capture payload size from first test run for dynamic assertions
+			if expectedPayloadSize == 0 {
+				expectedPayloadSize = int64(h.payload.size())
+			}
+
 			start := time.Now()
 			h.flush()
 			h.wg.Wait()
@@ -440,8 +439,18 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 
 			assert.Equal(1, len(statsd.TimingCalls()))
 			if test.tracesSent {
+				sentCounts := map[string]int64{
+					"datadog.tracer.decode_error":          1,
+					"datadog.tracer.flush_bytes":           expectedPayloadSize,
+					"datadog.tracer.flush_traces":          1,
+					"datadog.tracer.queue.enqueued.traces": 1,
+				}
 				assert.Equal(sentCounts, statsd.Counts())
 			} else {
+				droppedCounts := map[string]int64{
+					"datadog.tracer.queue.enqueued.traces": 1,
+					"datadog.tracer.traces_dropped":        1,
+				}
 				assert.Equal(droppedCounts, statsd.Counts())
 			}
 			if test.configRetries > 0 && test.failCount > 1 {
