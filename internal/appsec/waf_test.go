@@ -475,10 +475,10 @@ func TestBlocking(t *testing.T) {
 					require.True(t, ok)
 					require.Contains(t, spans[0].Tag("_dd.appsec.json"), "security_response_id")
 					require.NoError(t, json.Unmarshal([]byte(securityEvent), &payload))
-					wafSecurityResponseId := payload.Triggers[0].SecurityResponseID
-					require.Greater(t, len(wafSecurityResponseId), 0)
+					wafSecurityResponseID := payload.Triggers[0].SecurityResponseID
+					require.Greater(t, len(wafSecurityResponseID), 0)
 					require.NoError(t, json.Unmarshal(b, &blockedBody))
-					require.Equal(t, wafSecurityResponseId, blockedBody.SecurityResponseID)
+					require.Equal(t, wafSecurityResponseID, blockedBody.SecurityResponseID)
 				}
 			}
 
