@@ -78,7 +78,7 @@
 /openfeature                    @DataDog/feature-flagging-and-experimentation-sdk @DataDog/asm-go
 
 # Database Monitoring
-ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDataDogdog/apm-idm-go
+ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 
 # no owner: changes to these files will not automatically ping any particular
