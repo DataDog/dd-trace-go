@@ -160,7 +160,11 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
+	env, ok := getMeta(spn, ext.Environment)
+	if !ok {
+		env = "" // TODO(hannahkm): double check
+	}
+	key := "service:" + spn.service + ",env:" + env
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {
