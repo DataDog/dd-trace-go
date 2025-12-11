@@ -66,6 +66,8 @@ func (c *Client) finishAndClearActiveSpans() {
 	c.activeSpansMu.Unlock()
 }
 
+// We assume kgo spans to be inactive when a next group of fetches are polled,
+// so we finish and clear the active spans before polling the next group.
 func (c *Client) PollFetches(ctx context.Context) kgo.Fetches {
 	c.finishAndClearActiveSpans()
 	return c.Client.PollFetches(ctx)
