@@ -6,9 +6,7 @@
 package kgo
 
 import (
-	// TODO: Switch to the final package at some point
-	// "github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/internal/tracing"
-	"github.com/DataDog/_personal/mentorship/dd-trace-go/contrib/twmb/franz-go/internal/tracing"
+	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
