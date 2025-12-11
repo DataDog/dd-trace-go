@@ -56,12 +56,12 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	return tr
 }
 
-func (tr *Tracer) GetKafkaConfig() KafkaConfig {
-	return tr.kafkaCfg
-}
-
-func (tr *Tracer) SetKafkaConfig(kafkaCfg KafkaConfig) {
-	tr.kafkaCfg = kafkaCfg
+func (tr *Tracer) AddBootstrapServer(server string) {
+	if tr.kafkaCfg.BootstrapServers == "" {
+		tr.kafkaCfg.BootstrapServers = server
+	} else {
+		tr.kafkaCfg.BootstrapServers += "," + server
+	}
 }
 
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
