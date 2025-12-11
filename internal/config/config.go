@@ -81,7 +81,7 @@ func loadConfig() *Config {
 	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
 	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", false)
+	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", false)
 	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
 	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
@@ -134,6 +134,31 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debug = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG", enabled, origin)
+}
+
+func (c *Config) RuntimeMetricsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetrics
+}
+
+func (c *Config) SetRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runtimeMetrics = enabled
+	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
+}
+func (c *Config) RuntimeMetricsV2Enabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsV2
+}
+
+func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runtimeMetricsV2 = enabled
+	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
 }
 
 func (c *Config) DataStreamsMonitoringEnabled() bool {
