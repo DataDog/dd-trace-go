@@ -33,7 +33,7 @@ type Record interface {
 	GetHeaders() []Header
 	SetHeaders([]Header)
 	GetTopic() string
-	GetPartition() int
+	GetPartition() int32
 	GetOffset() int64
 }
 
