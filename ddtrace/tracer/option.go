@@ -243,9 +243,6 @@ type config struct {
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
 
-	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
-	profilerHotspots bool
-
 	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
 	profilerEndpoints bool
 
@@ -472,7 +469,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
-	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
 		if semver.IsValid(compatMode) {
 			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
@@ -1299,7 +1295,7 @@ func WithLogStartup(enabled bool) StartOption {
 // DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
 	return func(c *config) {
-		c.profilerHotspots = enabled
+		c.internalConfig.SetProfilerHotspotsEnabled(enabled, telemetry.OriginCode)
 	}
 }
 
