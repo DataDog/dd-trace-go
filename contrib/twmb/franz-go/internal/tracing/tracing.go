@@ -99,6 +99,7 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 }
 
 func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, r Record, spanOpts ...tracer.StartSpanOption) *tracer.Span {
+	// TODO: Modify "writer" for something that makes more sense.
 	topic := writer.GetTopic()
 	if topic == "" {
 		topic = r.GetTopic()
