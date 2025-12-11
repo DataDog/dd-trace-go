@@ -37,8 +37,9 @@ const (
 type Config struct {
 	mu sync.RWMutex
 	// Config fields are protected by the mutex.
-	agentURL                      *url.URL
-	debug                         bool
+	agentURL *url.URL
+	debug    bool
+	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup                    bool
 	serviceName                   string
 	version                       string
@@ -74,15 +75,15 @@ func loadConfig() *Config {
 	// TODO: Use defaults from config json instead of hardcoding them here
 	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
 	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
-	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", false)
+	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = provider.getString("DD_SERVICE", "")
 	cfg.version = provider.getString("DD_VERSION", "")
 	cfg.env = provider.getString("DD_ENV", "")
 	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
 	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", false)
-	cfg.profilerHotspots = provider.getBool(traceprof.CodeHotspotsEnvVar, true)
+	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", false)
 	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
 	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -147,4 +148,55 @@ func (c *Config) SetProfilerHotspotsEnabled(enabled bool, origin telemetry.Origi
 	defer c.mu.Unlock()
 	c.profilerHotspots = enabled
 	telemetry.RegisterAppConfig(traceprof.CodeHotspotsEnvVar, enabled, origin)
+}
+func (c *Config) RuntimeMetricsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetrics
+}
+
+func (c *Config) SetRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runtimeMetrics = enabled
+	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
+}
+
+func (c *Config) RuntimeMetricsV2Enabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsV2
+}
+
+func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.runtimeMetricsV2 = enabled
+	telemetry.RegisterAppConfig("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
+}
+
+func (c *Config) DataStreamsMonitoringEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dataStreamsMonitoringEnabled
+}
+
+func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dataStreamsMonitoringEnabled = enabled
+	telemetry.RegisterAppConfig("DD_DATA_STREAMS_ENABLED", enabled, origin)
+}
+
+func (c *Config) LogStartup() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logStartup
+}
+
+func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logStartup = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_STARTUP_LOGS", enabled, origin)
 }
