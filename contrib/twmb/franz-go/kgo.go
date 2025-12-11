@@ -93,13 +93,6 @@ func (c *Client) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
 	c.tracer.FinishProduceSpan(span, int(r.Partition), r.Offset, err)
 }
 
-// OnFetchRecordBuffered is called when a record is fetched and ready to be consumed
-func (c *Client) OnFetchRecordBuffered(r *kgo.Record) {
-	slog.Info("OnFetchRecordBuffered")
-	slog.Info("Record buffered", "offset", r.Offset)
-	slog.Info("OnFetchRecordBuffered done")
-}
-
 // OnFetchRecordUnbuffered is called when a record is consumed or discarded
 func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 	slog.Info("OnFetchRecordUnbuffered", "polled", polled)
