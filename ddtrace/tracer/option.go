@@ -309,9 +309,12 @@ type config struct {
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
 
-	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
-	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
-	dynamicInstrumentationEnabled bool
+	// dynamicInstrumentationEnabled controls if the target application can be
+	// modified by Dynamic Instrumentation / Live Debugger or not. If the value
+	// starts off as being explicitly set to false (as opposed to starting to
+	// false by default), then it is frozen -- it cannot be overwritten by Remote
+	// Config.
+	dynamicInstrumentationEnabled dynamicConfig[bool]
 
 	// globalSampleRate holds sample rate read from environment variables.
 	globalSampleRate float64
@@ -515,7 +518,21 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
 	// if it's explicitly set, and don't require both variables to be configured.
 
-	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	dynamicInstrumentationEnabledDefault, origin, _ := stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	c.dynamicInstrumentationEnabled = newDynamicConfig(
+		"dynamic_instrumentation_enabled",
+		dynamicInstrumentationEnabledDefault,
+		func(bool) bool {
+			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
+			return true
+		}, /* apply */
+		equal[bool],
+	)
+	// Keep track of the origin of the config value. Note that the origin is not
+	// properly maintained when the config value changes, but that's not a problem
+	// for us since we won't allow the value to change if dynamic instrumentation
+	// is explicitly disabled.
+	c.dynamicInstrumentationEnabled.cfgOrigin = origin
 
 	namingschema.LoadFromEnv()
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
@@ -1370,6 +1387,20 @@ func WithPartialFlushing(numSpans int) StartOption {
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.statsComputationEnabled = enabled
+	}
+}
+
+// WithDynamicInstrumentationEnabled enables or disables dynamic
+// instrumentation, allowing the tracer to place probes for the Live Debugger
+// and Dynamic Instrumentation products.
+func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
+	return func(c *config) {
+		apply := func(bool) bool {
+			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
+			return true
+		}
+		c.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, apply, equal[bool])
+		c.dynamicInstrumentationEnabled.cfgOrigin = telemetry.OriginCode
 	}
 }
 
