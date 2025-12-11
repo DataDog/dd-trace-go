@@ -162,7 +162,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 func (ps *prioritySampler) getRate(spn *Span) float64 {
 	env, ok := getMeta(spn, ext.Environment)
 	if !ok {
-		env = "" // TODO(hannahkm): double check
+		env = ""
 	}
 	key := "service:" + spn.service + ",env:" + env
 	ps.mu.RLock()
