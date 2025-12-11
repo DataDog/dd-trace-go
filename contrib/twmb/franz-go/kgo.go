@@ -52,9 +52,7 @@ func NewClient(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error
 	// since kgo.Client doesn't expose seed brokers. Setting the bootstrap servers is done in the OnBrokerConnect hook.
 	// ???: What to do, since the groupID can be an empty string? Nothing, right?
 	groupID, _ := wrapped.Client.GroupMetadata()
-	wrapped.tracer.SetKafkaConfig(tracing.KafkaConfig{
-		ConsumerGroupID: groupID,
-	})
+	wrapped.tracer.SetConsumerGroupID(groupID)
 
 	return wrapped, nil
 }
