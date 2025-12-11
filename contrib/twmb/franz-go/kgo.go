@@ -93,43 +93,19 @@ func (c *Client) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
 	c.tracer.FinishProduceSpan(span, int(r.Partition), r.Offset, err)
 }
 
-// OnFetchRecordUnbuffered is called when a record is consumed or discarded
 func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
-	slog.Info("OnFetchRecordUnbuffered", "polled", polled)
-
 	// We shouldn't start a span if the record is not polled, because it
 	// means it was discarded in some way before reaching user code.
 	if !polled {
 		return
 	}
 
-	opts := []tracer.StartSpanOption{
-		tracer.ServiceName("consumer-service"),
-		tracer.ResourceName("Consume Topic " + r.Topic),
-		tracer.SpanType(ext.SpanTypeMessageConsumer),
-		tracer.Tag(ext.MessagingKafkaPartition, r.Partition),
-		tracer.Tag("offset", r.Offset),
-		// tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, r.Topic),
-		tracer.Measured(),
-	}
-
-	spanctx, err := ExtractSpanContext(r)
-	if err == nil {
-		opts = append(opts, tracer.ChildOf(spanctx))
-	}
-
-	span, ctx := tracer.StartSpanFromContext(r.Context, "kafka.consume", opts...)
-	r.Context = ctx
+	span := c.tracer.StartConsumeSpan(r.Context, wrapRecord(r))
+	r.Context = tracer.ContextWithSpan(r.Context, span)
 
 	c.activeSpansMu.Lock()
 	c.activeSpans = append(c.activeSpans, span)
 	c.activeSpansMu.Unlock()
-
-	slog.Info("Record unbuffered", "offset", r.Offset, "polled", polled)
-	slog.Info("OnFetchRecordUnbuffered done")
 }
 
 // OnBrokerConnect is used to obtain the Client's seed brokers.
