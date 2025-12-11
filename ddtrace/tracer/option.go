@@ -169,10 +169,6 @@ type config struct {
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
 
-	// logStartup, when true, causes various startup info to be written
-	// when the tracer starts.
-	logStartup bool
-
 	// serviceName specifies the name of this application.
 	serviceName string
 
@@ -476,7 +472,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			c.isLambdaFunction = true
 		}
 	}
-	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
 	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
 	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
@@ -613,11 +608,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	// Check if CI Visibility mode is enabled
 	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
-		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityEnabled = true                                           // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45                                 // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
+		c.transport = ciTransport                                              // Replace the default transport with the CI Visibility transport
 		c.ciVisibilityAgentless = ciTransport.agentless
 		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
@@ -1300,7 +1295,7 @@ func WithTraceEnabled(enabled bool) StartOption {
 // WithLogStartup allows enabling or disabling the startup log.
 func WithLogStartup(enabled bool) StartOption {
 	return func(c *config) {
-		c.logStartup = enabled
+		c.internalConfig.SetLogStartup(enabled, internalconfig.OriginCode)
 	}
 }
 
