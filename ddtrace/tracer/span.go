@@ -951,7 +951,8 @@ func getMeta(s *Span, key string) (string, bool) {
 	return val, ok
 }
 
-// used in internal/civisibility/integrations/manual_api_common.go using linkname
+// getMetric gets a string tag. This method is safe for concurrent use and should be the primary method
+// of getting a metric tag if the span is not already locked.
 func getMetric(s *Span, key string) (float64, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

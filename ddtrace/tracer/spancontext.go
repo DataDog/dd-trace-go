@@ -514,7 +514,7 @@ func (t *trace) push(sp *Span) {
 		}
 		return
 	}
-	if v, ok := sp.metrics[keySamplingPriority]; ok {
+	if v, ok := getMetric(sp, keySamplingPriority); ok {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
 	t.spans = append(t.spans, sp)

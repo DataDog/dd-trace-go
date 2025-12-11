@@ -161,6 +161,8 @@ type ciVisibilityEvent struct {
 //	value - The tag value.
 func (e *ciVisibilityEvent) SetTag(key string, value interface{}) {
 	e.span.SetTag(key, value)
+	e.span.mu.RLock()
+	defer e.span.mu.RUnlock()
 	e.Content.Meta = e.span.meta
 	e.Content.Metrics = e.span.metrics
 }
