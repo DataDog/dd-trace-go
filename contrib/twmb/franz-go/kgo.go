@@ -147,17 +147,8 @@ func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 func (c *Client) OnBrokerConnect(meta kgo.BrokerMetadata, initDur time.Duration, conn net.Conn, err error) {
 	if meta.NodeID < 0 && meta.Rack == nil {
 		addr := fmt.Sprintf("%s:%d", meta.Host, meta.Port)
-		bootstrapServers := c.tracer.GetKafkaConfig().BootstrapServers
 		c.tracerMu.Lock()
-		if bootstrapServers == "" {
-			c.tracer.SetKafkaConfig(tracing.KafkaConfig{
-				BootstrapServers: addr,
-			})
-		} else {
-			c.tracer.SetKafkaConfig(tracing.KafkaConfig{
-				BootstrapServers: bootstrapServers + "," + addr,
-			})
-		}
+		c.tracer.AddBootstrapServer(addr)
 		c.tracerMu.Unlock()
 	}
 }
