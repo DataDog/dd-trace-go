@@ -81,36 +81,8 @@ func (c *Client) PollRecords(ctx context.Context, maxPollRecords int) kgo.Fetche
 }
 
 func (c *Client) OnProduceRecordBuffered(r *kgo.Record) {
-	opts := []tracer.StartSpanOption{
-		tracer.ServiceName("producer-service"), // TODO: from config in finished contrib
-		tracer.ResourceName("Produce Topic " + r.Topic),
-		tracer.SpanType(ext.SpanTypeMessageProducer),
-		// tracer.Tag(ext.Component, componentName), // TODO: from const in dd-trace-go
-		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
-		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-		tracer.Tag(ext.MessagingDestinationName, r.Topic),
-	}
-
-	// if tr.kafkaCfg.BootstrapServers != "" {
-	// 	opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
-	// } // TODO: from config in finished contrib
-	// if !math.IsNaN(tr.analyticsRate) {
-	// 	opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
-	// } // TODO: from config in finished contrib
-
-	span, ctx := tracer.StartSpanFromContext(r.Context, "kafka.produce", opts...) // TODO: operation name from config
-
-	slog.Info("Injecting span context into carrier in writer")
-	carrier := NewKafkaHeadersCarrier(r)
-	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		slog.Error("Failed to inject span context into carrier in writer", "error", err)
-		// instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier in writer, %s", err.Error())
-	}
-
-	// Store the span in the record's context so we can finish it later
-	r.Context = ctx
-
-	slog.Info("OnProduceRecordBuffered done")
+	span := c.tracer.StartProduceSpan(r.Context, wrapRecord(r))
+	r.Context = tracer.ContextWithSpan(r.Context, span)
 }
 
 // OnProduceRecordUnbuffered is called when a record has been sent and ack'd by the broker.
