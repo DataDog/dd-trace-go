@@ -98,12 +98,8 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 	return span
 }
 
-func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, r Record, spanOpts ...tracer.StartSpanOption) *tracer.Span {
-	// TODO: Modify "writer" for something that makes more sense.
-	topic := writer.GetTopic()
-	if topic == "" {
-		topic = r.GetTopic()
-	}
+func (tr *Tracer) StartProduceSpan(ctx context.Context, r Record, spanOpts ...tracer.StartSpanOption) *tracer.Span {
+	topic := r.GetTopic()
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.producerServiceName),
 		tracer.ResourceName("Produce Topic " + topic),
