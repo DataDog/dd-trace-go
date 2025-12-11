@@ -28,6 +28,7 @@ func reportTelemetryOnAppStarted(c telemetry.Configuration) {
 // event is sent with tracer config data.
 // Note that the tracer is not considered as a standalone product by telemetry so we cannot send
 // an app-product-change event for the tracer.
+// TODO (APMAPI-1771): This function should be deleted once config migration is complete
 func startTelemetry(c *config) telemetry.Client {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
@@ -42,7 +43,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "lambda_mode", Value: c.logToStdout},
 		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "retry_interval", Value: c.retryInterval},
-		{Name: "trace_startup_logs_enabled", Value: c.logStartup},
+		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
 		{Name: "service", Value: c.serviceName},
 		{Name: "universal_version", Value: c.universalVersion},
 		{Name: "env", Value: c.env},

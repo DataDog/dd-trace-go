@@ -68,10 +68,9 @@ func (p *configProvider) getString(key string, def string) string {
 
 func (p *configProvider) getBool(key string, def bool) bool {
 	return get(p, key, def, func(v string) (bool, bool) {
-		if v == "true" {
-			return true, true
-		} else if v == "false" {
-			return false, true
+		boolVal, err := strconv.ParseBool(v)
+		if err == nil {
+			return boolVal, true
 		}
 		return false, false
 	})

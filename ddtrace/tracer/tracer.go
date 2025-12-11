@@ -273,7 +273,7 @@ func Start(opts ...StartOption) error {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 	}
-	if t.config.logStartup {
+	if t.config.internalConfig.LogStartup() {
 		logStartup(t)
 	}
 
@@ -431,7 +431,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
-	if c.dataStreamsMonitoringEnabled {
+	if c.internalConfig.DataStreamsMonitoringEnabled() {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	var logFile *log.ManagedFile

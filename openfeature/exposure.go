@@ -137,7 +137,7 @@ func (w *exposureWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: exposure writer recovered panic: %v", r)
+				log.Error("openfeature: exposure writer recovered panic: %s", r)
 				var errAttr slog.Attr
 				if err, ok := r.(error); ok {
 					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
