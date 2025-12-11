@@ -307,13 +307,13 @@ se-ext_proc-appsec:
   variables:
     EXT_PROC: true
     ENABLE_APPSEC: true
+    EXT_PROC_BODY: false
     TRACER: false
 
 se-ext_proc-body-appsec:
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
-    EXT_PROC_BODY: true
     ENABLE_APPSEC: true
     TRACER: false
 
@@ -322,13 +322,13 @@ se-ext_proc-only-tracing:
   variables:
     EXT_PROC: true
     ENABLE_APPSEC: false
+    EXT_PROC_BODY: false
     TRACER: false
 
 se-ext_proc-body-only-tracing:
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: true
-    EXT_PROC_BODY: true
     ENABLE_APPSEC: false
     TRACER: false
 
@@ -338,6 +338,7 @@ se-tracer-no-ext_proc-appsec:
   variables:
     EXT_PROC: false
     ENABLE_APPSEC: true
+    EXT_PROC_BODY: false
     TRACER: true
 
 se-tracer-no-ext_proc-only-tracing:
@@ -345,6 +346,7 @@ se-tracer-no-ext_proc-only-tracing:
   variables:
     EXT_PROC: false
     ENABLE_APPSEC: false
+    EXT_PROC_BODY: false
     TRACER: true
 
 # Scenario without tracer, only direct connection through envoy to the webserver
@@ -352,6 +354,7 @@ se-no-tracer-no-ext_proc:
   extends: .benchmarks-serviceextensions
   variables:
     EXT_PROC: false
+    EXT_PROC_BODY: false
     TRACER: false
 
 #
@@ -407,8 +410,8 @@ haproxy-spoa-appsec:
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: true
-    EXT_PROC_BODY: false
     ENABLE_APPSEC: true
+    EXT_PROC_BODY: false
     TRACER: false
 
 haproxy-spoa-body-appsec:
@@ -423,6 +426,7 @@ haproxy-spoa-only-tracing:
   variables:
     EXT_PROC: true
     ENABLE_APPSEC: false
+    EXT_PROC_BODY: false
     TRACER: false
 
 haproxy-spoa-body-only-tracing:
@@ -438,6 +442,7 @@ haproxy-tracer-no-spoa-appsec:
   variables:
     EXT_PROC: false
     ENABLE_APPSEC: true
+    EXT_PROC_BODY: false
     TRACER: true
 
 haproxy-tracer-no-spoa-only-tracing:
@@ -445,6 +450,7 @@ haproxy-tracer-no-spoa-only-tracing:
   variables:
     EXT_PROC: false
     ENABLE_APPSEC: false
+    EXT_PROC_BODY: false
     TRACER: true
 
 # Scenario without tracer, only direct connection through HAProxy to the webserver
@@ -452,4 +458,5 @@ haproxy-no-tracer-no-spoa:
   extends: .benchmarks-haproxy_spoa
   variables:
     EXT_PROC: false
+    EXT_PROC_BODY: false
     TRACER: false
