@@ -85,22 +85,12 @@ func (c *Client) OnProduceRecordBuffered(r *kgo.Record) {
 	r.Context = tracer.ContextWithSpan(r.Context, span)
 }
 
-// OnProduceRecordUnbuffered is called when a record has been sent and ack'd by the broker.
 func (c *Client) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
-	slog.Info("OnProduceRecordUnbuffered")
-
 	span, ok := tracer.SpanFromContext(r.Context)
 	if !ok {
 		return
 	}
-
-	span.SetTag(ext.MessagingKafkaPartition, r.Partition)
-	span.SetTag("offset", r.Offset)
-
-	// Finish the span
-	span.Finish(tracer.WithError(err))
-
-	slog.Info("OnProduceRecordUnbuffered done")
+	c.tracer.FinishProduceSpan(span, int(r.Partition), r.Offset, err)
 }
 
 // OnFetchRecordBuffered is called when a record is fetched and ready to be consumed
