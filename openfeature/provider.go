@@ -28,36 +28,66 @@ var (
 
 const ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
 
+// DataSource represents the configuration data source for the OpenFeature provider.
+type DataSource int
+
+const (
+	// DataSourceRemoteConfig uses Datadog Remote Config as the data source (default).
+	DataSourceRemoteConfig DataSource = iota
+	// DataSourceFlagRules uses an HTTP endpoint as the data source for flag rules.
+	DataSourceFlagRules
+)
+
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
-// using configuration received from Datadog Remote Config.
+// using configuration received from Datadog Remote Config or a flag rules backend.
 type DatadogProvider struct {
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
 	metadata      openfeature.Metadata
 
 	configChange sync.Cond
+
+	// flagRulesBackend is set when using the flag rules data source
+	flagRulesBackend *flagRulesBackend
 }
 
+// ProviderConfig holds configuration for the Datadog OpenFeature provider.
 type ProviderConfig struct {
-	// Add any configuration fields if needed in the future
+	// DataSource specifies where to fetch flag configurations from.
+	// Default: DataSourceRemoteConfig
+	DataSource DataSource
+
+	// FlagRules contains flag rules backend configuration.
+	// Only used when DataSource is DataSourceFlagRules.
+	FlagRules FlagRulesConfig
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider.
-// It subscribes to Remote Config updates and automatically updates the provider's configuration
-// when new flag configurations are received.
+// It subscribes to Remote Config updates (default) or polls an HTTP endpoint
+// for flag configurations based on the ProviderConfig.DataSource setting.
 //
 // The provider will be ready to use immediately, but flag evaluations will return errors
-// until the first configuration is received from Remote Config.
+// until the first configuration is received.
 //
-// Returns an error if the default configuration of the Remote Config client is NOT working
+// For Remote Config (default): Returns an error if the Remote Config client cannot be initialized.
 // In this case, please call tracer.Start before creating the provider.
-func NewDatadogProvider(ProviderConfig) (openfeature.FeatureProvider, error) {
+//
+// For FlagRules: Returns an error if no URL is configured via ProviderConfig.FlagRules.URL
+// or DD_FFE_FLAG_RULES_URL environment variable.
+func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, error) {
 	if !internal.BoolEnv(ffeProductEnvVar, false) {
 		log.Error("openfeature: experimental flagging provider is not enabled, please set %s=true to enable it", ffeProductEnvVar)
 		return &openfeature.NoopProvider{}, nil
 	}
 
-	return startWithRemoteConfig()
+	switch config.DataSource {
+	case DataSourceFlagRules:
+		return startWithFlagRules(config.FlagRules)
+	case DataSourceRemoteConfig:
+		fallthrough
+	default:
+		return startWithRemoteConfig()
+	}
 }
 
 func newDatadogProvider() *DatadogProvider {
@@ -68,6 +98,25 @@ func newDatadogProvider() *DatadogProvider {
 	}
 	p.configChange.L = &p.mu
 	return p
+}
+
+// startWithFlagRules creates a provider that fetches configuration from a flag rules backend.
+func startWithFlagRules(flagRulesConfig FlagRulesConfig) (*DatadogProvider, error) {
+	provider := newDatadogProvider()
+	provider.metadata = openfeature.Metadata{
+		Name: "Datadog Flag Rules Provider",
+	}
+
+	backend, err := newFlagRulesBackend(flagRulesConfig, provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create flag rules backend: %w", err)
+	}
+
+	provider.flagRulesBackend = backend
+	backend.Start()
+
+	log.Debug("openfeature: successfully started flag rules backend")
+	return provider, nil
 }
 
 // updateConfiguration updates the provider's flag configuration.
@@ -103,9 +152,14 @@ func (p *DatadogProvider) Init(openfeature.EvaluationContext) error {
 	return nil
 }
 
-// Shutdown shuts down the provider and stops Remote Config updates.
+// Shutdown shuts down the provider and stops configuration updates.
 func (p *DatadogProvider) Shutdown() {
-	// Best effort to stop Remote Config - ignore error as we're shutting down anyway
+	// Stop flag rules backend if using flag rules data source
+	if p.flagRulesBackend != nil {
+		_ = p.flagRulesBackend.Stop()
+		return
+	}
+	// Otherwise, stop Remote Config
 	_ = stopRemoteConfig()
 }
 
