@@ -289,9 +289,6 @@ type config struct {
 	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
 	dynamicInstrumentationEnabled bool
 
-	// globalSampleRate holds sample rate read from environment variables.
-	globalSampleRate float64
-
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
 
@@ -362,19 +359,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	c.sampler = NewAllSampler()
-	sampleRate := math.NaN()
-	if r := getDDorOtelConfig("sampleRate"); r != "" {
-		var err error
-		sampleRate, err = strconv.ParseFloat(r, 64)
-		if err != nil {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE, error: %s", err.Error())
-			sampleRate = math.NaN()
-		} else if sampleRate < 0.0 || sampleRate > 1.0 {
-			log.Warn("ignoring DD_TRACE_SAMPLE_RATE: out of range %f", sampleRate)
-			sampleRate = math.NaN()
-		}
-	}
-	c.globalSampleRate = sampleRate
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	c.traceRateLimitPerSecond = defaultRateLimit
@@ -647,7 +631,7 @@ func apmTracingDisabled(c *config) {
 	// This means to stop sending trace metrics, send one trace per minute and those force-kept by other products
 	// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
 	// to let the backend know that it needs to keep APM UI disabled.
-	c.globalSampleRate = 1.0
+	c.internalConfig.SetGlobalSampleRate(1.0, internalconfig.OriginCalculated)
 	c.traceRateLimitPerSecond = 1.0 / 60
 	c.tracingAsTransport = true
 	WithGlobalTag("_dd.apm.enabled", 0)(c)

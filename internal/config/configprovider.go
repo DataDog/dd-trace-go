@@ -104,6 +104,19 @@ func (p *configProvider) getFloat(key string, def float64) float64 {
 	})
 }
 
+func (p *configProvider) getFloatWithValidator(key string, def float64, validate func(float64) bool) float64 {
+	return get(p, key, def, func(v string) (float64, bool) {
+		floatVal, err := strconv.ParseFloat(v, 64)
+		if err == nil {
+			if validate != nil && !validate(floatVal) {
+				return 0, false
+			}
+			return floatVal, true
+		}
+		return 0, false
+	})
+}
+
 func (p *configProvider) getURL(key string, def *url.URL) *url.URL {
 	return get(p, key, def, func(v string) (*url.URL, bool) {
 		u, err := url.Parse(v)

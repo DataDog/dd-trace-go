@@ -6,6 +6,7 @@
 package config
 
 import (
+	"math"
 	"net/url"
 	"sync"
 	"time"
@@ -61,11 +62,12 @@ type Config struct {
 	statsComputationEnabled       bool
 	dataStreamsMonitoringEnabled  bool
 	dynamicInstrumentationEnabled bool
-	globalSampleRate              float64
-	ciVisibilityEnabled           bool
-	ciVisibilityAgentless         bool
-	logDirectory                  string
-	traceRateLimitPerSecond       float64
+	// globalSampleRate holds the sample rate for the tracer.
+	globalSampleRate        float64
+	ciVisibilityEnabled     bool
+	ciVisibilityAgentless   bool
+	logDirectory            string
+	traceRateLimitPerSecond float64
 	// logToStdout, if true, indicates we should log all traces to the standard output
 	logToStdout bool
 	// isLambdaFunction, if true, indicates we are in a lambda function
@@ -105,6 +107,7 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -253,4 +256,17 @@ func (c *Config) SetIsLambdaFunction(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.isLambdaFunction = enabled
 	// Do not report telemetry because this is not a user-configurable option
+}
+
+func (c *Config) GlobalSampleRate() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.globalSampleRate
+}
+
+func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.globalSampleRate = rate
+	telemetry.RegisterAppConfig("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
