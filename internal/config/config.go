@@ -56,7 +56,9 @@ type Config struct {
 	peerServiceDefaultsEnabled bool
 	peerServiceMappings        map[string]string
 	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
-	debugAbandonedSpans  bool
+	debugAbandonedSpans bool
+	// spanTimeout represents how old a span can be before it should be logged as a possible
+	// misconfiguration. Unused if debugAbandonedSpans is false.
 	spanTimeout          time.Duration
 	partialFlushMinSpans int
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
@@ -101,7 +103,7 @@ func loadConfig() *Config {
 	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
 	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
+	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = provider.getIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
@@ -339,4 +341,17 @@ func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debugAbandonedSpans = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
+}
+
+func (c *Config) SpanTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanTimeout
+}
+
+func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanTimeout = timeout
+	telemetry.RegisterAppConfig("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
 }
