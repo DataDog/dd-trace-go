@@ -20,12 +20,14 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -1656,32 +1658,33 @@ func TestHostnameDisabled(t *testing.T) {
 }
 
 func TestPartialFlushing(t *testing.T) {
+	partialFlushMinSpansDefault := 1000
 	t.Run("None", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.False(t, c.internalConfig.PartialFlushEnabled())
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.Equal(t, partialFlushMinSpansDefault, c.internalConfig.PartialFlushMinSpans())
 	})
 	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.False(t, c.internalConfig.PartialFlushEnabled())
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.Equal(t, partialFlushMinSpansDefault, c.internalConfig.PartialFlushMinSpans())
 	})
 	t.Run("Default-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.False(t, c.internalConfig.PartialFlushEnabled())
-		assert.Equal(t, 10, c.partialFlushMinSpans)
+		assert.Equal(t, 10, c.internalConfig.PartialFlushMinSpans())
 	})
 	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.True(t, c.internalConfig.PartialFlushEnabled())
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.Equal(t, partialFlushMinSpansDefault, c.internalConfig.PartialFlushMinSpans())
 	})
 	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
@@ -1689,7 +1692,7 @@ func TestPartialFlushing(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.True(t, c.internalConfig.PartialFlushEnabled())
-		assert.Equal(t, 10, c.partialFlushMinSpans)
+		assert.Equal(t, 10, c.internalConfig.PartialFlushMinSpans())
 	})
 	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
@@ -1697,14 +1700,30 @@ func TestPartialFlushing(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.True(t, c.internalConfig.PartialFlushEnabled())
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		assert.Equal(t, partialFlushMinSpansDefault, c.internalConfig.PartialFlushMinSpans())
+	})
+	t.Run("Enabled-SetMinSpansAboveMax", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", strconv.Itoa(internalconfig.TraceMaxSize))
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
+		assert.Equal(t, partialFlushMinSpansDefault, c.internalConfig.PartialFlushMinSpans())
+	})
+	t.Run("Enabled-SetMinSpans0", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "0")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.True(t, c.internalConfig.PartialFlushEnabled())
+		assert.Equal(t, partialFlushMinSpansDefault, c.internalConfig.PartialFlushMinSpans())
 	})
 	t.Run("WithPartialFlushOption", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		WithPartialFlushing(20)(c)
 		assert.True(t, c.internalConfig.PartialFlushEnabled())
-		assert.Equal(t, 20, c.partialFlushMinSpans)
+		assert.Equal(t, 20, c.internalConfig.PartialFlushMinSpans())
 	})
 }
 

@@ -982,7 +982,7 @@ func (t *tracer) TracerConf() TracerConf {
 		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
 		Disabled:             !t.config.enabled.current,
 		PartialFlush:         t.config.internalConfig.PartialFlushEnabled(),
-		PartialFlushMinSpans: t.config.partialFlushMinSpans,
+		PartialFlushMinSpans: t.config.internalConfig.PartialFlushMinSpans(),
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
 		PeerServiceMappings:  t.config.peerServiceMappings,
 		EnvTag:               t.config.env,
