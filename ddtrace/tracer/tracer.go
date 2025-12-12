@@ -771,7 +771,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if span.service == "" {
 		span.service = t.config.serviceName
 	}
-	span.noDebugStack = t.config.noDebugStack
+	span.noDebugStack = !t.config.internalConfig.DebugStack()
 	if t.config.hostname != "" {
 		span.setMeta(keyHostname, t.config.hostname)
 	}
