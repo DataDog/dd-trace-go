@@ -74,6 +74,7 @@ const (
 	PackageUptraceBun                Package = "uptrace/bun"
 	PackageLogSlog                   Package = "log/slog"
 	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
+	PackageUberZap                   Package = "go.uber.org/zap"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
 	PackageEnvoyProxyGoControlPlane       Package = "envoyproxy/go-control-plane"
@@ -814,6 +815,10 @@ var packages = map[Package]PackageInfo{
 	PackageLogSlog: {
 		TracedPackage: "log/slog",
 		IsStdLib:      true,
+	},
+	PackageUberZap: {
+		TracedPackage: "go.uber.org/zap",
+		EnvVarPrefix:  "ZAP",
 	},
 	PackageValkeyIoValkeyGo: {
 		TracedPackage: "github.com/valkey-io/valkey-go",
