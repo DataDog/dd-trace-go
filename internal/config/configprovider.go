@@ -83,6 +83,19 @@ func (p *configProvider) getInt(key string, def int) int {
 	})
 }
 
+func (p *configProvider) getIntWithValidator(key string, def int, validate func(int) bool) int {
+	return get(p, key, def, func(v string) (int, bool) {
+		intVal, err := strconv.Atoi(v)
+		if err == nil {
+			if validate != nil && !validate(intVal) {
+				return 0, false
+			}
+			return intVal, true
+		}
+		return 0, false
+	})
+}
+
 func (p *configProvider) getMap(key string, def map[string]string) map[string]string {
 	return get(p, key, def, func(v string) (map[string]string, bool) {
 		m := parseMapString(v)

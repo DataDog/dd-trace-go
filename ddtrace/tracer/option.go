@@ -257,11 +257,6 @@ type config struct {
 	// misconfiguration
 	spanTimeout time.Duration
 
-	// partialFlushMinSpans is the number of finished spans in a single trace to trigger a
-	// partial flush, or 0 if partial flushing is disabled.
-	// Value from DD_TRACE_PARTIAL_FLUSH_MIN_SPANS, default 1000.
-	partialFlushMinSpans int
-
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
 
@@ -330,9 +325,6 @@ type StartOption func(*config)
 
 // maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
 const maxPropagatedTagsLength = 512
-
-// partialFlushMinSpansDefault is the default number of spans for partial flushing, if enabled.
-const partialFlushMinSpansDefault = 1000
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
@@ -418,17 +410,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
-	if c.partialFlushMinSpans <= 0 {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is not a valid value, setting to default %d", c.partialFlushMinSpans, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	} else if c.partialFlushMinSpans >= traceMaxSize {
-		log.Warn("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS=%d is above the max number of spans that can be kept in memory for a single trace (%d spans), so partial flushing will never trigger, setting to default %d", c.partialFlushMinSpans, traceMaxSize, partialFlushMinSpansDefault)
-		c.partialFlushMinSpans = partialFlushMinSpansDefault
-	}
-	// TODO(partialFlush): consider logging a warning if DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
-	// is set, but DD_TRACE_PARTIAL_FLUSH_ENABLED is not true. Or just assume it should be enabled
-	// if it's explicitly set, and don't require both variables to be configured.
 
 	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
@@ -1273,7 +1254,7 @@ func WithDebugSpansMode(timeout time.Duration) StartOption {
 func WithPartialFlushing(numSpans int) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetPartialFlushEnabled(true, internalconfig.OriginCode)
-		c.partialFlushMinSpans = numSpans
+		c.internalConfig.SetPartialFlushMinSpans(numSpans, internalconfig.OriginCode)
 	}
 }
 
