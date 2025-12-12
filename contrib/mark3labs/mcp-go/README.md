@@ -34,5 +34,5 @@ The integration automatically traces:
 - **Tool calls**: Creates LLMObs tool spans with input/output annotation for all tool invocations
 - **Session initialization**: Create LLMObs task spans for session initialization, including client information.
 
-The integration can optionally capture "intent" on MCP tool calls. When enabled, this adds a parameter to the schema of each tool to request that the client include an explaination.
+The integration can optionally capture "intent" on MCP tool calls. When enabled, this adds a parameter to the schema of each tool to request that the client include an explanation.
 This can help provide context in natural language about why tools are being used.

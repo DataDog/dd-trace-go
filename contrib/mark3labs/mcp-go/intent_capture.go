@@ -9,25 +9,22 @@ import (
 	"context"
 	"slices"
 
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-const ddtraceKey = "ddtrace"
-
-const intentPrompt string = "Briefly describe the wider context task, and why this tool was chosen. Omit argument values, PII/secrets. Use English."
-
-func ddtraceSchema() map[string]any {
+func ddTraceSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"intent": map[string]any{
+			instrmcp.IntentKey: map[string]any{
 				"type":        "string",
-				"description": intentPrompt,
+				"description": instrmcp.IntentPrompt,
 			},
 		},
-		"required":             []string{"intent"},
+		"required":             []string{instrmcp.IntentKey},
 		"additionalProperties": false,
 	}
 }
@@ -54,11 +51,11 @@ func injectDdtraceListToolsHook(ctx context.Context, id any, message *mcp.ListTo
 		}
 
 		// Insert/overwrite the ddtrace property
-		t.InputSchema.Properties[ddtraceKey] = ddtraceSchema()
+		t.InputSchema.Properties[instrmcp.DDTraceKey] = ddTraceSchema()
 
 		// Mark ddtrace as required (idempotent)
-		if !slices.Contains(t.InputSchema.Required, ddtraceKey) {
-			t.InputSchema.Required = append(t.InputSchema.Required, ddtraceKey)
+		if !slices.Contains(t.InputSchema.Required, instrmcp.DDTraceKey) {
+			t.InputSchema.Required = append(t.InputSchema.Required, instrmcp.DDTraceKey)
 		}
 	}
 }
@@ -66,16 +63,16 @@ func injectDdtraceListToolsHook(ctx context.Context, id any, message *mcp.ListTo
 // Removing tracing parameters from the tool call request so its not sent to the tool.
 // This must be registered after the tool handler middleware (mcp-go runs middleware in registration order).
 // This removes the ddtrace parameter before user-defined middleware or tool handlers can see it.
-var processAndRemoveDdtraceToolMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+var processAndRemoveDDTraceToolMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		if m, ok := request.Params.Arguments.(map[string]any); ok && m != nil {
-			if ddtraceVal, has := m[ddtraceKey]; has {
+			if ddtraceVal, has := m[instrmcp.DDTraceKey]; has {
 				if ddtraceMap, ok := ddtraceVal.(map[string]any); ok {
-					processDdtrace(ctx, ddtraceMap)
+					processDDTrace(ctx, ddtraceMap)
 				} else if instr != nil && instr.Logger() != nil {
 					instr.Logger().Warn("mcp-go intent capture: ddtrace value is not a map")
 				}
-				delete(m, ddtraceKey)
+				delete(m, instrmcp.DDTraceKey)
 			}
 		}
 
@@ -83,12 +80,12 @@ var processAndRemoveDdtraceToolMiddleware = func(next server.ToolHandlerFunc) se
 	}
 }
 
-func processDdtrace(ctx context.Context, m map[string]any) {
-	if m == nil {
+func processDDTrace(ctx context.Context, ddTraceVal map[string]any) {
+	if ddTraceVal == nil {
 		return
 	}
 
-	intentVal, exists := m["intent"]
+	intentVal, exists := ddTraceVal[instrmcp.IntentKey]
 	if !exists {
 		return
 	}
