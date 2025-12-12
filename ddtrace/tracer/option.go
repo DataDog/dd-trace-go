@@ -127,9 +127,6 @@ var (
 
 	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
 	defaultMaxTagsHeaderLen = 512
-
-	// defaultRateLimit specifies the default trace rate limit used when DD_TRACE_RATE_LIMIT is not set.
-	defaultRateLimit = 100.0
 )
 
 // Supported trace protocols.
@@ -304,9 +301,6 @@ type config struct {
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
 
-	// traceRateLimitPerSecond specifies the rate limit for traces.
-	traceRateLimitPerSecond float64
-
 	// traceProtocol specifies the trace protocol to use.
 	traceProtocol float64
 
@@ -360,22 +354,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	c.sampler = NewAllSampler()
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
-
-	c.traceRateLimitPerSecond = defaultRateLimit
-	origin := telemetry.OriginDefault
-	if v, ok := env.Lookup("DD_TRACE_RATE_LIMIT"); ok {
-		l, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			log.Warn("DD_TRACE_RATE_LIMIT invalid, using default value %f: %v", defaultRateLimit, err.Error())
-		} else if l < 0.0 {
-			log.Warn("DD_TRACE_RATE_LIMIT negative, using default value %f", defaultRateLimit)
-		} else {
-			c.traceRateLimitPerSecond = l
-			origin = telemetry.OriginEnvVar
-		}
-	}
-
-	reportTelemetryOnAppStarted(telemetry.Configuration{Name: "trace_rate_limit", Value: c.traceRateLimitPerSecond, Origin: origin})
 
 	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -632,7 +610,7 @@ func apmTracingDisabled(c *config) {
 	// using the tracer as transport layer for their data. And finally adding the _dd.apm.enabled=0 tag to all traces
 	// to let the backend know that it needs to keep APM UI disabled.
 	c.internalConfig.SetGlobalSampleRate(1.0, internalconfig.OriginCalculated)
-	c.traceRateLimitPerSecond = 1.0 / 60
+	c.internalConfig.SetTraceRateLimitPerSecond(1.0/60, internalconfig.OriginCalculated)
 	c.tracingAsTransport = true
 	WithGlobalTag("_dd.apm.enabled", 0)(c)
 	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still

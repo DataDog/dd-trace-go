@@ -63,10 +63,11 @@ type Config struct {
 	dataStreamsMonitoringEnabled  bool
 	dynamicInstrumentationEnabled bool
 	// globalSampleRate holds the sample rate for the tracer.
-	globalSampleRate        float64
-	ciVisibilityEnabled     bool
-	ciVisibilityAgentless   bool
-	logDirectory            string
+	globalSampleRate      float64
+	ciVisibilityEnabled   bool
+	ciVisibilityAgentless bool
+	logDirectory          string
+	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
 	// logToStdout, if true, indicates we should log all traces to the standard output
 	logToStdout bool
@@ -106,7 +107,7 @@ func loadConfig() *Config {
 	cfg.ciVisibilityEnabled = provider.getBool("DD_CIVISIBILITY_ENABLED", false)
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
-	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -269,4 +270,17 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.globalSampleRate = rate
 	telemetry.RegisterAppConfig("DD_TRACE_SAMPLE_RATE", rate, origin)
+}
+
+func (c *Config) TraceRateLimitPerSecond() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceRateLimitPerSecond
+}
+
+func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.traceRateLimitPerSecond = rate
+	telemetry.RegisterAppConfig("DD_TRACE_RATE_LIMIT", rate, origin)
 }
