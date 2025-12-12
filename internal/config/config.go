@@ -79,6 +79,8 @@ type Config struct {
 	logToStdout bool
 	// isLambdaFunction, if true, indicates we are in a lambda function
 	isLambdaFunction bool
+	// debugStack enables the collection of debug stack traces globally. Error traces will not record a stack trace when this option is false.
+	debugStack bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -115,6 +117,7 @@ func loadConfig() *Config {
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
+	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -354,4 +357,17 @@ func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin) 
 	defer c.mu.Unlock()
 	c.spanTimeout = timeout
 	telemetry.RegisterAppConfig("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
+}
+
+func (c *Config) DebugStack() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.debugStack
+}
+
+func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debugStack = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_STACK", enabled, origin)
 }
