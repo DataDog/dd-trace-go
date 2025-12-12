@@ -5,6 +5,7 @@ on:
     branches:
       - release-v*
       - mq-working-branch-**
+      - hannahkm/fix-upload
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
