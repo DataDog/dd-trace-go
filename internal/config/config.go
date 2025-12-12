@@ -73,7 +73,8 @@ type Config struct {
 	globalSampleRate      float64
 	ciVisibilityEnabled   bool
 	ciVisibilityAgentless bool
-	logDirectory          string
+	// logDirectory is directory for tracer logs
+	logDirectory string
 	// traceRateLimitPerSecond specifies the rate limit for traces.
 	traceRateLimitPerSecond float64
 	// logToStdout, if true, indicates we should log all traces to the standard output
@@ -384,4 +385,17 @@ func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origi
 	defer c.mu.Unlock()
 	c.statsComputationEnabled = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
+}
+
+func (c *Config) LogDirectory() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logDirectory
+}
+
+func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logDirectory = directory
+	telemetry.RegisterAppConfig("DD_TRACE_LOG_DIRECTORY", directory, origin)
 }
