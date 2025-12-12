@@ -76,20 +76,6 @@ func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
 	p.setTracerTags(t)
 	p.buf.Grow(t.Msgsize())
 
-	for _, span := range t {
-		if span != nil {
-			span.mu.RLock()
-		}
-	}
-
-	defer func() {
-		for _, span := range t {
-			if span != nil {
-				span.mu.RUnlock()
-			}
-		}
-	}()
-
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return payloadStats{}, err
 	}

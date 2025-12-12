@@ -409,7 +409,6 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		if span == nil {
 			continue
 		}
-		span.mu.RLock()
 		p.buf = msgp.AppendMapHeader(p.buf, 16) // number of fields in span
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, span.service, st)
@@ -458,7 +457,6 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 
 		spanKind := span.meta[ext.SpanKind]
 		p.buf = encodeField(p.buf, fullSetBitmap, 16, getSpanKindValue(spanKind), st)
-		span.mu.RUnlock()
 	}
 	return true, nil
 }
