@@ -7,6 +7,7 @@ package http_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -66,6 +67,40 @@ func ExampleWrapClient() {
 		w.Write([]byte(resp.Status))
 	})
 	http.ListenAndServe(":8080", mux)
+}
+
+// ExampleWrapClient_withClientTimings demonstrates how to enable detailed HTTP request tracing
+// using httptrace.ClientTrace. This provides timing information for DNS lookups, connection
+// establishment, TLS handshakes, and other HTTP request events as span tags.
+func ExampleWrapClient_withClientTimings() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create a test server for demonstration
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}))
+	defer server.Close()
+
+	// Create an HTTP client with ClientTimings enabled
+	c := httptrace.WrapClient(http.DefaultClient, httptrace.WithClientTimings(true))
+
+	// Make a request - the span will include detailed timing information
+	// such as http.dns.duration_ms, http.connect.duration_ms, etc.
+	req, _ := http.NewRequest(http.MethodGet, server.URL, nil)
+	resp, err := c.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	// The resulting span will contain timing tags like:
+	// - http.dns.duration_ms: Time spent on DNS resolution
+	// - http.connect.duration_ms: Time spent establishing connection
+	// - http.tls.duration_ms: Time spent on TLS handshake
+	// - http.get_conn.duration_ms: Time spent getting connection from pool
+	// - http.first_byte.duration_ms: Time to first response byte
 }
 
 func traceMiddleware(mux *http.ServeMux, next http.Handler) http.Handler {

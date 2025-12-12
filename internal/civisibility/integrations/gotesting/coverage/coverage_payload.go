@@ -56,12 +56,12 @@ func newCoveragePayload() *coveragePayload {
 
 // push pushes a new item into the stream.
 func (p *coveragePayload) push(testCoverageData *ciTestCoverageData) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	startTime := time.Now()
 	defer func() {
 		p.serializationTime += time.Since(startTime)
 	}()
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.buf.Grow(testCoverageData.Msgsize())
 	if err := msgp.Encode(&p.buf, testCoverageData); err != nil {
 		return err
@@ -162,7 +162,7 @@ func (p *coveragePayload) Read(b []byte) (n int, err error) {
 //	An error if reading from the buffer or encoding the payload fails.
 func (p *coveragePayload) getBuffer() (*bytes.Buffer, error) {
 	startTime := time.Now()
-	log.Debug("coveragePayload: .getBuffer (count: %v)", p.itemCount())
+	log.Debug("coveragePayload: .getBuffer (count: %d)", p.itemCount())
 
 	// Create a buffer to read the current payload
 	payloadBuf := new(bytes.Buffer)

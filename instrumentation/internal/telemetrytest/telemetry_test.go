@@ -46,6 +46,9 @@ func TestTelemetryEnabled(t *testing.T) {
 		if filepath.Base(path) != "go.mod" {
 			return nil
 		}
+		if strings.Contains(path, "integration_tests") {
+			return nil
+		}
 		rErr := testTelemetryEnabled(t, filepath.Dir(path))
 		if rErr != nil {
 			return fmt.Errorf("path: %s, err: %w", path, rErr)

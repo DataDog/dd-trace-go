@@ -1,0 +1,82 @@
+{
+  "version": "2.2",
+  "metadata": { "rules_version": "1.10.0" },
+  "rules": [
+    {
+      "id": "test-001",
+      "name": "Test 001 rule",
+      "tags": { "type": "commercial_scanner", "category": "attack_attemp" },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              { "address": "server.request.query" },
+              { "address": "server.request.uri.raw" },
+              { "address": "server.request.body" }
+            ],
+            "regex": "testattack",
+            "options": { "case_sensitive": false }
+          },
+          "operator": "match_regex"
+        }
+      ]
+    }
+  ],
+  "processors": [
+    {
+      "id": "extract-content",
+      "generator": "extract_schema",
+      "conditions": [
+        {
+          "operator": "equals",
+          "parameters": {
+            "inputs": [
+              {
+                "address": "waf.context.processor",
+                "key_path": ["extract-schema"]
+              }
+            ],
+            "type": "boolean",
+            "value": true
+          }
+        }
+      ],
+      "parameters": {
+        "mappings": [
+          {
+            "inputs": [{ "address": "server.request.query" }],
+            "output": "_dd.appsec.s.req.querytest"
+          },
+          {
+            "inputs": [{ "address": "server.request.body" }],
+            "output": "_dd.appsec.s.req.bodytest"
+          }
+        ],
+        "scanners": [{ "tags": { "category": "pii" } }]
+      },
+      "evaluate": true,
+      "output": true
+    }
+  ],
+  "scanners": [
+    {
+      "id": "test-scanner-001",
+      "name": "Standard E-mail Address",
+      "key": {
+        "operator": "match_regex",
+        "parameters": {
+          "regex": "\\b(?:(?:e[-\\s]?)?mail|address|sender|\\bto\\b|from|recipient)\\b",
+          "options": { "case_sensitive": false, "min_length": 2 }
+        }
+      },
+      "value": {
+        "operator": "match_regex",
+        "parameters": {
+          "regex": "\\b[\\w!#$%&'*+/=?`{|}~^-]+(?:\\.[\\w!#$%&'*+/=?`{|}~^-]+)*(%40|@)(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,6}\\b",
+          "options": { "case_sensitive": false, "min_length": 5 }
+        }
+      },
+      "tags": { "type": "email", "category": "pii" }
+    }
+  ]
+}

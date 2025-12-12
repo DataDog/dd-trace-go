@@ -17,12 +17,12 @@
 #      select one by default, but also allows to provide a --build-arg option
 #      too instead of relying on the --target option. This way, the CI matrix
 #      can systematically use --build-arg for all of the parameters.
-ARG go="1.23" # golang docker image parameter in `golang:{go}-{buildenv}`
-ARG build_env="bookworm" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG go="1.24" # golang docker image parameter in `golang:{go}-{buildenv}`
+ARG build_env="trixie" # golang docker image parameter in `golang:{go}-{buildenv}`
 ARG build_with_cgo="0" # 0 or 1
 ARG build_with_vendoring="" # y or empty
 ARG build_tags=""
-ARG deployment_env="debian12"
+ARG deployment_env="debian13"
 
 # Build stage compiling the test app in the golang image, along with sub-options
 # to possibly enable CGO and vendoring.
@@ -37,7 +37,7 @@ RUN go env -w CGO_ENABLED=$build_with_cgo
 
 # GCC and the C library headers are needed for compilation of runtime/cgo with
 # CGO_ENABLED=1 - but the golang:alpine image doesn't provide them out of the box.
-ARG build_env="bookworm"
+ARG build_env="trixie"
 RUN set -ex; if [ "$build_env" = "alpine" ] && [ "$build_with_cgo" = "1" ]; then \
       apk update && apk add gcc libc-dev; \
     fi
@@ -63,21 +63,21 @@ ARG build_tags
 RUN go env && go build -v -tags "$build_tags" -o smoke-test .
 RUN ldd smoke-test || true
 
-# debian11 deployment environment
-# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
-# this image to preperly highlight the fact that the compiled program is running
-# out of the box in it without any further installation.
-FROM debian:11 AS debian11
-COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
-
 # debian12 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
 FROM debian:12 AS debian12
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
+
+# debian13 deployment environment
+# IMPORTANT NOTE: Nothing else than the compiled program must be copied into
+# this image to preperly highlight the fact that the compiled program is running
+# out of the box in it without any further installation.
+FROM debian:13 AS debian13
+COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
+CMD ["/usr/local/bin/smoke-test"]
 
 # alpine deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -89,7 +89,7 @@ RUN set -ex; if [ "$build_with_cgo" = "1" ]; then \
       apk update && apk add libc6-compat; \
     fi
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # amazonlinux:2 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -97,7 +97,7 @@ CMD /usr/local/bin/smoke-test
 # out of the box in it without any further installation.
 FROM amazonlinux:2 AS al2
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # amazonlinux:2023 deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -105,7 +105,7 @@ CMD /usr/local/bin/smoke-test
 # out of the box in it without any further installation.
 FROM amazonlinux:2023 AS al2023
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # busybox deployment environment
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
@@ -114,15 +114,15 @@ CMD /usr/local/bin/smoke-test
 FROM busybox AS busybox
 RUN mkdir -p /usr/local/bin
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
-CMD /usr/local/bin/smoke-test
+CMD ["/usr/local/bin/smoke-test"]
 
 # scratch deployment environment - meant to be used with CGO_ENABLED=0
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM scratch AS scratch
+FROM scratch AS scratchy
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /
-ENTRYPOINT [ "/smoke-test" ]
+CMD ["/smoke-test"]
 
 # Final deployment environment - helper target to end up a single one
 FROM $deployment_env AS deployment-env

@@ -1,0 +1,11 @@
+{
+    "my-custom-event": {
+        "hello": 100
+    },
+    "fake-id": "12345678910",
+    "headers": {
+        "x-datadog-trace-id": "1231452342",
+        "x-datadog-parent-id": "45678910",
+        "x-datadog-sampling-priority": "2"
+    }
+}

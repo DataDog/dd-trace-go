@@ -6,6 +6,8 @@
 package telemetrytest
 
 import (
+	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -92,6 +94,8 @@ func (r *RecordClient) metric(kind string, namespace telemetry.Namespace, name s
 
 func (r *RecordClient) Count(namespace telemetry.Namespace, name string, tags []string) telemetry.MetricHandle {
 	return r.metric(string(transport.CountMetric), namespace, name, tags, func(handle *RecordMetricHandle, value float64) {
+		// DEBUG LOGGING
+		fmt.Printf("Count %s %s %v %.0f (prev=%.0f, new=%.0f)\n", namespace, name, tags, value, handle.count, handle.count+value)
 		handle.count += value
 	}, func(handle *RecordMetricHandle) float64 {
 		return handle.count
@@ -130,12 +134,12 @@ func (r *RecordClient) Distribution(namespace telemetry.Namespace, name string, 
 	})
 }
 
-func (r *RecordClient) Log(level telemetry.LogLevel, text string, _ ...telemetry.LogOption) {
+func (r *RecordClient) Log(record telemetry.Record, _ ...telemetry.LogOption) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Logs = append(r.Logs, LogLine{
-		Level: level,
-		Text:  text,
+		Level: slogLevelToLogLevel(record.Level),
+		Text:  record.Message,
 	})
 }
 
@@ -214,4 +218,17 @@ func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value
 	}
 
 	t.Fatalf("could not find configuration key %s with value %v", key, value)
+}
+
+func slogLevelToLogLevel(level slog.Level) telemetry.LogLevel {
+	switch level {
+	case slog.LevelDebug:
+		return telemetry.LogDebug
+	case slog.LevelWarn:
+		return telemetry.LogWarn
+	case slog.LevelError:
+		return telemetry.LogError
+	default:
+		return telemetry.LogError
+	}
 }

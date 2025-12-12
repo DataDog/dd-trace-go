@@ -11,8 +11,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/containers"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/require"
@@ -42,7 +42,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	addr, err := tc.server.HttpHostAddress(ctx)
 	if err != nil {
 		defer tc.server.Terminate(ctx)
-		t.Skipf("Failed to get vault container address: %v\n", err)
+		t.Skipf("Failed to get vault container address: %s\n", err.Error())
 	}
 	c, err := api.NewClient(&api.Config{
 		Address: addr,

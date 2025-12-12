@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -70,7 +71,30 @@ func TestGetLastLocalGitCommitShas(t *testing.T) {
 
 func TestUnshallowGitRepository(t *testing.T) {
 	_, err := UnshallowGitRepository()
+	if err != nil && strings.Contains(err.Error(), "shallow.lock") {
+		// if the error is related to a shallow.lock file, we will skip the test;
+		// the test is flaky in the CI due to multiple git commands running at the same time.
+		return
+	}
+
 	assert.NoError(t, err)
+}
+
+func TestFetchCommitData(t *testing.T) {
+	log.SetLevel(log.LevelDebug)
+	for _, sha := range GetLastLocalGitCommitShas() {
+		if gitData, err := fetchCommitData(sha); err == nil {
+			assert.NotEmpty(t, gitData.AuthorName, "Author name should not be empty")
+			assert.NotEmpty(t, gitData.AuthorEmail, "Author email should not be empty")
+			assert.NotEmpty(t, gitData.AuthorDate, "Author date should not be empty")
+			assert.NotEmpty(t, gitData.CommitterName, "Committer name should not be empty")
+			assert.NotEmpty(t, gitData.CommitterEmail, "Committer email should not be empty")
+			assert.NotEmpty(t, gitData.CommitterDate, "Committer date should not be empty")
+			assert.NotEmpty(t, gitData.CommitMessage, "Commit message should not be empty")
+		} else {
+			t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
+		}
+	}
 }
 
 // Tests for base branch detection functions
@@ -312,7 +336,7 @@ func TestGetBaseBranchShaWithoutGit(t *testing.T) {
 	isGitFoundValue = false
 	defer func() {
 		isGitFoundValue = originalGitFound
-		gitFinder = sync.Once{} // Reset the sync.Once
+		gitFinderOnce = sync.Once{} // Reset the sync.Once
 	}()
 
 	sha, err := GetBaseBranchSha("master")

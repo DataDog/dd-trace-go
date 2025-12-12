@@ -19,6 +19,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -462,9 +463,10 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 		if rule.match(span) {
 			matched = true
 			rate = rule.Rate
-			if rule.Provenance == Customer {
+			switch rule.Provenance {
+			case Customer:
 				sampler = samplernames.RemoteUserRule
-			} else if rule.Provenance == Dynamic {
+			case Dynamic:
 				sampler = samplernames.RemoteDynamicRule
 			}
 			break
@@ -493,6 +495,8 @@ func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, 
 
 	span.setMetric(keyRulesSamplerAppliedRate, rate)
 	delete(span.metrics, keySamplingPriorityRate)
+	// Set the Knuth sampling rate tag when trace sampling rules are applied
+	span.setMeta(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 	if !sampledByRate(span.traceID, rate) {
 		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
 		return
@@ -561,7 +565,6 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
 			rate := rule.Rate
-			span.setMetric(keyRulesSamplerAppliedRate, rate)
 			if !sampledByRate(span.spanID, rate) {
 				return false
 			}
@@ -669,16 +672,16 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 	}()
 
 	rulesByType := func(spanType SamplingRuleType) (rules []SamplingRule, errs []string) {
-		env := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
-		rulesEnv := os.Getenv(fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String())))
+		envKey := fmt.Sprintf("DD_%s_SAMPLING_RULES", strings.ToUpper(spanType.String()))
+		rulesEnv := env.Get(envKey)
 		rules, err := unmarshalSamplingRules([]byte(rulesEnv), spanType)
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-		rulesFile := os.Getenv(env + "_FILE")
+		rulesFile := env.Get(envKey + "_FILE")
 		if len(rules) != 0 {
 			if rulesFile != "" {
-				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", env, env)
+				log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", envKey, envKey)
 			}
 			return rules, errs
 		}
@@ -687,7 +690,7 @@ func samplingRulesFromEnv() (trace, span []SamplingRule, err error) {
 		}
 		rulesFromEnvFile, err := os.ReadFile(rulesFile)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", env, err))
+			errs = append(errs, fmt.Sprintf("Couldn't read file from %s_FILE: %v", envKey, err))
 		}
 		rules, err = unmarshalSamplingRules(rulesFromEnvFile, spanType)
 		if err != nil {
@@ -773,7 +776,7 @@ func unmarshalSamplingRules(b []byte, spanType SamplingRuleType) ([]SamplingRule
 	//	 if the JSON is an array, unmarshal it as an array of rules
 	err := json.Unmarshal(b, &jsonRules)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
+		return nil, fmt.Errorf("error unmarshalling JSON: %s", err.Error())
 	}
 	return validateRules(jsonRules, spanType)
 }
@@ -869,7 +872,7 @@ func (sr SamplingRule) MarshalJSON() ([]byte, error) {
 func (sr SamplingRule) String() string {
 	s, err := sr.MarshalJSON()
 	if err != nil {
-		log.Error("Error marshalling SamplingRule to json: %v", err)
+		log.Error("Error marshalling SamplingRule to json: %s", err.Error())
 	}
 	return string(s)
 }

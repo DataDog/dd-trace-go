@@ -1,0 +1,13 @@
+issuer: https://token.actions.githubusercontent.com
+subject: repo:DataDog/dd-trace-go:ref:refs/heads/main
+
+claim_pattern:
+  ref: refs/heads/main
+  ref_protected: "true"
+  repository: DataDog/dd-trace-go
+  job_workflow_ref: DataDog/dd-trace-go/.github/workflows/outdated-integrations.yml@.*
+
+permissions:
+  actions: read
+  contents: write
+  pull_requests: write

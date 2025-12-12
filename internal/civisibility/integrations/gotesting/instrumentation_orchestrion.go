@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // ******************************************************************************************************************
@@ -41,6 +42,8 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return func(_ int) {}
 	}
+
+	log.Debug("instrumentTestingM: initializing CI Visibility for testing.M")
 
 	// Initialize CI Visibility
 	integrations.EnsureCiVisibilityInitialization()
@@ -82,6 +85,8 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	}
 
 	return func(exitCode int) {
+		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
+
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
 			// let's try first with our coverage package
@@ -112,6 +117,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 		return f
 	}
 
+	log.Debug("instrumentTestingTFunc: instrumenting test function")
+
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
 	moduleName, suiteName := utils.GetModuleAndSuiteName(fReflect.Pointer())
@@ -133,112 +140,157 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			suiteName = testifyData.suiteName
 		}
 
-		// Initialize module counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
-		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		subtestIdentity := newTestIdentity(moduleName, suiteName, t.Name())
+		isSubtest := len(subtestIdentity.Segments) > 1
 
-		// Initialize suite counters if not already present.
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
-		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		var testPrivateFields *commonPrivateFields
+		var parentExecMeta *testExecutionMetadata
 
-		// Create or retrieve the module, suite, and test for CI visibility.
-		module := session.GetOrCreateModule(moduleName)
-		suite := module.GetOrCreateSuite(suiteName)
-		test := suite.CreateTest(t.Name())
-
-		// If we have testify data we use the method function from testify so the test source is properly set
-		if testifyData != nil {
-			test.SetTestFunc(testifyData.methodFunc)
-		} else {
-			// If not, let's set the original function
-			test.SetTestFunc(originalFunc)
-		}
-
-		// Get the metadata regarding the execution (in case is already created from the additional features)
-		execMeta := getTestMetadata(t)
-		if execMeta == nil {
-			// in case there's no additional features then we create the metadata for this execution and defer the disposal
-			execMeta = createTestMetadata(t)
-			defer deleteTestMetadata(t)
-		}
-
-		// Because this is a subtest let's propagate some execution metadata from the parent test
-		testPrivateFields := getTestPrivateFields(t)
-		if testPrivateFields != nil && testPrivateFields.parent != nil {
-			parentExecMeta := getTestMetadataFromPointer(*testPrivateFields.parent)
-			propagateTestExecutionMetadataFlags(execMeta, parentExecMeta)
-		}
-
-		// Set some required tags from the execution metadata
-		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
-		if cancelExecution {
-			checkModuleAndSuite(module, suite)
-			return
-		}
-
-		defer func() {
-			// Collect and write logs
-			collectAndWriteLogs(t, test)
-
-			if r := recover(); r != nil {
-				// Handle panic and set error information.
-				if execMeta.isARetry && execMeta.isLastRetry {
-					if execMeta.allRetriesFailed {
-						test.SetTag(constants.TestHasFailedAllRetries, "true")
-					}
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
-				}
-				test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
-				test.Close(integrations.ResultStatusFail)
-				checkModuleAndSuite(module, suite)
-				// this is not an internal test. Retries are not applied to subtest (because the parent internal test is going to be retried)
-				// so for this case we avoid closing CI Visibility, but we don't stop the panic from happening.
-				// it will be handled by `t.Run`
-				if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
-					integrations.ExitCiVisibility()
-				}
-				panic(r)
+		if isSubtest {
+			testPrivateFields = getTestPrivateFields(t)
+			if testPrivateFields != nil && testPrivateFields.parent != nil {
+				parentExecMeta = getTestMetadataFromPointer(*testPrivateFields.parent)
 			}
-			// Normal finalization: determine the test result based on its state.
-			if t.Failed() {
-				if execMeta.isARetry && execMeta.isLastRetry {
-					if execMeta.allRetriesFailed {
-						test.SetTag(constants.TestHasFailedAllRetries, "true")
+
+			settings := integrations.GetSettings()
+			shouldInstrument := settings != nil && settings.SubtestFeaturesEnabled
+			hasDirective := false
+
+			log.Debug("subtest gating module=%s suite=%s identity=%s", moduleName, suiteName, subtestIdentity.FullName)
+
+			if parentExecMeta != nil {
+				if parentExecMeta.isAttemptToFix || parentExecMeta.isDisabled || parentExecMeta.isQuarantined {
+					hasDirective = true
+					log.Debug("subtest gating parent directive for %s: attempt_to_fix=%t disabled=%t quarantined=%t",
+						subtestIdentity.FullName, parentExecMeta.isAttemptToFix, parentExecMeta.isDisabled, parentExecMeta.isQuarantined)
+				}
+			}
+
+			if !hasDirective && shouldInstrument {
+				if data, matchKind, hasData := getTestManagementData(subtestIdentity); hasData && matchKind == testManagementMatchExact && data != nil {
+					if data.Disabled || data.Quarantined || data.AttemptToFix {
+						hasDirective = true
+						log.Debug("subtest gating exact match for %s: disabled=%t quarantined=%t attempt_to_fix=%t",
+							subtestIdentity.FullName, data.Disabled, data.Quarantined, data.AttemptToFix)
 					}
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
+				} else {
+					log.Debug("subtest gating no exact match for %s (hasData=%t matchKind=%d)", subtestIdentity.FullName, hasData, matchKind)
 				}
-				test.SetTag(ext.Error, true)
-				suite.SetTag(ext.Error, true)
-				module.SetTag(ext.Error, true)
-				test.Close(integrations.ResultStatusFail)
-			} else if t.Skipped() {
-				if execMeta.isARetry && execMeta.isLastRetry {
-					test.SetTag(constants.TestAttemptToFixPassed, "false")
-				}
-				test.Close(integrations.ResultStatusSkip)
+			}
+		}
+
+		subtestInfo := &commonInfo{
+			moduleName: moduleName,
+			suiteName:  suiteName,
+			testName:   subtestIdentity.FullName,
+			identity:   subtestIdentity,
+		}
+
+		runSubtest := func(currentT *testing.T) {
+			localIdentity := subtestIdentity
+			if currentT.Name() != subtestIdentity.FullName {
+				// Nested subtests have their own full identity path.
+				localIdentity = newTestIdentity(moduleName, suiteName, currentT.Name())
+			}
+
+			addModulesCounters(moduleName, 1)
+			addSuitesCounters(suiteName, 1)
+
+			log.Debug("instrumentTestingTFunc: creating test span for %s", currentT.Name())
+
+			module := session.GetOrCreateModule(moduleName)
+			suite := module.GetOrCreateSuite(suiteName)
+			test := suite.CreateTest(currentT.Name())
+
+			if testifyData != nil {
+				// Testify-based suites expose the original method so we should record that.
+				test.SetTestFunc(testifyData.methodFunc)
 			} else {
-				if execMeta.isARetry && execMeta.isLastRetry {
-					if execMeta.allAttemptsPassed {
-						test.SetTag(constants.TestAttemptToFixPassed, "true")
-					} else {
+				// Otherwise fall back to the standard testing function pointer.
+				test.SetTestFunc(originalFunc)
+			}
+
+			execMeta := getTestMetadata(currentT)
+			if execMeta == nil {
+				// Create fresh metadata when additional-feature wrappers were not executed above us.
+				execMeta = createTestMetadata(currentT, nil)
+				defer deleteTestMetadata(currentT)
+			}
+			execMeta.identity = localIdentity
+
+			currentPrivates := getTestPrivateFields(currentT)
+			if currentPrivates != nil && currentPrivates.parent != nil {
+				parentFromCurrent := getTestMetadataFromPointer(*currentPrivates.parent)
+				propagateTestExecutionMetadataFlags(execMeta, parentFromCurrent)
+			}
+
+			cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
+			if cancelExecution {
+				checkModuleAndSuite(module, suite)
+				return
+			}
+
+			defer func() {
+				collectAndWriteLogs(currentT, test)
+
+				if r := recover(); r != nil {
+					// Set failure metadata before rethrowing the panic.
+					if execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allRetriesFailed {
+							test.SetTag(constants.TestHasFailedAllRetries, "true")
+						}
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
+					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
+					test.Close(integrations.ResultStatusFail)
+					checkModuleAndSuite(module, suite)
+					if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
+						integrations.ExitCiVisibility()
+					}
+					panic(r)
+				}
+
+				if currentT.Failed() {
+					// Failure path: bubble up retry metadata so spans reflect attempts.
+					if execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allRetriesFailed {
+							test.SetTag(constants.TestHasFailedAllRetries, "true")
+						}
+						if execMeta.isAttemptToFix {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
+					test.SetTag(ext.Error, true)
+					suite.SetTag(ext.Error, true)
+					module.SetTag(ext.Error, true)
+					test.Close(integrations.ResultStatusFail)
+				} else if currentT.Skipped() {
+					// Skip path still needs to communicate attempt-to-fix failure on the final run.
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
 						test.SetTag(constants.TestAttemptToFixPassed, "false")
 					}
+					test.Close(integrations.ResultStatusSkip)
+				} else {
+					// Success path: tag attempt-to-fix success only if all retries eventually passed.
+					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+						if execMeta.allAttemptsPassed {
+							test.SetTag(constants.TestAttemptToFixPassed, "true")
+						} else {
+							test.SetTag(constants.TestAttemptToFixPassed, "false")
+						}
+					}
+					test.Close(integrations.ResultStatusPass)
 				}
-				test.Close(integrations.ResultStatusPass)
-			}
-			checkModuleAndSuite(module, suite)
-		}()
+				checkModuleAndSuite(module, suite)
+			}()
 
-		// Execute the original test function.
-		f(t)
+			f(currentT)
+		}
+
+		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta)
+		wrappedFunc(t)
 	}
 
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFn)).Pointer()), &instrumentationMetadata{IsInternal: true})
@@ -257,6 +309,7 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	// Get the CI Visibility span and check if we can set the error type, message and stack
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.error.CompareAndSwap(0, 1) {
+		log.Debug("instrumentSetErrorInfo: setting error info [name: %q, type: %q, message: %q]", ciTestItem.test.Name(), errType, errMessage)
 		ciTestItem.test.SetError(integrations.WithErrorInfo(errType, errMessage, utils.GetStacktrace(2+skip)))
 
 		// Ensure to close the test with error before CI visibility exits. In CI visibility mode, we try to never lose data.
@@ -279,6 +332,7 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
+		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
 		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
@@ -295,6 +349,7 @@ func instrumentSkipNow(tb testing.TB) {
 	// Get the CI Visibility span and check if we can mark it as skipped and close it
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
+		log.Debug("instrumentSkipNow: skipping test [name: %q]", ciTestItem.test.Name())
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }
@@ -307,6 +362,8 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 	if !isCiVisibilityEnabled() {
 		return name, f
 	}
+
+	log.Debug("instrumentTestingBFunc: instrumenting benchmark function [name: %q]", name)
 
 	// Reflect the function to obtain its pointer.
 	fReflect := reflect.Indirect(reflect.ValueOf(f))
@@ -328,21 +385,11 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 		//		benchmark/[DD:TestVisibility]/child
 		// We use regex and decrement the depth level of the benchmark to restore the original name
 
-		// Initialize module counters if not already present.
-		if _, ok := modulesCounters[moduleName]; !ok {
-			var v int32
-			modulesCounters[moduleName] = &v
-		}
 		// Increment the test count in the module.
-		atomic.AddInt32(modulesCounters[moduleName], 1)
+		addModulesCounters(moduleName, 1)
 
-		// Initialize suite counters if not already present.
-		if _, ok := suitesCounters[suiteName]; !ok {
-			var v int32
-			suitesCounters[suiteName] = &v
-		}
 		// Increment the test count in the suite.
-		atomic.AddInt32(suitesCounters[suiteName], 1)
+		addSuitesCounters(suiteName, 1)
 
 		// Decrement level.
 		bpf := getBenchmarkPrivateFields(b)
@@ -395,7 +442,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 			execMeta := getTestMetadata(b)
 			if execMeta == nil {
 				// in case there's no additional features then we create the metadata for this execution and defer the disposal
-				execMeta = createTestMetadata(b)
+				execMeta = createTestMetadata(b, nil)
 				defer deleteTestMetadata(b)
 			}
 
@@ -476,6 +523,7 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 //
 //go:linkname instrumentTestifySuiteRun
 func instrumentTestifySuiteRun(t *testing.T, suite any) {
+	log.Debug("instrumentTestifySuiteRun: instrumenting testify suite run")
 	registerTestifySuite(t, suite)
 }
 
@@ -484,6 +532,7 @@ func instrumentTestifySuiteRun(t *testing.T, suite any) {
 //go:linkname getTestOptimizationContext
 func getTestOptimizationContext(tb testing.TB) context.Context {
 	if iTest := getTestOptimizationTest(tb); iTest != nil {
+		log.Debug("getTestOptimizationContext: returning context from test")
 		return iTest.Context()
 	}
 
@@ -496,8 +545,29 @@ func getTestOptimizationContext(tb testing.TB) context.Context {
 func getTestOptimizationTest(tb testing.TB) integrations.Test {
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil {
+		log.Debug("getTestOptimizationTest: returning test from metadata")
 		return ciTestItem.test
 	}
 
 	return nil
+}
+
+// instrumentTestingParallel helper function to instrument the Parallel method of a `*testing.T` instance
+//
+//go:linkname instrumentTestingParallel
+func instrumentTestingParallel(t *testing.T) bool {
+	// Check if CI Visibility was disabled using the kill switch before
+	if !isCiVisibilityEnabled() {
+		return false
+	}
+
+	meta := getTestMetadata(t)
+	if meta != nil && meta.originalTest != nil {
+		// if we have an original test, we call parallel on it
+		log.Debug("instrumentTestingParallel: calling Parallel on original test")
+		meta.originalTest.Parallel()
+		return true
+	}
+
+	return false
 }

@@ -54,13 +54,13 @@ func injectTraceContext(span *tracer.Span, input *string) *string {
 	}
 	traceCtxCarrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.Context(), traceCtxCarrier); err != nil {
-		instr.Logger().Debug("Unable to inject trace context: %s", err)
+		instr.Logger().Debug("Unable to inject trace context: %s", err.Error())
 		return input
 	}
 
 	traceCtxJSON, err := json.Marshal(traceCtxCarrier)
 	if err != nil {
-		instr.Logger().Debug("Unable to marshal trace context: %s", err)
+		instr.Logger().Debug("Unable to marshal trace context: %s", err.Error())
 		return input
 	}
 

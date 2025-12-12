@@ -6,7 +6,6 @@
 package instrumentation
 
 import (
-	"fmt"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -29,23 +28,19 @@ func newLogger(pkg Package) *logger {
 }
 
 func (l logger) Debug(msg string, args ...any) {
-	log.Debug(msg, args...)
+	log.Debug(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func (l logger) Info(msg string, args ...any) {
-	log.Info(msg, args...)
+	log.Info(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func (l logger) Warn(msg string, args ...any) {
-	log.Warn(msg, args...)
-	if hasErrors(args...) {
-		telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
-	}
+	log.Warn(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func (l logger) Error(msg string, args ...any) {
-	log.Error(msg, args...)
-	telemetry.Log(telemetry.LogError, fmt.Sprintf(msg, args...), l.logOpts...)
+	log.Error(msg, args...) //nolint:gocritic // Logger plumbing needs to pass through variable format strings
 }
 
 func hasErrors(args ...any) bool {

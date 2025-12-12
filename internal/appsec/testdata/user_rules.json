@@ -50,7 +50,7 @@
             ],
             "transformers": [],
             "on_match": [
-                "block"
+                "block_418"
             ]
         },
         {
@@ -76,10 +76,9 @@
             ],
             "transformers": [],
             "on_match": [
-                "block"
+                "block_418"
             ]
         },
-
         {
             "id": "headers-003",
             "name": "query match",
@@ -103,7 +102,7 @@
             ],
             "transformers": [],
             "on_match": [
-                "block"
+                "block_418"
             ]
         }
     ],
@@ -130,11 +129,256 @@
                 }
             ],
             "transformers": []
+        },
+        {
+            "id": "ua0-600-55x",
+            "name": "Datadog test scanner: user-agent",
+            "tags": {
+                "type": "security_scanner",
+                "category": "attack_attempt",
+                "cwe": "200",
+                "capec": "1000/118/169",
+                "tool_name": "Datadog Canary Test",
+                "confidence": "1",
+                "module": "waf"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.headers.no_cookies",
+                                "key_path": [
+                                    "user-agent"
+                                ]
+                            },
+                            {
+                                "address": "grpc.server.request.metadata",
+                                "key_path": [
+                                    "dd-canary"
+                                ]
+                            }
+                        ],
+                        "regex": "^dd-test-scanner-log(?:$|/|\\s)"
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": []
+        },
+        {
+            "id": "ua0-600-56x",
+            "name": "Datadog test scanner - blocking version: user-agent",
+            "tags": {
+                "type": "attack_tool",
+                "category": "attack_attempt",
+                "cwe": "200",
+                "capec": "1000/118/169",
+                "tool_name": "Datadog Canary Test",
+                "confidence": "1",
+                "module": "waf"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.headers.no_cookies",
+                                "key_path": [
+                                    "user-agent"
+                                ]
+                            },
+                            {
+                                "address": "grpc.server.request.metadata",
+                                "key_path": [
+                                    "dd-canary"
+                                ]
+                            }
+                        ],
+                        "regex": "^dd-test-scanner-log-block(?:$|/|\\s)"
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": [],
+            "on_match": [
+                "block"
+            ]
+        },
+        {
+            "id": "crs-941-110",
+            "name": "XSS Filter - Category 1: Script Tag Vector",
+            "tags": {
+                "type": "xss",
+                "crs_id": "941110",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.headers.no_cookies",
+                                "key_path": [
+                                    "user-agent"
+                                ]
+                            },
+                            {
+                                "address": "server.request.headers.no_cookies",
+                                "key_path": [
+                                    "referer"
+                                ]
+                            },
+                            {
+                                "address": "server.request.query"
+                            },
+                            {
+                                "address": "server.request.body"
+                            },
+                            {
+                                "address": "server.request.path_params"
+                            },
+                            {
+                                "address": "grpc.server.request.message"
+                            }
+                        ],
+                        "regex": "<script[^>]*>[\\s\\S]*?",
+                        "options": {
+                            "min_length": 8
+                        }
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": [
+                "removeNulls"
+            ]
+        },
+        {
+            "id": "crs-933-130-block",
+            "name": "PHP Injection Attack: Global Variables Found",
+            "tags": {
+                "type": "php_code_injection",
+                "crs_id": "933130",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.request.query"
+                            },
+                            {
+                                "address": "server.request.body"
+                            },
+                            {
+                                "address": "server.request.path_params"
+                            },
+                            {
+                                "address": "grpc.server.request.message"
+                            }
+                        ],
+                        "list": [
+                            "$globals",
+                            "$_cookie",
+                            "$_env",
+                            "$_files",
+                            "$_get",
+                            "$_post",
+                            "$_request",
+                            "$_server",
+                            "$_session",
+                            "$argc",
+                            "$argv",
+                            "$http_\\u200bresponse_\\u200bheader",
+                            "$php_\\u200berrormsg",
+                            "$http_cookie_vars",
+                            "$http_env_vars",
+                            "$http_get_vars",
+                            "$http_post_files",
+                            "$http_post_vars",
+                            "$http_raw_post_data",
+                            "$http_request_vars",
+                            "$http_server_vars"
+                        ]
+                    },
+                    "operator": "phrase_match"
+                }
+            ],
+            "transformers": [
+                "lowercase"
+            ],
+            "on_match": [
+                "block"
+            ]
+        },
+        {
+            "id": "blk-001-001",
+            "name": "Block IP Addresses",
+            "tags": {
+                "type": "block_ip",
+                "category": "security_response"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "http.client_ip"
+                            }
+                        ],
+                        "data": "blocked_ips"
+                    },
+                    "operator": "ip_match"
+                }
+            ],
+            "transformers": [],
+            "on_match": [
+                "block"
+            ]
+        },
+        {
+            "id": "headers-004",
+            "name": "query match monitor",
+            "tags": {
+                "type": "security_scanner",
+                "category": "attack_attempt",
+                "confidence": "1"
+            },
+            "conditions": [
+                {
+                    "parameters": {
+                        "inputs": [
+                            {
+                                "address": "server.response.headers.no_cookies",
+                                "key_path": [
+                                    "test"
+                                ]
+                            }
+                        ],
+                        "regex": "match-no-block-response-header"
+                    },
+                    "operator": "match_regex"
+                }
+            ],
+            "transformers": []
+        }
+    ],
+    "rules_data": [
+        {
+            "id": "blocked_ips",
+            "type": "ip_with_expiration",
+            "data": [
+                { "value": "111.222.111.222" }
+            ]
         }
     ],
     "actions":[
         {
-            "id": "block",
+            "id": "block_418",
             "type": "block_request",
             "parameters": {
                 "status_code": 418,

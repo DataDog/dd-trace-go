@@ -92,7 +92,7 @@ func (c *client) GetSkippableTests() (correlationID string, skippables map[strin
 
 	if err != nil {
 		telemetry.ITRSkippableTestsRequestErrors(telemetry.NetworkErrorType)
-		return "", nil, fmt.Errorf("sending skippable tests request: %s", err.Error())
+		return "", nil, fmt.Errorf("sending skippable tests request: %s", err)
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -108,7 +108,7 @@ func (c *client) GetSkippableTests() (correlationID string, skippables map[strin
 	var responseObject skippableResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return "", nil, fmt.Errorf("unmarshalling skippable tests response: %s", err.Error())
+		return "", nil, fmt.Errorf("unmarshalling skippable tests response: %s", err)
 	}
 
 	telemetry.ITRSkippableTestsResponseTests(float64(len(responseObject.Data)))

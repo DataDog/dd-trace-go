@@ -16,10 +16,10 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -48,7 +48,7 @@ func (p *profiler) upload(bat batch) error {
 		if rerr, ok := err.(*retriableError); ok {
 			statsd.Count("datadog.profiling.go.upload_retry", 1, nil, 1)
 			wait := time.Duration(rand.Int63n(p.cfg.period.Nanoseconds())) * time.Nanosecond
-			log.Error("Uploading profile failed: %v. Trying again in %s...", rerr, wait)
+			log.Error("Uploading profile failed: %s. Trying again in %s...", rerr.Error(), wait)
 			p.interruptibleSleep(wait)
 			continue
 		}
@@ -197,7 +197,7 @@ func encode(bat batch, cfg *config) (contentType string, body io.Reader, err err
 	// admission controller. Otherwise, the client library doesn't care
 	// about the value and assumes it was something "truthy", or this code
 	// wouldn't run. We just track it to be consistent with other languages
-	if os.Getenv("DD_PROFILING_ENABLED") == "auto" {
+	if env.Get("DD_PROFILING_ENABLED") == "auto" {
 		event.Info.Profiler.Activation = "auto"
 	} else {
 		event.Info.Profiler.Activation = "manual"

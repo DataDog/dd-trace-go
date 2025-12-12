@@ -6,7 +6,7 @@
 // Package sarama provides functions to trace the Shopify/sarama package (https://github.com/Shopify/sarama).
 //
 // Deprecated: github.com/Shopify/sarama is no longer maintained. Please migrate to github.com/IBM/sarama
-// and use the corresponding instrumentation.
+// and use the corresponding integration. This integration will be removed in a future release.
 package sarama // import "github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2"
 
 import (

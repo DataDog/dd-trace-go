@@ -142,9 +142,9 @@ func Distribution(namespace Namespace, name string, tags []string) MetricHandle 
 	return globalClientNewMetric(namespace, transport.DistMetric, name, tags)
 }
 
-func Log(level LogLevel, text string, options ...LogOption) {
+func Log(record Record, options ...LogOption) {
 	globalClientCall(func(client Client) {
-		client.Log(level, text, options...)
+		client.Log(record, options...)
 	})
 }
 
@@ -228,9 +228,7 @@ func globalClientCall(fun func(client Client)) {
 	if client == nil || *client == nil {
 		if !globalClientRecorder.Record(fun) {
 			globalClientLogLossOnce.Do(func() {
-				msg := "telemetry: global client recorder queue is full, dropping telemetry data, please start the telemetry client earlier to avoid data loss"
-				log.Debug("%s\n", msg)
-				Log(LogError, msg, WithStacktrace())
+				log.Debug("telemetry: global client recorder queue is full, dropping telemetry data, please start the telemetry client earlier to avoid data loss")
 			})
 		}
 		return

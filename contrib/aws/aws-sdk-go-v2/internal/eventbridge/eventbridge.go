@@ -46,7 +46,7 @@ func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
-		instr.Logger().Debug("Unable to inject trace context: %s", err)
+		instr.Logger().Debug("Unable to inject trace context: %s", err.Error())
 		return
 	}
 
@@ -56,7 +56,7 @@ func handlePutEvents(span *tracer.Span, in middleware.InitializeInput) {
 
 	carrierJSON, err := json.Marshal(carrier)
 	if err != nil {
-		instr.Logger().Debug("Unable to marshal trace context: %s", err)
+		instr.Logger().Debug("Unable to marshal trace context: %s", err.Error())
 		return
 	}
 

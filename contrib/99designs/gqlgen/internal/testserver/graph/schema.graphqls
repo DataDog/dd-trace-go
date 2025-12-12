@@ -3,5 +3,5 @@
 # https://gqlgen.com/getting-started/
 
 type Query {
-  withError: ID
+    withError: ID
 }

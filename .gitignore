@@ -16,6 +16,7 @@ go.work*
 .idea
 dd-trace-go.iml
 vendor
+tmp
 
 /contrib_coverage.txt
 /core_coverage.txt

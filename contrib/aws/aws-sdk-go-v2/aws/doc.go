@@ -37,7 +37,7 @@
 //	func Example_context() {
 //		cfg, err := awscfg.LoadDefaultConfig(context.TODO(), awscfg.WithRegion("us-west-2"))
 //		if err != nil {
-//			log.Fatalf("error: %v", err)
+//			log.Fatalf("error: %s", err.Error())
 //		}
 //		awstrace.AppendMiddleware(&cfg)
 //		client := s3.NewFromConfig(cfg)
@@ -55,7 +55,7 @@
 //		filename := "my_image.png"
 //		file, err := os.Open(filename)
 //		if err != nil {
-//			log.Fatalf("error: %v", err)
+//			log.Fatalf("error: %s", err.Error())
 //		}
 //		defer file.Close()
 //
@@ -68,7 +68,7 @@
 //		// Inherit parent span from context.
 //		_, err = uploader.Upload(ctx, uploadParams)
 //		if err != nil {
-//			log.Fatalf("error: %v", err)
+//			log.Fatalf("error: %s", err.Error())
 //		}
 //	}
 package aws

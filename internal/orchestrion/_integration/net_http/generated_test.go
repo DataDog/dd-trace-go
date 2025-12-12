@@ -21,6 +21,10 @@ func TestFuncHandler(t *testing.T) {
 	harness.Run(t, new(TestCaseFuncHandler))
 }
 
+func TestGlobalFunctions(t *testing.T) {
+	harness.Run(t, new(TestCaseGlobalFunctions))
+}
+
 func TestHandlerImplementation(t *testing.T) {
 	harness.Run(t, new(TestCaseHandlerImplementation))
 }

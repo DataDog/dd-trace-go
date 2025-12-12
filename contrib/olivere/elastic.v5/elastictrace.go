@@ -4,6 +4,9 @@
 // Copyright 2016 Datadog, Inc.
 
 // Package elastic provides functions to trace the gopkg.in/olivere/elastic.v5 packages.
+//
+// Deprecated: https://github.com/olivere/elastic is deprecated. Please use the official Elasticsearch client for Go
+// at https://github.com/elastic/go-elasticsearch and use the corresponding integration. This integration will be removed in a future release.
 package elastic // import "github.com/DataDog/dd-trace-go/contrib/olivere/elastic/v2"
 
 import (

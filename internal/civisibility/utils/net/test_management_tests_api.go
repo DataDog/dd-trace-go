@@ -33,6 +33,7 @@ type (
 		CommitSha     string `json:"sha"`
 		Module        string `json:"module,omitempty"`
 		CommitMessage string `json:"commit_message"`
+		Branch        string `json:"branch"`
 	}
 
 	testManagementTestsResponse struct {
@@ -71,14 +72,27 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 		return nil, fmt.Errorf("civisibility.GetTestManagementTests: repository URL is required")
 	}
 
+	// we use the head commit SHA if it is set, otherwise we use the commit SHA
+	commitSha := c.commitSha
+	if c.headCommitSha != "" {
+		commitSha = c.headCommitSha
+	}
+
+	// we use the head commit message if it is set, otherwise we use the commit message
+	commitMessage := c.commitMessage
+	if c.headCommitMessage != "" {
+		commitMessage = c.headCommitMessage
+	}
+
 	body := testManagementTestsRequest{
 		Data: testManagementTestsRequestHeader{
 			ID:   c.id,
 			Type: testManagementTestsRequestType,
 			Attributes: testManagementTestsRequestData{
 				RepositoryURL: c.repositoryURL,
-				CommitSha:     c.commitSha,
-				CommitMessage: c.commitMessage,
+				CommitSha:     commitSha,
+				CommitMessage: commitMessage,
+				Branch:        c.branchName,
 			},
 		},
 	}
@@ -96,7 +110,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 
 	if err != nil {
 		telemetry.TestManagementTestsRequestErrors(telemetry.NetworkErrorType)
-		return nil, fmt.Errorf("sending known tests request: %s", err.Error())
+		return nil, fmt.Errorf("sending known tests request: %s", err)
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
@@ -111,7 +125,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 	var responseObject testManagementTestsResponse
 	err = response.Unmarshal(&responseObject)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshalling test management tests response: %s", err.Error())
+		return nil, fmt.Errorf("unmarshalling test management tests response: %s", err)
 	}
 
 	testCount := 0

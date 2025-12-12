@@ -7,9 +7,9 @@ package tracer
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -28,34 +28,33 @@ func reportTelemetryOnAppStarted(c telemetry.Configuration) {
 // event is sent with tracer config data.
 // Note that the tracer is not considered as a standalone product by telemetry so we cannot send
 // an app-product-change event for the tracer.
-func startTelemetry(c *config) {
+// TODO (APMAPI-1771): This function should be deleted once config migration is complete
+func startTelemetry(c *config) telemetry.Client {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
-		return
+		return nil
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "trace_debug_enabled", Value: c.debug},
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
 		{Name: "lambda_mode", Value: c.logToStdout},
 		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "retry_interval", Value: c.retryInterval},
-		{Name: "trace_startup_logs_enabled", Value: c.logStartup},
+		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
 		{Name: "service", Value: c.serviceName},
 		{Name: "universal_version", Value: c.universalVersion},
 		{Name: "env", Value: c.env},
 		{Name: "version", Value: c.version},
 		{Name: "trace_agent_url", Value: c.agentURL.String()},
 		{Name: "agent_hostname", Value: c.hostname},
-		{Name: "runtime_metrics_enabled", Value: c.runtimeMetrics},
-		{Name: "runtime_metrics_v2_enabled", Value: c.runtimeMetricsV2},
+		{Name: "runtime_metrics_v2_enabled", Value: c.internalConfig.RuntimeMetricsV2Enabled()},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
 		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
-		{Name: "profiling_hotspots_enabled", Value: c.profilerHotspots},
-		{Name: "profiling_endpoints_enabled", Value: c.profilerEndpoints},
+		{Name: "profiling_endpoints_enabled", Value: c.internalConfig.ProfilerEndpoints()},
+		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
@@ -113,12 +112,12 @@ func startTelemetry(c *config) {
 		AgentURL:   c.agentURL.String(),
 	}
 	if c.logToStdout || c.ciVisibilityAgentless {
-		cfg.APIKey = os.Getenv("DD_API_KEY")
+		cfg.APIKey = env.Get("DD_API_KEY")
 	}
 	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
 	if err != nil {
-		log.Debug("tracer: failed to create telemetry client: %v", err)
-		return
+		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
+		return nil
 	}
 
 	if c.orchestrionCfg.Enabled {
@@ -128,4 +127,5 @@ func startTelemetry(c *config) {
 	}
 
 	telemetry.StartApp(client)
+	return client
 }

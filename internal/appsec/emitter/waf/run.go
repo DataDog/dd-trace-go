@@ -42,7 +42,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.Ru
 
 	result, err := ctx.Run(addrs)
 	if errors.Is(err, waferrors.ErrTimeout) {
-		log.Debug("appsec: WAF timeout value reached: %v", err)
+		log.Debug("appsec: WAF timeout value reached: %s", err.Error())
 	}
 
 	op.metrics.IncWafError(addrs, err)

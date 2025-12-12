@@ -1,58 +1,97 @@
 // Unless explicitly stated otherwise all files in this repository are licensed
 // under the Apache License Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2016 Datadog, Inc.
+// Copyright 2025 Datadog, Inc.
 
 package main
 
 import (
 	"net"
-	"os"
 	"strconv"
+
+	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 // IntEnv returns the parsed int value of an environment variable, or
 // def otherwise.
 func intEnv(key string, def int) int {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, def, instrumentation.TelemetryOriginDefault)
 		return def
 	}
 	v, err := strconv.Atoi(vv)
 	if err != nil {
 		log.Warn("Non-integer value for env var %s, defaulting to %d. Parse failed with error: %v", key, def, err)
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, def, instrumentation.TelemetryOriginDefault)
 		return def
 	}
+	gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, def, instrumentation.TelemetryOriginEnvVar)
 	return v
+}
+
+// intEnvNil returns the parsed int value of an environment variable if it exists, or
+// return nil if unset or failed to parse.
+func intEnvNil(key string) *int {
+	vv, ok := env.Lookup(key)
+	if !ok {
+		return nil
+	}
+	v, err := strconv.Atoi(vv)
+	if err != nil {
+		log.Warn("Non-integer value for env var %s. Parse failed with error: %v", key, err)
+		return nil
+	}
+	gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, &v, instrumentation.TelemetryOriginEnvVar)
+	return &v
 }
 
 // IpEnv returns the valid IP value of an environment variable, or def otherwise.
 func ipEnv(key string, def net.IP) net.IP {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, def.String(), instrumentation.TelemetryOriginDefault)
 		return def
 	}
 
 	ip := net.ParseIP(vv)
 	if ip == nil {
 		log.Warn("Non-IP value for env var %s, defaulting to %s", key, def.String())
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, def.String(), instrumentation.TelemetryOriginDefault)
 		return def
 	}
-
+	gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, vv, instrumentation.TelemetryOriginEnvVar)
 	return ip
 }
 
 // BoolEnv returns the parsed boolean value of an environment variable, or
 // def otherwise.
 func boolEnv(key string, def bool) bool {
-	vv, ok := os.LookupEnv(key)
+	vv, ok := env.Lookup(key)
 	if !ok {
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, def, instrumentation.TelemetryOriginDefault)
 		return def
 	}
 	v, err := strconv.ParseBool(vv)
 	if err != nil {
 		log.Warn("Non-boolean value for env var %s, defaulting to %t. Parse failed with error: %v", key, def, err)
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, def, instrumentation.TelemetryOriginDefault)
 		return def
 	}
+	gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, v, instrumentation.TelemetryOriginEnvVar)
+	return v
+}
+
+// stringEnv returns the string value of an environment variable, or
+// def otherwise.
+func stringEnv(key, def string) string {
+	v, ok := env.Lookup(key)
+	if !ok {
+		gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, v, instrumentation.TelemetryOriginDefault)
+		return def
+	}
+	gocontrolplane.Instrumentation().TelemetryRegisterAppConfig(key, v, instrumentation.TelemetryOriginEnvVar)
 	return v
 }

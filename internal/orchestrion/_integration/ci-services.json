@@ -70,5 +70,10 @@
       "9208:9200"
     ],
     "options": "--name \"elasticsearch8\""
+  },
+  "mongodb": {
+    "image": "mongo:8",
+    "ports": ["27017:27017"],
+    "options": "--name \"mongodb\""
   }
 }

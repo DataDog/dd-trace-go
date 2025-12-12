@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -20,10 +22,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 
-	"github.com/DataDog/appsec-internal-go/netip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -393,6 +395,223 @@ func TestStartRequestSpanWithBaggage(t *testing.T) {
 	assert.Equal(t, "value2", baggageMap["key2"], "should propagate baggage from header to context")
 }
 
+func TestBeforeHandleHTTPEndpoint(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	type tc struct {
+		name   string
+		trn    string // DD_TRACE_RESOURCE_RENAMING_ENABLED
+		always string // DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT
+		route  string
+		expect func(*testing.T, *mocktracer.Span, *http.Request)
+	}
+
+	route := "/api/v1/users/{id}"
+	cases := []tc{
+		{
+			name:   "no route, TRN=false, ALWAYS=false",
+			trn:    "false",
+			always: "false",
+			route:  "",
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				assert.Equal(t, nil, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+		{
+			name:   "no route, TRN=true, ALWAYS=false",
+			trn:    "true",
+			always: "false",
+			route:  "",
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				expected := simplifyHTTPUrl(URLFromRequest(r, true))
+				assert.Equal(t, expected, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+		{
+			name:   "route present, TRN=true, ALWAYS=false",
+			trn:    "true",
+			always: "false",
+			route:  route,
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				assert.Equal(t, route, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+		{
+			name:   "route present, TRN=true, ALWAYS=true",
+			trn:    "true",
+			always: "true",
+			route:  "/a/b/{id}",
+			expect: func(t *testing.T, s *mocktracer.Span, r *http.Request) {
+				expected := simplifyHTTPUrl(URLFromRequest(r, true))
+				assert.Equal(t, expected, s.Tag(ext.HTTPEndpoint))
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", c.trn)
+			t.Setenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", c.always)
+			ResetCfg()
+
+			r := httptest.NewRequest(http.MethodGet, "https://example.com/api/v1/users/123?foo=bar", nil)
+			w := httptest.NewRecorder()
+			cfg := &ServeConfig{Route: c.route}
+
+			rw, rt, after, handled := BeforeHandle(cfg, w, r)
+			assert.False(t, handled)
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+			after()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			c.expect(t, spans[0], r)
+			mt.Reset()
+		})
+	}
+}
+
+func TestResourceRenamingActivation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	type tc struct {
+		name        string
+		trn         *string // nil => unset
+		appsecStart bool
+		expectSet   bool
+	}
+
+	makeReq := func() (*http.Request, *httptest.ResponseRecorder, *ServeConfig) {
+		r := httptest.NewRequest(http.MethodGet, "https://example.com/a/b/123", nil)
+		w := httptest.NewRecorder()
+		cfg := &ServeConfig{Route: "/a/b/{id}"}
+		return r, w, cfg
+	}
+
+	trueStr := "true"
+	falseStr := "false"
+
+	cases := []tc{
+		{name: "TRN true -> enabled", trn: &trueStr, appsecStart: false, expectSet: true},
+		{name: "TRN false -> disabled", trn: &falseStr, appsecStart: false, expectSet: false},
+		{name: "APPSEC true, TRN unset -> enabled", trn: nil, appsecStart: true, expectSet: true},
+		{name: "APPSEC false, TRN unset -> disabled", trn: nil, appsecStart: false, expectSet: false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ENABLED")
+			os.Unsetenv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT")
+			os.Unsetenv("DD_APPSEC_ENABLED")
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			if c.trn != nil {
+				t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", *c.trn)
+			}
+
+			if c.appsecStart {
+				os.Setenv("DD_APPSEC_ENABLED", "true")
+				appsec.Start()
+			}
+			defer appsec.Stop()
+
+			ResetCfg()
+
+			r, w, cfg := makeReq()
+			rw, rt, after, handled := BeforeHandle(cfg, w, r)
+			assert.False(t, handled)
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+			after()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			if c.expectSet {
+				assert.NotEmpty(t, spans[0].Tag(ext.HTTPEndpoint))
+			} else {
+				assert.Empty(t, spans[0].Tag(ext.HTTPEndpoint))
+			}
+		})
+	}
+}
+
+// Ensure the resource renaming is enabled only if appsec was enabled at the startup with the env var.
+func TestResourceRenamingActivationAppSecNotStartup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/a/b/123", nil)
+	w := httptest.NewRecorder()
+	cfg := &ServeConfig{Route: "/a/b/{id}"}
+
+	rw, rt, after, handled := BeforeHandle(cfg, w, r)
+	assert.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Empty(t, spans[0].Tag(ext.HTTPEndpoint))
+
+	t.Setenv("DD_APPSEC_ENABLED", "true") // Force activation
+	appsec.Start()
+	defer appsec.Stop()
+
+	rw, rt, after, handled = BeforeHandle(cfg, w, r)
+	assert.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans = mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	assert.Empty(t, spans[1].Tag(ext.HTTPEndpoint))
+}
+
+func TestRenamedRouteSelection(t *testing.T) {
+	type tc struct {
+		name     string
+		route    string
+		endpoint string
+		url      string // escaped path
+		expect   string
+	}
+
+	cases := []tc{
+		{
+			name:   "route used when available",
+			route:  "/users/{id}",
+			url:    "/users/123",
+			expect: "/users/{id}",
+		},
+		{
+			name:     "endpoint used when route empty",
+			endpoint: "/users/{id}",
+			url:      "/users/123",
+			expect:   "/users/{id}",
+		},
+		{
+			name:   "fallback to simplified url when both empty",
+			url:    "/a/b/123456",
+			expect: simplifyHTTPUrl("/a/b/123456"),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := renamedRoute(c.route, c.endpoint, c.url)
+			assert.Equal(t, c.expect, got)
+		})
+	}
+}
+
 func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
 	tracer.Start()
@@ -420,6 +639,190 @@ func TestStartRequestSpanMergedBaggage(t *testing.T) {
 	assert.Equal(t, "another_value", mergedBaggage["another_header"], "should contain header baggage")
 }
 
+func TestBaggageSpanTagsOpentracer(t *testing.T) {
+	tracer.Start()
+	defer tracer.Stop()
+	ctx := context.Background()
+
+	// Create an HTTP request with no additional baggage context
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(ctx)
+	req.Header.Set("x-datadog-trace-id", "1")
+	req.Header.Set("x-datadog-parent-id", "2")
+	req.Header.Set("baggage", "session.id=789")  // w3c baggage header
+	req.Header.Set("ot-baggage-user.id", "1234") // opentracer baggage header
+
+	// Start the request span, which will extract baggage and add it as span tags
+	reqSpan, _, _ := StartRequestSpan(req)
+	m := reqSpan.AsMap()
+
+	// Keys that SHOULD be present:
+	assert.Contains(t, m, "baggage.session.id", "baggage.session.id should be included in span tags")
+	assert.Equal(t, "789", m["baggage.session.id"], "should contain session.id value")
+
+	// Keys that should NOT be present (user.id is ot-baggage header)
+	// This assertion WILL FAIL until baggage revamp is complete; therefore, commented out
+	// Baggage revamp Jira card: APMAPI-1442
+	// assert.NotContains(t, m, "baggage.user.id", "baggage.user.id should not be included in span tags")
+
+	reqSpan.Finish()
+}
+
+// baggageSpanTagTest represents a test case for baggage span tag functionality
+type baggageSpanTagTest struct {
+	name           string
+	envValue       string            // DD_TRACE_BAGGAGE_TAG_KEYS value
+	baggageHeader  string            // baggage header value
+	preSetBaggage  map[string]string // baggage to set in context before request
+	expectedTags   map[string]string // tags that should be present with their values
+	unexpectedTags []string          // tag keys that should not be present
+	needsResetCfg  bool              // whether to call ResetCfg()
+}
+
+// runBaggageSpanTagTest is a helper function that runs a baggage span tag test case
+func runBaggageSpanTagTest(t *testing.T, tc baggageSpanTagTest) {
+	t.Helper()
+
+	// Set up environment variable if specified
+	if tc.envValue != "" {
+		os.Setenv("DD_TRACE_BAGGAGE_TAG_KEYS", tc.envValue)
+		defer os.Unsetenv("DD_TRACE_BAGGAGE_TAG_KEYS")
+		if tc.needsResetCfg {
+			ResetCfg()
+		}
+	}
+
+	tracer.Start()
+	defer tracer.Stop()
+
+	// Create base context with pre-set baggage if specified
+	ctx := context.Background()
+	for key, value := range tc.preSetBaggage {
+		ctx = baggage.Set(ctx, key, value)
+	}
+
+	// Create HTTP request with context
+	req := httptest.NewRequest(http.MethodGet, "/somePath", nil).WithContext(ctx)
+
+	// Set baggage header
+	if tc.baggageHeader != "" {
+		req.Header.Set("baggage", tc.baggageHeader)
+	}
+
+	// Start request span and get span tags
+	span, _, _ := StartRequestSpan(req)
+	m := span.AsMap()
+
+	// Check expected tags
+	for key, expectedValue := range tc.expectedTags {
+		assert.Contains(t, m, key, fmt.Sprintf("%s should be included in span tags", key))
+		assert.Equal(t, expectedValue, m[key], fmt.Sprintf("should contain %s value", key))
+	}
+
+	// Check unexpected tags
+	for _, key := range tc.unexpectedTags {
+		assert.NotContains(t, m, key, fmt.Sprintf("%s should not be included in span tags", key))
+	}
+
+	span.Finish()
+}
+
+func TestBaggageSpanTags(t *testing.T) {
+	tests := []baggageSpanTagTest{
+		{
+			name:          "default",
+			baggageHeader: "header_key=header_value,account.id=456,session.id=789",
+			preSetBaggage: map[string]string{"user.id": "1234"},
+			expectedTags: map[string]string{
+				"baggage.account.id": "456",
+				"baggage.session.id": "789",
+			},
+			unexpectedTags: []string{"baggage.header_key", "baggage.user.id"},
+		},
+		{
+			name:          "wildcard",
+			envValue:      "*",
+			needsResetCfg: true,
+			baggageHeader: "user.id=abcd,account.id=456,session.id=789,color=blue,foo=bar",
+			expectedTags: map[string]string{
+				"baggage.account.id": "456",
+				"baggage.user.id":    "abcd",
+				"baggage.session.id": "789",
+				"baggage.color":      "blue",
+				"baggage.foo":        "bar",
+			},
+		},
+		{
+			name:          "disabled",
+			envValue:      " ",
+			needsResetCfg: true,
+			baggageHeader: "user.id=abcd,account.id=456,session.id=789,color=blue",
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.user.id",
+				"baggage.session.id",
+				"baggage.color",
+			},
+		},
+		{
+			name:          "specify_keys",
+			envValue:      "device,os.version,app.version",
+			needsResetCfg: true,
+			baggageHeader: "device=mobile,os.version=14.2,app.version=5.3.1,account.id=456,session.id=789,color=blue",
+			expectedTags: map[string]string{
+				"baggage.device":      "mobile",
+				"baggage.os.version":  "14.2",
+				"baggage.app.version": "5.3.1",
+			},
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.session.id",
+				"baggage.color",
+			},
+		},
+		{
+			name:          "asterisk_key",
+			envValue:      "user.id,*version",
+			needsResetCfg: true,
+			baggageHeader: "usr.id=fakeuser,*version=9.4,app.version=9.1.2",
+			expectedTags: map[string]string{
+				"baggage.*version": "9.4",
+			},
+			unexpectedTags: []string{
+				"baggage.user.id",
+				"baggage.usr.id",
+				"baggage.app.version",
+			},
+		},
+		{
+			name:          "malformed_header",
+			baggageHeader: "user.id=,account.id=456,session.id=789,foo=bar",
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.user.id",
+				"baggage.session.id",
+				"baggage.foo",
+			},
+		},
+		{
+			name:          "case_sensitive",
+			baggageHeader: "user.id=doggo,ACCOUNT.id=456,seSsIon.id=789",
+			expectedTags: map[string]string{
+				"baggage.user.id": "doggo",
+			},
+			unexpectedTags: []string{
+				"baggage.account.id",
+				"baggage.session.id",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runBaggageSpanTagTest(t, tt)
+		})
+	}
+}
+
 // TestStartRequestSpanOnlyBaggageCreatesNewTrace verifies that when only baggage headers are present
 // (no trace/span IDs), a new trace is created with a non-zero trace ID while still preserving the baggage.
 func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
@@ -445,4 +848,5 @@ func TestStartRequestSpanOnlyBaggageCreatesNewTrace(t *testing.T) {
 	// Verify that baggage is still propagated despite the new trace
 	baggageMap := baggage.All(ctx)
 	assert.Equal(t, "bar", baggageMap["foo"], "should propagate baggage even when it's the only header")
+
 }

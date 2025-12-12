@@ -7,11 +7,11 @@ package internal
 
 import (
 	"context"
+	_ "embed" // For go:embed
 	"net/http"
 	"testing"
 	"time"
 
-	internal "github.com/DataDog/appsec-internal-go/appsec"
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -20,11 +20,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	listener "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
-	libddwaf "github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	_ "embed" // For go:embed
 )
 
 var (
@@ -42,10 +40,10 @@ func TestFeature_headerCollection(t *testing.T) {
 	appsec.Start()
 	defer appsec.Stop()
 
-	blockingRulesWAFManager, err := config.NewWAFManager(internal.ObfuscatorConfig{}, blockingRules)
+	blockingRulesWAFManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, blockingRules)
 	require.NoError(t, err)
 
-	irrelevantRulesWAFManager, err := config.NewWAFManager(internal.ObfuscatorConfig{}, irrelevantRules)
+	irrelevantRulesWAFManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, irrelevantRules)
 	require.NoError(t, err)
 
 	var (

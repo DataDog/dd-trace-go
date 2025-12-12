@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"runtime"
@@ -68,10 +69,14 @@ type startupInfo struct {
 // checkEndpoint tries to connect to the URL specified by endpoint.
 // If the endpoint is not reachable, checkEndpoint returns an error
 // explaining why.
-func checkEndpoint(c *http.Client, endpoint string) error {
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader([]byte{0x90}))
+func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
+	b := []byte{0x90} // empty array
+	if protocol == traceProtocolV1 {
+		b = []byte{0x80} // empty map
+	}
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(b))
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %v", err)
+		return fmt.Errorf("cannot create http request: %s", err)
 	}
 	req.Header.Set(traceCountHeader, "0")
 	req.Header.Set("Content-Type", "application/msgpack")
@@ -125,7 +130,7 @@ func logStartup(t *tracer) {
 		Env:                         t.config.env,
 		Service:                     t.config.serviceName,
 		AgentURL:                    agentURL,
-		Debug:                       t.config.debug,
+		Debug:                       t.config.internalConfig.Debug(),
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
 		SampleRateLimit:             "disabled",
@@ -133,11 +138,11 @@ func logStartup(t *tracer) {
 		SpanSamplingRules:           t.config.spanRules,
 		ServiceMappings:             t.config.serviceMappings,
 		Tags:                        tags,
-		RuntimeMetricsEnabled:       t.config.runtimeMetrics,
-		RuntimeMetricsV2Enabled:     t.config.runtimeMetricsV2,
+		RuntimeMetricsEnabled:       t.config.internalConfig.RuntimeMetricsEnabled(),
+		RuntimeMetricsV2Enabled:     t.config.internalConfig.RuntimeMetricsV2Enabled(),
 		ApplicationVersion:          t.config.version,
-		ProfilerCodeHotspotsEnabled: t.config.profilerHotspots,
-		ProfilerEndpointsEnabled:    t.config.profilerEndpoints,
+		ProfilerCodeHotspotsEnabled: t.config.internalConfig.ProfilerHotspotsEnabled(),
+		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
@@ -152,25 +157,26 @@ func logStartup(t *tracer) {
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.dogstatsdAddr,
-		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
+		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
-		info.SamplingRulesError = fmt.Sprintf("%s", err)
+		info.SamplingRulesError = err.Error()
 	}
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.logToStdout {
-		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint()); err != nil {
-			info.AgentError = fmt.Sprintf("%s", err)
-			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err)
+		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
+			info.AgentError = fmt.Sprintf("%s", err.Error())
+			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
 	}
 	bs, err := json.Marshal(info)
 	if err != nil {
+		//nolint:gocritic // Diagnostic logging needs full struct representation
 		log.Warn("DIAGNOSTICS Failed to serialize json for startup log (%v) %#v\n", err, info)
 		return
 	}
 	log.Info("DATADOG TRACER CONFIGURATION %s\n", string(bs))
-	telemetrylog.Debug("DATADOG TRACER CONFIGURATION %s\n", string(bs))
+	telemetrylog.Debug("DATADOG TRACER CONFIGURATION", slog.String("config", string(bs)))
 }

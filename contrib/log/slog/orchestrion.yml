@@ -30,3 +30,23 @@ aspects:
       - prepend-statements:
           template: |-
             {{ .Function.Argument 0 }} = __dd_slogtrace_WrapHandler({{ .Function.Argument 0 }})
+  - id: SetDefault
+    join-point:
+      all-of:
+        - import-path: log/slog
+        - function-body:
+            function:
+              - name: SetDefault
+    advice:
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/log/slog/v2
+          template: |-
+            //go:linkname __dd_slogtrace_IsAlreadyWrapped github.com/DataDog/dd-trace-go/contrib/log/slog/v2.IsAlreadyWrapped
+            func __dd_slogtrace_IsAlreadyWrapped(Handler) bool
+      - prepend-statements:
+          template: |-
+            if __dd_slogtrace_IsAlreadyWrapped({{ .Function.Argument 0 }}.Handler()) {
+                defaultLogger.Store({{ .Function.Argument 0 }})
+                return
+            }

@@ -30,10 +30,10 @@ type failingCiVisibilityTransport struct {
 	assert       *assert.Assertions
 }
 
-func (t *failingCiVisibilityTransport) send(p *payload) (io.ReadCloser, error) {
+func (t *failingCiVisibilityTransport) send(p payload) (io.ReadCloser, error) {
 	t.sendAttempts++
 
-	ciVisibilityPayload := &ciVisibilityPayload{p, 0}
+	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
 
 	var events ciVisibilityEvents
 	err := msgp.Decode(ciVisibilityPayload, &events)
@@ -88,7 +88,7 @@ func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			c, err := newConfig(func(c *config) {
+			c, err := newTestConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
 				c.retryInterval = test.retryInterval

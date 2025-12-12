@@ -12,16 +12,23 @@ package httpsec
 
 import (
 	"context"
+	"sync"
+
 	// Blank import needed to use embed for the default blocked response payloads
 	_ "embed"
 	"net/http"
 	"sync/atomic"
 
+	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	"github.com/DataDog/go-libddwaf/v4"
 )
 
 // HandlerOperation type representing an HTTP operation. It must be created with
@@ -40,6 +47,20 @@ type (
 		method string
 		// route is the HTTP route for the current handler operation (or the URL if no route is available).
 		route string
+
+		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
+		downstreamRequestBodyAnalysis atomic.Int32
+
+		// downstreamRequestOverrides holds behavioral overrides for future downstream requests, related
+		// to a redirect chain.
+		downstreamRequestOverrides   map[string]DownstreamRequestOverride
+		downstreamRequestOverridesMu sync.Mutex
+	}
+
+	DownstreamRequestOverride struct {
+		DownstreamURL       string
+		AnalyzeBody         bool
+		OriginalRequestBody libddwaf.Encodable
 	}
 
 	// HandlerOperationArgs is the HTTP handler operation arguments.
@@ -61,6 +82,9 @@ type (
 		Headers    map[string][]string
 		StatusCode int
 	}
+
+	// EarlyBlock is used to trigger an early block before the handler is executed.
+	EarlyBlock struct{}
 )
 
 func (HandlerOperationArgs) IsArgOf(*HandlerOperation)   {}
@@ -87,6 +111,16 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		action.Store(a)
 	})
 
+	dyngo.OnData(op, func(evt DownstreamRequestOverride) {
+		op.downstreamRequestOverridesMu.Lock()
+		defer op.downstreamRequestOverridesMu.Unlock()
+
+		if op.downstreamRequestOverrides == nil {
+			op.downstreamRequestOverrides = make(map[string]DownstreamRequestOverride, 1)
+		}
+		op.downstreamRequestOverrides[evt.DownstreamURL] = evt
+	})
+
 	return op, &action, dyngo.StartAndRegisterOperation(ctx, op, args)
 }
 
@@ -103,6 +137,35 @@ func (op *HandlerOperation) Method() string {
 // Route returns the HTTP route for the current handler operation.
 func (op *HandlerOperation) Route() string {
 	return op.route
+}
+
+// DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
+func (op *HandlerOperation) DownstreamRequestBodyAnalysis() int {
+	return int(op.downstreamRequestBodyAnalysis.Load())
+}
+
+// HasDownstreamRequestOverride checks if a downstream request override exists for the given URL,
+// meaning it is part of a redirect chain.
+func (op *HandlerOperation) HasDownstreamRequestOverride(url string) bool {
+	op.downstreamRequestOverridesMu.Lock()
+	defer op.downstreamRequestOverridesMu.Unlock()
+	_, ok := op.downstreamRequestOverrides[url]
+	return ok
+}
+
+// ConsumeDownstreamRequestOverride consumes and removes a downstream request override for the given
+// URL, returning the override data.
+func (op *HandlerOperation) ConsumeDownstreamRequestOverride(url string) (DownstreamRequestOverride, bool) {
+	op.downstreamRequestOverridesMu.Lock()
+	defer op.downstreamRequestOverridesMu.Unlock()
+	override, ok := op.downstreamRequestOverrides[url]
+	delete(op.downstreamRequestOverrides, url)
+	return override, ok
+}
+
+// IncrementDownstreamRequestBodyAnalysis increments the number of times a call to a downstream request body monitoring function was made.
+func (op *HandlerOperation) IncrementDownstreamRequestBodyAnalysis() {
+	op.downstreamRequestBodyAnalysis.Add(1)
 }
 
 // Finish the HTTP handler operation and its children operations and write everything to the service entry span.
@@ -159,6 +222,37 @@ func makeCookies(parsed []*http.Cookie) map[string][]string {
 		cookies[c.Name] = append(cookies[c.Name], c.Value)
 	}
 	return cookies
+}
+
+// RouteMatched can be called if BeforeHandle is started too early in the http request lifecycle like
+// before the router has matched the request to a route. This can happen when the HTTP handler is wrapped
+// using http.NewServeMux instead of http.WrapHandler. In this case the route is empty and so are the path parameters.
+// In this case the route and path parameters will be filled in later by calling RouteMatched with the actual route.
+// If RouteMatched returns an error, the request should be considered blocked and the error should be reported.
+func RouteMatched(ctx context.Context, route string, routeParams map[string]string) error {
+	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
+	if !ok {
+		log.Debug("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
+		telemetrylog.With(telemetry.WithTags([]string{"product:appsec"})).
+			Warn("appsec: RouteMatched called without an active HandlerOperation in the context, ignoring")
+		return nil
+	}
+
+	// Overwrite the previous route that was created using a quantization algorithm
+	op.route = route
+
+	var err error
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
+		err = e
+	})
+
+	// Call the WAF with this new data
+	op.Run(op, addresses.NewAddressesBuilder().
+		WithPathParams(routeParams).
+		Build(),
+	)
+
+	return err
 }
 
 // BeforeHandle contains the appsec functionality that should be executed before a http.Handler runs.
@@ -222,6 +316,16 @@ func BeforeHandle(
 		blockPtr.Handler = nil
 		handled = true
 	}
+
+	// We register a handler for cases that would require us to write the blocking response before any more code
+	// from a specific framework (like Gin) is executed that would write another (wrong) response here.
+	dyngo.OnData(op, func(e EarlyBlock) {
+		if blockPtr := blockAtomic.Load(); blockPtr != nil && blockPtr.Handler != nil {
+			blockPtr.Handler.ServeHTTP(w, tr)
+			blockPtr.Handler = nil
+		}
+	})
+
 	return w, tr, afterHandle, handled
 }
 

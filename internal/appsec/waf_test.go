@@ -7,64 +7,45 @@ package appsec_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/DataDog/appsec-internal-go/apisec"
-	"github.com/DataDog/go-libddwaf/v4/timer"
-
-	internal "github.com/DataDog/appsec-internal-go/appsec"
-
 	pAppsec "github.com/DataDog/dd-trace-go/v2/appsec"
-
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
-
 	httptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptracemock"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
-
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-
 	"github.com/DataDog/go-libddwaf/v4"
-
+	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/assert"
-
 	"github.com/stretchr/testify/mock"
-
 	"github.com/stretchr/testify/require"
 )
 
 func TestCustomRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/custom_rules.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -98,6 +79,19 @@ func TestCustomRules(t *testing.T) {
 			prevClient := telemetry.SwapClient(telemetryClient)
 			defer telemetry.SwapClient(prevClient)
 
+			// Build tags and capture count before request to measure the delta
+			tags := []string{
+				"request_blocked:false",
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+				"input_truncated:false",
+			}
+			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
+
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
 
@@ -115,16 +109,8 @@ func TestCustomRules(t *testing.T) {
 				require.Contains(t, event, tc.ruleMatch)
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
-				"request_blocked:false",
-				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
-				"waf_timeout:false",
-				"rate_limited:false",
-				"waf_error:false",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-				"input_truncated:false",
-			}).Get())
+			// Assert that exactly one waf.requests metric was submitted during this request
+			assert.Equal(t, countBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 		})
 	}
 }
@@ -132,10 +118,6 @@ func TestCustomRules(t *testing.T) {
 func TestUserRules(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/user_rules.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -197,10 +179,6 @@ func TestUserRules(t *testing.T) {
 // Additionally, verifies that rule matching through SDK body instrumentation works as expected
 func TestWAF(t *testing.T) {
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("appsec disabled")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -348,10 +326,6 @@ func TestBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/blocking.json")
 	testutils.StartAppSec(t)
 
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
-
 	const (
 		ipBlockingRule   = "blk-001-001"
 		userBlockingRule = "blk-001-002"
@@ -378,7 +352,7 @@ func TestBlocking(t *testing.T) {
 		w.Write([]byte("Hello World!\n"))
 	})
 	srv := httptest.NewServer(mux)
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	for _, tc := range []struct {
 		name      string
@@ -449,10 +423,24 @@ func TestBlocking(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
-			defer mt.Stop()
+			t.Cleanup(mt.Stop)
 			telemetryClient := new(telemetrytest.RecordClient)
 			prevClient := telemetry.SwapClient(telemetryClient)
-			defer telemetry.SwapClient(prevClient)
+			t.Cleanup(func() { telemetry.SwapClient(prevClient) })
+
+			// Build tags and capture count before request to measure the delta
+			tags := []string{
+				"request_blocked:" + strconv.FormatBool(tc.status != 200),
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+				"input_truncated:false",
+			}
+			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
+
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
@@ -460,7 +448,7 @@ func TestBlocking(t *testing.T) {
 			}
 			res, err := srv.Client().Do(req)
 			require.NoError(t, err)
-			defer res.Body.Close()
+			t.Cleanup(func() { res.Body.Close() })
 			require.Equal(t, tc.status, res.StatusCode)
 			b, err := io.ReadAll(res.Body)
 			require.NoError(t, err)
@@ -473,18 +461,29 @@ func TestBlocking(t *testing.T) {
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
 				require.Contains(t, spans[0].Tag("_dd.appsec.json"), tc.ruleMatch)
+				if tc.status != 200 {
+					var payload struct {
+						Triggers []struct {
+							SecurityResponseID string `json:"security_response_id"`
+						} `json:"triggers"`
+					}
+					var blockedBody struct {
+						SecurityResponseID string `json:"security_response_id"`
+					}
+
+					securityEvent, ok := spans[0].Tag("_dd.appsec.json").(string)
+					require.True(t, ok)
+					require.Contains(t, spans[0].Tag("_dd.appsec.json"), "security_response_id")
+					require.NoError(t, json.Unmarshal([]byte(securityEvent), &payload))
+					wafSecurityResponseID := payload.Triggers[0].SecurityResponseID
+					require.Greater(t, len(wafSecurityResponseID), 0)
+					require.NoError(t, json.Unmarshal(b, &blockedBody))
+					require.Equal(t, wafSecurityResponseID, blockedBody.SecurityResponseID)
+				}
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
-				"request_blocked:" + strconv.FormatBool(tc.status != 200),
-				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
-				"waf_timeout:false",
-				"rate_limited:false",
-				"waf_error:false",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-				"input_truncated:false",
-			}).Get())
+			// Assert that exactly one waf.requests metric was submitted during this request
+			assert.Equal(t, countBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 		})
 	}
 }
@@ -516,8 +515,8 @@ func TestAPISecurity(t *testing.T) {
 		}
 		sampler.On("DecisionFor", samplingKey).Return(true).Once()
 
-		t.Setenv(internal.EnvAPISecEnabled, "true")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
+		t.Setenv(config.EnvAPISecEnabled, "true")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -561,8 +560,8 @@ func TestAPISecurity(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		var sampler mockSampler
 
-		t.Setenv(internal.EnvAPISecEnabled, "false")
-		testutils.StartAppSec(t, config.WithAPISecOptions(internal.WithAPISecSampler(&sampler)))
+		t.Setenv(config.EnvAPISecEnabled, "false")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithAPISecSampler(&sampler)))
 		require.True(t, appsec.Enabled())
 
 		mt := mocktracer.Start()
@@ -585,13 +584,74 @@ func TestAPISecurity(t *testing.T) {
 	})
 }
 
+func TestAPISecurityProxy(t *testing.T) {
+	if wafOK, err := libddwaf.Usable(); !wafOK {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+
+	mux := httptrace.NewServeMux()
+	mux.HandleFunc("/apisec/{id}", func(w http.ResponseWriter, r *http.Request) {
+		pAppsec.MonitorParsedHTTPBody(r.Context(), "plain body")
+		w.Write([]byte("Hello World!\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	req, err := http.NewRequest("POST", srv.URL+"/apisec/1337?vin=AAAAAAAAAAAAAAAAA", nil)
+	require.NoError(t, err)
+
+	t.Run("rate-limits", func(t *testing.T) {
+		t.Setenv(config.EnvEnabled, "true")
+		t.Setenv(config.EnvAPISecEnabled, "true")
+		// Set the rate to 1 schema per minute
+		t.Setenv(config.EnvAPISecProxySampleRate, "1")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
+		require.True(t, appsec.Enabled())
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// First request should be sampled
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.NotNil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+
+		// Second request should be dropped
+		res, err = srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		spans = mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		assert.Nil(t, spans[1].Tag("_dd.appsec.s.req.query"))
+	})
+
+	t.Run("disabled-with-rate-0", func(t *testing.T) {
+		t.Setenv(config.EnvEnabled, "true")
+		t.Setenv(config.EnvAPISecEnabled, "true")
+		t.Setenv(config.EnvAPISecProxySampleRate, "0")
+		testutils.StartAppSec(t, config.WithAPISecOptions(config.WithProxy()))
+		require.True(t, appsec.Enabled())
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := srv.Client().Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Nil(t, spans[0].Tag("_dd.appsec.s.req.query"))
+	})
+}
+
 func TestRASPLFI(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/rasp.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.RASPEnabled() {
-		t.Skip("RASP needs to be enabled for this test")
-	}
 
 	// Simulate what orchestrion does
 	WrappedOpen := func(ctx context.Context, path string, flags int) (file *os.File, err error) {
@@ -660,6 +720,21 @@ func TestRASPLFI(t *testing.T) {
 			prevClient := telemetry.SwapClient(telemetryClient)
 			defer telemetry.SwapClient(prevClient)
 
+			// Build tags and capture counts before request to measure the delta
+			evalTags := []string{
+				"rule_type:lfi",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+			}
+			matchTags := []string{
+				"block:success",
+				"rule_type:lfi",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+			}
+			evalCountBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", evalTags).Get()
+			matchCountBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", matchTags).Get()
+
 			req, err := http.NewRequest("GET", srv.URL+"?path="+tc.path+"&block="+strconv.FormatBool(tc.block), nil)
 			require.NoError(t, err)
 			res, err := srv.Client().Do(req)
@@ -677,22 +752,15 @@ func TestRASPLFI(t *testing.T) {
 				require.Equal(t, 204, res.StatusCode)
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", []string{
-				"rule_type:lfi",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-			}).Get())
+			// Assert that exactly one rasp.rule.eval metric was submitted during this request
+			assert.Equal(t, evalCountBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", evalTags).Get())
 
 			if !tc.block {
 				return
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", []string{
-				"block:success",
-				"rule_type:lfi",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-			}).Get())
+			// Assert that exactly one rasp.rule.match metric was submitted during this request
+			assert.Equal(t, matchCountBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", matchTags).Get())
 		})
 	}
 }
@@ -700,10 +768,6 @@ func TestRASPLFI(t *testing.T) {
 func TestSuspiciousAttackerBlocking(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/sab.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	const bodyBlockingRule = "crs-933-130-block"
 
@@ -890,14 +954,11 @@ func TestWafEventsInMetaStruct(t *testing.T) {
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
-	rules, err := internal.DefaultRulesetMap()
-	require.NoError(b, err)
-
-	builder, err := libddwaf.NewBuilder(internal.DefaultObfuscatorKeyRegex, internal.DefaultObfuscatorValueRegex)
+	builder, err := libddwaf.NewBuilder(config.DefaultObfuscatorKeyRegex, config.DefaultObfuscatorValueRegex)
 	require.NoError(b, err)
 	defer builder.Close()
 
-	_, err = builder.AddOrUpdateConfig("default", rules)
+	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(b, err)
 
 	handle := builder.Build()
@@ -964,10 +1025,6 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 func TestAttackerFingerprinting(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
 	testutils.StartAppSec(t)
-
-	if !appsec.Enabled() {
-		t.Skip("AppSec needs to be enabled for this test")
-	}
 
 	// Start and trace an HTTP server
 	mux := httptrace.NewServeMux()
@@ -1037,6 +1094,53 @@ func TestAttackerFingerprinting(t *testing.T) {
 	}
 }
 
+func TestAPI10ResponseBody(t *testing.T) {
+	if ok, err := libddwaf.Usable(); !ok {
+		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
+	}
+
+	builder, err := libddwaf.NewBuilder("", "")
+	require.NoError(t, err)
+
+	var ruleset any
+
+	_, thisFile, _, _ := runtime.Caller(0)
+
+	fp, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "testdata", "api10.json"))
+	require.NoError(t, err)
+
+	err = json.Unmarshal(fp, &ruleset)
+	require.NoError(t, err)
+
+	builder.AddOrUpdateConfig("/custom", ruleset)
+	defer builder.Close()
+
+	handle := builder.Build()
+	require.NotNil(t, handle)
+
+	defer handle.Close()
+
+	ctx, err := handle.NewContext(timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
+	require.NoError(t, err)
+
+	defer ctx.Close()
+
+	reader := io.NopCloser(strings.NewReader(`{"payload":{"payload_out":"kqehf09123r4lnksef"},"status":"OK"}`))
+
+	encodable, err := body.NewEncodable("application/json", &reader, 999999)
+	require.NoError(t, err)
+
+	result, err := ctx.Run(libddwaf.RunAddressData{
+		Ephemeral: map[string]any{
+			addresses.ServerIONetResponseBodyAddr: encodable,
+		},
+	})
+
+	require.NoError(t, err)
+
+	require.Contains(t, result.Derivatives, "_dd.appsec.trace.res_body")
+}
+
 type mockSampler struct {
 	mock.Mock
 }
@@ -1049,7 +1153,7 @@ func (m *mockSampler) DecisionFor(key apisec.SamplingKey) bool {
 func init() {
 	// This permits running the tests locally without defining the env var manually
 	// We do this because the default go-libddwaf timeout value is too small and makes the tests timeout for no reason
-	if _, ok := os.LookupEnv(internal.EnvWAFTimeout); !ok {
-		os.Setenv(internal.EnvWAFTimeout, "1s")
+	if _, ok := os.LookupEnv(config.EnvWAFTimeout); !ok {
+		os.Setenv(config.EnvWAFTimeout, "1s")
 	}
 }

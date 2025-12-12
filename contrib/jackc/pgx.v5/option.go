@@ -18,6 +18,7 @@ type config struct {
 	traceConnect  bool
 	traceAcquire  bool
 	poolStats     bool
+	errCheck      func(error) bool
 	statsdClient  instrumentation.StatsdClient
 }
 
@@ -43,7 +44,7 @@ func (c *config) checkStatsdRequired() {
 		if err == nil {
 			c.statsdClient = sc
 		} else {
-			instr.Logger().Warn("contrib/jackc/pgx.v5: Error creating statsd client; Pool stats will be dropped: %v", err)
+			instr.Logger().Warn("contrib/jackc/pgx.v5: Error creating statsd client; Pool stats will be dropped: %s", err.Error())
 		}
 	}
 }
@@ -105,5 +106,18 @@ func WithTraceConnect(enabled bool) Option {
 func WithPoolStats() Option {
 	return func(cfg *config) {
 		cfg.poolStats = true
+	}
+}
+
+// WithErrCheck specifies a function fn which determines whether the passed
+// error should be tagged into the span as an error.
+// fn is called whenever a pgx operation finishes with an error
+//
+// When the function returns true, the span will be tagged with the error.
+// When the function returns false, the span will not be tagged with the error.
+// When the function is nil, the span will be tagged with the error.
+func WithErrCheck(fn func(err error) bool) Option {
+	return func(cfg *config) {
+		cfg.errCheck = fn
 	}
 }

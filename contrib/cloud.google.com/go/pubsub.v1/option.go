@@ -5,20 +5,20 @@
 
 package pubsub
 
-import "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/internal/tracing"
+import "github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace"
 
 // Option describes options for the Pub/Sub integration.
-type Option = tracing.Option
+type Option = pubsubtrace.Option
 
 // OptionFn represents options applicable to WrapReceiveHandler or Publish.
-type OptionFn = tracing.OptionFn
+type OptionFn = pubsubtrace.OptionFn
 
 // WithService sets the service name tag for traces started by WrapReceiveHandler or Publish.
 func WithService(serviceName string) Option {
-	return tracing.WithService(serviceName)
+	return pubsubtrace.WithService(serviceName)
 }
 
 // WithMeasured sets the measured tag for traces started by WrapReceiveHandler or Publish.
 func WithMeasured() Option {
-	return tracing.WithMeasured()
+	return pubsubtrace.WithMeasured()
 }

@@ -36,7 +36,7 @@ var gcpPubsub = harness.TestCase{
 		if serviceOverride != "" {
 			opts = append(opts, pubsubtrace.WithService(serviceOverride))
 		}
-		topic, sub := newTestGCPPubsub(t)
+		topic, sub, srv, cleanup := newTestGCPPubsub(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
@@ -58,6 +58,9 @@ var gcpPubsub = harness.TestCase{
 
 		<-done
 		cancel()
+		cleanup()
+		srv.Wait()
+
 		return mt.FinishedSpans()
 	},
 	WantServiceNameV0: harness.ServiceNameAssertions{
@@ -77,16 +80,14 @@ var gcpPubsub = harness.TestCase{
 	},
 }
 
-func newTestGCPPubsub(t *testing.T) (*pubsub.Topic, *pubsub.Subscription) {
+func newTestGCPPubsub(t *testing.T) (*pubsub.Topic, *pubsub.Subscription, *pstest.Server, func()) {
 	srv := pstest.NewServer()
-	t.Cleanup(func() { assert.NoError(t, srv.Close()) })
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	conn, err := grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
 
 	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
 	require.NoError(t, err)
@@ -102,5 +103,8 @@ func newTestGCPPubsub(t *testing.T) (*pubsub.Topic, *pubsub.Subscription) {
 	require.NoError(t, err)
 
 	sub := client.Subscription("subscription")
-	return topic, sub
+	return topic, sub, srv, func() {
+		assert.NoError(t, conn.Close())
+		assert.NoError(t, srv.Close())
+	}
 }

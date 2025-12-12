@@ -47,6 +47,8 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 		tc.logger.Log(ctx, slog.LevelInfo, s, a...)
 	}, "log")
 
+	tc.testDeadlock(ctx, t)
+
 	logs := tc.logs.String()
 	t.Logf("got logs: %s", logs)
 	for _, msg := range []string{"debug", "info", "warn", "error", "log"} {
@@ -67,6 +69,18 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 			t.Errorf("no trace ID")
 		}
 	}
+}
+
+func (tc *TestCase) testDeadlock(ctx context.Context, t *testing.T) {
+	var buf bytes.Buffer
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	orig := slog.Default()
+	slog.SetDefault(slog.New(handler))
+
+	slog.SetDefault(orig)
+
+	logger := slog.Default()
+	logger.InfoContext(ctx, "This should deadlock")
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces { return trace.Traces{} }

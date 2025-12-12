@@ -125,7 +125,7 @@ func (tc *TestCaseResponse) ExpectedTraces() trace.Traces {
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "POST /json",
-						"service":  "gin.test",
+						"service":  "http.router",
 						"type":     "web",
 					},
 					Meta: map[string]string{
@@ -172,7 +172,7 @@ func (tc *TestCaseResponse) ExpectedTraces() trace.Traces {
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "POST /xml",
-						"service":  "gin.test",
+						"service":  "http.router",
 						"type":     "web",
 					},
 					Meta: map[string]string{

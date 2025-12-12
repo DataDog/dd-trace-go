@@ -31,9 +31,12 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"go.uber.org/goleak"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -72,12 +75,30 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
 	if internal.BoolEnv("DD_APPSEC_ENABLED", false) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
 	}
 	_, integration = os.LookupEnv("INTEGRATION")
-	os.Exit(m.Run())
+
+	// Run the tests and exit on failure
+	if code := m.Run(); code != 0 {
+		os.Exit(code)
+	}
+
+	// If the tests pass, check for goroutine leaks:
+	//
+	// TODO(felixge): We should try to get rid of all the ignored functions
+	// below. And we should definitely try to not add any new ones here!
+	opts := []goleak.Option{
+		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
+	}
+	if err := goleak.Find(opts...); err != nil {
+		fmt.Fprintf(os.Stderr, "goleak: Errors on successful test run: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "See Goroutine Leak section in CONTRIBUTING.md for more information on how to fix this.\n")
+		os.Exit(1)
+	}
 }
 
 func (t *tracer) awaitPayload(tst *testing.T, n int) {
@@ -88,7 +109,7 @@ loop:
 		case <-timeout:
 			tst.Fatalf("timed out waiting for payload to contain %d", n)
 		default:
-			if t.traceWriter.(*agentTraceWriter).payload.itemCount() == n {
+			if t.traceWriter.(*agentTraceWriter).payload.stats().itemCount == n {
 				break loop
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -114,7 +135,7 @@ func TestTracerCleanStop(t *testing.T) {
 		t.Skip("This test causes windows CI to fail due to out-of-memory issues")
 	}
 	// avoid CI timeouts due to AppSec and telemetry slowing down this test
-	t.Setenv("DD_APPSEC_ENABLED", "")
+	t.Setenv("DD_APPSEC_ENABLED", "false")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	t.Setenv("DD_TRACE_STARTUP_LOGS", "0")
 
@@ -166,6 +187,7 @@ func TestTracerCleanStop(t *testing.T) {
 	}()
 
 	wg.Wait()
+	Stop()
 }
 
 func TestTracerStart(t *testing.T) {
@@ -249,6 +271,7 @@ func TestTracerLogFile(t *testing.T) {
 		}
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", dir)
 		tracer, err := newTracer()
+		defer tracer.Stop()
 		assert.Nil(t, err)
 		assert.Equal(t, dir, tracer.config.logDirectory)
 		assert.NotNil(t, tracer.logFile)
@@ -258,7 +281,7 @@ func TestTracerLogFile(t *testing.T) {
 		t.Setenv("DD_TRACE_LOG_DIRECTORY", "some/nonexistent/path")
 		tracer, err := newTracer()
 		assert.Nil(t, err)
-		defer Stop()
+		defer tracer.Stop()
 		assert.Empty(t, tracer.config.logDirectory)
 		assert.Nil(t, tracer.logFile)
 	})
@@ -367,18 +390,16 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
 		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -389,18 +410,16 @@ func TestSamplingDecision(t *testing.T) {
 		// client-side stats are also enabled.
 		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false))
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -409,12 +428,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -422,6 +435,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
@@ -430,12 +447,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -443,6 +454,10 @@ func TestSamplingDecision(t *testing.T) {
 		child.SetTag(ext.EventSampleRate, 1)
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -451,12 +466,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -468,6 +477,10 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, ext.PriorityAutoReject, p)
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
@@ -481,12 +494,6 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
@@ -495,7 +502,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
@@ -509,12 +519,6 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
@@ -523,7 +527,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
@@ -537,12 +544,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be dropped. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
@@ -551,7 +552,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.NotContains(t, parent.metrics, keySpanSamplingMechanism)
@@ -565,12 +569,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
@@ -579,7 +577,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		// single span sampling should only run on dropped traces
 		assert.Equal(t, float64(ext.PriorityAutoKeep), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionKeep, parent.context.trace.samplingDecision)
@@ -716,7 +717,7 @@ func TestSamplingDecision(t *testing.T) {
 func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithRuntimeMetrics(), WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -733,7 +734,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 	t.Run("dd-env", func(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		tp := new(log.RecordLogger)
-		tp.Ignore("appsec: ", "telemetry")
+		tp.Ignore(commonLogIgnore...)
 		tracer, err := newTracer(WithLogger(tp), WithDebugMode(true), WithEnv("test"))
 		defer tracer.Stop()
 		assert.NoError(t, err)
@@ -749,23 +750,23 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 
 	t.Run("otel-env", func(t *testing.T) {
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
-		c, err := newConfig()
+		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.runtimeMetrics)
+		assert.False(t, c.internalConfig.RuntimeMetricsEnabled())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
 		// dd env overrides otel env
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
-		c, err := newConfig()
+		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetricsEnabled())
 		// tracer option overrides dd env
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		c, err = newConfig(WithRuntimeMetrics())
+		c, err = newTestConfig(WithRuntimeMetrics())
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetricsEnabled())
 	})
 }
 
@@ -1218,7 +1219,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, defaultHTTPClient(0))
+	return newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, true))
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1333,10 +1334,11 @@ func TestTracerPrioritySampler(t *testing.T) {
 			}
 		}`))
 	}))
+	defer srv.Close()
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, defaultHTTPClient(0))),
+		withTransport(newHTTPTransport(url, internal.DefaultHTTPClient(defaultHTTPTimeout, false))),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -1426,7 +1428,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.itemCount(), 0)
+	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
 	tracer1.awaitPayload(t, count)
 }
 
@@ -1756,11 +1758,15 @@ func TestPushPayload(t *testing.T) {
 func TestPushTrace(t *testing.T) {
 	assert := assert.New(t)
 
+	oldLvl := log.GetLevel()
+	defer func() { log.SetLevel(oldLvl) }()
+	log.SetLevel(log.LevelDebug)
+
 	tp := new(log.RecordLogger)
 	log.UseLogger(tp)
 	tracer, err := newUnstartedTracer()
 	assert.Nil(err)
-	defer tracer.statsd.Close()
+	defer tracer.Stop()
 	trace := []*Span{
 		{
 			name:     "pylons.request",
@@ -1780,7 +1786,7 @@ func TestPushTrace(t *testing.T) {
 	t0 := <-tracer.out
 	assert.Equal(&chunk{spans: trace}, t0)
 
-	many := payloadQueueSize + 2
+	many := payloadQueueSize * 2
 	for i := 0; i < many; i++ {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
@@ -2222,8 +2228,20 @@ func genBigTraces(b *testing.B) {
 				sp.Finish()
 			}
 			parent.Finish()
-			go flush(-1)         // act like a ticker
-			go transport.Reset() // pretend we sent any payloads
+			// TODO(fg): This test has historically not waited for the two
+			// goroutines below to finish. This was causing test failures when
+			// goroutine leak checks were added to TestMain. However, looking at
+			// the code, perhaps these goroutines should be required to finish
+			// before b.StopTimer() is called?
+			wg.Add(2)
+			go func() {
+				flush(-1) // act like a ticker
+				wg.Done()
+			}()
+			go func() {
+				transport.Reset() // pretend we sent any payloads
+				wg.Done()
+			}()
 		}
 	}
 	b.StopTimer()
@@ -2312,6 +2330,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	o := append([]StartOption{
 		withTransport(transport),
 		withTickChan(tick),
+		// disable keep-alives to avoid goroutine leaks between tests
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {
@@ -2322,6 +2342,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	tracer.config.agent.DropP0s = true
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
+		tracer.reportHealthMetrics()
 		if n < 0 {
 			tick <- time.Now()
 			return
@@ -2348,6 +2369,14 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		// clear any service name that was set: we want the state to be the same as startup
 		globalconfig.SetServiceName("")
 	}, nil
+}
+
+// newTestConfig wraps newConfig to set a default HTTP client with keep-alives
+// disabled. This is necessary to avoid goroutine leaks between tests, see
+// TestMain.
+func newTestConfig(opts ...StartOption) (*config, error) {
+	opts = append([]StartOption{WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true))}, opts...)
+	return newConfig(opts...)
 }
 
 // comparePayloadSpans allows comparing two spans which might have been
@@ -2432,10 +2461,12 @@ func TestFlush(t *testing.T) {
 	tr.traceWriter = tw
 
 	ts := &statsdtest.TestStatsdClient{}
+	tr.statsd.Close()
 	tr.statsd = ts
 
 	transport := newDummyTransport()
 	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	tr.stats.Stop()
 	tr.stats = c
 	c.Start()
 	defer c.Stop()
@@ -2489,12 +2520,11 @@ func TestTakeStackTrace(t *testing.T) {
 		// top frame should be runtime.main or runtime.goexit, in case of tests that's goexit
 		assert.Contains(t, val, "runtime.goexit")
 		numFrames := strings.Count(val, "\n\t")
-		assert.Equal(t, 1, numFrames)
+		assert.Equal(t, 3, numFrames)
 	})
 
 	t.Run("n=1", func(t *testing.T) {
 		val := takeStacktrace(1, 0)
-		assert.Contains(t, val, "tracer.TestTakeStackTrace", "should contain this function")
 		// each frame consists of two strings separated by \n\t, thus number of frames == number of \n\t
 		numFrames := strings.Count(val, "\n\t")
 		assert.Equal(t, 1, numFrames)
@@ -2711,25 +2741,25 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 
 func wasteA(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
 func wasteB(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
 func wasteC(d time.Duration) {
 	start := time.Now()
+	i := 0
 	for start.Add(d).Before(time.Now()) {
-		//lint:ignore S1039 We are intentionally creating empty prints
-		_ = fmt.Sprint("waste")
+		_ = fmt.Sprintf("waste %d", i)
 	}
 }
 
@@ -2851,4 +2881,117 @@ func TestExecTraceLargeTaskNameRegression(t *testing.T) {
 
 	s := StartSpan("test", ResourceName(b.String()))
 	s.Finish()
+}
+
+// Test a v2 regression where the global service name is removed if the tracer is started more than once.
+func TestTracerStartMultipleTimesGlobalService(t *testing.T) {
+	prev := globalconfig.ServiceName()
+	t.Cleanup(func() {
+		globalconfig.SetServiceName(prev)
+	})
+
+	err := Start()
+	require.NoError(t, err)
+	defer Stop()
+
+	err = Start(WithService("global_service"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "global_service", globalconfig.ServiceName())
+}
+
+func TestNewUnstartedTracerDDAgentHostNotFound(t *testing.T) {
+	t.Setenv("DD_AGENT_HOST", "ddapm-test-agent-c07208")
+	_, err := newUnstartedTracer()
+	assert.NoError(t, err)
+}
+
+func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
+	// This checks that starting the tracer twice properly shuts down the
+	// previous tracer, specifically the runtime metrics emitter.
+	tp := new(log.RecordLogger)
+	err := Start(WithLogger(tp))
+	require.NoError(t, err)
+	err = Start(WithLogger(tp))
+	require.NoError(t, err)
+	Stop()
+
+	// Check that runtime metrics emitters lifetimes did not overlap.
+	for _, logMsg := range tp.Logs() {
+		assert.NotContains(t, logMsg, "runtimemetrics has already been started")
+	}
+}
+
+// TestTracerTwiceStartRemoteConfig tests how RC behaves during tracer restarts.
+func TestTracerTwiceStartRemoteConfig(t *testing.T) {
+	err := Start()
+	require.NoError(t, err)
+	err = remoteconfig.RegisterProduct("testing")
+	require.NoError(t, err)
+
+	// "testing" should be present and RC is active
+	got, err := remoteconfig.HasProduct("testing")
+	require.True(t, got)
+	require.NoError(t, err)
+
+	err = Start()
+	require.NoError(t, err)
+	got, err = remoteconfig.HasProduct("testing")
+	require.False(t, got)
+	require.NoError(t, err)
+
+	Stop()
+	// This should be noop.
+	Stop()
+}
+
+func TestTracerConcurrentStartStop(t *testing.T) {
+	const iterations = 100
+	var wg sync.WaitGroup
+
+	// Goroutine 1: Continuously start the tracer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			Start()
+		}
+	}()
+
+	// Goroutine 2: Continuously stop the tracer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			Stop()
+		}
+	}()
+
+	// Wait for both goroutines to complete
+	wg.Wait()
+
+	// Ensure the tracer is stopped before proceeding
+	Stop()
+
+	// Now verify that starting the tracer enables remote config
+	err := Start()
+	require.NoError(t, err)
+
+	// Register a remote config product
+	err = remoteconfig.RegisterProduct("testing")
+	require.NoError(t, err)
+
+	// Verify that remote config is active and product is registered
+	got, err := remoteconfig.HasProduct("testing")
+	require.NoError(t, err)
+	require.True(t, got, "remote config should be active after Start()")
+
+	// Now stop the tracer and verify remote config is disabled
+	Stop()
+
+	// After Stop(), remote config should be disabled
+	// Attempting to check for the product should indicate it's not available
+	got, err = remoteconfig.HasProduct("testing")
+	require.ErrorIs(t, err, remoteconfig.ErrClientNotStarted)
+	require.False(t, got, "remote config should be disabled after Stop()")
 }

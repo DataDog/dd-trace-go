@@ -6,6 +6,9 @@
 package actions
 
 import (
+	"fmt"
+	"log/slog"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -39,10 +42,10 @@ func registerActionHandler(aType string, handler actionHandler) {
 func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
 	var blocked bool
 	for aType, params := range actions {
-		log.Debug("appsec: processing %s action with params %v", aType, params)
+		log.Debug("appsec: processing %q action with params %v", aType, params) //nolint:gocritic
 		params, ok := params.(map[string]any)
 		if !ok {
-			telemetrylog.Error("appsec: could not cast action params to map[string]any from %T", params)
+			telemetrylog.Error("appsec: could not cast action params to map[string]any", slog.String("actual_type", fmt.Sprintf("%T", params)))
 			continue
 		}
 
@@ -50,7 +53,7 @@ func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
 
 		actionHandler, ok := actionHandlers[aType]
 		if !ok {
-			telemetrylog.Error("appsec: unknown action type `%s`", aType)
+			telemetrylog.Error("appsec: unknown action type", slog.String("action_type", aType))
 			continue
 		}
 

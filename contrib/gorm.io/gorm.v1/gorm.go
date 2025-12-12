@@ -65,8 +65,7 @@ func Open(dialector gorm.Dialector, cfg *gorm.Config, opts ...Option) (*gorm.DB,
 }
 
 func withCallbacks(db *gorm.DB, opts ...Option) (*gorm.DB, error) {
-	cfg := new(config)
-	defaults(cfg)
+	cfg := newConfigWithDefaults()
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
@@ -151,12 +150,6 @@ func before(db *gorm.DB, operationName string, cfg *config) {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
-	for key, tagFn := range cfg.tagFns {
-		if tagFn != nil {
-			opts = append(opts, tracer.Tag(key, tagFn(db)))
-		}
-	}
-
 	_, ctx := tracer.StartSpanFromContext(db.Statement.Context, operationName, opts...)
 	db.Statement.Context = ctx
 }
@@ -175,6 +168,15 @@ func after(db *gorm.DB, cfg *config) {
 			dbErr = db.Error
 		}
 		span.SetTag(ext.ResourceName, db.Statement.SQL.String())
+
+		// process tagFns after setting the resource name to allow the resource
+		// name to be overridden
+		for key, tagFn := range cfg.tagFns {
+			if tagFn != nil {
+				span.SetTag(key, tagFn(db))
+			}
+		}
+
 		span.Finish(tracer.WithError(dbErr))
 	}
 }

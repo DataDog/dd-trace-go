@@ -87,7 +87,7 @@ func (c *client) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, forma
 	if responseErr != nil {
 		telemetry.EndpointPayloadRequestsErrors(telemetry.CodeCoverageEndpointType, telemetry.NetworkErrorType)
 		telemetry.EndpointPayloadDropped(telemetry.CodeCoverageEndpointType)
-		return fmt.Errorf("failed to send coverage request: %s", responseErr.Error())
+		return fmt.Errorf("failed to send coverage request: %s", responseErr)
 	}
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

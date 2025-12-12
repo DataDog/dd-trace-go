@@ -30,17 +30,23 @@ var _ ddTslvEvent = (*ciVisibilityCommon)(nil)
 
 // ciVisibilityCommon is a struct that implements the ddTslvEvent interface and provides common functionality for CI visibility.
 type ciVisibilityCommon struct {
+	mutex     sync.Mutex
 	startTime time.Time
 
 	tags   []tracer.StartSpanOption
 	span   *tracer.Span
-	ctx    context.Context
-	mutex  sync.Mutex
 	closed bool
+
+	ctxMutex sync.Mutex
+	ctx      context.Context
 }
 
 // Context returns the context of the event.
-func (c *ciVisibilityCommon) Context() context.Context { return c.ctx }
+func (c *ciVisibilityCommon) Context() context.Context {
+	c.ctxMutex.Lock()
+	defer c.ctxMutex.Unlock()
+	return c.ctx
+}
 
 // StartTime returns the start time of the event.
 func (c *ciVisibilityCommon) StartTime() time.Time { return c.startTime }
@@ -122,4 +128,16 @@ func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 	}
 
 	return opts
+}
+
+func (c *ciVisibilityCommon) getContextValue(key any) any {
+	c.ctxMutex.Lock()
+	defer c.ctxMutex.Unlock()
+	return c.ctx.Value(key)
+}
+
+func (c *ciVisibilityCommon) setContextValue(key, value any) {
+	c.ctxMutex.Lock()
+	defer c.ctxMutex.Unlock()
+	c.ctx = context.WithValue(c.ctx, key, value)
 }

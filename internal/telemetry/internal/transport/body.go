@@ -143,7 +143,7 @@ func unmarshalPayload(bytes json.RawMessage, requestType RequestType) (Payload, 
 	}
 
 	if err := json.Unmarshal(bytes, payload); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal payload: %v", err)
+		return nil, fmt.Errorf("failed to unmarshal payload: %s", err.Error())
 	}
 
 	return payload, nil

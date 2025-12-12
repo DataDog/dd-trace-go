@@ -26,7 +26,7 @@ var hostnameFetcher = cachedfetch.Fetcher{
 		hostname, err := getResponseWithMaxLength(ctx, metadataURL+"/instance/hostname",
 			255)
 		if err != nil {
-			return "", fmt.Errorf("unable to retrieve hostname from GCE: %s", err)
+			return "", fmt.Errorf("unable to retrieve hostname from GCE: %s", err.Error())
 		}
 		return hostname, nil
 	},
@@ -39,7 +39,7 @@ var projectIDFetcher = cachedfetch.Fetcher{
 			metadataURL+"/project/project-id",
 			255)
 		if err != nil {
-			return "", fmt.Errorf("unable to retrieve project ID from GCE: %s", err)
+			return "", fmt.Errorf("unable to retrieve project ID from GCE: %s", err.Error())
 		}
 		return projectID, err
 	},
@@ -76,7 +76,7 @@ func getInstanceAlias(ctx context.Context, hostname string) (string, error) {
 		// of the Compute Engine metadata server.
 		// See https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity#gke_mds
 		if hostname == "" {
-			return "", fmt.Errorf("unable to retrieve instance name and hostname from GCE: %s", err)
+			return "", fmt.Errorf("unable to retrieve instance name and hostname from GCE: %s", err.Error())
 		}
 		instanceName = strings.SplitN(hostname, ".", 2)[0]
 	}
@@ -108,7 +108,7 @@ func getResponseWithMaxLength(ctx context.Context, endpoint string, maxLength in
 func getResponse(ctx context.Context, url string) (string, error) {
 	res, err := httputils.Get(ctx, url, map[string]string{"Metadata-Flavor": "Google"}, 1000*time.Millisecond)
 	if err != nil {
-		return "", fmt.Errorf("GCE metadata API error: %s", err)
+		return "", fmt.Errorf("GCE metadata API error: %s", err.Error())
 	}
 
 	// Some cloud platforms will respond with an empty body, causing the agent to assume a faulty hostname

@@ -161,13 +161,12 @@ type Client struct {
 	lastError error
 }
 
-// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
-// Using a single RC client instance in the tracer is a requirement for remote configuration.
-var client *Client
-
 var (
-	startOnce sync.Once
-	stopOnce  sync.Once
+	// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
+	// Using a single RC client instance in the tracer is a requirement for remote configuration.
+	client    *Client
+	clientMux sync.Mutex
+	started   bool
 )
 
 // newClient creates a new remoteconfig Client
@@ -197,34 +196,47 @@ func newClient(config ClientConfig) (*Client, error) {
 // Start starts the client's update poll loop in a fresh goroutine.
 // Noop if the client has already started.
 func Start(config ClientConfig) error {
-	var err error
-	startOnce.Do(func() {
-		client, err = newClient(config)
-		if err != nil {
-			return
-		}
-		if !internal.BoolEnv("DD_REMOTE_CONFIGURATION_ENABLED", true) {
-			// Don't start polling if the feature is disabled explicitly
-			return
-		}
-		go func() {
-			ticker := time.NewTicker(client.PollInterval)
-			defer ticker.Stop()
+	if !internal.BoolEnv("DD_REMOTE_CONFIGURATION_ENABLED", true) {
+		// Don't start polling if the feature is disabled explicitly
+		return nil
+	}
+	clientMux.Lock()
+	defer clientMux.Unlock()
 
-			for {
-				select {
-				case <-client.stop:
-					close(client.stop)
+	if started {
+		// Return early if already started.
+		return nil
+	}
+	var err error
+	client, err = newClient(config)
+	if err != nil {
+		return err
+	}
+	started = true
+
+	var (
+		pollInterval = client.PollInterval
+		stop         = client.stop
+	)
+	go func() {
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				if client == nil {
 					return
-				case <-ticker.C:
-					client.Lock()
-					client.updateState()
-					client.Unlock()
 				}
+				client.Lock()
+				client.updateState()
+				client.Unlock()
 			}
-		}()
-	})
-	return err
+		}
+	}()
+	return nil
 }
 
 // Stop stops the client's update poll loop.
@@ -232,46 +244,61 @@ func Start(config ClientConfig) error {
 // The remote config client is supposed to have the same lifecycle as the tracer.
 // It can't be restarted after a call to Stop() unless explicitly calling Reset().
 func Stop() {
+	clientMux.Lock()
+	defer clientMux.Unlock()
+
 	if client == nil {
 		// In case Stop() is called before Start()
 		return
 	}
-	stopOnce.Do(func() {
-		log.Debug("remoteconfig: gracefully stopping the client")
-		client.stop <- struct{}{}
-		select {
-		case <-client.stop:
-			log.Debug("remoteconfig: client stopped successfully")
-		case <-time.After(time.Second):
-			log.Debug("remoteconfig: client stopping timeout")
-		}
-	})
+	if !started {
+		// Return early if already stopped.
+		return
+	}
+	log.Debug("remoteconfig: gracefully stopping the client")
+	close(client.stop)
+	select {
+	case <-client.stop:
+		log.Debug("remoteconfig: client stopped successfully")
+	case <-time.After(time.Second):
+		log.Debug("remoteconfig: client stopping timeout")
+	}
+	client = nil
+	started = false
 }
 
 // Reset destroys the client instance.
 // To be used only in tests to reset the state of the client.
 func Reset() {
+	clientMux.Lock()
+	defer clientMux.Unlock()
+
 	client = nil
-	startOnce = sync.Once{}
-	stopOnce = sync.Once{}
+	started = false
 }
 
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new update request payload: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new update request payload: %s", err.Error())
 		return
 	}
 
 	req, err := http.NewRequest(http.MethodGet, c.endpoint, &data)
 	if err != nil {
-		log.Error("remoteconfig: unexpected error while creating a new http request: %v", err)
+		log.Error("remoteconfig: unexpected error while creating a new http request: %s", err.Error())
 		return
+	}
+	if internal.ContainerID() != "" {
+		req.Header.Set("Datadog-Container-ID", internal.ContainerID())
+	}
+	if internal.EntityID() != "" {
+		req.Header.Set("Datadog-Entity-ID", internal.EntityID())
 	}
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		log.Debug("remoteconfig: http request error: %v", err)
+		log.Debug("remoteconfig: http request error: %s", err.Error())
 		return
 	}
 	// Flush and close the response body when returning (cf. https://pkg.go.dev/net/http#Client.Do)
@@ -287,7 +314,7 @@ func (c *Client) updateState() {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("remoteconfig: http request error: could not read the response body: %v", err)
+		log.Error("remoteconfig: http request error: could not read the response body: %s", err.Error())
 		return
 	}
 
@@ -297,7 +324,7 @@ func (c *Client) updateState() {
 
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
-		log.Error("remoteconfig: http request error: could not parse the json response body: %v", err)
+		log.Error("remoteconfig: http request error: could not parse the json response body: %s", err.Error())
 		return
 	}
 
@@ -489,7 +516,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 
 		fileMap[f.Path] = f.Raw
 		if !slices.Contains(allProducts, path.Product) {
-			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path)
+			log.Debug("remoteconfig: received file for unknown product %s (known: %#v): %s", path.Product, allProducts, f.Path) //nolint:gocritic // Debug logging for unknown products
 		}
 		if productUpdates[path.Product] == nil {
 			productUpdates[path.Product] = make(ProductUpdate)
@@ -512,7 +539,7 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	// are provided with this information in this case
 	stateBefore, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error: %v", err)
+		return fmt.Errorf("repository current state error: %s", err)
 	}
 	products, err := c.repository.Update(rc.Update{
 		TUFRoots:      pbUpdate.Roots,
@@ -521,11 +548,11 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		ClientConfigs: pbUpdate.ClientConfigs,
 	})
 	if err != nil {
-		return fmt.Errorf("repository update error: %v", err)
+		return fmt.Errorf("repository update error: %s", err)
 	}
 	stateAfter, err := c.repository.CurrentState()
 	if err != nil {
-		return fmt.Errorf("repository current state error after update: %v", err)
+		return fmt.Errorf("repository current state error after update: %s", err)
 	}
 
 	// Create a config files diff between before/after the update to see which config files are missing
@@ -628,6 +655,10 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 	}
 
 	capa := c.allCapabilities()
+	var tags []string
+	for k, v := range internal.GetGitMetadataTags() {
+		tags = append(tags, k+":"+v)
+	}
 	req := clientGetConfigsRequest{
 		Client: &clientData{
 			State: &clientState{
@@ -648,6 +679,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Env:           c.Env,
 				AppVersion:    c.AppVersion,
 				ProcessTags:   processtags.GlobalTags().Slice(),
+				Tags:          tags,
 			},
 			Capabilities: capa.Bytes(),
 		},

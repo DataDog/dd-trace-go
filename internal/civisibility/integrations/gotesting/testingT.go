@@ -97,7 +97,12 @@ func (ddt *T) SkipNow() {
 // other parallel tests. When a test is run multiple times due to use of
 // -test.count or -test.cpu, multiple instances of a single test never run in
 // parallel with each other.
-func (ddt *T) Parallel() { (*testing.T)(ddt).Parallel() }
+func (ddt *T) Parallel() {
+	t := (*testing.T)(ddt)
+	if !instrumentTestingParallel(t) {
+		t.Parallel()
+	}
+}
 
 // Deadline reports the time at which the test binary will have
 // exceeded the timeout specified by the -timeout flag.

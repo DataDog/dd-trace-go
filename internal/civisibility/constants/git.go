@@ -51,11 +51,38 @@ const (
 	GitTag = "git.tag"
 
 	// GitHeadCommit indicates the GIT head commit hash.
-	GitHeadCommit = "git.commit.head_sha"
+	GitHeadCommit = "git.commit.head.sha"
+
+	// GitHeadMessage indicates the GIT head commit message.
+	GitHeadMessage = "git.commit.head.message"
+
+	// GitHeadAuthorDate indicates the GIT head commit author date.
+	GitHeadAuthorDate = "git.commit.head.author.date"
+
+	// GitHeadAuthorEmail indicates the GIT head commit author email.
+	GitHeadAuthorEmail = "git.commit.head.author.email"
+
+	// GitHeadAuthorName indicates the GIT head commit author name.
+	GitHeadAuthorName = "git.commit.head.author.name"
+
+	// GitHeadCommitterDate indicates the GIT head commit committer date.
+	GitHeadCommitterDate = "git.commit.head.committer.date"
+
+	// GitHeadCommitterEmail indicates the GIT head commit committer email.
+	GitHeadCommitterEmail = "git.commit.head.committer.email"
+
+	// GitHeadCommitterName indicates the GIT head commit committer name.
+	GitHeadCommitterName = "git.commit.head.committer.name"
 
 	// GitPrBaseCommit indicates the GIT PR base commit hash.
 	GitPrBaseCommit = "git.pull_request.base_branch_sha"
 
+	// GitPrBaseHeadCommit indicates the GIT PR base branch head commit hash.
+	GitPrBaseHeadCommit = "git.pull_request.base_branch_head_sha"
+
 	// GitPrBaseBranch indicates the GIT PR base branch name.
 	GitPrBaseBranch = "git.pull_request.base_branch"
+
+	// PrNumber indicates the pull request number.
+	PrNumber = "pr.number"
 )

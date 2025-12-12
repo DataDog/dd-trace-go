@@ -27,7 +27,7 @@ aspects:
       - prepend-statements:
           template: |-
             exitFunc := __dd_civisibility_instrumentTestingM({{ .Function.Receiver }})
-            defer exitFunc({{ .Function.Receiver }}.exitCode)
+            defer func() { exitFunc({{ .Function.Receiver }}.exitCode) }()
 
   - id: T.Run
     join-point:
@@ -54,6 +54,9 @@ aspects:
 
             //go:linkname __dd_civisibility_instrumentSkipNow github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentSkipNow
             func __dd_civisibility_instrumentSkipNow(tb TB)
+            
+            //go:linkname __dd_civisibility_instrumentTestingParallel github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingParallel
+            func __dd_civisibility_instrumentTestingParallel(t *T) bool
 
             //go:linkname __dd_civisibility_ExitCiVisibility github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations.ExitCiVisibility
             func __dd_civisibility_ExitCiVisibility()
@@ -210,6 +213,19 @@ aspects:
       - prepend-statements:
           template: |-
             __dd_civisibility_instrumentSkipNow({{ .Function.Receiver }})
+
+  - id: common.Parallel
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Parallel
+              - receiver: '*testing.T'
+    advice:
+      - prepend-statements:
+          template: |-
+            defer func() { _ = __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }}) }()
 
   - id: testify.suite.Run
     join-point:

@@ -43,18 +43,18 @@ func main() {
 
 	tmpl, err := template.ParseFiles("child_pipeline.yml.tpl")
 	if err != nil {
-		log.Fatalf("Error parsing template: %v", err)
+		log.Fatalf("Error parsing template: %s", err.Error())
 	}
 
 	outputFile, err := os.Create("generated_benchmark_matrix.yml")
 	if err != nil {
-		log.Fatalf("Error creating output file: %v", err)
+		log.Fatalf("Error creating output file: %s", err.Error())
 	}
 	defer outputFile.Close()
 
 	err = tmpl.Execute(outputFile, config)
 	if err != nil {
-		log.Fatalf("Error executing template: %v", err)
+		log.Fatalf("Error executing template: %s", err.Error())
 	}
 
 	log.Println("Successfully generated benchmarking matrix template.")

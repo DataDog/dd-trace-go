@@ -12,9 +12,7 @@ COPYRIGHT_HEADER="// Unless explicitly stated otherwise all files in this reposi
 "
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-go -C "${SCRIPT_DIR}/../../../../_tools" install google.golang.org/protobuf/cmd/protoc-gen-go
-go -C "${SCRIPT_DIR}/../../../../_tools" install google.golang.org/grpc/cmd/protoc-gen-go-grpc
+export PATH="${SCRIPT_DIR}/../../../../bin:${PATH}"
 
 protoc fixture.proto \
   --go_out=. \

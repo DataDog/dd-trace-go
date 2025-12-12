@@ -19,16 +19,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
+var (
+	confluentKafkaV2GroupID = "ckgo-v2-gotest"
+	confluentKafkaV2Topic   = "ckgo-v2-gotest"
+)
+
 var confluentKafkaV2 = harness.KafkaTestCase(
 	instrumentation.PackageConfluentKafkaGoV2,
 	func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var (
-			testGroupID = "gotest"
-			testTopic   = "gotest"
-		)
-		const (
-			addr = "127.0.0.1:9092"
-		)
 
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -38,7 +36,7 @@ var confluentKafkaV2 = harness.KafkaTestCase(
 			opts = append(opts, kafkatrace.WithService(serviceOverride))
 		}
 		p, err := kafkatrace.NewProducer(&kafka.ConfigMap{
-			"bootstrap.servers":   addr,
+			"bootstrap.servers":   kafkaAddr,
 			"go.delivery.reports": true,
 		}, opts...)
 		require.NoError(t, err)
@@ -46,7 +44,7 @@ var confluentKafkaV2 = harness.KafkaTestCase(
 		delivery := make(chan kafka.Event, 1)
 		err = p.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{
-				Topic:     &testTopic,
+				Topic:     &confluentKafkaV2Topic,
 				Partition: 0,
 			},
 			Key:   []byte("key2"),
@@ -59,8 +57,8 @@ var confluentKafkaV2 = harness.KafkaTestCase(
 
 		// next attempt to consume the message
 		c, err := kafkatrace.NewConsumer(&kafka.ConfigMap{
-			"group.id":                 testGroupID,
-			"bootstrap.servers":        addr,
+			"group.id":                 confluentKafkaV2GroupID,
+			"bootstrap.servers":        kafkaAddr,
 			"fetch.wait.max.ms":        500,
 			"socket.timeout.ms":        1500,
 			"session.timeout.ms":       1500,
@@ -69,7 +67,7 @@ var confluentKafkaV2 = harness.KafkaTestCase(
 		require.NoError(t, err)
 
 		err = c.Assign([]kafka.TopicPartition{
-			{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
+			{Topic: &confluentKafkaV2Topic, Partition: 0, Offset: msg1.TopicPartition.Offset},
 		})
 		require.NoError(t, err)
 

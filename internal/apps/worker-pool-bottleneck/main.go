@@ -36,7 +36,7 @@ func main() {
 	// Init queue
 	queue, err := NewQueue()
 	if err != nil {
-		log.Fatalf("failed to create queue: %v", err)
+		log.Fatalf("failed to create queue: %s", err.Error())
 	}
 
 	// Start app
@@ -66,7 +66,7 @@ func QueuePushHandler(queue *Queue) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < 100; i++ {
 			if err := queue.Push(data); err != nil {
-				log.Fatalf("failed to push message: %v", err)
+				log.Fatalf("failed to push message: %s", err.Error())
 			}
 		}
 	}
@@ -99,7 +99,7 @@ func ConsumeMessageWorker(queue *Queue, decode chan<- []byte) {
 	for {
 		msg, err := queue.Pull()
 		if err != nil {
-			log.Fatalf("failed to pull message: %v", err)
+			log.Fatalf("failed to pull message: %s", err.Error())
 		}
 		decode <- msg
 	}

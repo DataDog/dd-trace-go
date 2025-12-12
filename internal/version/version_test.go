@@ -127,7 +127,9 @@ func TestParseVersion(t *testing.T) {
 		{"v1.2.3-rc.12", 1, 2, 3, 12},
 		{"v2.0.0-rc.1", 2, 0, 0, 1},
 		{"v2.1.0-dev", 2, 1, 0, 0},
+		{"v2.1.0-alpha", 2, 1, 0, 0},
 		{"v2.1.0-alpha.21", 2, 1, 0, 21},
+		{"v2.5.0-rc.11", 2, 5, 0, 11},
 		{"v2.1.0-beta.9", 2, 1, 0, 9},
 	}
 	for _, c := range tc {
@@ -143,6 +145,25 @@ func TestParseVersion(t *testing.T) {
 		}
 		if v.RC != c.rc {
 			t.Errorf("RC is %d", v.RC)
+		}
+	}
+}
+
+func BenchmarkParseVersion(b *testing.B) {
+	version := "v2.1.0-rc.21"
+	for b.Loop() {
+		v := parseVersion(version)
+		if got, want := v.Major, 2; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := v.Minor, 1; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := v.Patch, 0; got != want {
+			b.Fatalf("got %d, want %d", got, want)
+		}
+		if got, want := v.RC, 21; got != want {
+			b.Fatalf("got %d, want %d", got, want)
 		}
 	}
 }

@@ -19,6 +19,9 @@ const (
 	// NetworkDestinationIP is the remote address where the outbound connection is being made to.
 	NetworkDestinationIP = "network.destination.ip"
 
+	// NetworkClientIP is the client IP address.
+	NetworkClientIP = "network.client.ip"
+
 	// TargetPort sets the target host port.
 	// Legacy: Kept for backwards compatability. Use NetworkDestinationPort instead.
 	TargetPort = "out.port"
@@ -58,6 +61,9 @@ const (
 	// See https://docs.datadoghq.com/tracing/trace_collection/tracing_naming_convention/#http-requests
 	HTTPRequestHeaders = "http.request.headers"
 
+	// HTTPEndpoint sets the HTTP endpoint tag.
+	HTTPEndpoint = "http.endpoint"
+
 	// SpanName is a pseudo-key for setting a span's operation name by means of
 	// a tag. It is mostly here to facilitate vendor-agnostic frameworks like Opentracing
 	// and OpenCensus.
@@ -84,11 +90,18 @@ const (
 	// ErrorType specifies the error type.
 	ErrorType = "error.type"
 
-	// ErrorStack specifies the stack dump.
+	// ErrorStack specifies the stack dump when the error is thrown.
 	ErrorStack = "error.stack"
 
+	// ErrorHandlingStack specifies the stack dump when the error is captured.
+	ErrorHandlingStack = "error.handling_stack"
+
 	// ErrorDetails holds details about an error which implements a formatter.
+	// Deprecated: Use ErrorStack instead. This tag is not supported by Error Tracking.
 	ErrorDetails = "error.details"
+
+	// ErrorNoStackTrace is a tag that specifies that the error stack trace should not be captured.
+	ErrorNoStackTrace = "error.no_stack_trace"
 
 	// Environment specifies the environment to use with a trace.
 	Environment = "env"
@@ -138,4 +151,7 @@ const (
 
 	// MapSpanEvents is used by Span.AsMap to store the spanEvents value.
 	MapSpanEvents = "_ddtrace.span_events"
+
+	// CloudResourceID is the cloud provider resource identifier.
+	CloudResourceID = "cloud.resource_id"
 )

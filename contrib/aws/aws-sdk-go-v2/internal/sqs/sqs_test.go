@@ -28,7 +28,7 @@ func TestEnrichOperation(t *testing.T) {
 		operation string
 		input     middleware.InitializeInput
 		setup     func(context.Context) *tracer.Span
-		check     func(*testing.T, middleware.InitializeInput)
+		check     func(*testing.T, middleware.InitializeInput, *tracer.Span)
 	}{
 		{
 			name:      "SendMessage",
@@ -43,7 +43,7 @@ func TestEnrichOperation(t *testing.T) {
 				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
 				return span
 			},
-			check: func(t *testing.T, in middleware.InitializeInput) {
+			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span) {
 				params, ok := in.Parameters.(*sqs.SendMessageInput)
 				require.True(t, ok)
 				require.NotNil(t, params)
@@ -53,6 +53,7 @@ func TestEnrichOperation(t *testing.T) {
 				assert.Equal(t, "String", *params.MessageAttributes[datadogKey].DataType)
 				assert.NotNil(t, params.MessageAttributes[datadogKey].StringValue)
 				assert.NotEmpty(t, *params.MessageAttributes[datadogKey].StringValue)
+				require.Equal(t, span.AsMap()["messaging.system"], "amazonsqs")
 			},
 		},
 		{
@@ -81,7 +82,7 @@ func TestEnrichOperation(t *testing.T) {
 				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
 				return span
 			},
-			check: func(t *testing.T, in middleware.InitializeInput) {
+			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span) {
 				params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 				require.True(t, ok)
 				require.NotNil(t, params)
@@ -96,6 +97,7 @@ func TestEnrichOperation(t *testing.T) {
 					assert.NotNil(t, entry.MessageAttributes[datadogKey].StringValue)
 					assert.NotEmpty(t, *entry.MessageAttributes[datadogKey].StringValue)
 				}
+				require.Equal(t, span.AsMap()["messaging.system"], "amazonsqs")
 			},
 		},
 	}
@@ -111,7 +113,7 @@ func TestEnrichOperation(t *testing.T) {
 			EnrichOperation(span, tt.input, tt.operation)
 
 			if tt.check != nil {
-				tt.check(t, tt.input)
+				tt.check(t, tt.input, span)
 			}
 		})
 	}
