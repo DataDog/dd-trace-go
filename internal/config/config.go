@@ -55,9 +55,10 @@ type Config struct {
 	spanAttributeSchemaVersion int
 	peerServiceDefaultsEnabled bool
 	peerServiceMappings        map[string]string
-	debugAbandonedSpans        bool
-	spanTimeout                time.Duration
-	partialFlushMinSpans       int
+	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
+	debugAbandonedSpans  bool
+	spanTimeout          time.Duration
+	partialFlushMinSpans int
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled           bool
@@ -321,4 +322,17 @@ func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin) 
 	defer c.mu.Unlock()
 	c.partialFlushMinSpans = minSpans
 	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
+}
+
+func (c *Config) DebugAbandonedSpans() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.debugAbandonedSpans
+}
+
+func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debugAbandonedSpans = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
 }

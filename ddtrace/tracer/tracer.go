@@ -497,7 +497,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
 	}
-	if c.debugAbandonedSpans {
+	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
@@ -813,7 +813,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	} else {
 		span.pprofCtxRestore = nil
 	}
-	if t.config.debugAbandonedSpans {
+	if t.config.internalConfig.DebugAbandonedSpans() {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
 			// ok
@@ -979,7 +979,7 @@ func (t *tracer) TracerConf() TracerConf {
 	return TracerConf{
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
-		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
+		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
 		Disabled:             !t.config.enabled.current,
 		PartialFlush:         t.config.internalConfig.PartialFlushEnabled(),
 		PartialFlushMinSpans: t.config.internalConfig.PartialFlushMinSpans(),
