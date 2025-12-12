@@ -3,7 +3,7 @@
 # default owner
 *                               @DataDog/dd-trace-go-guild
 # tracing
-/contrib                        @DataDog/apm-go @Datadog/apm-idm-go
+/contrib                        @DataDog/apm-go @DataDog/apm-idm-go
 /ddtrace                        @DataDog/apm-go
 
 # profiling
@@ -83,8 +83,8 @@
 /openfeature                    @DataDog/feature-flagging-and-experimentation-sdk @DataDog/asm-go
 
 # Database Monitoring
-ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
-contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
+ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
+contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 
 # no owner: changes to these files will not automatically ping any particular
 # team and can be reviewed by anybody with the appropriate permissions. This is
