@@ -254,10 +254,6 @@ type config struct {
 	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
 	peerServiceMappings map[string]string
 
-	// spanTimeout represents how old a span can be before it should be logged as a possible
-	// misconfiguration
-	spanTimeout time.Duration
-
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
 
@@ -402,9 +398,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		} else {
 			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
 		}
-	}
-	if c.internalConfig.DebugAbandonedSpans() {
-		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 
@@ -1235,7 +1228,7 @@ func WithProfilerEndpoints(enabled bool) StartOption {
 func WithDebugSpansMode(timeout time.Duration) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetDebugAbandonedSpans(true, internalconfig.OriginCode)
-		c.spanTimeout = timeout
+		c.internalConfig.SetSpanTimeout(timeout, internalconfig.OriginCode)
 	}
 }
 
