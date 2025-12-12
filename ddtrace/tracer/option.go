@@ -273,10 +273,6 @@ type config struct {
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
 
-	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
-	// Value from DD_DYNAMIC_INSTRUMENTATION_ENABLED, default false.
-	dynamicInstrumentationEnabled bool
-
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
 
@@ -410,8 +406,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-
-	c.dynamicInstrumentationEnabled, _, _ = stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 
 	namingschema.LoadFromEnv()
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())

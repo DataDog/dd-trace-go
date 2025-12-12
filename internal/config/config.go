@@ -60,9 +60,10 @@ type Config struct {
 	partialFlushMinSpans       int
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
-	partialFlushEnabled           bool
-	statsComputationEnabled       bool
-	dataStreamsMonitoringEnabled  bool
+	partialFlushEnabled          bool
+	statsComputationEnabled      bool
+	dataStreamsMonitoringEnabled bool
+	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	dynamicInstrumentationEnabled bool
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate      float64
@@ -311,4 +312,17 @@ func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin) 
 	defer c.mu.Unlock()
 	c.partialFlushMinSpans = minSpans
 	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
+}
+
+func (c *Config) DynamicInstrumentationEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dynamicInstrumentationEnabled
+}
+
+func (c *Config) SetDynamicInstrumentationEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dynamicInstrumentationEnabled = enabled
+	telemetry.RegisterAppConfig("DD_DYNAMIC_INSTRUMENTATION_ENABLED", enabled, origin)
 }
