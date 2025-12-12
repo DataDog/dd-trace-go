@@ -63,9 +63,11 @@ type Config struct {
 	partialFlushMinSpans int
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
-	partialFlushEnabled           bool
-	statsComputationEnabled       bool
-	dataStreamsMonitoringEnabled  bool
+	partialFlushEnabled bool
+	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
+	statsComputationEnabled      bool
+	dataStreamsMonitoringEnabled bool
+	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	dynamicInstrumentationEnabled bool
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate      float64
@@ -107,7 +109,7 @@ func loadConfig() *Config {
 	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = provider.getIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
@@ -366,4 +368,17 @@ func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.debugStack = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_STACK", enabled, origin)
+}
+
+func (c *Config) StatsComputationEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsComputationEnabled
+}
+
+func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statsComputationEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
 }
