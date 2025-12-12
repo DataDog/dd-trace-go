@@ -157,10 +157,6 @@ type config struct {
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
 
-	// logToStdout reports whether we should log all traces to the standard
-	// output instead of using the agent. This is used in Lambda environments.
-	logToStdout bool
-
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
@@ -319,10 +315,6 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
-
-	// isLambdaFunction, if true, indicates we are in a lambda function
-	// It is set by checking for a nonempty LAMBDA_FUNCTION_NAME env var.
-	isLambdaFunction bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -450,14 +442,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
-	}
-	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
-		// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-		c.logToStdout = true
-		if v != "" {
-			c.isLambdaFunction = true
-		}
 	}
 	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
@@ -601,7 +585,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.logToStdout || !c.enabled.current || c.ciVisibilityAgentless
+	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.current || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
@@ -991,7 +975,7 @@ func WithDebugMode(enabled bool) StartOption {
 // running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {
-		c.logToStdout = enabled
+		c.internalConfig.SetLogToStdout(enabled, telemetry.OriginCode)
 	}
 }
 

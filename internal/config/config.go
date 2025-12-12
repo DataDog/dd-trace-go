@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
@@ -65,6 +66,10 @@ type Config struct {
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
+	// logToStdout, if true, indicates we should log all traces to the standard output
+	logToStdout bool
+	// isLambdaFunction, if true, indicates we are in a lambda function
+	isLambdaFunction bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -100,6 +105,16 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+
+	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
+	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+	// TODO: Is it possible that we can just use `v != ""` to configure one setting, `lambdaMode` instead
+	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		cfg.logToStdout = true
+		if v != "" {
+			cfg.isLambdaFunction = true
+		}
+	}
 
 	return cfg
 }
@@ -212,4 +227,30 @@ func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.logStartup = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_STARTUP_LOGS", enabled, origin)
+}
+
+func (c *Config) LogToStdout() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logToStdout
+}
+
+func (c *Config) SetLogToStdout(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logToStdout = enabled
+	// Do not report telemetry because this is not a user-configurable option
+}
+
+func (c *Config) IsLambdaFunction() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.isLambdaFunction
+}
+
+func (c *Config) SetIsLambdaFunction(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.isLambdaFunction = enabled
+	// Do not report telemetry because this is not a user-configurable option
 }

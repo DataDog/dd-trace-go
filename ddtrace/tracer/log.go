@@ -145,7 +145,7 @@ func logStartup(t *tracer) {
 		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
-		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
+		LambdaMode:                  fmt.Sprintf("%t", t.config.internalConfig.LogToStdout()),
 		AgentFeatures:               t.config.agent,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
@@ -165,7 +165,7 @@ func logStartup(t *tracer) {
 	if limit, ok := t.rulesSampling.TraceRateLimit(); ok {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
-	if !t.config.logToStdout {
+	if !t.config.internalConfig.LogToStdout() {
 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
 			info.AgentError = fmt.Sprintf("%s", err.Error())
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
