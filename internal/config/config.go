@@ -42,22 +42,24 @@ type Config struct {
 	agentURL *url.URL
 	debug    bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
-	logStartup                    bool
-	serviceName                   string
-	version                       string
-	env                           string
-	serviceMappings               map[string]string
-	hostname                      string
-	runtimeMetrics                bool
-	runtimeMetricsV2              bool
-	profilerHotspots              bool
-	profilerEndpoints             bool
-	spanAttributeSchemaVersion    int
-	peerServiceDefaultsEnabled    bool
-	peerServiceMappings           map[string]string
-	debugAbandonedSpans           bool
-	spanTimeout                   time.Duration
-	partialFlushMinSpans          int
+	logStartup                 bool
+	serviceName                string
+	version                    string
+	env                        string
+	serviceMappings            map[string]string
+	hostname                   string
+	runtimeMetrics             bool
+	runtimeMetricsV2           bool
+	profilerHotspots           bool
+	profilerEndpoints          bool
+	spanAttributeSchemaVersion int
+	peerServiceDefaultsEnabled bool
+	peerServiceMappings        map[string]string
+	debugAbandonedSpans        bool
+	spanTimeout                time.Duration
+	partialFlushMinSpans       int
+	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
+	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled           bool
 	statsComputationEnabled       bool
 	dataStreamsMonitoringEnabled  bool
@@ -293,4 +295,17 @@ func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origi
 	defer c.mu.Unlock()
 	c.traceRateLimitPerSecond = rate
 	telemetry.RegisterAppConfig("DD_TRACE_RATE_LIMIT", rate, origin)
+}
+
+func (c *Config) PartialFlushEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.partialFlushEnabled
+}
+
+func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.partialFlushEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
 }
