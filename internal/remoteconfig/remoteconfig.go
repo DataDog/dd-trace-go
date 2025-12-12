@@ -149,16 +149,33 @@ type Client struct {
 	stop       chan struct{}
 
 	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
-	callbacks               []Callback
-	_callbacksMu            sync.RWMutex
-	products                map[string]struct{}
-	productsMu              sync.RWMutex
-	productsWithCallbacks   map[string]ProductCallback
-	productsWithCallbacksMu sync.RWMutex
-	capabilities            map[Capability]struct{}
-	capabilitiesMu          sync.RWMutex
+	callbacks       []Callback
+	_callbacksMu    sync.RWMutex
+	products        map[string]struct{}
+	productsMu      sync.RWMutex
+	subscriptionsMu struct {
+		sync.RWMutex
+		subs        []subscription
+		idAllocator int
+	}
+	// capabilities contains the capabilities that have been registered through
+	// RegisterCapability. The capabilities of the subscribers added through
+	// RegisterSubscribers are reflected inside subscriptions.
+	capabilities   map[Capability]struct{}
+	capabilitiesMu sync.RWMutex
 
 	lastError error
+}
+
+// subscription represents a callback that was registered to run on updates to a
+// specific product.
+type subscription struct {
+	// id uniquely identifies this subscription. It is used to remove a specific
+	// subscription.
+	id           int
+	product      string
+	capabilities []Capability
+	callback     ProductCallback
 }
 
 var (
@@ -180,16 +197,15 @@ func newClient(config ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		ClientConfig:          config,
-		clientID:              generateID(),
-		endpoint:              fmt.Sprintf("%s/v0.7/config", config.AgentURL),
-		repository:            repo,
-		stop:                  make(chan struct{}),
-		lastError:             nil,
-		callbacks:             []Callback{},
-		capabilities:          map[Capability]struct{}{},
-		products:              map[string]struct{}{},
-		productsWithCallbacks: make(map[string]ProductCallback),
+		ClientConfig: config,
+		clientID:     generateID(),
+		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
+		repository:   repo,
+		stop:         make(chan struct{}),
+		lastError:    nil,
+		callbacks:    []Callback{},
+		capabilities: map[Capability]struct{}{},
+		products:     map[string]struct{}{},
 	}, nil
 }
 
@@ -331,28 +347,67 @@ func (c *Client) updateState() {
 	c.lastError = c.applyUpdate(&update)
 }
 
-// Subscribe registers a product and its callback to be invoked when the client receives configuration updates.
-// Subscribe should be preferred over RegisterProduct and RegisterCallback if your callback only handles a single product.
-func Subscribe(product string, callback ProductCallback, capabilities ...Capability) error {
+type SubscriptionToken int
+
+// Subscribe registers a product and its callback to be invoked when the client
+// receives configuration updates for the specified product. The returned token
+// can be passed to Unsubscribe to remove the subscription.
+//
+// It is legal to call Subscribe multiple times with the same product, and even
+// to call it multiple times with the same product and different capabilities.
+// Note, however, that the capabilities reported to RC are the union of all
+// capabilities passed to Subscribe and RegisterCapability (across all
+// products); in other words, the capabilities are not tied to a specific
+// product or subscription.
+//
+// Subscribe should be preferred over RegisterProduct and RegisterCallback if
+// your callback only handles a single product.
+func Subscribe(product string, callback ProductCallback, capabilities ...Capability) (SubscriptionToken, error) {
 	if client == nil {
-		return ErrClientNotStarted
+		return 0, ErrClientNotStarted
 	}
 	client.productsMu.RLock()
 	defer client.productsMu.RUnlock()
 	if _, found := client.products[product]; found {
-		return fmt.Errorf("product %s already registered via RegisterProduct", product)
+		return 0, fmt.Errorf("product %s already registered via RegisterProduct", product)
 	}
 
-	client.productsWithCallbacksMu.Lock()
-	defer client.productsWithCallbacksMu.Unlock()
-	client.productsWithCallbacks[product] = callback
+	client.subscriptionsMu.Lock()
+	defer client.subscriptionsMu.Unlock()
+	client.subscriptionsMu.idAllocator++
+	id := client.subscriptionsMu.idAllocator
+	sub := subscription{
+		id:           id,
+		product:      product,
+		capabilities: capabilities,
+		callback:     callback,
+	}
+	client.subscriptionsMu.subs = append(client.subscriptionsMu.subs, sub)
 
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
 	for _, cap := range capabilities {
 		client.capabilities[cap] = struct{}{}
 	}
-	return nil
+	return SubscriptionToken(id), nil
+}
+
+// Unsubscribe removes a subscription previously registered via Subscribe. The
+// capabilities associated with that subscription will no longer be reported to
+// RC.
+func Unsubscribe(token SubscriptionToken) error {
+	if client == nil {
+		return ErrClientNotStarted
+	}
+	client.subscriptionsMu.Lock()
+	defer client.subscriptionsMu.Unlock()
+	for i, sub := range client.subscriptionsMu.subs {
+		if sub.id == int(token) {
+			client.subscriptionsMu.subs = append(client.subscriptionsMu.subs[:i], client.subscriptionsMu.subs[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("subscription %d not found", token)
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client
@@ -391,11 +446,14 @@ func RegisterProduct(p string) error {
 	}
 	client.productsMu.Lock()
 	defer client.productsMu.Unlock()
-	client.productsWithCallbacksMu.RLock()
-	defer client.productsWithCallbacksMu.RUnlock()
-	if _, found := client.productsWithCallbacks[p]; found {
-		return fmt.Errorf("product %s already registered via Subscribe", p)
+	client.subscriptionsMu.RLock()
+	defer client.subscriptionsMu.RUnlock()
+	for _, s := range client.subscriptionsMu.subs {
+		if s.product == p {
+			return fmt.Errorf("product %s already registered via Subscribe", p)
+		}
 	}
+
 	client.products[p] = struct{}{}
 	return nil
 }
@@ -418,11 +476,21 @@ func HasProduct(p string) (bool, error) {
 	}
 	client.productsMu.RLock()
 	defer client.productsMu.RUnlock()
-	client.productsWithCallbacksMu.RLock()
-	defer client.productsWithCallbacksMu.RUnlock()
+
 	_, found := client.products[p]
-	_, foundWithCallback := client.productsWithCallbacks[p]
-	return found || foundWithCallback, nil
+	if found {
+		return true, nil
+	}
+
+	client.subscriptionsMu.RLock()
+	defer client.subscriptionsMu.RUnlock()
+	for _, s := range client.subscriptionsMu.subs {
+		if s.product == p {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
@@ -467,6 +535,15 @@ func (c *Client) allCapabilities() *big.Int {
 	for i := range c.capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
+
+	c.subscriptionsMu.RLock()
+	defer c.subscriptionsMu.RUnlock()
+	for _, s := range c.subscriptionsMu.subs {
+		for _, cap := range s.capabilities {
+			capa.SetBit(capa, int(cap), 1)
+		}
+	}
+
 	return capa
 }
 
@@ -479,11 +556,11 @@ func (c *Client) globalCallbacks() []Callback {
 }
 
 func (c *Client) productCallbacks() map[string]ProductCallback {
-	c.productsWithCallbacksMu.RLock()
-	defer c.productsWithCallbacksMu.RUnlock()
-	callbacks := make(map[string]ProductCallback, len(c.productsWithCallbacks))
-	for k, v := range c.productsWithCallbacks {
-		callbacks[k] = v
+	c.subscriptionsMu.RLock()
+	defer c.subscriptionsMu.RUnlock()
+	callbacks := make(map[string]ProductCallback, len(c.subscriptionsMu.subs))
+	for _, v := range c.subscriptionsMu.subs {
+		callbacks[v.product] = v.callback
 	}
 	return callbacks
 }
@@ -491,15 +568,24 @@ func (c *Client) productCallbacks() map[string]ProductCallback {
 func (c *Client) allProducts() []string {
 	c.productsMu.RLock()
 	defer c.productsMu.RUnlock()
-	c.productsWithCallbacksMu.RLock()
-	defer c.productsWithCallbacksMu.RUnlock()
-	products := make([]string, 0, len(c.products)+len(c.productsWithCallbacks))
+	c.subscriptionsMu.RLock()
+	defer c.subscriptionsMu.RUnlock()
+
+	// Dedup products across all subscriptions and registered products.
+	ps := make(map[string]struct{}, len(c.products)+len(c.subscriptionsMu.subs))
+
 	for p := range c.products {
+		ps[p] = struct{}{}
+	}
+	for _, s := range c.subscriptionsMu.subs {
+		ps[s.product] = struct{}{}
+	}
+
+	products := make([]string, 0, len(ps))
+	for p := range ps {
 		products = append(products, p)
 	}
-	for p := range c.productsWithCallbacks {
-		products = append(products, p)
-	}
+
 	return products
 }
 
