@@ -402,7 +402,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	var writer traceWriter
 	if c.ciVisibilityEnabled {
 		writer = newCiVisibilityTraceWriter(c)
-	} else if c.logToStdout {
+	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
@@ -982,7 +982,7 @@ func (t *tracer) TracerConf() TracerConf {
 		VersionTag:           t.config.version,
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
-		isLambdaFunction:     t.config.isLambdaFunction,
+		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
 	}
 }
 
