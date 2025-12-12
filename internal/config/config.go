@@ -62,20 +62,17 @@ type Config struct {
 	statsComputationEnabled       bool
 	dataStreamsMonitoringEnabled  bool
 	dynamicInstrumentationEnabled bool
-<<<<<<< HEAD
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate        float64
 	ciVisibilityEnabled     bool
 	ciVisibilityAgentless   bool
 	logDirectory            string
 	traceRateLimitPerSecond float64
-=======
 	globalSampleRate              float64
 	ciVisibilityEnabled           bool
 	ciVisibilityAgentless         bool
 	logDirectory                  string
 	traceRateLimitPerSecond       float64
->>>>>>> bdecfb5dc (migrate logToStdout and isLambdaFunction)
 	// logToStdout, if true, indicates we should log all traces to the standard output
 	logToStdout bool
 	// isLambdaFunction, if true, indicates we are in a lambda function
@@ -116,6 +113,7 @@ func loadConfig() *Config {
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
+<<<<<<< HEAD
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -136,6 +134,8 @@ func loadConfig() *Config {
 			cfg.isLambdaFunction = true
 		}
 	}
+=======
+>>>>>>> b2ed039b5 (migrate globalSampleRate and introduce configProvider.getFloatWithValidator)
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
