@@ -44,7 +44,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -242,9 +241,6 @@ type config struct {
 	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
-
-	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
-	profilerEndpoints bool
 
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
@@ -468,7 +464,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
-	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
 	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
 		if semver.IsValid(compatMode) {
 			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
@@ -1308,7 +1303,7 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // true.
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
-		c.profilerEndpoints = enabled
+		c.internalConfig.SetProfilerEndpoints(enabled, telemetry.OriginCode)
 	}
 }
 
