@@ -41,6 +41,7 @@ jobs:
         run: yarn install
 
       - name: Run Lambda integration tests
+        id: integration-tests
         env:
           BUILD_LAYERS: true
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
@@ -48,3 +49,44 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: ./run_integration_tests.sh
+
+      - name: Notify Slack on failure
+        if: failure() && steps.integration-tests.outcome == 'failure'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          payload: |
+            {
+              "text": "Lambda Integration Tests Failed",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":x: Lambda Integration Tests Failed"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n${{ github.workflow }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|#${{ github.run_number }}>"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.APM_SLS_SLACK_WEBHOOK_URL }}
