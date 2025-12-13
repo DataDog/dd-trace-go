@@ -166,3 +166,21 @@ func (c *otelCtxToDDCtx) SpanID() uint64 {
 }
 
 func (c *otelCtxToDDCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
+
+// SamplingDecision returns the sampling decision of the span context.
+func (c *otelCtxToDDCtx) SamplingDecision() uint32 {
+	if c.oc.IsSampled() {
+		return 2 // decisionKeep
+	}
+	return 1 // decisionDrop
+}
+
+// Priority returns the sampling priority of the span context.
+func (c *otelCtxToDDCtx) Priority() *float64 {
+	if c.oc.IsSampled() {
+		p := float64(ext.PriorityAutoKeep)
+		return &p
+	}
+	p := float64(ext.PriorityAutoReject)
+	return &p
+}
