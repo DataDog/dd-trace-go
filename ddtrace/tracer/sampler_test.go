@@ -2007,3 +2007,70 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 		})
 	}
 }
+
+func TestKnuthSamplingRatePropagation(t *testing.T) {
+	t.Run("propagating-tag-set-with-rules", func(t *testing.T) {
+		assert := assert.New(t)
+		Start(WithSamplingRules(TraceSamplingRules(
+			Rule{ServiceGlob: "test-service", Rate: 0.5},
+		)))
+		tr := getGlobalTracer()
+		defer tr.Stop()
+
+		root := tr.StartSpan("test.operation", ServiceName("test-service"))
+		root.Finish()
+
+		// Verify the Knuth sampling rate is set as a span meta tag
+		rate, ok := getMeta(root, keyKnuthSamplingRate)
+		assert.True(ok)
+		assert.Equal("0.5", rate)
+
+		// Verify the Knuth sampling rate is set as a propagating tag for header propagation
+		propagatedRate := root.context.trace.propagatingTags[keyKnuthSamplingRate]
+		assert.Equal("0.5", propagatedRate)
+	})
+
+	t.Run("propagating-tag-injected-in-headers", func(t *testing.T) {
+		assert := assert.New(t)
+		Start(WithSamplingRules(TraceSamplingRules(
+			Rule{ServiceGlob: "test-service", Rate: 0.75},
+		)))
+		tr := getGlobalTracer()
+		defer tr.Stop()
+
+		root := tr.StartSpan("test.operation", ServiceName("test-service"))
+
+		// Inject context into headers
+		headers := TextMapCarrier(map[string]string{})
+		err := tr.Inject(root.Context(), headers)
+		assert.Nil(err)
+
+		// Verify the tag is present in X-Datadog-Tags header
+		tagsHeader := headers[traceTagsHeader]
+		assert.Contains(tagsHeader, "_dd.p.ksr=0.75")
+
+		root.Finish()
+	})
+
+	t.Run("propagating-tag-in-tracestate", func(t *testing.T) {
+		assert := assert.New(t)
+		Start(WithSamplingRules(TraceSamplingRules(
+			Rule{ServiceGlob: "test-service", Rate: 0.25},
+		)))
+		tr := getGlobalTracer()
+		defer tr.Stop()
+
+		root := tr.StartSpan("test.operation", ServiceName("test-service"))
+
+		// Inject context into headers (W3C tracecontext propagator is enabled by default)
+		headers := TextMapCarrier(map[string]string{})
+		err := tr.Inject(root.Context(), headers)
+		assert.Nil(err)
+
+		// Verify the tag is present in tracestate header as t.ksr
+		tracestateHeader := headers["tracestate"]
+		assert.Contains(tracestateHeader, "t.ksr:0.25")
+
+		root.Finish()
+	})
+}
