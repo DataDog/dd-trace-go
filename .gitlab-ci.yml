@@ -13,6 +13,10 @@ variables:
   INDEX_FILE: index.txt
   BENCHMARK_TARGETS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics"
 
+workflow: 
+  auto_cancel:
+    on_new_commit: interruptible
+
 # In order to run benchmarks in parallel, we generate a matrix of test names based on the BENCHMARK_TARGETS variable.
 # This will be used in tandem with bp-runner in benchmarks.yml.
 # This will allow us to spin up a child job in GitLab CI that handles running all of the benchmarks in parallel.
@@ -48,11 +52,19 @@ trigger_child_pipeline:
       - artifact: generated_benchmark_matrix.yml
         job: generate_matrix
     strategy: depend
+  # Are interrutible rules propagated to the child pipeline?
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+      interruptible: false
+    - interruptible: true
   needs:
     - generate_matrix
   variables:
       PARENT_PIPELINE_ID: $CI_PIPELINE_ID
 
+# This repository is using PR-level performance quality gates.
+# Verify that the check-big-regressions CI job has passed. If any regression happened, merging this PR will be blocked.
+# If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
 check-big-regressions:
   stage: benchmarks
   needs:
@@ -77,7 +89,6 @@ check-big-regressions:
     paths:
       - reports/
     expire_in: "30 days"
-
 
 # Config Registry CI Jobs
 validate_supported_configurations_v2_local_file:
