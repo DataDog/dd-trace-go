@@ -20,7 +20,6 @@ import (
 type configuration struct {
 	mu     sync.Mutex
 	config map[string]transport.ConfKeyValue
-	seqID  uint64 // TODO: remove this
 }
 
 func idOrEmpty(id string) string {
@@ -63,10 +62,8 @@ func (c *configuration) Payload() transport.Payload {
 			conf.Origin = transport.OriginDefault
 		}
 		conf.Value = SanitizeConfigValue(conf.Value)
-		conf.SeqID = c.seqID
 		configs[idx] = conf
 		idx++
-		c.seqID++
 		delete(c.config, conf.Name)
 	}
 

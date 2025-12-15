@@ -57,8 +57,8 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
+			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id, SeqID: seqId})
 			if parsed, ok := parse(v); ok {
-				telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id, SeqID: seqId})
 				if final == nil {
 					final = &parsed
 				}
