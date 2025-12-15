@@ -49,12 +49,8 @@ type Config struct {
 	version         string
 	env             string
 	serviceMappings map[string]string
-	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
-	// and is added as a special tag to the root span of traces.
+	// hostname is automatically assigned from the OS hostname, or from the DD_TRACE_SOURCE_HOSTNAME environment variable or WithHostname() option.
 	hostname string
-	// hostnameExplicitlySet indicates whether the hostname was explicitly configured
-	// via DD_TRACE_SOURCE_HOSTNAME or WithHostname(), as opposed to auto-detected.
-	hostnameExplicitlySet bool
 	// hostnameLookupError is the error returned by os.Hostname() if it fails
 	hostnameLookupError        error
 	runtimeMetrics             bool
@@ -92,7 +88,8 @@ type Config struct {
 	isLambdaFunction bool
 	// debugStack enables the collection of debug stack traces globally. Error traces will not record a stack trace when this option is false.
 	debugStack bool
-	// reportHostname, if true, indicates we should report the targeted application's hostname to the agent
+	// reportHostname indicates whether hostname should be reported on spans.
+	// Set to true when DD_TRACE_REPORT_HOSTNAME=true, or when hostname is explicitly configured via DD_TRACE_SOURCE_HOSTNAME or WithHostname().
 	reportHostname bool
 }
 
@@ -130,7 +127,6 @@ func loadConfig() *Config {
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
-	cfg.reportHostname = provider.getBool("DD_TRACE_REPORT_HOSTNAME", false)
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -147,14 +143,19 @@ func loadConfig() *Config {
 		log.Warn("unable to look up hostname: %s", err.Error())
 		cfg.hostnameLookupError = err
 	}
+
+	// Always read DD_TRACE_REPORT_HOSTNAME for telemetry tracking
+	reportHostnameFromEnv := provider.getBool("DD_TRACE_REPORT_HOSTNAME", false)
+
 	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set
 	if sourceHostname, ok := env.Lookup("DD_TRACE_SOURCE_HOSTNAME"); ok {
+		// Explicitly configured hostname - always report it
 		cfg.hostname = sourceHostname
-		cfg.hostnameExplicitlySet = true
+		cfg.reportHostname = true
 	} else if err == nil {
-		// Use auto-detected hostname only if DD_TRACE_SOURCE_HOSTNAME wasn't set
+		// Auto-detected hostname - only report if DD_TRACE_REPORT_HOSTNAME=true
 		cfg.hostname = hostname
-		cfg.hostnameExplicitlySet = false
+		cfg.reportHostname = reportHostnameFromEnv
 	}
 
 	return cfg
@@ -442,7 +443,7 @@ func (c *Config) SetHostname(hostname string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.hostname = hostname
-	c.hostnameExplicitlySet = true
+	c.reportHostname = true // Explicitly configured hostname should always be reported
 	telemetry.RegisterAppConfig("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
 }
 
@@ -450,10 +451,4 @@ func (c *Config) HostnameLookupError() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.hostnameLookupError
-}
-
-func (c *Config) HostnameExplicitlySet() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.hostnameExplicitlySet
 }
