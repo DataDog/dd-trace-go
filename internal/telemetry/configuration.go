@@ -46,6 +46,11 @@ func (c *configuration) Add(kv Configuration) {
 		ID:     ID,
 		SeqID:  kv.SeqID,
 	}
+
+	// Debug logging
+	if kv.Name == "DD_TRACE_DEBUG" {
+		println("MTOFF DEBUG - configuration.Add():", "name:", kv.Name, "value:", kv.Value, "origin:", kv.Origin, "seqID:", kv.SeqID)
+	}
 }
 
 func (c *configuration) Payload() transport.Payload {
@@ -62,6 +67,12 @@ func (c *configuration) Payload() transport.Payload {
 			conf.Origin = transport.OriginDefault
 		}
 		conf.Value = SanitizeConfigValue(conf.Value)
+
+		// Debug logging
+		if conf.Name == "DD_TRACE_DEBUG" {
+			println("MTOFF DEBUG - Payload() processing DD_TRACE_DEBUG:", "value:", conf.Value, "origin:", conf.Origin, "seqID:", conf.SeqID, "idx:", idx)
+		}
+
 		configs[idx] = conf
 		idx++
 		delete(c.config, conf.Name)
