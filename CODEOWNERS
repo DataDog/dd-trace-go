@@ -51,9 +51,14 @@
 # capabilities- OTel integration
 /ddtrace/opentelemetry               @DataDog/apm-sdk-capabilities-go
 
-# datastreams
-/datastreams                    @DataDog/data-streams-monitoring
-/internal/datastreams           @DataDog/data-streams-monitoring
+# data streams monitoring
+/datastreams                                @Datadog/data-streams-monitoring
+/internal/datastreams                       @Datadog/data-streams-monitoring
+/ddtrace/tracer/data_streams.go             @Datadog/data-streams-monitoring
+/contrib/IBM/sarama                         @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
+/contrib/Shopify/sarama                     @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
+/contrib/confluentinc/confluent-kafka-go    @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
+/contrib/segmentio/kafka-go                 @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
 
 # civisibility
 /civisibility                   @DataDog/ci-app-libraries
