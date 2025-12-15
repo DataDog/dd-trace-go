@@ -56,7 +56,7 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 
 		// Debug logging for troubleshooting
 		if key == "DD_TRACE_DEBUG" {
-			println("DEBUG get:", key, "source:", source.origin(), "value:", v, "empty:", v == "")
+			println("DEBUG get timestamp:", time.Now().Format(time.RFC3339), "key:", key, "source:", source.origin(), "value:", v, "empty:", v == "")
 		}
 
 		if v != "" {
