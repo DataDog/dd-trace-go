@@ -8,7 +8,7 @@ package sdkgov2_test
 import (
 	"testing"
 
-	sdkgov2 "github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2"
+	sdkgov2 "github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/cloudevents/sdk-go/v2/event"

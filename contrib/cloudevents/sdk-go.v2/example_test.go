@@ -11,7 +11,7 @@ import (
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 
-	sdkgov2 "github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2"
+	sdkgov2 "github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
