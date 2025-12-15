@@ -216,7 +216,6 @@ func TestShouldObfuscate(t *testing.T) {
 				c.env = "someEnv"
 			})
 			assert.NoError(t, err)
-			// Set agent field after config creation to override loadAgentFeatures
 			cfg.agent = agentFeatures{obfuscationVersion: params.agentVersion}
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
@@ -242,7 +241,6 @@ func TestObfuscation(t *testing.T) {
 		c.env = "someEnv"
 	})
 	assert.NoError(t, err)
-	// Set agent field after config creation to override loadAgentFeatures
 	cfg.agent.obfuscationVersion = 2
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
