@@ -19,7 +19,12 @@ import (
 
 type configuration struct {
 	mu     sync.Mutex
-	config map[string]transport.ConfKeyValue
+	config map[configKey]transport.ConfKeyValue
+}
+
+type configKey struct {
+	name   string
+	origin string
 }
 
 func idOrEmpty(id string) string {
@@ -34,12 +39,13 @@ func (c *configuration) Add(kv Configuration) {
 	defer c.mu.Unlock()
 
 	if c.config == nil {
-		c.config = make(map[string]transport.ConfKeyValue)
+		c.config = make(map[configKey]transport.ConfKeyValue)
 	}
 
 	ID := idOrEmpty(kv.ID)
 
-	c.config[kv.Name] = transport.ConfKeyValue{
+	key := configKey{name: kv.Name, origin: string(kv.Origin)}
+	c.config[key] = transport.ConfKeyValue{
 		Name:   kv.Name,
 		Value:  kv.Value,
 		Origin: kv.Origin,
@@ -62,7 +68,7 @@ func (c *configuration) Payload() transport.Payload {
 
 	configs := make([]transport.ConfKeyValue, len(c.config))
 	idx := 0
-	for _, conf := range c.config {
+	for key, conf := range c.config {
 		if conf.Origin == "" {
 			conf.Origin = transport.OriginDefault
 		}
@@ -75,7 +81,7 @@ func (c *configuration) Payload() transport.Payload {
 
 		configs[idx] = conf
 		idx++
-		delete(c.config, conf.Name)
+		delete(c.config, key)
 	}
 
 	return transport.AppClientConfigurationChange{
