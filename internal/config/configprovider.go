@@ -52,7 +52,14 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 	var final *T
 	seqId := uint64(len(p.sources))
 	for _, source := range p.sources {
-		if v := source.get(key); v != "" {
+		v := source.get(key)
+
+		// Debug logging for troubleshooting
+		if key == "DD_TRACE_DEBUG" {
+			println("DEBUG get:", key, "source:", source.origin(), "value:", v, "empty:", v == "")
+		}
+
+		if v != "" {
 			var id string
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
