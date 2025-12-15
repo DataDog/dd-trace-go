@@ -942,8 +942,6 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 }
 
-// getMeta gets a string tag. This method is safe for concurrent use and should be the primary method
-// of getting a meta tag if the span is not already locked.
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
@@ -952,8 +950,6 @@ func getMeta(s *Span, key string) (string, bool) {
 	return val, ok
 }
 
-// getMetric gets a string tag. This method is safe for concurrent use and should be the primary method
-// of getting a metric tag if the span is not already locked.
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMetric(s *Span, key string) (float64, bool) {
 	s.mu.RLock()
