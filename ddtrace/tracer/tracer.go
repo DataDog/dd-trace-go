@@ -304,7 +304,7 @@ func storeConfig(c *config) {
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
-		Hostname:           c.hostname,
+		Hostname:           c.internalConfig.Hostname(),
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
 		ServiceVersion:     c.version,
@@ -320,7 +320,7 @@ func storeConfig(c *config) {
 
 	processContext := otelProcessContext{
 		DeploymentEnvironmentName: c.env,
-		HostName:                  c.hostname,
+		HostName:                  c.internalConfig.Hostname(),
 		ServiceInstanceID:         globalconfig.RuntimeID(),
 		ServiceName:               c.serviceName,
 		ServiceVersion:            c.version,
@@ -765,8 +765,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		span.service = t.config.serviceName
 	}
 	span.noDebugStack = !t.config.internalConfig.DebugStack()
-	if t.config.hostname != "" {
-		span.setMeta(keyHostname, t.config.hostname)
+	if hostname, shouldReport := t.reportHostname(); shouldReport {
+		span.setMeta(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
@@ -868,6 +868,19 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 // but http, rpc or custom (s.spanType == "") span resource names generally do not.
 func spanResourcePIISafe(s *Span) bool {
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
+}
+
+// reportHostname returns the hostname and whether it should be reported on spans.
+// The hostname is reported when either:
+// 1. DD_TRACE_REPORT_HOSTNAME is set to true, OR
+// 2. The hostname was explicitly configured via DD_TRACE_SOURCE_HOSTNAME or WithHostname()
+func (t *tracer) reportHostname() (hostname string, shouldReport bool) {
+	hostname = t.config.internalConfig.Hostname()
+	if hostname == "" {
+		return "", false
+	}
+	shouldReport = t.config.internalConfig.ReportHostname() || t.config.internalConfig.HostnameExplicitlySet()
+	return hostname, shouldReport
 }
 
 // Stop stops the tracer.
