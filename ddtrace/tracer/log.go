@@ -138,11 +138,11 @@ func logStartup(t *tracer) {
 		SpanSamplingRules:           t.config.spanRules,
 		ServiceMappings:             t.config.serviceMappings,
 		Tags:                        tags,
-		RuntimeMetricsEnabled:       t.config.runtimeMetrics,
-		RuntimeMetricsV2Enabled:     t.config.runtimeMetricsV2,
+		RuntimeMetricsEnabled:       t.config.internalConfig.RuntimeMetricsEnabled(),
+		RuntimeMetricsV2Enabled:     t.config.internalConfig.RuntimeMetricsV2Enabled(),
 		ApplicationVersion:          t.config.version,
-		ProfilerCodeHotspotsEnabled: t.config.profilerHotspots,
-		ProfilerEndpointsEnabled:    t.config.profilerEndpoints,
+		ProfilerCodeHotspotsEnabled: t.config.internalConfig.ProfilerHotspotsEnabled(),
+		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  fmt.Sprintf("%t", t.config.logToStdout),
@@ -157,7 +157,7 @@ func logStartup(t *tracer) {
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
 		DogstatsdAddr:               t.config.dogstatsdAddr,
-		DataStreamsEnabled:          t.config.dataStreamsMonitoringEnabled,
+		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {
 		info.SamplingRulesError = err.Error()

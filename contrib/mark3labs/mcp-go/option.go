@@ -64,7 +64,7 @@ func WithMCPServerTracing(options *TracingConfig) server.ServerOption {
 		if options.IntentCaptureEnabled {
 			hooks.AddAfterListTools(injectDdtraceListToolsHook)
 			// Register intent capture middleware second so it runs second (after span is created)
-			server.WithToolHandlerMiddleware(processAndRemoveDdtraceToolMiddleware)(s)
+			server.WithToolHandlerMiddleware(processAndRemoveDDTraceToolMiddleware)(s)
 		}
 	}
 }

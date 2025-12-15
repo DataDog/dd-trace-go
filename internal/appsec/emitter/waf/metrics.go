@@ -353,7 +353,7 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 		logger := m.logger.With(telemetry.WithTags(m.baseTags))
 		// This a known error origin all the ways to the tip of the error chain and since it impact WAF
 		// behavior we really want to log it so we can investigate it so we don't wrap it in a safe error
-		logger.Error("unexpected WAF error", slog.String("error.message", in.Error()))
+		logger.Error("unexpected WAF error", slog.Any("error", telemetrylog.NewSafeError(in)))
 	}
 
 	switch addrs.TimerKey {

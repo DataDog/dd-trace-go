@@ -763,14 +763,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.True(t, c.profilerEndpoints)
+			assert.True(t, c.internalConfig.ProfilerEndpoints())
 		})
 
 		t.Run("override", func(t *testing.T) {
 			t.Setenv(traceprof.EndpointEnvVar, "false")
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.False(t, c.profilerEndpoints)
+			assert.False(t, c.internalConfig.ProfilerEndpoints())
 		})
 	})
 
@@ -778,14 +778,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.True(t, c.profilerHotspots)
+			assert.True(t, c.internalConfig.ProfilerHotspotsEnabled())
 		})
 
 		t.Run("override", func(t *testing.T) {
 			t.Setenv(traceprof.CodeHotspotsEnvVar, "false")
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.False(t, c.profilerHotspots)
+			assert.False(t, c.internalConfig.ProfilerHotspotsEnabled())
 		})
 	})
 
@@ -1547,11 +1547,11 @@ func TestWithTraceEnabled(t *testing.T) {
 func TestWithLogStartup(t *testing.T) {
 	c, err := newTestConfig()
 	assert.NoError(t, err)
-	assert.True(t, c.logStartup)
+	assert.True(t, c.internalConfig.LogStartup())
 	WithLogStartup(false)(c)
-	assert.False(t, c.logStartup)
+	assert.False(t, c.internalConfig.LogStartup())
 	WithLogStartup(true)(c)
-	assert.True(t, c.logStartup)
+	assert.True(t, c.internalConfig.LogStartup())
 }
 
 func TestWithHeaderTags(t *testing.T) {

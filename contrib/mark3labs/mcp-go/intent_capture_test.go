@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
@@ -59,7 +60,7 @@ func TestIntentCapture(t *testing.T) {
 	ddtraceProps := ddtraceSchema["properties"].(map[string]interface{})
 	intentSchema := ddtraceProps["intent"].(map[string]interface{})
 	assert.Equal(t, "string", intentSchema["type"])
-	assert.Equal(t, intentPrompt, intentSchema["description"])
+	assert.Equal(t, instrmcp.IntentPrompt, intentSchema["description"])
 
 	required := schema["required"].([]interface{})
 	assert.Contains(t, required, "operation")
