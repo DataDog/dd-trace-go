@@ -13,268 +13,192 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestTelemetryRegistration verifies that OTel metrics configuration is registered
-// with telemetry when a MeterProvider is created.
-// Telemetry names follow snake_case convention (e.g., "otel_metrics_enabled" for DD_METRICS_OTEL_ENABLED)
-func TestTelemetryRegistration(t *testing.T) {
-	tests := []struct {
-		name        string
-		envVars     map[string]string
-		wantConfigs map[string]any
-	}{
-		{
-			name: "metrics enabled with defaults",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":                              true,
-				"otel_metrics_exporter":                             "otlp",
-				"otel_exporter_otlp_metrics_protocol":               "http/protobuf",
-				"otel_exporter_otlp_metrics_endpoint":               "localhost:4318",
-				"otel_exporter_otlp_metrics_temporality_preference": "delta",
-				"otel_metric_export_interval":                       "1m0s",
-				"otel_metric_export_timeout":                        "30s",
-			},
-		},
-		{
-			name: "metrics enabled with grpc protocol",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED":     "true",
-				"OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":                              true,
-				"otel_exporter_otlp_metrics_protocol":               "grpc",
-				"otel_exporter_otlp_metrics_endpoint":               "localhost:4317",
-				"otel_exporter_otlp_metrics_temporality_preference": "delta",
-			},
-		},
-		{
-			name: "metrics enabled with custom endpoint via DD_AGENT_HOST",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-				"DD_AGENT_HOST":           "custom-agent",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":                true,
-				"otel_exporter_otlp_metrics_endpoint": "custom-agent:4318",
-			},
-		},
-		{
-			name: "metrics enabled with OTEL endpoint override",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED":     "true",
-				"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector:4318",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":                true,
-				"otel_exporter_otlp_metrics_endpoint": "http://otel-collector:4318",
-			},
-		},
-		{
-			name: "metrics enabled with cumulative temporality",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED":                           "true",
-				"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":                              true,
-				"otel_exporter_otlp_metrics_temporality_preference": "cumulative",
-			},
-		},
-		{
-			name:    "metrics disabled by default",
-			envVars: map[string]string{},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled": false,
-			},
-		},
-		{
-			name: "metrics disabled via OTEL_METRICS_EXPORTER=none",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-				"OTEL_METRICS_EXPORTER":   "none",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":  false,
-				"otel_metrics_exporter": "none",
-			},
-		},
-		{
-			name: "metrics enabled with custom headers",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED":            "true",
-				"OTEL_EXPORTER_OTLP_METRICS_HEADERS": "api-key=secret",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":               true,
-				"otel_exporter_otlp_metrics_headers": "<redacted>",
-			},
-		},
-		{
-			name: "metrics enabled with custom OTLP timeout",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED":            "true",
-				"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": "10000",
-			},
-			wantConfigs: map[string]any{
-				"otel_metrics_enabled":               true,
-				"otel_exporter_otlp_metrics_timeout": "10000",
-			},
-		},
+// TestTelemetryDefaultConfigurations verifies that default configuration values
+// are reported to telemetry when no environment variables are set.
+func TestTelemetryDefaultConfigurations(t *testing.T) {
+	recorder := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(recorder)()
+
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+
+	mp, err := NewMeterProvider()
+	if err != nil {
+		t.Fatalf("unexpected error creating MeterProvider: %v", err)
+	}
+	defer Shutdown(t.Context(), mp)
+
+	// Check default values are reported
+	expectedDefaults := map[string]int{
+		"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": 10000, // 10 seconds
+		"OTEL_METRIC_EXPORT_INTERVAL":        10000, // 10 seconds
+		"OTEL_METRIC_EXPORT_TIMEOUT":         7500,  // 7.5 seconds
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set up mock telemetry client
-			recorder := new(telemetrytest.RecordClient)
-			defer telemetry.MockClient(recorder)()
-
-			// Set environment variables
-			for k, v := range tt.envVars {
-				t.Setenv(k, v)
+	for configName, expectedValue := range expectedDefaults {
+		found := false
+		for _, cfg := range recorder.Configuration {
+			if cfg.Name == configName {
+				found = true
+				assert.Equal(t, expectedValue, cfg.Value, "config %s has wrong value", configName)
+				assert.Equal(t, telemetry.OriginDefault, cfg.Origin, "config %s should have default origin", configName)
+				break
 			}
-
-			// Create MeterProvider (this triggers telemetry registration)
-			mp, err := NewMeterProvider()
-			if err != nil {
-				t.Fatalf("unexpected error creating MeterProvider: %v", err)
-			}
-			defer Shutdown(t.Context(), mp)
-
-			// Verify telemetry configurations
-			for key, wantValue := range tt.wantConfigs {
-				found := false
-				for _, cfg := range recorder.Configuration {
-					if cfg.Name == key {
-						found = true
-						assert.Equal(t, wantValue, cfg.Value, "config %s has wrong value", key)
-						break
-					}
-				}
-				assert.True(t, found, "expected config %s not found in telemetry", key)
-			}
-		})
+		}
+		assert.True(t, found, "expected config %s not found in telemetry", configName)
 	}
 }
 
-// TestTelemetryOrigins verifies that configuration origins are correctly reported.
-func TestTelemetryOrigins(t *testing.T) {
-	tests := []struct {
-		name       string
-		envVars    map[string]string
-		configName string
-		wantOrigin telemetry.Origin
-	}{
-		{
-			name: "enabled via env var",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-			},
-			configName: "otel_metrics_enabled",
-			wantOrigin: telemetry.OriginEnvVar,
-		},
-		{
-			name:       "disabled by default",
-			envVars:    map[string]string{},
-			configName: "otel_metrics_enabled",
-			wantOrigin: telemetry.OriginDefault,
-		},
-		{
-			name: "protocol via env var",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED":     "true",
-				"OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-			},
-			configName: "otel_exporter_otlp_metrics_protocol",
-			wantOrigin: telemetry.OriginEnvVar,
-		},
-		{
-			name: "protocol default",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-			},
-			configName: "otel_exporter_otlp_metrics_protocol",
-			wantOrigin: telemetry.OriginDefault,
-		},
-		{
-			name: "endpoint via DD_AGENT_HOST",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-				"DD_AGENT_HOST":           "agent-host",
-			},
-			configName: "otel_exporter_otlp_metrics_endpoint",
-			wantOrigin: telemetry.OriginEnvVar,
-		},
-		{
-			name: "endpoint default",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-			},
-			configName: "otel_exporter_otlp_metrics_endpoint",
-			wantOrigin: telemetry.OriginDefault,
-		},
-		{
-			name: "temporality via env var",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED":                           "true",
-				"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
-			},
-			configName: "otel_exporter_otlp_metrics_temporality_preference",
-			wantOrigin: telemetry.OriginEnvVar,
-		},
-		{
-			name: "temporality default (delta for Datadog)",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-			},
-			configName: "otel_exporter_otlp_metrics_temporality_preference",
-			wantOrigin: telemetry.OriginDefault,
-		},
-		{
-			name: "exporter via env var",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-				"OTEL_METRICS_EXPORTER":   "prometheus",
-			},
-			configName: "otel_metrics_exporter",
-			wantOrigin: telemetry.OriginEnvVar,
-		},
-		{
-			name: "exporter default",
-			envVars: map[string]string{
-				"DD_METRICS_OTEL_ENABLED": "true",
-			},
-			configName: "otel_metrics_exporter",
-			wantOrigin: telemetry.OriginDefault,
-		},
+// TestTelemetryExporterConfigurations verifies that OTEL_EXPORTER_OTLP_* configurations
+// are reported to telemetry when set via environment variables.
+func TestTelemetryExporterConfigurations(t *testing.T) {
+	recorder := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(recorder)()
+
+	// Set environment variables
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_TIMEOUT", "30000")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=key,other-config-value=value")
+	t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
+	t.Setenv("OTEL_METRIC_EXPORT_TIMEOUT", "5000")
+
+	mp, err := NewMeterProvider()
+	if err != nil {
+		t.Fatalf("unexpected error creating MeterProvider: %v", err)
+	}
+	defer Shutdown(t.Context(), mp)
+
+	// Check configurations are reported with env_var origin
+	expectedConfigs := map[string]any{
+		"OTEL_EXPORTER_OTLP_TIMEOUT":  30000,
+		"OTEL_EXPORTER_OTLP_HEADERS":  "api-key=key,other-config-value=value",
+		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+		"OTEL_METRIC_EXPORT_INTERVAL": 5000,
+		"OTEL_METRIC_EXPORT_TIMEOUT":  5000,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			recorder := new(telemetrytest.RecordClient)
-			defer telemetry.MockClient(recorder)()
-
-			for k, v := range tt.envVars {
-				t.Setenv(k, v)
+	for configName, expectedValue := range expectedConfigs {
+		found := false
+		for _, cfg := range recorder.Configuration {
+			if cfg.Name == configName {
+				found = true
+				assert.Equal(t, expectedValue, cfg.Value, "config %s has wrong value", configName)
+				assert.Equal(t, telemetry.OriginEnvVar, cfg.Origin, "config %s should have env_var origin", configName)
+				break
 			}
-
-			mp, err := NewMeterProvider()
-			if err != nil {
-				t.Fatalf("unexpected error creating MeterProvider: %v", err)
-			}
-			defer Shutdown(t.Context(), mp)
-
-			found := false
-			for _, cfg := range recorder.Configuration {
-				if cfg.Name == tt.configName {
-					found = true
-					assert.Equal(t, tt.wantOrigin, cfg.Origin, "config %s has wrong origin", tt.configName)
-					break
-				}
-			}
-			assert.True(t, found, "expected config %s not found in telemetry", tt.configName)
-		})
+		}
+		assert.True(t, found, "expected config %s not found in telemetry", configName)
 	}
+}
+
+// TestTelemetryExporterMetricsConfigurations verifies that OTEL_EXPORTER_OTLP_METRICS_*
+// configurations are reported to telemetry when set via environment variables.
+func TestTelemetryExporterMetricsConfigurations(t *testing.T) {
+	recorder := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(recorder)()
+
+	// Set environment variables
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", "30000")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=key,other-config-value=value")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
+	t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://localhost:4325")
+
+	mp, err := NewMeterProvider()
+	if err != nil {
+		t.Fatalf("unexpected error creating MeterProvider: %v", err)
+	}
+	defer Shutdown(t.Context(), mp)
+
+	// Check configurations are reported with env_var origin
+	expectedConfigs := map[string]any{
+		"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT":  30000,
+		"OTEL_EXPORTER_OTLP_METRICS_HEADERS":  "api-key=key,other-config-value=value",
+		"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": "http/protobuf",
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://localhost:4325",
+	}
+
+	for configName, expectedValue := range expectedConfigs {
+		found := false
+		for _, cfg := range recorder.Configuration {
+			if cfg.Name == configName {
+				found = true
+				assert.Equal(t, expectedValue, cfg.Value, "config %s has wrong value", configName)
+				assert.Equal(t, telemetry.OriginEnvVar, cfg.Origin, "config %s should have env_var origin", configName)
+				break
+			}
+		}
+		assert.True(t, found, "expected config %s not found in telemetry", configName)
+	}
+}
+
+// TestMetricsExportTelemetry verifies that the MetricsExportTelemetry correctly
+// tracks export attempts and successes.
+func TestMetricsExportTelemetry(t *testing.T) {
+	recorder := &telemetrytest.RecordClient{}
+	defer telemetry.MockClient(recorder)()
+
+	// Create telemetry tracker for HTTP/protobuf
+	met := NewMetricsExportTelemetry("http", "protobuf")
+
+	// Record some attempts and successes
+	met.RecordAttempt()
+	met.RecordSuccess()
+	met.RecordAttempt()
+	met.RecordSuccess()
+
+	// Check that metrics were recorded
+	attemptsKey := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceGeneral,
+		Name:      "otel.metrics_export_attempts",
+		Tags:      "encoding:protobuf,protocol:http",
+		Kind:      "count",
+	}
+	successesKey := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceGeneral,
+		Name:      "otel.metrics_export_successes",
+		Tags:      "encoding:protobuf,protocol:http",
+		Kind:      "count",
+	}
+
+	assert.Contains(t, recorder.Metrics, attemptsKey, "expected otel.metrics_export_attempts metric")
+	assert.Contains(t, recorder.Metrics, successesKey, "expected otel.metrics_export_successes metric")
+
+	if handle, ok := recorder.Metrics[attemptsKey]; ok {
+		assert.Equal(t, float64(2), handle.Get(), "expected 2 attempts")
+	}
+	if handle, ok := recorder.Metrics[successesKey]; ok {
+		assert.Equal(t, float64(2), handle.Get(), "expected 2 successes")
+	}
+}
+
+// TestMetricsExportTelemetryGRPC verifies that gRPC protocol is correctly tagged.
+func TestMetricsExportTelemetryGRPC(t *testing.T) {
+	recorder := &telemetrytest.RecordClient{}
+	defer telemetry.MockClient(recorder)()
+
+	// Create telemetry tracker for gRPC/protobuf
+	met := NewMetricsExportTelemetry("grpc", "protobuf")
+
+	met.RecordAttempt()
+	met.RecordSuccess()
+
+	// Check that metrics were recorded with correct tags
+	attemptsKey := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceGeneral,
+		Name:      "otel.metrics_export_attempts",
+		Tags:      "encoding:protobuf,protocol:grpc",
+		Kind:      "count",
+	}
+	successesKey := telemetrytest.MetricKey{
+		Namespace: telemetry.NamespaceGeneral,
+		Name:      "otel.metrics_export_successes",
+		Tags:      "encoding:protobuf,protocol:grpc",
+		Kind:      "count",
+	}
+
+	assert.Contains(t, recorder.Metrics, attemptsKey, "expected otel.metrics_export_attempts metric with grpc tag")
+	assert.Contains(t, recorder.Metrics, successesKey, "expected otel.metrics_export_successes metric with grpc tag")
 }

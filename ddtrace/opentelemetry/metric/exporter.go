@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 const (
@@ -41,6 +42,42 @@ const (
 	envDDTraceAgentPort = "DD_TRACE_AGENT_PORT"
 )
 
+// telemetryExporter wraps a metric.Exporter to track export attempts and successes.
+type telemetryExporter struct {
+	exporter  metric.Exporter
+	telemetry *MetricsExportTelemetry
+}
+
+// Export implements metric.Exporter.
+func (e *telemetryExporter) Export(ctx context.Context, rm *metricdata.ResourceMetrics) error {
+	e.telemetry.RecordAttempt()
+	err := e.exporter.Export(ctx, rm)
+	if err == nil {
+		e.telemetry.RecordSuccess()
+	}
+	return err
+}
+
+// Temporality implements metric.Exporter.
+func (e *telemetryExporter) Temporality(kind metric.InstrumentKind) metricdata.Temporality {
+	return e.exporter.Temporality(kind)
+}
+
+// Aggregation implements metric.Exporter.
+func (e *telemetryExporter) Aggregation(kind metric.InstrumentKind) metric.Aggregation {
+	return e.exporter.Aggregation(kind)
+}
+
+// ForceFlush implements metric.Exporter.
+func (e *telemetryExporter) ForceFlush(ctx context.Context) error {
+	return e.exporter.ForceFlush(ctx)
+}
+
+// Shutdown implements metric.Exporter.
+func (e *telemetryExporter) Shutdown(ctx context.Context) error {
+	return e.exporter.Shutdown(ctx)
+}
+
 // newDatadogOTLPExporter creates an OTLP exporter (HTTP or gRPC) configured with Datadog-specific defaults.
 //
 // Protocol selection priority:
@@ -62,15 +99,35 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 	// Determine protocol
 	protocol := otlpProtocol()
 
+	var exporter metric.Exporter
+	var err error
+	var protocolTag, encodingTag string
+
 	switch protocol {
 	case "grpc":
-		return newDatadogOTLPGRPCExporter(ctx, grpcOpts...)
+		exporter, err = newDatadogOTLPGRPCExporter(ctx, grpcOpts...)
+		protocolTag = "grpc"
+		encodingTag = "protobuf"
 	case defaultOTLPProtocol, "http":
-		return newDatadogOTLPHTTPExporter(ctx, httpOpts...)
+		exporter, err = newDatadogOTLPHTTPExporter(ctx, httpOpts...)
+		protocolTag = "http"
+		encodingTag = "protobuf"
 	default:
 		log.Warn("Unknown OTLP protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
-		return newDatadogOTLPHTTPExporter(ctx, httpOpts...)
+		exporter, err = newDatadogOTLPHTTPExporter(ctx, httpOpts...)
+		protocolTag = "http"
+		encodingTag = "protobuf"
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap the exporter with telemetry tracking
+	return &telemetryExporter{
+		exporter:  exporter,
+		telemetry: NewMetricsExportTelemetry(protocolTag, encodingTag),
+	}, nil
 }
 
 // otlpProtocol returns the OTLP protocol from environment variables.
