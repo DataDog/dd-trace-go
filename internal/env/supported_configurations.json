@@ -645,6 +645,9 @@
     "OTEL_EXPORTER_OTLP_ENDPOINT": [
       "A"
     ],
+    "OTEL_EXPORTER_OTLP_HEADERS": [
+      "A"
+    ],
     "OTEL_EXPORTER_OTLP_METRICS_HEADERS": [
       "A"
     ],
@@ -661,6 +664,9 @@
       "A"
     ],
     "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_TIMEOUT": [
       "A"
     ],
     "OTEL_LOGS_EXPORTER": [
