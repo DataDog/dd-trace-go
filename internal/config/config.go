@@ -8,10 +8,12 @@ package config
 import (
 	"math"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
@@ -42,12 +44,19 @@ type Config struct {
 	agentURL *url.URL
 	debug    bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
-	logStartup                 bool
-	serviceName                string
-	version                    string
-	env                        string
-	serviceMappings            map[string]string
-	hostname                   string
+	logStartup      bool
+	serviceName     string
+	version         string
+	env             string
+	serviceMappings map[string]string
+	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
+	// and is added as a special tag to the root span of traces.
+	hostname string
+	// hostnameExplicitlySet indicates whether the hostname was explicitly configured
+	// via DD_TRACE_SOURCE_HOSTNAME or WithHostname(), as opposed to auto-detected.
+	hostnameExplicitlySet bool
+	// hostnameLookupError is the error returned by os.Hostname() if it fails
+	hostnameLookupError        error
 	runtimeMetrics             bool
 	runtimeMetricsV2           bool
 	profilerHotspots           bool
@@ -83,6 +92,8 @@ type Config struct {
 	isLambdaFunction bool
 	// debugStack enables the collection of debug stack traces globally. Error traces will not record a stack trace when this option is false.
 	debugStack bool
+	// reportHostname, if true, indicates we should report the targeted application's hostname to the agent
+	reportHostname bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -98,7 +109,6 @@ func loadConfig() *Config {
 	cfg.version = provider.getString("DD_VERSION", "")
 	cfg.env = provider.getString("DD_ENV", "")
 	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
-	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
@@ -120,6 +130,7 @@ func loadConfig() *Config {
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
+	cfg.reportHostname = provider.getBool("DD_TRACE_REPORT_HOSTNAME", false)
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -131,14 +142,19 @@ func loadConfig() *Config {
 		}
 	}
 
-	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
-	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-	// TODO: Is it possible that we can just use `v != ""` to configure one setting, `lambdaMode` instead
-	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		cfg.logToStdout = true
-		if v != "" {
-			cfg.isLambdaFunction = true
-		}
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Warn("unable to look up hostname: %s", err.Error())
+		cfg.hostnameLookupError = err
+	}
+	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set
+	if sourceHostname, ok := env.Lookup("DD_TRACE_SOURCE_HOSTNAME"); ok {
+		cfg.hostname = sourceHostname
+		cfg.hostnameExplicitlySet = true
+	} else if err == nil {
+		// Use auto-detected hostname only if DD_TRACE_SOURCE_HOSTNAME wasn't set
+		cfg.hostname = hostname
+		cfg.hostnameExplicitlySet = false
 	}
 
 	return cfg
@@ -395,4 +411,36 @@ func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.logDirectory = directory
 	telemetry.RegisterAppConfig("DD_TRACE_LOG_DIRECTORY", directory, origin)
+}
+
+func (c *Config) ReportHostname() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.reportHostname
+}
+
+func (c *Config) Hostname() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hostname
+}
+
+func (c *Config) SetHostname(hostname string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hostname = hostname
+	c.hostnameExplicitlySet = true
+	telemetry.RegisterAppConfig("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
+}
+
+func (c *Config) HostnameLookupError() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hostnameLookupError
+}
+
+func (c *Config) HostnameExplicitlySet() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hostnameExplicitlySet
 }

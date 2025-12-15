@@ -202,10 +202,6 @@ type config struct {
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client
 
-	// hostname is automatically assigned when the DD_TRACE_REPORT_HOSTNAME is set to true,
-	// and is added as a special tag to the root span of traces.
-	hostname string
-
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger Logger
@@ -334,16 +330,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
-	if env.Get("DD_TRACE_REPORT_HOSTNAME") == "true" {
-		var err error
-		c.hostname, err = os.Hostname()
-		if err != nil {
-			log.Warn("unable to look up hostname: %s", err.Error())
-			return c, fmt.Errorf("unable to look up hostnamet: %s", err.Error())
+	if c.internalConfig.ReportHostname() {
+		if err := c.internalConfig.HostnameLookupError(); err != nil {
+			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
-	}
-	if v := env.Get("DD_TRACE_SOURCE_HOSTNAME"); v != "" {
-		c.hostname = v
 	}
 	if v := env.Get("DD_ENV"); v != "" {
 		c.env = v
@@ -814,8 +804,8 @@ func statsTags(c *config) []string {
 	if c.env != "" {
 		tags = append(tags, "env:"+c.env)
 	}
-	if c.hostname != "" {
-		tags = append(tags, "host:"+c.hostname)
+	if hostname := c.internalConfig.Hostname(); hostname != "" {
+		tags = append(tags, "host:"+hostname)
 	}
 	for k, v := range c.globalTags.get() {
 		if vstr, ok := v.(string); ok {
@@ -1174,7 +1164,7 @@ func WithUniversalVersion(version string) StartOption {
 // WithHostname allows specifying the hostname with which to mark outgoing traces.
 func WithHostname(name string) StartOption {
 	return func(c *config) {
-		c.hostname = name
+		c.internalConfig.SetHostname(name, telemetry.OriginCode)
 	}
 }
 

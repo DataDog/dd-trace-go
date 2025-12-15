@@ -29,6 +29,25 @@ func TestAlignTs(t *testing.T) {
 	assert.Equal(t, got, want)
 }
 
+func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env string) *config {
+	assert := assert.New(t)
+	cfg, err := newTestConfig(func(c *config) {
+		c.transport = transport
+		c.env = env
+	})
+	assert.NoError(err)
+	return cfg
+}
+
+func newTestConfigWithTransport(t *testing.T, transport transport) *config {
+	assert := assert.New(t)
+	cfg, err := newTestConfig(func(c *config) {
+		c.transport = transport
+	})
+	assert.NoError(err)
+	return cfg
+}
+
 func TestConcentrator(t *testing.T) {
 	bucketSize := int64(500_000)
 	s1 := Span{
@@ -45,7 +64,9 @@ func TestConcentrator(t *testing.T) {
 	}
 	t.Run("start-stop", func(t *testing.T) {
 		assert := assert.New(t)
-		c := newConcentrator(&config{}, bucketSize, &statsd.NoOpClientDirect{})
+		cfg, err := newTestConfig()
+		assert.NoError(err)
+		c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 1)
 		c.Start()
 		assert.EqualValues(atomic.LoadUint32(&c.stopped), 0)
@@ -64,7 +85,7 @@ func TestConcentrator(t *testing.T) {
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, 500_000, &statsd.NoOpClientDirect{})
+			c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -82,7 +103,7 @@ func TestConcentrator(t *testing.T) {
 		t.Run("recent+stats", func(t *testing.T) {
 			transport := newDummyTransport()
 			testStats := &statsdtest.TestStatsdClient{}
-			c := newConcentrator(&config{transport: transport, env: "someEnv"}, (10 * time.Second).Nanoseconds(), testStats)
+			c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), (10 * time.Second).Nanoseconds(), testStats)
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -109,7 +130,13 @@ func TestConcentrator(t *testing.T) {
 		t.Run("ciGitSha", func(t *testing.T) {
 			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport, env: "someEnv", ciVisibilityEnabled: true}, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+			cfg, err := newTestConfig(func(c *config) {
+				c.transport = transport
+				c.env = "someEnv"
+				c.ciVisibilityEnabled = true
+			})
+			assert.NoError(t, err)
+			c := newConcentrator(cfg, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -123,7 +150,7 @@ func TestConcentrator(t *testing.T) {
 		// stats should be sent if the concentrator is stopped
 		t.Run("stop", func(t *testing.T) {
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			c := newConcentrator(newTestConfigWithTransport(t, transport), 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -137,7 +164,7 @@ func TestConcentrator(t *testing.T) {
 			processtags.Reload()
 
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			c := newConcentrator(newTestConfigWithTransport(t, transport), 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -154,7 +181,7 @@ func TestConcentrator(t *testing.T) {
 			processtags.Reload()
 
 			transport := newDummyTransport()
-			c := newConcentrator(&config{transport: transport}, 500_000, &statsd.NoOpClientDirect{})
+			c := newConcentrator(newTestConfigWithTransport(t, transport), 500_000, &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
 			assert.True(t, ok)
@@ -184,7 +211,14 @@ func TestShouldObfuscate(t *testing.T) {
 		{name: "agent version newer", tracerVersion: 2, agentVersion: 3, expectedShouldObfuscate: false},
 	} {
 		t.Run(params.name, func(t *testing.T) {
-			c := newConcentrator(&config{transport: tsp, env: "someEnv", agent: agentFeatures{obfuscationVersion: params.agentVersion}}, bucketSize, &statsd.NoOpClientDirect{})
+			cfg, err := newTestConfig(func(c *config) {
+				c.transport = tsp
+				c.env = "someEnv"
+			})
+			assert.NoError(t, err)
+			// Set agent field after config creation to override loadAgentFeatures
+			cfg.agent = agentFeatures{obfuscationVersion: params.agentVersion}
+			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 			tracerObfuscationVersion = params.tracerVersion
 			assert.Equal(t, params.expectedShouldObfuscate, c.shouldObfuscate())
@@ -203,7 +237,14 @@ func TestObfuscation(t *testing.T) {
 		resource: "GET somekey",
 	}
 	tsp := newDummyTransport()
-	c := newConcentrator(&config{transport: tsp, env: "someEnv", agent: agentFeatures{obfuscationVersion: 2}}, bucketSize, &statsd.NoOpClientDirect{})
+	cfg, err := newTestConfig(func(c *config) {
+		c.transport = tsp
+		c.env = "someEnv"
+	})
+	assert.NoError(t, err)
+	// Set agent field after config creation to override loadAgentFeatures
+	cfg.agent.obfuscationVersion = 2
+	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 	tracerObfuscationVersion = 2
 
@@ -237,7 +278,7 @@ func TestStatsByKind(t *testing.T) {
 	s1.SetTag("span.kind", "client")
 	s2.SetTag("span.kind", "invalid")
 
-	c := newConcentrator(&config{transport: newDummyTransport(), env: "someEnv"}, 100, &statsd.NoOpClientDirect{})
+	c := newConcentrator(newTestConfigWithTransport(t, newDummyTransport()), 100, &statsd.NoOpClientDirect{})
 	_, ok := c.newTracerStatSpan(&s1, nil)
 	assert.True(t, ok)
 
@@ -249,29 +290,32 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("uses-agent-default-env-when-no-tracer-env", func(t *testing.T) {
-		cfg := &config{
-			transport: newDummyTransport(),
-			agent:     agentFeatures{defaultEnv: "agent-prod"},
-		}
+		cfg, err := newTestConfig(func(c *config) {
+			c.transport = newDummyTransport()
+		})
+		assert.NoError(err)
+		cfg.agent.defaultEnv = "agent-prod"
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("agent-prod", c.aggregationKey.Env)
 	})
 
 	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
-		cfg := &config{
-			transport: newDummyTransport(),
-			env:       "tracer-staging",
-			agent:     agentFeatures{defaultEnv: "agent-prod"},
-		}
+		cfg, err := newTestConfig(func(c *config) {
+			c.transport = newDummyTransport()
+			c.env = "tracer-staging"
+		})
+		assert.NoError(err)
+		cfg.agent.defaultEnv = "agent-prod"
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("tracer-staging", c.aggregationKey.Env)
 	})
 
 	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
-		cfg := &config{
-			transport: newDummyTransport(),
-			agent:     agentFeatures{},
-		}
+		cfg, err := newTestConfig(func(c *config) {
+			c.transport = newDummyTransport()
+		})
+		assert.NoError(err)
+		cfg.agent = agentFeatures{}
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("unknown-env", c.aggregationKey.Env)
 	})
@@ -293,7 +337,7 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 		},
 	}
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport, env: "someEnv"}, bucketSize, &statsd.NoOpClientDirect{})
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
 	ss, ok := c.newTracerStatSpan(&s, nil)
 	require.True(t, ok)
 	c.Start()
