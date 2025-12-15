@@ -126,9 +126,9 @@ func findContribModules(contribDir string) ([]string, error) {
 func extractFromModule(moduleDir string) ([]string, error) {
 	cmd := exec.Command("go", "list", "-m", "-f", "{{.Path}}", "all")
 	cmd.Dir = moduleDir
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run go list in %s: %w", moduleDir, err)
+		return nil, fmt.Errorf("failed to run go list in %s: %w\nOutput: %s", moduleDir, err, string(output))
 	}
 
 	var libraries []string
