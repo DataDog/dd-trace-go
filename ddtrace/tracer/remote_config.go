@@ -270,8 +270,13 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 	diRCState.Lock()
 	defer diRCState.Unlock()
 	for k, v := range u {
-		log.Debug("Received dynamic instrumentation RC configuration for %s\n", k)
-		if len(v) == 0 {
+		deleted := len(v) == 0
+		deletedMsg := ""
+		if deleted {
+			deletedMsg = " (deleted)"
+		}
+		log.Debug("Received dynamic instrumentation RC configuration for %s%s\n", k, deletedMsg)
+		if deleted {
 			delete(diRCState.state, k)
 			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 		} else {
