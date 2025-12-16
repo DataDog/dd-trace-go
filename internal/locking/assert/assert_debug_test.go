@@ -3,8 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build !deadlock && !debug
-// +build !deadlock,!debug
+//go:build debug && !deadlock
+// +build debug,!deadlock
 
 package assert
 
@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMutexLockedPanicsWhenUnlocked(t *testing.T) {
+func TestMutexLockedPanicsWhenUnlockedDebug(t *testing.T) {
 	tests := []struct {
 		name string
 		lock locking.TryLocker
@@ -40,7 +40,7 @@ func TestMutexLockedPanicsWhenUnlocked(t *testing.T) {
 	}
 }
 
-func TestMutexLockedDoesNotPanicWhenLocked(t *testing.T) {
+func TestMutexLockedDoesNotPanicWhenLockedDebug(t *testing.T) {
 	tests := []struct {
 		name     string
 		lock     locker
@@ -95,10 +95,10 @@ func TestMutexLockedDoesNotPanicWhenLocked(t *testing.T) {
 	}
 }
 
-func TestRWMutexRLockedPanicsWhenUnlocked(t *testing.T) {
+func TestRWMutexRLockedPanicsWhenUnlockedDebug(t *testing.T) {
 	tests := []struct {
 		name string
-		lock locker
+		lock locking.TryRLocker
 	}{
 		{
 			name: "locking.RWMutex panics when not read-locked",
@@ -119,7 +119,7 @@ func TestRWMutexRLockedPanicsWhenUnlocked(t *testing.T) {
 	}
 }
 
-func TestRWMutexRLockedDoesNotPanicWhenLocked(t *testing.T) {
+func TestRWMutexRLockedDoesNotPanicWhenLockedDebug(t *testing.T) {
 	tests := []struct {
 		name     string
 		lock     locker

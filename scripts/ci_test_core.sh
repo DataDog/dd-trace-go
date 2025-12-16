@@ -32,17 +32,17 @@ fi
 export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
 
 # Run tests with shuffle for packages that support it
-gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report.xml" -- -v -race $TAGS_ARG -shuffle=on -coverprofile=coverage.txt -covermode=atomic "${SHUFFLE_PACKAGES[@]}"
+gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report.xml" -- -v -race "$TAGS_ARG" -shuffle=on -coverprofile=coverage.txt -covermode=atomic "${SHUFFLE_PACKAGES[@]}"
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 
 # Run tests without shuffle for packages that don't support it yet
-gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-noshuffle.xml" -- -v -race $TAGS_ARG -coverprofile=coverage-noshuffle.txt -covermode=atomic "${NO_SHUFFLE_PACKAGES[@]}"
+gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-noshuffle.xml" -- -v -race "$TAGS_ARG" -coverprofile=coverage-noshuffle.txt -covermode=atomic "${NO_SHUFFLE_PACKAGES[@]}"
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 
 cd ./internal/exectracetest
-gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-exectrace.xml" -- -v -race $TAGS_ARG -coverprofile=coverage.txt -covermode=atomic ./...
+gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-exectrace.xml" -- -v -race "$TAGS_ARG" -coverprofile=coverage.txt -covermode=atomic ./...
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 

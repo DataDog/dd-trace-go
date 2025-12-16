@@ -57,7 +57,26 @@ func (c *Cache) Set(key string, value interface{}) {
 
 ### Lock State Assertions
 
-The assert package provides runtime verification of lock states using [`github.com/trailofbits/go-mutexasserts`](https://github.com/trailofbits/go-mutexasserts). While static analysis tools like [`checklocks`](https://github.com/google/gvisor/blob/master/tools/checklocks/README.md) provide compile-time guarantees through annotations, runtime assertions offer additional guarantees that static analysis cannot provide.
+The assert package provides runtime verification of lock states using TryLock-based checks. While static analysis tools like [`checklocks`](https://github.com/google/gvisor/blob/master/tools/checklocks/README.md) provide compile-time guarantees through annotations, runtime assertions offer additional guarantees that static analysis cannot provide.
+
+#### Available Assertion Functions
+
+- `MutexLocked(m TryLocker)` - Panics if mutex is NOT locked (works for both Mutex and RWMutex write locks)
+- `RWMutexRLocked(m TryRLocker)` - Panics if RWMutex is NOT read-locked (passes for both RLock and Lock)
+
+**Key Distinctions**:
+
+- `MutexLocked()` uses `TryLock()` to verify exclusive lock (Mutex.Lock or RWMutex.Lock)
+- `RWMutexRLocked()` uses `TryRLock()` to verify read access is blocked (either RLock or Lock held)
+
+**Implementation**: All assertions use TryLock-based verification:
+
+- TryLock succeeds (returns true) → lock was NOT held → panic (assertion fails)
+- TryLock fails (returns false) → lock IS held → no panic (assertion passes)
+
+This approach works consistently without external dependencies in default and debug builds.
+
+**Note**: When building with `deadlock` tag, these assertion functions become no-ops. The go-deadlock library provides comprehensive runtime deadlock detection, and attempting to use TryLock on already-held locks triggers false positives in go-deadlock's recursive locking detection. In deadlock builds, rely on go-deadlock's built-in verification instead of these assertions.
 
 #### Static vs Runtime Analysis
 
@@ -68,7 +87,7 @@ The assert package provides runtime verification of lock states using [`github.c
 - May miss violations in dynamically determined code paths
 - Excellent for enforcing consistent locking patterns across large codebases
 
-**Runtime Assertions (go-mutexasserts)**:
+**Runtime Assertions (TryLock-based)**:
 
 - Verify actual lock state during program execution
 - Catch violations that static analysis might miss
@@ -251,6 +270,45 @@ go test -v -timeout=300s -tags=deadlock ./ddtrace/tracer
 go test -v -timeout=300s -tags=debug,deadlock ./...
 ```
 
+## Build Tag Testing Strategy
+
+### Test Coverage Matrix
+
+| Build Configuration | Test File | Purpose |
+|---------------------|-----------|---------|
+| Default (`!deadlock && !debug`) | `assert_sync_test.go` | TryLock assertions with sync.Mutex type aliases |
+| Debug (`debug && !deadlock`) | `assert_debug_test.go` | TryLock assertions in debug mode |
+| Deadlock (`deadlock`) | `assert_test.go` | Assertions with go-deadlock wrapper |
+| Debug+Deadlock (`debug && deadlock`) | `assert_debug_deadlock_test.go` | Combined debug and deadlock features |
+
+### CI Integration
+
+The CI pipeline tests with:
+
+- `BUILD_TAGS=debug` - Tests debug-only configuration
+- `BUILD_TAGS=debug,deadlock` - Tests combined configuration
+
+### Running Tests Locally
+
+Test all configurations:
+```shell
+# Default (sync.Mutex type aliases)
+go test ./internal/locking/assert
+
+# Debug build
+go test -tags=debug ./internal/locking/assert
+
+# Deadlock build
+go test -tags=deadlock ./internal/locking/assert
+
+# Debug + Deadlock
+go test -tags=debug,deadlock ./internal/locking/assert
+
+# With race detection
+go test -race -tags=debug ./internal/locking/assert
+go test -race -tags=debug,deadlock ./internal/locking/assert
+```
+
 ## Performance Considerations
 
 - **Zero Overhead**: In the default build, type aliases ensure no performance penalty
@@ -261,7 +319,6 @@ go test -v -timeout=300s -tags=debug,deadlock ./...
 ## Dependencies
 
 - [`github.com/sasha-s/go-deadlock`](https://github.com/sasha-s/go-deadlock): Provides runtime deadlock detection
-- [`github.com/trailofbits/go-mutexasserts`](https://github.com/trailofbits/go-mutexasserts): Enables lock state assertions
 
 ## Troubleshooting
 

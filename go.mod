@@ -30,7 +30,6 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/theckman/httpforwarded v0.4.0
 	github.com/tinylib/msgp v1.3.0
-	github.com/trailofbits/go-mutexasserts v0.0.0-20250514102930-c1f3d2e37561
 	go.opentelemetry.io/collector/pdata/pprofile v0.140.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
 	go.opentelemetry.io/otel v1.38.0

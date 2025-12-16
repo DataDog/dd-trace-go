@@ -3,6 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build debug && deadlock
+// +build debug,deadlock
+
 package assert
 
 import (
@@ -12,24 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
-type lockMode string
-
-const (
-	lock  lockMode = "Lock"
-	rlock lockMode = "RLock"
-)
-
-// locker is an interface that combines all locking methods needed for testing.
-type locker interface {
-	Lock()
-	Unlock()
-	TryLock() bool
-	RLock()
-	RUnlock()
-	TryRLock() bool
-}
-
-func TestLockAssertions(t *testing.T) {
+func TestLockAssertionsDebugDeadlock(t *testing.T) {
 	tests := []struct {
 		name       string
 		lock       locker
@@ -78,7 +64,7 @@ func TestLockAssertions(t *testing.T) {
 	}
 }
 
-func TestRLockAssertions(t *testing.T) {
+func TestRLockAssertionsDebugDeadlock(t *testing.T) {
 	tests := []struct {
 		name       string
 		lock       locker
