@@ -1487,7 +1487,6 @@ func TestRulesSamplerInternals(t *testing.T) {
 }
 
 func TestSamplingLimiter(t *testing.T) {
-
 	t.Run("resets-every-second", func(t *testing.T) {
 		assert := assert.New(t)
 		sl := newRateLimiter(defaultRateLimit)
