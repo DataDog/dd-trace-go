@@ -674,12 +674,9 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 	// 3. Data corruption in payload structures
 }
 
-// TestV1PayloadSizeReporting tests that the v1 protocol reports accurate
-// payload sizes with eager encoding.
-func TestV1PayloadSizeReporting(t *testing.T) {
-	// This test validates that v1 payload sizes are correctly reported.
-	// With eager encoding, v1 now encodes immediately on push(), so sizes
-	// are accurate right away without needing to call Read().
+// TestPayloadSizeReporting tests that protocol reports accurate
+// payload sizes after encoding for both v1 and v0.4.
+func TestPayloadSizeReporting(t *testing.T) {
 	t.Run("v1-size-after-push", func(t *testing.T) {
 		// Reset process tags to ensure deterministic payload sizes
 		processtags.Reload()
@@ -687,19 +684,19 @@ func TestV1PayloadSizeReporting(t *testing.T) {
 		assert := assert.New(t)
 		p := newPayloadV1()
 
-		// Add a trace (array of spans) to the payload - each push() adds one trace
 		trace1 := []*Span{makeSpan(10), makeSpan(10)}
 		_, err := p.push(trace1)
 		assert.NoError(err)
 
-		// Add another trace
 		trace2 := []*Span{makeSpan(10)}
 		_, err = p.push(trace2)
 		assert.NoError(err)
 
 		// With eager encoding, size should be accurate immediately after push
 		statsAfterPush := p.stats()
-		assert.Greater(statsAfterPush.size, 0, "v1 payload size should be > 0 immediately after push()")
+		// The initial header size is 8 bytes. To ensure that the payload is encoding
+		// beyond the header, we check that the reported size is greater than 8.
+		assert.Greater(statsAfterPush.size, 8, "v1 payload size should be > 8 immediately after push()")
 		assert.Equal(2, statsAfterPush.itemCount, "should have 2 trace chunks")
 	})
 
@@ -710,7 +707,6 @@ func TestV1PayloadSizeReporting(t *testing.T) {
 		assert := assert.New(t)
 		p := newPayloadV04()
 
-		// Add traces (each push() adds one trace)
 		trace1 := []*Span{makeSpan(10), makeSpan(10)}
 		stats, err := p.push(trace1)
 		assert.NoError(err)
@@ -719,8 +715,6 @@ func TestV1PayloadSizeReporting(t *testing.T) {
 		stats, err = p.push(trace2)
 		assert.NoError(err)
 
-		// For v0.4, size should be accurate immediately after push
-		// because encoding happens during push(), not lazily during Read()
 		assert.Equal(1935, stats.size, "v0.4 payload size should be > 0 immediately after push()")
 		assert.Equal(2, stats.itemCount, "should have 2 traces")
 	})
