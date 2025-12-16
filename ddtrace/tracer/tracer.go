@@ -258,7 +258,7 @@ func Start(opts ...StartOption) error {
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
-	cfg.AppVersion = t.config.version
+	cfg.AppVersion = t.config.internalConfig.Version()
 	cfg.Env = t.config.env
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
@@ -314,7 +314,7 @@ func storeConfig(c *config) {
 		Hostname:           c.internalConfig.Hostname(),
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
-		ServiceVersion:     c.version,
+		ServiceVersion:     c.internalConfig.Version(),
 		ProcessTags:        processtags.GlobalTags().String(),
 		ContainerID:        globalinternal.ContainerID(),
 	}
@@ -330,7 +330,7 @@ func storeConfig(c *config) {
 		HostName:                  c.internalConfig.Hostname(),
 		ServiceInstanceID:         globalconfig.RuntimeID(),
 		ServiceName:               c.serviceName,
-		ServiceVersion:            c.version,
+		ServiceVersion:            c.internalConfig.Version(),
 		TelemetrySDKLanguage:      "go",
 		TelemetrySDKVersion:       version.Tag,
 		TelemetrySdkName:          "dd-trace-go",
@@ -439,7 +439,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.internalConfig.Version(), c.agentURL, c.httpClient)
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -786,9 +786,9 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 			span.service = newSvc
 		}
 	}
-	if t.config.version != "" {
+	if t.config.internalConfig.Version() != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
-			span.setMeta(ext.Version, t.config.version)
+			span.setMeta(ext.Version, t.config.internalConfig.Version())
 		}
 	}
 	if t.config.env != "" {
@@ -986,7 +986,7 @@ func (t *tracer) TracerConf() TracerConf {
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
 		PeerServiceMappings:  t.config.peerServiceMappings,
 		EnvTag:               t.config.env,
-		VersionTag:           t.config.version,
+		VersionTag:           t.config.internalConfig.Version(),
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
 		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),

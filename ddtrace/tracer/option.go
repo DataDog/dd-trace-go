@@ -168,9 +168,6 @@ type config struct {
 	// should match to set application version tag. False by default
 	universalVersion bool
 
-	// version specifies the version of this application
-	version string
-
 	// env contains the environment that this application will run under.
 	env string
 
@@ -347,9 +344,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
 	}
-	if ver := env.Get("DD_VERSION"); ver != "" {
-		c.version = ver
-	}
 	if v := env.Get("DD_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
@@ -447,10 +441,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 			}
 		}
 	}
-	if c.version == "" {
+	if c.internalConfig.Version() == "" {
 		if v, ok := globalTags["version"]; ok {
 			if ver, ok := v.(string); ok {
-				c.version = ver
+				c.internalConfig.SetVersion(ver, c.globalTags.cfgOrigin)
 			}
 		}
 	}
@@ -537,7 +531,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		DDTags:     c.globalTags.get(),
 		Env:        c.env,
 		Service:    c.serviceName,
-		Version:    c.version,
+		Version:    c.internalConfig.Version(),
 		AgentURL:   c.agentURL,
 		APIKey:     env.Get("DD_API_KEY"),
 		APPKey:     env.Get("DD_APP_KEY"),
@@ -1146,7 +1140,7 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 // span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
-		cfg.version = version
+		cfg.internalConfig.SetVersion(version, telemetry.OriginCode)
 		cfg.universalVersion = false
 	}
 }
@@ -1156,7 +1150,7 @@ func WithServiceVersion(version string) StartOption {
 // See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
-		c.version = version
+		c.internalConfig.SetVersion(version, telemetry.OriginCode)
 		c.universalVersion = true
 	}
 }
