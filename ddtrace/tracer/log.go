@@ -140,7 +140,7 @@ func logStartup(t *tracer) {
 		Tags:                        tags,
 		RuntimeMetricsEnabled:       t.config.internalConfig.RuntimeMetricsEnabled(),
 		RuntimeMetricsV2Enabled:     t.config.internalConfig.RuntimeMetricsV2Enabled(),
-		ApplicationVersion:          t.config.version,
+		ApplicationVersion:          t.config.internalConfig.Version(),
 		ProfilerCodeHotspotsEnabled: t.config.internalConfig.ProfilerHotspotsEnabled(),
 		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,

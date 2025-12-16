@@ -452,3 +452,16 @@ func (c *Config) HostnameLookupError() error {
 	defer c.mu.RUnlock()
 	return c.hostnameLookupError
 }
+
+func (c *Config) Version() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.version
+}
+
+func (c *Config) SetVersion(version string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.version = version
+	telemetry.RegisterAppConfig("DD_VERSION", version, origin)
+}
