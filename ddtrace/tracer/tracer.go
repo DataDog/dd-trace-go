@@ -259,7 +259,7 @@ func Start(opts ...StartOption) error {
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
 	cfg.AppVersion = t.config.internalConfig.Version()
-	cfg.Env = t.config.env
+	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	if err := t.startRemoteConfig(cfg); err != nil {
@@ -313,7 +313,7 @@ func storeConfig(c *config) {
 		Version:            version.Tag,
 		Hostname:           c.internalConfig.Hostname(),
 		ServiceName:        c.serviceName,
-		ServiceEnvironment: c.env,
+		ServiceEnvironment: c.internalConfig.Env(),
 		ServiceVersion:     c.internalConfig.Version(),
 		ProcessTags:        processtags.GlobalTags().String(),
 		ContainerID:        globalinternal.ContainerID(),
@@ -326,7 +326,7 @@ func storeConfig(c *config) {
 	}
 
 	processContext := otelProcessContext{
-		DeploymentEnvironmentName: c.env,
+		DeploymentEnvironmentName: c.internalConfig.Env(),
 		HostName:                  c.internalConfig.Hostname(),
 		ServiceInstanceID:         globalconfig.RuntimeID(),
 		ServiceName:               c.serviceName,
@@ -439,7 +439,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.internalConfig.Version(), c.agentURL, c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.agentURL, c.httpClient)
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -791,8 +791,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 			span.setMeta(ext.Version, t.config.internalConfig.Version())
 		}
 	}
-	if t.config.env != "" {
-		span.setMeta(ext.Environment, t.config.env)
+	if t.config.internalConfig.Env() != "" {
+		span.setMeta(ext.Environment, t.config.internalConfig.Env())
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -985,7 +985,7 @@ func (t *tracer) TracerConf() TracerConf {
 		PartialFlushMinSpans: t.config.internalConfig.PartialFlushMinSpans(),
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
 		PeerServiceMappings:  t.config.peerServiceMappings,
-		EnvTag:               t.config.env,
+		EnvTag:               t.config.internalConfig.Env(),
 		VersionTag:           t.config.internalConfig.Version(),
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,

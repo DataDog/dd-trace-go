@@ -44,9 +44,10 @@ type Config struct {
 	agentURL *url.URL
 	debug    bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
-	logStartup      bool
-	serviceName     string
-	version         string
+	logStartup  bool
+	serviceName string
+	version     string
+	// env contains the environment that this application will run under.
 	env             string
 	serviceMappings map[string]string
 	// hostname is automatically assigned from the OS hostname, or from the DD_TRACE_SOURCE_HOSTNAME environment variable or WithHostname() option.
@@ -451,4 +452,17 @@ func (c *Config) SetVersion(version string, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.version = version
 	telemetry.RegisterAppConfig("DD_VERSION", version, origin)
+}
+
+func (c *Config) Env() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.env
+}
+
+func (c *Config) SetEnv(env string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.env = env
+	telemetry.RegisterAppConfig("DD_ENV", env, origin)
 }

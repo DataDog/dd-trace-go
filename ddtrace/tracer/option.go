@@ -168,9 +168,6 @@ type config struct {
 	// should match to set application version tag. False by default
 	universalVersion bool
 
-	// env contains the environment that this application will run under.
-	env string
-
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
 
@@ -332,9 +329,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	if v := env.Get("DD_ENV"); v != "" {
-		c.env = v
-	}
 	if v := env.Get("DD_TRACE_FEATURES"); v != "" {
 		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
 			return r == ',' || r == ' '
@@ -434,10 +428,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	globalTags := c.globalTags.get()
-	if c.env == "" {
+	if c.internalConfig.Env() == "" {
 		if v, ok := globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
-				c.env = e
+				c.internalConfig.SetEnv(e, c.globalTags.cfgOrigin)
 			}
 		}
 	}
@@ -529,7 +523,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Update the llmobs config with stuff needed from the tracer.
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
 		DDTags:     c.globalTags.get(),
-		Env:        c.env,
+		Env:        c.internalConfig.Env(),
 		Service:    c.serviceName,
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.agentURL,
@@ -795,8 +789,8 @@ func statsTags(c *config) []string {
 		"lang:go",
 		"lang_version:" + runtime.Version(),
 	}
-	if c.env != "" {
-		tags = append(tags, "env:"+c.env)
+	if c.internalConfig.Env() != "" {
+		tags = append(tags, "env:"+c.internalConfig.Env())
 	}
 	if hostname := c.internalConfig.Hostname(); hostname != "" {
 		tags = append(tags, "host:"+hostname)
@@ -984,7 +978,7 @@ func WithAgentTimeout(timeout int) StartOption {
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
 	return func(c *config) {
-		c.env = env
+		c.internalConfig.SetEnv(env, telemetry.OriginCode)
 	}
 }
 
