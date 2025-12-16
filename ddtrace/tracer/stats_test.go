@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
@@ -33,7 +34,7 @@ func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env str
 	assert := assert.New(t)
 	cfg, err := newTestConfig(func(c *config) {
 		c.transport = transport
-		c.env = env
+		c.internalConfig.SetEnv(env, internalconfig.OriginCode)
 	})
 	assert.NoError(err)
 	return cfg
@@ -130,12 +131,8 @@ func TestConcentrator(t *testing.T) {
 		t.Run("ciGitSha", func(t *testing.T) {
 			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
 			transport := newDummyTransport()
-			cfg, err := newTestConfig(func(c *config) {
-				c.transport = transport
-				c.env = "someEnv"
-				c.ciVisibilityEnabled = true
-			})
-			assert.NoError(t, err)
+			cfg := newTestConfigWithTransportAndEnv(t, transport, "someEnv")
+			cfg.ciVisibilityEnabled = true
 			c := newConcentrator(cfg, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
@@ -211,11 +208,7 @@ func TestShouldObfuscate(t *testing.T) {
 		{name: "agent version newer", tracerVersion: 2, agentVersion: 3, expectedShouldObfuscate: false},
 	} {
 		t.Run(params.name, func(t *testing.T) {
-			cfg, err := newTestConfig(func(c *config) {
-				c.transport = tsp
-				c.env = "someEnv"
-			})
-			assert.NoError(t, err)
+			cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
 			cfg.agent = agentFeatures{obfuscationVersion: params.agentVersion}
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
@@ -236,11 +229,7 @@ func TestObfuscation(t *testing.T) {
 		resource: "GET somekey",
 	}
 	tsp := newDummyTransport()
-	cfg, err := newTestConfig(func(c *config) {
-		c.transport = tsp
-		c.env = "someEnv"
-	})
-	assert.NoError(t, err)
+	cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
 	cfg.agent.obfuscationVersion = 2
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
@@ -298,21 +287,14 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 	})
 
 	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
-		cfg, err := newTestConfig(func(c *config) {
-			c.transport = newDummyTransport()
-			c.env = "tracer-staging"
-		})
-		assert.NoError(err)
+		cfg := newTestConfigWithTransportAndEnv(t, newDummyTransport(), "tracer-staging")
 		cfg.agent.defaultEnv = "agent-prod"
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("tracer-staging", c.aggregationKey.Env)
 	})
 
 	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
-		cfg, err := newTestConfig(func(c *config) {
-			c.transport = newDummyTransport()
-		})
-		assert.NoError(err)
+		cfg := newTestConfigWithTransport(t, newDummyTransport())
 		cfg.agent = agentFeatures{}
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("unknown-env", c.aggregationKey.Env)

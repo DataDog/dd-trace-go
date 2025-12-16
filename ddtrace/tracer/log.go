@@ -127,7 +127,7 @@ func logStartup(t *tracer) {
 		Version:                     version.Tag,
 		Lang:                        "Go",
 		LangVersion:                 runtime.Version(),
-		Env:                         t.config.env,
+		Env:                         t.config.internalConfig.Env(),
 		Service:                     t.config.serviceName,
 		AgentURL:                    agentURL,
 		Debug:                       t.config.internalConfig.Debug(),
