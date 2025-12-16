@@ -129,12 +129,6 @@ func (h *agentTraceWriter) flush() {
 			h.wg.Done()
 		}(time.Now())
 
-		// v1 updates buffers on Read, so we must read the payload before reporting
-		// size and item count stats.
-		buf := make([]byte, 1)
-		_, _ = p.Read(buf)
-		p.reset()
-
 		stats := p.stats()
 		var err error
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
