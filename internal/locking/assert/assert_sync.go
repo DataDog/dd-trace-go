@@ -23,5 +23,11 @@ func RWMutexLocked(m *locking.RWMutex) {
 }
 
 func RWMutexRLocked(m *locking.RWMutex) {
+	// A write lock also satisfies the read lock requirement because
+	// a write lock provides exclusive access that encompasses read-level exclusivity
+	if mutexasserts.RWMutexRLocked(m) || mutexasserts.RWMutexLocked(m) {
+		return
+	}
+	// Neither read-locked nor write-locked - trigger assertion failure
 	mutexasserts.AssertRWMutexRLocked(m)
 }

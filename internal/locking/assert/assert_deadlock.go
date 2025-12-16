@@ -45,5 +45,9 @@ func RWMutexRLocked(m *locking.RWMutex) {
 		panic("could not find mu field in deadlock.RWMutex")
 	}
 	muPtr := (*sync.RWMutex)(unsafe.Pointer(muField.UnsafeAddr()))
+	// A write lock also satisfies the read lock requirement
+	if mutexasserts.RWMutexRLocked(muPtr) || mutexasserts.RWMutexLocked(muPtr) {
+		return
+	}
 	mutexasserts.AssertRWMutexRLocked(muPtr)
 }
