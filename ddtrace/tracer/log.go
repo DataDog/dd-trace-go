@@ -96,8 +96,9 @@ func logStartup(t *tracer) {
 		tags[k] = fmt.Sprintf("%v", v)
 	}
 
-	featureFlags := make([]string, 0, len(t.config.featureFlags))
-	for f := range t.config.featureFlags {
+	allFeatures := t.config.internalConfig.FeatureFlags()
+	featureFlags := make([]string, 0, len(allFeatures))
+	for f := range allFeatures {
 		featureFlags = append(featureFlags, f)
 	}
 

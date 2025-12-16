@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,6 +93,8 @@ type Config struct {
 	// reportHostname indicates whether hostname should be reported on spans.
 	// Set to true when DD_TRACE_REPORT_HOSTNAME=true, or when hostname is explicitly configured via DD_TRACE_SOURCE_HOSTNAME or WithHostname().
 	reportHostname bool
+	// featureFlags specifies any enabled feature flags.
+	featureFlags map[string]struct{}
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -128,6 +131,16 @@ func loadConfig() *Config {
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
+
+	// Parse feature flags from DD_TRACE_FEATURES as a set
+	cfg.featureFlags = make(map[string]struct{})
+	if featuresStr := provider.getString("DD_TRACE_FEATURES", ""); featuresStr != "" {
+		for _, feat := range strings.FieldsFunc(featuresStr, func(r rune) bool {
+			return r == ',' || r == ' '
+		}) {
+			cfg.featureFlags[strings.TrimSpace(feat)] = struct{}{}
+		}
+	}
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -465,4 +478,34 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.env = env
 	telemetry.RegisterAppConfig("DD_ENV", env, origin)
+}
+
+func (c *Config) HasFeature(feat string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.featureFlags[strings.TrimSpace(feat)]
+	return ok
+}
+
+func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.featureFlags == nil {
+		c.featureFlags = make(map[string]struct{})
+	}
+	for _, feat := range features {
+		c.featureFlags[strings.TrimSpace(feat)] = struct{}{}
+	}
+	telemetry.RegisterAppConfig("DD_TRACE_FEATURES", strings.Join(features, ","), origin)
+}
+
+func (c *Config) FeatureFlags() map[string]struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	// Return a copy to prevent external modification
+	result := make(map[string]struct{}, len(c.featureFlags))
+	for k, v := range c.featureFlags {
+		result[k] = v
+	}
+	return result
 }

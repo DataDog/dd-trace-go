@@ -151,9 +151,6 @@ type config struct {
 	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
 
-	// featureFlags specifies any enabled feature flags.
-	featureFlags map[string]struct{}
-
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
 	// failure.
 	sendRetries int
@@ -289,12 +286,6 @@ type (
 	}
 )
 
-// HasFeature reports whether feature f is enabled.
-func (c *config) HasFeature(f string) bool {
-	_, ok := c.featureFlags[strings.TrimSpace(f)]
-	return ok
-}
-
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -328,11 +319,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if err := c.internalConfig.HostnameLookupError(); err != nil {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
-	}
-	if v := env.Get("DD_TRACE_FEATURES"); v != "" {
-		WithFeatureFlags(strings.FieldsFunc(v, func(r rune) bool {
-			return r == ',' || r == ' '
-		})...)(c)
 	}
 	if v := getDDorOtelConfig("service"); v != "" {
 		c.serviceName = v
@@ -777,7 +763,7 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && (c.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
+	return c.agent.Stats && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 
 func (c *config) canDropP0s() bool {
@@ -839,12 +825,7 @@ func WithAppSecEnabled(enabled bool) StartOption {
 // unexpected bugs.
 func WithFeatureFlags(feats ...string) StartOption {
 	return func(c *config) {
-		if c.featureFlags == nil {
-			c.featureFlags = make(map[string]struct{}, len(feats))
-		}
-		for _, f := range feats {
-			c.featureFlags[strings.TrimSpace(f)] = struct{}{}
-		}
+		c.internalConfig.SetFeatureFlags(feats, telemetry.OriginCode)
 		log.Info("FEATURES enabled: %s", feats)
 	}
 }
