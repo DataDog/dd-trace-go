@@ -7,7 +7,6 @@ package config
 
 import (
 	"os"
-	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -85,9 +84,6 @@ func parseFile(filePath string) *declarativeConfig {
 // fileContentsToConfig parses YAML data into a declarativeConfig struct.
 // Returns an empty config if parsing fails or the data is malformed.
 func fileContentsToConfig(data []byte, fileName string) *declarativeConfig {
-	if fileName == managedFilePath {
-		println("MTOFF DEBUG - data at time ", time.Now().Format(time.RFC3339), "is: ", string(data))
-	}
 	dc := &declarativeConfig{}
 	err := yaml.Unmarshal(data, dc)
 	if err != nil {

@@ -234,17 +234,6 @@ func (c *client) Flush() {
 	payloads := make([]transport.Payload, 0, 8)
 	for _, ds := range c.dataSources {
 		if payload := ds.Payload(); payload != nil {
-			println("MTOFF DEBUG - client.Flush() got payload type:", payload.RequestType())
-			if payload.RequestType() == transport.RequestTypeAppClientConfigurationChange {
-				if configPayload, ok := payload.(transport.AppClientConfigurationChange); ok {
-					println("MTOFF DEBUG - AppClientConfigurationChange payload has", len(configPayload.Configuration), "configs")
-					for i, conf := range configPayload.Configuration {
-						if conf.Name == "DD_TRACE_DEBUG" {
-							println("MTOFF DEBUG - config[", i, "]:", "name:", conf.Name, "value:", conf.Value, "origin:", conf.Origin, "seqID:", conf.SeqID)
-						}
-					}
-				}
-			}
 			payloads = append(payloads, payload)
 		}
 	}
@@ -295,20 +284,6 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 	// We enqueue the new payloads to preserve the order of the payloads
 	c.payloadQueue.Enqueue(payloads...)
 	payloads = c.payloadQueue.Flush()
-
-	println("MTOFF DEBUG - flush() after queue flush, payloads count:", len(payloads))
-	for _, payload := range payloads {
-		if payload.RequestType() == transport.RequestTypeAppClientConfigurationChange {
-			if configPayload, ok := payload.(transport.AppClientConfigurationChange); ok {
-				println("MTOFF DEBUG - About to send AppClientConfigurationChange with", len(configPayload.Configuration), "configs")
-				for i, conf := range configPayload.Configuration {
-					if conf.Name == "DD_TRACE_DEBUG" {
-						println("MTOFF DEBUG - Sending config[", i, "]:", "name:", conf.Name, "value:", conf.Value, "origin:", conf.Origin, "seqID:", conf.SeqID)
-					}
-				}
-			}
-		}
-	}
 
 	var (
 		nbBytes        int

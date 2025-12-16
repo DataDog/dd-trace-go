@@ -8,7 +8,6 @@ package telemetry
 import (
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/puzpuzpuz/xsync/v3"
 
@@ -51,7 +50,6 @@ func StartApp(client Client) {
 	}
 
 	client.AppStart()
-	println("MTOFF DEBUG - app started at time ", time.Now().Format(time.RFC3339))
 	go client.Flush()
 }
 

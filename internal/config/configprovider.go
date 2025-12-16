@@ -59,9 +59,6 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
-			if key == "DD_TRACE_DEBUG" {
-				println("MTOFF DEBUG - registering config:", key, "source:", source.origin(), "value:", v, "empty:", v == "")
-			}
 			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id, SeqID: seqId})
 			if parsed, ok := parse(v); ok {
 				if final == nil {
