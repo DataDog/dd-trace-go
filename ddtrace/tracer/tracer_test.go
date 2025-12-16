@@ -428,7 +428,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -494,7 +493,7 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -519,7 +518,6 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -544,7 +542,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be dropped. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -569,7 +566,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
@@ -602,7 +598,6 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		var spans []*Span
 		for i := 0; i < 100; i++ {
@@ -642,7 +637,6 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
@@ -678,7 +672,6 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
@@ -2644,8 +2637,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2665,8 +2657,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2690,8 +2681,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
