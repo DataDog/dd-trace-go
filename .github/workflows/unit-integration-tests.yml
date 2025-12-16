@@ -383,12 +383,12 @@ jobs:
                   cat response.txt
                   echo " - All APM Test Agent Check Traces returned successful!"
                   echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt | jq "."
+                  jq "." summary_response.txt
               else
                   echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
                   echo "Failures:"
                   cat response.txt
                   echo "APM Test Agent Check Traces Summary Results:"
-                  cat summary_response.txt | jq "."
+                  jq "." summary_response.txt
                   exit 1
               fi
