@@ -774,8 +774,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
-	if t.config.serviceMappings != nil {
-		if newSvc, ok := t.config.serviceMappings[span.service]; ok {
+	if mappings := t.config.internalConfig.ServiceMappings(); mappings != nil {
+		if newSvc, ok := mappings[span.service]; ok {
 			span.service = newSvc
 		}
 	}
@@ -791,8 +791,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
 	}
-	if t.config.serviceMappings != nil {
-		if newSvc, ok := t.config.serviceMappings[span.service]; ok {
+	if mappings := t.config.internalConfig.ServiceMappings(); mappings != nil {
+		if newSvc, ok := mappings[span.service]; ok {
 			span.service = newSvc
 		}
 	}

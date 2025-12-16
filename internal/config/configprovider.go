@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -147,35 +148,11 @@ func normalizeKey(key string) string {
 
 // parseMapString parses a string containing key:value pairs separated by comma or space.
 // Format: "key1:value1,key2:value2" or "key1:value1 key2:value2"
+// Uses internal.ForEachStringTag to ensure consistent parsing with other tag-like env vars.
 func parseMapString(str string) map[string]string {
 	result := make(map[string]string)
-
-	// Determine separator (comma or space)
-	sep := " "
-	if strings.Contains(str, ",") {
-		sep = ","
-	}
-
-	// Parse each key:value pair
-	for _, pair := range strings.Split(str, sep) {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
-			continue
-		}
-
-		// Split on colon delimiter
-		kv := strings.SplitN(pair, ":", 2)
-		key := strings.TrimSpace(kv[0])
-		if key == "" {
-			continue
-		}
-
-		var val string
-		if len(kv) == 2 {
-			val = strings.TrimSpace(kv[1])
-		}
+	internal.ForEachStringTag(str, internal.DDTagsDelimiter, func(key, val string) {
 		result[key] = val
-	}
-
+	})
 	return result
 }

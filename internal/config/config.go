@@ -6,6 +6,7 @@
 package config
 
 import (
+	"fmt"
 	"math"
 	"net/url"
 	"os"
@@ -49,7 +50,8 @@ type Config struct {
 	serviceName string
 	version     string
 	// env contains the environment that this application will run under.
-	env             string
+	env string
+	// serviceMappings holds a set of service mappings to dynamically rename services
 	serviceMappings map[string]string
 	// hostname is automatically assigned from the OS hostname, or from the DD_TRACE_SOURCE_HOSTNAME environment variable or WithHostname() option.
 	hostname string
@@ -521,4 +523,29 @@ func (c *Config) FeatureFlags() map[string]struct{} {
 		result[k] = v
 	}
 	return result
+}
+
+// ServiceMappings returns a copy of the service mappings map. If no service mappings are set, returns nil.
+func (c *Config) ServiceMappings() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	// Return a copy to prevent external modification
+	if c.serviceMappings == nil {
+		return nil
+	}
+	result := make(map[string]string, len(c.serviceMappings))
+	for k, v := range c.serviceMappings {
+		result[k] = v
+	}
+	return result
+}
+
+func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.serviceMappings == nil {
+		c.serviceMappings = make(map[string]string)
+	}
+	c.serviceMappings[from] = to
+	telemetry.RegisterAppConfig("DD_SERVICE_MAPPING", fmt.Sprintf("%s:%s", from, to), origin)
 }
