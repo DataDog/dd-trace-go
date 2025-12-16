@@ -102,10 +102,10 @@
     "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [
       "A"
     ],
-    "DD_CIVISIBILITY_USE_NOOP_TRACER": [
+    "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT": [
       "A"
     ],
-    "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT": [
+    "DD_CIVISIBILITY_USE_NOOP_TRACER": [
       "A"
     ],
     "DD_CUSTOM_TRACE_ID": [
@@ -217,6 +217,9 @@
       "A"
     ],
     "DD_LOGGING_RATE": [
+      "A"
+    ],
+    "DD_METRICS_OTEL_ENABLED": [
       "A"
     ],
     "DD_PIPELINE_EXECUTION_ID": [
@@ -639,31 +642,28 @@
     "DD_VERSION": [
       "A"
     ],
-    "DD_METRICS_OTEL_ENABLED": [
-      "A"
-    ],
     "OTEL_EXPORTER_OTLP_ENDPOINT": [
       "A"
     ],
     "OTEL_EXPORTER_OTLP_HEADERS": [
       "A"
     ],
-    "OTEL_EXPORTER_OTLP_METRICS_HEADERS": [
-      "A"
-    ],
-    "OTEL_EXPORTER_OTLP_PROTOCOL": [
-      "A"
-    ],
-    "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": [
-      "A"
-    ],
     "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_HEADERS": [
       "A"
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
       "A"
     ],
     "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": [
+      "A"
+    ],
+    "OTEL_EXPORTER_OTLP_PROTOCOL": [
       "A"
     ],
     "OTEL_EXPORTER_OTLP_TIMEOUT": [
