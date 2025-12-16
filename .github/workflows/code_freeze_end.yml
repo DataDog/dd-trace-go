@@ -1,0 +1,43 @@
+name: End code freeze
+
+on:
+    workflow_dispatch:
+    milestone:
+        types: [closed, deleted]
+
+jobs:
+    end_code_freeze:
+        # Trigger on:
+        # - Manual dispatch (unfreezes all PRs)
+        # - Milestone events where title starts with "Code Freeze" or "Incident" and state is closed
+        if: |
+            github.event_name == 'workflow_dispatch' ||
+            (github.event_name == 'milestone' &&
+              (startsWith(github.event.milestone.title, 'Code Freeze') ||
+               startsWith(github.event.milestone.title, 'Incident')))
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pull-requests: read # Fetches PRs
+            statuses: write # add a commit status check
+        env:
+            GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+        steps:
+            - name: Log code freeze end
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    echo "🌡️ Code freeze ended manually"
+                  else
+                    echo "🌡️ Code freeze ended by closing milestone: ${{ github.event.milestone.title }}"
+                  fi
+
+            - name: Checkout repository
+              uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+            - name: Unfreeze PRs
+              uses: ./.github/actions/pr-status-updater
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  state: success
+                  workflow_name: code_freeze_end.yml
