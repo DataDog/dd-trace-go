@@ -86,6 +86,9 @@ test.sh - Run the tests for dd-trace-go
   -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds
   -t | --tools       - Install gotestsum and goimports
   -h | --help        - Print this help message
+
+Environment Variables:
+  BUILD_TAGS         - Comma-separated Go build tags (e.g., BUILD_TAGS=deadlock or BUILD_TAGS=debug,deadlock)
 ```
 
 ### Go Programs
