@@ -27,5 +27,7 @@ static-analysis.datadog.yml
 .vscode/settings.json
 coverage-*.txt
 
-# Cursor
+# Editors and Agents
 /.cursor
+/.claude
+/.vscode
