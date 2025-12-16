@@ -801,7 +801,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, span.meta, span.metrics)
 	}
-	if t.config.internalConfig.ProfilerHotspotsEnabled() || t.config.profilerEndpoints {
+	if t.config.internalConfig.ProfilerHotspotsEnabled() || t.config.internalConfig.ProfilerEndpoints() {
 		t.applyPPROFLabels(span.pprofCtxRestore, span)
 	} else {
 		span.pprofCtxRestore = nil
@@ -843,7 +843,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	if t.config.internalConfig.ProfilerHotspotsEnabled() {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if t.config.profilerEndpoints && localRootSpan != nil {
+	if t.config.internalConfig.ProfilerEndpoints() && localRootSpan != nil {
 		localRootSpan.mu.RLock()
 		if spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
