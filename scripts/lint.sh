@@ -65,7 +65,9 @@ lint_misc_files() {
 
 lint_action_files() {
   message "Linting GitHub Actions workflows..."
-  run "actionlint"
+  # Ignore 'if: false' warnings - used intentionally for disabled jobs like checklocks.
+  # The ignore is only available through the command line, not the configuration file.
+  run "actionlint -ignore 'condition .false. is always evaluated to false'"
 }
 
 # Parse command line arguments
