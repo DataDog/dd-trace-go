@@ -9,19 +9,19 @@
 package assert
 
 import (
+	"github.com/trailofbits/go-mutexasserts"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
-func MutexLocked(m locking.TryLocker) {
-	if m.TryLock() {
-		m.Unlock()
-		panic("mutex not locked")
-	}
+func MutexLocked(m *locking.Mutex) {
+	mutexasserts.AssertMutexLocked(m)
 }
 
-func RWMutexRLocked(m locking.TryRLocker) {
-	if m.TryRLock() {
-		m.RUnlock()
-		panic("rwmutex not read-locked")
-	}
+func RWMutexLocked(m *locking.RWMutex) {
+	mutexasserts.AssertRWMutexLocked(m)
+}
+
+func RWMutexRLocked(m *locking.RWMutex) {
+	mutexasserts.AssertRWMutexRLocked(m)
 }

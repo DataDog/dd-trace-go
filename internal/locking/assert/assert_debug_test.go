@@ -9,157 +9,48 @@
 package assert
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestMutexLockedPanicsWhenUnlockedDebug(t *testing.T) {
-	tests := []struct {
-		name string
-		lock locking.TryLocker
-	}{
-		{
-			name: "locking.Mutex panics when not locked",
-			lock: &locking.Mutex{},
-		},
-		{
-			name: "sync.Mutex panics when not locked",
-			lock: &sync.Mutex{},
-		},
-	}
+// Note: go-mutexasserts uses os.Exit(1) instead of panic when assertions fail,
+// so we can't test the failure cases in unit tests as they would terminate the test process.
+// We only test the success cases here.
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.PanicsWithValue(t, "mutex not locked", func() {
-				MutexLocked(tt.lock)
-			})
-		})
-	}
+func TestMutexLockedWhenLockedDebug(t *testing.T) {
+	m := &locking.Mutex{}
+	m.Lock()
+	defer m.Unlock()
+
+	// This should not exit when the mutex is actually locked
+	MutexLocked(m)
 }
 
-func TestMutexLockedDoesNotPanicWhenLockedDebug(t *testing.T) {
-	tests := []struct {
-		name     string
-		lock     locker
-		lockMode lockMode
-	}{
-		{
-			name:     "locking.Mutex does not panic when locked",
-			lock:     &locking.RWMutex{}, // Use RWMutex to satisfy locker interface
-			lockMode: lock,
-		},
-		{
-			name:     "sync.Mutex does not panic when locked",
-			lock:     &sync.RWMutex{}, // Use RWMutex to satisfy locker interface
-			lockMode: lock,
-		},
-		{
-			name:     "locking.RWMutex does not panic when write-locked",
-			lock:     &locking.RWMutex{},
-			lockMode: lock,
-		},
-		{
-			name:     "sync.RWMutex does not panic when write-locked",
-			lock:     &sync.RWMutex{},
-			lockMode: lock,
-		},
-		{
-			name:     "locking.RWMutex does not panic when read-locked",
-			lock:     &locking.RWMutex{},
-			lockMode: rlock,
-		},
-		{
-			name:     "sync.RWMutex does not panic when read-locked",
-			lock:     &sync.RWMutex{},
-			lockMode: rlock,
-		},
-	}
+func TestRWMutexLockedWhenLockedDebug(t *testing.T) {
+	m := &locking.RWMutex{}
+	m.Lock()
+	defer m.Unlock()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.lockMode == lock {
-				tt.lock.Lock()
-				defer tt.lock.Unlock()
-			} else {
-				tt.lock.RLock()
-				defer tt.lock.RUnlock()
-			}
-
-			assert.NotPanics(t, func() {
-				MutexLocked(tt.lock)
-			})
-		})
-	}
+	// This should not exit when the mutex is actually locked
+	RWMutexLocked(m)
 }
 
-func TestRWMutexRLockedPanicsWhenUnlockedDebug(t *testing.T) {
-	tests := []struct {
-		name string
-		lock locking.TryRLocker
-	}{
-		{
-			name: "locking.RWMutex panics when not read-locked",
-			lock: &locking.RWMutex{},
-		},
-		{
-			name: "sync.RWMutex panics when not read-locked",
-			lock: &sync.RWMutex{},
-		},
-	}
+func TestRWMutexRLockedWhenRLockedDebug(t *testing.T) {
+	m := &locking.RWMutex{}
+	m.RLock()
+	defer m.RUnlock()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.PanicsWithValue(t, "rwmutex not read-locked", func() {
-				RWMutexRLocked(tt.lock)
-			})
-		})
-	}
+	// This should not exit when the mutex is actually RLocked
+	RWMutexRLocked(m)
 }
 
-func TestRWMutexRLockedDoesNotPanicWhenLockedDebug(t *testing.T) {
-	tests := []struct {
-		name     string
-		lock     locker
-		lockMode lockMode
-	}{
-		{
-			name:     "locking.RWMutex does not panic when read-locked",
-			lock:     &locking.RWMutex{},
-			lockMode: rlock,
-		},
-		{
-			name:     "sync.RWMutex does not panic when read-locked",
-			lock:     &sync.RWMutex{},
-			lockMode: rlock,
-		},
-		{
-			name:     "locking.RWMutex does not panic when write-locked",
-			lock:     &locking.RWMutex{},
-			lockMode: lock,
-		},
-		{
-			name:     "sync.RWMutex does not panic when write-locked",
-			lock:     &sync.RWMutex{},
-			lockMode: lock,
-		},
-	}
+func TestRWMutexRLockedWhenWriteLockedDebug(t *testing.T) {
+	m := &locking.RWMutex{}
+	m.Lock()
+	defer m.Unlock()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.lockMode == lock {
-				tt.lock.Lock()
-				defer tt.lock.Unlock()
-			} else {
-				tt.lock.RLock()
-				defer tt.lock.RUnlock()
-			}
-
-			assert.NotPanics(t, func() {
-				RWMutexRLocked(tt.lock)
-			})
-		})
-	}
+	// This should not exit when the mutex has a write lock
+	// (go-mutexasserts considers write lock as also satisfying RLocked)
+	RWMutexRLocked(m)
 }

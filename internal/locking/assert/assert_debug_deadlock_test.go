@@ -9,94 +9,39 @@
 package assert
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
 func TestLockAssertionsDebugDeadlock(t *testing.T) {
-	tests := []struct {
-		name       string
-		lock       locker
-		lockMode   lockMode
-		assertFunc func(locking.TryLocker)
-	}{
-		{
-			name:       "locking.Mutex locked",
-			lock:       &locking.RWMutex{}, // Use RWMutex to satisfy locker interface
-			lockMode:   lock,
-			assertFunc: MutexLocked,
-		},
-		{
-			name:       "sync.Mutex locked",
-			lock:       &sync.RWMutex{}, // Use RWMutex to satisfy locker interface
-			lockMode:   lock,
-			assertFunc: MutexLocked,
-		},
-		{
-			name:       "locking.RWMutex write-locked",
-			lock:       &locking.RWMutex{},
-			lockMode:   lock,
-			assertFunc: MutexLocked,
-		},
-		{
-			name:       "sync.RWMutex write-locked",
-			lock:       &sync.RWMutex{},
-			lockMode:   lock,
-			assertFunc: MutexLocked,
-		},
-	}
+	t.Run("locking.Mutex locked", func(t *testing.T) {
+		m := &locking.Mutex{}
+		m.Lock()
+		defer m.Unlock()
+		MutexLocked(m)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.lockMode == lock {
-				tt.lock.Lock()
-				defer tt.lock.Unlock()
-			} else {
-				tt.lock.RLock()
-				defer tt.lock.RUnlock()
-			}
-
-			// Should not panic/exit when lock is in expected state
-			tt.assertFunc(tt.lock)
-		})
-	}
+	t.Run("locking.RWMutex write-locked", func(t *testing.T) {
+		m := &locking.RWMutex{}
+		m.Lock()
+		defer m.Unlock()
+		RWMutexLocked(m)
+	})
 }
 
 func TestRLockAssertionsDebugDeadlock(t *testing.T) {
-	tests := []struct {
-		name       string
-		lock       locker
-		lockMode   lockMode
-		assertFunc func(locking.TryRLocker)
-	}{
-		{
-			name:       "locking.RWMutex read-locked",
-			lock:       &locking.RWMutex{},
-			lockMode:   rlock,
-			assertFunc: RWMutexRLocked,
-		},
-		{
-			name:       "sync.RWMutex read-locked",
-			lock:       &sync.RWMutex{},
-			lockMode:   rlock,
-			assertFunc: RWMutexRLocked,
-		},
-	}
+	t.Run("locking.RWMutex read-locked", func(t *testing.T) {
+		m := &locking.RWMutex{}
+		m.RLock()
+		defer m.RUnlock()
+		RWMutexRLocked(m)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.lockMode == lock {
-				tt.lock.Lock()
-				defer tt.lock.Unlock()
-			} else {
-				tt.lock.RLock()
-				defer tt.lock.RUnlock()
-			}
-
-			// Should not panic/exit when lock is in expected state
-			tt.assertFunc(tt.lock)
-		})
-	}
+	t.Run("locking.RWMutex write-locked also satisfies RLocked", func(t *testing.T) {
+		m := &locking.RWMutex{}
+		m.Lock()
+		defer m.Unlock()
+		RWMutexRLocked(m)
+	})
 }
