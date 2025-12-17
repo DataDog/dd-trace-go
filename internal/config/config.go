@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -79,7 +80,8 @@ type Config struct {
 	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	dynamicInstrumentationEnabled bool
 	// globalSampleRate holds the sample rate for the tracer.
-	globalSampleRate      float64
+	globalSampleRate float64
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled   bool
 	ciVisibilityAgentless bool
 	// logDirectory is directory for tracer logs
@@ -129,7 +131,7 @@ func loadConfig() *Config {
 	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
-	cfg.ciVisibilityEnabled = provider.getBool("DD_CIVISIBILITY_ENABLED", false)
+	cfg.ciVisibilityEnabled = provider.getBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
@@ -551,4 +553,30 @@ func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origi
 	defer c.mu.Unlock()
 	c.retryInterval = interval
 	telemetry.RegisterAppConfig("DD_TRACE_RETRY_INTERVAL", interval, origin)
+}
+
+func (c *Config) ServiceName() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.serviceName
+}
+
+func (c *Config) SetServiceName(name string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.serviceName = name
+	telemetry.RegisterAppConfig("DD_SERVICE", name, origin)
+}
+
+func (c *Config) CIVisibilityEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled
+}
+
+func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ciVisibilityEnabled = enabled
+	telemetry.RegisterAppConfig(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
 }

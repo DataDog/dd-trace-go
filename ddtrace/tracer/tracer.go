@@ -226,7 +226,7 @@ func Start(opts ...StartOption) error {
 		t.Stop()
 		return nil
 	}
-	if t.config.ciVisibilityEnabled && t.config.ciVisibilityNoopTracer {
+	if t.config.internalConfig.CIVisibilityEnabled() && t.config.ciVisibilityNoopTracer {
 		setGlobalTracer(wrapWithCiVisibilityNoopTracer(t))
 	} else {
 		setGlobalTracer(t)
@@ -407,7 +407,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}
 	}()
 	var writer traceWriter
-	if c.ciVisibilityEnabled {
+	if c.internalConfig.CIVisibilityEnabled() {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
