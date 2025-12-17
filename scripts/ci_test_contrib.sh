@@ -26,7 +26,7 @@ export DD_APPSEC_WAF_TIMEOUT=1m
 report_error=0
 
 # Build the tags argument if BUILD_TAGS is set
-TAGS_ARG=""
+TAGS_ARG="-tags="
 if [[ -n "$BUILD_TAGS" ]]; then
   TAGS_ARG="-tags=$BUILD_TAGS"
   echo "Running contrib tests with build tags: $BUILD_TAGS"

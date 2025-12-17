@@ -10,39 +10,39 @@ on:
       - synchronize
       - reopened
     paths:
-      - '.github/workflows/dynamic-checks.yml'
-      - 'internal/locking/**'
-      - 'ddtrace/tracer/**'
-      - 'scripts/ci_test_*.sh'
-      - '**/go.mod'
-  merge_group:
+      - ".github/workflows/dynamic-checks.yml"
+      - "internal/locking/**"
+      - "ddtrace/tracer/**"
+      - "scripts/ci_test_*.sh"
+      - "**/go.mod"
   push:
     branches:
-      - main
+      - mq-working-branch-**
       - release-v*
     tags-ignore:
-      - 'contrib/**'
-      - 'instrumentation/**'
+      - "contrib/**"
+      - "instrumentation/**"
+      - "internal/**"
+      - "orchestrion/**"
+      - "scripts/**"
 
 permissions:
   contents: read
 
 jobs:
   test-with-debug:
-    name: Dynamic Analysis with Deadlock Detection
+    name: Dynamic Analysis with Debug Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
       go-version: stable
-      ref: ${{ github.ref }}
       build_tags: "debug"
     secrets: inherit
 
   test-with-deadlock:
-    name: Dynamic Analysis with Debug and Deadlock Detection
+    name: Dynamic Analysis with Deadlock Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
       go-version: stable
-      ref: ${{ github.ref }}
       build_tags: "deadlock"
     secrets: inherit
 
@@ -52,8 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [ "oldstable", "stable" ]
-        build_tags: [ "debug", "debug,deadlock" ]
+        go-version: ["oldstable", "stable"]
+        build_tags: ["debug", "debug,deadlock"]
       fail-fast: false
     env:
       BUILD_TAGS: ${{ matrix.build_tags }}

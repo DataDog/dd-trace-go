@@ -10,7 +10,9 @@ package locking
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestMutexInterface verifies that locking.Mutex satisfies sync.Locker interface
@@ -58,4 +60,99 @@ func TestMutexAsParameter(t *testing.T) {
 
 	// With type aliases, we can pass locking.Mutex directly to functions expecting sync.Mutex
 	acceptSyncMutex(&m)
+}
+
+// TestMutexBlocksConcurrentAccess verifies that Mutex actually blocks
+// concurrent access. If Lock/Unlock were no-ops, this test would fail.
+func TestMutexBlocksConcurrentAccess(t *testing.T) {
+	var m Mutex
+	var counter int
+	done := make(chan struct{})
+
+	m.Lock()
+
+	// Start a goroutine that tries to acquire the lock
+	go func() {
+		m.Lock()
+		counter++
+		m.Unlock()
+		close(done)
+	}()
+
+	// Give the goroutine time to attempt the lock
+	time.Sleep(50 * time.Millisecond)
+
+	// Counter should still be 0 because goroutine is blocked
+	if counter != 0 {
+		t.Error("Mutex did not block concurrent access")
+	}
+
+	m.Unlock()
+
+	// Wait for goroutine to complete
+	<-done
+
+	if counter != 1 {
+		t.Errorf("Counter should be 1, got %d", counter)
+	}
+}
+
+// TestRWMutexBlocksConcurrentWrite verifies RWMutex write lock behavior
+func TestRWMutexBlocksConcurrentWrite(t *testing.T) {
+	var m RWMutex
+	var counter int
+	done := make(chan struct{})
+
+	m.Lock()
+
+	go func() {
+		m.Lock()
+		counter++
+		m.Unlock()
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	if counter != 0 {
+		t.Error("RWMutex did not block concurrent write access")
+	}
+
+	m.Unlock()
+	<-done
+
+	if counter != 1 {
+		t.Errorf("Counter should be 1, got %d", counter)
+	}
+}
+
+// TestRWMutexAllowsConcurrentRead verifies RWMutex allows multiple readers
+func TestRWMutexAllowsConcurrentRead(t *testing.T) {
+	var m RWMutex
+	var readCount int32
+	var wg sync.WaitGroup
+
+	m.RLock()
+
+	// Start multiple reader goroutines
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.RLock()
+			atomic.AddInt32(&readCount, 1)
+			time.Sleep(10 * time.Millisecond)
+			m.RUnlock()
+		}()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	// All readers should have acquired the lock
+	if atomic.LoadInt32(&readCount) != 3 {
+		t.Errorf("Expected 3 concurrent readers, got %d", readCount)
+	}
+
+	m.RUnlock()
+	wg.Wait()
 }

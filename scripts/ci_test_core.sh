@@ -21,7 +21,7 @@ mapfile -t NO_SHUFFLE_PACKAGES < <(go list ./... | grep -v /contrib/ | grep -E "
 set +e
 
 # Build the tags argument if BUILD_TAGS is set
-TAGS_ARG=""
+TAGS_ARG="-tags="
 if [[ -n "$BUILD_TAGS" ]]; then
   TAGS_ARG="-tags=$BUILD_TAGS"
   echo "Running tests for core packages with build tags: $BUILD_TAGS"

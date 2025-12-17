@@ -6,10 +6,6 @@ on:
       go-version:
         required: true
         type: string
-      ref:
-        description: 'The branch to run the workflow on'
-        required: true
-        type: string
       build_tags:
         description: 'Build tags to use for testing (e.g., "debug,deadlock")'
         required: false
