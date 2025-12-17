@@ -98,7 +98,7 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 
 	// We reinject the span context so consumers can pick it up
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier in reader, %s", err.Error())
+		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier for consume span, %s", err.Error())
 	}
 	return span
 }
@@ -124,7 +124,7 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, r Record, spanOpts ...tr
 	carrier := NewKafkaHeadersCarrier(r)
 	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
-		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier in writer, %s", err.Error())
+		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier for produce span, %s", err.Error())
 	}
 	return span
 }
