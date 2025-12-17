@@ -165,8 +165,8 @@ for function_name in "${LAMBDA_HANDLERS[@]}"; do
             # Normalize layer version tag
             perl -p -e "s/(dd_lambda_layer:datadog-go)[0-9]+\.[0-9]+\.[0-9]+/\1X\.X\.X/g" |
             # Normalize package version tag
-            perl -p -e "s/(datadog_lambda:v)[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(-dev)?/\1X.X.X/g; 
-            s/(datadog_lambda:v)[0-9]+\.[0-9]+\.[0-9]+(-dev)?/\1X.X.X/g" |
+            perl -p -e "s/(datadog_lambda:v)[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(-dev)?/\1X.X.X/g" |
+            perl -p -e "s/(datadog_lambda:v)[0-9]+\.[0-9]+\.[0-9]+(-dev)?/\1X.X.X/g" |
             # Normalize golang version tag
             perl -p -e "s/(go)[0-9]+\.[0-9]+\.[0-9]+/\1X\.X\.X/g" |
             # Normalize data in logged traces
