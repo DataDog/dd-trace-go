@@ -313,35 +313,58 @@
 //
 // # Testing
 //
-// For unit testing code that uses feature flags, you can use the OpenFeature
-// SDK's NoopProvider to return predictable default values:
+// For unit testing code that uses feature flags, use the OpenFeature SDK's
+// InMemoryProvider to define specific flag values:
+//
+//	import (
+//	    of "github.com/open-feature/go-sdk/openfeature"
+//	    "github.com/open-feature/go-sdk/openfeature/memprovider"
+//	)
 //
 //	func TestMyFeature(t *testing.T) {
-//	    // Use NoopProvider for testing - all evaluations return defaults
-//	    of.SetProvider(&of.NoopProvider{})
+//	    // Create an in-memory provider with test flag values
+//	    provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+//	        "my-feature": {
+//	            Key:            "my-feature",
+//	            State:          memprovider.Enabled,
+//	            DefaultVariant: "on",
+//	            Variants: map[string]any{
+//	                "on":  true,
+//	                "off": false,
+//	            },
+//	        },
+//	        "api-version": {
+//	            Key:            "api-version",
+//	            State:          memprovider.Enabled,
+//	            DefaultVariant: "v2",
+//	            Variants: map[string]any{
+//	                "v1": "v1",
+//	                "v2": "v2",
+//	            },
+//	        },
+//	    })
+//
+//	    of.SetProviderAndWait(provider)
 //	    defer of.Shutdown()
 //
 //	    client := of.NewClient("test-app")
 //	    ctx := context.Background()
 //
-//	    // This will return the default value (false)
+//	    // This will return true (the "on" variant)
 //	    enabled, _ := client.BooleanValue(ctx, "my-feature", false,
 //	        of.NewEvaluationContext("test-user", nil))
 //
-//	    // Test your code with the expected default...
-//	    if enabled {
-//	        t.Error("expected feature to be disabled in test")
+//	    if !enabled {
+//	        t.Error("expected feature to be enabled")
 //	    }
 //	}
 //
-// For integration testing with real flag configurations, set up the provider
-// with the DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED environment variable
-// and configure Datadog Remote Config in your test environment.
+// The InMemoryProvider also supports context-based evaluation using ContextEvaluator
+// for more complex test scenarios where the returned value depends on user attributes.
 //
-// Alternatively, you can test feature flag behavior by:
-//   - Using dependency injection to pass an OpenFeature client interface
-//   - Creating test doubles that implement the same evaluation interface
-//   - Using environment-specific flag configurations via Remote Config
+// For integration testing with real Datadog Remote Config, set the
+// DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED environment variable and ensure
+// the Datadog agent is running in your test environment
 //
 // # Limitations
 //
