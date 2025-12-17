@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -245,5 +246,85 @@ func TestLRUCache_SingleCapacity(t *testing.T) {
 	result = cache.add("flag|user-2", "alloc", "variant")
 	if !result {
 		t.Error("user-2 should have been evicted")
+	}
+}
+
+func TestExposureWriter_ConcurrentAppend(t *testing.T) {
+	// Create a writer with a mock/nil HTTP client (we only care about the cache behavior)
+	writer := &exposureWriter{
+		buffer: make([]exposureEvent, 0, 256),
+		cache:  newExposureLRUCache(1000),
+	}
+
+	const numGoroutines = 100
+	const opsPerGoroutine = 100
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	// Concurrent appends simulating multiple goroutines evaluating flags
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			defer wg.Done()
+			for i := 0; i < opsPerGoroutine; i++ {
+				event := exposureEvent{
+					Timestamp:  int64(i),
+					Allocation: exposureAllocation{Key: fmt.Sprintf("alloc-%d", goroutineID%3)},
+					Flag:       exposureFlag{Key: fmt.Sprintf("flag-%d", i%10)},
+					Variant:    exposureVariant{Key: fmt.Sprintf("variant-%d", i%2)},
+					Subject:    exposureSubject{ID: fmt.Sprintf("user-%d", i%10)},
+				}
+				writer.append(event)
+			}
+		}(g)
+	}
+
+	wg.Wait()
+
+	// Verify no panic occurred and buffer has events
+	// Due to deduplication, we expect fewer events than total operations
+	if len(writer.buffer) == 0 {
+		t.Error("expected some events in buffer after concurrent appends")
+	}
+
+	// With 10 unique (flag, subject) pairs and varying allocations/variants,
+	// we should have significantly fewer events than numGoroutines * opsPerGoroutine
+	totalOps := numGoroutines * opsPerGoroutine
+	if len(writer.buffer) >= totalOps {
+		t.Errorf("deduplication not working: got %d events, expected fewer than %d", len(writer.buffer), totalOps)
+	}
+}
+
+func TestExposureWriter_ConcurrentAppend_Deduplication(t *testing.T) {
+	writer := &exposureWriter{
+		buffer: make([]exposureEvent, 0, 256),
+		cache:  newExposureLRUCache(1000),
+	}
+
+	const numGoroutines = 50
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	// All goroutines append the exact same event - only 1 should make it through
+	for g := 0; g < numGoroutines; g++ {
+		go func() {
+			defer wg.Done()
+			event := exposureEvent{
+				Timestamp:  12345,
+				Allocation: exposureAllocation{Key: "same-alloc"},
+				Flag:       exposureFlag{Key: "same-flag"},
+				Variant:    exposureVariant{Key: "same-variant"},
+				Subject:    exposureSubject{ID: "same-user"},
+			}
+			writer.append(event)
+		}()
+	}
+
+	wg.Wait()
+
+	// Only 1 event should be in the buffer due to deduplication
+	if len(writer.buffer) != 1 {
+		t.Errorf("expected exactly 1 event due to deduplication, got %d", len(writer.buffer))
 	}
 }
