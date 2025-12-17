@@ -1,95 +1,96 @@
 name: Code Freeze Check
 
 on:
-    pull_request:
-        types: [opened, synchronize, reopened, edited, milestoned, demilestoned]
+  pull_request:
+    types: [opened, synchronize, reopened, edited, milestoned, demilestoned]
 
 permissions:
-    contents: read
-    pull-requests: read
-    statuses: write
+  contents: read
+  pull-requests: read
+  statuses: write
+  issues: read
 
 jobs:
-    code_freeze_check:
-        runs-on: ubuntu-latest
-        env:
-            GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+  code_freeze_check:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
-        steps:
-            - name: Check code freeze status
-              id: check
-              run: |
-                  set -e
+    steps:
+      - name: Check code freeze status
+        id: check
+        run: |
+          set -e
 
-                  REPO="${{ github.repository }}"
-                  PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
 
-                  echo "Checking code freeze status for PR #$PR_NUMBER..."
+          echo "Checking code freeze status for PR #$PR_NUMBER..."
 
-                  # Get all open milestones
-                  MILESTONES=$(gh api \
-                    -H "Accept: application/vnd.github+json" \
-                    -H "X-GitHub-Api-Version: 2022-11-28" \
-                    "/repos/$REPO/milestones?state=open" \
-                    --jq '.[] | select(.title | startswith("Code Freeze") or startswith("Incident")) | .title')
+          # Get all open milestones
+          MILESTONES=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$REPO/milestones?state=open" \
+            --jq '.[] | select(.title | startswith("Code Freeze") or startswith("Incident")) | .title')
 
-                  # Check if any code freeze milestones are open
-                  if [ -z "$MILESTONES" ]; then
-                    echo "✅ No active code freeze - merging allowed"
-                    echo "freeze_active=false" >> "$GITHUB_OUTPUT"
-                    echo "pr_exempt=true" >> "$GITHUB_OUTPUT"
-                    exit 0
-                  fi
+          # Check if any code freeze milestones are open
+          if [ -z "$MILESTONES" ]; then
+            echo "✅ No active code freeze - merging allowed"
+            echo "freeze_active=false" >> "$GITHUB_OUTPUT"
+            echo "pr_exempt=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-                  echo "🥶 Active code freeze milestones:"
-                  echo "$MILESTONES"
-                  echo "freeze_active=true" >> "$GITHUB_OUTPUT"
+          echo "🥶 Active code freeze milestones:"
+          echo "$MILESTONES"
+          echo "freeze_active=true" >> "$GITHUB_OUTPUT"
 
-                  # Get the PR's milestone
-                  PR_MILESTONE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json milestone --jq '.milestone.title // ""')
+          # Get the PR's milestone
+          PR_MILESTONE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json milestone --jq '.milestone.title // ""')
 
-                  echo "PR milestone: '$PR_MILESTONE'"
+          echo "PR milestone: '$PR_MILESTONE'"
 
-                  # Check if PR is in an allowed milestone
-                  if [[ "$PR_MILESTONE" == Code\ Freeze* ]] || [[ "$PR_MILESTONE" == Incident* ]]; then
-                    echo "✅ PR #$PR_NUMBER is in milestone '$PR_MILESTONE' - exempt from code freeze"
-                    echo "pr_exempt=true" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "❌ PR #$PR_NUMBER is NOT in a code freeze/incident milestone"
-                    echo "pr_exempt=false" >> "$GITHUB_OUTPUT"
-                  fi
+          # Check if PR is in an allowed milestone
+          if [[ "$PR_MILESTONE" == Code\ Freeze* ]] || [[ "$PR_MILESTONE" == Incident* ]]; then
+            echo "✅ PR #$PR_NUMBER is in milestone '$PR_MILESTONE' - exempt from code freeze"
+            echo "pr_exempt=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ PR #$PR_NUMBER is NOT in a code freeze/incident milestone"
+            echo "pr_exempt=false" >> "$GITHUB_OUTPUT"
+          fi
 
-            - name: Set commit status
-              run: |
-                  SHA="${{ github.event.pull_request.head.sha }}"
-                  REPO="${{ github.repository }}"
-                  CONTEXT="code-freeze"
+      - name: Set commit status
+        run: |
+          SHA="${{ github.event.pull_request.head.sha }}"
+          REPO="${{ github.repository }}"
+          CONTEXT="code-freeze"
 
-                  if [ "${{ steps.check.outputs.freeze_active }}" = "false" ]; then
-                    STATE="success"
-                    DESCRIPTION="No active code freeze - merging allowed"
-                  elif [ "${{ steps.check.outputs.pr_exempt }}" = "true" ]; then
-                    STATE="success"
-                    DESCRIPTION="PR is in Code Freeze/Incident milestone - exempt from code freeze"
-                  else
-                    STATE="failure"
-                    DESCRIPTION="Code freeze is active - add PR to Code Freeze/Incident milestone to merge"
-                  fi
+          if [ "${{ steps.check.outputs.freeze_active }}" = "false" ]; then
+            STATE="success"
+            DESCRIPTION="No active code freeze - merging allowed"
+          elif [ "${{ steps.check.outputs.pr_exempt }}" = "true" ]; then
+            STATE="success"
+            DESCRIPTION="PR is in Code Freeze/Incident milestone - exempt from code freeze"
+          else
+            STATE="failure"
+            DESCRIPTION="Code freeze is active - add PR to Code Freeze/Incident milestone to merge"
+          fi
 
-                  gh api \
-                    --method POST \
-                    -H "Accept: application/vnd.github+json" \
-                    -H "X-GitHub-Api-Version: 2022-11-28" \
-                    "/repos/$REPO/statuses/$SHA" \
-                    -f state="$STATE" \
-                    -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-                    -f description="$DESCRIPTION" \
-                    -f context="$CONTEXT"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$REPO/statuses/$SHA" \
+            -f state="$STATE" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f description="$DESCRIPTION" \
+            -f context="$CONTEXT"
 
-                  echo "Set status '$STATE' on commit ${SHA:0:7}"
+          echo "Set status '$STATE' on commit ${SHA:0:7}"
 
-                  # Fail the job if PR is blocked
-                  if [ "$STATE" = "failure" ]; then
-                    echo "::error::Code freeze is active. Add this PR to a 'Code Freeze' or 'Incident' milestone to allow merging."
-                    exit 1
-                  fi
+          # Fail the job if PR is blocked
+          if [ "$STATE" = "failure" ]; then
+            echo "::error::Code freeze is active. Add this PR to a 'Code Freeze' or 'Incident' milestone to allow merging."
+            exit 1
+          fi
