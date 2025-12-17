@@ -33,12 +33,6 @@ jobs:
           role-chaining: true
           mask-aws-account-id: false
 
-      - name: Verify AWS Authentication
-        run: |
-          echo "✅ Verifying AWS authentication..."
-          aws sts get-caller-identity
-          echo "✅ AWS authentication successful!"
-
       - name: Set up Go
         uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
@@ -69,7 +63,6 @@ jobs:
         env:
           BUILD_LAYERS: true
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
-          # AWS credentials now provided by OIDC authentication above
         working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: ./run_integration_tests.sh
 
