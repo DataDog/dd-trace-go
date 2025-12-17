@@ -44,8 +44,9 @@ const (
 	// defaultHTTPTimeout is the timeout for HTTP requests to the agent
 	defaultHTTPTimeout = 5 * time.Second
 
-	// defaultExposureCacheCapacity is the default capacity for the exposure deduplication cache
-	// Matches the dd-trace-java implementation (65536 elements)
+	// defaultExposureCacheCapacity is the default capacity for the exposure deduplication cache.
+	// 65536 (2^16) balances memory efficiency (~6.5MB max) with sufficient capacity for
+	// high-throughput production workloads.
 	defaultExposureCacheCapacity = 65536
 )
 
