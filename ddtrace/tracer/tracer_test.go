@@ -391,7 +391,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		tracer.prioritySampling.defaultRate = 1
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
@@ -411,7 +411,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false))
 		assert.Nil(t, err)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
@@ -429,7 +429,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
@@ -447,7 +447,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
@@ -467,7 +467,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
@@ -496,7 +496,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -520,7 +520,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -544,7 +544,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -568,7 +568,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -598,7 +598,7 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		var spans []*Span
 		for i := 0; i < 100; i++ {
 			s := tracer.StartSpan(fmt.Sprintf("name_%d", i))
@@ -637,7 +637,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
 			s := tracer.StartSpan("name_1")
@@ -672,7 +672,7 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
 			s := tracer.StartSpan("name_1")
@@ -2640,7 +2640,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			span := tracer.StartSpan("name_1")
@@ -2660,7 +2660,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			span := tracer.StartSpan("name_1")
@@ -2684,7 +2684,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
-		tracer.config.serviceName = "test_service"
+		tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			span := tracer.StartSpan("name_1")
@@ -2815,7 +2815,7 @@ func TestEmptyChunksNotSent(t *testing.T) {
 
 	tracer.config.internalConfig.SetStatsComputationEnabled(true, internalconfig.OriginCode)
 	tracer.prioritySampling.defaultRate = 0
-	tracer.config.serviceName = "test_service"
+	tracer.config.internalConfig.SetServiceName("test_service", internalconfig.OriginCode)
 
 	span := tracer.StartSpan("name_1")
 	child := tracer.StartSpan("name_2", ChildOf(span.Context()))
