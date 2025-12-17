@@ -95,9 +95,15 @@ type exposurePayload struct {
 	Exposures []exposureEvent `json:"exposures"`
 }
 
+// exposureCacheKey is the key for the exposure deduplication cache
+type exposureCacheKey struct {
+	flagKey      string
+	targetingKey string
+}
+
 // exposureCacheEntry stores the key and value for an LRU cache entry
 type exposureCacheEntry struct {
-	key           string // cache key: "flag|subject"
+	key           exposureCacheKey
 	allocationKey string
 	variant       string
 }
@@ -105,7 +111,7 @@ type exposureCacheEntry struct {
 // exposureLRUCache is a simple LRU cache for exposure deduplication
 type exposureLRUCache struct {
 	capacity int
-	items    map[string]*list.Element
+	items    map[exposureCacheKey]*list.Element
 	order    *list.List // front = most recently used, back = least recently used
 }
 
@@ -113,14 +119,14 @@ type exposureLRUCache struct {
 func newExposureLRUCache(capacity int) *exposureLRUCache {
 	return &exposureLRUCache{
 		capacity: capacity,
-		items:    make(map[string]*list.Element),
+		items:    make(map[exposureCacheKey]*list.Element),
 		order:    list.New(),
 	}
 }
 
 // add adds or updates an entry in the cache and returns true if this is a new
 // or changed entry (should generate exposure), false if it's a duplicate
-func (c *exposureLRUCache) add(key, allocationKey, variant string) bool {
+func (c *exposureLRUCache) add(key exposureCacheKey, allocationKey, variant string) bool {
 	if elem, exists := c.items[key]; exists {
 		// Entry exists - check if allocation/variant changed
 		entry := elem.Value.(*exposureCacheEntry)
@@ -246,7 +252,10 @@ func (w *exposureWriter) append(event exposureEvent) {
 	}
 
 	// Create cache key from flag key and subject ID
-	cacheKey := event.Flag.Key + "|" + event.Subject.ID
+	cacheKey := exposureCacheKey{
+		flagKey:      event.Flag.Key,
+		targetingKey: event.Subject.ID,
+	}
 
 	// Check deduplication cache - returns true if this is a new or changed entry
 	if !w.cache.add(cacheKey, event.Allocation.Key, event.Variant.Key) {
