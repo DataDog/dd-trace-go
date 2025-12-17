@@ -8,6 +8,7 @@ package openfeature
 import (
 	"bytes"
 	"cmp"
+	"container/list"
 	"context"
 	"fmt"
 	"io"
@@ -42,6 +43,10 @@ const (
 
 	// defaultHTTPTimeout is the timeout for HTTP requests to the agent
 	defaultHTTPTimeout = 5 * time.Second
+
+	// defaultExposureCacheCapacity is the default capacity for the exposure deduplication cache
+	// Matches the dd-trace-java implementation (65536 elements)
+	defaultExposureCacheCapacity = 65536
 )
 
 // exposureEvent represents a single feature flag evaluation exposure event.
@@ -89,10 +94,79 @@ type exposurePayload struct {
 	Exposures []exposureEvent `json:"exposures"`
 }
 
+// exposureCacheEntry stores the key and value for an LRU cache entry
+type exposureCacheEntry struct {
+	key           string // cache key: "flag|subject"
+	allocationKey string
+	variant       string
+}
+
+// exposureLRUCache is a simple LRU cache for exposure deduplication
+type exposureLRUCache struct {
+	capacity int
+	items    map[string]*list.Element
+	order    *list.List // front = most recently used, back = least recently used
+}
+
+// newExposureLRUCache creates a new LRU cache with the given capacity
+func newExposureLRUCache(capacity int) *exposureLRUCache {
+	return &exposureLRUCache{
+		capacity: capacity,
+		items:    make(map[string]*list.Element),
+		order:    list.New(),
+	}
+}
+
+// add adds or updates an entry in the cache and returns true if this is a new
+// or changed entry (should generate exposure), false if it's a duplicate
+func (c *exposureLRUCache) add(key, allocationKey, variant string) bool {
+	if elem, exists := c.items[key]; exists {
+		// Entry exists - check if allocation/variant changed
+		entry := elem.Value.(*exposureCacheEntry)
+		if entry.allocationKey == allocationKey && entry.variant == variant {
+			// Same allocation and variant - this is a duplicate, move to front
+			c.order.MoveToFront(elem)
+			return false
+		}
+		// Allocation or variant changed - update and move to front
+		entry.allocationKey = allocationKey
+		entry.variant = variant
+		c.order.MoveToFront(elem)
+		return true
+	}
+
+	// New entry - add to cache
+	entry := &exposureCacheEntry{
+		key:           key,
+		allocationKey: allocationKey,
+		variant:       variant,
+	}
+	elem := c.order.PushFront(entry)
+	c.items[key] = elem
+
+	// Evict if over capacity
+	if c.order.Len() > c.capacity {
+		c.evictOldest()
+	}
+
+	return true
+}
+
+// evictOldest removes the least recently used entry
+func (c *exposureLRUCache) evictOldest() {
+	elem := c.order.Back()
+	if elem != nil {
+		entry := elem.Value.(*exposureCacheEntry)
+		delete(c.items, entry.key)
+		c.order.Remove(elem)
+	}
+}
+
 // exposureWriter manages buffering and flushing of exposure events to the Datadog Agent
 type exposureWriter struct {
 	mu            sync.Mutex
-	buffer        []exposureEvent // Buffer for exposure events
+	buffer        []exposureEvent   // Buffer for exposure events
+	cache         *exposureLRUCache // LRU deduplication cache
 	flushInterval time.Duration
 	httpClient    *http.Client
 	agentURL      *url.URL
@@ -118,6 +192,7 @@ func newExposureWriter(config ProviderConfig) *exposureWriter {
 
 	return &exposureWriter{
 		buffer:        make([]exposureEvent, 0, 1<<8), // Initial capacity of 256
+		cache:         newExposureLRUCache(defaultExposureCacheCapacity),
 		flushInterval: cmp.Or(config.ExposureFlushInterval, defaultExposureFlushInterval),
 		httpClient:    httpClient,
 		agentURL:      agentURL,
@@ -160,7 +235,7 @@ func (w *exposureWriter) start() {
 	}()
 }
 
-// append adds an exposure event to the buffer
+// append adds an exposure event to the buffer with deduplication
 func (w *exposureWriter) append(event exposureEvent) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -169,8 +244,16 @@ func (w *exposureWriter) append(event exposureEvent) {
 		return
 	}
 
+	// Create cache key from flag key and subject ID
+	cacheKey := event.Flag.Key + "|" + event.Subject.ID
+
+	// Check deduplication cache - returns true if this is a new or changed entry
+	if !w.cache.add(cacheKey, event.Allocation.Key, event.Variant.Key) {
+		// Duplicate exposure - skip
+		return
+	}
+
 	// Append event to buffer
-	// Each exposure event is tracked individually to maintain accurate analytics
 	w.buffer = append(w.buffer, event)
 }
 
