@@ -45,8 +45,7 @@ const (
 	defaultHTTPTimeout = 5 * time.Second
 
 	// defaultExposureCacheCapacity is the default capacity for the exposure deduplication cache.
-	// 65536 (2^16) balances memory efficiency (~6.5MB max) with sufficient capacity for
-	// high-throughput production workloads.
+	// 65536 (2^16) provides sufficient capacity for high-throughput production workloads.
 	defaultExposureCacheCapacity = 65536
 )
 
