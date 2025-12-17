@@ -100,11 +100,16 @@ type exposureCacheKey struct {
 	targetingKey string
 }
 
-// exposureCacheEntry stores the key and value for an LRU cache entry
-type exposureCacheEntry struct {
-	key           exposureCacheKey
+// exposureCacheValue is the value stored in the exposure deduplication cache
+type exposureCacheValue struct {
 	allocationKey string
 	variant       string
+}
+
+// exposureCacheEntry stores the key and value for an LRU cache entry
+type exposureCacheEntry struct {
+	key   exposureCacheKey
+	value exposureCacheValue
 }
 
 // exposureLRUCache is a simple LRU cache for exposure deduplication
@@ -125,27 +130,25 @@ func newExposureLRUCache(capacity int) *exposureLRUCache {
 
 // add adds or updates an entry in the cache and returns true if this is a new
 // or changed entry (should generate exposure), false if it's a duplicate
-func (c *exposureLRUCache) add(key exposureCacheKey, allocationKey, variant string) bool {
+func (c *exposureLRUCache) add(key exposureCacheKey, value exposureCacheValue) bool {
 	if elem, exists := c.items[key]; exists {
 		// Entry exists - check if allocation/variant changed
 		entry := elem.Value.(*exposureCacheEntry)
-		if entry.allocationKey == allocationKey && entry.variant == variant {
+		if entry.value == value {
 			// Same allocation and variant - this is a duplicate, move to front
 			c.order.MoveToFront(elem)
 			return false
 		}
 		// Allocation or variant changed - update and move to front
-		entry.allocationKey = allocationKey
-		entry.variant = variant
+		entry.value = value
 		c.order.MoveToFront(elem)
 		return true
 	}
 
 	// New entry - add to cache
 	entry := &exposureCacheEntry{
-		key:           key,
-		allocationKey: allocationKey,
-		variant:       variant,
+		key:   key,
+		value: value,
 	}
 	elem := c.order.PushFront(entry)
 	c.items[key] = elem
@@ -250,14 +253,18 @@ func (w *exposureWriter) append(event exposureEvent) {
 		return
 	}
 
-	// Create cache key from flag key and subject ID
+	// Create cache key and value from event
 	cacheKey := exposureCacheKey{
 		flagKey:      event.Flag.Key,
 		targetingKey: event.Subject.ID,
 	}
+	cacheValue := exposureCacheValue{
+		allocationKey: event.Allocation.Key,
+		variant:       event.Variant.Key,
+	}
 
 	// Check deduplication cache - returns true if this is a new or changed entry
-	if !w.cache.add(cacheKey, event.Allocation.Key, event.Variant.Key) {
+	if !w.cache.add(cacheKey, cacheValue) {
 		// Duplicate exposure - skip
 		return
 	}
