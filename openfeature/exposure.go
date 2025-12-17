@@ -132,16 +132,14 @@ func newExposureLRUCache(capacity int) *exposureLRUCache {
 // or changed entry (should generate exposure), false if it's a duplicate
 func (c *exposureLRUCache) add(key exposureCacheKey, value exposureCacheValue) bool {
 	if elem, exists := c.items[key]; exists {
-		// Entry exists - check if allocation/variant changed
 		entry := elem.Value.(*exposureCacheEntry)
+		c.order.MoveToFront(elem)
 		if entry.value == value {
-			// Same allocation and variant - this is a duplicate, move to front
-			c.order.MoveToFront(elem)
+			// Same allocation and variant - this is a duplicate
 			return false
 		}
-		// Allocation or variant changed - update and move to front
+		// Allocation or variant changed - update entry
 		entry.value = value
-		c.order.MoveToFront(elem)
 		return true
 	}
 
