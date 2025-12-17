@@ -64,6 +64,7 @@ func (tr *Tracer) AddBootstrapServer(server string) {
 	}
 }
 
+// TODO: Remove if unused
 func (tr *Tracer) SetConsumerGroupID(groupID string) {
 	tr.kafkaCfg.ConsumerGroupID = groupID
 }
