@@ -193,12 +193,12 @@ func (s *Span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, errorConfig{
+		s.setTagErrorLocked(value, errorConfig{
 			noDebugStack: s.noDebugStack,
 		})
 		return
 	case ext.ErrorNoStackTrace:
-		s.setTagError(value, errorConfig{
+		s.setTagErrorLocked(value, errorConfig{
 			noDebugStack: true,
 		})
 		return
@@ -223,7 +223,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
 			pprof.SetGoroutineLabels(s.pprofCtxActive)
 		}
-		s.setMeta(key, v)
+		s.setMeta(key, v, true)
 		return
 	}
 	if v, ok := sharedinternal.ToFloat64(value); ok {
@@ -237,18 +237,18 @@ func (s *Span) SetTag(key string, value interface{}) {
 					// If .String() panics due to a nil receiver, we want to catch this
 					// and replace the string value with "<nil>", just as Sprintf does.
 					// Other panics should not be handled.
-					s.setMeta(key, "<nil>")
+					s.setMeta(key, "<nil>", false)
 					return
 				}
 				panic(e)
 			}
 		}()
-		s.setMeta(key, v.String())
+		s.setMeta(key, v.String(), true)
 		return
 	}
 
 	if v, ok := value.([]byte); ok {
-		s.setMeta(key, string(v))
+		s.setMeta(key, string(v), true)
 		return
 	}
 
@@ -265,7 +265,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 				if num, ok := sharedinternal.ToFloat64(v.Interface()); ok {
 					s.setMetric(key, num)
 				} else {
-					s.setMeta(key, fmt.Sprintf("%v", v))
+					s.setMeta(key, fmt.Sprintf("%v", v), true)
 				}
 			}
 			return
@@ -292,7 +292,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 	}
 
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
-	s.setMeta(key, fmt.Sprint(value))
+	s.setMeta(key, fmt.Sprint(value), true)
 }
 
 // setSamplingPriority locks the span, then updates the sampling priority.
@@ -309,7 +309,7 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 func (s *Span) setProcessTags(pTags string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.setMeta(keyProcessTags, pTags)
+	s.setMeta(keyProcessTags, pTags, true)
 }
 
 // root returns the root span of the span's trace. The return value shouldn't be
@@ -380,7 +380,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	for k, v := range usrData {
 		if v != "" {
 			// setMeta is used since the span is already locked
-			root.setMeta(k, v)
+			root.setMeta(k, v, true)
 		}
 	}
 }
@@ -422,9 +422,9 @@ func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames
 	s.context.forceSetSamplingPriority(priority, sampler)
 }
 
-// setTagError sets the error tag. It accounts for various valid scenarios.
+// setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
 // This method is not safe for concurrent use.
-func (s *Span) setTagError(value interface{}, cfg errorConfig) {
+func (s *Span) setTagErrorLocked(value interface{}, cfg errorConfig) {
 	setError := func(yes bool) {
 		if yes {
 			if s.error == 0 {
@@ -455,25 +455,25 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		// and provide all the benefits.
 		// TODO: once Error Tracking fix is resolved, update relevant tags here. See #4095
 		setError(true)
-		s.setMeta(ext.ErrorMsg, v.Error())
-		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
+		s.setMeta(ext.ErrorMsg, v.Error(), true)
+		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String(), true)
 		if cfg.noDebugStack {
 			return
 		}
 		switch err := v.(type) {
 		case xerrors.Formatter:
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v), true)
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v), true)
 		case *errortrace.TracerError:
 			// instrumentation/errortrace approach
-			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
-			s.setMeta(ext.ErrorHandlingStack, err.Format())
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v), true)
+			s.setMeta(ext.ErrorHandlingStack, err.Format(), true)
 			return
 		}
 		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-		s.setMeta(ext.ErrorStack, stack)
+		s.setMeta(ext.ErrorStack, stack, true)
 	case nil:
 		// no error
 		setError(false)
@@ -504,7 +504,14 @@ func takeStacktrace(depth uint, skip uint) string {
 }
 
 // setMeta sets a string tag. This method is not safe for concurrent use.
-func (s *Span) setMeta(key, v string) {
+func (s *Span) setMeta(key, v string, locked bool) {
+	if s.mu.TryLock() {
+		if locked {
+			panic("setMeta: span was not locked")
+		} else {
+			s.mu.Unlock()
+		}
+	}
 	if s.meta == nil {
 		s.meta = make(map[string]string, 1)
 	}
@@ -549,9 +556,9 @@ func (s *Span) setTagBool(key string, v bool) {
 		}
 	default:
 		if v {
-			s.setMeta(key, "true")
+			s.setMeta(key, "true", true)
 		} else {
-			s.setMeta(key, "false")
+			s.setMeta(key, "false", true)
 		}
 	}
 }
@@ -655,7 +662,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 		if cfg.Error != nil {
 			s.mu.Lock()
-			s.setTagError(cfg.Error, errorConfig{
+			s.setTagErrorLocked(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
 				stackFrames:  cfg.StackFrames,
 				stackSkip:    cfg.SkipStackFrames,

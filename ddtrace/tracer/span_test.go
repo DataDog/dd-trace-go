@@ -533,13 +533,17 @@ func TestSpanSetTagError(t *testing.T) {
 
 	t.Run("off", func(t *testing.T) {
 		span := newBasicSpan("web.request")
-		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
+		span.mu.Lock()
+		defer span.mu.Unlock()
+		span.setTagErrorLocked(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
 		assert.Empty(t, span.meta[ext.ErrorStack])
 	})
 
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
-		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
+		span.mu.Lock()
+		defer span.mu.Unlock()
+		span.setTagErrorLocked(errors.New("error value with trace"), errorConfig{noDebugStack: false})
 		assert.NotEmpty(t, span.meta[ext.ErrorStack])
 	})
 }
