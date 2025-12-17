@@ -22,7 +22,6 @@ jobs:
           role-to-assume: arn:aws:iam::486234852809:role/dd-trace-go-github-actions
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
           aws-region: us-east-1
-          mask-aws-account-id: false
 
       - name: Configure AWS Credentials for Serverless Sandbox
         uses: aws-actions/configure-aws-credentials@v4
@@ -31,7 +30,6 @@ jobs:
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
           aws-region: us-east-1
           role-chaining: true
-          mask-aws-account-id: false
 
       - name: Set up Go
         uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
