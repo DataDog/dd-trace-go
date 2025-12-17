@@ -1,43 +1,74 @@
 name: End code freeze
 
 on:
-    workflow_dispatch:
-    milestone:
-        types: [closed, deleted]
+  workflow_dispatch:
+  milestone:
+    types: [closed, deleted]
 
 jobs:
-    end_code_freeze:
-        # Trigger on:
-        # - Manual dispatch (unfreezes all PRs)
-        # - Milestone events where title starts with "Code Freeze" or "Incident" and state is closed
-        if: |
-            github.event_name == 'workflow_dispatch' ||
-            (github.event_name == 'milestone' &&
-              (startsWith(github.event.milestone.title, 'Code Freeze') ||
-               startsWith(github.event.milestone.title, 'Incident')))
-        runs-on: ubuntu-latest
-        permissions:
-            contents: read
-            pull-requests: read # Fetches PRs
-            statuses: write # add a commit status check
-        env:
-            GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+  end_code_freeze:
+    # Trigger on:
+    # - Manual dispatch (unfreezes all PRs)
+    # - Milestone events where title starts with "Code Freeze" or "Incident" and state is closed
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'milestone' &&
+        (startsWith(github.event.milestone.title, 'Code Freeze') ||
+         startsWith(github.event.milestone.title, 'Incident')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # Fetches PRs
+      statuses: write # add a commit status check
+      issues: read # Required to list milestones
+    env:
+      GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
-        steps:
-            - name: Log code freeze end
-              run: |
-                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-                    echo "🌡️ Code freeze ended manually"
-                  else
-                    echo "🌡️ Code freeze ended by closing milestone: ${{ github.event.milestone.title }}"
-                  fi
+    steps:
+      - name: Log code freeze end
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "🌡️ Code freeze ended manually"
+          else
+            echo "🌡️ Code freeze ended by closing milestone: ${{ github.event.milestone.title }}"
+          fi
 
-            - name: Checkout repository
-              uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-            - name: Unfreeze PRs
-              uses: ./.github/actions/pr-status-updater
-              with:
-                  github_token: ${{ secrets.GITHUB_TOKEN }}
-                  state: success
-                  workflow_name: code_freeze_end.yml
+      - name: Check for remaining freeze milestones
+        id: check_remaining
+        run: |
+          REPO="${{ github.repository }}"
+
+          # Check if any other Code Freeze or Incident milestones are still open
+          REMAINING=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$REPO/milestones?state=open" \
+            --jq '.[] | select(.title | startswith("Code Freeze") or startswith("Incident")) | .title')
+
+          if [ -z "$REMAINING" ]; then
+            echo "✅ No remaining freeze milestones - proceeding with unfreeze"
+            echo "should_unfreeze=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️ Other freeze milestones are still open:"
+            echo "$REMAINING"
+
+            # For manual dispatch, warn but allow unfreezing all PRs
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "🔓 Manual dispatch - unfreezing all PRs despite active freeze milestones"
+              echo "should_unfreeze=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "🔒 Skipping unfreeze because other freeze milestones remain open"
+              echo "should_unfreeze=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Unfreeze PRs
+        if: steps.check_remaining.outputs.should_unfreeze == 'true'
+        uses: ./.github/actions/pr-status-updater
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          state: success
+          workflow_name: code_freeze_end.yml
