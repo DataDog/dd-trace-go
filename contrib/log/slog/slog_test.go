@@ -84,6 +84,8 @@ func testLogger(t *testing.T, createLogger func(b io.Writer) *slog.Logger, asser
 	spanID := strconv.FormatUint(span.Context().SpanID(), 10)
 	if os.Getenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED") == "false" {
 		// Re-initialize to account for race condition between setting env var in the test and reading it in the contrib
+		oldCfg := cfg
+		t.Cleanup(func() { cfg = oldCfg })
 		cfg = newConfig()
 		traceID = strconv.FormatUint(span.Context().TraceIDLower(), 10)
 	} else {
