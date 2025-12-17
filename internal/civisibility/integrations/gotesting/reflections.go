@@ -344,6 +344,9 @@ func copyTestWithoutParent(source *testing.T, target *testing.T) {
 	_ = copyFieldUsingPointers[context.Context](source, target, "ctx")
 	_ = copyFieldUsingPointers[context.CancelFunc](source, target, "cancelCtx")
 
+	// New 1.25 fields
+	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "o") // For the new output Writer (partial flush)
+
 	_ = copyFieldUsingPointers[bool](source, target, "denyParallel")
 	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "tstate") // For running tests and subtests.
 }
