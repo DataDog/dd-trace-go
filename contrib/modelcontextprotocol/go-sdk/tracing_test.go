@@ -178,6 +178,10 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	require.NotNil(t, initSpan, "initialize span not found")
 	require.NotNil(t, toolSpan, "tool span not found")
 
+	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool:calculator")
+
 	// Session id must be the same between spans
 	assert.Contains(t, initSpan.Tags, "mcp_session_id:"+sessionID)
 	assert.Contains(t, toolSpan.Tags, "mcp_session_id:"+sessionID)

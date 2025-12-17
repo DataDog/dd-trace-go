@@ -176,6 +176,10 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	assert.Contains(t, initSpan.Tags, expectedTag)
 	assert.Contains(t, toolSpan.Tags, expectedTag)
 
+	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool:calculator")
+
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 

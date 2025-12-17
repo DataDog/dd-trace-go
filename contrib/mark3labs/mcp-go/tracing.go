@@ -51,6 +51,8 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 				outputText = string(resultJSON)
 			}
 
+			toolSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_tool": request.Params.Name, "mcp_tool_kind": "server"}))
+			tagWithMethod(request.Method, toolSpan)
 			tagWithSessionID(ctx, toolSpan)
 			toolSpan.AnnotateTextIO(string(inputJSON), outputText)
 
@@ -86,6 +88,7 @@ func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.Ini
 	taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{"client_name": clientName, "client_version": clientName + "_" + clientVersion}))
 
 	h.spanCache.Store(id, taskSpan)
+	tagWithMethod(request.Method, taskSpan)
 	tagWithSessionID(ctx, taskSpan)
 }
 
@@ -123,6 +126,10 @@ func tagWithSessionID(ctx context.Context, span llmobs.Span) {
 		sessionID := session.SessionID()
 		span.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_session_id": sessionID}))
 	}
+}
+
+func tagWithMethod(method string, span llmobs.Span) {
+	span.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_method": method}))
 }
 
 func finishSpanWithIO[Req any, Res any](h *hooks, id any, request Req, result Res) {

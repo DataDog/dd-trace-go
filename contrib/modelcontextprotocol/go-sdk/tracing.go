@@ -54,7 +54,9 @@ func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method st
 	var err error
 
 	defer func() {
+		tagWithMethod(method, toolSpan)
 		tagWithSessionID(req, toolSpan)
+		toolSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_tool": req.Params.Name, "mcp_tool_kind": "server"}))
 		finishSpanWithIO(toolSpan, method, req, result, err)
 	}()
 
@@ -83,6 +85,7 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 	var err error
 
 	defer func() {
+		tagWithMethod(method, taskSpan)
 		tagWithSessionID(req, taskSpan)
 		finishSpanWithIO(taskSpan, method, req, res, err)
 	}()
@@ -101,6 +104,10 @@ func tagWithSessionID(req mcp.Request, span llmobs.Span) {
 		return
 	}
 	span.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_session_id": sessionID}))
+}
+
+func tagWithMethod(method string, span llmobs.Span) {
+	span.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_method": method}))
 }
 
 type textIOSpan interface {
