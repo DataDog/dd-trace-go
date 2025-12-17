@@ -37,17 +37,12 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(r Record) {
 	}
 }
 
-func (tr *Tracer) SetProduceDSMCheckpoint(r Record, writer Writer) {
+func (tr *Tracer) SetProduceDSMCheckpoint(r Record) {
 	if !tr.dataStreamsEnabled || r == nil {
 		return
 	}
 
-	var topic string
-	if writer.GetTopic() != "" {
-		topic = writer.GetTopic()
-	} else {
-		topic = r.GetTopic()
-	}
+	topic := r.GetTopic()
 
 	edges := []string{"direction:out", "topic:" + topic, "type:kafka"}
 	carrier := NewKafkaHeadersCarrier(r)
