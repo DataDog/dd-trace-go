@@ -595,7 +595,9 @@ func TestSamplingDecision(t *testing.T) {
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		// Don't allow the rate limiter to reset while the test is running.
+		// Force the time to be 1 second in the future to force reset the rate limiter on the first span.
+		// Then freeze the time to avoid the rate limiter from resetting while the test is running.
+		// current := time.Now().Add(1 * time.Second)
 		current := time.Now()
 		nowTime = func() time.Time { return current }
 		defer func() {
