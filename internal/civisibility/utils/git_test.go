@@ -81,6 +81,13 @@ func TestUnshallowGitRepository(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestPackFiles(t *testing.T) {
+	shas := GetLastLocalGitCommitShas()
+	shas = shas[:min(len(shas), 5)]
+	packfiles := CreatePackFiles(shas, []string{})
+	assert.NotEmpty(t, packfiles)
+}
+
 func TestFetchCommitData(t *testing.T) {
 	log.SetLevel(log.LevelDebug)
 	commits := GetLastLocalGitCommitShas()
