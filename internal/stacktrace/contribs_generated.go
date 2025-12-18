@@ -657,6 +657,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/tonistiigi/fsutil",
 		"github.com/tonistiigi/units",
 		"github.com/tonistiigi/vt100",
+		"github.com/trailofbits/go-mutexasserts",
 		"github.com/tv42/httpunix",
 		"github.com/twitchtv/twirp",
 		"github.com/twitchyliquid64/golang-asm",
