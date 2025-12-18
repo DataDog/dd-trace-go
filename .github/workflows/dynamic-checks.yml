@@ -76,14 +76,14 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          mkdir -p $TEST_RESULTS
+          mkdir -p "$TEST_RESULTS"
           cd internal/locking
           echo "Testing internal/locking with build tags: $BUILD_TAGS"
-          TAGS_ARG=""
+          TAGS_ARG="-tags="
           if [[ -n "$BUILD_TAGS" ]]; then
             TAGS_ARG="-tags=$BUILD_TAGS"
           fi
-          gotestsum --junitfile ${TEST_RESULTS}/gotestsum-report-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.xml -- ./... -v -race $TAGS_ARG -timeout=10m -coverprofile=coverage-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.txt -covermode=atomic
+          gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.xml" -- ./... -v -race "$TAGS_ARG" -timeout=10m -coverprofile="coverage-locking-${{ matrix.go-version }}-${{ matrix.build_tags }}.txt" -covermode=atomic
 
       - name: Upload test results
         if: always()
