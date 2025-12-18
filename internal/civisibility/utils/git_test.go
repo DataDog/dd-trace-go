@@ -93,10 +93,10 @@ func TestFetchCommitData(t *testing.T) {
 			assert.NotEmpty(t, gitData.CommitterEmail, "Committer email should not be empty")
 			assert.NotEmpty(t, gitData.CommitterDate, "Committer date should not be empty")
 			assert.NotEmpty(t, gitData.CommitMessage, "Commit message should not be empty")
+		} else if acceptableError(err) {
+			t.Skipf("test skipped due to: %s", err.Error())
 		} else {
-			if !acceptableError(err) {
-				t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
-			}
+			t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
 		}
 	}
 }
