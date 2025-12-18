@@ -73,6 +73,10 @@ lint/shell: tools-install ## Run shell script linting checks
 lint/misc: tools-install ## Run miscellaneous linting checks (copyright, Makefiles)
 	$(BIN_PATH) ./scripts/lint.sh --misc
 
+.PHONY: lint/action
+lint/action: tools-install ## Lint GitHub Actions workflows
+	$(BIN_PATH) ./scripts/lint.sh --action
+
 .PHONY: format
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all
