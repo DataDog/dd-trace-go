@@ -73,6 +73,37 @@ func matchDefaultConfig(name string, value interface{}, origin telemetry.Origin)
 	}
 }
 
+// seqIDCapture is a helper to capture SeqIDs from telemetry calls for verification
+type seqIDCapture struct {
+	seqIDs map[string]uint64 // key format: "name:value:origin"
+}
+
+func newSeqIDCapture() *seqIDCapture {
+	return &seqIDCapture{seqIDs: make(map[string]uint64)}
+}
+
+func (s *seqIDCapture) key(name, value string, origin telemetry.Origin) string {
+	return name + ":" + value + ":" + string(origin)
+}
+
+func (s *seqIDCapture) captureMatcher(name, value string, origin telemetry.Origin, id string) func([]telemetry.Configuration) bool {
+	return func(configs []telemetry.Configuration) bool {
+		if len(configs) != 1 {
+			return false
+		}
+		c := configs[0]
+		if c.Name == name && c.Value == value && c.Origin == origin && c.ID == id {
+			s.seqIDs[s.key(name, value, origin)] = c.SeqID
+			return true
+		}
+		return false
+	}
+}
+
+func (s *seqIDCapture) get(name, value string, origin telemetry.Origin) uint64 {
+	return s.seqIDs[s.key(name, value, origin)]
+}
+
 func TestGetMethods(t *testing.T) {
 	t.Run("defaults", func(t *testing.T) {
 		// Test that defaults are used when the queried key does not exist
@@ -431,7 +462,7 @@ apm_configuration_default:
 		// Comprehensive test that verifies:
 		// 1. ALL sources with non-empty values report telemetry (not just the winning one)
 		// 2. The first (highest priority) source's value is returned
-		// 3. SeqID reflects priority and increments for each value reported
+		// 3. SeqID increases with source priority (higher priority = higher SeqID)
 		// 4. Config IDs are preserved in telemetry reports
 		// 5. Only sources with values for a given key report for that key
 		// 6. Default configs always have SeqID=defaultSeqID (1)
@@ -453,6 +484,7 @@ apm_configuration_default:
 		defer os.Remove(tempManaged)
 		defer os.Remove(tempLocal)
 
+		capture := newSeqIDCapture()
 		telemetryClient := new(telemetrytest.MockClient)
 		// Allow any telemetry calls without failing
 		telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
@@ -469,14 +501,19 @@ apm_configuration_default:
 		result := provider.getString("DD_SERVICE", "default-service")
 		assert.Equal(t, "managed-service", result, "Managed (highest priority) should win")
 
-		// Verify ALL 3 sources reported telemetry for DD_SERVICE
-		// We can't predict exact SeqIDs due to global counter, but we verify all fields are correct
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "managed-service", telemetry.OriginManagedStableConfig, "managed-123")))
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "env-service", telemetry.OriginEnvVar, telemetry.EmptyID)))
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "local-service", telemetry.OriginLocalStableConfig, "local-456")))
-
-		// Verify default for DD_SERVICE with SeqID=defaultSeqID
+		// Verify ALL 3 sources reported telemetry for DD_SERVICE and capture their SeqIDs
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "managed-service", telemetry.OriginManagedStableConfig, "managed-123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "env-service", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "local-service", telemetry.OriginLocalStableConfig, "local-456")))
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_SERVICE", "default-service", telemetry.OriginDefault)))
+
+		// Verify SeqID ordering: Managed (highest priority) > Env > Local (lowest priority)
+		managedSeq := capture.get("DD_SERVICE", "managed-service", telemetry.OriginManagedStableConfig)
+		envSeq := capture.get("DD_SERVICE", "env-service", telemetry.OriginEnvVar)
+		localSeq := capture.get("DD_SERVICE", "local-service", telemetry.OriginLocalStableConfig)
+		assert.Greater(t, managedSeq, envSeq, "Managed (highest priority) should have higher SeqID than Env")
+		assert.Greater(t, envSeq, localSeq, "Env should have higher SeqID than Local (lowest priority)")
+		assert.Greater(t, localSeq, defaultSeqID, "All non-default configs should have SeqID > defaultSeqID")
 
 		// Test DD_ENV: only local has a value
 		env := provider.getString("DD_ENV", "default-env")
@@ -484,8 +521,6 @@ apm_configuration_default:
 
 		// Verify only local reported telemetry for DD_ENV (others don't have it)
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_ENV", "local-env", telemetry.OriginLocalStableConfig, "local-456")))
-
-		// Verify default for DD_ENV with SeqID=defaultSeqID
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_ENV", "default-env", telemetry.OriginDefault)))
 	})
 

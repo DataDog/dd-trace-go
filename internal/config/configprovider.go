@@ -15,7 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-const defaultSeqID = 1
+const defaultSeqID uint64 = 1
 
 var seqId uint64 = defaultSeqID
 
@@ -51,7 +51,7 @@ func defaultconfigProvider() *configProvider {
 //
 // Telemetry Reporting:
 //   - Reports telemetry for ALL non-empty values found across ALL sources, regardless of priority
-//   - SeqID reflects priority: highest priority source gets len(sources), decreasing to 1 for lowest priority
+//   - SeqID reflects priority: higher priority sources get higher seqIds, while default sources always report defaultSeqID
 func get[T any](p *configProvider, key string, def T, parse func(string) (T, bool)) T {
 	var final *T
 	for i := len(p.sources) - 1; i >= 0; i-- {
@@ -65,9 +65,8 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 			seqId++
 			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id, SeqID: seqId})
 			if parsed, ok := parse(v); ok {
-				if final == nil {
-					final = &parsed
-				}
+				// Always overwrite final so higher priority sources win
+				final = &parsed
 			}
 		}
 	}
