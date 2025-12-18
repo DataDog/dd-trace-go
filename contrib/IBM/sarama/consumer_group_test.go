@@ -10,6 +10,7 @@ import (
 	"log"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
@@ -29,9 +30,13 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 
 	cg, err := sarama.NewConsumerGroup(kafkaBrokers, groupID, cfg)
 	require.NoError(t, err)
-	defer func() {
+	cgClosed := false
+	t.Cleanup(func() {
+		if cgClosed {
+			return
+		}
 		assert.NoError(t, cg.Close())
-	}()
+	})
 
 	handler := &testConsumerGroupHandler{
 		T:           t,
@@ -80,13 +85,27 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	_, _, err = p.SendMessage(produceMsg)
 	require.NoError(t, err)
 
-	waitForSpans(mt, 2)
+	var consumeMsg *sarama.ConsumerMessage
+	require.Eventually(t, func() bool {
+		select {
+		case consumeMsg = <-handler.rcvMessages:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 50*time.Millisecond, "consumer did not receive a message")
+
 	cancel()
 	wg.Wait()
+	require.NoError(t, cg.Close())
+	cgClosed = true
+
+	require.Eventually(t, func() bool {
+		return len(mt.FinishedSpans()) >= 2
+	}, 5*time.Second, 50*time.Millisecond, "expected producer and consumer spans to finish")
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
-	consumeMsg := <-handler.rcvMessages
 
 	s0 := spans[0]
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
