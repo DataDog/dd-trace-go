@@ -613,9 +613,9 @@ func TestGetBaseBranchShaWithCIBaseBranch(t *testing.T) {
 }
 
 func acceptableError(err error) bool {
-	errMessage := err.Error()
+	errMessage := strings.ToLower(err.Error())
 	// if the error is related to a shallow.lock file, we will skip the test;
 	// if the error is to a github connection error, we will skip the test;
 	// the test is flaky in the CI due to multiple git commands running at the same time.
-	return strings.Contains(errMessage, "shallow.lock") || strings.Contains(errMessage, "Couldn't connect to server")
+	return strings.Contains(errMessage, "shallow.lock") || strings.Contains(errMessage, "couldn't connect to server")
 }
