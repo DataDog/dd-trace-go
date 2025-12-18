@@ -12,6 +12,7 @@ permissions:
 jobs:
   lambda-integration-test:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -68,6 +69,7 @@ jobs:
         if: failure() && steps.integration-tests.outcome == 'failure'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
         with:
+          webhook-type: incoming-webhook
           payload: |
             {
               "text": "Lambda Integration Tests Failed",

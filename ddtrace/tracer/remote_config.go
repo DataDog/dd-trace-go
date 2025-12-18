@@ -385,10 +385,10 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	var dynamicInstrumentationError, apmTracingError error
 
 	if t.config.dynamicInstrumentationEnabled {
-		liveDebuggingError := remoteconfig.Subscribe(
+		_, liveDebuggingError := remoteconfig.Subscribe(
 			"LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate,
 		)
-		liveDebuggingSymDBError := remoteconfig.Subscribe(
+		_, liveDebuggingSymDBError := remoteconfig.Subscribe(
 			"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationSymDBRCUpdate,
 		)
 		if liveDebuggingError != nil && liveDebuggingSymDBError != nil {
@@ -405,7 +405,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 
 	initalizeRC.Do(initalizeDynamicInstrumentationRemoteConfigState)
 
-	apmTracingError = remoteconfig.Subscribe(
+	_, apmTracingError = remoteconfig.Subscribe(
 		state.ProductAPMTracing,
 		t.onRemoteConfigUpdate,
 		remoteconfig.APMTracingSampleRate,
