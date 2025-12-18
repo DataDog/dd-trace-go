@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -17,7 +18,37 @@ import (
 
 const defaultSeqID uint64 = 1
 
-var seqId uint64 = defaultSeqID
+// seqId is a global counter for configuration telemetry sequence IDs.
+// Initialized to defaultSeqID in init() so config values start reporting at 2+.
+//
+// For telemetry reporting, it's recommended to:
+// - Use reportTelemetry() for all config telemetry, OR
+// - Use nextSeqID() if calling telemetry.RegisterAppConfigs directly
+// - If accessing seqId directly, always use seqId.Add(1) to get the next ID
+// - Defaults should always use defaultSeqID (not nextSeqID)
+var seqId atomic.Uint64
+
+func init() {
+	seqId.Store(defaultSeqID)
+}
+
+// nextSeqID returns the next sequence ID for configuration telemetry.
+// All non-default configuration telemetry must use this function to obtain sequence IDs.
+func nextSeqID() uint64 {
+	return seqId.Add(1)
+}
+
+// reportTelemetry reports configuration telemetry with an auto-incremented sequence ID.
+// This is the preferred way to report non-default configuration values.
+func reportTelemetry(name string, value any, origin telemetry.Origin, id string) {
+	telemetry.RegisterAppConfigs(telemetry.Configuration{
+		Name:   name,
+		Value:  value,
+		Origin: origin,
+		ID:     id,
+		SeqID:  nextSeqID(),
+	})
+}
 
 var provider = defaultconfigProvider()
 
@@ -62,8 +93,7 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
-			seqId++
-			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id, SeqID: seqId})
+			reportTelemetry(key, v, source.origin(), id)
 			if parsed, ok := parse(v); ok {
 				// Always overwrite final so higher priority sources win
 				final = &parsed
