@@ -8,6 +8,7 @@ package sarama
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
@@ -61,7 +62,7 @@ func TestWrapConsumer(t *testing.T) {
 	require.NoError(t, err)
 	// wait for the channel to be closed
 	<-partitionConsumer.Messages()
-	waitForSpans(mt, 2)
+	waitForSpans(t, mt, 2, 5*time.Second)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
@@ -157,7 +158,7 @@ func TestWrapConsumerWithCustomConsumerSpanOptions(t *testing.T) {
 	require.NoError(t, err)
 	// wait for the channel to be closed
 	<-partitionConsumer.Messages()
-	waitForSpans(mt, 1)
+	waitForSpans(t, mt, 1, 5*time.Second)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
