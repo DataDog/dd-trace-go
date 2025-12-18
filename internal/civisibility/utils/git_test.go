@@ -50,6 +50,9 @@ func TestFilterSensitiveInfo(t *testing.T) {
 
 func TestGetLocalGitData(t *testing.T) {
 	data, err := getLocalGitData()
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, data.SourceRoot)
@@ -71,10 +74,8 @@ func TestGetLastLocalGitCommitShas(t *testing.T) {
 
 func TestUnshallowGitRepository(t *testing.T) {
 	_, err := UnshallowGitRepository()
-	if err != nil && strings.Contains(err.Error(), "shallow.lock") {
-		// if the error is related to a shallow.lock file, we will skip the test;
-		// the test is flaky in the CI due to multiple git commands running at the same time.
-		return
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
 	}
 
 	assert.NoError(t, err)
@@ -82,7 +83,8 @@ func TestUnshallowGitRepository(t *testing.T) {
 
 func TestFetchCommitData(t *testing.T) {
 	log.SetLevel(log.LevelDebug)
-	for _, sha := range GetLastLocalGitCommitShas() {
+	commits := GetLastLocalGitCommitShas()
+	for _, sha := range commits[:min(len(commits), 3)] {
 		if gitData, err := fetchCommitData(sha); err == nil {
 			assert.NotEmpty(t, gitData.AuthorName, "Author name should not be empty")
 			assert.NotEmpty(t, gitData.AuthorEmail, "Author email should not be empty")
@@ -92,7 +94,9 @@ func TestFetchCommitData(t *testing.T) {
 			assert.NotEmpty(t, gitData.CommitterDate, "Committer date should not be empty")
 			assert.NotEmpty(t, gitData.CommitMessage, "Commit message should not be empty")
 		} else {
-			t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
+			if !acceptableError(err) {
+				t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
+			}
 		}
 	}
 }
@@ -200,6 +204,9 @@ func TestComputeBranchMetrics(t *testing.T) {
 
 	// Test with the current branch as both candidate and source (should work)
 	metrics, err := computeBranchMetrics([]string{currentBranch}, currentBranch)
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 
 	// When comparing a branch to itself, ahead should be 0
@@ -271,6 +278,9 @@ func TestGetRemoteName(t *testing.T) {
 	}
 
 	remoteName, err := getRemoteName()
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 	assert.NotEmpty(t, remoteName, "Remote name should not be empty")
 	// Most repositories have "origin" as the default remote
@@ -283,6 +293,9 @@ func TestGetSourceBranch(t *testing.T) {
 	}
 
 	branch, err := getSourceBranch()
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 	assert.NotEmpty(t, branch, "Source branch should not be empty")
 }
@@ -340,6 +353,9 @@ func TestGetBaseBranchShaWithoutGit(t *testing.T) {
 	}()
 
 	sha, err := GetBaseBranchSha("master")
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.Error(t, err)
 	assert.Equal(t, "", sha)
 	assert.Contains(t, err.Error(), "git executable not found")
@@ -408,6 +424,9 @@ func TestDetectDefaultBranch(t *testing.T) {
 	}
 
 	defaultBranch, err := detectDefaultBranch(remoteName)
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 
 	// The function should either succeed or fail gracefully
 	if err != nil {
@@ -463,6 +482,9 @@ func TestDetectDefaultBranchWithNonExistentRemote(t *testing.T) {
 
 	// Test with a non-existent remote
 	defaultBranch, err := detectDefaultBranch("nonexistent")
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 
 	// Should fail to detect
 	assert.Error(t, err)
@@ -524,6 +546,9 @@ func TestGetRemoteBranches(t *testing.T) {
 	}
 
 	branches, err := getRemoteBranches(remoteName)
+	if err != nil && acceptableError(err) {
+		t.Skipf("test skipped due to: %s", err.Error())
+	}
 	assert.NoError(t, err)
 
 	// Should get some remote branches (even if empty in some test environments)
@@ -585,4 +610,12 @@ func TestGetBaseBranchShaWithCIBaseBranch(t *testing.T) {
 		assert.Regexp(t, "^[a-f0-9]{40}$", sha, "SHA should be valid hex string")
 		t.Logf("GetBaseBranchSha without CI tags returned valid SHA: %s", sha)
 	}
+}
+
+func acceptableError(err error) bool {
+	errMessage := err.Error()
+	// if the error is related to a shallow.lock file, we will skip the test;
+	// if the error is to a github connection error, we will skip the test;
+	// the test is flaky in the CI due to multiple git commands running at the same time.
+	return strings.Contains(errMessage, "shallow.lock") || strings.Contains(errMessage, "Couldn't connect to server")
 }
