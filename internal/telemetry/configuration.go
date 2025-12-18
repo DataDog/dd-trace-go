@@ -20,6 +20,9 @@ import (
 type configuration struct {
 	mu     sync.Mutex
 	config map[configKey]transport.ConfKeyValue
+	// fallbackSeqID is used only for legacy configs that don't already have a seqID.
+	// New code should report configs with seqIDs via config/configProvider.
+	fallbackSeqID uint64
 }
 
 type configKey struct {
@@ -68,6 +71,13 @@ func (c *configuration) Payload() transport.Payload {
 			conf.Origin = transport.OriginDefault
 		}
 		conf.Value = SanitizeConfigValue(conf.Value)
+
+		// Fallback seqID for legacy code that doesn't report via config/configProvider
+		if conf.SeqID == 0 {
+			c.fallbackSeqID++
+			conf.SeqID = c.fallbackSeqID
+		}
+
 		configs[idx] = conf
 		idx++
 		delete(c.config, key)
