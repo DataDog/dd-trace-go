@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # Required for OIDC authentication
 
 jobs:
   lambda-integration-test:
@@ -15,6 +16,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Configure AWS Credentials via OIDC (Build-Stable)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::486234852809:role/dd-trace-go-github-actions
+          role-session-name: dd-trace-go-lambda-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - name: Configure AWS Credentials for Serverless Sandbox
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::425362996713:role/gha-dd-trace-lambda-integration-test
+          role-session-name: dd-trace-go-lambda-${{ github.run_id }}
+          aws-region: us-east-1
+          role-chaining: true
 
       - name: Set up Go
         uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
@@ -46,8 +62,6 @@ jobs:
         env:
           BUILD_LAYERS: true
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: ./run_integration_tests.sh
 
