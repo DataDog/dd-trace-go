@@ -42,6 +42,7 @@ Targets:
   lint/go/fix          Fix linting issues automatically
   lint/shell           Run shell script linting checks
   lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
+  lint/action          Lint GitHub Actions workflows
   format               Format code
   format/shell         install shfmt
   test                 Run all tests (core, integration, contrib)

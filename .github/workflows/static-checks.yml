@@ -60,6 +60,24 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           make lint/misc
 
+  check-github-actions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Lint GitHub Actions workflows
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          make lint/action
+
   check-modules:
     runs-on: ubuntu-latest
     steps:

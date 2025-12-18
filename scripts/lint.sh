@@ -22,6 +22,7 @@ run() {
 lint_go=false
 lint_shell=false
 lint_misc=false
+lint_action=false
 
 usage() {
   cat << EOF
@@ -34,6 +35,7 @@ Options:
   --go           Run linters for Go code
   --shell        Run linters for Shell scripts
   --misc         Run miscellaneous linters
+  --action       Run linters for GitHub Actions workflows
   -t, --tools    Install linting tools
   -h, --help     Show this help message
 EOF
@@ -61,12 +63,21 @@ lint_misc_files() {
   run "checkmake --config=.checkmake Makefile scripts/autoreleasetagger/Makefile scripts/apiextractor/Makefile profiler/internal/fastdelta/Makefile"
 }
 
+lint_action_files() {
+  message "Linting GitHub Actions workflows..."
+  # Ignore 'if: false' warnings - used intentionally for disabled jobs like checklocks.
+  # The ignore is only available through the command line, not the configuration file.
+  run "actionlint -ignore 'condition .false. is always evaluated to false'"
+}
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
     --all)
       lint_go=true
       lint_shell=true
+      lint_misc=true
+      lint_action=true
       shift
       ;;
     --go)
@@ -81,6 +92,10 @@ while [[ $# -gt 0 ]]; do
       lint_misc=true
       shift
       ;;
+    --action)
+      lint_action=true
+      shift
+      ;;
     -h | --help)
       usage
       ;;
@@ -92,10 +107,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Default behavior: run linters
-if [[ ${lint_go} == false && ${lint_shell} == false && ${lint_misc} == false ]]; then
+if [[ ${lint_go} == false && ${lint_shell} == false && ${lint_misc} == false && ${lint_action} == false ]]; then
   lint_go=true
   lint_shell=true
   lint_misc=true
+  lint_action=true
 fi
 
 if [[ ${lint_go} == true ]]; then
@@ -108,4 +124,8 @@ fi
 
 if [[ ${lint_misc} == true ]]; then
   lint_misc_files
+fi
+
+if [[ ${lint_action} == true ]]; then
+  lint_action_files
 fi
