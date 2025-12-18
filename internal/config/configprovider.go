@@ -15,6 +15,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
+const defaultSeqID = 1
+
+var seqId uint64 = defaultSeqID
+
 var provider = defaultconfigProvider()
 
 type configProvider struct {
@@ -50,15 +54,15 @@ func defaultconfigProvider() *configProvider {
 //   - SeqID reflects priority: highest priority source gets len(sources), decreasing to 1 for lowest priority
 func get[T any](p *configProvider, key string, def T, parse func(string) (T, bool)) T {
 	var final *T
-	seqId := uint64(len(p.sources))
-	for _, source := range p.sources {
+	for i := len(p.sources) - 1; i >= 0; i-- {
+		source := p.sources[i]
 		v := source.get(key)
-
 		if v != "" {
 			var id string
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
+			seqId++
 			telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: v, Origin: source.origin(), ID: id, SeqID: seqId})
 			if parsed, ok := parse(v); ok {
 				if final == nil {
@@ -66,9 +70,8 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 				}
 			}
 		}
-		seqId--
 	}
-	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: 0})
+	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID})
 	if final != nil {
 		return *final
 	}
