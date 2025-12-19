@@ -798,10 +798,11 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c, err := newTestConfig(WithAgentTimeout(2))
 
 		assert.NoError(err)
-		assert.Equal("test2", c.serviceMappings["tracer.test"])
-		assert.Equal("Newsvc", c.serviceMappings["svc"])
-		assert.Equal("myRouter", c.serviceMappings["http.router"])
-		assert.Equal("", c.serviceMappings["noval"])
+		serviceMappings := c.internalConfig.ServiceMappings()
+		assert.Equal("test2", serviceMappings["tracer.test"])
+		assert.Equal("Newsvc", serviceMappings["svc"])
+		assert.Equal("myRouter", serviceMappings["http.router"])
+		assert.Equal("", serviceMappings["noval"])
 	})
 
 	t.Run("datadog-tags", func(t *testing.T) {

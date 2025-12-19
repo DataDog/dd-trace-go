@@ -174,9 +174,6 @@ type config struct {
 	// originalAgentURL is the agent URL that receives traces from the tracer and does not get changed.
 	originalAgentURL *url.URL
 
-	// serviceMappings holds a set of service mappings to dynamically rename services
-	serviceMappings map[string]string
-
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
 	globalTags dynamicConfig[map[string]interface{}]
@@ -317,9 +314,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := getDDorOtelConfig("service"); v != "" {
 		c.serviceName = v
 		globalconfig.SetServiceName(v)
-	}
-	if v := env.Get("DD_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { WithServiceMapping(key, val)(c) })
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
@@ -949,10 +943,7 @@ func WithEnv(env string) StartOption {
 // This option is is case sensitive and can be used multiple times.
 func WithServiceMapping(from, to string) StartOption {
 	return func(c *config) {
-		if c.serviceMappings == nil {
-			c.serviceMappings = make(map[string]string)
-		}
-		c.serviceMappings[from] = to
+		c.internalConfig.SetServiceMapping(from, to, telemetry.OriginCode)
 	}
 }
 
