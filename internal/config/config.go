@@ -213,7 +213,7 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debug = enabled
-	reportTelemetry("DD_TRACE_DEBUG", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_DEBUG", enabled, origin)
 }
 
 func (c *Config) ProfilerEndpoints() bool {
@@ -226,7 +226,7 @@ func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.profilerEndpoints = enabled
-	reportTelemetry("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
 }
 
 func (c *Config) ProfilerHotspotsEnabled() bool {
@@ -239,7 +239,7 @@ func (c *Config) SetProfilerHotspotsEnabled(enabled bool, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.profilerHotspots = enabled
-	reportTelemetry(traceprof.CodeHotspotsEnvVar, enabled, origin, telemetry.EmptyID)
+	reportTelemetry(traceprof.CodeHotspotsEnvVar, enabled, origin)
 }
 func (c *Config) RuntimeMetricsEnabled() bool {
 	c.mu.RLock()
@@ -251,7 +251,7 @@ func (c *Config) SetRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.runtimeMetrics = enabled
-	reportTelemetry("DD_RUNTIME_METRICS_ENABLED", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
 }
 
 func (c *Config) RuntimeMetricsV2Enabled() bool {
@@ -264,7 +264,7 @@ func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.runtimeMetricsV2 = enabled
-	reportTelemetry("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
 }
 
 func (c *Config) DataStreamsMonitoringEnabled() bool {
@@ -277,7 +277,7 @@ func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dataStreamsMonitoringEnabled = enabled
-	reportTelemetry("DD_DATA_STREAMS_ENABLED", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_DATA_STREAMS_ENABLED", enabled, origin)
 }
 
 func (c *Config) LogStartup() bool {
@@ -290,7 +290,7 @@ func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.logStartup = enabled
-	reportTelemetry("DD_TRACE_STARTUP_LOGS", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_STARTUP_LOGS", enabled, origin)
 }
 
 func (c *Config) LogToStdout() bool {
@@ -329,7 +329,7 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.globalSampleRate = rate
-	reportTelemetry("DD_TRACE_SAMPLE_RATE", rate, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
 func (c *Config) TraceRateLimitPerSecond() float64 {
@@ -342,7 +342,7 @@ func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.traceRateLimitPerSecond = rate
-	reportTelemetry("DD_TRACE_RATE_LIMIT", rate, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_RATE_LIMIT", rate, origin)
 }
 
 func (c *Config) PartialFlushEnabled() bool {
@@ -355,7 +355,7 @@ func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.partialFlushEnabled = enabled
-	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
 }
 
 func (c *Config) PartialFlushMinSpans() int {
@@ -368,7 +368,7 @@ func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.partialFlushMinSpans = minSpans
-	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
 }
 
 func (c *Config) DynamicInstrumentationEnabled() bool {
@@ -381,7 +381,7 @@ func (c *Config) SetDynamicInstrumentationEnabled(enabled bool, origin telemetry
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dynamicInstrumentationEnabled = enabled
-	reportTelemetry("DD_DYNAMIC_INSTRUMENTATION_ENABLED", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_DYNAMIC_INSTRUMENTATION_ENABLED", enabled, origin)
 }
 
 func (c *Config) DebugAbandonedSpans() bool {
@@ -394,7 +394,7 @@ func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debugAbandonedSpans = enabled
-	reportTelemetry("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
 }
 
 func (c *Config) SpanTimeout() time.Duration {
@@ -407,7 +407,7 @@ func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.spanTimeout = timeout
-	reportTelemetry("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
 }
 
 func (c *Config) DebugStack() bool {
@@ -420,7 +420,7 @@ func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debugStack = enabled
-	reportTelemetry("DD_TRACE_DEBUG_STACK", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_DEBUG_STACK", enabled, origin)
 }
 
 func (c *Config) StatsComputationEnabled() bool {
@@ -433,7 +433,7 @@ func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.statsComputationEnabled = enabled
-	reportTelemetry("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
 }
 
 func (c *Config) LogDirectory() string {
@@ -446,7 +446,7 @@ func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.logDirectory = directory
-	reportTelemetry("DD_TRACE_LOG_DIRECTORY", directory, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_LOG_DIRECTORY", directory, origin)
 }
 
 func (c *Config) ReportHostname() bool {
@@ -466,7 +466,7 @@ func (c *Config) SetHostname(hostname string, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.hostname = hostname
 	c.reportHostname = true // Explicitly configured hostname should always be reported
-	reportTelemetry("DD_TRACE_SOURCE_HOSTNAME", hostname, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
 }
 
 func (c *Config) HostnameLookupError() error {
@@ -485,7 +485,7 @@ func (c *Config) SetVersion(version string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.version = version
-	reportTelemetry("DD_VERSION", version, origin, telemetry.EmptyID)
+	reportTelemetry("DD_VERSION", version, origin)
 }
 
 func (c *Config) Env() string {
@@ -498,7 +498,7 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.env = env
-	reportTelemetry("DD_ENV", env, origin, telemetry.EmptyID)
+	reportTelemetry("DD_ENV", env, origin)
 }
 
 func (c *Config) HasFeature(feat string) bool {
@@ -517,7 +517,7 @@ func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
 	for _, feat := range features {
 		c.featureFlags[strings.TrimSpace(feat)] = struct{}{}
 	}
-	reportTelemetry("DD_TRACE_FEATURES", strings.Join(features, ","), origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_FEATURES", strings.Join(features, ","), origin)
 }
 
 func (c *Config) FeatureFlags() map[string]struct{} {
@@ -553,7 +553,7 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
 		c.serviceMappings = make(map[string]string)
 	}
 	c.serviceMappings[from] = to
-	reportTelemetry("DD_SERVICE_MAPPING", fmt.Sprintf("%s:%s", from, to), origin, telemetry.EmptyID)
+	reportTelemetry("DD_SERVICE_MAPPING", fmt.Sprintf("%s:%s", from, to), origin)
 }
 
 func (c *Config) RetryInterval() time.Duration {
@@ -566,7 +566,7 @@ func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.retryInterval = interval
-	reportTelemetry("DD_TRACE_RETRY_INTERVAL", interval, origin, telemetry.EmptyID)
+	reportTelemetry("DD_TRACE_RETRY_INTERVAL", interval, origin)
 }
 
 func (c *Config) ServiceName() string {
@@ -579,7 +579,7 @@ func (c *Config) SetServiceName(name string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.serviceName = name
-	reportTelemetry("DD_SERVICE", name, origin, telemetry.EmptyID)
+	reportTelemetry("DD_SERVICE", name, origin)
 }
 
 func (c *Config) CIVisibilityEnabled() bool {
@@ -592,5 +592,5 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ciVisibilityEnabled = enabled
-	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin, telemetry.EmptyID)
+	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
 }

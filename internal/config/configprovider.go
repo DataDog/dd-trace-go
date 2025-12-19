@@ -39,14 +39,36 @@ func nextSeqID() uint64 {
 }
 
 // reportTelemetry reports configuration telemetry with an auto-incremented sequence ID.
-// This is the preferred way to report non-default configuration values.
-func reportTelemetry(name string, value any, origin telemetry.Origin, id string) {
+// This is the preferred way to report non-default configuration values and should be used when the source does not have a config ID.
+func reportTelemetry(name string, value any, origin telemetry.Origin) {
+	telemetry.RegisterAppConfigs(telemetry.Configuration{
+		Name:   name,
+		Value:  value,
+		Origin: origin,
+		ID:     telemetry.EmptyID,
+		SeqID:  nextSeqID(),
+	})
+}
+
+// reportTelemetryWithID reports configuration telemetry with a provided config ID, and an auto-incremented sequence ID.
+// config sources of type idAwareConfigSource should use this function to report telemetry with their config ID.
+func reportTelemetryWithID(name string, value any, origin telemetry.Origin, id string) {
 	telemetry.RegisterAppConfigs(telemetry.Configuration{
 		Name:   name,
 		Value:  value,
 		Origin: origin,
 		ID:     id,
 		SeqID:  nextSeqID(),
+	})
+}
+
+func reportDefaultTelemetry(name string, value any) {
+	telemetry.RegisterAppConfigs(telemetry.Configuration{
+		Name:   name,
+		Value:  value,
+		Origin: telemetry.OriginDefault,
+		ID:     telemetry.EmptyID,
+		SeqID:  defaultSeqID,
 	})
 }
 
@@ -61,6 +83,8 @@ type configSource interface {
 	origin() telemetry.Origin
 }
 
+// idAwareConfigSource is a config source that has a config ID.
+// Currently, only DeclarativeConfigSource implements this interface.
 type idAwareConfigSource interface {
 	configSource
 	getID() string
@@ -93,14 +117,14 @@ func get[T any](p *configProvider, key string, def T, parse func(string) (T, boo
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
-			reportTelemetry(key, v, source.origin(), id)
+			reportTelemetryWithID(key, v, source.origin(), id)
 			if parsed, ok := parse(v); ok {
 				// Always overwrite final so higher priority sources win
 				final = &parsed
 			}
 		}
 	}
-	telemetry.RegisterAppConfigs(telemetry.Configuration{Name: key, Value: def, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID})
+	reportDefaultTelemetry(key, def)
 	if final != nil {
 		return *final
 	}
