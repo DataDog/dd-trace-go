@@ -66,8 +66,8 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		BucketInterval:         defaultStatsBucketSize,
 	}
 	env := c.agent.defaultEnv
-	if c.env != "" {
-		env = c.env
+	if c.internalConfig.Env() != "" {
+		env = c.internalConfig.Env()
 	}
 	if env == "" {
 		// We do this to avoid a panic in the stats calculation logic when env is empty

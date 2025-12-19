@@ -616,7 +616,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.NoError(t, err)
 		defer tracer.Stop()
 		c := tracer.config
-		assert.Equal(t, "testEnv", c.env)
+		assert.Equal(t, "testEnv", c.internalConfig.Env())
 	})
 
 	t.Run("env-agentAddr", func(t *testing.T) {
@@ -700,7 +700,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer tracer.Stop()
 		assert.NoError(err)
 		c := tracer.config
-		assert.Equal(env, c.env)
+		assert.Equal(env, c.internalConfig.Env())
 	})
 
 	t.Run("trace_enabled", func(t *testing.T) {
@@ -740,7 +740,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(&url.URL{Scheme: "http", Host: "127.0.0.1:58126"}, c.agentURL)
 		assert.NotNil(c.globalTags.get())
 		assert.Equal("v", c.globalTags.get()["k"])
-		assert.Equal("testEnv", c.env)
+		assert.Equal("testEnv", c.internalConfig.Env())
 		assert.True(c.internalConfig.Debug())
 	})
 
@@ -1383,7 +1383,7 @@ func TestEnvConfig(t *testing.T) {
 			WithEnv("testing"),
 		)
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -1392,14 +1392,14 @@ func TestEnvConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("WithGlobalTag", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithGlobalTag("env", "testing"))
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
@@ -1408,7 +1408,7 @@ func TestEnvConfig(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -1417,37 +1417,37 @@ func TestEnvConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(c.env, "")
+		assert.Equal(c.internalConfig.Env(), "")
 
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing0")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("testing0", c.env)
+		assert.Equal("testing0", c.internalConfig.Env())
 
 		t.Setenv("DD_TAGS", "env:testing1")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("testing1", c.env)
+		assert.Equal("testing1", c.internalConfig.Env())
 
 		c, err = newTestConfig(WithGlobalTag("env", "testing2"))
 		assert.NoError(err)
-		assert.Equal("testing2", c.env)
+		assert.Equal("testing2", c.internalConfig.Env())
 
 		t.Setenv("DD_ENV", "testing3")
 		c, err = newTestConfig(WithGlobalTag("env", "testing2"))
 		assert.NoError(err)
-		assert.Equal("testing3", c.env)
+		assert.Equal("testing3", c.internalConfig.Env())
 
 		c, err = newTestConfig(WithGlobalTag("env", "testing2"), WithEnv("testing4"))
 		assert.NoError(err)
-		assert.Equal("testing4", c.env)
+		assert.Equal("testing4", c.internalConfig.Env())
 	})
 }
 

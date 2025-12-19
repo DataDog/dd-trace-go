@@ -46,7 +46,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
 		{Name: "service", Value: c.serviceName},
 		{Name: "universal_version", Value: c.universalVersion},
-		{Name: "env", Value: c.env},
+		{Name: "env", Value: c.internalConfig.Env()},
 		{Name: "version", Value: c.internalConfig.Version()},
 		{Name: "trace_agent_url", Value: c.agentURL.String()},
 		{Name: "agent_hostname", Value: c.internalConfig.Hostname()},
@@ -114,7 +114,7 @@ func startTelemetry(c *config) telemetry.Client {
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
 		cfg.APIKey = env.Get("DD_API_KEY")
 	}
-	client, err := telemetry.NewClient(c.serviceName, c.env, c.internalConfig.Version(), cfg)
+	client, err := telemetry.NewClient(c.serviceName, c.internalConfig.Env(), c.internalConfig.Version(), cfg)
 	if err != nil {
 		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
 		return nil

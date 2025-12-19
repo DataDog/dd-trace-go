@@ -2465,11 +2465,7 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	cfg, err := newTestConfig(func(c *config) {
-		c.transport = transport
-		c.env = "someEnv"
-	})
-	assert.NoError(t, err)
+	cfg := newTestConfigWithTransportAndEnv(t, transport, "someEnv")
 	c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
 	tr.stats.Stop()
 	tr.stats = c
