@@ -636,7 +636,6 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/tchap/go-patricia/v2",
 		"github.com/testcontainers/testcontainers-go",
 		"github.com/testcontainers/testcontainers-go/modules/compose",
-		"github.com/theckman/httpforwarded",
 		"github.com/theupdateframework/notary",
 		"github.com/tidwall/assert",
 		"github.com/tidwall/btree",

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -33,7 +32,7 @@ func TestClientIP(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		addr             net.Addr
-		md               metadata.MD
+		md               map[string][]string // previously google.golang.org/grpc/metadata.MD
 		expectedClientIP string
 	}{
 		{

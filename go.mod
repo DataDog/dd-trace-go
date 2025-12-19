@@ -28,7 +28,6 @@ require (
 	github.com/sasha-s/go-deadlock v0.3.5
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.11.1
-	github.com/theckman/httpforwarded v0.4.0
 	github.com/tinylib/msgp v1.3.0
 	github.com/trailofbits/go-mutexasserts v0.0.0-20250514102930-c1f3d2e37561
 	go.opentelemetry.io/collector/pdata/pprofile v0.140.0
@@ -49,7 +48,6 @@ require (
 	golang.org/x/time v0.12.0
 	golang.org/x/tools v0.38.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
-	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
 )
 
@@ -106,6 +104,7 @@ require (
 	golang.org/x/text v0.30.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250825161204-c5933d9347a5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 // indirect
+	google.golang.org/grpc v1.76.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
