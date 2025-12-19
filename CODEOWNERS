@@ -3,7 +3,7 @@
 # default owner
 *                               @DataDog/dd-trace-go-guild
 # tracing
-/contrib                        @DataDog/apm-go @Datadog/apm-idm-go
+/contrib                        @DataDog/apm-go @DataDog/apm-idm-go
 /ddtrace                        @DataDog/apm-go
 
 # profiling
@@ -51,17 +51,24 @@
 # capabilities- OTel integration
 /ddtrace/opentelemetry               @DataDog/apm-sdk-capabilities-go
 
-# datastreams
-/datastreams                    @Datadog/data-streams-monitoring
-/internal/datastreams           @Datadog/data-streams-monitoring
+# data streams monitoring
+/datastreams                                @Datadog/data-streams-monitoring
+/internal/datastreams                       @Datadog/data-streams-monitoring
+/ddtrace/tracer/data_streams.go             @Datadog/data-streams-monitoring
+/contrib/IBM/sarama                         @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
+/contrib/Shopify/sarama                     @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
+/contrib/confluentinc/confluent-kafka-go    @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
+/contrib/segmentio/kafka-go                 @DataDog/apm-go @Datadog/apm-idm-go @Datadog/data-streams-monitoring
 
 # civisibility
 /civisibility                   @DataDog/ci-app-libraries
 /internal/civisibility          @DataDog/ci-app-libraries
 
 # llm observability
-/llmobs                         @DataDog/ml-observability
-/internal/llmobs                @DataDog/ml-observability
+/llmobs                                    @DataDog/ml-observability @DataDog/apm-idm-go
+/internal/llmobs                           @DataDog/ml-observability @DataDog/apm-idm-go
+/contrib/mark3labs/mcp-go                  @DataDog/ml-observability @DataDog/apm-idm-go
+/contrib/modelcontextprotocol/go-sdk       @DataDog/ml-observability @DataDog/apm-idm-go
 
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
@@ -78,8 +85,8 @@
 /openfeature                    @DataDog/feature-flagging-and-experimentation-sdk @DataDog/asm-go
 
 # Database Monitoring
-ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
-contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @Datadog/apm-idm-go
+ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
+contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go
 
 # no owner: changes to these files will not automatically ping any particular
 # team and can be reviewed by anybody with the appropriate permissions. This is

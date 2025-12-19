@@ -25,6 +25,17 @@ func init() {
 
 // WrapHandler wraps a fasthttp.RequestHandler with tracing middleware
 func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
+	return wrapHandler(h, opts...)
+}
+
+// wrapHandlerWithDefaults is used by go:linkname in orchestrion aspects
+// to avoid circular dependencies. It has a simple signature without variadic
+// arguments so it can be safely referenced via linkname.
+func wrapHandlerWithDefaults(h fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return wrapHandler(h)
+}
+
+func wrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
 	cfg := newConfig()
 	for _, fn := range opts {
 		fn.apply(cfg)

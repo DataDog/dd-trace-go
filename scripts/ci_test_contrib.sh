@@ -8,6 +8,8 @@ set +e
 
 [[ -d ./contrib ]] || exit 0
 
+BUILD_TAGS="${BUILD_TAGS:-}"
+
 if [ $# -eq 2 ]; then
   CONTRIBS="$2"
   INSTRUMENTATION_SUBMODULES=""
@@ -23,22 +25,21 @@ export DD_APPSEC_WAF_TIMEOUT=1m
 
 report_error=0
 
+# Build the tags argument if BUILD_TAGS is set
+TAGS_ARG="-tags="
+if [[ -n "$BUILD_TAGS" ]]; then
+  TAGS_ARG="-tags=$BUILD_TAGS"
+  echo "Running contrib tests with build tags: $BUILD_TAGS"
+else
+  echo "Running standard contrib tests"
+fi
+
 for contrib in $CONTRIBS; do
   echo "Testing contrib module: $contrib"
   contrib_id=$(echo "$contrib" | sed 's/^\.\///g;s/[\/\.]/_/g')
   cd "$contrib" || exit 1
   if [[ "$1" = "smoke" ]]; then
     go get -u -t ./...
-    go get github.com/DataDog/datadog-agent/pkg/trace@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/util/log@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/util/scrubber@v0.71.0-rc.2
-    go get github.com/DataDog/datadog-agent/pkg/version@v0.71.0-rc.2
-    go get go.opentelemetry.io/collector/pdata@v1.39.0
   fi
   if [[ "$1" = "smoke" && "$contrib" = "./contrib/k8s.io/client-go/" ]]; then
     # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
@@ -50,7 +51,7 @@ for contrib in $CONTRIBS; do
     go get github.com/quic-go/qpack@v0.5.1
   fi
   go mod tidy
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
+  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
@@ -66,7 +67,7 @@ for mod in $INSTRUMENTATION_SUBMODULES; do
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
   fi
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race -coverprofile="coverage-$mod_id.txt" -covermode=atomic
+  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1

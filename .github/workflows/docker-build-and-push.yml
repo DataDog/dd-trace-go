@@ -49,10 +49,10 @@ jobs:
       - name: Prepare
         run: |
           platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.commit_sha }}
 
@@ -68,7 +68,7 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ inputs.image }}
 
@@ -92,12 +92,13 @@ jobs:
         id: tags
         run: |
           TAGS=""
+          # shellcheck disable=SC2086
           for tag in ${{ inputs.tags }}; do
             if [ -n "$tag" ]; then
               TAGS="$TAGS,${{ inputs.image }}:$tag"
             fi
           done
-          echo "list=${TAGS:1}" >> $GITHUB_OUTPUT
+          echo "list=${TAGS:1}" >> "$GITHUB_OUTPUT"
 
       - name: Build and export
         id: build-export
@@ -163,10 +164,12 @@ jobs:
         working-directory: /tmp/digests
         run: |
           TAG_FLAGS=""
+          # shellcheck disable=SC2086
           for tag in ${{ inputs.tags }}; do
             if [ -n "$tag" ]; then
               TAG_FLAGS="$TAG_FLAGS -t ${{ inputs.image }}:$tag"
             fi
           done
+          # shellcheck disable=SC2046,SC2086
           docker buildx imagetools create $TAG_FLAGS \
-            $(printf '${{ inputs.image }}@sha256:%s ' *) 
+            $(printf '${{ inputs.image }}@sha256:%s ' *)

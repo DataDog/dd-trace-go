@@ -61,6 +61,7 @@ const (
 	OriginRemoteConfig        Origin = transport.OriginRemoteConfig
 	OriginLocalStableConfig   Origin = transport.OriginLocalStableConfig
 	OriginManagedStableConfig Origin = transport.OriginManagedStableConfig
+	OriginCalculated          Origin = transport.OriginCalculated
 )
 
 // EmptyID represents the absence of a configuration ID.

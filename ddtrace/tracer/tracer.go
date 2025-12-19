@@ -219,7 +219,11 @@ func Start(opts ...StartOption) error {
 		t.Stop()
 		return nil
 	}
-	setGlobalTracer(t)
+	if t.config.ciVisibilityEnabled && t.config.ciVisibilityNoopTracer {
+		setGlobalTracer(wrapWithCiVisibilityNoopTracer(t))
+	} else {
+		setGlobalTracer(t)
+	}
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -234,7 +238,7 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	if t.config.runtimeMetricsV2 {
+	if t.config.internalConfig.RuntimeMetricsV2Enabled() {
 		l := slog.New(slogHandler{})
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
@@ -269,7 +273,7 @@ func Start(opts ...StartOption) error {
 			return fmt.Errorf("failed to start llmobs: %w", err)
 		}
 	}
-	if t.config.logStartup {
+	if t.config.internalConfig.LogStartup() {
 		logStartup(t)
 	}
 
@@ -427,7 +431,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
-	if c.dataStreamsMonitoringEnabled {
+	if c.internalConfig.DataStreamsMonitoringEnabled() {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
 	}
 	var logFile *log.ManagedFile
@@ -478,7 +482,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	}
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
-	if c.runtimeMetrics {
+	if c.internalConfig.RuntimeMetricsEnabled() {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Add(1)
 		go func() {
@@ -797,7 +801,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, span.meta, span.metrics)
 	}
-	if t.config.profilerHotspots || t.config.profilerEndpoints {
+	if t.config.internalConfig.ProfilerHotspotsEnabled() || t.config.internalConfig.ProfilerEndpoints() {
 		t.applyPPROFLabels(span.pprofCtxRestore, span)
 	} else {
 		span.pprofCtxRestore = nil
@@ -831,15 +835,15 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
-	if t.config.profilerHotspots && localRootSpan != nil {
+	if t.config.internalConfig.ProfilerHotspotsEnabled() && localRootSpan != nil {
 		localRootSpan.mu.RLock()
 		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
 		localRootSpan.mu.RUnlock()
 	}
-	if t.config.profilerHotspots {
+	if t.config.internalConfig.ProfilerHotspotsEnabled() {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if t.config.profilerEndpoints && localRootSpan != nil {
+	if t.config.internalConfig.ProfilerEndpoints() && localRootSpan != nil {
 		localRootSpan.mu.RLock()
 		if spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)

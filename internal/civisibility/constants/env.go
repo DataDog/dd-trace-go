@@ -58,4 +58,7 @@ const (
 
 	// CIVisibilitySubtestFeaturesEnabled indicates if subtest-specific management and retry features are enabled.
 	CIVisibilitySubtestFeaturesEnabled = "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED"
+
+	// CIVisibilityUseNoopTracer indicates if the ci visibility mode must set a noop tracer (avoid change current test behaviors over the noop tracer implementation)
+	CIVisibilityUseNoopTracer = "DD_CIVISIBILITY_USE_NOOP_TRACER"
 )

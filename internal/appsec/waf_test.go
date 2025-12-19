@@ -79,6 +79,19 @@ func TestCustomRules(t *testing.T) {
 			prevClient := telemetry.SwapClient(telemetryClient)
 			defer telemetry.SwapClient(prevClient)
 
+			// Build tags and capture count before request to measure the delta
+			tags := []string{
+				"request_blocked:false",
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+				"input_truncated:false",
+			}
+			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
+
 			req, err := http.NewRequest(tc.method, srv.URL, nil)
 			require.NoError(t, err)
 
@@ -96,16 +109,8 @@ func TestCustomRules(t *testing.T) {
 				require.Contains(t, event, tc.ruleMatch)
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
-				"request_blocked:false",
-				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
-				"waf_timeout:false",
-				"rate_limited:false",
-				"waf_error:false",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-				"input_truncated:false",
-			}).Get())
+			// Assert that exactly one waf.requests metric was submitted during this request
+			assert.Equal(t, countBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 		})
 	}
 }
@@ -422,6 +427,20 @@ func TestBlocking(t *testing.T) {
 			telemetryClient := new(telemetrytest.RecordClient)
 			prevClient := telemetry.SwapClient(telemetryClient)
 			t.Cleanup(func() { telemetry.SwapClient(prevClient) })
+
+			// Build tags and capture count before request to measure the delta
+			tags := []string{
+				"request_blocked:" + strconv.FormatBool(tc.status != 200),
+				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
+				"waf_timeout:false",
+				"rate_limited:false",
+				"waf_error:false",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+				"input_truncated:false",
+			}
+			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
+
 			req, err := http.NewRequest("POST", srv.URL+tc.endpoint, strings.NewReader(tc.reqBody))
 			require.NoError(t, err)
 			for k, v := range tc.headers {
@@ -456,23 +475,15 @@ func TestBlocking(t *testing.T) {
 					require.True(t, ok)
 					require.Contains(t, spans[0].Tag("_dd.appsec.json"), "security_response_id")
 					require.NoError(t, json.Unmarshal([]byte(securityEvent), &payload))
-					wafSecurityResponseId := payload.Triggers[0].SecurityResponseID
-					require.Greater(t, len(wafSecurityResponseId), 0)
+					wafSecurityResponseID := payload.Triggers[0].SecurityResponseID
+					require.Greater(t, len(wafSecurityResponseID), 0)
 					require.NoError(t, json.Unmarshal(b, &blockedBody))
-					require.Equal(t, wafSecurityResponseId, blockedBody.SecurityResponseID)
+					require.Equal(t, wafSecurityResponseID, blockedBody.SecurityResponseID)
 				}
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", []string{
-				"request_blocked:" + strconv.FormatBool(tc.status != 200),
-				"rule_triggered:" + strconv.FormatBool(tc.ruleMatch != ""),
-				"waf_timeout:false",
-				"rate_limited:false",
-				"waf_error:false",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-				"input_truncated:false",
-			}).Get())
+			// Assert that exactly one waf.requests metric was submitted during this request
+			assert.Equal(t, countBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get())
 		})
 	}
 }
@@ -709,6 +720,21 @@ func TestRASPLFI(t *testing.T) {
 			prevClient := telemetry.SwapClient(telemetryClient)
 			defer telemetry.SwapClient(prevClient)
 
+			// Build tags and capture counts before request to measure the delta
+			evalTags := []string{
+				"rule_type:lfi",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+			}
+			matchTags := []string{
+				"block:success",
+				"rule_type:lfi",
+				"waf_version:" + libddwaf.Version(),
+				"event_rules_version:1.4.2",
+			}
+			evalCountBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", evalTags).Get()
+			matchCountBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", matchTags).Get()
+
 			req, err := http.NewRequest("GET", srv.URL+"?path="+tc.path+"&block="+strconv.FormatBool(tc.block), nil)
 			require.NoError(t, err)
 			res, err := srv.Client().Do(req)
@@ -726,22 +752,15 @@ func TestRASPLFI(t *testing.T) {
 				require.Equal(t, 204, res.StatusCode)
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", []string{
-				"rule_type:lfi",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-			}).Get())
+			// Assert that exactly one rasp.rule.eval metric was submitted during this request
+			assert.Equal(t, evalCountBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.eval", evalTags).Get())
 
 			if !tc.block {
 				return
 			}
 
-			assert.Equal(t, 1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", []string{
-				"block:success",
-				"rule_type:lfi",
-				"waf_version:" + libddwaf.Version(),
-				"event_rules_version:1.4.2",
-			}).Get())
+			// Assert that exactly one rasp.rule.match metric was submitted during this request
+			assert.Equal(t, matchCountBefore+1.0, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.match", matchTags).Get())
 		})
 	}
 }

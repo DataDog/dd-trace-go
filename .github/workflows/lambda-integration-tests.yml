@@ -7,16 +7,33 @@ on:
 
 permissions:
   contents: read
+  id-token: write # Required for OIDC authentication
 
 jobs:
   lambda-integration-test:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Configure AWS Credentials via OIDC (Build-Stable)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::486234852809:role/dd-trace-go-github-actions
+          role-session-name: dd-trace-go-lambda-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - name: Configure AWS Credentials for Serverless Sandbox
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::425362996713:role/gha-dd-trace-lambda-integration-test
+          role-session-name: dd-trace-go-lambda-${{ github.run_id }}
+          aws-region: us-east-1
+          role-chaining: true
 
       - name: Set up Go
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version: '1.25'
 
@@ -41,10 +58,51 @@ jobs:
         run: yarn install
 
       - name: Run Lambda integration tests
+        id: integration-tests
         env:
           BUILD_LAYERS: true
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: ./run_integration_tests.sh
+
+      - name: Notify Slack on failure
+        if: failure() && steps.integration-tests.outcome == 'failure'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Lambda Integration Tests Failed",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":x: Lambda Integration Tests Failed"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n${{ github.workflow }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|#${{ github.run_number }}>"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.APM_SLS_SLACK_WEBHOOK_URL }}

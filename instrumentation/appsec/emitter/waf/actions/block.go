@@ -130,11 +130,10 @@ func newGRPCBlockHandler(status int) GRPCWrapper {
 }
 
 func blockParamsFromMap(params map[string]any) (blockActionParams, error) {
-	grpcCode := 10
 	p := blockActionParams{
 		Type:           "auto",
 		StatusCode:     403,
-		GRPCStatusCode: grpcCode,
+		GRPCStatusCode: 10,
 	}
 	if err := p.Decode(params); err != nil {
 		return p, err

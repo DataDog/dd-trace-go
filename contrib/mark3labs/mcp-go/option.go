@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-// The file contains methods for easily adding tracing to a MCP server.
+// The file contains methods for easily adding tracing and intent capture to a MCP server.
 
 // TracingConfig holds configuration for adding tracing to an MCP server.
 type TracingConfig struct {
@@ -17,6 +17,9 @@ type TracingConfig struct {
 	// If nil, only Datadog tracing hooks will be added and any custom hooks provided via server.WithHooks(...) will be removed.
 	// If provided, your custom hooks will be executed alongside Datadog tracing hooks.
 	Hooks *server.Hooks
+	// Enables intent capture for tool spans.
+	// This will modify the tool schemas to include a parameter for the client to provide the intent.
+	IntentCaptureEnabled bool
 }
 
 // WithMCPServerTracing adds Datadog tracing to an MCP server.
@@ -54,6 +57,14 @@ func WithMCPServerTracing(options *TracingConfig) server.ServerOption {
 
 		server.WithHooks(hooks)(s)
 
+		// Register toolHandlerMiddleware first so it runs first (creates the span)
+		// Note: mcp-go middleware runs in registration order (first registered runs first)
 		server.WithToolHandlerMiddleware(toolHandlerMiddleware)(s)
+
+		if options.IntentCaptureEnabled {
+			hooks.AddAfterListTools(injectDdtraceListToolsHook)
+			// Register intent capture middleware second so it runs second (after span is created)
+			server.WithToolHandlerMiddleware(processAndRemoveDDTraceToolMiddleware)(s)
+		}
 	}
 }

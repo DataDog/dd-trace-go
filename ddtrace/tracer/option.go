@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
@@ -43,7 +44,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -140,8 +140,8 @@ const (
 
 // config holds the tracer configuration.
 type config struct {
-	// debug, when true, writes details to logs.
-	debug bool
+	// internalConfig holds a reference to the global configuration singleton.
+	internalConfig *internalconfig.Config
 
 	// appsecStartOptions controls the options used when starting appsec features.
 	appsecStartOptions []appsecconfig.StartOption
@@ -167,10 +167,6 @@ type config struct {
 
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
-
-	// logStartup, when true, causes various startup info to be written
-	// when the tracer starts.
-	logStartup bool
 
 	// serviceName specifies the name of this application.
 	serviceName string
@@ -221,12 +217,6 @@ type config struct {
 	// will be used.
 	logger Logger
 
-	// runtimeMetrics specifies whether collection of runtime metrics is enabled.
-	runtimeMetrics bool
-
-	// runtimeMetricsV2 specifies whether collection of runtime metrics v2 is enabled.
-	runtimeMetricsV2 bool
-
 	// dogstatsdAddr specifies the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
@@ -251,12 +241,6 @@ type config struct {
 	// noDebugStack disables the collection of debug stack traces globally. No traces reporting
 	// errors will record a stack trace when this option is set.
 	noDebugStack bool
-
-	// profilerHotspots specifies whether profiler Code Hotspots is enabled.
-	profilerHotspots bool
-
-	// profilerEndpoints specifies whether profiler endpoint filtering is enabled.
-	profilerEndpoints bool
 
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
@@ -292,9 +276,6 @@ type config struct {
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
 
-	// dataStreamsMonitoringEnabled specifies whether the tracer should enable monitoring of data streams
-	dataStreamsMonitoringEnabled bool
-
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -320,6 +301,9 @@ type config struct {
 
 	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
 	ciVisibilityAgentless bool
+
+	// ciVisibilityNoopTracer controls if CI Visibility must set a wrapper to behave like a noop tracer. default false
+	ciVisibilityNoopTracer bool
 
 	// logDirectory is directory for tracer logs specified by user-setting DD_TRACE_LOG_DIRECTORY. default empty/unused
 	logDirectory string
@@ -375,6 +359,7 @@ const partialFlushMinSpansDefault = 1000
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
+	c.internalConfig = internalconfig.Get()
 
 	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
 	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
@@ -474,17 +459,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 			c.isLambdaFunction = true
 		}
 	}
-	c.logStartup = internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true)
-	c.runtimeMetrics = internal.BoolVal(getDDorOtelConfig("metrics"), false)
-	c.runtimeMetricsV2 = internal.BoolEnv("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	c.debug = internal.BoolVal(getDDorOtelConfig("debugMode"), false)
 	c.logDirectory = env.Get("DD_TRACE_LOG_DIRECTORY")
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.cfgOrigin = telemetry.OriginEnvVar
 	}
-	c.profilerEndpoints = internal.BoolEnv(traceprof.EndpointEnvVar, true)
-	c.profilerHotspots = internal.BoolEnv(traceprof.CodeHotspotsEnvVar, true)
 	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
 		if semver.IsValid(compatMode) {
 			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
@@ -497,7 +476,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.spanTimeout = internal.DurationEnv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	}
 	c.statsComputationEnabled = internal.BoolEnv("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	c.dataStreamsMonitoringEnabled, _, _ = stableconfig.Bool("DD_DATA_STREAMS_ENABLED", false)
 	c.partialFlushEnabled = internal.BoolEnv("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	c.partialFlushMinSpans = internal.IntEnv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", partialFlushMinSpansDefault)
 	if c.partialFlushMinSpans <= 0 {
@@ -608,18 +586,18 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.logger != nil {
 		log.UseLogger(c.logger)
 	}
-	if c.debug {
+	if c.internalConfig.Debug() {
 		log.SetLevel(log.LevelDebug)
 	}
-
 	// Check if CI Visibility mode is enabled
 	if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
-		c.ciVisibilityEnabled = true               // Enable CI Visibility mode
-		c.httpClientTimeout = time.Second * 45     // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.logStartup = false                       // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
-		c.transport = ciTransport                  // Replace the default transport with the CI Visibility transport
+		c.ciVisibilityEnabled = true                                           // Enable CI Visibility mode
+		c.httpClientTimeout = time.Second * 45                                 // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
+		c.transport = ciTransport                                              // Replace the default transport with the CI Visibility transport
 		c.ciVisibilityAgentless = ciTransport.agentless
+		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
@@ -691,8 +669,8 @@ func apmTracingDisabled(c *config) {
 	WithGlobalTag("_dd.apm.enabled", 0)(c)
 	// Disable runtime metrics. In `tracingAsTransport` mode, we'll still
 	// tell the agent we computed them, so it doesn't do it either.
-	c.runtimeMetrics = false
-	c.runtimeMetricsV2 = false
+	c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCalculated)
+	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
@@ -1004,8 +982,7 @@ func WithDebugStack(enabled bool) StartOption {
 // WithDebugMode enables debug mode on the tracer, resulting in more verbose logging.
 func WithDebugMode(enabled bool) StartOption {
 	return func(c *config) {
-		telemetry.RegisterAppConfig("trace_debug_enabled", enabled, telemetry.OriginCode)
-		c.debug = enabled
+		c.internalConfig.SetDebug(enabled, telemetry.OriginCode)
 	}
 }
 
@@ -1230,7 +1207,7 @@ func WithAnalyticsRate(rate float64) StartOption {
 func WithRuntimeMetrics() StartOption {
 	return func(cfg *config) {
 		telemetry.RegisterAppConfig("runtime_metrics_enabled", true, telemetry.OriginCode)
-		cfg.runtimeMetrics = true
+		cfg.internalConfig.SetRuntimeMetricsEnabled(true, internalconfig.OriginCode)
 	}
 }
 
@@ -1301,7 +1278,7 @@ func WithTraceEnabled(enabled bool) StartOption {
 // WithLogStartup allows enabling or disabling the startup log.
 func WithLogStartup(enabled bool) StartOption {
 	return func(c *config) {
-		c.logStartup = enabled
+		c.internalConfig.SetLogStartup(enabled, internalconfig.OriginCode)
 	}
 }
 
@@ -1313,7 +1290,7 @@ func WithLogStartup(enabled bool) StartOption {
 // DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED env variable or true.
 func WithProfilerCodeHotspots(enabled bool) StartOption {
 	return func(c *config) {
-		c.profilerHotspots = enabled
+		c.internalConfig.SetProfilerHotspotsEnabled(enabled, telemetry.OriginCode)
 	}
 }
 
@@ -1326,7 +1303,7 @@ func WithProfilerCodeHotspots(enabled bool) StartOption {
 // true.
 func WithProfilerEndpoints(enabled bool) StartOption {
 	return func(c *config) {
-		c.profilerEndpoints = enabled
+		c.internalConfig.SetProfilerEndpoints(enabled, telemetry.OriginCode)
 	}
 }
 

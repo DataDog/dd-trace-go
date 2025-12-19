@@ -42,7 +42,7 @@ jobs:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -56,20 +56,11 @@ jobs:
 
       - name: go get -u
         run: |-
-          mkdir -p $TEST_RESULTS
+          mkdir -p "$TEST_RESULTS"
+          # shellcheck disable=SC2086
           go get -u -t $PACKAGES
-          go get github.com/DataDog/datadog-agent/pkg/trace@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/util/log@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/util/scrubber@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/version@v0.71.0-rc.2
-          go get go.opentelemetry.io/collector/pdata@v1.39.0
           go mod tidy
-          for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
+          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
 
       - name: Install requested go-libddwaf version
         if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
@@ -78,7 +69,9 @@ jobs:
           go mod tidy
 
       - name: Compile dd-trace-go
-        run: go build $PACKAGES
+        run: |
+          # shellcheck disable=SC2086
+          go build $PACKAGES
 
       - name: Compute Matrix
         id: matrix
@@ -99,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -125,11 +118,13 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
-      - run: go test $PACKAGES
+      - run: |
+          # shellcheck disable=SC2086
+          go test $PACKAGES
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
@@ -147,7 +142,7 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
@@ -238,7 +233,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is

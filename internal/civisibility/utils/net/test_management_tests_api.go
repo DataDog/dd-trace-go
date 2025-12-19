@@ -33,6 +33,7 @@ type (
 		CommitSha     string `json:"sha"`
 		Module        string `json:"module,omitempty"`
 		CommitMessage string `json:"commit_message"`
+		Branch        string `json:"branch"`
 	}
 
 	testManagementTestsResponse struct {
@@ -91,6 +92,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 				RepositoryURL: c.repositoryURL,
 				CommitSha:     commitSha,
 				CommitMessage: commitMessage,
+				Branch:        c.branchName,
 			},
 		},
 	}
