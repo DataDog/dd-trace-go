@@ -22,6 +22,7 @@ import (
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -404,6 +405,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 	}
 
 	ss := []*Span{makeSpan(0)}
+
 	for _, test := range testcases {
 		name := fmt.Sprintf("%d-%d-%t-%d", test.configRetries, test.failCount, test.tracesSent, test.expAttempts)
 		t.Run(name, func(t *testing.T) {
@@ -415,7 +417,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			c, err := newTestConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
-				c.retryInterval = test.retryInterval
+				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 			})
 			assert.Nil(err)
 			var statsd statsdtest.TestStatsdClient

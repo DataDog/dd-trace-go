@@ -591,6 +591,9 @@
     "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [
       "A"
     ],
+    "DD_TRACE_RETRY_INTERVAL": [
+      "A"
+    ],
     "DD_TRACE_SAMPLE_RATE": [
       "A"
     ],

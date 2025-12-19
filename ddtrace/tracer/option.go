@@ -155,9 +155,6 @@ type config struct {
 	// failure.
 	sendRetries int
 
-	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
-	retryInterval time.Duration
-
 	// serviceName specifies the name of this application.
 	serviceName string
 
@@ -354,7 +351,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := env.Get("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
 		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
 	}
-	c.retryInterval = time.Millisecond
 
 	// LLM Observability config
 	c.llmobs = llmobsconfig.Config{
@@ -853,7 +849,7 @@ func WithSendRetries(retries int) StartOption {
 // WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
 func WithRetryInterval(interval int) StartOption {
 	return func(c *config) {
-		c.retryInterval = time.Duration(interval) * time.Second
+		c.internalConfig.SetRetryInterval(time.Duration(interval)*time.Second, telemetry.OriginCode)
 	}
 }
 

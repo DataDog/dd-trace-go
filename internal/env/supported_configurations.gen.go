@@ -206,6 +206,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT":           {},
 	"DD_TRACE_RESOURCE_RENAMING_ENABLED":                              {},
 	"DD_TRACE_RESTFUL_ANALYTICS_ENABLED":                              {},
+	"DD_TRACE_RETRY_INTERVAL":                                         {},
 	"DD_TRACE_SAMPLE_RATE":                                            {},
 	"DD_TRACE_SAMPLING_RULES":                                         {},
 	"DD_TRACE_SAMPLING_RULES_FILE":                                    {},
