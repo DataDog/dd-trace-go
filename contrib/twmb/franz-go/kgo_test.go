@@ -136,16 +136,47 @@ func ensureTopicReady() error {
 	return fetches.Err()
 }
 
-func testClient(t *testing.T, opts ...tracing.Option) *Client {
-	cl, err := NewClient(ClientOptions(
-		kgo.SeedBrokers(seedBrokers...),
-		kgo.ConsumeTopics(testTopic),
-		kgo.ConsumerGroup(testGroupID)),
-		opts...,
-	)
+func testClient(t *testing.T, kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) *Client {
+	cl, err := NewClient(kgoOpts, tracingOpts...)
 	require.NoError(t, err)
 	return cl
 }
+
+type testRecords struct {
+	records []*kgo.Record
+}
+
+func (r *testRecords) OnProduceRecordUnbuffered(record *kgo.Record, err error) {
+	r.records = append(r.records, record)
+}
+
+func generateSpans(t *testing.T, mt mocktracer.Tracer, producerOp func(t *testing.T, cl *Client), consumerOp func(t *testing.T, cl *Client), producerOpts []tracing.Option, consumerOpts []tracing.Option) ([]*mocktracer.Span, []*kgo.Record) {
+	producedRecords := &testRecords{}
+
+	producerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.ConsumeTopics(testTopic),
+		kgo.ConsumerGroup(testGroupID),
+		kgo.WithHooks(producedRecords),
+	), producerOpts...)
+	require.NoError(t, err)
+	producerOp(t, producerCl)
+	producerCl.Close()
+
+	consumerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.ConsumeTopics(testTopic),
+		kgo.ConsumerGroup(testGroupID),
+	), consumerOpts...)
+	require.NoError(t, err)
+	consumerOp(t, consumerCl)
+	consumerCl.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	return spans, producedRecords.records
+}
+
 
 func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, producerOp func(t *testing.T, cl *Client), consumerOp func(t *testing.T, cl *Client), producerOpts []tracing.Option, consumerOpts []tracing.Option) ([]*mocktracer.Span, []kgo.Record) {
 	producedRecords := []kgo.Record{}
