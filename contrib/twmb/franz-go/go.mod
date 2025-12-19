@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2
 
-go 1.25.1
+go 1.24.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.4.0-dev
