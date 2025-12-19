@@ -69,11 +69,6 @@ type Config struct {
 	logDirectory          string
 	// traceRateLimitPerSecond specifies the rate limit per second for traces.
 	traceRateLimitPerSecond float64
-	globalSampleRate              float64
-	ciVisibilityEnabled           bool
-	ciVisibilityAgentless         bool
-	logDirectory                  string
-	traceRateLimitPerSecond       float64
 	// logToStdout, if true, indicates we should log all traces to the standard output
 	logToStdout bool
 	// isLambdaFunction, if true, indicates we are in a lambda function
@@ -114,29 +109,6 @@ func loadConfig() *Config {
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
-<<<<<<< HEAD
-
-	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
-	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-	// TODO: Is it possible that we can just use `v != ""` to configure one setting, `lambdaMode` instead
-	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		cfg.logToStdout = true
-		if v != "" {
-			cfg.isLambdaFunction = true
-		}
-	}
-
-	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
-	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-	// TODO: Is it possible that we can just use `v != ""` to configure one setting, `lambdaMode` instead
-	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		cfg.logToStdout = true
-		if v != "" {
-			cfg.isLambdaFunction = true
-		}
-	}
-=======
->>>>>>> b2ed039b5 (migrate globalSampleRate and introduce configProvider.getFloatWithValidator)
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
