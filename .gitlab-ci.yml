@@ -15,9 +15,8 @@ variables:
 
 workflow:
   auto_cancel: 
-    on_new_commit: 
-      interruptible: true
-
+    on_new_commit: interruptible
+ 
 # In order to run benchmarks in parallel, we generate a matrix of test names based on the BENCHMARK_TARGETS variable.
 # This will be used in tandem with bp-runner in benchmarks.yml.
 # This will allow us to spin up a child job in GitLab CI that handles running all of the benchmarks in parallel.
