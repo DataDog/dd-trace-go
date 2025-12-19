@@ -1308,7 +1308,7 @@ func TestVersionConfig(t *testing.T) {
 			WithServiceVersion("1.2.3"),
 		)
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -1317,14 +1317,14 @@ func TestVersionConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("WithGlobalTag", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithGlobalTag("version", "1.2.3"))
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
@@ -1333,7 +1333,7 @@ func TestVersionConfig(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -1342,37 +1342,37 @@ func TestVersionConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(c.version, "")
+		assert.Equal(c.internalConfig.Version(), "")
 
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.version=1.1.0")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("1.1.0", c.version)
+		assert.Equal("1.1.0", c.internalConfig.Version())
 
 		t.Setenv("DD_TAGS", "version:1.1.1")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("1.1.1", c.version)
+		assert.Equal("1.1.1", c.internalConfig.Version())
 
 		c, err = newTestConfig(WithGlobalTag("version", "1.1.2"))
 		assert.NoError(err)
-		assert.Equal("1.1.2", c.version)
+		assert.Equal("1.1.2", c.internalConfig.Version())
 
 		t.Setenv("DD_VERSION", "1.1.3")
 		c, err = newTestConfig(WithGlobalTag("version", "1.1.2"))
 		assert.NoError(err)
-		assert.Equal("1.1.3", c.version)
+		assert.Equal("1.1.3", c.internalConfig.Version())
 
 		c, err = newTestConfig(WithGlobalTag("version", "1.1.2"), WithServiceVersion("1.1.4"))
 		assert.NoError(err)
-		assert.Equal("1.1.4", c.version)
+		assert.Equal("1.1.4", c.internalConfig.Version())
 	})
 }
 
