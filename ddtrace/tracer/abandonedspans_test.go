@@ -133,7 +133,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		assert.Nil(err)
 		defer stop()
 		assert.True(tracer.config.internalConfig.DebugAbandonedSpans())
-		assert.Equal(tracer.config.spanTimeout, 100*time.Millisecond)
+		assert.Equal(tracer.config.internalConfig.SpanTimeout(), 100*time.Millisecond)
 	})
 
 	t.Run("finished", func(t *testing.T) {
@@ -351,7 +351,7 @@ func TestDebugAbandonedSpansOff(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		assert := assert.New(t)
 		assert.False(tracer.config.internalConfig.DebugAbandonedSpans())
-		assert.Equal(time.Duration(0), tracer.config.spanTimeout)
+		assert.Equal(10*time.Minute, tracer.config.internalConfig.SpanTimeout())
 		expected := "Abandoned spans logs enabled."
 		s := tracer.StartSpan("operation", StartTime(spanStartTime))
 		time.Sleep(100 * time.Millisecond)
