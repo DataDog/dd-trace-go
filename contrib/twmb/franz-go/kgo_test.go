@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -131,6 +133,17 @@ func ensureTopicReady() error {
 	}
 
 	return fetches.Err()
+}
+
+func testClient(t *testing.T, opts ...tracing.Option) *Client {
+	cl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.ConsumeTopics(testTopic),
+		kgo.ConsumerGroup(testGroupID)),
+		opts...,
+	)
+	require.NoError(t, err)
+	return cl
 }
 
 func TestTest(t *testing.T) {
