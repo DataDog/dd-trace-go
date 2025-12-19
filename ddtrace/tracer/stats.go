@@ -82,7 +82,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		gitCommitSha = utils.GetCITags()[constants.GitCommitSHA]
 	}
 	aggKey := stats.PayloadAggregationKey{
-		Hostname:     c.hostname,
+		Hostname:     c.internalConfig.Hostname(),
 		Env:          env,
 		Version:      c.version,
 		ContainerID:  "", // This intentionally left empty as the Agent will attach the container ID only in certain situations.

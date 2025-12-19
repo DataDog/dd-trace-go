@@ -1857,11 +1857,11 @@ func TestTracerReportsHostname(t *testing.T) {
 
 			name, ok := root.meta[keyHostname]
 			assert.True(ok)
-			assert.Equal(name, tracer.config.hostname)
+			assert.Equal(name, tracer.config.internalConfig.Hostname())
 
 			name, ok = child.meta[keyHostname]
 			assert.True(ok)
-			assert.Equal(name, tracer.config.hostname)
+			assert.Equal(name, tracer.config.internalConfig.Hostname())
 		})
 	}
 	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/true", true)
@@ -2465,7 +2465,12 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	cfg, err := newTestConfig(func(c *config) {
+		c.transport = transport
+		c.env = "someEnv"
+	})
+	assert.NoError(t, err)
+	c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
 	tr.stats.Stop()
 	tr.stats = c
 	c.Start()

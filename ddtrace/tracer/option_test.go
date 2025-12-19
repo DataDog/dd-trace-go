@@ -1456,7 +1456,7 @@ func TestStatsTags(t *testing.T) {
 	c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
 	assert.NoError(err)
 	defer globalconfig.SetServiceName("")
-	c.hostname = "hostName"
+	c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
 	tags := statsTags(c)
 
 	assert.Contains(tags, "service:serviceName")
@@ -1476,9 +1476,10 @@ func TestStatsTags(t *testing.T) {
 }
 
 func TestGlobalTag(t *testing.T) {
-	var c config
-	WithGlobalTag("k", "v")(&c)
-	assert.Contains(t, statsTags(&c), "k:v")
+	c, err := newTestConfig()
+	assert.NoError(t, err)
+	WithGlobalTag("k", "v")(c)
+	assert.Contains(t, statsTags(c), "k:v")
 }
 
 func TestWithHostname(t *testing.T) {
@@ -1486,7 +1487,7 @@ func TestWithHostname(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithHostname("hostname"))
 		assert.NoError(err)
-		assert.Equal("hostname", c.hostname)
+		assert.Equal("hostname", c.internalConfig.Hostname())
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -1494,7 +1495,7 @@ func TestWithHostname(t *testing.T) {
 		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal("hostname-env", c.hostname)
+		assert.Equal("hostname-env", c.internalConfig.Hostname())
 	})
 
 	t.Run("env-override", func(t *testing.T) {
@@ -1503,7 +1504,7 @@ func TestWithHostname(t *testing.T) {
 		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
 		c, err := newTestConfig(WithHostname("hostname-middleware"))
 		assert.NoError(err)
-		assert.Equal("hostname-middleware", c.hostname)
+		assert.Equal("hostname-middleware", c.internalConfig.Hostname())
 	})
 }
 

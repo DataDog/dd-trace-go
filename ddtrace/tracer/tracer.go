@@ -304,7 +304,7 @@ func storeConfig(c *config) {
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
-		Hostname:           c.hostname,
+		Hostname:           c.internalConfig.Hostname(),
 		ServiceName:        c.serviceName,
 		ServiceEnvironment: c.env,
 		ServiceVersion:     c.version,
@@ -320,7 +320,7 @@ func storeConfig(c *config) {
 
 	processContext := otelProcessContext{
 		DeploymentEnvironmentName: c.env,
-		HostName:                  c.hostname,
+		HostName:                  c.internalConfig.Hostname(),
 		ServiceInstanceID:         globalconfig.RuntimeID(),
 		ServiceName:               c.serviceName,
 		ServiceVersion:            c.version,
@@ -765,8 +765,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		span.service = t.config.serviceName
 	}
 	span.noDebugStack = !t.config.internalConfig.DebugStack()
-	if t.config.hostname != "" {
-		span.setMeta(keyHostname, t.config.hostname)
+	if hostname := t.config.internalConfig.Hostname(); hostname != "" && t.config.internalConfig.ReportHostname() {
+		span.setMeta(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
