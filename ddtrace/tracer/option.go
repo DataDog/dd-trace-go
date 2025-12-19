@@ -288,6 +288,9 @@ type config struct {
 	// it is frozen -- it cannot be overwritten by Remote Config.
 	dynamicInstrumentationEnabled dynamicConfig[bool]
 
+	// globalSampleRate holds sample rate read from environment variables.
+	globalSampleRate float64
+
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled bool
 
