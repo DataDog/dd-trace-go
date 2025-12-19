@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -144,6 +145,13 @@ func testClient(t *testing.T, opts ...tracing.Option) *Client {
 	)
 	require.NoError(t, err)
 	return cl
+}
+
+func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, producerOp func(t *testing.T, cl *Client), consumerOp func(t *testing.T, cl *Client), producerOpts []tracing.Option, consumerOpts []tracing.Option) ([]*mocktracer.Span, []kgo.Record) {
+	producedRecords := []kgo.Record{}
+
+	producerCl := testClient(t, producerOpts...)
+
 }
 
 func TestTest(t *testing.T) {
