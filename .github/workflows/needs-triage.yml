@@ -81,10 +81,12 @@ jobs:
             --json='number,title,body,createdAt'                                \
             | tee issues.json
 
-          echo "count=$(jq -r '. | length' < issues.json)" >> "${GITHUB_OUTPUT}"
-          echo "json<<EOJSON"                              >> "${GITHUB_OUTPUT}"
-          cat issues.json                                  >> "${GITHUB_OUTPUT}"
-          echo "EOJSON"                                    >> "${GITHUB_OUTPUT}"
+          {
+            echo "count=$(jq -r '. | length' < issues.json)"
+            echo "json<<EOJSON"
+            cat issues.json
+            echo "EOJSON"
+          } >> "${GITHUB_OUTPUT}"
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
