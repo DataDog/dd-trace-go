@@ -20,6 +20,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 )
 
@@ -84,7 +85,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	parsedURL, _ := url.Parse(srv.URL)
 	cfg, err := newTestConfig()
 	assert.NoError(err)
-	cfg.ciVisibilityEnabled = true
+	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
 	cfg.httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
 	cfg.agentURL = parsedURL
 

@@ -132,7 +132,7 @@ func TestConcentrator(t *testing.T) {
 			utils.AddCITags(constants.GitCommitSHA, "DEADBEEF")
 			transport := newDummyTransport()
 			cfg := newTestConfigWithTransportAndEnv(t, transport, "someEnv")
-			cfg.ciVisibilityEnabled = true
+			cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
 			c := newConcentrator(cfg, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 			assert.Len(t, transport.Stats(), 0)
 			ss1, ok := c.newTracerStatSpan(&s1, nil)
