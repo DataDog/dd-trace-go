@@ -270,7 +270,6 @@ notify-slo-breaches:
   stage: gates
   needs: ["check-slo-breaches"]
   rules: *pre-release-performance-quality-gates-rules
-  when: always
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
 
