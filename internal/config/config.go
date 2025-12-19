@@ -62,7 +62,6 @@ type Config struct {
 	statsComputationEnabled       bool
 	dataStreamsMonitoringEnabled  bool
 	dynamicInstrumentationEnabled bool
-<<<<<<< HEAD
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate      float64
 	ciVisibilityEnabled   bool
@@ -70,13 +69,6 @@ type Config struct {
 	logDirectory          string
 	// traceRateLimitPerSecond specifies the rate limit per second for traces.
 	traceRateLimitPerSecond float64
-=======
-	globalSampleRate              float64
-	ciVisibilityEnabled           bool
-	ciVisibilityAgentless         bool
-	logDirectory                  string
-	traceRateLimitPerSecond       float64
->>>>>>> 22b1c5a41 (chore(config): migrate logToStdout and isLambdaFunction (#4256))
 	// logToStdout, if true, indicates we should log all traces to the standard output
 	logToStdout bool
 	// isLambdaFunction, if true, indicates we are in a lambda function
@@ -276,7 +268,6 @@ func (c *Config) SetIsLambdaFunction(enabled bool, origin telemetry.Origin) {
 	c.isLambdaFunction = enabled
 	// Do not report telemetry because this is not a user-configurable option
 }
-<<<<<<< HEAD
 
 func (c *Config) GlobalSampleRate() float64 {
 	c.mu.RLock()
@@ -303,5 +294,3 @@ func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origi
 	c.traceRateLimitPerSecond = rate
 	telemetry.RegisterAppConfig("DD_TRACE_RATE_LIMIT", rate, origin)
 }
-=======
->>>>>>> 22b1c5a41 (chore(config): migrate logToStdout and isLambdaFunction (#4256))
