@@ -119,6 +119,16 @@ func loadConfig() *Config {
 		}
 	}
 
+	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
+	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+	// TODO: Is it possible that we can just use `v != ""` to configure one setting, `lambdaMode` instead
+	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
+		cfg.logToStdout = true
+		if v != "" {
+			cfg.isLambdaFunction = true
+		}
+	}
+
 	return cfg
 }
 

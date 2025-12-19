@@ -21,10 +21,11 @@ import (
 	"sync"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 // Callback represents a function that can process a remote config update.
@@ -36,8 +37,10 @@ type Callback func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus
 // ProductCallback is like Callback but for a specific product.
 type ProductCallback func(update ProductUpdate) map[string]rc.ApplyStatus
 
-// Capability represents a bit index to be set in clientData.Capabilites in order to register a client
-// for a specific capability
+// Capability represents a bit index to be set in clientData.Capabilites in
+// order to register a client for a specific capability. These bit indexes
+// correspond to the Remote Config specification, see
+// https://github.com/DataDog/dd-source/blob/9b29208565b6e9c9644d8488520a24eb252ca1cb/domains/remote-config/shared/libs/rc/capabilities.go#L28
 type Capability uint
 
 const (
@@ -128,6 +131,10 @@ const (
 	ASMDDMultiConfig
 	// ASMTraceTaggingRules represents the capability to honor trace tagging rules
 	ASMTraceTaggingRules
+	ASMExtendedDataCollection
+	// APMTracingMulticonfig is the capability to handle cascading configs for the
+	// APMTracing product.
+	APMTracingMulticonfig
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.
