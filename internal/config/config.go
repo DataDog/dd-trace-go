@@ -67,7 +67,7 @@ type Config struct {
 	ciVisibilityEnabled   bool
 	ciVisibilityAgentless bool
 	logDirectory          string
-	// traceRateLimitPerSecond specifies the rate limit for traces.
+	// traceRateLimitPerSecond specifies the rate limit per second for traces.
 	traceRateLimitPerSecond float64
 	globalSampleRate              float64
 	ciVisibilityEnabled           bool
