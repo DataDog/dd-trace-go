@@ -46,7 +46,8 @@ type Config struct {
 	agentURL *url.URL
 	debug    bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
-	logStartup  bool
+	logStartup bool
+	// serviceName specifies the name of this application.
 	serviceName string
 	version     string
 	// env contains the environment that this application will run under.
@@ -564,4 +565,17 @@ func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origi
 	defer c.mu.Unlock()
 	c.retryInterval = interval
 	telemetry.RegisterAppConfig("DD_TRACE_RETRY_INTERVAL", interval, origin)
+}
+
+func (c *Config) ServiceName() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.serviceName
+}
+
+func (c *Config) SetServiceName(name string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.serviceName = name
+	telemetry.RegisterAppConfig("DD_SERVICE", name, origin)
 }

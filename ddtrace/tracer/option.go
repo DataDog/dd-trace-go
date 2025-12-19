@@ -155,9 +155,6 @@ type config struct {
 	// failure.
 	sendRetries int
 
-	// serviceName specifies the name of this application.
-	serviceName string
-
 	// universalVersion, reports whether span service name and config service name
 	// should match to set application version tag. False by default
 	universalVersion bool
@@ -308,8 +305,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	if v := getDDorOtelConfig("service"); v != "" {
-		c.serviceName = v
+	if v := c.internalConfig.ServiceName(); v != "" {
 		globalconfig.SetServiceName(v)
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
@@ -400,16 +396,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 			}
 		}
 	}
-	if c.serviceName == "" {
+	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.serviceName = s
+				c.internalConfig.SetServiceName(s, c.globalTags.cfgOrigin)
 				globalconfig.SetServiceName(s)
 			}
 		} else {
 			// There is not an explicit service set, default to binary name.
 			// In this case, don't set a global service name so the contribs continue using their defaults.
-			c.serviceName = filepath.Base(os.Args[0])
+			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), c.globalTags.cfgOrigin)
 		}
 	}
 	if c.transport == nil {
@@ -482,7 +478,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
 		DDTags:     c.globalTags.get(),
 		Env:        c.internalConfig.Env(),
-		Service:    c.serviceName,
+		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.agentURL,
 		APIKey:     env.Get("DD_API_KEY"),
@@ -760,8 +756,8 @@ func statsTags(c *config) []string {
 	}
 	globalconfig.SetStatsTags(tags)
 	tags = append(tags, "tracer_version:"+version.Tag)
-	if c.serviceName != "" {
-		tags = append(tags, "service:"+c.serviceName)
+	if c.internalConfig.ServiceName() != "" {
+		tags = append(tags, "service:"+c.internalConfig.ServiceName())
 	}
 	return tags
 }
@@ -863,8 +859,8 @@ func WithPropagator(p Propagator) StartOption {
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
-		c.serviceName = name
-		globalconfig.SetServiceName(c.serviceName)
+		c.internalConfig.SetServiceName(name, telemetry.OriginCode)
+		globalconfig.SetServiceName(name)
 	}
 }
 
