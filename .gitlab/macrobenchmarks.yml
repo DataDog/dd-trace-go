@@ -11,8 +11,6 @@ variables:
   interruptible: false
 
 .macrobenchmarks-rules: &macrobenchmarks-rules
-  # TODO: Revert, just for testing
-  - when: always
   - <<: *on-graphite-never
   - <<: *on-main-or-release-always-and-not-interruptible
   - when: manual
