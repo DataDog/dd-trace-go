@@ -537,20 +537,22 @@ func HasCapability(cpb Capability) (bool, error) {
 }
 
 func (c *Client) allCapabilities() *big.Int {
-	client.capabilitiesMu.Lock()
-	defer client.capabilitiesMu.Unlock()
 	capa := big.NewInt(0)
+
+	// Read registered capabilities without holding the lock while we also read subscriptions.
+	c.capabilitiesMu.RLock()
 	for i := range c.capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
+	c.capabilitiesMu.RUnlock()
 
 	c.subscriptionsMu.RLock()
-	defer c.subscriptionsMu.RUnlock()
 	for _, s := range c.subscriptionsMu.subs {
 		for _, cap := range s.capabilities {
 			capa.SetBit(capa, int(cap), 1)
 		}
 	}
+	c.subscriptionsMu.RUnlock()
 
 	return capa
 }
