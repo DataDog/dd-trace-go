@@ -487,13 +487,6 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin) {
 	telemetry.RegisterAppConfig("DD_ENV", env, origin)
 }
 
-func (c *Config) HasFeature(feat string) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	_, ok := c.featureFlags[strings.TrimSpace(feat)]
-	return ok
-}
-
 func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -517,6 +510,15 @@ func (c *Config) FeatureFlags() map[string]struct{} {
 	return result
 }
 
+// HasFeature performs a single feature flag lookup without copying the underlying map.
+// This is better than FeatureFlags() for hot paths (e.g., span creation) to avoid per-call allocations.
+func (c *Config) HasFeature(feat string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.featureFlags[strings.TrimSpace(feat)]
+	return ok
+}
+
 // ServiceMappings returns a copy of the service mappings map. If no service mappings are set, returns nil.
 func (c *Config) ServiceMappings() map[string]string {
 	c.mu.RLock()
@@ -530,6 +532,18 @@ func (c *Config) ServiceMappings() map[string]string {
 		result[k] = v
 	}
 	return result
+}
+
+// ServiceMapping performs a single mapping lookup without copying the underlying map.
+// This is better than ServiceMappings() for hot paths (e.g., span creation) to avoid per-call allocations.
+func (c *Config) ServiceMapping(from string) (to string, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.serviceMappings == nil {
+		return "", false
+	}
+	to, ok = c.serviceMappings[from]
+	return to, ok
 }
 
 func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {

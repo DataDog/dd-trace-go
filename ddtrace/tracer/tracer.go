@@ -784,11 +784,8 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		span.SetTag(k, v)
 	}
 
-	mappings := cfg.ServiceMappings()
-	if mappings != nil {
-		if newSvc, ok := mappings[span.service]; ok {
-			span.service = newSvc
-		}
+	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
+		span.service = newSvc
 	}
 
 	if ver := cfg.Version(); ver != "" {
