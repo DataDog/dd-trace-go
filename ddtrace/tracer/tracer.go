@@ -973,13 +973,14 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 }
 
 func (t *tracer) TracerConf() TracerConf {
+	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
 	return TracerConf{
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
 		Disabled:             !t.config.enabled.current,
-		PartialFlush:         t.config.internalConfig.PartialFlushEnabled(),
-		PartialFlushMinSpans: t.config.internalConfig.PartialFlushMinSpans(),
+		PartialFlush:         pfEnabled,
+		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
 		PeerServiceMappings:  t.config.peerServiceMappings,
 		EnvTag:               t.config.internalConfig.Env(),

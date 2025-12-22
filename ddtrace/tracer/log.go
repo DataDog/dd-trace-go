@@ -102,6 +102,8 @@ func logStartup(t *tracer) {
 		featureFlags = append(featureFlags, f)
 	}
 
+	partialFlushEnabled, partialFlushMinSpans := t.config.internalConfig.PartialFlushEnabled()
+
 	var injectorNames, extractorNames string
 	switch v := t.config.propagator.(type) {
 	case *chainedPropagator:
@@ -150,8 +152,8 @@ func logStartup(t *tracer) {
 		AgentFeatures:               t.config.agent,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
-		PartialFlushEnabled:         t.config.internalConfig.PartialFlushEnabled(),
-		PartialFlushMinSpans:        t.config.internalConfig.PartialFlushMinSpans(),
+		PartialFlushEnabled:         partialFlushEnabled,
+		PartialFlushMinSpans:        partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
@@ -168,7 +170,7 @@ func logStartup(t *tracer) {
 	}
 	if !t.config.internalConfig.LogToStdout() {
 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
-			info.AgentError = fmt.Sprintf("%s", err.Error())
+			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
 	}

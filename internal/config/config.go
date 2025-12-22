@@ -103,6 +103,13 @@ type Config struct {
 	retryInterval time.Duration
 }
 
+// HOT PATH NOTE:
+// Some Config accessors may be called on hot paths (e.g., span start/finish, partial flush logic).
+// If benchmarks regress, ensure getters are efficient and do not:
+// - copy whole maps/slices on every call (prefer single-key lookup helpers like ServiceMapping/HasFeature), or
+// - take multiple lock/unlock pairs to read related fields (prefer a combined getter under one RLock, like PartialFlushEnabled()).
+// Also consider avoiding `defer` in getters that are executed per-span in tight loops.
+
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
 func loadConfig() *Config {
@@ -344,10 +351,13 @@ func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origi
 	telemetry.RegisterAppConfig("DD_TRACE_RATE_LIMIT", rate, origin)
 }
 
-func (c *Config) PartialFlushEnabled() bool {
+// PartialFlushEnabled returns the partial flushing configuration under a single read lock.
+func (c *Config) PartialFlushEnabled() (enabled bool, minSpans int) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.partialFlushEnabled
+	enabled = c.partialFlushEnabled
+	minSpans = c.partialFlushMinSpans
+	c.mu.RUnlock()
+	return enabled, minSpans
 }
 
 func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
@@ -355,12 +365,6 @@ func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.partialFlushEnabled = enabled
 	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
-}
-
-func (c *Config) PartialFlushMinSpans() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.partialFlushMinSpans
 }
 
 func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin) {
