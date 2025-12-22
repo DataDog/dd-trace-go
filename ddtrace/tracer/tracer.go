@@ -771,8 +771,10 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if span.service == "" {
 		span.service = t.config.serviceName
 	}
-	span.noDebugStack = !t.config.internalConfig.DebugStack()
-	if hostname := t.config.internalConfig.Hostname(); hostname != "" && t.config.internalConfig.ReportHostname() {
+
+	cfg := t.config.internalConfig
+	span.noDebugStack = !cfg.DebugStack()
+	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
 		span.setMeta(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
@@ -781,27 +783,25 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
-	if mappings := t.config.internalConfig.ServiceMappings(); mappings != nil {
+
+	mappings := cfg.ServiceMappings()
+	if mappings != nil {
 		if newSvc, ok := mappings[span.service]; ok {
 			span.service = newSvc
 		}
 	}
-	if t.config.internalConfig.Version() != "" {
+
+	if ver := cfg.Version(); ver != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
-			span.setMeta(ext.Version, t.config.internalConfig.Version())
+			span.setMeta(ext.Version, ver)
 		}
 	}
-	if t.config.internalConfig.Env() != "" {
-		span.setMeta(ext.Environment, t.config.internalConfig.Env())
+	if env := cfg.Env(); env != "" {
+		span.setMeta(ext.Environment, env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
-	}
-	if mappings := t.config.internalConfig.ServiceMappings(); mappings != nil {
-		if newSvc, ok := mappings[span.service]; ok {
-			span.service = newSvc
-		}
 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
