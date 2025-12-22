@@ -401,6 +401,9 @@ func TestProcessTags(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+
 		b, err := client.newUpdateRequest()
 		require.NoError(t, err)
 		var req clientGetConfigsRequest
@@ -411,6 +414,8 @@ func TestProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
+		// Run a cleanup after the env var is restored to re-enable process tags for later tests.
+		t.Cleanup(processtags.Reload)
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
 		processtags.Reload()
 
@@ -526,4 +531,58 @@ func TestAsync(t *testing.T) {
 	client._callbacksMu.RLock()
 	defer client._callbacksMu.RUnlock()
 	require.Empty(t, client.callbacks)
+}
+
+// Ensure the lock ordering between capabilities and subscriptions does not deadlock.
+func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
+	Reset()
+	cfg := DefaultClientConfig()
+	c, err := newClient(cfg)
+	require.NoError(t, err)
+
+	client = c
+	started = true
+	defer Reset()
+
+	const iterations = 200
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Churn subscriptions and their capabilities.
+	go func() {
+		defer wg.Done()
+		var cb ProductCallback
+		for i := 0; i < iterations; i++ {
+			token, err := Subscribe(fmt.Sprintf("product-%d", i), cb, APMTracingMulticonfig)
+			if err != nil {
+				t.Errorf("subscribe failed: %v", err)
+				return
+			}
+			if err := Unsubscribe(token); err != nil {
+				t.Errorf("unsubscribe failed: %v", err)
+				return
+			}
+		}
+	}()
+
+	// Read allCapabilities concurrently.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			c.allCapabilities()
+		}
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("allCapabilities deadlocked with concurrent subscribe")
+	}
 }

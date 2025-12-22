@@ -225,6 +225,7 @@ func Start(config ClientConfig) error {
 		for {
 			select {
 			case <-stop:
+				close(stop)
 				return
 			case <-ticker.C:
 				if client == nil {
@@ -256,7 +257,7 @@ func Stop() {
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
-	close(client.stop)
+	client.stop <- struct{}{}
 	select {
 	case <-client.stop:
 		log.Debug("remoteconfig: client stopped successfully")
