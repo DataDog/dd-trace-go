@@ -72,6 +72,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			routePattern := cfg.modifyResourceName(chi.RouteContext(r.Context()).RoutePattern())
 			span.SetTag(ext.HTTPRoute, routePattern)
+			httptrace.SetHTTPEndpoint(span, routePattern, r)
 			var resourceName string
 			if cfg.resourceNamer != nil {
 				resourceName = cfg.resourceNamer(r)

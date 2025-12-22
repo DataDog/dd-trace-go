@@ -69,6 +69,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			}
 
 			span, ctx, finishSpans := httptrace.StartRequestSpan(request, opts...)
+			httptrace.SetHTTPEndpoint(span, route, request)
 
 			// pass the span through the request context
 			c.SetRequest(request.WithContext(ctx))
