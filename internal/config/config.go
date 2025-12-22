@@ -514,8 +514,13 @@ func (c *Config) FeatureFlags() map[string]struct{} {
 // This is better than FeatureFlags() for hot paths (e.g., span creation) to avoid per-call allocations.
 func (c *Config) HasFeature(feat string) bool {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	_, ok := c.featureFlags[strings.TrimSpace(feat)]
+	ff := c.featureFlags
+	if ff == nil {
+		c.mu.RUnlock()
+		return false
+	}
+	_, ok := ff[strings.TrimSpace(feat)]
+	c.mu.RUnlock()
 	return ok
 }
 
@@ -538,11 +543,13 @@ func (c *Config) ServiceMappings() map[string]string {
 // This is better than ServiceMappings() for hot paths (e.g., span creation) to avoid per-call allocations.
 func (c *Config) ServiceMapping(from string) (to string, ok bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.serviceMappings == nil {
+	m := c.serviceMappings
+	if m == nil {
+		c.mu.RUnlock()
 		return "", false
 	}
-	to, ok = c.serviceMappings[from]
+	to, ok = m[from]
+	c.mu.RUnlock()
 	return to, ok
 }
 
