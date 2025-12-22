@@ -113,6 +113,12 @@ func (i *Instrumentation) TelemetryRegisterAppConfig(key string, value any, orig
 	telemetry.RegisterAppConfig(key, value, origin)
 }
 
+type AppEndpointAttributes = telemetry.AppEndpointAttributes
+
+func (i *Instrumentation) TelemetryRegisterAppEndpoint(opName string, resName string, attrs AppEndpointAttributes) {
+	telemetry.RegisterAppEndpoint(opName, resName, attrs)
+}
+
 func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
 	if internal.BoolEnv("DD_TRACE_"+i.info.EnvVarPrefix+"_ANALYTICS_ENABLED", false) {
 		return 1.0
@@ -129,6 +135,10 @@ func (i *Instrumentation) GlobalAnalyticsRate() float64 {
 
 func (i *Instrumentation) AppSecEnabled() bool {
 	return appsec.Enabled()
+}
+
+func (i *Instrumentation) ApiSecurityEndpointCollectionEnabled() bool {
+	return internal.BoolEnv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", true)
 }
 
 func (i *Instrumentation) AppSecRASPEnabled() bool {
