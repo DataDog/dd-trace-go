@@ -190,6 +190,15 @@ func RegisterAppConfigs(kvs ...Configuration) {
 	})
 }
 
+// RegisterAppEndpoint reports a new REST endpoint exposed by the application.
+// This can be called multiple times and endpoints will be accumulated
+// additively by the backend.
+func RegisterAppEndpoint(opName string, resName string, attrs AppEndpointAttributes) {
+	globalClientCall(func(client Client) {
+		client.RegisterAppEndpoint(opName, resName, attrs)
+	})
+}
+
 // MarkIntegrationAsLoaded marks an integration as loaded in the telemetry. If telemetry is disabled
 // or the client has not started yet it will record the action and replay it once the client is started.
 func MarkIntegrationAsLoaded(integration Integration) {

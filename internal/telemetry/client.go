@@ -65,7 +65,8 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
 		},
-		backend: newLoggerBackend(config.MaxDistinctLogs),
+		appEndpoints: appEndpoints{is_first: true},
+		backend:      newLoggerBackend(config.MaxDistinctLogs),
 	}
 
 	client.dataSources = append(client.dataSources,
@@ -73,6 +74,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		&client.products,
 		&client.configuration,
 		&client.dependencies,
+		&client.appEndpoints,
 	)
 
 	if config.LogsEnabled {
@@ -106,6 +108,7 @@ type client struct {
 	backend       *loggerBackend
 	metrics       metrics
 	distributions distributions
+	appEndpoints  appEndpoints
 
 	// flushMapper is the transformer to use for the next flush on the gathered bodies on this tick
 	flushMapper   mapper.Mapper
@@ -206,6 +209,10 @@ func (c *client) callFlushTickerFuncs() {
 
 func (c *client) Config() ClientConfig {
 	return c.clientConfig
+}
+
+func (c *client) RegisterAppEndpoint(opName string, resName string, attrs AppEndpointAttributes) {
+	c.appEndpoints.Add(opName, resName, attrs)
 }
 
 // Flush sends all the data sources before calling flush
