@@ -208,7 +208,7 @@ type Client interface {
 	// the backend), and is called independent of the endpoint receiving traffic.
 	//
 	// The `opName` must match the operation name set on spans for this endpoint,
-	// and `resName` mus match the resource name set on spans for this entrypoint.
+	// and `resName` must match the resource name set on spans for this endpoint.
 	RegisterAppEndpoint(opName string, resName string, attrs AppEndpointAttributes)
 
 	// Flush closes the client and flushes any remaining data.
