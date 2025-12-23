@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -493,15 +494,20 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin) {
 
 func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.featureFlags == nil {
 		c.featureFlags = make(map[string]struct{})
 	}
 	for _, feat := range features {
 		c.featureFlags[strings.TrimSpace(feat)] = struct{}{}
 	}
-	// TODO: Report full map
-	reportTelemetry("DD_TRACE_FEATURES", strings.Join(features, ","), origin)
+	all := make([]string, 0, len(c.featureFlags))
+	for feat := range c.featureFlags {
+		all = append(all, feat)
+	}
+	c.mu.Unlock()
+
+	sort.Strings(all)
+	reportTelemetry("DD_TRACE_FEATURES", strings.Join(all, ","), origin)
 }
 
 func (c *Config) FeatureFlags() map[string]struct{} {
@@ -560,13 +566,18 @@ func (c *Config) ServiceMapping(from string) (to string, ok bool) {
 
 func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.serviceMappings == nil {
 		c.serviceMappings = make(map[string]string)
 	}
 	c.serviceMappings[from] = to
-	// TODO: Report full map
-	reportTelemetry("DD_SERVICE_MAPPING", fmt.Sprintf("%s:%s", from, to), origin)
+	all := make([]string, 0, len(c.serviceMappings))
+	for k, v := range c.serviceMappings {
+		all = append(all, fmt.Sprintf("%s:%s", k, v))
+	}
+	c.mu.Unlock()
+
+	sort.Strings(all)
+	reportTelemetry("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
 }
 
 func (c *Config) RetryInterval() time.Duration {

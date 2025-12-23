@@ -6,11 +6,16 @@
 package config
 
 import (
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -210,9 +215,211 @@ func TestGet(t *testing.T) {
 	})
 }
 
+// settersWithoutTelemetry lists Set methods that don't report telemetry.
+// Add your setter here with a reason if telemetry reporting is not needed.
+var settersWithoutTelemetry = map[string]string{
+	"SetLogToStdout":      "not user-configurable",
+	"SetIsLambdaFunction": "not user-configurable",
+}
+
+// specialCaseSetters handles setters with non-standard signatures.
+// Add here if signature is not: SetX(value T, origin telemetry.Origin)
+var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
+	"SetServiceMapping": func(c *Config, origin telemetry.Origin) {
+		c.SetServiceMapping("from-service", "to-service", origin)
+	},
+}
+
+// TestAllSettersReportTelemetry verifies Set* methods report telemetry with seqID > defaultSeqID.
+// If this fails: call reportTelemetry() in your setter, OR add to settersWithoutTelemetry, OR add to specialCaseSetters.
+func TestAllSettersReportTelemetry(t *testing.T) {
+	// Get all methods on *Config
+	configType := reflect.TypeOf(&Config{})
+
+	for i := 0; i < configType.NumMethod(); i++ {
+		// Capture method
+		method := configType.Method(i)
+		methodName := method.Name
+
+		// Skip if not a Set method
+		if len(methodName) < 3 || methodName[:3] != "Set" {
+			continue
+		}
+
+		// Skip if in exclusion list
+		if reason, excluded := settersWithoutTelemetry[methodName]; excluded {
+			t.Logf("Skipping %s: %s", methodName, reason)
+			continue
+		}
+
+		t.Run(methodName, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			// Mock telemetry client
+			telemetryClient := new(telemetrytest.MockClient)
+			telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+			defer telemetry.MockClient(telemetryClient)()
+
+			cfg := Get()
+			testOrigin := telemetry.OriginCode
+
+			// Check if this is a special case
+			if callFunc, isSpecial := specialCaseSetters[methodName]; isSpecial {
+				callFunc(cfg, testOrigin)
+			} else {
+				// Try to call the method generically
+				callSetter(t, cfg, method, testOrigin)
+			}
+
+			// Verify telemetry was reported with seqID > defaultSeqID
+			foundTelemetry := false
+			for _, call := range telemetryClient.Calls {
+				if call.Method == "RegisterAppConfigs" {
+					if len(call.Arguments) > 0 {
+						if configs, ok := call.Arguments[0].([]telemetry.Configuration); ok && len(configs) > 0 {
+							config := configs[0]
+							if config.Origin == testOrigin && config.SeqID > defaultSeqID {
+								foundTelemetry = true
+								break
+							}
+						}
+					}
+				}
+			}
+
+			assert.True(t, foundTelemetry,
+				"%s: no telemetry with origin=%v and seqID > %d. Fix: call reportTelemetry() OR add to settersWithoutTelemetry/specialCaseSetters",
+				methodName, testOrigin, defaultSeqID)
+		})
+	}
+}
+
+// callSetter attempts to call a setter method with appropriate test values
+func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemetry.Origin) {
+	methodType := method.Type
+
+	// Verify it has the right number of parameters (receiver + value param(s) + origin)
+	if methodType.NumIn() < 3 {
+		t.Fatalf("%s: expected ≥3 params (receiver, value, origin), got %d. Add to specialCaseSetters if non-standard.",
+			method.Name, methodType.NumIn())
+	}
+
+	// Last parameter should be telemetry.Origin
+	originType := reflect.TypeOf((*telemetry.Origin)(nil)).Elem()
+	lastParamType := methodType.In(methodType.NumIn() - 1)
+	if lastParamType != originType {
+		t.Fatalf("%s: last param should be telemetry.Origin, got %v. Add to specialCaseSetters if non-standard.",
+			method.Name, lastParamType)
+	}
+
+	// Build arguments
+	args := []reflect.Value{reflect.ValueOf(cfg)}
+
+	// Add value parameters (all except receiver and origin)
+	for i := 1; i < methodType.NumIn()-1; i++ {
+		paramType := methodType.In(i)
+		testValue := getTestValueForType(paramType)
+		args = append(args, reflect.ValueOf(testValue))
+	}
+
+	// Add origin parameter
+	args = append(args, reflect.ValueOf(origin))
+
+	// Call the method
+	method.Func.Call(args)
+}
+
+// getTestValueForType generates appropriate test values based on parameter type.
+// Add support for new types here as setters with new parameter types are added.
+func getTestValueForType(t reflect.Type) interface{} {
+	// Check for specific named types first (before kind checks)
+	if t == reflect.TypeOf(time.Duration(0)) {
+		return 10 * time.Second
+	}
+
+	// Then check by kind
+	switch t.Kind() {
+	case reflect.Bool:
+		return true
+	case reflect.String:
+		return "test-value"
+	case reflect.Int:
+		return 42
+	case reflect.Float64:
+		return 0.75
+	case reflect.Slice:
+		if t.Elem().Kind() == reflect.String {
+			return []string{"feature1", "feature2"}
+		}
+	}
+
+	panic("getTestValueForType: unsupported parameter type: " + t.String() +
+		". Add support for this type in getTestValueForType() or add your setter to specialCaseSetters.")
+}
+
 // resetGlobalState resets all global singleton state for testing
 func resetGlobalState() {
 	mu = sync.Mutex{}
 	instance = nil
 	useFreshConfig = false
+}
+
+func TestSetFeatureFlagsReportsFullList(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+
+	cfg.SetFeatureFlags([]string{"b", "a"}, telemetry.OriginCode)
+	cfg.SetFeatureFlags([]string{"c"}, telemetry.OriginCode)
+
+	var (
+		found bool
+		got   telemetry.Configuration
+	)
+	for i := len(rec.Configuration) - 1; i >= 0; i-- {
+		c := rec.Configuration[i]
+		if c.Name == "DD_TRACE_FEATURES" && c.Origin == telemetry.OriginCode {
+			found = true
+			got = c
+			break
+		}
+	}
+	require.True(t, found, "expected telemetry to include DD_TRACE_FEATURES with OriginCode")
+	assert.Equal(t, "a,b,c", got.Value)
+}
+
+func TestSetServiceMappingReportsFullList(t *testing.T) {
+	resetGlobalState()
+	defer resetGlobalState()
+
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := Get()
+	require.NotNil(t, cfg)
+
+	cfg.SetServiceMapping("b", "2", telemetry.OriginCode)
+	cfg.SetServiceMapping("a", "1", telemetry.OriginCode)
+	cfg.SetServiceMapping("a", "3", telemetry.OriginCode) // update existing
+
+	var (
+		found bool
+		got   telemetry.Configuration
+	)
+	for i := len(rec.Configuration) - 1; i >= 0; i-- {
+		c := rec.Configuration[i]
+		if c.Name == "DD_SERVICE_MAPPING" && c.Origin == telemetry.OriginCode {
+			found = true
+			got = c
+			break
+		}
+	}
+	require.True(t, found, "expected telemetry to include DD_SERVICE_MAPPING with OriginCode")
+	assert.Equal(t, "a:3,b:2", got.Value)
 }
