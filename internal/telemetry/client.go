@@ -222,7 +222,7 @@ func (c *client) Flush() {
 		} else {
 			log.Warn("panic while flushing telemetry data, stopping telemetry!")
 		}
-		telemetryClientDisabled = true
+		telemetryClientEnabled = false
 		if gc, ok := GlobalClient().(*client); ok && gc == c {
 			SwapClient(nil)
 		}
