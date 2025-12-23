@@ -221,6 +221,7 @@ func normalizeKey(key string) string {
 // Uses internal.ForEachStringTag to ensure consistent parsing with other tag-like env vars.
 func parseMapString(str string) map[string]string {
 	result := make(map[string]string)
+	// NOTE: Beware of potential cyclic import if config moves to another package.
 	internal.ForEachStringTag(str, internal.DDTagsDelimiter, func(key, val string) {
 		result[key] = val
 	})
