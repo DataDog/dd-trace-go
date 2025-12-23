@@ -7,6 +7,8 @@ package config
 
 import (
 	"reflect"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -391,7 +393,10 @@ func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 		}
 	}
 	require.True(t, found, "expected telemetry to include DD_TRACE_FEATURES with OriginCode")
-	assert.Equal(t, "a,b,c", got.Value)
+	require.IsType(t, "", got.Value)
+	parts := strings.Split(got.Value.(string), ",")
+	sort.Strings(parts)
+	assert.Equal(t, []string{"a", "b", "c"}, parts)
 }
 
 func TestSetServiceMappingReportsFullList(t *testing.T) {
@@ -421,5 +426,8 @@ func TestSetServiceMappingReportsFullList(t *testing.T) {
 		}
 	}
 	require.True(t, found, "expected telemetry to include DD_SERVICE_MAPPING with OriginCode")
-	assert.Equal(t, "a:3,b:2", got.Value)
+	require.IsType(t, "", got.Value)
+	parts := strings.Split(got.Value.(string), ",")
+	sort.Strings(parts)
+	assert.Equal(t, []string{"a:3", "b:2"}, parts)
 }

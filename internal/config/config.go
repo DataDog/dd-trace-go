@@ -10,7 +10,6 @@ import (
 	"math"
 	"net/url"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -506,7 +505,6 @@ func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
 	}
 	c.mu.Unlock()
 
-	sort.Strings(all)
 	reportTelemetry("DD_TRACE_FEATURES", strings.Join(all, ","), origin)
 }
 
@@ -576,7 +574,6 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
 	}
 	c.mu.Unlock()
 
-	sort.Strings(all)
 	reportTelemetry("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
 }
 
