@@ -137,6 +137,7 @@ func StartTelemetryRecorder(t *testing.T) *telemetrytest.RecordClient {
 	t.Helper()
 
 	client := new(telemetrytest.RecordClient)
+	FlushTelemetry()
 	oldClient := telemetry.SwapClient(client)
 
 	t.Cleanup(func() {
