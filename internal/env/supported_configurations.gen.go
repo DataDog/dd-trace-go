@@ -14,6 +14,8 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_API_KEY":             {},
 	"DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE":    {},
 	"DD_API_SECURITY_ENABLED":                                         {},
+	"DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED":                     {},
+	"DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT":               {},
 	"DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS":            {},
 	"DD_API_SECURITY_PROXY_SAMPLE_RATE":                               {},
 	"DD_API_SECURITY_REQUEST_SAMPLE_RATE":                             {},

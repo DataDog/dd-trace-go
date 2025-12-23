@@ -2940,6 +2940,8 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	const iterations = 100
 	var wg sync.WaitGroup
 
+	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
+
 	// Goroutine 1: Continuously start the tracer
 	wg.Add(1)
 	go func() {
