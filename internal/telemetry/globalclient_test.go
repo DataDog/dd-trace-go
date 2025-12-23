@@ -15,9 +15,8 @@ import (
 // Ensure that DD_INSTRUMENTATION_TELEMETRY_ENABLED is read once and cached,
 // matching the expectation that env vars are set before telemetry is first used.
 func TestDisabledCachesInitialEnv(t *testing.T) {
-	// reset lazy init state
+	// Reset lazy init state
 	telemetryDisabledOnce = sync.Once{}
-	telemetryClientDisabled = false
 
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
 	require.True(t, Disabled())
@@ -25,4 +24,7 @@ func TestDisabledCachesInitialEnv(t *testing.T) {
 	// Changing the env after the first call should not flip the cached value.
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
 	require.True(t, Disabled())
+
+	// Reset again
+	telemetryDisabledOnce = sync.Once{}
 }
