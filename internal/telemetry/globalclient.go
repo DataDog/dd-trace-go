@@ -113,9 +113,9 @@ var (
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
 	telemetryEnabledOnce.Do(func() {
-		telemetryClientEnabled = !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+		telemetryClientEnabled = globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 	})
-	return !telemetryClientEnabled
+	return telemetryClientEnabled == false
 }
 
 // Count creates a new metric handle for the given parameters that can be used to submit values.
