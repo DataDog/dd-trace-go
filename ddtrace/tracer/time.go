@@ -15,3 +15,7 @@ var nowTime = func() time.Time { return time.Now() }
 
 // now returns the current UNIX time in nanoseconds, as computed by Time.UnixNano().
 var now = func() int64 { return time.Now().UnixNano() }
+
+// alignTs returns the provided timestamp truncated to the bucket size.
+// It gives us the start time of the time bucket in which such timestamp falls.
+func alignTs(ts, bucketSize int64) int64 { return ts - ts%bucketSize }

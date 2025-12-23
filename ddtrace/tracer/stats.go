@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//go:build !noprotobuf
+
 package tracer
 
 import (
@@ -100,10 +102,6 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		statsdClient:     statsdClient,
 	}
 }
-
-// alignTs returns the provided timestamp truncated to the bucket size.
-// It gives us the start time of the time bucket in which such timestamp falls.
-func alignTs(ts, bucketSize int64) int64 { return ts - ts%bucketSize }
 
 // Start starts the concentrator. A started concentrator needs to be stopped
 // in order to gracefully shut down, using Stop.
