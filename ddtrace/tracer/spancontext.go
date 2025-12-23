@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -398,12 +399,7 @@ var (
 	// reasonable as span is actually way bigger, and avoids re-allocating
 	// over and over. Could be fine-tuned at runtime.
 	traceStartSize = 10
-	// traceMaxSize is the maximum number of spans we keep in memory for a
-	// single trace. This is to avoid memory leaks. If more spans than this
-	// are added to a trace, then the trace is dropped and the spans are
-	// discarded. Adding additional spans after a trace is dropped does
-	// nothing.
-	traceMaxSize = int(1e5)
+	traceMaxSize   = internalconfig.TraceMaxSize
 )
 
 // newTrace creates a new trace using the given callback which will be called

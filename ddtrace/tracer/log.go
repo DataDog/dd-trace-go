@@ -96,10 +96,13 @@ func logStartup(t *tracer) {
 		tags[k] = fmt.Sprintf("%v", v)
 	}
 
-	featureFlags := make([]string, 0, len(t.config.featureFlags))
-	for f := range t.config.featureFlags {
+	allFeatures := t.config.internalConfig.FeatureFlags()
+	featureFlags := make([]string, 0, len(allFeatures))
+	for f := range allFeatures {
 		featureFlags = append(featureFlags, f)
 	}
+
+	partialFlushEnabled, partialFlushMinSpans := t.config.internalConfig.PartialFlushEnabled()
 
 	var injectorNames, extractorNames string
 	switch v := t.config.propagator.(type) {
@@ -127,7 +130,7 @@ func logStartup(t *tracer) {
 		Version:                     version.Tag,
 		Lang:                        "Go",
 		LangVersion:                 runtime.Version(),
-		Env:                         t.config.env,
+		Env:                         t.config.internalConfig.Env(),
 		Service:                     t.config.serviceName,
 		AgentURL:                    agentURL,
 		Debug:                       t.config.internalConfig.Debug(),
@@ -136,11 +139,11 @@ func logStartup(t *tracer) {
 		SampleRateLimit:             "disabled",
 		TraceSamplingRules:          t.config.traceRules,
 		SpanSamplingRules:           t.config.spanRules,
-		ServiceMappings:             t.config.serviceMappings,
+		ServiceMappings:             t.config.internalConfig.ServiceMappings(),
 		Tags:                        tags,
 		RuntimeMetricsEnabled:       t.config.internalConfig.RuntimeMetricsEnabled(),
 		RuntimeMetricsV2Enabled:     t.config.internalConfig.RuntimeMetricsV2Enabled(),
-		ApplicationVersion:          t.config.version,
+		ApplicationVersion:          t.config.internalConfig.Version(),
 		ProfilerCodeHotspotsEnabled: t.config.internalConfig.ProfilerHotspotsEnabled(),
 		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
@@ -149,8 +152,8 @@ func logStartup(t *tracer) {
 		AgentFeatures:               t.config.agent,
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
-		PartialFlushEnabled:         t.config.partialFlushEnabled,
-		PartialFlushMinSpans:        t.config.partialFlushMinSpans,
+		PartialFlushEnabled:         partialFlushEnabled,
+		PartialFlushMinSpans:        partialFlushMinSpans,
 		Orchestrion:                 t.config.orchestrionCfg,
 		FeatureFlags:                featureFlags,
 		PropagationStyleInject:      injectorNames,
@@ -167,7 +170,7 @@ func logStartup(t *tracer) {
 	}
 	if !t.config.internalConfig.LogToStdout() {
 		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
-			info.AgentError = fmt.Sprintf("%s", err.Error())
+			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}
 	}

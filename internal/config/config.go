@@ -6,12 +6,17 @@
 package config
 
 import (
+	"fmt"
 	"math"
 	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
@@ -42,37 +47,68 @@ type Config struct {
 	agentURL *url.URL
 	debug    bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
-	logStartup                    bool
-	serviceName                   string
-	version                       string
-	env                           string
-	serviceMappings               map[string]string
-	hostname                      string
-	runtimeMetrics                bool
-	runtimeMetricsV2              bool
-	profilerHotspots              bool
-	profilerEndpoints             bool
-	spanAttributeSchemaVersion    int
-	peerServiceDefaultsEnabled    bool
-	peerServiceMappings           map[string]string
-	debugAbandonedSpans           bool
-	spanTimeout                   time.Duration
-	partialFlushMinSpans          int
-	partialFlushEnabled           bool
-	statsComputationEnabled       bool
-	dataStreamsMonitoringEnabled  bool
+	logStartup  bool
+	serviceName string
+	version     string
+	// env contains the environment that this application will run under.
+	env string
+	// serviceMappings holds a set of service mappings to dynamically rename services
+	serviceMappings map[string]string
+	// hostname is automatically assigned from the OS hostname, or from the DD_TRACE_SOURCE_HOSTNAME environment variable or WithHostname() option.
+	hostname string
+	// hostnameLookupError is the error returned by os.Hostname() if it fails
+	hostnameLookupError        error
+	runtimeMetrics             bool
+	runtimeMetricsV2           bool
+	profilerHotspots           bool
+	profilerEndpoints          bool
+	spanAttributeSchemaVersion int
+	peerServiceDefaultsEnabled bool
+	peerServiceMappings        map[string]string
+	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
+	debugAbandonedSpans bool
+	// spanTimeout represents how old a span can be before it should be logged as a possible
+	// misconfiguration. Unused if debugAbandonedSpans is false.
+	spanTimeout          time.Duration
+	partialFlushMinSpans int
+	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
+	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
+	partialFlushEnabled bool
+	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
+	statsComputationEnabled      bool
+	dataStreamsMonitoringEnabled bool
+	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	dynamicInstrumentationEnabled bool
 	// globalSampleRate holds the sample rate for the tracer.
-	globalSampleRate        float64
-	ciVisibilityEnabled     bool
-	ciVisibilityAgentless   bool
-	logDirectory            string
+	globalSampleRate float64
+	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
+	ciVisibilityEnabled   bool
+	ciVisibilityAgentless bool
+	// logDirectory is directory for tracer logs
+	logDirectory string
+	// traceRateLimitPerSecond specifies the rate limit per second for traces.
 	traceRateLimitPerSecond float64
 	// logToStdout, if true, indicates we should log all traces to the standard output
 	logToStdout bool
 	// isLambdaFunction, if true, indicates we are in a lambda function
 	isLambdaFunction bool
+	// debugStack enables the collection of debug stack traces globally. Error traces will not record a stack trace when this option is false.
+	debugStack bool
+	// reportHostname indicates whether hostname should be reported on spans.
+	// Set to true when DD_TRACE_REPORT_HOSTNAME=true, or when hostname is explicitly configured via DD_TRACE_SOURCE_HOSTNAME or WithHostname().
+	reportHostname bool
+	// featureFlags specifies any enabled feature flags.
+	featureFlags map[string]struct{}
+	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
+	retryInterval time.Duration
 }
+
+// HOT PATH NOTE:
+// Some Config accessors may be called on hot paths (e.g., span start/finish, partial flush logic).
+// If benchmarks regress, ensure getters are efficient and do not:
+// - copy whole maps/slices on every call (prefer single-key lookup helpers like ServiceMapping/HasFeature), or
+// - take multiple lock/unlock pairs to read related fields (prefer a combined getter under one RLock, like PartialFlushEnabled()).
+// Also consider avoiding `defer` in getters that are executed per-span in tight loops.
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
@@ -87,7 +123,6 @@ func loadConfig() *Config {
 	cfg.version = provider.getString("DD_VERSION", "")
 	cfg.env = provider.getString("DD_ENV", "")
 	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
-	cfg.hostname = provider.getString("DD_TRACE_SOURCE_HOSTNAME", "")
 	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
@@ -96,26 +131,28 @@ func loadConfig() *Config {
 	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
 	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
 	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
-	cfg.partialFlushMinSpans = provider.getInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
+	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
+	cfg.partialFlushMinSpans = provider.getIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", false)
+	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
-	cfg.ciVisibilityEnabled = provider.getBool("DD_CIVISIBILITY_ENABLED", false)
+	cfg.ciVisibilityEnabled = provider.getBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
-	cfg.traceRateLimitPerSecond = provider.getFloat("DD_TRACE_RATE_LIMIT", 0.0)
+	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
+	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
+	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 
-	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
-	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
-	// TODO: Is it possible that we can just use `v != ""` to configure one setting, `lambdaMode` instead
-	if v, ok := env.Lookup("AWS_LAMBDA_FUNCTION_NAME"); ok {
-		cfg.logToStdout = true
-		if v != "" {
-			cfg.isLambdaFunction = true
+	// Parse feature flags from DD_TRACE_FEATURES as a set
+	cfg.featureFlags = make(map[string]struct{})
+	if featuresStr := provider.getString("DD_TRACE_FEATURES", ""); featuresStr != "" {
+		for _, feat := range strings.FieldsFunc(featuresStr, func(r rune) bool {
+			return r == ',' || r == ' '
+		}) {
+			cfg.featureFlags[strings.TrimSpace(feat)] = struct{}{}
 		}
 	}
 
@@ -127,6 +164,26 @@ func loadConfig() *Config {
 		if v != "" {
 			cfg.isLambdaFunction = true
 		}
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Warn("unable to look up hostname: %s", err.Error())
+		cfg.hostnameLookupError = err
+	}
+
+	// Always read DD_TRACE_REPORT_HOSTNAME for telemetry tracking
+	reportHostnameFromEnv := provider.getBool("DD_TRACE_REPORT_HOSTNAME", false)
+
+	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set
+	if sourceHostname, ok := env.Lookup("DD_TRACE_SOURCE_HOSTNAME"); ok {
+		// Explicitly configured hostname - always report it
+		cfg.hostname = sourceHostname
+		cfg.reportHostname = true
+	} else if err == nil {
+		// Auto-detected hostname - only report if DD_TRACE_REPORT_HOSTNAME=true
+		cfg.hostname = hostname
+		cfg.reportHostname = reportHostnameFromEnv
 	}
 
 	return cfg
@@ -279,4 +336,272 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.globalSampleRate = rate
 	telemetry.RegisterAppConfig("DD_TRACE_SAMPLE_RATE", rate, origin)
+}
+
+func (c *Config) TraceRateLimitPerSecond() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceRateLimitPerSecond
+}
+
+func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.traceRateLimitPerSecond = rate
+	telemetry.RegisterAppConfig("DD_TRACE_RATE_LIMIT", rate, origin)
+}
+
+// PartialFlushEnabled returns the partial flushing configuration under a single read lock.
+func (c *Config) PartialFlushEnabled() (enabled bool, minSpans int) {
+	c.mu.RLock()
+	enabled = c.partialFlushEnabled
+	minSpans = c.partialFlushMinSpans
+	c.mu.RUnlock()
+	return enabled, minSpans
+}
+
+func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.partialFlushEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
+}
+
+func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.partialFlushMinSpans = minSpans
+	telemetry.RegisterAppConfig("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
+}
+
+func (c *Config) DebugAbandonedSpans() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.debugAbandonedSpans
+}
+
+func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debugAbandonedSpans = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
+}
+
+func (c *Config) SpanTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanTimeout
+}
+
+func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanTimeout = timeout
+	telemetry.RegisterAppConfig("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
+}
+
+func (c *Config) DebugStack() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.debugStack
+}
+
+func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.debugStack = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_DEBUG_STACK", enabled, origin)
+}
+
+func (c *Config) StatsComputationEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsComputationEnabled
+}
+
+func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statsComputationEnabled = enabled
+	telemetry.RegisterAppConfig("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
+}
+
+func (c *Config) LogDirectory() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logDirectory
+}
+
+func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logDirectory = directory
+	telemetry.RegisterAppConfig("DD_TRACE_LOG_DIRECTORY", directory, origin)
+}
+
+func (c *Config) ReportHostname() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.reportHostname
+}
+
+func (c *Config) Hostname() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hostname
+}
+
+func (c *Config) SetHostname(hostname string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hostname = hostname
+	c.reportHostname = true // Explicitly configured hostname should always be reported
+	telemetry.RegisterAppConfig("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
+}
+
+func (c *Config) HostnameLookupError() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.hostnameLookupError
+}
+
+func (c *Config) Version() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.version
+}
+
+func (c *Config) SetVersion(version string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.version = version
+	telemetry.RegisterAppConfig("DD_VERSION", version, origin)
+}
+
+func (c *Config) Env() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.env
+}
+
+func (c *Config) SetEnv(env string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.env = env
+	telemetry.RegisterAppConfig("DD_ENV", env, origin)
+}
+
+func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.featureFlags == nil {
+		c.featureFlags = make(map[string]struct{})
+	}
+	for _, feat := range features {
+		c.featureFlags[strings.TrimSpace(feat)] = struct{}{}
+	}
+	telemetry.RegisterAppConfig("DD_TRACE_FEATURES", strings.Join(features, ","), origin)
+}
+
+func (c *Config) FeatureFlags() map[string]struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	// Return a copy to prevent external modification
+	result := make(map[string]struct{}, len(c.featureFlags))
+	for k, v := range c.featureFlags {
+		result[k] = v
+	}
+	return result
+}
+
+// HasFeature performs a single feature flag lookup without copying the underlying map.
+// This is better than FeatureFlags() for hot paths (e.g., span creation) to avoid per-call allocations.
+func (c *Config) HasFeature(feat string) bool {
+	c.mu.RLock()
+	ff := c.featureFlags
+	if ff == nil {
+		c.mu.RUnlock()
+		return false
+	}
+	_, ok := ff[strings.TrimSpace(feat)]
+	c.mu.RUnlock()
+	return ok
+}
+
+// ServiceMappings returns a copy of the service mappings map. If no service mappings are set, returns nil.
+func (c *Config) ServiceMappings() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	// Return a copy to prevent external modification
+	if c.serviceMappings == nil {
+		return nil
+	}
+	result := make(map[string]string, len(c.serviceMappings))
+	for k, v := range c.serviceMappings {
+		result[k] = v
+	}
+	return result
+}
+
+// ServiceMapping performs a single mapping lookup without copying the underlying map.
+// This is better than ServiceMappings() for hot paths (e.g., span creation) to avoid per-call allocations.
+func (c *Config) ServiceMapping(from string) (to string, ok bool) {
+	c.mu.RLock()
+	m := c.serviceMappings
+	if m == nil {
+		c.mu.RUnlock()
+		return "", false
+	}
+	to, ok = m[from]
+	c.mu.RUnlock()
+	return to, ok
+}
+
+func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.serviceMappings == nil {
+		c.serviceMappings = make(map[string]string)
+	}
+	c.serviceMappings[from] = to
+	telemetry.RegisterAppConfig("DD_SERVICE_MAPPING", fmt.Sprintf("%s:%s", from, to), origin)
+}
+
+func (c *Config) RetryInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.retryInterval
+}
+
+func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.retryInterval = interval
+	telemetry.RegisterAppConfig("DD_TRACE_RETRY_INTERVAL", interval, origin)
+}
+
+func (c *Config) ServiceName() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.serviceName
+}
+
+func (c *Config) SetServiceName(name string, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.serviceName = name
+	telemetry.RegisterAppConfig("DD_SERVICE", name, origin)
+}
+
+func (c *Config) CIVisibilityEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled
+}
+
+func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ciVisibilityEnabled = enabled
+	telemetry.RegisterAppConfig(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
 }

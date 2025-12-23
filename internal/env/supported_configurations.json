@@ -420,6 +420,9 @@
     "DD_TRACE_DEBUG_ABANDONED_SPANS": [
       "A"
     ],
+    "DD_TRACE_DEBUG_STACK": [
+      "A"
+    ],
     "DD_TRACE_DEBUG_SEELOG_WORKAROUND": [
       "A"
     ],
@@ -592,6 +595,9 @@
       "A"
     ],
     "DD_TRACE_RESTFUL_ANALYTICS_ENABLED": [
+      "A"
+    ],
+    "DD_TRACE_RETRY_INTERVAL": [
       "A"
     ],
     "DD_TRACE_SAMPLE_RATE": [
