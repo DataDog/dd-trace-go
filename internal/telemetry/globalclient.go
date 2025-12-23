@@ -105,17 +105,17 @@ func StopApp() {
 }
 
 var (
-	telemetryClientDisabled bool
-	telemetryDisabledOnce   sync.Once
+	telemetryClientEnabled bool
+	telemetryEnabledOnce   sync.Once
 )
 
 // Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
-	telemetryDisabledOnce.Do(func() {
-		telemetryClientDisabled = !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	telemetryEnabledOnce.Do(func() {
+		telemetryClientEnabled = !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
 	})
-	return telemetryClientDisabled
+	return !telemetryClientEnabled
 }
 
 // Count creates a new metric handle for the given parameters that can be used to submit values.
