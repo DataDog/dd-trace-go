@@ -650,8 +650,8 @@ func TestBlocking(t *testing.T) {
 }
 
 func TestOnAddRouteHandler(t *testing.T) {
-	t.Run("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED=0", func(t *testing.T) {
-		t.Setenv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", "0")
+	t.Run("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED=false", func(t *testing.T) {
+		t.Setenv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", "false")
 
 		e := Wrap(echo.New())
 
@@ -663,8 +663,8 @@ func TestOnAddRouteHandler(t *testing.T) {
 		assert.Nil(t, telemetry.AppEndpoints)
 	})
 
-	t.Run("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED=1", func(t *testing.T) {
-		t.Setenv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", "1") // Default value
+	t.Run("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED=true", func(t *testing.T) {
+		t.Setenv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", "true") // Default value
 
 		e := Wrap(echo.New())
 
