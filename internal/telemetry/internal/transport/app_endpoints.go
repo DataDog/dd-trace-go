@@ -6,6 +6,10 @@
 package transport
 
 type AppEndpoints struct {
+	// isFirst must be set to `true` for the first payload emitted in a given
+	// service instance, causing the back-end to initiate a new set of API
+	// definitions. When `false`, new messages are merged in with the other API
+	// definitions accumulated so far for this instance.
 	IsFirst   bool          `json:"is_first"`
 	Endpoints []AppEndpoint `json:"endpoints"`
 }

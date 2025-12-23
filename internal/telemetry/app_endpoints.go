@@ -22,9 +22,12 @@ type appEndpointKey struct {
 }
 
 type appEndpoints struct {
-	mu       sync.Mutex
-	store    []transport.AppEndpoint
-	is_first bool
+	mu    sync.Mutex
+	store []transport.AppEndpoint
+	// isFirst determines what the first message for a deployment is, allowing
+	// multiple messages to be accumulated backend-side into a single API
+	// definition; while allowing new deployments to drop removed APIs.
+	isFirst bool
 }
 
 func (a *appEndpoints) Add(opName string, resName string, attrs AppEndpointAttributes) {
@@ -55,11 +58,11 @@ func (a *appEndpoints) Payload() transport.Payload {
 
 	count := min(len(a.store), appEndpointsMessageLimit)
 	payload := &transport.AppEndpoints{
-		IsFirst:   a.is_first,
+		IsFirst:   a.isFirst,
 		Endpoints: a.store[:count],
 	}
 
-	a.is_first = false
+	a.isFirst = false
 	if count < len(a.store) {
 		a.store = a.store[count:]
 	} else {

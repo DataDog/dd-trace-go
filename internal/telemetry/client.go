@@ -65,7 +65,7 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 			skipAllowlist: config.Debug,
 			queueSize:     config.DistributionsSize,
 		},
-		appEndpoints: appEndpoints{is_first: true},
+		appEndpoints: appEndpoints{isFirst: true},
 		backend:      newLoggerBackend(config.MaxDistinctLogs),
 	}
 
