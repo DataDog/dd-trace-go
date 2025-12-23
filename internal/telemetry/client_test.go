@@ -496,6 +496,59 @@ func TestClientFlush(t *testing.T) {
 			},
 		},
 		{
+			name: "app-endpoints",
+			when: func(c *client) {
+				c.RegisterAppEndpoint("http.request", "POST /analytics/requests", AppEndpointAttributes{
+					Kind:             "REST",
+					Method:           http.MethodPost,
+					Path:             "/analytics/requests",
+					RequestBodyType:  []string{"application/json"},
+					ResponseBodyType: []string{"application/json"},
+					ResponseCode:     []int{http.StatusOK, http.StatusCreated},
+					Authentication:   []AppEndpointAuthentication{AppEndpointAuthenticationJWT},
+					Metadata:         map[string]any{"key": 1337},
+				})
+				c.Flush() // The next payload is no longer "first"
+				c.RegisterAppEndpoint("http.request", "GET /analytics", AppEndpointAttributes{
+					Kind:   "REST",
+					Method: http.MethodGet,
+					Path:   "/analytics",
+				})
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				require.Equal(t, []transport.Payload{
+					&transport.AppEndpoints{
+						IsFirst: true,
+						Endpoints: []transport.AppEndpoint{
+							{
+								OperationName:    "http.request",
+								ResourceName:     "POST /analytics/requests",
+								Kind:             "REST",
+								Method:           "POST",
+								Path:             "/analytics/requests",
+								RequestBodyType:  []string{"application/json"},
+								ResponseBodyType: []string{"application/json"},
+								ResponseCode:     []int{200, 201},
+								Authentication:   []AppEndpointAuthentication{AppEndpointAuthenticationJWT},
+								Metadata:         map[string]any{"key": 1337},
+							},
+						},
+					}, &transport.AppEndpoints{
+						IsFirst: false,
+						Endpoints: []transport.AppEndpoint{
+							{
+								OperationName: "http.request",
+								ResourceName:  "GET /analytics",
+								Kind:          "REST",
+								Method:        "GET",
+								Path:          "/analytics",
+							},
+						},
+					},
+				}, payloads)
+			},
+		},
+		{
 			name: "app-dependencies-loaded",
 			clientConfig: ClientConfig{
 				DependencyLoader: func() (*debug.BuildInfo, bool) {

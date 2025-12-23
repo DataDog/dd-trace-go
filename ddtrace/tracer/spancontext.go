@@ -116,11 +116,16 @@ type SpanContext struct {
 	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
 }
 
+// Private interface for span contexts that can propagate sampling decisions.
+type spanContextWithSamplingDecision interface {
+	SamplingDecision() uint32
+	Priority() *float64
+}
+
 // Private interface for converting v1 span contexts to v2 ones.
 type spanContextV1Adapter interface {
-	SamplingDecision() uint32
+	spanContextWithSamplingDecision
 	Origin() string
-	Priority() *float64
 	PropagatingTags() map[string]string
 	Tags() map[string]string
 }
@@ -137,14 +142,35 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		sc.baggage[k] = v
 		return true
 	})
+
+	ctxSpl, ok := c.(spanContextWithSamplingDecision)
+	if !ok {
+		return &sc
+	}
+
+	// If the generic context has a sampling decision, set it on the trace
+	// along with the priority if it exists.
+	// After setting the sampling decision, lock the trace so the decision is
+	// respected and avoid re-sampling.
+	if sDecision := samplingDecision(ctxSpl.SamplingDecision()); sDecision != decisionNone {
+		sc.trace = newTrace()
+		sc.trace.samplingDecision = sDecision
+
+		if p := ctxSpl.Priority(); p != nil {
+			sc.setSamplingPriority(int(*p), samplernames.Unknown)
+			sc.trace.setLocked(true)
+		}
+	}
+
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
 		return &sc
 	}
+
 	sc.origin = ctx.Origin()
-	sc.trace = newTrace()
-	sc.trace.priority = ctx.Priority()
-	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
+	if sc.trace == nil {
+		sc.trace = newTrace()
+	}
 	sc.trace.tags = ctx.Tags()
 	sc.trace.propagatingTags = ctx.PropagatingTags()
 	return &sc
