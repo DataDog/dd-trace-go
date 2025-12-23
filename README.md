@@ -85,6 +85,7 @@ Targets:
   test/integration     Run integration tests
   test-deadlock        Run tests with deadlock detection
   test-debug-deadlock  Run tests with debug and deadlock detection
+  test-noprotobuf      Run tests with noprotobuf build tag
   fix-modules          Fix module dependencies and consistency
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules

@@ -32,8 +32,10 @@ func (*Processor) SetCheckpointWithParams(ctx context.Context, _ options.Checkpo
 	return ctx
 }
 
-func (*Processor) TrackKafkaCommitOffset(_, _ string, _ int32, _ int64) {}
+func (*Processor) TrackKafkaCommitOffset(_, _ string, _ int32, _ int64) {
+	panic("not implemented")
+}
 
 func (*Processor) TrackKafkaProduceOffset(_ string, _ int32, _ int64) {}
 
-func (*Processor) TrackKafkaHighWatermarkOffset(_ string, _ string, _ int32, _ int64)
+func (*Processor) TrackKafkaHighWatermarkOffset(_ string, _ string, _ int32, _ int64) {}

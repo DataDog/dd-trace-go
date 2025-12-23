@@ -113,6 +113,10 @@ test-deadlock: tools-install ## Run tests with deadlock detection
 test-debug-deadlock: tools-install ## Run tests with debug and deadlock detection
 	BUILD_TAGS=debug,deadlock $(BIN_PATH) ./scripts/test.sh --all
 
+.PHONY: test-noprotobuf
+test-noprotobuf: tools-install ## Run tests with noprotobuf build tag
+	BUILD_TAGS=noprotobuf $(BIN_PATH) ./scripts/test.sh --all
+
 .PHONY: fix-modules
 fix-modules: tools-install ## Fix module dependencies and consistency
 	$(BIN_PATH) ./scripts/fix_modules.sh
