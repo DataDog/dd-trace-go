@@ -104,11 +104,17 @@ func StopApp() {
 	}
 }
 
-var telemetryClientDisabled = !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+var (
+	telemetryClientDisabled bool
+	telemetryDisabledOnce   sync.Once
+)
 
 // Disabled returns whether instrumentation telemetry is disabled
 // according to the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
 func Disabled() bool {
+	telemetryDisabledOnce.Do(func() {
+		telemetryClientDisabled = !globalinternal.BoolEnv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", true)
+	})
 	return telemetryClientDisabled
 }
 
