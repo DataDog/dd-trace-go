@@ -239,3 +239,81 @@ func TestProduceConsumeFunctional(t *testing.T) {
 	assert.NotEmpty(t, h0map["traceparent"])
 	assert.NotEmpty(t, h0map["tracestate"])
 }
+
+func TestConsumeFunctional(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var (
+		recordsToProduce = []*kgo.Record{
+			{
+				Topic: testTopic,
+				Key:   []byte("key1"),
+				Value: []byte("value1"),
+			},
+		}
+		producedRecords = &producedRecords{}
+	)
+
+	consumerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.ConsumeTopics(testTopic),
+		kgo.ConsumerGroup(testGroupID),
+	))
+	require.NoError(t, err)
+	defer consumerCl.Close()
+
+	err = consumerCl.Ping(context.Background())
+	require.NoError(t, err)
+
+	producerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.WithHooks(producedRecords),
+	))
+	require.NoError(t, err)
+	defer producerCl.Close()
+
+	err = producerCl.Ping(context.Background())
+	require.NoError(t, err)
+
+	err = producerCl.ProduceSync(context.Background(), recordsToProduce...).FirstErr()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	fetches := consumerCl.PollFetches(ctx)
+	require.NoError(t, fetches.Err())
+
+	records := fetches.Records()
+	require.Len(t, records, 1)
+	assert.Equal(t, []byte("value1"), records[0].Value)
+
+	consumerCl.PollFetches(ctx)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+
+	s0 := spans[0]
+	assert.Equal(t, "kafka.produce", s0.OperationName())
+	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
+	assert.Equal(t, "Produce Topic "+testTopic, s0.Tag(ext.ResourceName))
+	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
+	assert.Equal(t, "twmb/franz-go", s0.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
+	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
+
+	s1 := spans[1]
+	assert.Equal(t, "kafka.consume", s1.OperationName())
+	assert.Equal(t, "kafka", s1.Tag(ext.ServiceName))
+	assert.Equal(t, "Consume Topic "+testTopic, s1.Tag(ext.ResourceName))
+	assert.Equal(t, "queue", s1.Tag(ext.SpanType))
+	assert.Equal(t, float64(0), s1.Tag(ext.MessagingKafkaPartition))
+	assert.Equal(t, "twmb/franz-go", s1.Tag(ext.Component))
+	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
+	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
+	assert.Contains(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
+	assert.Equal(t, testTopic, s1.Tag("messaging.destination.name"))
+
+	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
+	assert.Equal(t, s0.TraceID(), s1.TraceID(), "spans should have the same trace id")
+}
