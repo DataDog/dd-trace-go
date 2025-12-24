@@ -137,7 +137,7 @@ func (i *Instrumentation) AppSecEnabled() bool {
 	return appsec.Enabled()
 }
 
-func (i *Instrumentation) ApiSecurityEndpointCollectionEnabled() bool {
+func (i *Instrumentation) APISecurityEndpointCollectionEnabled() bool {
 	return internal.BoolEnv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", true)
 }
 

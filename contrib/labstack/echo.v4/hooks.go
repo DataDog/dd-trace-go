@@ -17,7 +17,7 @@ import (
 // The collection can be disabled at runtime by setting
 // `DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED` to a false-ey value.
 func OnAddRouteHandler(_ string, route echo.Route, _ echo.HandlerFunc, _ []echo.MiddlewareFunc) {
-	if !instr.ApiSecurityEndpointCollectionEnabled() {
+	if !instr.APISecurityEndpointCollectionEnabled() {
 		return
 	}
 
