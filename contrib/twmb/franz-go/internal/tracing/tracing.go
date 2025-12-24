@@ -37,7 +37,7 @@ type Tracer struct {
 	producerSpanName    string
 	analyticsRate       float64
 	dataStreamsEnabled  bool
-	kafkaCfg            KafkaConfig
+	kafkaCfg            *KafkaConfig
 }
 
 func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
@@ -48,7 +48,7 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 		producerSpanName:    instr.OperationName(instrumentation.ComponentProducer, nil),
 		analyticsRate:       instr.AnalyticsRate(false),
 		dataStreamsEnabled:  instr.DataStreamsEnabled(),
-		kafkaCfg:            kafkaCfg,
+		kafkaCfg:            &kafkaCfg,
 	}
 	for _, opt := range opts {
 		opt.apply(tr)
