@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/stretchr/testify/assert"
@@ -139,12 +138,6 @@ func ensureTopicReady() error {
 	return fetches.Err()
 }
 
-func testClient(t *testing.T, kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) *Client {
-	cl, err := NewClient(kgoOpts, tracingOpts...)
-	require.NoError(t, err)
-	return cl
-}
-
 type producedRecords struct {
 	records []*kgo.Record
 }
@@ -152,32 +145,6 @@ type producedRecords struct {
 func (r *producedRecords) OnProduceRecordUnbuffered(record *kgo.Record, err error) {
 	r.records = append(r.records, record)
 }
-
-// func generateSpans(t *testing.T, mt mocktracer.Tracer, producerOp func(t *testing.T, cl *Client), consumerOp func(t *testing.T, cl *Client), producerOpts []tracing.Option, consumerOpts []tracing.Option) ([]*mocktracer.Span, []*kgo.Record) {
-
-// 	producerCl, err := NewClient(ClientOptions(
-// 		kgo.SeedBrokers(seedBrokers...),
-// 		kgo.ConsumeTopics(testTopic),
-// 		kgo.ConsumerGroup(testGroupID),
-// 		kgo.WithHooks(producedRecords),
-// 	), producerOpts...)
-// 	require.NoError(t, err)
-// 	producerOp(t, producerCl)
-// 	producerCl.Close()
-
-// 	consumerCl, err := NewClient(ClientOptions(
-// 		kgo.SeedBrokers(seedBrokers...),
-// 		kgo.ConsumeTopics(testTopic),
-// 		kgo.ConsumerGroup(testGroupID),
-// 	), consumerOpts...)
-// 	require.NoError(t, err)
-// 	consumerOp(t, consumerCl)
-// 	consumerCl.Close()
-
-// 	spans := mt.FinishedSpans()
-// 	require.Len(t, spans, 2)
-// 	return spans, producedRecords.records
-// }
 
 func TestProduceConsumeFunctional(t *testing.T) {
 	mt := mocktracer.Start()
@@ -263,18 +230,12 @@ func TestConsumeFunctional(t *testing.T) {
 	require.NoError(t, err)
 	defer consumerCl.Close()
 
-	err = consumerCl.Ping(context.Background())
-	require.NoError(t, err)
-
 	producerCl, err := NewClient(ClientOptions(
 		kgo.SeedBrokers(seedBrokers...),
 		kgo.WithHooks(producedRecords),
 	))
 	require.NoError(t, err)
 	defer producerCl.Close()
-
-	err = producerCl.Ping(context.Background())
-	require.NoError(t, err)
 
 	err = producerCl.ProduceSync(context.Background(), recordsToProduce...).FirstErr()
 	require.NoError(t, err)
