@@ -136,9 +136,14 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 func StartTelemetryRecorder(t *testing.T) *telemetrytest.RecordClient {
 	t.Helper()
 
+	// Set a first telemetry client to flush any pending data that may exist...
 	client := new(telemetrytest.RecordClient)
-	FlushTelemetry()
 	oldClient := telemetry.SwapClient(client)
+	FlushTelemetry()
+
+	// Then set the actual client now...
+	client = new(telemetrytest.RecordClient)
+	telemetry.SwapClient(client)
 
 	t.Cleanup(func() {
 		assert.NoError(t, client.Close())
