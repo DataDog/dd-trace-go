@@ -15,6 +15,8 @@ import (
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
+//
+// ctx must be non-nil. If ctx is nil, context.WithValue panics, "cannot create context from nil parent".
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
 	return contextWithPropagatedLLMSpan(newCtx, s)
