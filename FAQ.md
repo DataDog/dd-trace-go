@@ -3,7 +3,7 @@ This document contains answers to questions frequently asked by users. Just beca
 
 ## How can I reduce the size of my instrumented binaries?
 You can use the tags below to reduce the size of your binaries (note that some tags disable features):
-- `datadog.no_waf`: forces AAP's WAF to be disabled, so Application Security detections and blocking will not run even if AppSec is enabled.
+- `datadog.no_waf`: forces AAP's WAF to be disabled, so Application Security Monitoring features can't be activated if you specify this build tag.
 - `grpcnotrace` ([only for gRPC users](https://github.com/grpc/grpc-go/pull/6954)): disables gRPC's built-in `golang.org/x/net/trace` debug tracing endpoints (avoids the `reflect.MethodByName` dependency).
 - `nomsgpack` ([only for Gin users](https://github.com/gin-gonic/gin/blob/master/docs/doc.md#build-without-msgpack-rendering-feature)): disables msgpack binding/rendering support in Gin; msgpack-based request/response handling will not be available (dd-trace-go's msgpack usage is unaffected).
 
