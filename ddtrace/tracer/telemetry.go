@@ -42,24 +42,24 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
 		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
 		{Name: "send_retries", Value: c.sendRetries},
-		{Name: "retry_interval", Value: c.retryInterval},
+		{Name: "retry_interval", Value: c.internalConfig.RetryInterval()},
 		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
 		{Name: "service", Value: c.serviceName},
 		{Name: "universal_version", Value: c.universalVersion},
-		{Name: "env", Value: c.env},
-		{Name: "version", Value: c.version},
+		{Name: "env", Value: c.internalConfig.Env()},
+		{Name: "version", Value: c.internalConfig.Version()},
 		{Name: "trace_agent_url", Value: c.agentURL.String()},
-		{Name: "agent_hostname", Value: c.hostname},
+		{Name: "agent_hostname", Value: c.internalConfig.Hostname()},
 		{Name: "runtime_metrics_v2_enabled", Value: c.internalConfig.RuntimeMetricsV2Enabled()},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
-		{Name: "debug_stack_enabled", Value: !c.noDebugStack},
 		{Name: "profiling_endpoints_enabled", Value: c.internalConfig.ProfilerEndpoints()},
+		{Name: "debug_stack_enabled", Value: c.internalConfig.DebugStack()},
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
-		{Name: "trace_log_directory", Value: c.logDirectory},
+		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
@@ -79,10 +79,10 @@ func startTelemetry(c *config) telemetry.Client {
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: "trace_propagation_style_extract", Value: chained.extractorsNames})
 	}
-	for k, v := range c.featureFlags {
+	for k, v := range c.internalConfig.FeatureFlags() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
 	}
-	for k, v := range c.serviceMappings {
+	for k, v := range c.internalConfig.ServiceMappings() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "service_mapping_" + k, Value: v})
 	}
 	for k, v := range c.globalTags.get() {
@@ -114,7 +114,7 @@ func startTelemetry(c *config) telemetry.Client {
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
 		cfg.APIKey = env.Get("DD_API_KEY")
 	}
-	client, err := telemetry.NewClient(c.serviceName, c.env, c.version, cfg)
+	client, err := telemetry.NewClient(c.serviceName, c.internalConfig.Env(), c.internalConfig.Version(), cfg)
 	if err != nil {
 		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
 		return nil

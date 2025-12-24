@@ -110,6 +110,8 @@ type Configuration struct {
 	Origin Origin
 	// ID is the config ID of the configuration change.
 	ID string
+	// SeqID is the sequence ID of the configuration change.
+	SeqID uint64
 }
 
 type AppEndpointAuthentication = transport.AppEndpointAuthentication
