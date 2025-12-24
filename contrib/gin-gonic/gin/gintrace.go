@@ -47,12 +47,14 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		}
 		opts := options.Expand(spanOpts, 0, 4) // opts must be a copy of cfg.spanOpts, locally scoped, to avoid races.
 		opts = append(opts, tracer.ResourceName(cfg.resourceNamer(c)))
+		route := c.FullPath()
 		if !math.IsNaN(cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 		}
-		opts = append(opts, tracer.Tag(ext.HTTPRoute, c.FullPath()))
+		opts = append(opts, tracer.Tag(ext.HTTPRoute, route))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
+		httptrace.SetHTTPEndpoint(span, route, c.Request)
 		defer func() {
 			status := c.Writer.Status()
 			if cfg.useGinErrors && cfg.isStatusError(status) && len(c.Errors) > 0 {
