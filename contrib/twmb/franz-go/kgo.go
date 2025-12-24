@@ -104,6 +104,10 @@ func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 		return
 	}
 
+	if r.Context == nil {
+		r.Context = context.Background()
+	}
+
 	wrapped := wrapRecord(r)
 	span := c.tracer.StartConsumeSpan(r.Context, wrapped)
 	c.tracer.SetConsumeDSMCheckpoint(wrapped)
