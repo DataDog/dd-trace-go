@@ -5,6 +5,8 @@ on:
     - cron: "0 0 * * *"
   push:
     branches:
+      - release-v*
+      - mq-working-branch-**
       - hannahkm/tip-dependencies
   workflow_dispatch: { } # manually
 
@@ -28,6 +30,8 @@ jobs:
           echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
 
       - name: Download dependencies
+        env:
+          GO_CMD: gotip
         run: |-
           ./scripts/install_tools.sh --bin-dir ${{ github.workspace }}/bin
           gotip download

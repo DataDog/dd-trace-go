@@ -9,6 +9,7 @@ TEST_RESULTS="${TEST_RESULTS:-.}"
 mkdir -p "$TEST_RESULTS"
 
 GO_CMD="${GO_CMD:-go}"
+echo "Running tests with $GO_CMD"
 
 # Packages that don't support -shuffle on yet
 NO_SHUFFLE_PATTERN="(github\.com/DataDog/dd-trace-go/v2/ddtrace/tracer|\
