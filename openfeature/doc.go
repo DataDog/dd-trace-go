@@ -34,13 +34,13 @@
 //		)
 //
 //		// Create and register the provider
-//		provider, err := openfeature.NewDatadogProvider()
+//		provider, err := openfeature.NewDatadogProvider(openfeature.ProviderConfig{})
 //		if err != nil {
 //		    log.Fatal(err)
 //		}
 //		defer provider.Shutdown()
 //
-//	 // This can take a few seconds to complete as it waits for Remote Config initialization
+//	 // This can take up to 30 seconds (default timeout) as it waits for Remote Config initialization
 //		err = of.SetProviderAndWait(provider)
 //		if err != nil {
 //		    log.Fatal(err)
@@ -50,8 +50,9 @@
 //		client := of.NewClient("my-app")
 //		ctx := context.Background()
 //
-//		// Evaluate a boolean flag
-//		enabled, err := client.BooleanValue(ctx, "new-feature", false, of.EvaluationContext{})
+//		// Evaluate a boolean flag with an empty context
+//		evalCtx := of.NewEvaluationContext("", nil)
+//		enabled, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
 //		if err != nil {
 //		    log.Printf("Failed to evaluate flag: %v", err)
 //		}
@@ -215,6 +216,9 @@
 //     the OpenFeature provider. This is a safety flag to ensure the feature is
 //     intentionally activated. If not set or set to false, NewDatadogProvider()
 //     will return a NoopProvider instead of the actual Datadog provider.
+//     Important: When using the NoopProvider, all flag evaluations will silently
+//     return the default values you specify, with no errors. This allows your
+//     application to run without feature flags being active.
 //
 // Example:
 //
@@ -336,28 +340,58 @@
 //
 // # Testing
 //
-// For testing purposes, you can create a provider without Remote Config and
-// manually update its configuration:
+// For unit testing code that uses feature flags, use the OpenFeature SDK's
+// InMemoryProvider to define specific flag values:
 //
-//	// Use the internal constructor for testing
-//	provider := openfeature.newDatadogProvider()
+//	import (
+//	    of "github.com/open-feature/go-sdk/openfeature"
+//	    "github.com/open-feature/go-sdk/openfeature/memprovider"
+//	)
 //
-//	// Manually set test configuration
-//	config := &universalFlagConfiguration{
-//	    Format: "SERVER",
-//	    Flags: map[string]*flag{
-//	        "test-flag": {
-//	            Key: "test-flag",
-//	            Enabled: true,
-//	            VariationType: valueTypeBoolean,
-//	            Variations: map[string]*variant{
-//	                "on": {Key: "on", Value: true},
+//	func TestMyFeature(t *testing.T) {
+//	    // Create an in-memory provider with test flag values
+//	    provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+//	        "my-feature": {
+//	            Key:            "my-feature",
+//	            State:          memprovider.Enabled,
+//	            DefaultVariant: "on",
+//	            Variants: map[string]any{
+//	                "on":  true,
+//	                "off": false,
 //	            },
-//	            Allocations: []*allocation{},
 //	        },
-//	    },
+//	        "api-version": {
+//	            Key:            "api-version",
+//	            State:          memprovider.Enabled,
+//	            DefaultVariant: "v2",
+//	            Variants: map[string]any{
+//	                "v1": "v1",
+//	                "v2": "v2",
+//	            },
+//	        },
+//	    })
+//
+//	    of.SetProviderAndWait(provider)
+//	    defer of.Shutdown()
+//
+//	    client := of.NewClient("test-app")
+//	    ctx := context.Background()
+//
+//	    // This will return true (the "on" variant)
+//	    enabled, _ := client.BooleanValue(ctx, "my-feature", false,
+//	        of.NewEvaluationContext("test-user", nil))
+//
+//	    if !enabled {
+//	        t.Error("expected feature to be enabled")
+//	    }
 //	}
-//	provider.updateConfiguration(config)
+//
+// The InMemoryProvider also supports context-based evaluation using ContextEvaluator
+// for more complex test scenarios where the returned value depends on user attributes.
+//
+// For integration testing with real Datadog Remote Config, set the
+// DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED environment variable and ensure
+// the Datadog agent is running in your test environment
 //
 // # Limitations
 //
