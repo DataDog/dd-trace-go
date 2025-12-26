@@ -24,11 +24,11 @@ jobs:
       - name: Get Gotip
         run: |-
           go install golang.org/dl/gotip@latest
-          export PATH="$HOME/go/bin:$PATH"
-          gotip download
+          echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      - name: Get Agent main branch
+      - name: Setup environment
         run: |-
+          gotip download
           gotip get -u -t github.com/DataDog/datadog-agent@main
           gotip mod tidy
           find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && gotip mod tidy && popd; done
