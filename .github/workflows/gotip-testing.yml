@@ -24,6 +24,7 @@ jobs:
       - name: Get Gotip
         run: |-
           go install golang.org/dl/gotip@latest
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           gotip download
 
       - name: Get Agent main branch
