@@ -27,8 +27,9 @@ jobs:
           echo "$HOME/go/bin" >> $GITHUB_PATH
           echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
 
-      - name: Setup environment
+      - name: Download dependencies
         run: |-
+          ./scripts/install_tools.sh --bin-dir ${{ github.workspace }}/bin
           gotip download
           gotip get -u -t github.com/DataDog/datadog-agent@main
           gotip mod tidy
@@ -39,9 +40,7 @@ jobs:
           DD_APPSEC_WAF_TIMEOUT: 1h
           TEST_RESULTS: ${{ env.TEST_RESULTS }}
           GO_CMD: gotip
-        run: |
-          export PATH="${{ github.workspace }}/bin:$HOME/go/bin:$PATH"
-          ./scripts/ci_test_core.sh
+        run: ./scripts/ci_test_core.sh
       
       - name: Upload the results to Datadog CI App
         if: always()
