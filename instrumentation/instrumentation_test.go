@@ -21,6 +21,11 @@ func TestInstrumentation_AnalyticsRate(t *testing.T) {
 				t.Skip("Lambda contrib does not implement analytics functionality")
 				return
 			}
+			// Skip logging integrations - they don't generate spans, just correlate logs with traces
+			if pkg == PackageSirupsenLogrus || pkg == PackageLogSlog || pkg == PackageUberZap {
+				t.Skip("Logging integrations do not implement analytics functionality")
+				return
+			}
 
 			instr := Load(pkg)
 
