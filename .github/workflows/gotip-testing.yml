@@ -1,0 +1,57 @@
+name: Gotip Testing
+
+on:
+  schedule: # nightly
+    - cron: "0 0 * * *"
+  push:
+    branches:
+      - hannahkm/tip-dependencies
+  workflow_dispatch: { } # manually
+
+env:
+  TEST_RESULTS: /tmp/tip-results # path to where test results will be saved
+
+jobs:
+  test-tip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          ref: ${{ github.ref }}
+          repository: DataDog/dd-trace-go
+
+      - name: Get Gotip
+        run: |-
+          go install golang.org/dl/gotip@latest
+          gotip download
+
+      - name: Get Agent main branch
+        run: |-
+          gotip get -u -t github.com/DataDog/datadog-agent@main
+          gotip mod tidy
+          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && gotip mod tidy && popd; done
+      
+      - name: Run tests
+        env:
+          DD_APPSEC_WAF_TIMEOUT: 1h
+          TEST_RESULTS: ${{ env.TEST_RESULTS }}
+          GO_CMD: gotip
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
+          ls -al "${{ github.workspace }}/bin"
+          ./scripts/ci_test_core.sh
+      
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ env.TEST_RESULTS }}
+          tags: go:gotip,arch:${{ runner.arch }},os:${{ runner.os }}
+
+      - name: Upload Coverage
+        if: always()
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}

@@ -8,14 +8,16 @@ BUILD_TAGS="${BUILD_TAGS:-}"
 TEST_RESULTS="${TEST_RESULTS:-.}"
 mkdir -p "$TEST_RESULTS"
 
+GO_CMD="${GO_CMD:-go}"
+
 # Packages that don't support -shuffle on yet
 NO_SHUFFLE_PATTERN="(github\.com/DataDog/dd-trace-go/v2/ddtrace/tracer|\
 github\.com/DataDog/dd-trace-go/v2/internal/civisibility/utils|\
 github\.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo|\
 github\.com/DataDog/dd-trace-go/v2/instrumentation/httptrace)$"
 
-mapfile -t SHUFFLE_PACKAGES < <(go list ./... | grep -v /contrib/ | grep -Ev "$NO_SHUFFLE_PATTERN")
-mapfile -t NO_SHUFFLE_PACKAGES < <(go list ./... | grep -v /contrib/ | grep -E "$NO_SHUFFLE_PATTERN")
+mapfile -t SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -v /contrib/ | grep -Ev "$NO_SHUFFLE_PATTERN")
+mapfile -t NO_SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -v /contrib/ | grep -E "$NO_SHUFFLE_PATTERN")
 
 # Set +e so that we run all test commands even if one fails
 set +e
