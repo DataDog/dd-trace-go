@@ -25,6 +25,7 @@ jobs:
         run: |-
           go install golang.org/dl/gotip@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
 
       - name: Setup environment
         run: |-
@@ -39,8 +40,7 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULTS }}
           GO_CMD: gotip
         run: |
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ls -al "${{ github.workspace }}/bin"
+          export PATH="${{ github.workspace }}/bin:$HOME/go/bin:$PATH"
           ./scripts/ci_test_core.sh
       
       - name: Upload the results to Datadog CI App
