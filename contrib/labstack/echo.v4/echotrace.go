@@ -38,6 +38,10 @@ func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
 }
 
 // Middleware returns echo middleware which will trace incoming requests.
+//
+// Use of the [Wrap] function is recommended instead of directly calling
+// [echo.Echo.Use] with this middleware function, as [Wrap] activates all
+// available features automatically.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
 	cfg := new(config)
 	defaults(cfg)
