@@ -172,7 +172,7 @@ func (em *ExtensionManager) SendEndInvocationRequest(ctx context.Context, functi
 	// Mark the invocation as an error if any
 	if cfg.Error != nil {
 		req.Header.Set(string(DdInvocationError), "true")
-		req.Header.Set(string(DdInvocationErrorMsg), cfg.Error.Error())
+		req.Header.Set(string(DdInvocationErrorMsg), hdrEncode(cfg.Error.Error()))
 		req.Header.Set(string(DdInvocationErrorType), reflect.TypeOf(cfg.Error).String())
 		req.Header.Set(string(DdInvocationErrorStack), takeStacktrace(cfg))
 	}
@@ -247,7 +247,12 @@ func takeStacktrace(opts ddtracer.FinishConfig) string {
 		}
 	}
 
-	return base64.StdEncoding.EncodeToString([]byte(builder.String()))
+	return hdrEncode(builder.String())
+}
+
+// hdrEncode encodes a header value to base64.
+func hdrEncode(value string) string {
+	return base64.StdEncoding.EncodeToString([]byte(value))
 }
 
 func (em *ExtensionManager) IsExtensionRunning() bool {
