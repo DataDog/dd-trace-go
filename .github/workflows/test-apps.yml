@@ -73,7 +73,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -99,7 +99,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -125,7 +125,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -151,7 +151,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -177,7 +177,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -203,7 +203,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -229,7 +229,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -255,7 +255,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -281,7 +281,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
@@ -307,7 +307,7 @@ jobs:
     if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
