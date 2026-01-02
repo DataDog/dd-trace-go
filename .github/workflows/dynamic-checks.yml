@@ -60,7 +60,7 @@ jobs:
       TEST_RESULT_PATH: /tmp/test-results
     steps:
       - name: Checkout
-        uses: actions/checkout@09d2acae674a48949e3602304ab46fd20ae0c42f
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
           ref: ${{ github.ref }}
 

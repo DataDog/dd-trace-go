@@ -22,7 +22,7 @@ jobs:
       id-token: write
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - run: echo 'Smoke Tests workflow passed'
       - run: go run ./scripts/gen_integrations_doc.go
       - run: git diff
@@ -35,7 +35,7 @@ jobs:
           policy: self.update-supported-versions-doc.create-pr
       - name: Create Pull Request
         id: pr
-        uses: peter-evans/create-pull-request@84ae59a2cdc2258d6fa0732dd66352dddae2a412
+        uses: peter-evans/create-pull-request@98357b18bf14b5342f975ff684046ec3b2a07725
         with:
           token: ${{ steps.octo-sts.outputs.token }}
           branch: "update-latest-supported-versions"
