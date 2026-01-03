@@ -17,7 +17,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -128,6 +130,27 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	ptr := uintptr(unsafe.Pointer(ctx))
 	cc := (*cookieCutter)(*(*unsafe.Pointer)(unsafe.Pointer(&ptr)))
 	cc.trace.propagatingTags[k] = v
+}
+
+// StartTelemetryRecorder starts a new telemetry mock client and returns it.
+func StartTelemetryRecorder(t *testing.T) *telemetrytest.RecordClient {
+	t.Helper()
+
+	// Set a first telemetry client to flush any pending data that may exist...
+	client := new(telemetrytest.RecordClient)
+	oldClient := telemetry.SwapClient(client)
+	FlushTelemetry()
+
+	// Then set the actual client now...
+	client = new(telemetrytest.RecordClient)
+	telemetry.SwapClient(client)
+
+	t.Cleanup(func() {
+		assert.NoError(t, client.Close())
+		telemetry.SwapClient(oldClient)
+	})
+
+	return client
 }
 
 // FlushTelemetry flushes any pending telemetry data.
