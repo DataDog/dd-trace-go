@@ -44,6 +44,8 @@ func NewMeterProvider(opts ...Option) (otelmetric.MeterProvider, error) {
 func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetric.MeterProvider, error) {
 	// Check if metrics are enabled via environment variables
 	if !isMetricsEnabled() {
+		// Report to telemetry that metrics are disabled
+		registerNoopTelemetry()
 		// Return a no-op MeterProvider that doesn't export metrics
 		return noop.NewMeterProvider(), nil
 	}
@@ -53,6 +55,9 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
+
+	// Report configuration to telemetry
+	registerTelemetry(cfg)
 
 	// Build Datadog-specific resource
 	res, err := buildDatadogResource(ctx, cfg.resourceOptions...)
