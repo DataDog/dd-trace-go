@@ -56,7 +56,7 @@ func (p *ciVisibilityPayload) push(event *ciVisibilityEvent) (size int, err erro
 //	A pointer to a newly initialized civisibilitypayload instance.
 func newCiVisibilityPayload() *ciVisibilityPayload {
 	log.Debug("ciVisibilityPayload: creating payload instance")
-	return &ciVisibilityPayload{payload: newPayload(traceProtocolV04), serializationTime: 0}
+	return &ciVisibilityPayload{payload: newPayload(traceProtocolV04, nil), serializationTime: 0}
 }
 
 // getBuffer retrieves the complete body of the CI Visibility payload, including metadata.

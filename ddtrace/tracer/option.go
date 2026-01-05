@@ -260,6 +260,11 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
+
+	// spanPoolingDisabled controls whether spans are returned to the pool after processing.
+	// When true, spans are not returned to the pool, allowing tests to access span data
+	// after the tracer is stopped and for tracers not using pooling.
+	spanPoolingDisabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.

@@ -31,7 +31,7 @@ func BenchmarkAgentTraceWriterAdd(b *testing.B) {
 			cfg, err := newTestConfig()
 			require.NoError(b, err)
 
-			writer := newAgentTraceWriter(cfg, nil, &statsd)
+			writer := newAgentTraceWriter(cfg, nil, &statsd, nil)
 
 			trace := make([]*Span, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
@@ -53,7 +53,7 @@ func BenchmarkAgentTraceWriterFlush(b *testing.B) {
 	cfg, err := newTestConfig()
 	require.NoError(b, err)
 
-	writer := newAgentTraceWriter(cfg, nil, &statsd)
+	writer := newAgentTraceWriter(cfg, nil, &statsd, nil)
 	trace := []*Span{newBasicSpan("flush-test")}
 
 	b.ReportAllocs()
@@ -75,7 +75,7 @@ func BenchmarkAgentTraceWriterConcurrent(b *testing.B) {
 			cfg, err := newTestConfig()
 			require.NoError(b, err)
 
-			writer := newAgentTraceWriter(cfg, nil, &statsd)
+			writer := newAgentTraceWriter(cfg, nil, &statsd, nil)
 			trace := []*Span{newBasicSpan("concurrent-test")}
 
 			b.ReportAllocs()
@@ -103,7 +103,7 @@ func BenchmarkAgentTraceWriterStats(b *testing.B) {
 	cfg, err := newTestConfig()
 	require.NoError(b, err)
 
-	writer := newAgentTraceWriter(cfg, nil, &statsd)
+	writer := newAgentTraceWriter(cfg, nil, &statsd, nil)
 
 	for i := 0; i < 10; i++ {
 		trace := []*Span{newBasicSpan("stats-test")}

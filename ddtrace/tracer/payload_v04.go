@@ -63,7 +63,8 @@ type payloadV04 struct {
 var _ io.Reader = (*payloadV04)(nil)
 
 // newPayloadV04 returns a ready to use payload.
-func newPayloadV04() *payloadV04 {
+// The releaseSpan parameter is accepted for API consistency with payloadV1 but is not used.
+func newPayloadV04(_ func(*Span)) *payloadV04 {
 	p := &payloadV04{
 		header: make([]byte, 8),
 		off:    8,

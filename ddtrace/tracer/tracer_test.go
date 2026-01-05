@@ -2325,6 +2325,8 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		withTickChan(tick),
 		// disable keep-alives to avoid goroutine leaks between tests
 		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+		// disable span pooling so tests can access span data after stop()
+		withSpanPoolingDisabled(),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {

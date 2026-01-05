@@ -173,6 +173,9 @@ type tracer struct {
 		ldSubscriptionToken    remoteconfig.SubscriptionToken
 		symDBSubscriptionToken remoteconfig.SubscriptionToken
 	}
+
+	// spanPool is a pool of Span structs to reduce allocation pressure.
+	spanPool sync.Pool
 }
 
 const (
@@ -406,14 +409,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			statsd.Close()
 		}
 	}()
-	var writer traceWriter
-	if c.internalConfig.CIVisibilityEnabled() {
-		writer = newCiVisibilityTraceWriter(c)
-	} else if c.internalConfig.LogToStdout() {
-		writer = newLogTraceWriter(c, statsd)
-	} else {
-		writer = newAgentTraceWriter(c, sampler, statsd)
-	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
 		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors: %s", err.Error())
@@ -451,7 +446,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	}
 	t = &tracer{
 		config:           c,
-		traceWriter:      writer,
 		out:              make(chan *chunk, payloadQueueSize),
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
@@ -473,6 +467,19 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
 		logFile:     logFile,
+		spanPool: sync.Pool{
+			New: func() any {
+				return &Span{}
+			},
+		},
+	}
+	// Create the writer after the tracer so we can pass the releaseSpan method
+	if c.internalConfig.CIVisibilityEnabled() {
+		t.traceWriter = newCiVisibilityTraceWriter(c)
+	} else if c.internalConfig.LogToStdout() {
+		t.traceWriter = newLogTraceWriter(c, statsd)
+	} else {
+		t.traceWriter = newAgentTraceWriter(c, sampler, statsd, t.releaseSpan)
 	}
 	return t, nil
 }
@@ -631,6 +638,9 @@ func (t *tracer) sampleChunk(c *chunk) {
 		if len(kept) == 0 {
 			tracerstats.Signal(tracerstats.DroppedP0Traces, 1)
 		}
+		// Note: We don't release dropped spans to the pool here because external code
+		// may still hold references to them (e.g., tests checking span data after Finish()).
+		// Spans will be pooled later when they go through payload encoding.
 		c.spans = kept
 	}
 }
@@ -639,6 +649,8 @@ func (t *tracer) pushChunk(trace *chunk) {
 	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
+		// Tracer stopped, spans are dropped and will be garbage collected.
+		// We don't pool them here because external code may still reference them.
 		return
 	default:
 	}
@@ -647,6 +659,8 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
+		// Queue full, spans are dropped and will be garbage collected.
+		// We don't pool them here because external code may still reference them.
 	}
 	select {
 	case <-t.logDroppedTraces.C:
@@ -700,16 +714,15 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	if id == 0 {
 		id = generateSpanID(startTime)
 	}
-	// span defaults
-	span := &Span{
-		name:        operationName,
-		service:     "",
-		resource:    operationName,
-		spanID:      id,
-		traceID:     id,
-		start:       startTime,
-		integration: "manual",
-	}
+	// span defaults - get from pool to reduce allocations
+	span := getSpanFromPool()
+	span.name = operationName
+	span.service = ""
+	span.resource = operationName
+	span.spanID = id
+	span.traceID = id
+	span.start = startTime
+	span.integration = "manual"
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
@@ -872,6 +885,16 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 // but http, rpc or custom (s.spanType == "") span resource names generally do not.
 func spanResourcePIISafe(s *Span) bool {
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
+}
+
+// releaseSpan returns a span to the pool after resetting it.
+// If spanPoolingDisabled is true in the config, the span is not returned to the pool.
+func (t *tracer) releaseSpan(s *Span) {
+	if t.config.spanPoolingDisabled {
+		return
+	}
+	s.reset()
+	t.spanPool.Put(s)
 }
 
 // Stop stops the tracer.

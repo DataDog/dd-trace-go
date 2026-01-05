@@ -578,6 +578,8 @@ func (t *trace) finishedOne(s *Span) {
 		// to a race condition where spans can be modified while flushing.
 		//
 		// TODO(partialFlush): should we do a partial flush in this scenario?
+		// Note: We don't pool the span here because external code may still
+		// reference it. It will be garbage collected.
 		return
 	}
 	t.finished++
@@ -613,6 +615,12 @@ func (t *trace) finishedOne(s *Span) {
 	// We need to track when any single span is finished.
 	if mtr, ok := tr.(interface{ FinishSpan(*Span) }); ok {
 		mtr.FinishSpan(s)
+	}
+
+	// Submit stats for this span BEFORE sending to the chunk (where it may be reset due to pooling).
+	// This ensures normalization/tag propagation has been applied.
+	if tr, ok := tr.(*tracer); ok {
+		tr.submit(s)
 	}
 
 	if len(t.spans) == t.finished { // perform a full flush of all spans

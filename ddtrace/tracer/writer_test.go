@@ -422,7 +422,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			assert.Nil(err)
 			var statsd statsdtest.TestStatsdClient
 
-			h := newAgentTraceWriter(c, newPrioritySampler(), &statsd)
+			h := newAgentTraceWriter(c, newPrioritySampler(), &statsd, nil)
 			h.add(ss)
 			start := time.Now()
 			h.flush()
@@ -464,7 +464,7 @@ func TestTraceProtocol(t *testing.T) {
 		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "true")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
-		h := newAgentTraceWriter(cfg, nil, nil)
+		h := newAgentTraceWriter(cfg, nil, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
@@ -483,7 +483,7 @@ func TestTraceProtocol(t *testing.T) {
 			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
 		)
 		assert.NoError(err)
-		h := newAgentTraceWriter(cfg, nil, nil)
+		h := newAgentTraceWriter(cfg, nil, nil, nil)
 		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 
@@ -491,14 +491,14 @@ func TestTraceProtocol(t *testing.T) {
 		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "false")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
-		h := newAgentTraceWriter(cfg, nil, nil)
+		h := newAgentTraceWriter(cfg, nil, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("default", func(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
-		h := newAgentTraceWriter(cfg, nil, nil)
+		h := newAgentTraceWriter(cfg, nil, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
@@ -506,7 +506,7 @@ func TestTraceProtocol(t *testing.T) {
 		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "invalid")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
-		h := newAgentTraceWriter(cfg, nil, nil)
+		h := newAgentTraceWriter(cfg, nil, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 }
@@ -547,7 +547,7 @@ func TestAgentWriterRaceCondition(t *testing.T) {
 	require.NoError(t, err)
 	defer statsd.Close()
 
-	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg, nil)
 
 	const numGoroutines = 50
 	const numOperations = 100
@@ -614,7 +614,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 	require.NoError(t, err)
 	defer statsd.Close()
 
-	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg, nil)
 
 	const numAddGoroutines = 20
 	const numFlushGoroutines = 10
@@ -685,7 +685,7 @@ func TestPayloadSizeReporting(t *testing.T) {
 		processtags.Reload()
 
 		assert := assert.New(t)
-		p := newPayloadV1()
+		p := newPayloadV1(nil)
 
 		trace1 := []*Span{makeSpan(10), makeSpan(10)}
 		_, err := p.push(trace1)
@@ -709,7 +709,7 @@ func TestPayloadSizeReporting(t *testing.T) {
 		processtags.Reload()
 
 		assert := assert.New(t)
-		p := newPayloadV04()
+		p := newPayloadV04(nil)
 
 		trace1 := []*Span{makeSpan(10), makeSpan(10)}
 		stats, err := p.push(trace1)
@@ -754,13 +754,13 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 	}{
 		{
 			name:        "v0.4-protocol",
-			newPayload:  func() payload { return newPayloadV04() },
+			newPayload:  func() payload { return newPayloadV04(nil) },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
 			size:        1934,
 		},
 		{
 			name:        "v1-protocol",
-			newPayload:  func() payload { return newPayloadV1() },
+			newPayload:  func() payload { return newPayloadV1(nil) },
 			description: "v1 now encodes eagerly, size is accurate immediately",
 			size:        821,
 		},
@@ -783,7 +783,7 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+			writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg, nil)
 			// Override the payload with the specific protocol we want to test
 			writer.payload = tc.newPayload()
 
@@ -820,13 +820,13 @@ func TestPayloadSizeConsistency(t *testing.T) {
 	}{
 		{
 			name:        "v0.4",
-			newPayload:  func() payload { return newPayloadV04() },
+			newPayload:  func() payload { return newPayloadV04(nil) },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
 			size:        1332,
 		},
 		{
 			name:        "v1",
-			newPayload:  func() payload { return newPayloadV1() },
+			newPayload:  func() payload { return newPayloadV1(nil) },
 			description: "v1 now encodes eagerly too, size is accurate immediately",
 			size:        685,
 		},

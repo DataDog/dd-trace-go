@@ -53,6 +53,19 @@ var (
 	_ msgp.Decodable = (*spanLists)(nil)
 )
 
+// getSpanFromPool retrieves a span from the global tracer's pool, or creates a new one.
+// If span pooling is disabled in the config, a new Span is always allocated.
+func getSpanFromPool() *Span {
+	if tr, ok := getGlobalTracer().(*tracer); ok {
+		if !tr.config.spanPoolingDisabled {
+			if s := tr.spanPool.Get(); s != nil {
+				return s.(*Span)
+			}
+		}
+	}
+	return &Span{}
+}
+
 // errorConfig holds customization options for setting error tags.
 type errorConfig struct {
 	noDebugStack bool
@@ -145,9 +158,42 @@ type Span struct {
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
+// reset clears all fields of the span for reuse via sync.Pool.
+// This method should only be called after the span has been fully processed
+// and is no longer referenced.
+func (s *Span) reset() {
+	// Note: mu (sync.RWMutex) does not need to be reset
+	s.name = ""
+	s.service = ""
+	s.resource = ""
+	s.spanType = ""
+	s.start = 0
+	s.duration = 0
+	s.meta = nil
+	s.metaStruct = nil
+	s.metrics = nil
+	s.spanID = 0
+	s.traceID = 0
+	s.parentID = 0
+	s.error = 0
+	s.spanLinks = nil
+	s.spanEvents = nil
+	s.goExecTraced = false
+	s.noDebugStack = false
+	s.finished = false
+	s.context = nil
+	s.integration = ""
+	s.supportsEvents = false
+	s.pprofCtxActive = nil
+	s.pprofCtxRestore = nil
+	s.taskEnd = nil
+}
+
 // Context yields the SpanContext for this Span. Note that the return
-// value of Context() is still valid after a call to Finish(). This is
-// called the span context and it is different from Go's context.
+// value of Context() is still valid after a call to Finish() and until
+// the span is flushed to the agent. After flushing, the span may be
+// returned to a memory pool and reused, at which point the context
+// will no longer be valid.
 func (s *Span) Context() *SpanContext {
 	if s == nil {
 		return nil
@@ -722,6 +768,10 @@ func (s *Span) finish(finishTime int64) {
 		// already finished
 		return
 	}
+	// Check if span was reset and returned to pool (context would be nil)
+	if s.context == nil {
+		return
+	}
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
@@ -740,6 +790,10 @@ func (s *Span) finish(finishTime int64) {
 	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
 		if !tracer.config.enabled.current {
+			// Tracer disabled, mark as finished and return.
+			// The span won't be flushed to a writer, so it won't be released to the pool.
+			// This is acceptable as disabled tracer is not the common case.
+			s.finished = true
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -762,11 +816,6 @@ func (s *Span) finish(finishTime int64) {
 			s, s.name, s.resource, s.meta, s.metrics)
 	}
 	s.context.finish()
-
-	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
-	if hasTracer {
-		tracer.submit(s)
-	}
 
 	if s.pprofCtxRestore != nil {
 		// Restore the labels of the parent span so any CPU samples after this

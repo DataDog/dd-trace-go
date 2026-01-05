@@ -60,7 +60,7 @@ func getTestTrace(traceN, size int) [][]*Span {
 }
 
 func encode(traces [][]*Span) (payload, error) {
-	p := newPayload(traceProtocolV04)
+	p := newPayload(traceProtocolV04, nil)
 	for _, t := range traces {
 		if _, err := p.push(t); err != nil {
 			return p, err
@@ -160,7 +160,7 @@ func TestTransportResponse(t *testing.T) {
 			}))
 			defer srv.Close()
 			transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false))
-			rc, err := transport.send(newPayload(traceProtocolV04))
+			rc, err := transport.send(newPayload(traceProtocolV04, nil))
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
 				return

@@ -1766,3 +1766,120 @@ func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
 	errorStack, _ := getMeta(sp, "error.stack")
 	assert.Equal(t, "boom", errorStack)
 }
+
+func TestSpanReset(t *testing.T) {
+	// Create a span with all fields populated
+	span := &Span{
+		name:           "test-operation",
+		service:        "test-service",
+		resource:       "test-resource",
+		spanType:       "test-type",
+		start:          12345,
+		duration:       6789,
+		meta:           map[string]string{"key": "value"},
+		metaStruct:     metaStructMap{"struct": "value"},
+		metrics:        map[string]float64{"metric": 1.0},
+		spanID:         100,
+		traceID:        200,
+		parentID:       300,
+		error:          1,
+		spanLinks:      []SpanLink{{TraceID: 1, SpanID: 2}},
+		spanEvents:     []spanEvent{{Name: "event"}},
+		goExecTraced:   true,
+		noDebugStack:   true,
+		finished:       true,
+		context:        &SpanContext{},
+		integration:    "test-integration",
+		supportsEvents: true,
+		taskEnd:        func() {},
+	}
+
+	// Reset the span
+	span.reset()
+
+	// Verify all fields are zeroed
+	assert.Equal(t, "", span.name)
+	assert.Equal(t, "", span.service)
+	assert.Equal(t, "", span.resource)
+	assert.Equal(t, "", span.spanType)
+	assert.Equal(t, int64(0), span.start)
+	assert.Equal(t, int64(0), span.duration)
+	assert.Nil(t, span.meta)
+	assert.Nil(t, span.metaStruct)
+	assert.Nil(t, span.metrics)
+	assert.Equal(t, uint64(0), span.spanID)
+	assert.Equal(t, uint64(0), span.traceID)
+	assert.Equal(t, uint64(0), span.parentID)
+	assert.Equal(t, int32(0), span.error)
+	assert.Nil(t, span.spanLinks)
+	assert.Nil(t, span.spanEvents)
+	assert.False(t, span.goExecTraced)
+	assert.False(t, span.noDebugStack)
+	assert.False(t, span.finished)
+	assert.Nil(t, span.context)
+	assert.Equal(t, "", span.integration)
+	assert.False(t, span.supportsEvents)
+	assert.Nil(t, span.taskEnd)
+	assert.Nil(t, span.pprofCtxActive)
+	assert.Nil(t, span.pprofCtxRestore)
+}
+
+func TestSpanPoolReuse(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	// Get a span from pool
+	span1 := tracer.spanPool.Get().(*Span)
+	span1.name = "span1"
+	span1.spanID = 12345
+
+	// Reset and return to pool
+	span1.reset()
+	tracer.spanPool.Put(span1)
+
+	// Get another span - might be the same one
+	span2 := tracer.spanPool.Get().(*Span)
+
+	// Verify it's clean (no data leakage)
+	assert.Equal(t, "", span2.name)
+	assert.Equal(t, uint64(0), span2.spanID)
+	assert.Nil(t, span2.meta)
+	assert.Nil(t, span2.metrics)
+}
+
+func BenchmarkSpanPoolAllocation(b *testing.B) {
+	b.Run("without_pool", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			span := &Span{
+				name:     "test",
+				service:  "service",
+				resource: "resource",
+				spanID:   uint64(i),
+				traceID:  uint64(i),
+			}
+			_ = span
+		}
+	})
+
+	b.Run("with_pool", func(b *testing.B) {
+		// Create a local pool for benchmarking
+		pool := sync.Pool{
+			New: func() any {
+				return &Span{}
+			},
+		}
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			span := pool.Get().(*Span)
+			span.name = "test"
+			span.service = "service"
+			span.resource = "resource"
+			span.spanID = uint64(i)
+			span.traceID = uint64(i)
+			span.reset()
+			pool.Put(span)
+		}
+	})
+}
