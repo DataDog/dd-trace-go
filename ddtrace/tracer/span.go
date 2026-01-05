@@ -453,7 +453,6 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 	case error:
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
-		// TODO: once Error Tracking fix is resolved, update relevant tags here. See #4095
 		setError(true)
 		s.setMeta(ext.ErrorMsg, v.Error())
 		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
@@ -462,10 +461,10 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		}
 		switch err := v.(type) {
 		case xerrors.Formatter:
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
 		case *errortrace.TracerError:
 			// instrumentation/errortrace approach
 			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
@@ -473,7 +472,7 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 			return
 		}
 		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-		s.setMeta(ext.ErrorStack, stack)
+		s.setMeta(ext.ErrorHandlingStack, stack)
 	case nil:
 		// no error
 		setError(false)
