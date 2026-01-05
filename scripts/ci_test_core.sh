@@ -32,7 +32,9 @@ else
   echo "Running standard tests for core packages"
 fi
 
-export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
+if [[ "$GO_CMD" == "go" ]]; then
+  export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
+fi
 
 # Run tests with shuffle for packages that support it
 gotestsum --raw-command --junitfile "${TEST_RESULTS}/gotestsum-report.xml" -- $GO_CMD test -json -v -race "$TAGS_ARG" -shuffle=on -coverprofile=coverage.txt -covermode=atomic "${SHUFFLE_PACKAGES[@]}"
