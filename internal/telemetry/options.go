@@ -9,15 +9,48 @@ import (
 	"strings"
 )
 
-// WithTags returns a LogOption that sets the tags for the telemetry log message. Tags are key-value pairs that are then
+// estimatedAvgTagLen is a heuristic for pre-allocating string builder capacity.
+// Typical tags like "product:appsec" (14 chars) or "env:production" (14 chars).
+// Under-estimating causes additional allocations when the builder grows.
+// Over-estimating wastes memory until the final string is built.
+const estimatedAvgTagLen = 16
+
+// WithTags returns a LogOption that appends the tags for the telemetry log message. Tags are key-value pairs that are then
 // serialized into a simple "key:value,key2:value2" format. No quoting or escaping is performed.
+// Multiple calls to WithTags will append tags without duplications, preserving the order of first occurrence.
 func WithTags(tags []string) LogOption {
-	compiledTags := strings.Join(tags, ",")
 	return func(key *loggerKey, _ *loggerValue) {
-		if key == nil {
+		if key == nil || len(tags) == 0 {
 			return
 		}
-		key.tags = compiledTags
+
+		if key.tags == "" {
+			key.tags = strings.Join(tags, ",")
+			return
+		}
+
+		seen := make(map[string]struct{}, len(tags))
+
+		var builder strings.Builder
+		builder.Grow(len(key.tags) + len(tags)*estimatedAvgTagLen)
+
+		for tag := range strings.SplitSeq(key.tags, ",") {
+			if builder.Len() > 0 {
+				builder.WriteByte(',')
+			}
+			builder.WriteString(tag)
+			seen[tag] = struct{}{}
+		}
+
+		for _, tag := range tags {
+			if _, exists := seen[tag]; !exists {
+				seen[tag] = struct{}{}
+				builder.WriteByte(',')
+				builder.WriteString(tag)
+			}
+		}
+
+		key.tags = builder.String()
 	}
 }
 
