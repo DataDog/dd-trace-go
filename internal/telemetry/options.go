@@ -9,31 +9,36 @@ import (
 	"strings"
 )
 
-// estimatedAvgTagLen is a heuristic for pre-allocating string builder capacity.
-// Typical tags like "product:appsec" (14 chars) or "env:production" (14 chars).
-// Under-estimating causes additional allocations when the builder grows.
-// Over-estimating wastes memory until the final string is built.
-const estimatedAvgTagLen = 16
-
 // WithTags returns a LogOption that appends the tags for the telemetry log message. Tags are key-value pairs that are then
 // serialized into a simple "key:value,key2:value2" format. No quoting or escaping is performed.
 // Multiple calls to WithTags will append tags without duplications, preserving the order of first occurrence.
 func WithTags(tags []string) LogOption {
+	if len(tags) == 0 {
+		return func(*loggerKey, *loggerValue) {}
+	}
+
+	// Pre-compute joined string to minimize closure size (string vs slice header)
+	// and avoid repeated joins in the common fast-path case
+	compiled := strings.Join(tags, ",")
+
 	return func(key *loggerKey, _ *loggerValue) {
-		if key == nil || len(tags) == 0 {
+		if key == nil {
 			return
 		}
 
 		if key.tags == "" {
-			key.tags = strings.Join(tags, ",")
+			// Fast path: no existing tags, just assign
+			key.tags = compiled
 			return
 		}
 
-		seen := make(map[string]struct{}, len(tags))
+		// Slow path: merge and deduplicate
+		seen := make(map[string]struct{})
 
 		var builder strings.Builder
-		builder.Grow(len(key.tags) + len(tags)*estimatedAvgTagLen)
+		builder.Grow(len(key.tags) + len(compiled) + 1)
 
+		// Add existing tags
 		for tag := range strings.SplitSeq(key.tags, ",") {
 			if builder.Len() > 0 {
 				builder.WriteByte(',')
@@ -42,11 +47,14 @@ func WithTags(tags []string) LogOption {
 			seen[tag] = struct{}{}
 		}
 
-		for _, tag := range tags {
+		// Add new tags, skipping duplicates
+		for tag := range strings.SplitSeq(compiled, ",") {
 			if _, exists := seen[tag]; !exists {
-				seen[tag] = struct{}{}
-				builder.WriteByte(',')
+				if builder.Len() > 0 {
+					builder.WriteByte(',')
+				}
 				builder.WriteString(tag)
+				seen[tag] = struct{}{}
 			}
 		}
 
