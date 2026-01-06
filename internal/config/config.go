@@ -105,13 +105,6 @@ type Config struct {
 	retryInterval time.Duration
 }
 
-// HOT PATH NOTE:
-// Some Config accessors may be called on hot paths (e.g., span start/finish, partial flush logic).
-// If benchmarks regress, ensure getters are efficient and do not:
-// - copy whole maps/slices on every call (prefer single-key lookup helpers like ServiceMapping/HasFeature), or
-// - take multiple lock/unlock pairs to read related fields (prefer a combined getter under one RLock, like PartialFlushEnabled()).
-// Also consider avoiding `defer` in getters that are executed per-span in tight loops.
-
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
 func loadConfig() *Config {
