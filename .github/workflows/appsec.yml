@@ -158,7 +158,7 @@ jobs:
                     fi
 
                     cd "$submodule"
-                    submodule_name="${submodule//\//-}"
+                    submodule_name=$(echo "$submodule" | tr '/' '-')
                     # shellcheck disable=SC2086
                     if ! env CGO_ENABLED="$cgo" $appsec_enabled_env GOEXPERIMENT="$cgocheck_env" gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-${cgo}-${appsec_enabled_env:-default}-${cgocheck_env}-${submodule_name}.xml" -- -v .; then
                       echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-${cgo}-${appsec_enabled_env:-default}-${cgocheck_env}-${submodule_name}.xml\" -- -v . (submodule: $submodule)"
@@ -232,7 +232,7 @@ jobs:
               # shellcheck disable=SC2086
               for submodule in $SUBMODULES; do
                 cd "$submodule"
-                submodule_name="${submodule//\//-}"
+                submodule_name=$(echo "$submodule" | tr '/' '-')
                 # shellcheck disable=SC2086
                 if ! env $appsec_enabled_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml" -- -v $go_tags .; then
                   echo "Failed: env $appsec_enabled_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml\" -- -v $go_tags . (submodule: $submodule)"
@@ -334,7 +334,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=0 test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-undefined.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            submodule_name="${submodule//\//-}"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
             if ! sudo docker exec -i -e CGO_ENABLED=0 test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-undefined-${submodule_name}.xml\" -- -v ."; then
               echo "Failed: env CGO_ENABLED=0 bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-undefined-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
@@ -345,7 +345,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-disabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            submodule_name="${submodule//\//-}"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
             if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-disabled-${submodule_name}.xml\" -- -v ."; then
               echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-disabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
@@ -356,7 +356,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-enabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            submodule_name="${submodule//\//-}"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
             if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-enabled-${submodule_name}.xml\" -- -v ."; then
               echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-enabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
@@ -367,7 +367,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=1 test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-cgo-undefined.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            submodule_name="${submodule//\//-}"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
             if ! sudo docker exec -i -e CGO_ENABLED=1 test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-undefined-${submodule_name}.xml\" -- -v ."; then
               echo "Failed: env CGO_ENABLED=1 bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-undefined-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
@@ -378,7 +378,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-cgo-disabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            submodule_name="${submodule//\//-}"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
             if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-disabled-${submodule_name}.xml\" -- -v ."; then
               echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-disabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
@@ -389,7 +389,7 @@ jobs:
           sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-cgo-enabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            submodule_name="${submodule//\//-}"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
             if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-enabled-${submodule_name}.xml\" -- -v ."; then
               echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-enabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
