@@ -131,7 +131,10 @@ func (h *agentTraceWriter) flush() {
 
 		stats := p.stats()
 		var err error
-		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
+		// Cache send retries and retry interval once per flush to avoid acquiring the lock on every loop iteration.
+		sendRetries := h.config.internalConfig.SendRetries()
+		retryInterval := h.config.internalConfig.RetryInterval()
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
 			var rc io.ReadCloser
 			rc, err = h.config.transport.send(p)
@@ -146,10 +149,10 @@ func (h *agentTraceWriter) flush() {
 			}
 
 			if attempt+1%5 == 0 {
-				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error())
 			}
 			p.reset()
-			time.Sleep(h.config.internalConfig.RetryInterval())
+			time.Sleep(retryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:send_failed"}, 1)
 		log.Error("lost %d traces: %v", stats.itemCount, err.Error())
