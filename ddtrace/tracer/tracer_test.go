@@ -273,7 +273,7 @@ func TestTracerLogFile(t *testing.T) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.Nil(t, err)
-		assert.Equal(t, dir, tracer.config.logDirectory)
+		assert.Equal(t, dir, tracer.config.internalConfig.LogDirectory())
 		assert.NotNil(t, tracer.logFile)
 		assert.Equal(t, dir+"/"+log.LoggerFile, tracer.logFile.Name())
 	})
@@ -282,7 +282,7 @@ func TestTracerLogFile(t *testing.T) {
 		tracer, err := newTracer()
 		assert.Nil(t, err)
 		defer tracer.Stop()
-		assert.Empty(t, tracer.config.logDirectory)
+		assert.Empty(t, tracer.config.internalConfig.LogDirectory())
 		assert.Nil(t, tracer.logFile)
 	})
 }
@@ -428,7 +428,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -494,7 +493,7 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -519,7 +518,6 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -544,7 +542,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be dropped. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -569,7 +566,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
@@ -602,7 +598,6 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		var spans []*Span
 		for i := 0; i < 100; i++ {
@@ -642,7 +637,6 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
@@ -678,7 +672,6 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
@@ -752,7 +745,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.runtimeMetrics)
+		assert.False(t, c.internalConfig.RuntimeMetricsEnabled())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
@@ -761,12 +754,12 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetricsEnabled())
 		// tracer option overrides dd env
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		c, err = newTestConfig(WithRuntimeMetrics())
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetricsEnabled())
 	})
 }
 
@@ -1857,11 +1850,11 @@ func TestTracerReportsHostname(t *testing.T) {
 
 			name, ok := root.meta[keyHostname]
 			assert.True(ok)
-			assert.Equal(name, tracer.config.hostname)
+			assert.Equal(name, tracer.config.internalConfig.Hostname())
 
 			name, ok = child.meta[keyHostname]
 			assert.True(ok)
-			assert.Equal(name, tracer.config.hostname)
+			assert.Equal(name, tracer.config.internalConfig.Hostname())
 		})
 	}
 	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/true", true)
@@ -2465,7 +2458,8 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	cfg := newTestConfigWithTransportAndEnv(t, transport, "someEnv")
+	c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
 	tr.stats.Stop()
 	tr.stats = c
 	c.Start()
@@ -2643,8 +2637,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2664,8 +2657,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2689,8 +2681,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2822,7 +2813,7 @@ func TestEmptyChunksNotSent(t *testing.T) {
 	assert.NoError(err)
 	defer stop()
 
-	tracer.config.statsComputationEnabled = true
+	tracer.config.internalConfig.SetStatsComputationEnabled(true, internalconfig.OriginCode)
 	tracer.prioritySampling.defaultRate = 0
 	tracer.config.serviceName = "test_service"
 
@@ -2948,6 +2939,8 @@ func TestTracerTwiceStartRemoteConfig(t *testing.T) {
 func TestTracerConcurrentStartStop(t *testing.T) {
 	const iterations = 100
 	var wg sync.WaitGroup
+
+	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
 
 	// Goroutine 1: Continuously start the tracer
 	wg.Add(1)

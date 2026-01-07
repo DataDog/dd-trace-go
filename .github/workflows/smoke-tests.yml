@@ -56,20 +56,11 @@ jobs:
 
       - name: go get -u
         run: |-
-          mkdir -p $TEST_RESULTS
+          mkdir -p "$TEST_RESULTS"
+          # shellcheck disable=SC2086
           go get -u -t $PACKAGES
-          go get github.com/DataDog/datadog-agent/pkg/trace@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/remoteconfig/state@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/proto@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/obfuscate@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/comp/core/tagger/origindetection@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/util/log@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/util/scrubber@v0.71.0-rc.2
-          go get github.com/DataDog/datadog-agent/pkg/version@v0.71.0-rc.2
-          go get go.opentelemetry.io/collector/pdata@v1.39.0
           go mod tidy
-          for d in `find . -iname go.mod | xargs -n1 dirname`; do pushd $d; go mod tidy; popd; done;
+          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
 
       - name: Install requested go-libddwaf version
         if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
@@ -78,7 +69,9 @@ jobs:
           go mod tidy
 
       - name: Compile dd-trace-go
-        run: go build $PACKAGES
+        run: |
+          # shellcheck disable=SC2086
+          go build $PACKAGES
 
       - name: Compute Matrix
         id: matrix
@@ -129,7 +122,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
-      - run: go test $PACKAGES
+      - run: |
+          # shellcheck disable=SC2086
+          go test $PACKAGES
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()

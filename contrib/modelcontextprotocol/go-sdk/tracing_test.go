@@ -29,7 +29,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server)
 
 	// go-sdk only assigns session ids on streamable transports.
 	// Using a streamable http transport in this test allows testing session id tagging behavior.
@@ -59,6 +59,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	assert.Contains(t, taskSpan.Tags, "client_name:test-client")
 	assert.Contains(t, taskSpan.Tags, "client_version:test-client_1.0.0")
 	assert.Contains(t, taskSpan.Tags, "mcp_session_id:"+sessionID)
+	assert.Contains(t, taskSpan.Tags, "mcp_method:initialize")
 
 	assert.Contains(t, taskSpan.Meta, "input")
 	assert.Contains(t, taskSpan.Meta, "output")
@@ -91,7 +92,7 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server, WithIntentCapture())
 
 	type CalcArgs struct {
 		Operation string  `json:"operation"`
@@ -146,6 +147,8 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	require.NoError(t, err)
 	defer clientSession.Close()
 
+	clientSession.ListTools(ctx, &mcp.ListToolsParams{})
+
 	sessionID := clientSession.ID()
 	require.NotEmpty(t, sessionID)
 
@@ -175,6 +178,10 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 
 	require.NotNil(t, initSpan, "initialize span not found")
 	require.NotNil(t, toolSpan, "tool span not found")
+
+	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool:calculator")
 
 	// Session id must be the same between spans
 	assert.Contains(t, initSpan.Tags, "mcp_session_id:"+sessionID)
@@ -235,7 +242,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server)
 
 	mcp.AddTool(server,
 		&mcp.Tool{
@@ -312,7 +319,7 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
-	AddTracingMiddleware(server)
+	AddTracing(server)
 
 	type ValidationArgs struct {
 		Name string `json:"name"`
@@ -414,6 +421,8 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	outputStr := string(outputJSON)
 	assert.Contains(t, outputStr, "invalid input")
 }
+
+// Shared helpers
 
 // testTracer creates a testtracer with LLMObs enabled for integration tests
 func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
