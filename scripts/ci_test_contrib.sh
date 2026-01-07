@@ -46,7 +46,7 @@ for contrib in $CONTRIBS; do
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
     # Another temporary workaround caused by the upgrade introduced by this commit: https://github.com/kubernetes/client-go/commit/f4d210639bbc61f2f2a8596662d7ad50abaa6544
-    go get k8s.io/client-go@81caec87ee2e7f0c000f17c3e8ab5af8ad806966
+    go get k8s.io/client-go@34f52c14eaed7e50c845cc14e85e1c4c91e77470
   fi
   if [[ "$1" = "smoke" && "$contrib" = "./contrib/gin-gonic/gin/" ]]; then
     # Temporary workaround, see: https://github.com/gin-gonic/gin/issues/4441
