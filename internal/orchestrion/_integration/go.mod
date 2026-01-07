@@ -10,7 +10,7 @@ require (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.6.0-dev.1
-	github.com/DataDog/go-libddwaf/v4 v4.7.0
+	github.com/DataDog/go-libddwaf/v4 v4.8.0
 	github.com/DataDog/orchestrion v1.6.1
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -316,7 +316,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.37.0 // indirect
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0 // indirect
-	github.com/theckman/httpforwarded v0.4.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
