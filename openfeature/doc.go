@@ -29,18 +29,18 @@
 // register it with the OpenFeature SDK:
 //
 //		import (
-//		    "github.com/DataDog/dd-trace-go/v2/openfeature"
+//		    ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
 //		    of "github.com/open-feature/go-sdk/openfeature"
 //		)
 //
 //		// Create and register the provider
-//		provider, err := openfeature.NewDatadogProvider(openfeature.ProviderConfig{})
+//		provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
 //		if err != nil {
 //		    log.Fatal(err)
 //		}
 //		defer provider.Shutdown()
 //
-//	 // This can take up to 30 seconds (default timeout) as it waits for Remote Config initialization
+//	 // This can take up to 30 seconds (Datadog Remote Config default timeout) as it waits for initialization
 //		err = of.SetProviderAndWait(provider)
 //		if err != nil {
 //		    log.Fatal(err)
@@ -50,8 +50,8 @@
 //		client := of.NewClient("my-app")
 //		ctx := context.Background()
 //
-//		// Evaluate a boolean flag with an empty context
-//		evalCtx := of.NewEvaluationContext("", nil)
+//		// Evaluate a boolean flag with a targetless context
+//		evalCtx := of.NewTargetlessEvaluationContext()
 //		enabled, err := client.BooleanValue(ctx, "new-feature", false, evalCtx)
 //		if err != nil {
 //		    log.Printf("Failed to evaluate flag: %v", err)
@@ -196,10 +196,10 @@
 //
 // The provider can be configured using ProviderConfig when creating a new instance:
 //
-//	config := openfeature.ProviderConfig{
+//	config := ddopenfeature.ProviderConfig{
 //	    ExposureFlushInterval: 5 * time.Second,  // Optional: defaults to 1 second
 //	}
-//	provider, err := openfeature.NewDatadogProvider(config)
+//	provider, err := ddopenfeature.NewDatadogProvider(config)
 //
 // Configuration Options:
 //
@@ -218,7 +218,10 @@
 //     will return a NoopProvider instead of the actual Datadog provider.
 //     Important: When using the NoopProvider, all flag evaluations will silently
 //     return the default values you specify, with no errors. This allows your
-//     application to run without feature flags being active.
+//     application to run without feature flags being active. The NoopProvider
+//     can also be combined with the OpenFeature multi-provider
+//     (https://github.com/open-feature/go-sdk/tree/main/openfeature/multi)
+//     to implement local overrides during development or testing.
 //
 // Example:
 //
@@ -285,7 +288,7 @@
 //	    "log"
 //
 //	    "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-//	    "github.com/DataDog/dd-trace-go/v2/openfeature"
+//	    ddopenfeature "github.com/DataDog/dd-trace-go/v2/openfeature"
 //	    of "github.com/open-feature/go-sdk/openfeature"
 //	)
 //
@@ -295,7 +298,7 @@
 //	    defer tracer.Stop()
 //
 //	    // Create OpenFeature provider
-//	    provider, err := openfeature.NewDatadogProvider(openfeature.ProviderConfig{})
+//	    provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
 //	    if err != nil {
 //	        log.Fatalf("Failed to create provider: %v", err)
 //	    }
