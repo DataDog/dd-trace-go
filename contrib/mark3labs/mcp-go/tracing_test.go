@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -80,6 +79,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	assert.Contains(t, taskSpan.Tags, "client_version:test-client_1.0.0")
 
 	assert.Contains(t, taskSpan.Tags, "mcp_session_id:test-session-init")
+	assert.Contains(t, taskSpan.Tags, "mcp_method:initialize")
 
 	assert.Contains(t, taskSpan.Meta, "input")
 	assert.Contains(t, taskSpan.Meta, "output")
@@ -176,6 +176,10 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	expectedTag := "mcp_session_id:test-session-123"
 	assert.Contains(t, initSpan.Tags, expectedTag)
 	assert.Contains(t, toolSpan.Tags, expectedTag)
+
+	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool:calculator")
 
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
@@ -369,45 +373,3 @@ func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {
 }
 
 // Test helpers
-
-// testTracer creates a testtracer with LLMObs enabled for integration tests
-func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
-	defaultOpts := []testtracer.Option{
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-mcp-app"),
-			tracer.WithLogStartup(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-	}
-	allOpts := append(defaultOpts, opts...)
-	tt := testtracer.Start(t, allOpts...)
-	t.Cleanup(tt.Stop)
-	return tt
-}
-
-// mockSession is a simple mock implementation of server.ClientSession for testing
-type mockSession struct {
-	id             string
-	initialized    bool
-	notificationCh chan mcp.JSONRPCNotification
-}
-
-func (m *mockSession) SessionID() string {
-	return m.id
-}
-
-func (m *mockSession) Initialize() {
-	m.initialized = true
-	m.notificationCh = make(chan mcp.JSONRPCNotification, 10)
-}
-
-func (m *mockSession) Initialized() bool {
-	return m.initialized
-}
-
-func (m *mockSession) NotificationChannel() chan<- mcp.JSONRPCNotification {
-	return m.notificationCh
-}

@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -375,7 +376,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(x.Timeout, y.Timeout)
 		compareHTTPClients(t, x, y)
 		assert.True(getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
-		assert.False(c.debug)
+		assert.False(c.internalConfig.Debug())
 	})
 
 	t.Run("http-client", func(t *testing.T) {
@@ -430,48 +431,43 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.True(t, c.debug)
+			assert.True(t, c.internalConfig.Debug())
 		})
 		t.Run("env", func(t *testing.T) {
 			t.Setenv("DD_TRACE_DEBUG", "true")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
-			assert.True(t, c.debug)
+			assert.True(t, c.internalConfig.Debug())
 		})
 		t.Run("otel-env-debug", func(t *testing.T) {
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
-			assert.True(t, c.debug)
+			assert.True(t, c.internalConfig.Debug())
 		})
 		t.Run("otel-env-notdebug", func(t *testing.T) {
 			// any value other than debug, does nothing
 			t.Setenv("OTEL_LOG_LEVEL", "notdebug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig()
 			assert.NoError(t, err)
-			assert.False(t, c.debug)
+			assert.False(t, c.internalConfig.Debug())
 		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
 			// option override otel
 			t.Setenv("OTEL_LOG_LEVEL", "debug")
-			internalconfig.ResetForTesting()
 			c, err := newTestConfig(WithDebugMode(false))
 			assert.NoError(err)
-			assert.False(c.debug)
+			assert.False(c.internalConfig.Debug())
 			// env override otel
 			t.Setenv("DD_TRACE_DEBUG", "false")
-			internalconfig.ResetForTesting()
 			c, err = newTestConfig()
 			assert.NoError(err)
-			assert.False(c.debug)
+			assert.False(c.internalConfig.Debug())
 			// option override env
 			c, err = newTestConfig(WithDebugMode(true))
 			assert.NoError(err)
-			assert.True(c.debug)
+			assert.True(c.internalConfig.Debug())
 		})
 	})
 
@@ -620,7 +616,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.NoError(t, err)
 		defer tracer.Stop()
 		c := tracer.config
-		assert.Equal(t, "testEnv", c.env)
+		assert.Equal(t, "testEnv", c.internalConfig.Env())
 	})
 
 	t.Run("env-agentAddr", func(t *testing.T) {
@@ -704,7 +700,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		defer tracer.Stop()
 		assert.NoError(err)
 		c := tracer.config
-		assert.Equal(env, c.env)
+		assert.Equal(env, c.internalConfig.Env())
 	})
 
 	t.Run("trace_enabled", func(t *testing.T) {
@@ -744,8 +740,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(&url.URL{Scheme: "http", Host: "127.0.0.1:58126"}, c.agentURL)
 		assert.NotNil(c.globalTags.get())
 		assert.Equal("v", c.globalTags.get()["k"])
-		assert.Equal("testEnv", c.env)
-		assert.True(c.debug)
+		assert.Equal("testEnv", c.internalConfig.Env())
+		assert.True(c.internalConfig.Debug())
 	})
 
 	t.Run("env-tags", func(t *testing.T) {
@@ -769,14 +765,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.True(t, c.profilerEndpoints)
+			assert.True(t, c.internalConfig.ProfilerEndpoints())
 		})
 
 		t.Run("override", func(t *testing.T) {
 			t.Setenv(traceprof.EndpointEnvVar, "false")
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.False(t, c.profilerEndpoints)
+			assert.False(t, c.internalConfig.ProfilerEndpoints())
 		})
 	})
 
@@ -784,14 +780,14 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("default", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.True(t, c.profilerHotspots)
+			assert.True(t, c.internalConfig.ProfilerHotspotsEnabled())
 		})
 
 		t.Run("override", func(t *testing.T) {
 			t.Setenv(traceprof.CodeHotspotsEnvVar, "false")
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.False(t, c.profilerHotspots)
+			assert.False(t, c.internalConfig.ProfilerHotspotsEnabled())
 		})
 	})
 
@@ -802,10 +798,11 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c, err := newTestConfig(WithAgentTimeout(2))
 
 		assert.NoError(err)
-		assert.Equal("test2", c.serviceMappings["tracer.test"])
-		assert.Equal("Newsvc", c.serviceMappings["svc"])
-		assert.Equal("myRouter", c.serviceMappings["http.router"])
-		assert.Equal("", c.serviceMappings["noval"])
+		serviceMappings := c.internalConfig.ServiceMappings()
+		assert.Equal("test2", serviceMappings["tracer.test"])
+		assert.Equal("Newsvc", serviceMappings["svc"])
+		assert.Equal("myRouter", serviceMappings["http.router"])
+		assert.Equal("", serviceMappings["noval"])
 	})
 
 	t.Run("datadog-tags", func(t *testing.T) {
@@ -885,16 +882,16 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		t.Run("defaults", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.Equal(t, false, c.debugAbandonedSpans)
-			assert.Equal(t, time.Duration(0), c.spanTimeout)
+			assert.Equal(t, false, c.internalConfig.DebugAbandonedSpans())
+			assert.Equal(t, 10*time.Minute, c.internalConfig.SpanTimeout())
 		})
 
 		t.Run("debug-on", func(t *testing.T) {
 			t.Setenv("DD_TRACE_DEBUG_ABANDONED_SPANS", "true")
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.Equal(t, true, c.debugAbandonedSpans)
-			assert.Equal(t, 10*time.Minute, c.spanTimeout)
+			assert.Equal(t, true, c.internalConfig.DebugAbandonedSpans())
+			assert.Equal(t, 10*time.Minute, c.internalConfig.SpanTimeout())
 		})
 
 		t.Run("timeout-set", func(t *testing.T) {
@@ -902,16 +899,16 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			t.Setenv("DD_TRACE_ABANDONED_SPAN_TIMEOUT", fmt.Sprint(time.Minute))
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.Equal(t, true, c.debugAbandonedSpans)
-			assert.Equal(t, time.Minute, c.spanTimeout)
+			assert.Equal(t, true, c.internalConfig.DebugAbandonedSpans())
+			assert.Equal(t, time.Minute, c.internalConfig.SpanTimeout())
 		})
 
 		t.Run("with-function", func(t *testing.T) {
 			c, err := newTestConfig(WithAgentTimeout(2))
 			assert.NoError(t, err)
 			WithDebugSpansMode(time.Second)(c)
-			assert.Equal(t, true, c.debugAbandonedSpans)
-			assert.Equal(t, time.Second, c.spanTimeout)
+			assert.Equal(t, true, c.internalConfig.DebugAbandonedSpans())
+			assert.Equal(t, time.Second, c.internalConfig.SpanTimeout())
 		})
 	})
 
@@ -927,7 +924,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		assert.Equal(t, 0, c.sendRetries)
-		assert.Equal(t, time.Millisecond, c.retryInterval)
+		assert.Equal(t, time.Millisecond, c.internalConfig.RetryInterval())
 	})
 }
 
@@ -940,7 +937,7 @@ func TestTraceRetry(t *testing.T) {
 	t.Run("retryInterval", func(t *testing.T) {
 		c, err := newTestConfig(WithRetryInterval(10))
 		assert.NoError(t, err)
-		assert.Equal(t, 10*time.Second, c.retryInterval)
+		assert.Equal(t, 10*time.Second, c.internalConfig.RetryInterval())
 	})
 }
 
@@ -1312,7 +1309,7 @@ func TestVersionConfig(t *testing.T) {
 			WithServiceVersion("1.2.3"),
 		)
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -1321,14 +1318,14 @@ func TestVersionConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("WithGlobalTag", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithGlobalTag("version", "1.2.3"))
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
@@ -1337,7 +1334,7 @@ func TestVersionConfig(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -1346,37 +1343,37 @@ func TestVersionConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("1.2.3", c.version)
+		assert.Equal("1.2.3", c.internalConfig.Version())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(c.version, "")
+		assert.Equal(c.internalConfig.Version(), "")
 
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.version=1.1.0")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("1.1.0", c.version)
+		assert.Equal("1.1.0", c.internalConfig.Version())
 
 		t.Setenv("DD_TAGS", "version:1.1.1")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("1.1.1", c.version)
+		assert.Equal("1.1.1", c.internalConfig.Version())
 
 		c, err = newTestConfig(WithGlobalTag("version", "1.1.2"))
 		assert.NoError(err)
-		assert.Equal("1.1.2", c.version)
+		assert.Equal("1.1.2", c.internalConfig.Version())
 
 		t.Setenv("DD_VERSION", "1.1.3")
 		c, err = newTestConfig(WithGlobalTag("version", "1.1.2"))
 		assert.NoError(err)
-		assert.Equal("1.1.3", c.version)
+		assert.Equal("1.1.3", c.internalConfig.Version())
 
 		c, err = newTestConfig(WithGlobalTag("version", "1.1.2"), WithServiceVersion("1.1.4"))
 		assert.NoError(err)
-		assert.Equal("1.1.4", c.version)
+		assert.Equal("1.1.4", c.internalConfig.Version())
 	})
 }
 
@@ -1387,7 +1384,7 @@ func TestEnvConfig(t *testing.T) {
 			WithEnv("testing"),
 		)
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -1396,14 +1393,14 @@ func TestEnvConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("WithGlobalTag", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithGlobalTag("env", "testing"))
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("OTEL_RESOURCE_ATTRIBUTES", func(t *testing.T) {
@@ -1412,7 +1409,7 @@ func TestEnvConfig(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("DD_TAGS", func(t *testing.T) {
@@ -1421,37 +1418,37 @@ func TestEnvConfig(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("testing", c.env)
+		assert.Equal("testing", c.internalConfig.Env())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(c.env, "")
+		assert.Equal(c.internalConfig.Env(), "")
 
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "deployment.environment=testing0")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("testing0", c.env)
+		assert.Equal("testing0", c.internalConfig.Env())
 
 		t.Setenv("DD_TAGS", "env:testing1")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal("testing1", c.env)
+		assert.Equal("testing1", c.internalConfig.Env())
 
 		c, err = newTestConfig(WithGlobalTag("env", "testing2"))
 		assert.NoError(err)
-		assert.Equal("testing2", c.env)
+		assert.Equal("testing2", c.internalConfig.Env())
 
 		t.Setenv("DD_ENV", "testing3")
 		c, err = newTestConfig(WithGlobalTag("env", "testing2"))
 		assert.NoError(err)
-		assert.Equal("testing3", c.env)
+		assert.Equal("testing3", c.internalConfig.Env())
 
 		c, err = newTestConfig(WithGlobalTag("env", "testing2"), WithEnv("testing4"))
 		assert.NoError(err)
-		assert.Equal("testing4", c.env)
+		assert.Equal("testing4", c.internalConfig.Env())
 	})
 }
 
@@ -1460,7 +1457,7 @@ func TestStatsTags(t *testing.T) {
 	c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
 	assert.NoError(err)
 	defer globalconfig.SetServiceName("")
-	c.hostname = "hostName"
+	c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
 	tags := statsTags(c)
 
 	assert.Contains(tags, "service:serviceName")
@@ -1480,9 +1477,10 @@ func TestStatsTags(t *testing.T) {
 }
 
 func TestGlobalTag(t *testing.T) {
-	var c config
-	WithGlobalTag("k", "v")(&c)
-	assert.Contains(t, statsTags(&c), "k:v")
+	c, err := newTestConfig()
+	assert.NoError(t, err)
+	WithGlobalTag("k", "v")(c)
+	assert.Contains(t, statsTags(c), "k:v")
 }
 
 func TestWithHostname(t *testing.T) {
@@ -1490,7 +1488,7 @@ func TestWithHostname(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithHostname("hostname"))
 		assert.NoError(err)
-		assert.Equal("hostname", c.hostname)
+		assert.Equal("hostname", c.internalConfig.Hostname())
 	})
 
 	t.Run("env", func(t *testing.T) {
@@ -1498,7 +1496,7 @@ func TestWithHostname(t *testing.T) {
 		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal("hostname-env", c.hostname)
+		assert.Equal("hostname-env", c.internalConfig.Hostname())
 	})
 
 	t.Run("env-override", func(t *testing.T) {
@@ -1507,7 +1505,7 @@ func TestWithHostname(t *testing.T) {
 		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "hostname-env")
 		c, err := newTestConfig(WithHostname("hostname-middleware"))
 		assert.NoError(err)
-		assert.Equal("hostname-middleware", c.hostname)
+		assert.Equal("hostname-middleware", c.internalConfig.Hostname())
 	})
 }
 
@@ -1553,11 +1551,11 @@ func TestWithTraceEnabled(t *testing.T) {
 func TestWithLogStartup(t *testing.T) {
 	c, err := newTestConfig()
 	assert.NoError(t, err)
-	assert.True(t, c.logStartup)
+	assert.True(t, c.internalConfig.LogStartup())
 	WithLogStartup(false)(c)
-	assert.False(t, c.logStartup)
+	assert.False(t, c.internalConfig.LogStartup())
 	WithLogStartup(true)(c)
-	assert.True(t, c.logStartup)
+	assert.True(t, c.internalConfig.LogStartup())
 }
 
 func TestWithHeaderTags(t *testing.T) {
@@ -1662,55 +1660,81 @@ func TestHostnameDisabled(t *testing.T) {
 }
 
 func TestPartialFlushing(t *testing.T) {
+	partialFlushMinSpansDefault := 1000
 	t.Run("None", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.False(t, enabled)
+		assert.Equal(t, partialFlushMinSpansDefault, min)
 	})
 	t.Run("Disabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.False(t, enabled)
+		assert.Equal(t, partialFlushMinSpansDefault, min)
 	})
 	t.Run("Default-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.partialFlushEnabled)
-		assert.Equal(t, 10, c.partialFlushMinSpans)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.False(t, enabled)
+		assert.Equal(t, 10, min)
 	})
 	t.Run("Enabled-DefaultMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.True(t, enabled)
+		assert.Equal(t, partialFlushMinSpansDefault, min)
 	})
 	t.Run("Enabled-SetMinSpans", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "10")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, 10, c.partialFlushMinSpans)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.True(t, enabled)
+		assert.Equal(t, 10, min)
 	})
 	t.Run("Enabled-SetMinSpansNegative", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "-1")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, partialFlushMinSpansDefault, c.partialFlushMinSpans)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.True(t, enabled)
+		assert.Equal(t, partialFlushMinSpansDefault, min)
+	})
+	t.Run("Enabled-SetMinSpansAboveMax", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", strconv.Itoa(internalconfig.TraceMaxSize))
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.True(t, enabled)
+		assert.Equal(t, partialFlushMinSpansDefault, min)
+	})
+	t.Run("Enabled-SetMinSpans0", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "0")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.True(t, enabled)
+		assert.Equal(t, partialFlushMinSpansDefault, min)
 	})
 	t.Run("WithPartialFlushOption", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
 		WithPartialFlushing(20)(c)
-		assert.True(t, c.partialFlushEnabled)
-		assert.Equal(t, 20, c.partialFlushMinSpans)
+		enabled, min := c.internalConfig.PartialFlushEnabled()
+		assert.True(t, enabled)
+		assert.Equal(t, 20, min)
 	})
 }
 
@@ -1719,33 +1743,33 @@ func TestWithStatsComputation(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("enabled-via-option", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("disabled-via-option", func(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithStatsComputation(false))
 		assert.NoError(err)
-		assert.False(c.statsComputationEnabled)
+		assert.False(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 	t.Run("env-override", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "false")
 		c, err := newTestConfig(WithStatsComputation(true))
 		assert.NoError(err)
-		assert.True(c.statsComputationEnabled)
+		assert.True(c.internalConfig.StatsComputationEnabled())
 	})
 }
 

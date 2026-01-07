@@ -12,17 +12,12 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
-
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageMark3LabsMCPGo)
-}
 
 type hooks struct {
 	spanCache *sync.Map
@@ -57,6 +52,11 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 				outputText = string(resultJSON)
 			}
 
+			toolSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
+				instrmcp.MCPToolTag:     request.Params.Name,
+				instrmcp.MCPToolKindTag: "server",
+				instrmcp.MCPMethodTag:   request.Method,
+			}))
 			tagWithSessionID(ctx, toolSpan)
 			toolSpan.AnnotateTextIO(string(inputJSON), outputText)
 
@@ -85,11 +85,15 @@ func newHooks() *hooks {
 }
 
 func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.InitializeRequest) {
-	taskSpan, _ := llmobs.StartTaskSpan(ctx, "mcp.initialize", llmobs.WithIntegration("mark3labs/mcp-go"))
+	taskSpan, _ := llmobs.StartTaskSpan(ctx, "mcp.initialize", llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
 
 	clientName := request.Params.ClientInfo.Name
 	clientVersion := request.Params.ClientInfo.Version
-	taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{"client_name": clientName, "client_version": clientName + "_" + clientVersion}))
+	taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
+		instrmcp.MCPClientNameTag:    clientName,
+		instrmcp.MCPClientVersionTag: clientName + "_" + clientVersion,
+		instrmcp.MCPMethodTag:        request.Method,
+	}))
 
 	h.spanCache.Store(id, taskSpan)
 	tagWithSessionID(ctx, taskSpan)
@@ -127,7 +131,7 @@ func tagWithSessionID(ctx context.Context, span llmobs.Span) {
 	session := server.ClientSessionFromContext(ctx)
 	if session != nil {
 		sessionID := session.SessionID()
-		span.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_session_id": sessionID}))
+		span.Annotate(llmobs.WithAnnotatedTags(map[string]string{instrmcp.MCPSessionIDTag: sessionID}))
 	}
 }
 
