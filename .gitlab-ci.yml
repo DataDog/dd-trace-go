@@ -95,7 +95,7 @@ aggregate-benchmarks:
   script:
     - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-    - git clone --branch dario.castane/fix-benchmark-reports https://github.com/DataDog/benchmarking-platform platform && cd platform
+    - git clone --branch dario.castane/fix-benchmark-reports https://github.com/DataDog/benchmarking-platform /platform && cd /platform
     - ./steps/download-child-pipeline-artifacts.sh
     - ./steps/compare-merged-results.sh
     - ./steps/post-pr-comment.sh
@@ -106,7 +106,6 @@ aggregate-benchmarks:
     expire_in: 3 months
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: benchmarking-platform
-    FF_USE_LEGACY_KUBERNETES_EXECUTION_STRATEGY: "true"
 
 # Config Registry CI Jobs
 validate_supported_configurations_v2_local_file:
