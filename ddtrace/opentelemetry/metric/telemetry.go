@@ -6,6 +6,7 @@
 package metric
 
 import (
+	"cmp"
 	"strconv"
 	"strings"
 
@@ -94,22 +95,12 @@ func registerTelemetry(cfg *config) {
 	// ===========================================
 
 	// OTEL_EXPORTER_OTLP_METRICS_TIMEOUT
-	if timeout := env.Get(envOTLPMetricsTimeout); timeout != "" {
-		if ms, err := parseMilliseconds(timeout); err == nil {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-				Name:   envOTLPMetricsTimeout,
-				Value:  ms,
-				Origin: telemetry.OriginEnvVar,
-			})
-		}
-	} else {
-		// Report default value
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-			Name:   envOTLPMetricsTimeout,
-			Value:  defaultOTLPTimeoutMs,
-			Origin: telemetry.OriginDefault,
-		})
-	}
+	metricsTimeout := getMillisecondsConfig(envOTLPMetricsTimeout, defaultOTLPTimeoutMs)
+	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
+		Name:   envOTLPMetricsTimeout,
+		Value:  metricsTimeout.value,
+		Origin: metricsTimeout.origin,
+	})
 
 	// OTEL_EXPORTER_OTLP_METRICS_HEADERS
 	if headers := env.Get(envOTLPMetricsHeaders); headers != "" {
@@ -143,40 +134,20 @@ func registerTelemetry(cfg *config) {
 	// ===========================================
 
 	// OTEL_METRIC_EXPORT_INTERVAL
-	if interval := env.Get(envOtelMetricExportInterval); interval != "" {
-		if ms, err := parseMilliseconds(interval); err == nil {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-				Name:   envOtelMetricExportInterval,
-				Value:  ms,
-				Origin: telemetry.OriginEnvVar,
-			})
-		}
-	} else {
-		// Report default value
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-			Name:   envOtelMetricExportInterval,
-			Value:  defaultExportIntervalMs,
-			Origin: telemetry.OriginDefault,
-		})
-	}
+	exportInterval := getMillisecondsConfig(envOtelMetricExportInterval, defaultExportIntervalMs)
+	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
+		Name:   envOtelMetricExportInterval,
+		Value:  exportInterval.value,
+		Origin: exportInterval.origin,
+	})
 
 	// OTEL_METRIC_EXPORT_TIMEOUT
-	if timeout := env.Get(envOtelMetricExportTimeout); timeout != "" {
-		if ms, err := parseMilliseconds(timeout); err == nil {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-				Name:   envOtelMetricExportTimeout,
-				Value:  ms,
-				Origin: telemetry.OriginEnvVar,
-			})
-		}
-	} else {
-		// Report default value
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-			Name:   envOtelMetricExportTimeout,
-			Value:  defaultExportTimeoutMs,
-			Origin: telemetry.OriginDefault,
-		})
-	}
+	exportTimeout := getMillisecondsConfig(envOtelMetricExportTimeout, defaultExportTimeoutMs)
+	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
+		Name:   envOtelMetricExportTimeout,
+		Value:  exportTimeout.value,
+		Origin: exportTimeout.origin,
+	})
 
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 }
@@ -198,6 +169,32 @@ func parseMilliseconds(value string) (int, error) {
 
 	// Could add support for duration strings like "10s" here if needed
 	return 0, strconv.ErrSyntax
+}
+
+// msConfig holds a milliseconds configuration value with its origin.
+type msConfig struct {
+	value  int
+	origin telemetry.Origin
+}
+
+// parseMsFromEnv attempts to parse a milliseconds value from an environment variable.
+// Returns a zero msConfig if the env var is empty or parsing fails.
+func parseMsFromEnv(envVar string) msConfig {
+	if v := env.Get(envVar); v != "" {
+		if ms, err := parseMilliseconds(v); err == nil {
+			return msConfig{value: ms, origin: telemetry.OriginEnvVar}
+		}
+	}
+	return msConfig{}
+}
+
+// getMillisecondsConfig reads a milliseconds value from an environment variable,
+// falling back to the provided default. Uses cmp.Or to select the first valid config.
+func getMillisecondsConfig(envVar string, defaultMs int) msConfig {
+	return cmp.Or(
+		parseMsFromEnv(envVar),
+		msConfig{value: defaultMs, origin: telemetry.OriginDefault},
+	)
 }
 
 // MetricsExportTelemetry provides telemetry metrics for OTLP metrics export operations.
