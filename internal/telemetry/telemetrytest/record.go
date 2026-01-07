@@ -42,6 +42,7 @@ type RecordClient struct {
 	Products      map[telemetry.Namespace]bool
 	Metrics       map[MetricKey]*RecordMetricHandle
 	knownMetrics  bool
+	AppEndpoints  map[string]map[string][]telemetry.AppEndpointAttributes
 }
 
 func (r *RecordClient) Close() error {
@@ -190,6 +191,19 @@ func (r *RecordClient) MarkIntegrationAsLoaded(integration telemetry.Integration
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Integrations = append(r.Integrations, integration)
+}
+
+func (r *RecordClient) RegisterAppEndpoint(opName string, resName string, attrs telemetry.AppEndpointAttributes) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.AppEndpoints == nil {
+		r.AppEndpoints = make(map[string]map[string][]telemetry.AppEndpointAttributes)
+	}
+	if r.AppEndpoints[opName] == nil {
+		r.AppEndpoints[opName] = make(map[string][]telemetry.AppEndpointAttributes)
+	}
+	r.AppEndpoints[opName][resName] = append(r.AppEndpoints[opName][resName], attrs)
 }
 
 func (r *RecordClient) Flush() {}

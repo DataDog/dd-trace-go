@@ -79,6 +79,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	assert.Contains(t, taskSpan.Tags, "client_version:test-client_1.0.0")
 
 	assert.Contains(t, taskSpan.Tags, "mcp_session_id:test-session-init")
+	assert.Contains(t, taskSpan.Tags, "mcp_method:initialize")
 
 	assert.Contains(t, taskSpan.Meta, "input")
 	assert.Contains(t, taskSpan.Meta, "output")
@@ -175,6 +176,10 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	expectedTag := "mcp_session_id:test-session-123"
 	assert.Contains(t, initSpan.Tags, expectedTag)
 	assert.Contains(t, toolSpan.Tags, expectedTag)
+
+	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
+	assert.Contains(t, toolSpan.Tags, "mcp_tool:calculator")
 
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])

@@ -656,18 +656,38 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 		objectsShasString += objectSha + "\n"
 	}
 
-	// get a temporary path to store the pack files
-	temporaryPath, err := os.MkdirTemp("", "pack-objects")
-	if err != nil {
-		log.Warn("civisibility: error creating temporary directory: %s", err.Error())
-		return nil
+	workingDirectory := func() string {
+		wd, err := os.Getwd()
+		if err != nil {
+			return "."
+		}
+		return wd
 	}
 
-	// git pack-objects --compression=9 --max-pack-size={MaxPackFileSizeInMb}m "{temporaryPath}"
-	out, err := execGitStringWithInput(telemetry.PackObjectsCommandsType, objectsShasString,
-		"pack-objects", "--compression=9", "--max-pack-size="+strconv.Itoa(MaxPackFileSizeInMb)+"m", temporaryPath+"/")
+	var temporaryPath string
+	var out string
+	var err error
+
+	// Git can throw a cross device error if the temporal folder is in a different drive than the .git folder (eg. symbolic link)
+	// to handle this edge case, we first try with a temp folder and if we fail then we try in the working directory folder.
+	for _, folder := range []string{"", workingDirectory()} {
+		// get a temporary path to store the pack files
+		temporaryPath, err = os.MkdirTemp(folder, ".dd-pack-objects")
+		if err != nil {
+			log.Warn("civisibility: error creating temporary directory %s: %s", folder, err.Error())
+			continue
+		}
+
+		// git pack-objects --compression=9 --max-pack-size={MaxPackFileSizeInMb}m "{temporaryPath}"
+		out, err = execGitStringWithInput(telemetry.PackObjectsCommandsType, objectsShasString,
+			"pack-objects", "--compression=9", "--max-pack-size="+strconv.Itoa(MaxPackFileSizeInMb)+"m", temporaryPath+"/")
+		if err == nil {
+			break
+		}
+	}
+
 	if err != nil {
-		log.Warn("civisibility: error creating pack files: %s", err.Error())
+		log.Warn("civisibility: error creating pack files in %s: %s", temporaryPath, err.Error())
 		return nil
 	}
 

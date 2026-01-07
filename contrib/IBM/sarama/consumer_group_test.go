@@ -10,6 +10,7 @@ import (
 	"log"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
@@ -80,13 +81,18 @@ func TestWrapConsumerGroupHandler(t *testing.T) {
 	_, _, err = p.SendMessage(produceMsg)
 	require.NoError(t, err)
 
-	waitForSpans(mt, 2)
+	// Wait for the message to be received by the consumer before cancelling.
+	consumeMsg := <-handler.rcvMessages
+
+	// The consumer only finishes spans when the next message is received and when the consumer shuts down.
+	// To make sure the last span is finished, we need to cancel the context to make sure this last span is finished.
 	cancel()
 	wg.Wait()
 
+	waitForSpans(t, mt, 2, 5*time.Second)
+
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
-	consumeMsg := <-handler.rcvMessages
 
 	s0 := spans[0]
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))

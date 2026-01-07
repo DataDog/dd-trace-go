@@ -166,6 +166,13 @@ type tracer struct {
 
 	// telemetry is the telemetry client for the tracer.
 	telemetry telemetry.Client
+
+	// State related to the Dynamic Instrumentation product.
+	dynInstMu struct {
+		sync.Mutex
+		ldSubscriptionToken    remoteconfig.SubscriptionToken
+		symDBSubscriptionToken remoteconfig.SubscriptionToken
+	}
 }
 
 const (
@@ -219,7 +226,7 @@ func Start(opts ...StartOption) error {
 		t.Stop()
 		return nil
 	}
-	if t.config.ciVisibilityEnabled && t.config.ciVisibilityNoopTracer {
+	if t.config.internalConfig.CIVisibilityEnabled() && t.config.ciVisibilityNoopTracer {
 		setGlobalTracer(wrapWithCiVisibilityNoopTracer(t))
 	} else {
 		setGlobalTracer(t)
@@ -251,8 +258,8 @@ func Start(opts ...StartOption) error {
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
 	cfg.AgentURL = t.config.agentURL.String()
-	cfg.AppVersion = t.config.version
-	cfg.Env = t.config.env
+	cfg.AppVersion = t.config.internalConfig.Version()
+	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
 	if err := t.startRemoteConfig(cfg); err != nil {
@@ -304,10 +311,10 @@ func storeConfig(c *config) {
 		RuntimeID:          globalconfig.RuntimeID(),
 		Language:           "go",
 		Version:            version.Tag,
-		Hostname:           c.hostname,
+		Hostname:           c.internalConfig.Hostname(),
 		ServiceName:        c.serviceName,
-		ServiceEnvironment: c.env,
-		ServiceVersion:     c.version,
+		ServiceEnvironment: c.internalConfig.Env(),
+		ServiceVersion:     c.internalConfig.Version(),
 		ProcessTags:        processtags.GlobalTags().String(),
 		ContainerID:        globalinternal.ContainerID(),
 	}
@@ -319,11 +326,11 @@ func storeConfig(c *config) {
 	}
 
 	processContext := otelProcessContext{
-		DeploymentEnvironmentName: c.env,
-		HostName:                  c.hostname,
+		DeploymentEnvironmentName: c.internalConfig.Env(),
+		HostName:                  c.internalConfig.Hostname(),
 		ServiceInstanceID:         globalconfig.RuntimeID(),
 		ServiceName:               c.serviceName,
-		ServiceVersion:            c.version,
+		ServiceVersion:            c.internalConfig.Version(),
 		TelemetrySDKLanguage:      "go",
 		TelemetrySDKVersion:       version.Tag,
 		TelemetrySdkName:          "dd-trace-go",
@@ -400,9 +407,9 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}
 	}()
 	var writer traceWriter
-	if c.ciVisibilityEnabled {
+	if c.internalConfig.CIVisibilityEnabled() {
 		writer = newCiVisibilityTraceWriter(c)
-	} else if c.logToStdout {
+	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
 	} else {
 		writer = newAgentTraceWriter(c, sampler, statsd)
@@ -419,27 +426,27 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		c.spanRules = spans
 	}
 
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.globalSampleRate, c.traceRateLimitPerSecond)
-	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.globalSampleRate, rulesSampler.traces.setGlobalSampleRate, equal[float64])
+	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
+	c.traceSampleRate = newDynamicConfig("trace_sample_rate", c.internalConfig.GlobalSampleRate(), rulesSampler.traces.setGlobalSampleRate, equal[float64])
 	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
 	// We could always set the origin to "env_var" inconditionally, but then it wouldn't be possible
 	// to distinguish between the case where the environment variable was not set and the case where
 	// it default to NaN.
-	if !math.IsNaN(c.globalSampleRate) {
+	if !math.IsNaN(c.internalConfig.GlobalSampleRate()) {
 		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
 	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.env, c.serviceName, c.version, c.agentURL, c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.agentURL, c.httpClient)
 	}
 	var logFile *log.ManagedFile
-	if v := c.logDirectory; v != "" {
+	if v := c.internalConfig.LogDirectory(); v != "" {
 		logFile, err = log.OpenFileAtPath(v)
 		if err != nil {
 			log.Warn("%s", err.Error())
-			c.logDirectory = ""
+			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
 	t = &tracer{
@@ -490,10 +497,10 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		}()
 	}
-	if c.debugAbandonedSpans {
+	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
-		t.abandonedSpansDebugger.Start(t.config.spanTimeout)
+		t.abandonedSpansDebugger.Start(t.config.internalConfig.SpanTimeout())
 	}
 	t.wg.Add(1)
 	go func() {
@@ -764,9 +771,11 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if span.service == "" {
 		span.service = t.config.serviceName
 	}
-	span.noDebugStack = t.config.noDebugStack
-	if t.config.hostname != "" {
-		span.setMeta(keyHostname, t.config.hostname)
+
+	cfg := t.config.internalConfig
+	span.noDebugStack = !cfg.DebugStack()
+	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
+		span.setMeta(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
@@ -774,27 +783,22 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	for k, v := range t.config.globalTags.get() {
 		span.SetTag(k, v)
 	}
-	if t.config.serviceMappings != nil {
-		if newSvc, ok := t.config.serviceMappings[span.service]; ok {
-			span.service = newSvc
-		}
+
+	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
+		span.service = newSvc
 	}
-	if t.config.version != "" {
+
+	if ver := cfg.Version(); ver != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
-			span.setMeta(ext.Version, t.config.version)
+			span.setMeta(ext.Version, ver)
 		}
 	}
-	if t.config.env != "" {
-		span.setMeta(ext.Environment, t.config.env)
+	if env := cfg.Env(); env != "" {
+		span.setMeta(ext.Environment, env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
 		t.sample(span)
-	}
-	if t.config.serviceMappings != nil {
-		if newSvc, ok := t.config.serviceMappings[span.service]; ok {
-			span.service = newSvc
-		}
 	}
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
@@ -806,7 +810,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	} else {
 		span.pprofCtxRestore = nil
 	}
-	if t.config.debugAbandonedSpans {
+	if t.config.internalConfig.DebugAbandonedSpans() {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
 			// ok
@@ -969,20 +973,21 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 }
 
 func (t *tracer) TracerConf() TracerConf {
+	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
 	return TracerConf{
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
-		DebugAbandonedSpans:  t.config.debugAbandonedSpans,
+		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
 		Disabled:             !t.config.enabled.current,
-		PartialFlush:         t.config.partialFlushEnabled,
-		PartialFlushMinSpans: t.config.partialFlushMinSpans,
+		PartialFlush:         pfEnabled,
+		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
 		PeerServiceMappings:  t.config.peerServiceMappings,
-		EnvTag:               t.config.env,
-		VersionTag:           t.config.version,
+		EnvTag:               t.config.internalConfig.Env(),
+		VersionTag:           t.config.internalConfig.Version(),
 		ServiceTag:           t.config.serviceName,
 		TracingAsTransport:   t.config.tracingAsTransport,
-		isLambdaFunction:     t.config.isLambdaFunction,
+		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
 	}
 }
 

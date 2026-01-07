@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"testing"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
@@ -183,7 +184,7 @@ func TestWrapAsyncProducer(t *testing.T) {
 		}
 		producer.Input() <- msg1
 
-		waitForSpans(mt, 1)
+		waitForSpans(t, mt, 1, 5*time.Second)
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)

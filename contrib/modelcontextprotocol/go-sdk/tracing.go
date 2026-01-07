@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -55,6 +56,11 @@ func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method st
 
 	defer func() {
 		tagWithSessionID(req, toolSpan)
+		toolSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
+			instrmcp.MCPToolTag:     req.Params.Name,
+			instrmcp.MCPToolKindTag: "server",
+			instrmcp.MCPMethodTag:   method,
+		}))
 		finishSpanWithIO(toolSpan, method, req, result, err)
 	}()
 
@@ -75,7 +81,10 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 		if initParams, ok := params.(*mcp.InitializeParams); ok {
 			clientName := initParams.ClientInfo.Name
 			clientVersion := initParams.ClientInfo.Version
-			taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{"client_name": clientName, "client_version": clientName + "_" + clientVersion}))
+			taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
+				instrmcp.MCPClientNameTag:    clientName,
+				instrmcp.MCPClientVersionTag: clientName + "_" + clientVersion,
+			}))
 		}
 	}
 
@@ -83,6 +92,9 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 	var err error
 
 	defer func() {
+		taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
+			instrmcp.MCPMethodTag: method,
+		}))
 		tagWithSessionID(req, taskSpan)
 		finishSpanWithIO(taskSpan, method, req, res, err)
 	}()
@@ -100,7 +112,7 @@ func tagWithSessionID(req mcp.Request, span llmobs.Span) {
 	if sessionID == "" {
 		return
 	}
-	span.Annotate(llmobs.WithAnnotatedTags(map[string]string{"mcp_session_id": sessionID}))
+	span.Annotate(llmobs.WithAnnotatedTags(map[string]string{instrmcp.MCPSessionIDTag: sessionID}))
 }
 
 type textIOSpan interface {

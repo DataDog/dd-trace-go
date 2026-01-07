@@ -222,9 +222,8 @@ func TestLoggerBackend_StackTrace(t *testing.T) {
 }
 
 func TestLoggerBackend_Tags(t *testing.T) {
-	backend := newLoggerBackend(10)
-
 	t.Run("includes tags in log entry", func(t *testing.T) {
+		backend := newLoggerBackend(10)
 		record := NewRecord(LogDebug, "tagged message")
 		backend.Add(record, WithTags([]string{"service:api", "version:1.2.3"}))
 
@@ -235,5 +234,145 @@ func TestLoggerBackend_Tags(t *testing.T) {
 		require.Len(t, logs.Logs, 1)
 
 		assert.Equal(t, "service:api,version:1.2.3", logs.Logs[0].Tags)
+	})
+
+	t.Run("same message with different tags are separate entries", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record1 := NewRecord(LogDebug, "shared message")
+		record2 := NewRecord(LogDebug, "shared message")
+
+		backend.Add(record1, WithTags([]string{"env:prod"}))
+		backend.Add(record2, WithTags([]string{"env:staging"}))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 2, "Should have two separate log entries for different tags")
+
+		// Extract tags for comparison
+		tagSet := make(map[string]bool)
+		for _, log := range logs.Logs {
+			tagSet[log.Tags] = true
+			assert.Equal(t, "shared message", log.Message)
+			assert.Equal(t, uint32(1), log.Count)
+		}
+		assert.True(t, tagSet["env:prod"], "Should contain env:prod tag")
+		assert.True(t, tagSet["env:staging"], "Should contain env:staging tag")
+	})
+
+	t.Run("same message and tags increments count", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		tags := []string{"service:api", "version:1.0"}
+
+		backend.Add(NewRecord(LogWarn, "repeated message"), WithTags(tags))
+		backend.Add(NewRecord(LogWarn, "repeated message"), WithTags(tags))
+		backend.Add(NewRecord(LogWarn, "repeated message"), WithTags(tags))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1, "Should deduplicate logs with same message and tags")
+
+		assert.Equal(t, "repeated message", logs.Logs[0].Message)
+		assert.Equal(t, "service:api,version:1.0", logs.Logs[0].Tags)
+		assert.Equal(t, uint32(3), logs.Logs[0].Count)
+	})
+
+	t.Run("empty tags slice results in empty tags string", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "no tags message")
+		backend.Add(record, WithTags([]string{}))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		assert.Equal(t, "", logs.Logs[0].Tags)
+	})
+
+	t.Run("message without tags has empty tags field", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "plain message")
+		backend.Add(record) // No WithTags option
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		assert.Equal(t, "", logs.Logs[0].Tags)
+	})
+
+	t.Run("single tag is serialized correctly", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "single tag message")
+		backend.Add(record, WithTags([]string{"env:production"}))
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		assert.Equal(t, "env:production", logs.Logs[0].Tags)
+	})
+
+	t.Run("multiple WithTags options appends tags", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "multi tags message")
+		backend.Add(record,
+			WithTags([]string{"product:appsec"}),
+			WithTags([]string{"version:1.0", "env:prod"}),
+		)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		// All tags from both WithTags calls should be present
+		assert.Equal(t, "product:appsec,version:1.0,env:prod", logs.Logs[0].Tags)
+	})
+
+	t.Run("multiple WithTags options deduplicates tags", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "dedup tags message")
+		backend.Add(record,
+			WithTags([]string{"product:appsec", "env:prod"}),
+			WithTags([]string{"version:1.0", "product:appsec"}), // product:appsec is duplicated
+		)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		// Tags should be deduplicated - product:appsec should appear only once
+		assert.Equal(t, "product:appsec,env:prod,version:1.0", logs.Logs[0].Tags)
+	})
+
+	t.Run("WithTags with empty slice after non-empty preserves original tags", func(t *testing.T) {
+		backend := newLoggerBackend(10)
+		record := NewRecord(LogDebug, "preserve tags message")
+		backend.Add(record,
+			WithTags([]string{"product:appsec"}),
+			WithTags([]string{}),
+		)
+
+		payload := backend.Payload()
+		require.NotNil(t, payload)
+
+		logs := payload.(transport.Logs)
+		require.Len(t, logs.Logs, 1)
+
+		// Original tags should be preserved even when empty WithTags is added
+		assert.Equal(t, "product:appsec", logs.Logs[0].Tags)
 	})
 }

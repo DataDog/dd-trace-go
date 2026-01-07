@@ -29,7 +29,7 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	}
 
 	// Subscribe to Remote Config updates for the OpenFeature product
-	if err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, ffeCapability); err != nil {
+	if _, err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, ffeCapability); err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider ?)", err)
 	}
 

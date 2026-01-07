@@ -65,8 +65,10 @@
 /internal/civisibility          @DataDog/ci-app-libraries
 
 # llm observability
-/llmobs                         @DataDog/ml-observability
-/internal/llmobs                @DataDog/ml-observability
+/llmobs                                    @DataDog/ml-observability @DataDog/apm-idm-go
+/internal/llmobs                           @DataDog/ml-observability @DataDog/apm-idm-go
+/contrib/mark3labs/mcp-go                  @DataDog/ml-observability @DataDog/apm-idm-go
+/contrib/modelcontextprotocol/go-sdk       @DataDog/ml-observability @DataDog/apm-idm-go
 
 # Gitlab configuration
 .gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability

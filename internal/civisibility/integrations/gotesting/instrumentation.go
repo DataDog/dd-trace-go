@@ -660,6 +660,8 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	// Create a new local copy of `t` to isolate execution results
 	ptrToLocalT := createNewTest()
 	copyTestWithoutParent(execOpts.options.t, ptrToLocalT)
+	// Ensure cloned tests don't share the same output writer (Go 1.25+).
+	reinitOutputWriter(ptrToLocalT)
 	ptrToLocalT.Helper()
 	execOpts.options.t.Helper()
 
@@ -674,6 +676,8 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	}
 	dummyParent := &testing.T{}
 	copyTestWithoutParent(execOpts.options.t, dummyParent)
+	// Ensure the dummy parent doesn't share the original test's output writer (Go 1.25+).
+	reinitOutputWriter(dummyParent)
 	*localTPrivateFields.parent = unsafe.Pointer(dummyParent)
 
 	// Create an execution metadata instance

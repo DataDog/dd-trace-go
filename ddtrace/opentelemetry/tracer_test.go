@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -397,4 +398,90 @@ func TestMergeOtelDDBaggage(t *testing.T) {
 		assert.True(ok)
 		assert.Equal("otelValue", value)
 	})
+}
+
+func Test_DDOpenTelemetryTracer(t *testing.T) {
+	traceID, err := oteltrace.TraceIDFromHex("5b8aa5a2d2c872e8321cf37308d69df1")
+	assert.NoError(t, err)
+	spanID, err := oteltrace.SpanIDFromHex("051581bf3cb55c11")
+	assert.NoError(t, err)
+	parentSpanCtx := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID: traceID,
+		SpanID:  spanID,
+	})
+
+	testCases := []struct {
+		isSampled      bool
+		ddRate         float64
+		expectedResult bool
+	}{
+		{
+			isSampled:      true,
+			ddRate:         1.0,
+			expectedResult: true,
+		},
+		{
+			isSampled:      false,
+			ddRate:         1.0,
+			expectedResult: false,
+		},
+		{
+			isSampled:      true,
+			ddRate:         0,
+			expectedResult: true,
+		},
+		{
+			isSampled:      false,
+			ddRate:         0,
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("OTel %t DD rate %f", tc.isSampled, tc.ddRate), func(t *testing.T) {
+			ddOTelTracer := NewTracerProvider(
+				tracer.WithLogStartup(false),
+				tracer.WithSamplingRules([]tracer.SamplingRule{
+					{Rate: tc.ddRate}, // This should be applied only when a brand new root span is started and should be ignored for a non-root span
+				}),
+			).Tracer("")
+
+			parentSpanCtx = parentSpanCtx.WithTraceFlags(parentSpanCtx.TraceFlags().WithSampled(tc.isSampled))
+
+			ctx := oteltrace.ContextWithSpanContext(context.Background(), parentSpanCtx)
+			_, span := ddOTelTracer.Start(ctx, "test")
+			span.End()
+
+			childSpanContext := span.SpanContext()
+			assert.Equal(t, parentSpanCtx.TraceID(), childSpanContext.TraceID())
+			assert.Equal(t, tc.expectedResult, childSpanContext.IsSampled(),
+				"inconsistent sampling decision between OTel and DD")
+		})
+	}
+}
+
+func Test_otelCtxToDDCtx_SamplingDecision_Priority(t *testing.T) {
+	parentSpanCtx := oteltrace.NewSpanContext(oteltrace.SpanContextConfig{
+		TraceID: oteltrace.TraceID{0xAA},
+		SpanID:  oteltrace.SpanID{0x01},
+	})
+
+	// Zero value TraceFlags sampling decision - In an OTel Span the sampling decision is taken at start, this
+	// means that the sampling decision we will receive will always be filled.
+	// Zero value means that the trace should be dropped
+	ctx := &otelCtxToDDCtx{parentSpanCtx}
+	assert.Equal(t, uint32(1), ctx.SamplingDecision())
+	assert.EqualValues(t, ext.PriorityAutoReject, *ctx.Priority())
+
+	// Set sampling decision to true
+	parentSpanCtx = parentSpanCtx.WithTraceFlags(parentSpanCtx.TraceFlags().WithSampled(true))
+	ctx = &otelCtxToDDCtx{parentSpanCtx}
+	assert.Equal(t, uint32(2), ctx.SamplingDecision())
+	assert.EqualValues(t, ext.PriorityAutoKeep, *ctx.Priority())
+
+	// Set sampling decision to false
+	parentSpanCtx = parentSpanCtx.WithTraceFlags(parentSpanCtx.TraceFlags().WithSampled(false))
+	ctx = &otelCtxToDDCtx{parentSpanCtx}
+	assert.Equal(t, uint32(1), ctx.SamplingDecision())
+	assert.EqualValues(t, ext.PriorityAutoReject, *ctx.Priority())
 }

@@ -11,6 +11,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -153,7 +155,7 @@ func TestExtensionStartInvoke(t *testing.T) {
 
 func TestExtensionStartInvokeLambdaRequestId(t *testing.T) {
 	headers := http.Header{}
-	capturingClient := capturingClient{hdr: headers}
+	capturingClient := &capturingClient{hdr: headers}
 
 	em := &ExtensionManager{
 		startInvocationUrl: startInvocationUrl,
@@ -248,7 +250,7 @@ func TestExtensionEndInvocation(t *testing.T) {
 
 func TestExtensionEndInvokeLambdaRequestId(t *testing.T) {
 	headers := http.Header{}
-	capturingClient := capturingClient{hdr: headers}
+	capturingClient := &capturingClient{hdr: headers}
 
 	em := &ExtensionManager{
 		endInvocationUrl: endInvocationUrl,
@@ -271,7 +273,7 @@ func TestExtensionEndInvokeLambdaRequestId(t *testing.T) {
 
 func TestExtensionEndInvokeLambdaRequestIdError(t *testing.T) {
 	headers := http.Header{}
-	capturingClient := capturingClient{hdr: headers}
+	capturingClient := &capturingClient{hdr: headers}
 	ctx := context.WithValue(context.TODO(), DdSamplingPriority, mockSamplingPriority)
 	ctx = context.WithValue(ctx, DdTraceId, mockTraceId)
 	em := &ExtensionManager{
@@ -316,7 +318,7 @@ func TestExtensionEndInvocationSamplingPriority(t *testing.T) {
 
 	// When priority in context, use that value
 	headers1 := http.Header{}
-	em1 := &ExtensionManager{httpClient: capturingClient{hdr: headers1}}
+	em1 := &ExtensionManager{httpClient: &capturingClient{hdr: headers1}}
 	ctx := context.WithValue(context.Background(), DdTraceId, "123")
 	ctx = context.WithValue(ctx, DdSamplingPriority, "2")
 	em1.SendEndInvocationRequest(ctx, span, tracer.FinishConfig{})
@@ -326,43 +328,61 @@ func TestExtensionEndInvocationSamplingPriority(t *testing.T) {
 	// Set sampling priority to -1 using ManualDrop tag
 	span.SetTag(ext.ManualDrop, true)
 	headers2 := http.Header{}
-	em2 := &ExtensionManager{httpClient: capturingClient{hdr: headers2}}
+	em2 := &ExtensionManager{httpClient: &capturingClient{hdr: headers2}}
 	em2.SendEndInvocationRequest(context.Background(), span, tracer.FinishConfig{})
 	assert.Equal(t, "-1", headers2.Get("X-Datadog-Sampling-Priority"))
 }
 
 type capturingClient struct {
 	hdr http.Header
+	err error
 }
 
-func (c capturingClient) Do(req *http.Request) (*http.Response, error) {
+func (c *capturingClient) Do(req *http.Request) (resp *http.Response, err error) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		rw.WriteHeader(200)
+	}))
+	defer server.Close()
+	defer func() { c.err = err }()
+
+	if c.hdr == nil {
+		c.hdr = http.Header{}
+	}
 	for k, v := range req.Header {
 		c.hdr[k] = v
 	}
-	return &http.Response{StatusCode: 200}, nil
+	url, err := url.Parse(server.URL)
+	if err != nil {
+		return nil, err
+	}
+	req.URL = url
+	return http.DefaultClient.Do(req)
 }
 
 func TestExtensionEndInvocationErrorHeaders(t *testing.T) {
 	hdr := http.Header{}
-	em := &ExtensionManager{httpClient: capturingClient{hdr: hdr}}
+	em := &ExtensionManager{httpClient: &capturingClient{hdr: hdr}}
 	span := tracer.StartSpan("aws.lambda")
 	cfg := tracer.FinishConfig{Error: fmt.Errorf("ooooops")}
 
 	em.SendEndInvocationRequest(context.TODO(), span, cfg)
 
 	assert.Equal(t, hdr.Get("X-Datadog-Invocation-Error"), "true")
-	assert.Equal(t, hdr.Get("X-Datadog-Invocation-Error-Msg"), "ooooops")
 	assert.Equal(t, hdr.Get("X-Datadog-Invocation-Error-Type"), "*errors.errorString")
 
 	data, err := base64.StdEncoding.DecodeString(hdr.Get("X-Datadog-Invocation-Error-Stack"))
 	assert.Nil(t, err)
 	assert.Contains(t, string(data), "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2")
 	assert.Contains(t, string(data), "TestExtensionEndInvocationErrorHeaders")
+
+	data, err = base64.StdEncoding.DecodeString(hdr.Get("X-Datadog-Invocation-Error-Msg"))
+	assert.Nil(t, err)
+	assert.Equal(t, string(data), "ooooops")
 }
 
 func TestExtensionEndInvocationErrorHeadersNilError(t *testing.T) {
 	hdr := http.Header{}
-	em := &ExtensionManager{httpClient: capturingClient{hdr: hdr}}
+	em := &ExtensionManager{httpClient: &capturingClient{hdr: hdr}}
 	span := tracer.StartSpan("aws.lambda")
 	cfg := tracer.FinishConfig{Error: nil}
 
@@ -372,4 +392,28 @@ func TestExtensionEndInvocationErrorHeadersNilError(t *testing.T) {
 	assert.Equal(t, hdr.Get("X-Datadog-Invocation-Error-Msg"), "")
 	assert.Equal(t, hdr.Get("X-Datadog-Invocation-Error-Type"), "")
 	assert.Equal(t, hdr.Get("X-Datadog-Invocation-Error-Stack"), "")
+}
+
+func TestExtensionEndInvocationErrorMessage(t *testing.T) {
+	testCases := []struct {
+		message string
+	}{
+		{"simple error"},
+		{"error with special chars !@#$%^&*()"},
+		{"error with unicode 字符"},
+		{"error with newlines\nline2\nline3"},
+	}
+
+	cl := new(capturingClient)
+	em := &ExtensionManager{httpClient: cl}
+	span := tracer.StartSpan("aws.lambda")
+
+	for _, tc := range testCases {
+		t.Run(tc.message, func(t *testing.T) {
+			cfg := tracer.FinishConfig{Error: fmt.Errorf("%s", tc.message)}
+			em.SendEndInvocationRequest(context.TODO(), span, cfg)
+			assert.Nil(t, cl.err)
+			assert.NotEqual(t, "", cl.hdr.Get("X-Datadog-Invocation-Error-Msg"))
+		})
+	}
 }

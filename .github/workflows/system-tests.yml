@@ -139,7 +139,7 @@ jobs:
           - weblog-variant: net-http
             scenario: APM_TRACING_EFFICIENT_PAYLOAD
           - weblog-variant: net-http
-            scenario: FEATURE_FLAG_EXPOSURE
+            scenario: FEATURE_FLAGGING_AND_EXPERIMENTATION
       fail-fast: false
     env:
       TEST_LIBRARY: golang

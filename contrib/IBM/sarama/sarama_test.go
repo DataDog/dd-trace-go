@@ -38,14 +38,21 @@ func newIntegrationTestConfig(t *testing.T) *sarama.Config {
 }
 
 // waitForSpans polls the mock tracer until the expected number of spans
-// appear
-func waitForSpans(mt mocktracer.Tracer, sz int) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+// appear, or fails the test if the timeout is reached.
+func waitForSpans(t *testing.T, mt mocktracer.Tracer, sz int, timeout time.Duration) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	for len(mt.FinishedSpans()) < sz {
 		select {
 		case <-ctx.Done():
+			spans := mt.FinishedSpans()
+			var spanNames []string
+			for _, s := range spans {
+				spanNames = append(spanNames, s.OperationName())
+			}
+			t.Fatalf("timed out waiting for %d spans, got %d: %v", sz, len(spans), spanNames)
 			return
 		default:
 		}

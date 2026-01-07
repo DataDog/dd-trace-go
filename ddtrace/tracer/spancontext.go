@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -116,11 +117,16 @@ type SpanContext struct {
 	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
 }
 
+// Private interface for span contexts that can propagate sampling decisions.
+type spanContextWithSamplingDecision interface {
+	SamplingDecision() uint32
+	Priority() *float64
+}
+
 // Private interface for converting v1 span contexts to v2 ones.
 type spanContextV1Adapter interface {
-	SamplingDecision() uint32
+	spanContextWithSamplingDecision
 	Origin() string
-	Priority() *float64
 	PropagatingTags() map[string]string
 	Tags() map[string]string
 }
@@ -137,14 +143,35 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		sc.baggage[k] = v
 		return true
 	})
+
+	ctxSpl, ok := c.(spanContextWithSamplingDecision)
+	if !ok {
+		return &sc
+	}
+
+	// If the generic context has a sampling decision, set it on the trace
+	// along with the priority if it exists.
+	// After setting the sampling decision, lock the trace so the decision is
+	// respected and avoid re-sampling.
+	if sDecision := samplingDecision(ctxSpl.SamplingDecision()); sDecision != decisionNone {
+		sc.trace = newTrace()
+		sc.trace.samplingDecision = sDecision
+
+		if p := ctxSpl.Priority(); p != nil {
+			sc.setSamplingPriority(int(*p), samplernames.Unknown)
+			sc.trace.setLocked(true)
+		}
+	}
+
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
 		return &sc
 	}
+
 	sc.origin = ctx.Origin()
-	sc.trace = newTrace()
-	sc.trace.priority = ctx.Priority()
-	sc.trace.samplingDecision = samplingDecision(ctx.SamplingDecision())
+	if sc.trace == nil {
+		sc.trace = newTrace()
+	}
 	sc.trace.tags = ctx.Tags()
 	sc.trace.propagatingTags = ctx.PropagatingTags()
 	return &sc
@@ -372,12 +399,7 @@ var (
 	// reasonable as span is actually way bigger, and avoids re-allocating
 	// over and over. Could be fine-tuned at runtime.
 	traceStartSize = 10
-	// traceMaxSize is the maximum number of spans we keep in memory for a
-	// single trace. This is to avoid memory leaks. If more spans than this
-	// are added to a trace, then the trace is dropped and the spans are
-	// discarded. Adding additional spans after a trace is dropped does
-	// nothing.
-	traceMaxSize = int(1e5)
+	traceMaxSize   = internalconfig.TraceMaxSize
 )
 
 // newTrace creates a new trace using the given callback which will be called
@@ -621,10 +643,18 @@ func (t *trace) finishedOne(s *Span) {
 	}
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
-	finishedSpans[0].setMetric(keySamplingPriority, *t.priority)
+	// #incident-46344 -- if we set metrics and tags on a different span than what was passed into this function,
+	// we need to lock this new span.
+	fSpan := finishedSpans[0]
+	currentSpanIsFirstInChunk := s == fSpan
+	if !currentSpanIsFirstInChunk {
+		fSpan.mu.Lock()
+		defer fSpan.mu.Unlock()
+	}
+	fSpan.setMetric(keySamplingPriority, *t.priority)
 	if s != t.spans[0] {
 		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(finishedSpans[0])
+		t.setTraceTags(fSpan)
 	}
 	if tr, ok := tr.(*tracer); ok {
 		t.finishChunk(tr, &chunk{

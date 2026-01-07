@@ -23,7 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	pb "github.com/DataDog/dd-trace-go/v2/internal/traceprof/testapp"
+	pb "github.com/DataDog/dd-trace-go/v2/internal/traceprof/traceproftest/testapp"
 
 	"github.com/julienschmidt/httprouter"
 	"github.com/stretchr/testify/require"

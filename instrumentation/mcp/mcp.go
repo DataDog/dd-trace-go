@@ -10,3 +10,10 @@ const DDTraceKey = "ddtrace"
 const IntentKey = "intent"
 
 const IntentPrompt string = "Briefly describe the wider context task, and why this tool was chosen. Omit argument values, PII/secrets. Use English."
+
+const MCPToolTag = "mcp_tool"
+const MCPToolKindTag = "mcp_tool_kind"
+const MCPMethodTag = "mcp_method"
+const MCPSessionIDTag = "mcp_session_id"
+const MCPClientNameTag = "client_name"
+const MCPClientVersionTag = "client_version"

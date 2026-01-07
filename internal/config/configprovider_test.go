@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,6 +46,62 @@ func (s *testConfigSource) get(key string) string {
 
 func (s *testConfigSource) origin() telemetry.Origin {
 	return s.originValue
+}
+
+// matchConfig is a helper to create a matcher for telemetry configurations that ignores exact SeqID.
+// This is useful since seqId is a global counter and we can't predict its exact value.
+// For default origin, use matchDefaultConfig instead to check SeqID=defaultSeqID.
+func matchConfig(name, value string, origin telemetry.Origin, id string) func([]telemetry.Configuration) bool {
+	return func(configs []telemetry.Configuration) bool {
+		if len(configs) != 1 {
+			return false
+		}
+		c := configs[0]
+		return c.Name == name && c.Value == value && c.Origin == origin && c.ID == id && c.SeqID > 0
+	}
+}
+
+// matchDefaultConfig is a helper to create a matcher for default telemetry configurations.
+// Default configs should always have SeqID=defaultSeqID (1).
+func matchDefaultConfig(name string, value interface{}, origin telemetry.Origin) func([]telemetry.Configuration) bool {
+	return func(configs []telemetry.Configuration) bool {
+		if len(configs) != 1 {
+			return false
+		}
+		c := configs[0]
+		return c.Name == name && c.Value == value && c.Origin == origin && c.ID == telemetry.EmptyID && c.SeqID == defaultSeqID
+	}
+}
+
+// seqIDCapture is a helper to capture SeqIDs from telemetry calls for verification
+type seqIDCapture struct {
+	seqIDs map[string]uint64 // key format: "name:value:origin"
+}
+
+func newSeqIDCapture() *seqIDCapture {
+	return &seqIDCapture{seqIDs: make(map[string]uint64)}
+}
+
+func (s *seqIDCapture) key(name, value string, origin telemetry.Origin) string {
+	return name + ":" + value + ":" + string(origin)
+}
+
+func (s *seqIDCapture) captureMatcher(name, value string, origin telemetry.Origin, id string) func([]telemetry.Configuration) bool {
+	return func(configs []telemetry.Configuration) bool {
+		if len(configs) != 1 {
+			return false
+		}
+		c := configs[0]
+		if c.Name == name && c.Value == value && c.Origin == origin && c.ID == id {
+			s.seqIDs[s.key(name, value, origin)] = c.SeqID
+			return true
+		}
+		return false
+	}
+}
+
+func (s *seqIDCapture) get(name, value string, origin telemetry.Origin) uint64 {
+	return s.seqIDs[s.key(name, value, origin)]
 }
 
 func TestGetMethods(t *testing.T) {
@@ -326,14 +383,8 @@ apm_configuration_default:
 func TestConfigProviderTelemetryRegistration(t *testing.T) {
 	t.Run("env source reports telemetry for all getters", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
-		// Expectations: value is the raw string from the source; ID is empty
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "service", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "100", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.5", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://localhost:8126", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "old:new", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "10s", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}}).Return()
+		// Allow any telemetry calls without failing
+		telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
 		defer telemetry.MockClient(telemetryClient)()
 
 		source := newTestConfigSource(map[string]string{
@@ -355,17 +406,22 @@ func TestConfigProviderTelemetryRegistration(t *testing.T) {
 		_ = provider.getMap("DD_SERVICE_MAPPING", nil)
 		_ = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "service", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "100", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.5", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://localhost:8126", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "old:new", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "10s", Origin: telemetry.OriginEnvVar, ID: telemetry.EmptyID}})
+		// Assert that the env_var values were reported (don't care about defaults or exact SeqID)
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "service", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_DEBUG", "true", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "100", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_SAMPLE_RATE", "0.5", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_AGENT_URL", "http://localhost:8126", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE_MAPPING", "old:new", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_ABANDONED_SPAN_TIMEOUT", "10s", telemetry.OriginEnvVar, telemetry.EmptyID)))
 	})
 
 	t.Run("declarative source reports telemetry with ID", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
+		// Allow any telemetry calls without failing
+		telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+		defer telemetry.MockClient(telemetryClient)()
+
 		// Values expected as raw strings, with OriginLocalStableConfig and ID from file
 		yaml := `config_id: 123
 apm_configuration_default:
@@ -381,15 +437,6 @@ apm_configuration_default:
 		require.NoError(t, os.WriteFile(temp, []byte(yaml), 0644))
 		defer os.Remove(temp)
 
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "svc", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "7", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.9", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://127.0.0.1:8126", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "a:b", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "2s", Origin: telemetry.OriginLocalStableConfig, ID: "123"}}).Return()
-		defer telemetry.MockClient(telemetryClient)()
-
 		decl := newDeclarativeConfigSource(temp, telemetry.OriginLocalStableConfig)
 		provider := newTestconfigProvider(decl)
 
@@ -401,18 +448,24 @@ apm_configuration_default:
 		_ = provider.getMap("DD_SERVICE_MAPPING", nil)
 		_ = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE", Value: "svc", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_DEBUG", Value: "true", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", Value: "7", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_SAMPLE_RATE", Value: "0.9", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_AGENT_URL", Value: "http://127.0.0.1:8126", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_SERVICE_MAPPING", Value: "a:b", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: "DD_TRACE_ABANDONED_SPAN_TIMEOUT", Value: "2s", Origin: telemetry.OriginLocalStableConfig, ID: "123"}})
+		// Assert that the declarative source values were reported with the correct ID (don't care about exact SeqID)
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "svc", telemetry.OriginLocalStableConfig, "123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_DEBUG", "true", telemetry.OriginLocalStableConfig, "123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "7", telemetry.OriginLocalStableConfig, "123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_SAMPLE_RATE", "0.9", telemetry.OriginLocalStableConfig, "123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_AGENT_URL", "http://127.0.0.1:8126", telemetry.OriginLocalStableConfig, "123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE_MAPPING", "a:b", telemetry.OriginLocalStableConfig, "123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_TRACE_ABANDONED_SPAN_TIMEOUT", "2s", telemetry.OriginLocalStableConfig, "123")))
 	})
 
-	t.Run("source priority with config IDs", func(t *testing.T) {
-		// Test that when multiple sources exist, only the winning source's
-		// telemetry (including its config ID) is registered
+	t.Run("source priority with config IDs and SeqID", func(t *testing.T) {
+		// Comprehensive test that verifies:
+		// 1. ALL sources with non-empty values report telemetry (not just the winning one)
+		// 2. The first (highest priority) source's value is returned
+		// 3. SeqID increases with source priority (higher priority = higher SeqID)
+		// 4. Config IDs are preserved in telemetry reports
+		// 5. Only sources with values for a given key report for that key
+		// 6. Default configs always have SeqID=defaultSeqID (1)
 
 		yamlManaged := `config_id: managed-123
 apm_configuration_default:
@@ -431,22 +484,47 @@ apm_configuration_default:
 		defer os.Remove(tempManaged)
 		defer os.Remove(tempLocal)
 
+		capture := newSeqIDCapture()
+		telemetryClient := new(telemetrytest.MockClient)
+		// Allow any telemetry calls without failing
+		telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+		defer telemetry.MockClient(telemetryClient)()
+
 		tempManagedSource := newDeclarativeConfigSource(tempManaged, telemetry.OriginManagedStableConfig)
+		envSource := newTestConfigSource(map[string]string{"DD_SERVICE": "env-service"}, telemetry.OriginEnvVar)
 		tempLocalSource := newDeclarativeConfigSource(tempLocal, telemetry.OriginLocalStableConfig)
 
-		// Managed has higher priority than Local
-		provider := newTestconfigProvider(tempManagedSource, tempLocalSource)
+		// Priority order: Managed (highest) -> Env -> Local (lowest) = 3 sources total
+		provider := newTestconfigProvider(tempManagedSource, envSource, tempLocalSource)
 
-		// For DD_SERVICE: managed wins, so telemetry gets ID "managed-123"
-		result := provider.getString("DD_SERVICE", "default")
-		assert.Equal(t, "managed-service", result)
+		// Test DD_SERVICE: all 3 sources have values, managed wins
+		result := provider.getString("DD_SERVICE", "default-service")
+		assert.Equal(t, "managed-service", result, "Managed (highest priority) should win")
 
-		// For DD_ENV: local wins (managed doesn't have it), so telemetry gets ID "local-456"
-		env := provider.getString("DD_ENV", "default")
+		// Verify ALL 3 sources reported telemetry for DD_SERVICE and capture their SeqIDs
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "managed-service", telemetry.OriginManagedStableConfig, "managed-123")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "env-service", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "local-service", telemetry.OriginLocalStableConfig, "local-456")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_SERVICE", "default-service", telemetry.OriginDefault)))
+
+		// Verify SeqID ordering: Managed (highest priority) > Env > Local (lowest priority)
+		managedSeq := capture.get("DD_SERVICE", "managed-service", telemetry.OriginManagedStableConfig)
+		envSeq := capture.get("DD_SERVICE", "env-service", telemetry.OriginEnvVar)
+		localSeq := capture.get("DD_SERVICE", "local-service", telemetry.OriginLocalStableConfig)
+		assert.Greater(t, managedSeq, envSeq, "Managed (highest priority) should have higher SeqID than Env")
+		assert.Greater(t, envSeq, localSeq, "Env should have higher SeqID than Local (lowest priority)")
+		assert.Greater(t, localSeq, defaultSeqID, "All non-default configs should have SeqID > defaultSeqID")
+
+		// Test DD_ENV: only local has a value
+		env := provider.getString("DD_ENV", "default-env")
 		assert.Equal(t, "local-env", env)
+
+		// Verify only local reported telemetry for DD_ENV (others don't have it)
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_ENV", "local-env", telemetry.OriginLocalStableConfig, "local-456")))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_ENV", "default-env", telemetry.OriginDefault)))
 	})
 
-	t.Run("reports defaults via telemetry when key missing or invalid", func(t *testing.T) {
+	t.Run("still reports defaults via telemetry when key missing or invalid", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 
 		strKey, strDef := "DD_SERVICE", "default_service"
@@ -457,13 +535,14 @@ apm_configuration_default:
 		urlKey, urlDef := "DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:9000"}
 		mapKey, mapDef := "DD_SERVICE_MAPPING", map[string]string{"a": "b"}
 
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: strKey, Value: strDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: boolKey, Value: boolDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: intKey, Value: intDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: floatKey, Value: floatDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: durKey, Value: durDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: urlKey, Value: urlDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: mapKey, Value: mapDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}}).Return()
+		// Set up strict expectations - ONLY defaults should be reported with SeqID=defaultSeqID
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: strKey, Value: strDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: boolKey, Value: boolDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: intKey, Value: intDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: floatKey, Value: floatDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: durKey, Value: durDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: urlKey, Value: urlDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: mapKey, Value: mapDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: defaultSeqID}}).Return()
 		defer telemetry.MockClient(telemetryClient)()
 
 		// Use an empty test source to force defaults
@@ -478,12 +557,7 @@ apm_configuration_default:
 		assert.Equal(t, urlDef, provider.getURL(urlKey, urlDef))
 		assert.Equal(t, mapDef, provider.getMap(mapKey, mapDef))
 
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: strKey, Value: strDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: boolKey, Value: boolDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: intKey, Value: intDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: floatKey, Value: floatDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: durKey, Value: durDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: urlKey, Value: urlDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}})
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", []telemetry.Configuration{{Name: mapKey, Value: mapDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID}})
+		// Verify that ONLY the expected defaults were reported (strict)
+		telemetryClient.AssertExpectations(t)
 	})
 }
