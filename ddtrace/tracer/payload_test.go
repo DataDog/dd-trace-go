@@ -181,6 +181,9 @@ func TestPayloadV1Decode(t *testing.T) {
 // can be encoded and decoded correctly after using the string table.
 // Tests repeated string values.
 func TestPayloadV1EmbeddedStreamingStringTable(t *testing.T) {
+	// Reset process tags to ensure deterministic payload sizes
+	processtags.Reload()
+
 	p := newPayloadV1()
 	p.SetHostname("production")
 	p.SetEnv("production")
@@ -232,6 +235,9 @@ func TestPayloadV1UpdateHeader(t *testing.T) {
 // TestEmptyPayloadV1 tests that an empty payload can be encoded and decoded correctly.
 // Notably, it should send an empty map.
 func TestEmptyPayloadV1(t *testing.T) {
+	// Reset process tags to ensure deterministic behavior
+	processtags.Reload()
+
 	p := newPayloadV1()
 	assert := assert.New(t)
 	encoded, err := io.ReadAll(p)

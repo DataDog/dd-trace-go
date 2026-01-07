@@ -1,23 +1,38 @@
 variables:
   BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:go-go-prof-app-and-serviceextensions-and-haproxy-0003
 
+.on-graphite-never: &on-graphite-never
+  if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
+  when: never
+
+.on-main-or-release-always-and-not-interruptible: &on-main-or-release-always-and-not-interruptible
+  if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
+  when: always
+  interruptible: false
+
+.macrobenchmarks-rules: &macrobenchmarks-rules
+  - <<: *on-graphite-never
+  - <<: *on-main-or-release-always-and-not-interruptible
+  - when: manual
+    interruptible: true
+
+.pre-release-performance-quality-gates-rules: &pre-release-performance-quality-gates-rules
+  - <<: *on-graphite-never
+  - <<: *on-main-or-release-always-and-not-interruptible
+  # Unlike in "main" or release branches, in development branches there's
+  # no strict requirement to run the check unconditionally with "when: always".
+  - interruptible: true
+
+#
+# Default macrobenchmarks
+# 
+
 .benchmarks-default:
   stage: macrobenchmarks
   needs: []
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
-  rules:
-    # We don't want to run benchmarks on graphite commits
-    - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
-      when: never
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: always
-      interruptible: false
-    - if: $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
-      when: always
-      interruptible: false
-    - when: manual
-      interruptible: true
+  rules: *macrobenchmarks-rules
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
   script:
@@ -43,6 +58,9 @@ variables:
   # Workaround: Currently we're not running the benchmarks on every PR, but GitHub still shows them as pending.
   # By marking the benchmarks as allow_failure, this should go away. (This workaround should be removed once the
   # benchmarks get changed to run on every PR)
+  # Note: Setting allow_failure to false does not stop check-slo-breaches
+  # from running if benchmarks fail, since it has "when: always". It can be 
+  # safely set to false once the workaround is removed.
   allow_failure: true
 
   retry:
@@ -74,7 +92,9 @@ variables:
     GO_VERSION: "1.24.6"
 
 #
-# Specific macrobenchmark configurations are below
+# Specific macrobenchmark configurations extending 
+# .go-(stable|oldstable)-benchmarks are below
+#
 
 go-oldstable-baseline:
   extends: .go-oldstable-benchmarks
@@ -204,9 +224,10 @@ go-stable-profile-trace-asm:
     ENABLE_APPSEC: "true"
     DD_PROFILING_EXECUTION_TRACE_ENABLED: "false"
 
-# This repository is using PR-level performance quality gates.
-# Verify that the check-slo-breaches CI job has passed. If any regression happened, merging this PR will be blocked.
-# If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/spaces/APMINT/pages/5158175217/Performance+quality+gates+-+User+Guide for more details.
+# This repository is using pre-release performance quality gates.
+# On release branches, verify that the latest CI pipeline passed the check-slo-breaches job.
+# If any SLO is breached, your release will be blocked.
+# If bypassing is necessary, see https://datadoghq.atlassian.net/wiki/x/8YFzMwE for more details.
 check-slo-breaches:
   extends: .check-slo-breaches
   stage: gates
@@ -226,7 +247,7 @@ check-slo-breaches:
     "go-stable-trace-asm",
     "go-stable-profile-trace-asm",
   ]
-  when: on_success
+  rules: *pre-release-performance-quality-gates-rules
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
     ARTIFACTS_DIR: "platform/artifacts"
@@ -248,13 +269,12 @@ notify-slo-breaches:
   extends: .notify-slo-breaches
   stage: gates
   needs: ["check-slo-breaches"]
-  when: on_failure
+  rules: *pre-release-performance-quality-gates-rules
   variables:
     CHANNEL: "guild-dd-trace-go-notifications"
 
 #
-# Macro benchmarks for Service Extensions
-# (using Envoy External Processing)
+# Macrobenchmarks for Service Extensions (using Envoy External Processing)
 #
 
 .benchmarks-serviceextensions:
@@ -262,15 +282,7 @@ notify-slo-breaches:
   needs: []
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
-  rules:
-    # We don't want to run benchmarks on graphite commits
-    - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
-      when: never
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: always
-      interruptible: false
-    - when: manual
-      interruptible: true
+  rules: *macrobenchmarks-rules
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
   script:
@@ -366,15 +378,7 @@ se-no-tracer-no-ext_proc:
   needs: []
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
-  rules:
-    # We don't want to run benchmarks on graphite commits
-    - if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
-      when: never
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: always
-      interruptible: false
-    - when: manual
-      interruptible: true
+  rules: *macrobenchmarks-rules
   # If you have a problem with Gitlab cache, see Troubleshooting section in Benchmarking Platform docs
   image: $BENCHMARKS_CI_IMAGE
   script:

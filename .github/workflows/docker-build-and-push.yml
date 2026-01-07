@@ -49,7 +49,7 @@ jobs:
       - name: Prepare
         run: |
           platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -92,12 +92,13 @@ jobs:
         id: tags
         run: |
           TAGS=""
+          # shellcheck disable=SC2086
           for tag in ${{ inputs.tags }}; do
             if [ -n "$tag" ]; then
               TAGS="$TAGS,${{ inputs.image }}:$tag"
             fi
           done
-          echo "list=${TAGS:1}" >> $GITHUB_OUTPUT
+          echo "list=${TAGS:1}" >> "$GITHUB_OUTPUT"
 
       - name: Build and export
         id: build-export
@@ -163,10 +164,12 @@ jobs:
         working-directory: /tmp/digests
         run: |
           TAG_FLAGS=""
+          # shellcheck disable=SC2086
           for tag in ${{ inputs.tags }}; do
             if [ -n "$tag" ]; then
               TAG_FLAGS="$TAG_FLAGS -t ${{ inputs.image }}:$tag"
             fi
           done
+          # shellcheck disable=SC2046,SC2086
           docker buildx imagetools create $TAG_FLAGS \
-            $(printf '${{ inputs.image }}@sha256:%s ' *) 
+            $(printf '${{ inputs.image }}@sha256:%s ' *)

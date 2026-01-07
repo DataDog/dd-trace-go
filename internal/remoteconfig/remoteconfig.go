@@ -21,10 +21,11 @@ import (
 	"sync"
 	"time"
 
-	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
 
 // Callback represents a function that can process a remote config update.
@@ -36,8 +37,10 @@ type Callback func(updates map[string]ProductUpdate) map[string]rc.ApplyStatus
 // ProductCallback is like Callback but for a specific product.
 type ProductCallback func(update ProductUpdate) map[string]rc.ApplyStatus
 
-// Capability represents a bit index to be set in clientData.Capabilites in order to register a client
-// for a specific capability
+// Capability represents a bit index to be set in clientData.Capabilites in
+// order to register a client for a specific capability. These bit indexes
+// correspond to the Remote Config specification, see
+// https://github.com/DataDog/dd-source/blob/9b29208565b6e9c9644d8488520a24eb252ca1cb/domains/remote-config/shared/libs/rc/capabilities.go#L28
 type Capability uint
 
 const (
@@ -128,6 +131,10 @@ const (
 	ASMDDMultiConfig
 	// ASMTraceTaggingRules represents the capability to honor trace tagging rules
 	ASMTraceTaggingRules
+	ASMExtendedDataCollection
+	// APMTracingMulticonfig is the capability to handle cascading configs for the
+	// APMTracing product.
+	APMTracingMulticonfig
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.
@@ -241,6 +248,7 @@ func Start(config ClientConfig) error {
 		for {
 			select {
 			case <-stop:
+				close(stop)
 				return
 			case <-ticker.C:
 				if client == nil {
@@ -272,7 +280,7 @@ func Stop() {
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
-	close(client.stop)
+	client.stop <- struct{}{}
 	select {
 	case <-client.stop:
 		log.Debug("remoteconfig: client stopped successfully")
@@ -529,20 +537,22 @@ func HasCapability(cpb Capability) (bool, error) {
 }
 
 func (c *Client) allCapabilities() *big.Int {
-	client.capabilitiesMu.Lock()
-	defer client.capabilitiesMu.Unlock()
 	capa := big.NewInt(0)
+
+	// Read registered capabilities without holding the lock while we also read subscriptions.
+	c.capabilitiesMu.RLock()
 	for i := range c.capabilities {
 		capa.SetBit(capa, int(i), 1)
 	}
+	c.capabilitiesMu.RUnlock()
 
 	c.subscriptionsMu.RLock()
-	defer c.subscriptionsMu.RUnlock()
 	for _, s := range c.subscriptionsMu.subs {
 		for _, cap := range s.capabilities {
 			capa.SetBit(capa, int(cap), 1)
 		}
 	}
+	c.subscriptionsMu.RUnlock()
 
 	return capa
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
 )
@@ -91,7 +92,7 @@ func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 			c, err := newTestConfig(func(c *config) {
 				c.transport = p
 				c.sendRetries = test.configRetries
-				c.retryInterval = test.retryInterval
+				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 			})
 			assert.NoError(err)
 

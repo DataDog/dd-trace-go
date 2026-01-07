@@ -14,6 +14,8 @@ on:
     secrets:
       DD_API_KEY:
         required: false
+      DD_CI_API_KEY:
+        required: false
   pull_request:
   push:
     branches:
@@ -232,18 +234,21 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
+            # shellcheck disable=SC2086
+            gotestsum --junitfile "${XML_PATH}" --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
             orchestrion go test -json -shuffle=on ./civisibility
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
+            # shellcheck disable=SC2086
+            gotestsum --junitfile "${XML_PATH}" -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
             go test -shuffle=on -toolexec='orchestrion toolexec' ./civisibility
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on $PACKAGE_NAMES
+            # shellcheck disable=SC2086
+            gotestsum --junitfile "${XML_PATH}" -- -shuffle=on $PACKAGE_NAMES
             go test -shuffle=on ./civisibility
             ;;
           *)
@@ -306,7 +311,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
-          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests

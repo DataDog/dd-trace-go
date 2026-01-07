@@ -242,12 +242,39 @@
 // If the default Remote Config setup fails, the provider creation will return
 // an error asking you to call tracer.Start first.
 //
+// # Exposure Events and Deduplication
+//
+// The provider automatically tracks exposure events when feature flags are evaluated.
+// Exposure events record which flags are evaluated and for which subjects (users),
+// providing visibility into feature flag usage for analytics and experimentation.
+//
+// To avoid sending duplicate exposure events for repeated evaluations, the provider
+// implements an LRU (Least Recently Used) cache for deduplication:
+//
+//   - Cache key: combination of flag key and subject ID
+//   - Cache value: allocation key and variant
+//   - Capacity: 65536 entries (2^16, ~6.5MB max memory)
+//
+// Deduplication behavior:
+//
+//   - Same subject evaluating the same flag multiple times: 1 exposure (deduplicated)
+//   - Different subjects evaluating the same flag: 1 exposure per subject
+//   - Same subject with variant change (A→B→A): 3 exposures (each change tracked)
+//   - Same subject with allocation change: new exposure generated
+//
+// The cache uses LRU eviction when capacity is reached, ensuring recently active
+// flag/subject combinations remain cached while older entries are evicted.
+//
+// Exposure events are buffered and flushed periodically to the Datadog Agent
+// (default: every 1 second, configurable via ExposureFlushInterval).
+//
 // # Performance Considerations
 //
 //   - Regex patterns are compiled once and cached for reuse
 //   - Read locks are used for flag evaluation (multiple concurrent reads)
 //   - Write locks only during configuration updates
 //   - MD5 hashing is used for sharding (fast, non-cryptographic)
+//   - Exposure deduplication uses O(1) LRU cache operations
 //
 // # Example: Complete Integration
 //
