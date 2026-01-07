@@ -14,7 +14,7 @@ on:
   push:
     branches:
       - release-v*
-      - mq-working-branch-**
+      - main
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
