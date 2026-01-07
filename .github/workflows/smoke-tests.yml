@@ -124,7 +124,7 @@ jobs:
           repository: DataDog/dd-trace-go
       - run: |
           # shellcheck disable=SC2086
-          go test $PACKAGES
+          gotestsum --junitfile "${TEST_RESULTS}/report-smoke-tracer.xml" -- -v $PACKAGES
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
