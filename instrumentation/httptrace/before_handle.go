@@ -93,32 +93,16 @@ func handleHTTPEndpoint(serveCfg *ServeConfig, r *http.Request) (tracer.StartSpa
 
 	return func(sc *tracer.StartSpanConfig) {
 			if sc.Tags == nil {
-				return
+				sc.Tags = make(map[string]interface{})
 			}
 			if serveCfg.Route != "" {
 				sc.Tags[ext.HTTPRoute] = serveCfg.Route
 			}
 
-			// This feature is currently disabled by default, except when AppSec is enabled at startup. It can be explicitly
-			// enabled or disabled for all requests by setting the value of DD_TRACE_RESOURCE_RENAMING_ENABLED.
-			if (cfg.resourceRenamingEnabled != nil && !*cfg.resourceRenamingEnabled) || (cfg.resourceRenamingEnabled == nil && !cfg.appsecEnabledMode()) {
-				return
+			if ep, ok := computeHTTPEndpoint(serveCfg.Route, r); ok {
+				endpoint = ep
+				sc.Tags[ext.HTTPEndpoint] = ep
 			}
-
-			httpURL := r.URL.EscapedPath()
-			if cfg.resourceRenamingAlwaysSimplifiedEndpoint {
-				endpoint = simplifyHTTPUrl(httpURL)
-				sc.Tags[ext.HTTPEndpoint] = endpoint
-				return
-			}
-
-			if serveCfg.Route != "" {
-				endpoint = serveCfg.Route
-			} else {
-				endpoint = simplifyHTTPUrl(httpURL)
-			}
-
-			sc.Tags[ext.HTTPEndpoint] = endpoint
 		}, func() string {
 			return endpoint
 		}

@@ -3,8 +3,12 @@ module github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
 go 1.24.0
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/v2 v2.6.0-dev.1
 	github.com/go-chi/chi v1.5.4
+	github.com/go-chi/chi/v5 v5.2.3
+	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -85,3 +89,7 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
+
+replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 => ../chi.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../sirupsen/logrus

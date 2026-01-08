@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
@@ -172,6 +173,29 @@ func TestTraceMultipleResponses(t *testing.T) {
 	assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 	assert.Equal("gin-gonic/gin", span.Tag(ext.Component))
 	assert.Equal(componentName, span.Integration())
+}
+
+func TestGinResourceRenamingEndpoint(t *testing.T) {
+	t.Cleanup(httptrace.ResetCfg)
+	t.Setenv("DD_TRACE_RESOURCE_RENAMING_ENABLED", "true")
+	httptrace.ResetCfg()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := gin.New()
+	router.Use(Middleware("foobar"))
+	router.GET("/users/:id", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	r := httptest.NewRequest("GET", "/users/123", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "/users/:id", spans[0].Tag(ext.HTTPEndpoint))
 }
 
 func TestError(t *testing.T) {

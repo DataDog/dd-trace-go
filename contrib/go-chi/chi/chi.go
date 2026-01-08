@@ -70,6 +70,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 			span.SetTag(ext.HTTPRoute, chi.RouteContext(r.Context()).RoutePattern())
+			httptrace.SetHTTPEndpoint(span, chi.RouteContext(r.Context()).RoutePattern(), r)
 			span.SetTag(ext.ResourceName, cfg.resourceNamer(r))
 		})
 	}
