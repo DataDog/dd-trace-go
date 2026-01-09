@@ -130,6 +130,11 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
 
+      - name: Setup testing environment
+        run: |-
+          mkdir -p "tmp_appsec"
+          go install gotest.tools/gotestsum@latest
+
       # go test is being manually called multiple times here for the sake of reusing the runner.
       # Waiting runners is unfortunately so long that we decided to do so for things only requiring recompilation or
       # reruns under different settings.
@@ -145,8 +150,8 @@ jobs:
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
                 for cgocheck_env in "${GOEXPERIMENT}" "$cgocheck"; do
                   # shellcheck disable=SC2086
-                  if ! env CGO_ENABLED="$cgo" $appsec_enabled_env GOEXPERIMENT="$cgocheck_env" go test -v $PACKAGES; then
-                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES"
+                  if ! env CGO_ENABLED="$cgo" $appsec_enabled_env GOEXPERIMENT="$cgocheck_env" gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-${cgo}-${appsec_enabled_env:-default}-${cgocheck_env}.xml" -- -v $PACKAGES; then
+                    echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-${cgo}-${appsec_enabled_env:-default}-${cgocheck_env}.xml\" -- -v $PACKAGES"
                   fi
 
                   # shellcheck disable=SC2086
@@ -157,9 +162,10 @@ jobs:
                     fi
 
                     cd "$submodule"
+                    submodule_name=$(echo "$submodule" | tr '/' '-')
                     # shellcheck disable=SC2086
-                    if ! env CGO_ENABLED="$cgo" $appsec_enabled_env GOEXPERIMENT="$cgocheck_env" go test -v .; then
-                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule)"
+                    if ! env CGO_ENABLED="$cgo" $appsec_enabled_env GOEXPERIMENT="$cgocheck_env" gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-${cgo}-${appsec_enabled_env:-default}-${cgocheck_env}-${submodule_name}.xml" -- -v .; then
+                      echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-${cgo}-${appsec_enabled_env:-default}-${cgocheck_env}-${submodule_name}.xml\" -- -v . (submodule: $submodule)"
                       report_error=1
                     fi
                     cd -
@@ -168,6 +174,19 @@ jobs:
             done
           done
           exit $report_error
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: tmp_appsec
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
@@ -202,6 +221,11 @@ jobs:
       - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         if: runner.os != 'Windows'
 
+      - name: Setup testing environment
+        run: |-
+          mkdir -p "tmp_appsec"
+          go install gotest.tools/gotestsum@latest
+
       - name: go test
         shell: bash
         run: |
@@ -209,16 +233,17 @@ jobs:
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
               # shellcheck disable=SC2086
-              if ! env $appsec_enabled_env go test -v $go_tags $PACKAGES; then
-                echo "Failed: env $appsec_enabled_env go test -v $go_tags $PACKAGES"
+              if ! env $appsec_enabled_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-${appsec_enabled_env:-default}-${go_tags}.xml" -- -v $go_tags $PACKAGES; then
+                echo "Failed: env $appsec_enabled_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-${appsec_enabled_env:-default}-${go_tags}.xml\" -- -v $go_tags $PACKAGES"
               fi
 
               # shellcheck disable=SC2086
               for submodule in $SUBMODULES; do
                 cd "$submodule"
+                submodule_name=$(echo "$submodule" | tr '/' '-')
                 # shellcheck disable=SC2086
-                if ! env $appsec_enabled_env go test -v $go_tags .; then
-                  echo "Failed: env $appsec_enabled_env go test -v $go_tags . (submodule: $submodule)"
+                if ! env $appsec_enabled_env gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml" -- -v $go_tags .; then
+                  echo "Failed: env $appsec_enabled_env gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-${appsec_enabled_env:-default}-${go_tags}-${submodule_name}.xml\" -- -v $go_tags . (submodule: $submodule)"
                 fi
                 cd -
               done
@@ -229,6 +254,20 @@ jobs:
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
+
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: tmp_appsec
+          tags: go:,arch:${{ runner.arch }},os:${{ runner.os }}
 
   # Same tests but on the official golang container for linux
   golang-linux-container:
@@ -292,65 +331,75 @@ jobs:
         run: sudo docker exec -i test.runner apk add gcc musl-dev libc6-compat bash
       - name: Output go env
         run: sudo docker exec -i test.runner go env
+      - name: Setup testing environment
+        run: |-
+          mkdir -p "tmp_appsec"
+          sudo docker exec -i test.runner go install gotest.tools/gotestsum@latest
 
       - name: NOCGO, undefined appsec state
         run: |
           # shellcheck disable=SC2086
-          sudo docker exec -i -e CGO_ENABLED=0 test.runner go test -v $PACKAGES
+          sudo docker exec -i -e CGO_ENABLED=0 test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-undefined.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            if ! sudo docker exec -i -e CGO_ENABLED=0 test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=0 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
+            if ! sudo docker exec -i -e CGO_ENABLED=0 test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-undefined-${submodule_name}.xml\" -- -v ."; then
+              echo "Failed: env CGO_ENABLED=0 bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-undefined-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
           done
       - name: NOCGO, appsec disabled
         run: |
           # shellcheck disable=SC2086
-          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
+          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-disabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
+            if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-disabled-${submodule_name}.xml\" -- -v ."; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-disabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
           done
       - name: NOCGO, appsec enabled
         run: |
           # shellcheck disable=SC2086
-          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
+          sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-enabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
+            if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-enabled-${submodule_name}.xml\" -- -v ."; then
+              echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-nocgo-enabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
           done
       - name: CGO, undefined appsec state
         run: |
           # shellcheck disable=SC2086
-          sudo docker exec -i -e CGO_ENABLED=1 test.runner go test -v $PACKAGES
+          sudo docker exec -i -e CGO_ENABLED=1 test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-cgo-undefined.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            if ! sudo docker exec -i -e CGO_ENABLED=1 test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=1 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
+            if ! sudo docker exec -i -e CGO_ENABLED=1 test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-undefined-${submodule_name}.xml\" -- -v ."; then
+              echo "Failed: env CGO_ENABLED=1 bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-undefined-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
           done
       - name: CGO, appsec disabled
         run: |
           # shellcheck disable=SC2086
-          sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
+          sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-cgo-disabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
+            if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-disabled-${submodule_name}.xml\" -- -v ."; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-disabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
           done
       - name: CGO, appsec enabled
         run: |
           # shellcheck disable=SC2086
-          sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
+          sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner gotestsum --junitfile "$GITHUB_WORKSPACE/tmp_appsec/report-cgo-enabled.xml" -- -v $PACKAGES
           # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
-            if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
-              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
+            submodule_name=$(echo "$submodule" | tr '/' '-')
+            if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-enabled-${submodule_name}.xml\" -- -v ."; then
+              echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c 'cd $submodule && gotestsum --junitfile \"$GITHUB_WORKSPACE/tmp_appsec/report-cgo-enabled-${submodule_name}.xml\" -- -v .' (submodule: $submodule)"
             fi
           done
 
@@ -359,6 +408,20 @@ jobs:
         if: always()
         run: |
           sudo docker exec -i test.runner bash -c "go run ./scripts/configinverter/main.go check"
+      
+      - name: Upload Coverage
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: tmp_appsec
+          tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Clean up
         if: always()
