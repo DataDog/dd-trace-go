@@ -15,7 +15,6 @@ on:
     branches:
       - release-v*
       - main
-      - hannahkm/report-smoke-tests
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
