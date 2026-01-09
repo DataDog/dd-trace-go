@@ -39,7 +39,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 
 	for _, size := range payloadSizes {
 		b.Run(size.name, func(b *testing.B) {
-			payload := newPayload(traceProtocolV04)
+			payload := newPayload(traceProtocolV04, nil)
 			spans := make([]*Span, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
 				span := newBasicSpan("transport-test")
@@ -85,7 +85,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 					go func() {
 						defer wg.Done()
 
-						payload := newPayload(traceProtocolV04)
+						payload := newPayload(traceProtocolV04, nil)
 						spans := []*Span{newBasicSpan("concurrent-transport-test")}
 						_, _ = payload.push(spans)
 

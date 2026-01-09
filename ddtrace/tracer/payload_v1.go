@@ -89,15 +89,21 @@ type payloadV1 struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// releaseSpan is called for each span when clear() is called.
+	// The spans are stored in the chunks field (traceChunk.spans).
+	releaseSpan func(*Span)
 }
 
 // newPayloadV1 returns a ready to use payloadV1.
-func newPayloadV1() *payloadV1 {
+// The releaseSpan function is called for each span when clear() is called.
+func newPayloadV1(releaseSpan func(*Span)) *payloadV1 {
 	return &payloadV1{
-		attributes: make(map[string]anyValue),
-		chunks:     make([]traceChunk, 0),
-		readOff:    0,
-		writeOff:   0,
+		attributes:  make(map[string]anyValue),
+		chunks:      make([]traceChunk, 0),
+		readOff:     0,
+		writeOff:    0,
+		releaseSpan: releaseSpan,
 	}
 }
 
@@ -189,6 +195,15 @@ func (p *payloadV1) reset() {
 }
 
 func (p *payloadV1) clear() {
+	// Release spans back to the pool before clearing chunks
+	if p.releaseSpan != nil {
+		for _, chunk := range p.chunks {
+			for _, s := range chunk.spans {
+				p.releaseSpan(s)
+			}
+		}
+	}
+	p.chunks = nil
 	p.bm = 0
 	p.buf = p.buf[:0]
 	p.reader = nil

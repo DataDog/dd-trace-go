@@ -49,6 +49,14 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	}
 }
 
+// withSpanPoolingDisabled disables returning spans to the pool after processing.
+// This is used in tests to allow accessing span data after the tracer is stopped.
+func withSpanPoolingDisabled() StartOption {
+	return func(c *config) {
+		c.spanPoolingDisabled = true
+	}
+}
+
 // testStatsd asserts that the given statsd.Client can successfully send metrics
 // to a UDP listener located at addr.
 func testStatsd(t *testing.T, cfg *config, addr string) {

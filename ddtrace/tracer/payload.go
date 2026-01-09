@@ -47,14 +47,15 @@ type payload interface {
 }
 
 // newPayload returns a ready to use payload.
-func newPayload(protocol float64) payload {
+// The releaseSpan function is called for each span when clear() is called.
+func newPayload(protocol float64, releaseSpan func(*Span)) payload {
 	if protocol == traceProtocolV1 {
 		return &safePayload{
-			p: newPayloadV1(),
+			p: newPayloadV1(releaseSpan),
 		}
 	}
 	return &safePayload{
-		p: newPayloadV04(),
+		p: newPayloadV04(releaseSpan),
 	}
 }
 
