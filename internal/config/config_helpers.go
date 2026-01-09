@@ -46,3 +46,11 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 	}
 	return true
 }
+
+func validateSendRetries(retries int) bool {
+	if retries < 0 {
+		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries)
+		return false
+	}
+	return true
+}

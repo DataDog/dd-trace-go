@@ -41,7 +41,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
 		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
-		{Name: "send_retries", Value: c.sendRetries},
+		{Name: "send_retries", Value: c.internalConfig.SendRetries()},
 		{Name: "retry_interval", Value: c.internalConfig.RetryInterval()},
 		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
 		{Name: "service", Value: c.serviceName},

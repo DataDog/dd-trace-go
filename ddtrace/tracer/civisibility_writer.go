@@ -113,7 +113,9 @@ func (w *ciVisibilityTraceWriter) flush() {
 		}
 		telemetry.EndpointPayloadRequests(telemetry.TestCycleEndpointType, requestCompressedType)
 
-		for attempt := 0; attempt <= w.config.sendRetries; attempt++ {
+		sendRetries := w.config.internalConfig.SendRetries()
+		retryInterval := w.config.internalConfig.RetryInterval()
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			stats := p.stats()
 			size, count = stats.size, stats.itemCount
 			log.Debug("ciVisibilityTraceWriter: sending payload: size: %d events: %d\n", size, count)
@@ -122,9 +124,9 @@ func (w *ciVisibilityTraceWriter) flush() {
 				log.Debug("ciVisibilityTraceWriter: sent events after %d attempts", attempt+1)
 				return
 			}
-			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, w.config.sendRetries+1, err.Error())
+			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error())
 			p.reset()
-			time.Sleep(w.config.internalConfig.RetryInterval())
+			time.Sleep(retryInterval)
 		}
 		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error())
 		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
