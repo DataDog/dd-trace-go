@@ -73,17 +73,17 @@ jobs:
       key: ${{ steps.cfg.outputs.key }}
       path: ${{ steps.cfg.outputs.path }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Compute cache configuration
         id: cfg
         run: |
-          echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> $GITHUB_OUTPUT
-          echo "path=go_pkg_mod_cache" >> $GITHUB_OUTPUT
+          echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> "$GITHUB_OUTPUT"
+          echo "path=go_pkg_mod_cache" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           cache: false
 
@@ -112,7 +112,7 @@ jobs:
         go-version: [ "1.25", "1.24" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -125,7 +125,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
@@ -143,19 +143,22 @@ jobs:
           report_error=0
           for cgo in "0" "1"; do
             for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
-                for cgocheck_env in "" "$cgocheck"; do
-                  if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES; then
+                for cgocheck_env in "${GOEXPERIMENT}" "$cgocheck"; do
+                  # shellcheck disable=SC2086
+                  if ! env CGO_ENABLED="$cgo" $appsec_enabled_env GOEXPERIMENT="$cgocheck_env" go test -v $PACKAGES; then
                     echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v $PACKAGES"
                   fi
 
+                  # shellcheck disable=SC2086
                   for submodule in $SUBMODULES; do
                     if [[ $cgocheck_env =~ "cgocheck2" && $submodule == "./contrib/gin-gonic/gin" ]]; then
                       echo "Skipped: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule, reason: gin-gonic/gin depends on leodido/go-urn that causes an internal compiler when GOEXPERIMENT=cgocheck2)"
                       continue
                     fi
 
-                    cd $submodule
-                    if ! env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v .; then
+                    cd "$submodule"
+                    # shellcheck disable=SC2086
+                    if ! env CGO_ENABLED="$cgo" $appsec_enabled_env GOEXPERIMENT="$cgocheck_env" go test -v .; then
                       echo "Failed: env CGO_ENABLED=$cgo $appsec_enabled_env GOEXPERIMENT=$cgocheck_env go test -v . (submodule: $submodule)"
                       report_error=1
                     fi
@@ -176,7 +179,7 @@ jobs:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest-16-cores ]
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -189,12 +192,12 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version: stable
           cache: false # we manage the caching ourselves
 
-      - run: go env -w GOMODCACHE=${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}
+      - run: go env -w GOMODCACHE="${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}"
         if: runner.os == 'Windows'
       - run: go env -w GOMODCACHE=${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         if: runner.os != 'Windows'
@@ -205,12 +208,15 @@ jobs:
           set -euxo pipefail
           for appsec_enabled_env in "" "DD_APPSEC_ENABLED=true" "DD_APPSEC_ENABLED=false"; do
             for go_tags in "" "-tags datadog.no_waf"; do
+              # shellcheck disable=SC2086
               if ! env $appsec_enabled_env go test -v $go_tags $PACKAGES; then
                 echo "Failed: env $appsec_enabled_env go test -v $go_tags $PACKAGES"
               fi
 
+              # shellcheck disable=SC2086
               for submodule in $SUBMODULES; do
-                cd $submodule
+                cd "$submodule"
+                # shellcheck disable=SC2086
                 if ! env $appsec_enabled_env go test -v $go_tags .; then
                   echo "Failed: env $appsec_enabled_env go test -v $go_tags . (submodule: $submodule)"
                 fi
@@ -238,7 +244,7 @@ jobs:
 
       fail-fast: false
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -289,7 +295,9 @@ jobs:
 
       - name: NOCGO, undefined appsec state
         run: |
+          # shellcheck disable=SC2086
           sudo docker exec -i -e CGO_ENABLED=0 test.runner go test -v $PACKAGES
+          # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=0 test.runner bash -c "cd $submodule && go test -v ."; then
               echo "Failed: env CGO_ENABLED=0 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
@@ -297,7 +305,9 @@ jobs:
           done
       - name: NOCGO, appsec disabled
         run: |
+          # shellcheck disable=SC2086
           sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
+          # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
               echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
@@ -305,7 +315,9 @@ jobs:
           done
       - name: NOCGO, appsec enabled
         run: |
+          # shellcheck disable=SC2086
           sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
+          # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=0 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
               echo "Failed: env CGO_ENABLED=0 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
@@ -313,7 +325,9 @@ jobs:
           done
       - name: CGO, undefined appsec state
         run: |
+          # shellcheck disable=SC2086
           sudo docker exec -i -e CGO_ENABLED=1 test.runner go test -v $PACKAGES
+          # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=1 test.runner bash -c "cd $submodule && go test -v ."; then
               echo "Failed: env CGO_ENABLED=1 bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
@@ -321,7 +335,9 @@ jobs:
           done
       - name: CGO, appsec disabled
         run: |
+          # shellcheck disable=SC2086
           sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner go test -v $PACKAGES
+          # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=false test.runner bash -c "cd $submodule && go test -v ."; then
               echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=false bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"
@@ -329,7 +345,9 @@ jobs:
           done
       - name: CGO, appsec enabled
         run: |
+          # shellcheck disable=SC2086
           sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner go test -v $PACKAGES
+          # shellcheck disable=SC2086
           for submodule in $SUBMODULES; do
             if ! sudo docker exec -i -e CGO_ENABLED=1 -e DD_APPSEC_ENABLED=true test.runner bash -c "cd $submodule && go test -v ."; then
               echo "Failed: env CGO_ENABLED=1 DD_APPSEC_ENABLED=true bash -c \"cd $submodule && go test -v .\" (submodule: $submodule)"

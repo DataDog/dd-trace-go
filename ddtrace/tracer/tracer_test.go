@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -74,6 +75,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+	internalconfig.SetUseFreshConfig(true)
 	if internal.BoolEnv("DD_APPSEC_ENABLED", false) {
 		// things are slower with AppSec; double wait times
 		timeMultiplicator = time.Duration(2)
@@ -271,7 +273,7 @@ func TestTracerLogFile(t *testing.T) {
 		tracer, err := newTracer()
 		defer tracer.Stop()
 		assert.Nil(t, err)
-		assert.Equal(t, dir, tracer.config.logDirectory)
+		assert.Equal(t, dir, tracer.config.internalConfig.LogDirectory())
 		assert.NotNil(t, tracer.logFile)
 		assert.Equal(t, dir+"/"+log.LoggerFile, tracer.logFile.Name())
 	})
@@ -280,7 +282,7 @@ func TestTracerLogFile(t *testing.T) {
 		tracer, err := newTracer()
 		assert.Nil(t, err)
 		defer tracer.Stop()
-		assert.Empty(t, tracer.config.logDirectory)
+		assert.Empty(t, tracer.config.internalConfig.LogDirectory())
 		assert.Nil(t, tracer.logFile)
 	})
 }
@@ -388,18 +390,16 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
 		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -410,18 +410,16 @@ func TestSamplingDecision(t *testing.T) {
 		// client-side stats are also enabled.
 		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false))
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -430,19 +428,16 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_stats", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
@@ -451,12 +446,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("events_sampled", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
@@ -464,6 +453,10 @@ func TestSamplingDecision(t *testing.T) {
 		child.SetTag(ext.EventSampleRate, 1)
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		assert.Equal(t, "", span.context.trace.tags[keyDecisionMaker])
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
@@ -472,12 +465,6 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("client_dropped", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -489,6 +476,10 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, ext.PriorityAutoReject, p)
 		child.Finish()
 		span.Finish()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
@@ -502,13 +493,7 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -516,7 +501,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
@@ -530,13 +518,6 @@ func TestSamplingDecision(t *testing.T) {
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -544,7 +525,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.Equal(t, 8.0, parent.metrics[keySpanSamplingMechanism])
@@ -558,13 +542,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be dropped. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -572,7 +549,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionDrop, parent.context.trace.samplingDecision)
 		assert.NotContains(t, parent.metrics, keySpanSamplingMechanism)
@@ -586,13 +566,6 @@ func TestSamplingDecision(t *testing.T) {
 		// The trace should be kept. No single spans extracted.
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
-		defer func() {
-			// Must check these after tracer is stopped to avoid flakiness
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
-			assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
-		}()
-		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.sampler = NewRateSampler(1)
 		tracer.prioritySampling.defaultRate = 1
 		tracer.config.serviceName = "test_service"
@@ -600,7 +573,10 @@ func TestSamplingDecision(t *testing.T) {
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
 		parent.Finish()
-		tracer.Stop()
+		stop()
+		// Must check these after tracer is stopped to avoid flakiness
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
+		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		// single span sampling should only run on dropped traces
 		assert.Equal(t, float64(ext.PriorityAutoKeep), parent.metrics[keySamplingPriority])
 		assert.Equal(t, decisionKeep, parent.context.trace.samplingDecision)
@@ -622,7 +598,6 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		var spans []*Span
 		for i := 0; i < 100; i++ {
@@ -662,7 +637,6 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
@@ -698,7 +672,6 @@ func TestSamplingDecision(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for i := 0; i < 100; i++ {
@@ -772,7 +745,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("OTEL_METRICS_EXPORTER", "none")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.False(t, c.runtimeMetrics)
+		assert.False(t, c.internalConfig.RuntimeMetricsEnabled())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
@@ -781,12 +754,12 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetricsEnabled())
 		// tracer option overrides dd env
 		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
 		c, err = newTestConfig(WithRuntimeMetrics())
 		assert.NoError(t, err)
-		assert.True(t, c.runtimeMetrics)
+		assert.True(t, c.internalConfig.RuntimeMetricsEnabled())
 	})
 }
 
@@ -1877,11 +1850,11 @@ func TestTracerReportsHostname(t *testing.T) {
 
 			name, ok := root.meta[keyHostname]
 			assert.True(ok)
-			assert.Equal(name, tracer.config.hostname)
+			assert.Equal(name, tracer.config.internalConfig.Hostname())
 
 			name, ok = child.meta[keyHostname]
 			assert.True(ok)
-			assert.Equal(name, tracer.config.hostname)
+			assert.Equal(name, tracer.config.internalConfig.Hostname())
 		})
 	}
 	testReportHostnameEnabled(t, "DD_TRACE_REPORT_HOSTNAME/set,DD_TRACE_COMPUTE_STATS/true", true)
@@ -2362,6 +2335,7 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 	tracer.config.agent.DropP0s = true
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
+		tracer.reportHealthMetrics()
 		if n < 0 {
 			tick <- time.Now()
 			return
@@ -2484,7 +2458,8 @@ func TestFlush(t *testing.T) {
 	tr.statsd = ts
 
 	transport := newDummyTransport()
-	c := newConcentrator(&config{transport: transport, env: "someEnv"}, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	cfg := newTestConfigWithTransportAndEnv(t, transport, "someEnv")
+	c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
 	tr.stats.Stop()
 	tr.stats = c
 	c.Start()
@@ -2539,12 +2514,11 @@ func TestTakeStackTrace(t *testing.T) {
 		// top frame should be runtime.main or runtime.goexit, in case of tests that's goexit
 		assert.Contains(t, val, "runtime.goexit")
 		numFrames := strings.Count(val, "\n\t")
-		assert.Equal(t, 1, numFrames)
+		assert.Equal(t, 3, numFrames)
 	})
 
 	t.Run("n=1", func(t *testing.T) {
 		val := takeStacktrace(1, 0)
-		assert.Contains(t, val, "tracer.TestTakeStackTrace", "should contain this function")
 		// each frame consists of two strings separated by \n\t, thus number of frames == number of \n\t
 		numFrames := strings.Count(val, "\n\t")
 		assert.Equal(t, 1, numFrames)
@@ -2663,8 +2637,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2684,8 +2657,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2709,8 +2681,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
 		defer stop()
-		tracer.config.featureFlags = make(map[string]struct{})
-		tracer.config.featureFlags["discovery"] = struct{}{}
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
@@ -2842,7 +2813,7 @@ func TestEmptyChunksNotSent(t *testing.T) {
 	assert.NoError(err)
 	defer stop()
 
-	tracer.config.statsComputationEnabled = true
+	tracer.config.internalConfig.SetStatsComputationEnabled(true, internalconfig.OriginCode)
 	tracer.prioritySampling.defaultRate = 0
 	tracer.config.serviceName = "test_service"
 
@@ -2968,6 +2939,8 @@ func TestTracerTwiceStartRemoteConfig(t *testing.T) {
 func TestTracerConcurrentStartStop(t *testing.T) {
 	const iterations = 100
 	var wg sync.WaitGroup
+
+	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
 
 	// Goroutine 1: Continuously start the tracer
 	wg.Add(1)

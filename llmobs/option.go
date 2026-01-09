@@ -85,7 +85,7 @@ func WithError(err error) FinishSpanOption {
 	return func(cfg *illmobs.FinishSpanConfig) {
 		var tErr *errortrace.TracerError
 		if !errors.As(err, &tErr) {
-			tErr = errortrace.WrapN(err, 0, 2)
+			tErr = errortrace.WrapN(err, 2)
 		}
 		cfg.Error = tErr
 	}
@@ -152,5 +152,13 @@ func WithAnnotatedMetrics(metrics map[string]float64) AnnotateOption {
 		for k, v := range metrics {
 			a.Metrics[k] = v
 		}
+	}
+}
+
+// WithIntent sets the intent for the span.
+// Intent is a description of a reason for calling an MCP tool.
+func WithIntent(intent string) AnnotateOption {
+	return func(a *illmobs.SpanAnnotations) {
+		a.Intent = intent
 	}
 }

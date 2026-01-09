@@ -33,9 +33,6 @@ func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
 		rig, err := newEnvoyAppsecRig(t, GCPServiceExtensionIntegration, false, nil)
@@ -275,9 +272,6 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
 		bodyParsingSizeLimit := 256
@@ -645,9 +639,6 @@ func TestAppSecAPISecurityBodyParsingEnabled(t *testing.T) {
 	t.Setenv("_DD_APPSEC_PROXY_ENVIRONMENT", "true") // Enable API Security proxy sampler
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func() (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
 		bodyParsingSizeLimit := 256
@@ -768,9 +759,6 @@ func TestAppSecBodyParsingActivation(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
 
 	testutils.StartAppSec(t)
-	if !instr.AppSecEnabled() {
-		t.Skip("appsec disabled")
-	}
 
 	setup := func(integration Integration, bodyParsingSizeLimit *int) (envoyextproc.ExternalProcessorClient, mocktracer.Tracer, func()) {
 		rig, err := newEnvoyAppsecRig(t, integration, false, bodyParsingSizeLimit)

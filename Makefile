@@ -73,6 +73,10 @@ lint/shell: tools-install ## Run shell script linting checks
 lint/misc: tools-install ## Run miscellaneous linting checks (copyright, Makefiles)
 	$(BIN_PATH) ./scripts/lint.sh --misc
 
+.PHONY: lint/action
+lint/action: tools-install ## Lint GitHub Actions workflows
+	$(BIN_PATH) ./scripts/lint.sh --action
+
 .PHONY: format
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all
@@ -82,8 +86,12 @@ format/shell: tools-install ## install shfmt
 	$(BIN_PATH) ./scripts/format.sh --shell
 
 .PHONY: test
-test: tools-install ## Run all tests (core, integration, contrib)
+test: tools-install test/unit ## Run all tests (core, integration, contrib)
 	$(BIN_PATH) ./scripts/test.sh --all
+
+.PHONY: test/unit
+test/unit: tools-install ## Run unit tests
+	go test -v -failfast ./...
 
 .PHONY: test-appsec
 test/appsec: tools-install ## Run tests with AppSec enabled
@@ -96,6 +104,14 @@ test/contrib: tools-install ## Run contrib package tests
 .PHONY: test-integration
 test/integration: tools-install ## Run integration tests
 	$(BIN_PATH) ./scripts/test.sh --integration
+
+.PHONY: test-deadlock
+test-deadlock: tools-install ## Run tests with deadlock detection
+	BUILD_TAGS=deadlock $(BIN_PATH) ./scripts/test.sh --all
+
+.PHONY: test-debug-deadlock
+test-debug-deadlock: tools-install ## Run tests with debug and deadlock detection
+	BUILD_TAGS=debug,deadlock $(BIN_PATH) ./scripts/test.sh --all
 
 .PHONY: fix-modules
 fix-modules: tools-install ## Fix module dependencies and consistency

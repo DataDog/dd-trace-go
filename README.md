@@ -75,12 +75,16 @@ Targets:
   lint/go/fix          Fix linting issues automatically
   lint/shell           Run shell script linting checks
   lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
+  lint/action          Lint GitHub Actions workflows
   format               Format code
   format/shell         install shfmt
   test                 Run all tests (core, integration, contrib)
+  test/unit            Run unit tests
   test/appsec          Run tests with AppSec enabled
   test/contrib         Run contrib package tests
   test/integration     Run integration tests
+  test-deadlock        Run tests with deadlock detection
+  test-debug-deadlock  Run tests with debug and deadlock detection
   fix-modules          Fix module dependencies and consistency
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules

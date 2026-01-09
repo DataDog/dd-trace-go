@@ -14,6 +14,8 @@ on:
     secrets:
       DD_API_KEY:
         required: false
+      DD_CI_API_KEY:
+        required: false
   pull_request:
   push:
     branches:
@@ -24,6 +26,8 @@ on:
       - 'internal/**'
       - 'orchestrion/**'
       - 'scripts/**'
+  schedule: # nightly
+    - cron: "0 0 * * *"
 
 permissions: read-all
 
@@ -40,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
@@ -61,12 +65,12 @@ jobs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
       - name: Setup Go
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version: stable
           cache: true
@@ -84,7 +88,7 @@ jobs:
       services_json: ${{ steps.set-services.outputs.services_json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
@@ -126,7 +130,7 @@ jobs:
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
@@ -135,7 +139,7 @@ jobs:
       - name: Check out orchestrion
         if: inputs.orchestrion-version != ''
         id: checkout-orchestrion
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           path: ${{ github.workspace }}/orchestrion
           repository: DataDog/orchestrion
@@ -143,7 +147,7 @@ jobs:
 
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
@@ -230,18 +234,21 @@ jobs:
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            gotestsum --junitfile ${XML_PATH} --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
+            # shellcheck disable=SC2086
+            gotestsum --junitfile "${XML_PATH}" --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
             orchestrion go test -json -shuffle=on ./civisibility
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
+            # shellcheck disable=SC2086
+            gotestsum --junitfile "${XML_PATH}" -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
             go test -shuffle=on -toolexec='orchestrion toolexec' ./civisibility
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            gotestsum --junitfile ${XML_PATH} -- -shuffle=on $PACKAGE_NAMES
+            # shellcheck disable=SC2086
+            gotestsum --junitfile "${XML_PATH}" -- -shuffle=on $PACKAGE_NAMES
             go test -shuffle=on ./civisibility
             ;;
           *)
@@ -292,7 +299,7 @@ jobs:
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
 
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         if: always()
         with:
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
@@ -304,7 +311,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
-          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},distribution:${{ runner.distribution }}
+          tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
   integration-test-done:
     name: Orchestrion Integration Tests

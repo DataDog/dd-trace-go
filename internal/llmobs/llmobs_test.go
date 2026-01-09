@@ -641,6 +641,17 @@ func TestSpanAnnotate(t *testing.T) {
 			},
 			wantSessionID: "config-session-456",
 		},
+		{
+			name: "tool-span-with-intent",
+			kind: llmobs.SpanKindTool,
+			annotations: llmobs.SpanAnnotations{
+				Intent: "test intent",
+			},
+			wantMeta: map[string]any{
+				"span.kind": "tool",
+				"intent":    "test intent",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
