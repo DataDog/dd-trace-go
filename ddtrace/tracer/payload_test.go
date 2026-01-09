@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,6 +44,7 @@ func newDetailedSpanList(n int) spanList {
 	list := make([]*Span, n)
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
+		list[i].context.trace.setPropagatingTagLocked(keyDecisionMaker, "1")
 		list[i].start = fixedTime
 		list[i].service = "golden"
 		list[i].resource = "resource." + itoa[i%5+1]
@@ -52,6 +54,10 @@ func newDetailedSpanList(n int) spanList {
 		list[i].spanEvents = []spanEvent{{Name: "span.event." + itoa[i%5+1]}}
 	}
 	return list
+}
+
+func addPriority(sl *spanList) {
+	(*sl)[0].context.trace.setSamplingPriorityLocked(1, samplernames.Manual)
 }
 
 // TestPayloadIntegrity tests that whatever we push into the payload
@@ -173,6 +179,7 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
 			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
 			assert.Equal(got.chunks[0].attributes["service"].value, "golden")
+			assert.Equal(uint32(1), got.chunks[0].samplingMechanism)
 		})
 
 		// Test that a span with no decision maker does not error
@@ -199,6 +206,41 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Greater(len(got.chunks), 0)
 			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
 			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+		})
+
+		t.Run("with priority", func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+			p.SetContainerID("containerID")
+			p.SetLanguageName("go")
+			p.SetLanguageVersion("1.25")
+			p.SetTracerVersion(version.Tag)
+			p.SetRuntimeID(globalconfig.RuntimeID())
+			p.SetEnv("test")
+			p.SetHostname("hostname")
+			p.SetAppVersion("appVersion")
+
+			for i := 0; i < n; i++ {
+				sl := newSpanList(i%5 + 1)
+				addPriority(&sl) // also set the sampling priority
+				_, _ = p.push(sl)
+			}
+
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			assert.Equal(uint32(4), got.chunks[0].samplingMechanism)
+			assert.Equal(int32(1), got.chunks[0].priority)
 		})
 	}
 }
