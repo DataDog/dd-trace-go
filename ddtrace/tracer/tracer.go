@@ -123,7 +123,7 @@ type tracer struct {
 
 	// These maps count the spans started and finished from
 	// each component, including contribs and "manual" spans.
-	spansStarted, spansFinished globalinternal.XSyncMapCounterMap
+	spansStarted, spansFinished *globalinternal.CounterMap
 
 	// Keeps track of the total number of traces dropped for accurate logging.
 	totalTracesDropped uint32
@@ -460,8 +460,8 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
-		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
-		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
+		spansStarted:     globalinternal.NewCounterMap(),
+		spansFinished:    globalinternal.NewCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
 			SQL: obfuscate.SQLConfig{
 				TableNames:       c.agent.HasFlag("table_names"),
