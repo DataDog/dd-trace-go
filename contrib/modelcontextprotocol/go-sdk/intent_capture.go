@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func ddTraceSchema() *jsonschema.Schema {
+func telemetrySchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type: "object",
 		Properties: map[string]*jsonschema.Schema{
@@ -68,8 +68,8 @@ func injectToolsListResponse(res *mcp.ListToolsResult) {
 			inputSchema.Properties = map[string]*jsonschema.Schema{}
 		}
 
-		inputSchema.Properties[instrmcp.DDTraceKey] = ddTraceSchema()
-		inputSchema.Required = append(inputSchema.Required, instrmcp.DDTraceKey)
+		inputSchema.Properties[instrmcp.TelemetryKey] = telemetrySchema()
+		inputSchema.Required = append(inputSchema.Required, instrmcp.TelemetryKey)
 	}
 }
 
@@ -83,14 +83,14 @@ func processToolCallIntent(next mcp.MethodHandler, ctx context.Context, method s
 			return next(ctx, method, req)
 		}
 
-		if ddtraceVal, has := argsMap[instrmcp.DDTraceKey]; has {
-			if ddtraceMap, ok := ddtraceVal.(map[string]any); ok {
-				annotateSpanWithIntent(ctx, ddtraceMap)
+		if telemetryVal, has := argsMap[instrmcp.TelemetryKey]; has {
+			if telemetryMap, ok := telemetryVal.(map[string]any); ok {
+				annotateSpanWithIntent(ctx, telemetryMap)
 			} else {
-				instr.Logger().Warn("go-sdk intent capture: ddtrace value is not a map")
+				instr.Logger().Warn("go-sdk intent capture: telemetry value is not a map")
 			}
 
-			delete(argsMap, instrmcp.DDTraceKey)
+			delete(argsMap, instrmcp.TelemetryKey)
 
 			modifiedArgs, err := json.Marshal(argsMap)
 			if err != nil {
@@ -103,12 +103,12 @@ func processToolCallIntent(next mcp.MethodHandler, ctx context.Context, method s
 	return next(ctx, method, req)
 }
 
-func annotateSpanWithIntent(ctx context.Context, ddTraceVal map[string]any) {
-	if ddTraceVal == nil {
+func annotateSpanWithIntent(ctx context.Context, telemetryVal map[string]any) {
+	if telemetryVal == nil {
 		return
 	}
 
-	intentVal, exists := ddTraceVal[instrmcp.IntentKey]
+	intentVal, exists := telemetryVal[instrmcp.IntentKey]
 	if !exists {
 		return
 	}
