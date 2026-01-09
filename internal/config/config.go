@@ -103,6 +103,8 @@ type Config struct {
 	sendRetries int
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
+	// httpClientTimeout specifies the timeout for the HTTP client.
+	httpClientTimeout time.Duration
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -142,7 +144,7 @@ func loadConfig() *Config {
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.sendRetries = provider.getIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
-
+	cfg.httpClientTimeout = provider.getDuration("DD_TRACE_AGENT_TIMEOUT", 10*time.Second)
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
 	if featuresStr := provider.getString("DD_TRACE_FEATURES", ""); featuresStr != "" {
@@ -624,4 +626,17 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.ciVisibilityEnabled = enabled
 	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) HTTPClientTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.httpClientTimeout
+}
+
+func (c *Config) SetHTTPClientTimeout(timeout time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.httpClientTimeout = timeout
+	reportTelemetry("DD_TRACE_AGENT_TIMEOUT", timeout, origin)
 }
