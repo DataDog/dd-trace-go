@@ -122,7 +122,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: "1.24"
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
       - run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           # shellcheck disable=SC2086
           gotestsum --junitfile "${TEST_RESULTS}/report-smoke-tracer.xml" -- -v $PACKAGES
       # Check for changes in the supported_configurations.json file
@@ -137,7 +144,6 @@ jobs:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:1.24,arch:${{ runner.arch }},os:${{ runner.os }}
-
       - name: Upload Coverage
         if: always()
         shell: bash
