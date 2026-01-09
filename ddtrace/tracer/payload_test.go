@@ -56,10 +56,6 @@ func newDetailedSpanList(n int) spanList {
 	return list
 }
 
-func addPriority(sl *spanList) {
-	(*sl)[0].context.trace.setSamplingPriorityLocked(1, samplernames.Manual)
-}
-
 // TestPayloadIntegrity tests that whatever we push into the payload
 // allows us to read the same content as would have been encoded by
 // the codec.
@@ -224,7 +220,7 @@ func TestPayloadV1Decode(t *testing.T) {
 
 			for i := 0; i < n; i++ {
 				sl := newSpanList(i%5 + 1)
-				addPriority(&sl) // also set the sampling priority
+				sl[0].context.trace.setSamplingPriorityLocked(1, samplernames.Manual)
 				_, _ = p.push(sl)
 			}
 

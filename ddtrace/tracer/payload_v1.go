@@ -119,7 +119,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 			continue
 		}
 
-		if span.Context() == nil {
+		if span.context == nil {
 			continue
 		}
 
