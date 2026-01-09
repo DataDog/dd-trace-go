@@ -20,6 +20,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -108,7 +110,7 @@ type SpanContext struct {
 	traceID traceID
 	spanID  uint64
 
-	mu         sync.RWMutex // guards below fields
+	mu         locking.RWMutex // guards below fields
 	baggage    map[string]string
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
@@ -273,6 +275,17 @@ func (c *SpanContext) SpanLinks() []SpanLink {
 	return cp
 }
 
+// foreachBaggageItemLocked iterates over baggage items.
+// c.mu must be held for reading.
+func (c *SpanContext) foreachBaggageItemLocked(handler func(k, v string) bool) {
+	assert.RWMutexRLocked(&c.mu)
+	for k, v := range c.baggage {
+		if !handler(k, v) {
+			break
+		}
+	}
+}
+
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	if c == nil {
@@ -283,11 +296,7 @@ func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	for k, v := range c.baggage {
-		if !handler(k, v) {
-			break
-		}
-	}
+	c.foreachBaggageItemLocked(handler)
 }
 
 // sets the sampling priority and decision maker (based on `sampler`).
@@ -319,14 +328,35 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 	return c.trace.samplingPriority()
 }
 
-func (c *SpanContext) setBaggageItem(key, val string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// setBaggageItemLocked sets a baggage item.
+// c.mu must be held for writing.
+func (c *SpanContext) setBaggageItemLocked(key, val string) {
+	assert.RWMutexLocked(&c.mu)
 	if c.baggage == nil {
 		atomic.StoreUint32(&c.hasBaggage, 1)
 		c.baggage = make(map[string]string, 1)
 	}
 	c.baggage[key] = val
+}
+
+func (c *SpanContext) setBaggageItem(key, val string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.setBaggageItemLocked(key, val)
+}
+
+// baggageItemLocked retrieves a baggage item.
+// c.mu must be held for reading.
+func (c *SpanContext) baggageItemLocked(key string) string {
+	assert.RWMutexRLocked(&c.mu)
+	return c.baggage[key]
+}
+
+// baggageCountLocked returns the number of baggage items.
+// c.mu must be held for reading.
+func (c *SpanContext) baggageCountLocked() int {
+	assert.RWMutexRLocked(&c.mu)
+	return len(c.baggage)
 }
 
 func (c *SpanContext) baggageItem(key string) string {
@@ -335,7 +365,7 @@ func (c *SpanContext) baggageItem(key string) string {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.baggage[key]
+	return c.baggageItemLocked(key)
 }
 
 // finish marks this span as finished in the trace.
@@ -352,7 +382,7 @@ func (c *SpanContext) safeDebugString() string {
 	var baggageCount int
 	if hasBaggage {
 		c.mu.RLock()
-		baggageCount = len(c.baggage)
+		baggageCount = c.baggageCountLocked()
 		c.mu.RUnlock()
 	}
 
