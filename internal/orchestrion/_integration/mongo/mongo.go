@@ -29,6 +29,13 @@ type TestCase struct {
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
+	t.Cleanup(func() {
+		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		assert.NoError(t, tc.client.Disconnect(ctx))
+	})
+
 	_, mongoURI := containers.StartMongoDBTestContainer(t)
 
 	opts := options.Client()
@@ -36,13 +43,6 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	client, err := mongo.Connect(ctx, opts)
 	require.NoError(t, err)
 	tc.client = client
-
-	t.Cleanup(func() {
-		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		assert.NoError(t, tc.client.Disconnect(ctx))
-	})
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
