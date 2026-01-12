@@ -681,9 +681,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 			// Inherit the context.Context from parent span if it was propagated
 			// using ChildOf() rather than StartSpanFromContext(), see
 			// applyPPROFLabels() below.
-			context.span.mu.RLock()
-			pprofContext = context.span.pprofCtxActive
-			context.span.mu.RUnlock()
+			pprofContext = context.span.getPprofCtxActive()
 		}
 	}
 	if pprofContext == nil {
@@ -722,9 +720,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		}
 		if context.span != nil {
 			// local parent, inherit service
-			context.span.mu.RLock()
-			span.service = context.span.service
-			context.span.mu.RUnlock()
+			span.service = context.span.getService()
 		} else {
 			// remote parent
 			if context.origin != "" {
@@ -840,25 +836,23 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
 	if t.config.internalConfig.ProfilerHotspotsEnabled() && localRootSpan != nil {
-		localRootSpan.mu.RLock()
-		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
-		localRootSpan.mu.RUnlock()
+		spanID, _ := localRootSpan.getSpanIDAndResource()
+		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
 	}
 	if t.config.internalConfig.ProfilerHotspotsEnabled() {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
 	if t.config.internalConfig.ProfilerEndpoints() && localRootSpan != nil {
-		localRootSpan.mu.RLock()
+		_, resource := localRootSpan.getSpanIDAndResource()
 		if spanResourcePIISafe(localRootSpan) {
-			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
+			labels = append(labels, traceprof.TraceEndpoint, resource)
 			if span == localRootSpan {
 				// Inform the profiler of endpoint hits. This is used for the unit of
 				// work feature. We can't use APM stats for this since the stats don't
 				// have enough cardinality (e.g. runtime-id tags are missing).
-				traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
+				traceprof.GlobalEndpointCounter().Inc(resource)
 			}
 		}
-		localRootSpan.mu.RUnlock()
 	}
 	if len(labels) > 0 {
 		span.pprofCtxRestore = ctx

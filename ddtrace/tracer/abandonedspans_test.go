@@ -60,15 +60,8 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 }
 
 func formatSpanString(s *Span) string {
-	s.mu.Lock()
-	var integration string
-	if v, ok := s.meta[ext.Component]; ok {
-		integration = v
-	} else {
-		integration = "manual"
-	}
-	msg := fmt.Sprintf("[name: %s, integration: %s, span_id: %d, trace_id: %d, age: %s],", s.name, integration, s.spanID, s.traceID, spanAge(s))
-	s.mu.Unlock()
+	name, spanID, traceID, integration := s.debugInfo()
+	msg := fmt.Sprintf("[name: %s, integration: %s, span_id: %d, trace_id: %d, age: %s],", name, integration, spanID, traceID, spanAge(s))
 	return msg
 }
 

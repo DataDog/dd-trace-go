@@ -579,16 +579,16 @@ func (t *trace) push(sp *Span) {
 // t must already be locked.
 func (t *trace) setTraceTags(s *Span) {
 	for k, v := range t.tags {
-		s.setMeta(k, v)
+		s.setMetaLocked(k, v)
 	}
 	for k, v := range t.propagatingTags {
-		s.setMeta(k, v)
+		s.setMetaLocked(k, v)
 	}
 	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
-		s.setMeta(k, v)
+		s.setMetaLocked(k, v)
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
 	}
 }
 
@@ -627,7 +627,7 @@ func (t *trace) finishedOne(s *Span) {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		t.root.setMetricLocked(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -677,15 +677,13 @@ func (t *trace) finishedOne(s *Span) {
 	// we need to lock this new span.
 	fSpan := finishedSpans[0]
 	currentSpanIsFirstInChunk := s == fSpan
-	if !currentSpanIsFirstInChunk {
-		fSpan.mu.Lock()
-		defer fSpan.mu.Unlock()
-	}
-	fSpan.setMetric(keySamplingPriority, *t.priority)
-	if s != t.spans[0] {
-		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(fSpan)
-	}
+	fSpan.withLockIf(!currentSpanIsFirstInChunk, func() {
+		fSpan.setMetricLocked(keySamplingPriority, *t.priority)
+		if s != t.spans[0] {
+			// Make sure the first span in the chunk has the trace-level tags
+			t.setTraceTags(fSpan)
+		}
+	})
 	if tr, ok := tr.(*tracer); ok {
 		t.finishChunk(tr, &chunk{
 			spans:    finishedSpans,
@@ -707,13 +705,13 @@ func setPeerService(s *Span, tc TracerConf) {
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
-		s.setMeta(keyPeerServiceSource, ext.PeerService)
+		s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 	} else if isServerless(tc) {
 		// Set peerService only in outbound Lambda requests
 		if isOutboundRequest {
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
-				s.setMeta(ext.PeerService, ps)
-				s.setMeta(keyPeerServiceSource, ext.PeerService)
+				s.setMetaLocked(ext.PeerService, ps)
+				s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 			} else {
 				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
 			}
@@ -728,13 +726,13 @@ func setPeerService(s *Span, tc TracerConf) {
 			log.Debug("No source tag value could be found for span %q, peer.service not set", s.name)
 			return
 		}
-		s.setMeta(keyPeerServiceSource, source)
+		s.setMetaLocked(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
 	if to, ok := tc.PeerServiceMappings[ps]; ok {
-		s.setMeta(keyPeerServiceRemappedFrom, ps)
-		s.setMeta(ext.PeerService, to)
+		s.setMetaLocked(keyPeerServiceRemappedFrom, ps)
+		s.setMetaLocked(ext.PeerService, to)
 	}
 }
 
@@ -834,7 +832,7 @@ func setPeerServiceFromSource(s *Span) string {
 	}
 	for _, source := range sources {
 		if val, ok := s.meta[source]; ok {
-			s.setMeta(ext.PeerService, val)
+			s.setMetaLocked(ext.PeerService, val)
 			return source
 		}
 	}
