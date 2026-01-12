@@ -749,7 +749,7 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 }
 
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
+	return c.agent.Stats && c.agent.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 
 func (c *config) canDropP0s() bool {
