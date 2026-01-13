@@ -369,7 +369,10 @@ func (c *SpanContext) baggageItem(key string) string {
 }
 
 // finish marks this span as finished in the trace.
-func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
+// The span must be locked by the caller.
+func (c *SpanContext) finish() {
+	c.trace.finishedOneLocked(c.span)
+}
 
 // safeDebugString returns a safe string representation of the SpanContext for debug logging.
 // It excludes potentially sensitive data like baggage contents while preserving useful debugging information.
@@ -575,9 +578,10 @@ func (t *trace) push(sp *Span) {
 	}
 }
 
-// setTraceTags sets all "trace level" tags on the provided span
+// setTraceTagsLocked sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *Span) {
+func (t *trace) setTraceTagsLocked(s *Span) {
+	assert.RWMutexLocked(&s.mu)
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)
 	}
@@ -592,12 +596,13 @@ func (t *trace) setTraceTags(s *Span) {
 	}
 }
 
-// finishedOne acknowledges that another span in the trace has finished, and checks
+// finishedOneLocked acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 // The provided span must be locked.
-func (t *trace) finishedOne(s *Span) {
+func (t *trace) finishedOneLocked(s *Span) {
+	assert.RWMutexLocked(&s.mu)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s.finished = true
@@ -621,7 +626,7 @@ func (t *trace) finishedOne(s *Span) {
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
 	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
-		s.meta[keyBaseService] = tc.ServiceTag
+		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
@@ -636,7 +641,7 @@ func (t *trace) finishedOne(s *Span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
+		t.setTraceTagsLocked(s)
 	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
@@ -681,7 +686,7 @@ func (t *trace) finishedOne(s *Span) {
 		fSpan.setMetricLocked(keySamplingPriority, *t.priority)
 		if s != t.spans[0] {
 			// Make sure the first span in the chunk has the trace-level tags
-			t.setTraceTags(fSpan)
+			t.setTraceTagsLocked(fSpan)
 		}
 	})
 	if tr, ok := tr.(*tracer); ok {
