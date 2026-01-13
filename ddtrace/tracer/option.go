@@ -1401,10 +1401,10 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	locking.RWMutex
-	traces     spanLists
-	stats      []*pb.ClientStatsPayload
-	obfVersion int
+	mu         locking.RWMutex
+	traces     spanLists                // +checklocks:mu
+	stats      []*pb.ClientStatsPayload // +checklocks:mu
+	obfVersion int                      // +checklocks:mu
 }
 
 func newDummyTransport() *dummyTransport {
@@ -1412,28 +1412,28 @@ func newDummyTransport() *dummyTransport {
 }
 
 func (t *dummyTransport) Len() int {
-	t.RLock()
-	defer t.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return len(t.traces)
 }
 
 func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload, obfVersion int) error {
-	t.Lock()
+	t.mu.Lock()
 	t.stats = append(t.stats, p)
 	t.obfVersion = obfVersion
-	t.Unlock()
+	t.mu.Unlock()
 	return nil
 }
 
 func (t *dummyTransport) Stats() []*pb.ClientStatsPayload {
-	t.RLock()
-	defer t.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.stats
 }
 
 func (t *dummyTransport) ObfuscationVersion() int {
-	t.RLock()
-	defer t.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.obfVersion
 }
 
@@ -1442,9 +1442,9 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.Lock()
+	t.mu.Lock()
 	t.traces = append(t.traces, traces...)
-	t.Unlock()
+	t.mu.Unlock()
 	ok := io.NopCloser(strings.NewReader("OK"))
 	return ok, nil
 }
@@ -1460,14 +1460,14 @@ func decode(p payloadReader) (spanLists, error) {
 }
 
 func (t *dummyTransport) Reset() {
-	t.Lock()
+	t.mu.Lock()
 	t.traces = t.traces[:0]
-	t.Unlock()
+	t.mu.Unlock()
 }
 
 func (t *dummyTransport) Traces() spanLists {
-	t.Lock()
-	defer t.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	traces := t.traces
 	t.traces = spanLists{}
