@@ -56,14 +56,18 @@ type agentTraceWriter struct {
 	statsd globalinternal.StatsdClient
 
 	tracesQueued uint32
+
+	// releaseSpan is called for each span when the payload is cleared.
+	releaseSpan func(*Span)
 }
 
-func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient) *agentTraceWriter {
+func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient, releaseSpan func(*Span)) *agentTraceWriter {
 	tw := &agentTraceWriter{
 		config:           c,
 		climit:           make(chan struct{}, concurrentConnectionLimit),
 		prioritySampling: s,
 		statsd:           statsdClient,
+		releaseSpan:      releaseSpan,
 	}
 	tw.payload = tw.newPayload()
 	return tw
@@ -98,7 +102,7 @@ func (h *agentTraceWriter) stop() {
 
 // newPayload returns a new payload based on the trace protocol.
 func (h *agentTraceWriter) newPayload() payload {
-	return newPayload(h.config.traceProtocol)
+	return newPayload(h.config.traceProtocol, h.releaseSpan)
 }
 
 // flush will push any currently buffered traces to the server.
