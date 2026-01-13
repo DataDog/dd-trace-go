@@ -46,17 +46,23 @@ func (w *wrappedDispatcher) Messages() <-chan *sarama.ConsumerMessage {
 
 func (w *wrappedDispatcher) Run() {
 	msgs := w.d.Messages()
+
+	defer func() {
+		close(w.messages)
+	}()
+
 	var prev *tracer.Span
+	defer func() {
+		if prev != nil {
+			prev.Finish()
+		}
+	}()
 
 	for {
 		select {
 		case msg, ok := <-msgs:
 			if !ok {
-				// Channel closed, exit cleanly
-				if prev != nil {
-					prev.Finish()
-				}
-				close(w.messages)
+				// Channel closed, exit cleanly.
 				return
 			}
 
@@ -71,10 +77,6 @@ func (w *wrappedDispatcher) Run() {
 			case <-w.ctx.Done():
 				// Context cancelled while sending, cleanup and exit.
 				next.Finish()
-				if prev != nil {
-					prev.Finish()
-				}
-				close(w.messages)
 				return
 			}
 
@@ -86,10 +88,6 @@ func (w *wrappedDispatcher) Run() {
 
 		case <-w.ctx.Done():
 			// Context cancelled, cleanup and exit.
-			if prev != nil {
-				prev.Finish()
-			}
-			close(w.messages)
 			return
 		}
 	}
