@@ -748,6 +748,10 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 	c.integrations = integrations
 }
 
+// canComputeStats determines whether Client-Side Stats can be computed, which requires:
+// - 'client_drop_p0' is enabled
+// - Trace Agent exposes 'stats' endpoint
+// - Stats Computation is enabled on the tracer (or has 'discovery' FF)
 func (c *config) canComputeStats() bool {
 	return c.agent.Stats && c.agent.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
