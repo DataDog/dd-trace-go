@@ -36,7 +36,8 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	}
 	instr.Logger().Debug("contrib/IBM/sarama: Wrapping Partition Consumer: %#v", cfg)
 
-	d := wrapDispatcher(pc, cfg)
+	// Use background context since partition consumers don't have session context
+	d := wrapDispatcher(context.Background(), pc, cfg)
 	go d.Run()
 
 	wrapped := &partitionConsumer{

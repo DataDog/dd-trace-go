@@ -15,8 +15,8 @@ type consumerGroupHandler struct {
 }
 
 func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	// Wrap claim
-	wd := wrapDispatcher(claim, h.cfg)
+	// Wrap claim with session context to enable graceful shutdown
+	wd := wrapDispatcher(session.Context(), claim, h.cfg)
 	go wd.Run()
 	claim = &consumerGroupClaim{
 		ConsumerGroupClaim: claim,
