@@ -989,9 +989,9 @@ func WithGlobalTag(k string, v interface{}) StartOption {
 		if c.globalTags.get() == nil {
 			c.initGlobalTags(map[string]interface{}{}, telemetry.OriginDefault)
 		}
-		c.globalTags.Lock()
-		defer c.globalTags.Unlock()
-		c.globalTags.current[k] = v
+		c.globalTags.set(func(current map[string]interface{}) {
+			current[k] = v
+		})
 	}
 }
 
