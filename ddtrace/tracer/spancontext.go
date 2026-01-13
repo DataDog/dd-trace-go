@@ -441,6 +441,7 @@ func newTrace() *trace {
 }
 
 func (t *trace) samplingPriorityLocked() (p int, ok bool) {
+	assert.RWMutexRLocked(&t.mu)
 	if t.priority == nil {
 		return 0, false
 	}
@@ -484,6 +485,7 @@ func (t *trace) setTag(key, value string) {
 }
 
 func (t *trace) setTagLocked(key, value string) {
+	assert.RWMutexLocked(&t.mu)
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
@@ -500,6 +502,7 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 // The force parameter is used to bypass the locked sampling decision check
 // when setting the sampling priority. This is used to apply a manual keep or drop decision.
 func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.SamplerName, force bool) bool {
+	assert.RWMutexLocked(&t.mu)
 	if t.locked && !force {
 		return false
 	}
@@ -534,6 +537,7 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 }
 
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+	assert.RWMutexLocked(&t.mu)
 	return t.setSamplingPriorityLockedWithForce(p, sampler, false)
 }
 
@@ -580,6 +584,7 @@ func (t *trace) push(sp *Span) {
 // setTraceTagsLocked sets all "trace level" tags on the provided span
 // t must already be locked.
 func (t *trace) setTraceTagsLocked(s *Span) {
+	assert.RWMutexLocked(&t.mu)
 	assert.RWMutexLocked(&s.mu)
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)
