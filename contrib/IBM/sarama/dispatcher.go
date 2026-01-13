@@ -6,6 +6,7 @@
 package sarama
 
 import (
+	"context"
 	"math"
 
 	"github.com/IBM/sarama"
@@ -20,17 +21,22 @@ type dispatcher interface {
 }
 
 type wrappedDispatcher struct {
+	ctx context.Context
+
 	d        dispatcher
 	messages chan *sarama.ConsumerMessage
 
 	cfg *config
 }
 
-func wrapDispatcher(d dispatcher, cfg *config) *wrappedDispatcher {
+func wrapDispatcher(ctx context.Context, d dispatcher, cfg *config) *wrappedDispatcher {
 	return &wrappedDispatcher{
+		ctx: ctx,
+
 		d:        d,
 		messages: make(chan *sarama.ConsumerMessage),
-		cfg:      cfg,
+
+		cfg: cfg,
 	}
 }
 
@@ -42,52 +48,86 @@ func (w *wrappedDispatcher) Run() {
 	msgs := w.d.Messages()
 	var prev *tracer.Span
 
-	for msg := range msgs {
-		// create the next span from the message
-		opts := []tracer.StartSpanOption{
-			tracer.ServiceName(w.cfg.consumerServiceName),
-			tracer.ResourceName("Consume Topic " + msg.Topic),
-			tracer.SpanType(ext.SpanTypeMessageConsumer),
-			tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
-			tracer.Tag("offset", msg.Offset),
-			tracer.Tag(ext.Component, instrumentation.PackageIBMSarama),
-			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
-			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
-			tracer.Tag(ext.MessagingDestinationName, msg.Topic),
-			tracer.Measured(),
-		}
-		if !math.IsNaN(w.cfg.analyticsRate) {
-			opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
-		}
-		if len(w.cfg.consumerCustomTags) > 0 {
-			for tag, tagValueFn := range w.cfg.consumerCustomTags {
-				opts = append(opts, tracer.Tag(tag, tagValueFn(msg)))
+	for {
+		select {
+		case msg, ok := <-msgs:
+			if !ok {
+				// Channel closed, exit cleanly
+				if prev != nil {
+					prev.Finish()
+				}
+				close(w.messages)
+				return
 			}
-		}
-		// kafka supports headers, so try to extract a span context
-		carrier := NewConsumerMessageCarrier(msg)
-		if spanctx, err := tracer.Extract(carrier); err == nil {
-			// If there are span links as a result of context extraction, add them as a StartSpanOption
-			if spanctx != nil && spanctx.SpanLinks() != nil {
-				opts = append(opts, tracer.WithSpanLinks(spanctx.SpanLinks()))
-			}
-			opts = append(opts, tracer.ChildOf(spanctx))
-		}
-		next := tracer.StartSpan(w.cfg.consumerSpanName, opts...)
-		// reinject the span context so consumers can pick it up
-		tracer.Inject(next.Context(), carrier)
-		setConsumeCheckpoint(w.cfg.dataStreamsEnabled, w.cfg.groupID, msg)
-		w.messages <- msg
 
-		// if the next message was received, finish the previous span
-		if prev != nil {
-			prev.Finish()
+			// create the next span from the message
+			next := w.nextSpan(msg)
+
+			// Send message with context monitoring to prevent blocking when context is cancelled
+			select {
+			case w.messages <- msg:
+				// Message sent successfully
+				// no-op
+			case <-w.ctx.Done():
+				// Context cancelled while sending, cleanup and exit.
+				next.Finish()
+				if prev != nil {
+					prev.Finish()
+				}
+				close(w.messages)
+				return
+			}
+
+			// if the next message was received, finish the previous span.
+			if prev != nil {
+				prev.Finish()
+			}
+			prev = next
+
+		case <-w.ctx.Done():
+			// Context cancelled, cleanup and exit.
+			if prev != nil {
+				prev.Finish()
+			}
+			close(w.messages)
+			return
 		}
-		prev = next
 	}
-	// finish any remaining span
-	if prev != nil {
-		prev.Finish()
+}
+
+func (w *wrappedDispatcher) nextSpan(msg *sarama.ConsumerMessage) *tracer.Span {
+	opts := []tracer.StartSpanOption{
+		tracer.ServiceName(w.cfg.consumerServiceName),
+		tracer.ResourceName("Consume Topic " + msg.Topic),
+		tracer.SpanType(ext.SpanTypeMessageConsumer),
+		tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
+		tracer.Tag("offset", msg.Offset),
+		tracer.Tag(ext.Component, instrumentation.PackageIBMSarama),
+		tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
+		tracer.Tag(ext.MessagingDestinationName, msg.Topic),
+		tracer.Measured(),
 	}
-	close(w.messages)
+	if !math.IsNaN(w.cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
+	}
+	if len(w.cfg.consumerCustomTags) > 0 {
+		for tag, tagValueFn := range w.cfg.consumerCustomTags {
+			opts = append(opts, tracer.Tag(tag, tagValueFn(msg)))
+		}
+	}
+	// kafka supports headers, so try to extract a span context
+	carrier := NewConsumerMessageCarrier(msg)
+	if spanctx, err := tracer.Extract(carrier); err == nil {
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		if spanctx != nil && spanctx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithSpanLinks(spanctx.SpanLinks()))
+		}
+		opts = append(opts, tracer.ChildOf(spanctx))
+	}
+	next := tracer.StartSpan(w.cfg.consumerSpanName, opts...)
+	// reinject the span context so consumers can pick it up
+	tracer.Inject(next.Context(), carrier)
+	setConsumeCheckpoint(w.cfg.dataStreamsEnabled, w.cfg.groupID, msg)
+	return next
 }
