@@ -37,17 +37,17 @@ if [[ "$GO_CMD" == "go" ]]; then
 fi
 
 # Run tests with shuffle for packages that support it
-gotestsum --raw-command --junitfile "${TEST_RESULTS}/gotestsum-report.xml" -- $GO_CMD test -json -v -race "$TAGS_ARG" -shuffle=on -coverprofile=coverage.txt -covermode=atomic "${SHUFFLE_PACKAGES[@]}"
+gotestsum --raw-command --junitfile "${TEST_RESULTS}/gotestsum-report.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -shuffle=on -coverprofile=coverage.txt -covermode=atomic "${SHUFFLE_PACKAGES[@]}"
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 
 # Run tests without shuffle for packages that don't support it yet
-gotestsum --raw-command --junitfile "${TEST_RESULTS}/gotestsum-report-noshuffle.xml" -- $GO_CMD test -json -v -race "$TAGS_ARG" -coverprofile=coverage-noshuffle.txt -covermode=atomic "${NO_SHUFFLE_PACKAGES[@]}"
+gotestsum --raw-command --junitfile "${TEST_RESULTS}/gotestsum-report-noshuffle.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -coverprofile=coverage-noshuffle.txt -covermode=atomic "${NO_SHUFFLE_PACKAGES[@]}"
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 
 cd ./internal/exectracetest
-gotestsum --raw-command --junitfile "${TEST_RESULTS}/gotestsum-report-exectrace.xml" -- $GO_CMD test -json -v -race "$TAGS_ARG" -coverprofile=coverage.txt -covermode=atomic ./...
+gotestsum --raw-command --junitfile "${TEST_RESULTS}/gotestsum-report-exectrace.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -coverprofile=coverage.txt -covermode=atomic ./...
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 
