@@ -338,7 +338,7 @@ type dynamicInstrumentationRCProbeConfig struct {
 
 type dynamicInstrumentationRCState struct {
 	locking.Mutex
-	state map[string]dynamicInstrumentationRCProbeConfig
+	state map[string]dynamicInstrumentationRCProbeConfig // +checklocks:Mutex
 
 	// symdbExport is a flag that indicates that this tracer is resposible
 	// for uploading symbols to the symbol database. The tracer will learn
@@ -351,7 +351,7 @@ type dynamicInstrumentationRCState struct {
 	// simplify the internal state of the tracer an avoid risks of excess memory
 	// usage, we use a single boolean flag to track this state as opposed to
 	// tracking the actual RC key and value.
-	symdbExport bool
+	symdbExport bool // +checklocks:Mutex
 }
 
 var (
