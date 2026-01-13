@@ -375,10 +375,6 @@ func (s *Span) SetTag(key string, value interface{}) {
 		return
 	}
 	if v, ok := value.(fmt.Stringer); ok {
-		// +checklocksignore
-		// False positive: checklocks cannot track that the defer function executes
-		// after SetTag returns, ensuring the mutex is properly released. The early
-		// return at line 242 is inside the defer, not in SetTag's main flow.
 		defer func() {
 			if e := recover(); e != nil {
 				if v := reflect.ValueOf(value); v.Kind() == reflect.Ptr && v.IsNil() {

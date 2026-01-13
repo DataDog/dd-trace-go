@@ -100,6 +100,35 @@ func (dc *dynamicConfig[T]) toTelemetry() telemetry.Configuration {
 	}
 }
 
+// setOrigin safely sets the configuration origin
+func (dc *dynamicConfig[T]) setOrigin(origin telemetry.Origin) {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	dc.cfgOrigin = origin
+}
+
+// Origin safely reads the configuration origin
+func (dc *dynamicConfig[T]) Origin() telemetry.Origin {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.cfgOrigin
+}
+
+// getCurrentAndOrigin atomically reads both current value and origin
+// This prevents TOCTOU bugs when both values are needed
+func (dc *dynamicConfig[T]) getCurrentAndOrigin() (T, telemetry.Origin) {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.current, dc.cfgOrigin
+}
+
+// setStartup updates the startup value (used during initialization)
+func (dc *dynamicConfig[T]) setStartup(val T) {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	dc.startup = val
+}
+
 func equal[T comparable](x, y T) bool {
 	return x == y
 }
