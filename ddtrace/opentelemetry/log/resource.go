@@ -90,9 +90,13 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	}
 
 	// Step 4: Handle hostname with special rules
-	hostname, shouldAddHostname := resolveHostname()
-	if shouldAddHostname && hostname != "" {
-		attrs["host.name"] = hostname
+	// OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - never override it
+	if _, hasOtelHostname := otelAttrs["host.name"]; !hasOtelHostname {
+		// OTEL didn't set hostname, so check DD settings
+		hostname, shouldAddHostname := resolveHostname()
+		if shouldAddHostname && hostname != "" {
+			attrs["host.name"] = hostname
+		}
 	}
 
 	// Step 5: Convert map to attribute.KeyValue slice
@@ -129,30 +133,36 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 //   - hostname: the resolved hostname value
 //   - shouldAdd: true if hostname should be added to resource, false otherwise
 //
-// Hostname is only added if explicitly provided by:
-// 1. DD_HOSTNAME is set, or
-// 2. DD_TRACE_REPORT_HOSTNAME=true (uses DD_HOSTNAME or detected hostname), or
-// 3. OTEL_RESOURCE_ATTRIBUTES already includes host.name (checked by caller)
+// Hostname is ONLY added if:
+// 1. DD_TRACE_REPORT_HOSTNAME=true (uses DD_HOSTNAME or detected hostname), OR
+// 2. OTEL_RESOURCE_ATTRIBUTES already includes host.name (handled by caller)
 //
-// Note: OTEL_RESOURCE_ATTRIBUTES[host.name] is handled in the main function
-// through the normal overlay process, so we only need to check DD settings here.
+// Just setting DD_HOSTNAME alone does NOT add hostname - it needs DD_TRACE_REPORT_HOSTNAME=true.
+// This ensures hostname is only sent when explicitly enabled (privacy by default).
 func resolveHostname() (string, bool) {
-	// Check DD_HOSTNAME first - if explicitly set, always use it
+	// Check if DD_TRACE_REPORT_HOSTNAME is set to "true"
+	reportHostname := env.Get(envDDTraceReportHostname)
+	if reportHostname != "true" {
+		// Hostname reporting not enabled - do not add hostname
+		return "", false
+	}
+
+	// DD_TRACE_REPORT_HOSTNAME=true, so we should add hostname
+	// Priority: DD_HOSTNAME → detected hostname
+
+	// Check DD_HOSTNAME first
 	if ddHostname := env.Get(envDDHostname); ddHostname != "" {
 		return ddHostname, true
 	}
 
-	// Check if DD_TRACE_REPORT_HOSTNAME is set to "true"
-	if reportHostname := env.Get(envDDTraceReportHostname); reportHostname == "true" {
-		// Try to detect hostname
-		if hostname, err := os.Hostname(); err == nil && hostname != "" {
-			return hostname, true
-		} else if err != nil {
-			log.Warn("unable to look up hostname: %s", err.Error())
-		}
+	// Try to detect hostname
+	if hostname, err := os.Hostname(); err == nil && hostname != "" {
+		return hostname, true
+	} else if err != nil {
+		log.Warn("unable to look up hostname: %s", err.Error())
 	}
 
-	// Hostname should not be added
+	// Could not determine hostname
 	return "", false
 }
 
