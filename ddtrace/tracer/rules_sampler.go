@@ -573,12 +573,18 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 type rateLimiter struct {
 	limiter *rate.Limiter
 
-	mu          locking.Mutex // guards below fields
-	prevTime    time.Time     // time at which prevAllowed and prevSeen were set
-	allowed     float64       // number of spans allowed in the current period
-	seen        float64       // number of spans seen in the current period
-	prevAllowed float64       // number of spans allowed in the previous period
-	prevSeen    float64       // number of spans seen in the previous period
+	// guards below fields
+	mu locking.Mutex
+	// time at which prevAllowed and prevSeen were set
+	prevTime time.Time // +checklocks:mu
+	// number of spans allowed in the current period
+	allowed float64 // +checklocks:mu
+	// number of spans seen in the current period
+	seen float64 // +checklocks:mu
+	// number of spans allowed in the previous period
+	prevAllowed float64 // +checklocks:mu
+	// number of spans seen in the previous period
+	prevSeen float64 // +checklocks:mu
 }
 
 // allowOne returns the rate limiter's decision to allow the span to be sampled, and the
