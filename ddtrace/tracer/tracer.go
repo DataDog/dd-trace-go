@@ -172,8 +172,8 @@ type tracer struct {
 	// State related to the Dynamic Instrumentation product.
 	dynInstMu struct {
 		locking.Mutex
-		ldSubscriptionToken    remoteconfig.SubscriptionToken
-		symDBSubscriptionToken remoteconfig.SubscriptionToken
+		ldSubscriptionToken    remoteconfig.SubscriptionToken // +checklocks:Mutex
+		symDBSubscriptionToken remoteconfig.SubscriptionToken // +checklocks:Mutex
 	}
 }
 
