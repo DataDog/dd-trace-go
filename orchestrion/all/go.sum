@@ -804,8 +804,8 @@ github.com/DataDog/datadog-agent/pkg/version v0.71.2 h1:5wVVZrOCzvH6ka+J/3iKQH3r
 github.com/DataDog/datadog-agent/pkg/version v0.71.2/go.mod h1:FYj51C1ib86rpr5tlLEep9jitqvljIJ5Uz2rrimGTeY=
 github.com/DataDog/datadog-go/v5 v5.8.1 h1:+GOES5W9zpKlhwHptZVW2C0NLVf7ilr7pHkDcbNvpIc=
 github.com/DataDog/datadog-go/v5 v5.8.1/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.6.0-dev.1 h1:K0UProbZVR5zNWsA5fLX8MOOo3MVax/LLM+m9i3t0lk=
-github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.6.0-dev.1/go.mod h1:b/eylBU8wM5L9nCv/cPonYvgJUD3sL3rcOEy+55piBc=
+github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.7.0-dev.1 h1:jvJ9ZDDSWRni0yUtfC0uHEt0U44fzLFuYJlA+xSrxKQ=
+github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.7.0-dev.1/go.mod h1:/dl88IdGx+dIsXXmYjX7AGbK4mzzHcNHHvYtUWp8T3k=
 github.com/DataDog/go-libddwaf/v4 v4.8.0 h1:m6Bl1lS2RtVN4MtdTYhR5vJ2fWQ3WmNy4FiNBpzrp6w=
 github.com/DataDog/go-libddwaf/v4 v4.8.0/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250806100345-ca5e7fdaf7b6 h1:rIMZ3Bqn2w8nWrAIXekOdm+sZVxUYHGX8cS7P9W06Kk=
