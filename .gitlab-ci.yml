@@ -83,30 +83,6 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
-aggregate-benchmarks:
-  stage: post-pr-comment
-  needs:
-    - job: trigger_child_pipeline
-  when: on_success
-  tags: ["runner:apm-k8s-tweaked-metal"]
-
-  image: $BASE_CI_IMAGE
-
-  script:
-    - export ARTIFACTS_DIR="$(pwd)/reports" && (mkdir "${ARTIFACTS_DIR}" || :)
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-    - git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform /platform && cd /platform
-    - ./steps/download-child-pipeline-artifacts.sh
-    - ./steps/compare-merged-results.sh
-    - ./steps/post-pr-comment.sh
-  artifacts:
-    name: "reports"
-    paths:
-      - reports/
-    expire_in: 3 months
-  variables:
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: benchmarking-platform
-
 # Config Registry CI Jobs
 validate_supported_configurations_v2_local_file:
   stage: config-validation
