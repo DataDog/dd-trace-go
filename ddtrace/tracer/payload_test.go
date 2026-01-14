@@ -177,6 +177,38 @@ func TestPayloadV1Decode(t *testing.T) {
 	}
 }
 
+func TestPayloadV1SpanLinkTraceID(t *testing.T) {
+	assert := assert.New(t)
+	p := newPayloadV1()
+
+	span := newBasicSpan("test.span")
+	span.spanLinks = []SpanLink{
+		{TraceID: 123, TraceIDHigh: 456, SpanID: 789},
+	}
+	_, err := p.push(spanList{span})
+	assert.NoError(err)
+
+	encoded, err := io.ReadAll(p)
+	assert.NoError(err)
+
+	got := newPayloadV1()
+	buf := bytes.NewBuffer(encoded)
+	_, err = buf.WriteTo(got)
+	assert.NoError(err)
+
+	_, err = got.decodeBuffer()
+	assert.NoError(err)
+
+	require.Len(t, got.chunks, 1)
+	require.Len(t, got.chunks[0].spans, 1)
+	require.Len(t, got.chunks[0].spans[0].spanLinks, 1)
+
+	link := got.chunks[0].spans[0].spanLinks[0]
+	assert.Equal(uint64(123), link.TraceID)
+	assert.Equal(uint64(456), link.TraceIDHigh)
+	assert.Equal(uint64(789), link.SpanID)
+}
+
 // TestPayloadV1EmbeddedStreamingStringTable tests that string values on the payload
 // can be encoded and decoded correctly after using the string table.
 // Tests repeated string values.
