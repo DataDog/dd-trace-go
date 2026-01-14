@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/99designs/gqlgen v0.17.83
-	github.com/DataDog/dd-trace-go/v2 v2.6.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/stretchr/testify v1.11.1
 	github.com/vektah/gqlparser/v2 v2.5.31
 )
@@ -61,6 +61,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.9.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.8-0.20250809033336-ffcdc2b7662f // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
