@@ -161,11 +161,12 @@ func startService(config serviceExtensionConfig) error {
 }
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
+	imageVersion := stringEnv("DD_VERSION", instrumentation.Version())
 	muxServer := http.NewServeMux()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + instrumentation.Version() + `"}}`))
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + imageVersion + `"}}`))
 	})
 
 	server := &http.Server{
