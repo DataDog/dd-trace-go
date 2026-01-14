@@ -8,6 +8,7 @@ package zap
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -17,7 +18,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// orchestrionEnabled returns whether orchestrion is enabled
 func orchestrionEnabled() bool {
 	return orchestrion.Enabled()
 }
@@ -30,10 +30,8 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.logs = new(bytes.Buffer)
 
-	// Debug: Check if orchestrion is enabled
 	t.Logf("orchestrion.Enabled() = %v", orchestrionEnabled())
 
-	// Create a custom encoder config for readable test output
 	encoderCfg := zapcore.EncoderConfig{
 		MessageKey:     "msg",
 		LevelKey:       "level",
@@ -54,7 +52,6 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 		zapcore.DebugLevel,
 	)
 
-	// zap.New is instrumented by orchestrion to wrap the core
 	tc.logger = zap.New(core)
 
 	// Debug: Log the core type to verify wrapping happened
@@ -82,13 +79,11 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	Log(ctx, tc.logger, zapcore.WarnLevel, "warn")
 	Log(ctx, tc.logger, zapcore.ErrorLevel, "error")
 
-	// Sync to flush any buffered log entries
 	_ = tc.logger.Sync()
 
 	logs := tc.logs.String()
 	t.Logf("got logs: %s", logs)
 
-	// Verify all log messages are present
 	for _, msg := range []string{"debug", "info", "warn", "error"} {
 		want := `"msg":"` + msg + `"`
 		if !strings.Contains(logs, want) {
@@ -96,9 +91,20 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 		}
 	}
 
-	// Note: Automatic trace context injection is not currently supported for zap
-	// because zap's Write method does not receive a context.Context.
-	// Use WithTraceFields(ctx, logger) for manual trace injection.
+	// Verify trace context is injected into each log line via GLS
+	lines := strings.Split(strings.TrimSpace(logs), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		t.Logf("checking line: %s", line)
+		if ok, _ := regexp.MatchString(`"dd\.span_id":"\d+"`, line); !ok {
+			t.Errorf("no span ID in log line: %s", line)
+		}
+		if ok, _ := regexp.MatchString(`"dd\.trace_id":"[0-9a-f]+"`, line); !ok {
+			t.Errorf("no trace ID in log line: %s", line)
+		}
+	}
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {
