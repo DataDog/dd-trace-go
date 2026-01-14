@@ -234,31 +234,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        scenario:
+          - GO_PROXIES
+          - GO_PROXIES_BLOCKING
+        weblog_variant:
+          - envoy
+          - haproxy-spoa
         include:
-          - target: external_processing
-            scenario: EXTERNAL_PROCESSING
+          - weblog_variant: envoy
+            target: external_processing
             image_name: service-extensions-callout
             image_artifact: service-extensions-image-linux-amd64
-            system_tests_name: external_processing
-          - target: external_processing
-            scenario: EXTERNAL_PROCESSING_BLOCKING
-            image_name: service-extensions-callout
-            image_artifact: service-extensions-image-linux-amd64
-            system_tests_name: external_processing
-          - target: haproxy
-            scenario: STREAM_PROCESSING_OFFLOAD
+          - weblog_variant: haproxy-spoa
+            target: haproxy
             image_name: haproxy-spoa
             image_artifact: haproxy-spoa-image-linux-amd64
-            system_tests_name: stream_processing_offload
-          - target: haproxy
-            scenario: STREAM_PROCESSING_OFFLOAD_BLOCKING
-            image_name: haproxy-spoa
-            image_artifact: haproxy-spoa-image-linux-amd64
-            system_tests_name: stream_processing_offload
 
-    name: Test (${{ matrix.system_tests_name }}, ${{ matrix.scenario }})
+    name: Test (${{ matrix.weblog_variant }}, ${{ matrix.scenario }})
     steps:
-      - name: Download ${{ matrix.target }}) artifacts
+      - name: Download ${{ matrix.target }} artifacts
         if: github.ref != 'refs/heads/main'
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
@@ -290,6 +284,8 @@ jobs:
 
       - name: Run
         run: ./run.sh ${{ matrix.scenario }}
+        env:
+          WEBLOG_VARIANT: ${{ matrix.weblog_variant }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -304,7 +300,7 @@ jobs:
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: ${{ always() }}
         with:
-          name: logs_${{ matrix.system_tests_name }}_${{ matrix.scenario }}
+          name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
 
   system-tests-done:
