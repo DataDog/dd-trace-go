@@ -80,6 +80,9 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 		// Create the DD-aware wrapper
 		globalLoggerProviderWrapper = &ddAwareLoggerProvider{underlying: globalLoggerProvider}
 
+		// Register telemetry configuration
+		registerTelemetry()
+
 		log.Debug("OTel LoggerProvider initialized")
 	})
 

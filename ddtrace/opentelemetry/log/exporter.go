@@ -57,7 +57,35 @@ const (
 	defaultBLRPScheduleDelay      = 1000 * time.Millisecond
 	defaultBLRPExportTimeout      = 30000 * time.Millisecond
 	defaultBLRPMaxExportBatchSize = 512
+
+	// Default values for BatchLogRecordProcessor in milliseconds (for telemetry reporting)
+	defaultBLRPScheduleDelayMs = 1000
+	defaultBLRPExportTimeoutMs = 30000
+	defaultOTLPTimeoutMs       = 10000 // 10 seconds
+
+	// Protocol and encoding constants for telemetry tagging
+	protocolHTTP     = "http"
+	protocolGRPC     = "grpc"
+	encodingJSON     = "json"
+	encodingProtobuf = "protobuf"
 )
+
+// telemetryExporter wraps an sdklog.Exporter to track log record exports.
+type telemetryExporter struct {
+	sdklog.Exporter
+	telemetry *LogsExportTelemetry
+}
+
+// Export implements sdklog.Exporter.
+func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	err := e.Exporter.Export(ctx, records)
+	// Record the number of log records exported (success or failure)
+	// This matches the RFC requirement to track log_records counter
+	if len(records) > 0 {
+		e.telemetry.RecordLogRecords(len(records))
+	}
+	return err
+}
 
 // newOTLPExporter creates an OTLP exporter (HTTP or gRPC) configured with Datadog-specific defaults.
 //
@@ -81,15 +109,39 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	// Determine protocol
 	protocol := resolveOTLPProtocol()
 
+	var exporter sdklog.Exporter
+	var err error
+	var protocolTag, encodingTag string
+
 	switch protocol {
 	case "grpc":
-		return newOTLPGRPCExporter(ctx, grpcOpts...)
-	case "http/json", "http/protobuf", "http":
-		return newOTLPHTTPExporter(ctx, httpOpts...)
+		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
+		protocolTag = protocolGRPC
+		encodingTag = encodingProtobuf
+	case "http/json":
+		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
+		protocolTag = protocolHTTP
+		encodingTag = encodingJSON
+	case "http/protobuf", "http":
+		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
+		protocolTag = protocolHTTP
+		encodingTag = encodingProtobuf
 	default:
 		log.Warn("Unknown OTLP logs protocol %q, defaulting to %s", protocol, defaultOTLPProtocol)
-		return newOTLPHTTPExporter(ctx, httpOpts...)
+		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
+		protocolTag = protocolHTTP
+		encodingTag = encodingJSON
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap the exporter with telemetry tracking
+	return &telemetryExporter{
+		Exporter:  exporter,
+		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
+	}, nil
 }
 
 // resolveOTLPProtocol returns the OTLP protocol from environment variables.
