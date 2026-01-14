@@ -118,18 +118,33 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		if span == nil {
 			continue
 		}
+
+		if span.context == nil {
+			continue
+		}
+
 		// If we haven't seen the service yet, we set it blindly assuming that all the spans created by
 		// a service must share the same value.
 		if _, ok := attr["service"]; !ok {
 			attr["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
 		}
+
 		binary.BigEndian.PutUint64(traceID[:8], span.Context().traceID.Upper())
 		binary.BigEndian.PutUint64(traceID[8:], span.Context().traceID.Lower())
 
-		if prio, ok := span.Context().SamplingPriority(); ok {
-			origin = span.Context().origin // TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
-			priority = prio                // TODO(darccio): the same goes for priority.
-			dm := span.context.trace.propagatingTag(keyDecisionMaker)
+		if span.context.trace == nil {
+			continue
+		}
+
+		// TODO(darccio): are we sure that priority will be shared across all the spans in the chunk?
+		if prio, ok := span.context.trace.samplingPriority(); ok {
+			priority = prio
+		}
+
+		// TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
+		origin = span.Context().origin
+
+		if dm := span.context.trace.propagatingTag(keyDecisionMaker); dm != "" {
 			if v, err := strconv.ParseInt(dm, 10, 32); err == nil {
 				if v < 0 {
 					v = -v
