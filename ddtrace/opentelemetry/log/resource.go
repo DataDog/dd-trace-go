@@ -74,9 +74,9 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 		attrs["service.name"] = ddService
 	}
 
-	// Overlay DD_ENV → deployment.environment
+	// Overlay DD_ENV → deployment.environment.name
 	if ddEnv := env.Get(envDDEnv); ddEnv != "" {
-		attrs["deployment.environment"] = ddEnv
+		attrs["deployment.environment.name"] = ddEnv
 	}
 
 	// Overlay DD_VERSION → service.version
@@ -106,7 +106,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 		switch k {
 		case "service.name":
 			keyValues = append(keyValues, semconv.ServiceName(v))
-		case "deployment.environment":
+		case "deployment.environment.name":
 			keyValues = append(keyValues, semconv.DeploymentEnvironmentNameKey.String(v))
 		case "service.version":
 			keyValues = append(keyValues, semconv.ServiceVersion(v))
