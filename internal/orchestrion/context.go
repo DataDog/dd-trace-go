@@ -41,6 +41,17 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 	return context.WithValue(WrapContext(parent), key, val)
 }
 
+// GLSPeekValue returns the value from the GLS slot of orchestrion without removing it.
+// This is useful for reading the current active span without modifying the stack,
+// such as when injecting trace context into log entries.
+func GLSPeekValue(key any) any {
+	if !Enabled() {
+		return nil
+	}
+
+	return getDDContextStack().Peek(key)
+}
+
 // GLSPopValue pops the value from the GLS slot of orchestrion and returns it. Using context.Context values usually does
 // not require to pop any stack because the copy of each previous context makes the local variable in the scope disappear
 // when the current function ends. But the GLS is a semi-global variable that can be accessed from any function in the
