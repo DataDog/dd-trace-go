@@ -2,7 +2,6 @@ stages:
   - docker-images-reliability-env
   - generate
   - benchmarks
-  - post-pr-comment
   - macrobenchmarks
   - gates
   - config-validation
@@ -87,11 +86,12 @@ check-big-regressions:
     expire_in: "30 days"
 
 aggregate-benchmarks:
-  stage: post-pr-comment
+  stage: benchmarks
   needs:
     - job: trigger_child_pipeline
+    - job: check-big-regressions
   when: on_success
-  tags: ["runner:apm-k8s-tweaked-metal"]
+  tags: ["arch:amd64"]
 
   image: $BASE_CI_IMAGE
 
