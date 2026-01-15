@@ -85,7 +85,7 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
-collect-benchmark-artifacts:
+analyze-benchmark-results:
   stage: benchmarks
   needs:
     - job: trigger_child_pipeline
@@ -95,13 +95,14 @@ collect-benchmark-artifacts:
   image: $BASE_CI_IMAGE
   script:
     - |
-      mkdir -p all-benchmark-reports
-      export ARTIFACTS_DIR="$(pwd)/all-benchmark-reports"
+      mkdir -p reports
+      export ARTIFACTS_DIR="$(pwd)/reports"
       git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
       git clone --branch fayssal/incident-48034 https://github.com/DataDog/benchmarking-platform platform && cd platform
       ./steps/download-child-pipeline-artifacts.sh
       echo "All benchmark artifacts collected:"
       ls -la "${ARTIFACTS_DIR}/"
+      ./steps/analyze-results.sh
       
   artifacts:
     name: "all-benchmark-reports"
