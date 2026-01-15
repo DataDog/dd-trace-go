@@ -81,6 +81,10 @@ lint/action: tools-install ## Lint GitHub Actions workflows
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all
 
+.PHONY: format/go
+format/go: tools-install ## Format Go code
+	$(BIN_PATH) ./scripts/format.sh --go
+
 .PHONY: format/shell
 format/shell: tools-install ## install shfmt
 	$(BIN_PATH) ./scripts/format.sh --shell
