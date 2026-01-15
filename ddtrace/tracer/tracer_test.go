@@ -2039,7 +2039,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
@@ -2056,7 +2056,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("https://github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
@@ -2077,7 +2077,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
@@ -2094,7 +2094,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("https://github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
@@ -2111,7 +2111,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
@@ -2131,7 +2131,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("", sp.meta[internal.TraceTagRepositoryURL])

@@ -20,6 +20,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -108,7 +110,7 @@ type SpanContext struct {
 	traceID traceID
 	spanID  uint64
 
-	mu         sync.RWMutex // guards below fields
+	mu         locking.RWMutex // guards below fields
 	baggage    map[string]string
 	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	origin     string // e.g. "synthetics"
@@ -273,6 +275,17 @@ func (c *SpanContext) SpanLinks() []SpanLink {
 	return cp
 }
 
+// foreachBaggageItemLocked iterates over baggage items.
+// c.mu must be held for reading.
+func (c *SpanContext) foreachBaggageItemLocked(handler func(k, v string) bool) {
+	assert.RWMutexRLocked(&c.mu)
+	for k, v := range c.baggage {
+		if !handler(k, v) {
+			break
+		}
+	}
+}
+
 // ForeachBaggageItem implements ddtrace.SpanContext.
 func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	if c == nil {
@@ -283,11 +296,7 @@ func (c *SpanContext) ForeachBaggageItem(handler func(k, v string) bool) {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	for k, v := range c.baggage {
-		if !handler(k, v) {
-			break
-		}
-	}
+	c.foreachBaggageItemLocked(handler)
 }
 
 // sets the sampling priority and decision maker (based on `sampler`).
@@ -319,14 +328,35 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 	return c.trace.samplingPriority()
 }
 
-func (c *SpanContext) setBaggageItem(key, val string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// setBaggageItemLocked sets a baggage item.
+// c.mu must be held for writing.
+func (c *SpanContext) setBaggageItemLocked(key, val string) {
+	assert.RWMutexLocked(&c.mu)
 	if c.baggage == nil {
 		atomic.StoreUint32(&c.hasBaggage, 1)
 		c.baggage = make(map[string]string, 1)
 	}
 	c.baggage[key] = val
+}
+
+func (c *SpanContext) setBaggageItem(key, val string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.setBaggageItemLocked(key, val)
+}
+
+// baggageItemLocked retrieves a baggage item.
+// c.mu must be held for reading.
+func (c *SpanContext) baggageItemLocked(key string) string {
+	assert.RWMutexRLocked(&c.mu)
+	return c.baggage[key]
+}
+
+// baggageCountLocked returns the number of baggage items.
+// c.mu must be held for reading.
+func (c *SpanContext) baggageCountLocked() int {
+	assert.RWMutexRLocked(&c.mu)
+	return len(c.baggage)
 }
 
 func (c *SpanContext) baggageItem(key string) string {
@@ -335,11 +365,14 @@ func (c *SpanContext) baggageItem(key string) string {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.baggage[key]
+	return c.baggageItemLocked(key)
 }
 
 // finish marks this span as finished in the trace.
-func (c *SpanContext) finish() { c.trace.finishedOne(c.span) }
+// The span must be locked by the caller.
+func (c *SpanContext) finish() {
+	c.trace.finishedOneLocked(c.span)
+}
 
 // safeDebugString returns a safe string representation of the SpanContext for debug logging.
 // It excludes potentially sensitive data like baggage contents while preserving useful debugging information.
@@ -352,7 +385,7 @@ func (c *SpanContext) safeDebugString() string {
 	var baggageCount int
 	if hasBaggage {
 		c.mu.RLock()
-		baggageCount = len(c.baggage)
+		baggageCount = c.baggageCountLocked()
 		c.mu.RUnlock()
 	}
 
@@ -545,29 +578,31 @@ func (t *trace) push(sp *Span) {
 	}
 }
 
-// setTraceTags sets all "trace level" tags on the provided span
+// setTraceTagsLocked sets all "trace level" tags on the provided span
 // t must already be locked.
-func (t *trace) setTraceTags(s *Span) {
+func (t *trace) setTraceTagsLocked(s *Span) {
+	assert.RWMutexLocked(&s.mu)
 	for k, v := range t.tags {
-		s.setMeta(k, v)
+		s.setMetaLocked(k, v)
 	}
 	for k, v := range t.propagatingTags {
-		s.setMeta(k, v)
+		s.setMetaLocked(k, v)
 	}
 	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
-		s.setMeta(k, v)
+		s.setMetaLocked(k, v)
 	}
 	if s.context != nil && s.context.traceID.HasUpper() {
-		s.setMeta(keyTraceID128, s.context.traceID.UpperHex())
+		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
 	}
 }
 
-// finishedOne acknowledges that another span in the trace has finished, and checks
+// finishedOneLocked acknowledges that another span in the trace has finished, and checks
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
 // The provided span must be locked.
-func (t *trace) finishedOne(s *Span) {
+func (t *trace) finishedOneLocked(s *Span) {
+	assert.RWMutexLocked(&s.mu)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	s.finished = true
@@ -591,13 +626,13 @@ func (t *trace) finishedOne(s *Span) {
 	// attach the _dd.base_service tag only when the globally configured service name is different from the
 	// span service name.
 	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
-		s.meta[keyBaseService] = tc.ServiceTag
+		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
 	if s == t.root && t.priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetric(keySamplingPriority, *t.priority)
+		t.root.setMetricLocked(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -606,7 +641,7 @@ func (t *trace) finishedOne(s *Span) {
 		// TODO(barbayar): make sure this doesn't happen in vain when switching to
 		// the new wire format. We won't need to set the tags on the first span
 		// in the chunk there.
-		t.setTraceTags(s)
+		t.setTraceTagsLocked(s)
 	}
 
 	// This is here to support the mocktracer. It would be nice to be able to not do this.
@@ -647,15 +682,13 @@ func (t *trace) finishedOne(s *Span) {
 	// we need to lock this new span.
 	fSpan := finishedSpans[0]
 	currentSpanIsFirstInChunk := s == fSpan
-	if !currentSpanIsFirstInChunk {
-		fSpan.mu.Lock()
-		defer fSpan.mu.Unlock()
-	}
-	fSpan.setMetric(keySamplingPriority, *t.priority)
-	if s != t.spans[0] {
-		// Make sure the first span in the chunk has the trace-level tags
-		t.setTraceTags(fSpan)
-	}
+	fSpan.withLockIf(!currentSpanIsFirstInChunk, func() {
+		fSpan.setMetricLocked(keySamplingPriority, *t.priority)
+		if s != t.spans[0] {
+			// Make sure the first span in the chunk has the trace-level tags
+			t.setTraceTagsLocked(fSpan)
+		}
+	})
 	if tr, ok := tr.(*tracer); ok {
 		t.finishChunk(tr, &chunk{
 			spans:    finishedSpans,
@@ -677,13 +710,13 @@ func setPeerService(s *Span, tc TracerConf) {
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
-		s.setMeta(keyPeerServiceSource, ext.PeerService)
+		s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 	} else if isServerless(tc) {
 		// Set peerService only in outbound Lambda requests
 		if isOutboundRequest {
 			if ps := deriveAWSPeerService(s.meta); ps != "" {
-				s.setMeta(ext.PeerService, ps)
-				s.setMeta(keyPeerServiceSource, ext.PeerService)
+				s.setMetaLocked(ext.PeerService, ps)
+				s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 			} else {
 				log.Debug("Unable to set peer.service tag for serverless span %q", s.name)
 			}
@@ -698,13 +731,13 @@ func setPeerService(s *Span, tc TracerConf) {
 			log.Debug("No source tag value could be found for span %q, peer.service not set", s.name)
 			return
 		}
-		s.setMeta(keyPeerServiceSource, source)
+		s.setMetaLocked(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	ps := s.meta[ext.PeerService]
 	if to, ok := tc.PeerServiceMappings[ps]; ok {
-		s.setMeta(keyPeerServiceRemappedFrom, ps)
-		s.setMeta(ext.PeerService, to)
+		s.setMetaLocked(keyPeerServiceRemappedFrom, ps)
+		s.setMetaLocked(ext.PeerService, to)
 	}
 }
 
@@ -804,7 +837,7 @@ func setPeerServiceFromSource(s *Span) string {
 	}
 	for _, source := range sources {
 		if val, ok := s.meta[source]; ok {
-			s.setMeta(ext.PeerService, val)
+			s.setMetaLocked(ext.PeerService, val)
 			return source
 		}
 	}

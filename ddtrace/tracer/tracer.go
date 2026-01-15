@@ -671,19 +671,29 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	} else {
 		startTime = opts.StartTime.UnixNano()
 	}
-	var context *SpanContext
-	// The default pprof context is taken from the start options and is
-	// not nil when using StartSpanFromContext()
-	pprofContext := opts.Context
+
+	var (
+		context       *SpanContext
+		parentService string
+		// The default pprof context is taken from the start options and is
+		// not nil when using StartSpanFromContext()
+		pprofContext = opts.Context
+	)
+
 	if opts.Parent != nil {
 		context = opts.Parent
-		if pprofContext == nil && context.span != nil {
+		if context.span != nil {
+			// Batch read service and pprofContext from parent span under single lock
+			// to minimize lock contention on the parent span during child creation.
+			inheritedData := context.span.inheritedData()
+			parentService = inheritedData.service
+
 			// Inherit the context.Context from parent span if it was propagated
 			// using ChildOf() rather than StartSpanFromContext(), see
 			// applyPPROFLabels() below.
-			context.span.mu.RLock()
-			pprofContext = context.span.pprofCtxActive
-			context.span.mu.RUnlock()
+			if pprofContext == nil {
+				pprofContext = inheritedData.pprofCtx
+			}
 		}
 	}
 	if pprofContext == nil {
@@ -703,7 +713,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	// span defaults
 	span := &Span{
 		name:        operationName,
-		service:     "",
+		service:     parentService, // inherit from parent if available
 		resource:    operationName,
 		spanID:      id,
 		traceID:     id,
@@ -718,23 +728,14 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
-			span.setMetric(keySamplingPriority, float64(p))
+			span.setMetricInit(keySamplingPriority, float64(p))
 		}
-		if context.span != nil {
-			// local parent, inherit service
-			context.span.mu.RLock()
-			span.service = context.span.service
-			context.span.mu.RUnlock()
-		} else {
-			// remote parent
-			if context.origin != "" {
-				// mark origin
-				span.setMeta(keyOrigin, context.origin)
-			}
+		if context.span == nil && context.origin != "" { // remote parent
+			// mark origin
+			span.setMetaInit(keyOrigin, context.origin)
 		}
-
 		if context.reparentID != "" {
-			span.setMeta(keyReparentID, context.reparentID)
+			span.setMetaInit(keyReparentID, context.reparentID)
 		}
 
 	}
@@ -742,7 +743,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}
-	span.setMeta("language", "go")
+	span.setMetaInit("language", "go")
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -753,7 +754,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 	if isRootSpan || context.span.service != span.service {
 		// The span is the local root span.
-		span.setMetric(keyTopLevel, 1)
+		span.setMetricInit(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.metrics, keyMeasured)
 	}
@@ -775,7 +776,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	cfg := t.config.internalConfig
 	span.noDebugStack = !cfg.DebugStack()
 	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
-		span.setMeta(keyHostname, hostname)
+		span.setMetaInit(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
@@ -790,11 +791,11 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 
 	if ver := cfg.Version(); ver != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
-			span.setMeta(ext.Version, ver)
+			span.setMetaInit(ext.Version, ver)
 		}
 	}
 	if env := cfg.Env(); env != "" {
-		span.setMeta(ext.Environment, env)
+		span.setMetaInit(ext.Environment, env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -820,9 +821,9 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if span.metrics[keyTopLevel] == 1 {
 		// The span is the local root span.
-		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
-	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMetricInit(ext.Pid, float64(t.pid))
 	t.spansStarted.Inc(span.integration)
 
 	return span
@@ -840,25 +841,23 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
 	if t.config.internalConfig.ProfilerHotspotsEnabled() && localRootSpan != nil {
-		localRootSpan.mu.RLock()
-		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(localRootSpan.spanID, 10))
-		localRootSpan.mu.RUnlock()
+		spanID := localRootSpan.getSpanID()
+		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
 	}
 	if t.config.internalConfig.ProfilerHotspotsEnabled() {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
 	if t.config.internalConfig.ProfilerEndpoints() && localRootSpan != nil {
-		localRootSpan.mu.RLock()
+		resource := localRootSpan.getResource()
 		if spanResourcePIISafe(localRootSpan) {
-			labels = append(labels, traceprof.TraceEndpoint, localRootSpan.resource)
+			labels = append(labels, traceprof.TraceEndpoint, resource)
 			if span == localRootSpan {
 				// Inform the profiler of endpoint hits. This is used for the unit of
 				// work feature. We can't use APM stats for this since the stats don't
 				// have enough cardinality (e.g. runtime-id tags are missing).
-				traceprof.GlobalEndpointCounter().Inc(localRootSpan.resource)
+				traceprof.GlobalEndpointCounter().Inc(resource)
 			}
 		}
-		localRootSpan.mu.RUnlock()
 	}
 	if len(labels) > 0 {
 		span.pprofCtxRestore = ctx

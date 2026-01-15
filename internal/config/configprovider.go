@@ -18,24 +18,24 @@ import (
 
 const defaultSeqID uint64 = 1
 
-// seqId is a global counter for configuration telemetry sequence IDs.
+// seqID is a global counter for configuration telemetry sequence IDs.
 // Initialized to defaultSeqID in init() so config values start reporting at 2+.
 //
 // For telemetry reporting, it's recommended to:
 // - Use reportTelemetry() for all config telemetry, OR
 // - Use nextSeqID() if calling telemetry.RegisterAppConfigs directly
-// - If accessing seqId directly, always use seqId.Add(1) to get the next ID
+// - If accessing seqID directly, always use seqID.Add(1) to get the next ID
 // - Defaults should always use defaultSeqID (not nextSeqID)
-var seqId atomic.Uint64
+var seqID atomic.Uint64
 
 func init() {
-	seqId.Store(defaultSeqID)
+	seqID.Store(defaultSeqID)
 }
 
 // nextSeqID returns the next sequence ID for configuration telemetry.
 // All non-default configuration telemetry must use this function to obtain sequence IDs.
 func nextSeqID() uint64 {
-	return seqId.Add(1)
+	return seqID.Add(1)
 }
 
 // reportTelemetry reports configuration telemetry with an auto-incremented sequence ID.
@@ -106,7 +106,7 @@ func defaultconfigProvider() *configProvider {
 //
 // Telemetry Reporting:
 //   - Reports telemetry for ALL non-empty values found across ALL sources, regardless of priority
-//   - SeqID reflects priority: higher priority sources get higher seqIds, while default sources always report defaultSeqID
+//   - SeqID reflects priority: higher priority sources get higher seqIDs, while default sources always report defaultSeqID
 func get[T any](p *configProvider, key string, def T, parse func(string) (T, bool)) T {
 	var final *T
 	for i := len(p.sources) - 1; i >= 0; i-- {

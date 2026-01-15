@@ -38,7 +38,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.6.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.6.0-dev.1
@@ -47,8 +47,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/urfave/negroni/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.6.0-dev.1
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/IBM/sarama v1.42.1
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.44.327
@@ -227,6 +227,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -251,6 +252,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
+	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -282,6 +284,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
+	github.com/trailofbits/go-mutexasserts v0.0.0-20250514102930-c1f3d2e37561 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect

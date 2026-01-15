@@ -500,6 +500,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/leeavital/protoc-gen-gostreamer",
 		"github.com/leodido/go-urn",
 		"github.com/lib/pq",
+		"github.com/linkdata/deadlock",
 		"github.com/linkedin/goavro",
 		"github.com/linkedin/goavro/v2",
 		"github.com/logrusorgru/aurora/v4",

@@ -31,7 +31,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			if r.URL.Path == "/info" {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"endpoints": ["/v0.4/traces", "/v0.6/stats"]}`))
+				w.Write([]byte(`{"endpoints": ["/v0.4/traces", "/v0.6/stats"],"client_drop_p0s":true}`))
 				return
 			}
 			w.WriteHeader(http.StatusOK)

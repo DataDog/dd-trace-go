@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//msgp:ignore inheritedData
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
 package tracer
@@ -12,11 +13,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"runtime/pprof"
 	rt "runtime/trace"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -25,6 +27,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -114,7 +118,7 @@ func (s *Span) spanEventsAsJSONString() string {
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
 type Span struct {
-	mu sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
+	mu locking.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 
 	name       string             `msg:"name"`                  // operation name
 	service    string             `msg:"service"`               // service name (i.e. "grpc.server", "http.request")
@@ -155,6 +159,155 @@ func (s *Span) Context() *SpanContext {
 	return s.context
 }
 
+type inheritedData struct {
+	service  string
+	pprofCtx context.Context
+}
+
+func (s *Span) inheritedData() inheritedData {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return inheritedData{
+		service:  s.service,
+		pprofCtx: s.pprofCtxActive,
+	}
+}
+
+// getSpanID concurrency safe reads the spanID field.
+func (s *Span) getSpanID() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.spanID
+}
+
+// getResource concurrency safe reads the resource field.
+func (s *Span) getResource() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resource
+}
+
+// getAndRemoveMeta retrieves and removes metadata by key.
+// Used by civisibility_tslv.go for test span level tag processing.
+func (s *Span) getAndRemoveMeta(key string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.meta == nil {
+		s.meta = make(map[string]string, 1)
+	}
+	if v, ok := s.meta[key]; ok {
+		delete(s.meta, key)
+		delete(s.metrics, key)
+		return v
+	}
+	return ""
+}
+
+// applyRateWithLock applies sampling rate and executes the provided function with the lock held.
+// Used by rules_sampler.go when applying trace sampling rules.
+// The function f is called with the lock held and should contain operations that need to be atomic.
+// Returns false if span is already finished, true otherwise.
+func (s *Span) applyRateWithLock(rate float64, f func()) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.finished {
+		return false
+	}
+
+	s.setMetricLocked(keyRulesSamplerAppliedRate, rate)
+	delete(s.metrics, keySamplingPriorityRate)
+	if f != nil {
+		f()
+	}
+	return true
+}
+
+// applySingleSpanSamplingWithLock applies single-span sampling rule to the span with the lock held.
+// Used by rules_sampler.go when applying single span sampling rules.
+// The maxPerSecond parameter should be 0 if there's no rate limit for the rule.
+// Note: This is called on finished spans during trace flushing, so we don't check s.finished.
+func (s *Span) applySingleSpanSamplingWithLock(rate, maxPerSecond float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.metrics, keySamplingPriorityRate)
+	s.setMetricLocked(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
+	s.setMetricLocked(keySingleSpanSamplingRuleRate, rate)
+	if maxPerSecond != 0 {
+		s.setMetricLocked(keySingleSpanSamplingMPS, maxPerSecond)
+	}
+}
+
+// withLockIf executes the given function with the lock held if condition is true.
+// Used by spancontext.go for conditional locking patterns during trace finishing.
+func (s *Span) withLockIf(condition bool, f func()) {
+	if condition {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+	}
+	f()
+}
+
+// debugInfo returns span information for debugging and logging.
+// Used by test code for formatting span information.
+func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	name = s.name
+	spanID = s.spanID
+	traceID = s.traceID
+	if v, ok := s.meta[ext.Component]; ok {
+		integration = v
+	} else {
+		integration = "manual"
+	}
+	return
+}
+
+// getMetadata returns a copy of the meta map for testing purposes.
+// This is only for use in tests to verify span metadata state.
+func (s *Span) getMetadata() map[string]string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	meta := make(map[string]string, len(s.meta))
+	for k, v := range s.meta {
+		meta[k] = v
+	}
+	return meta
+}
+
+// matchTagsForSampling checks if span tags match the sampling rule tag patterns.
+// Used by rules_sampler.go for tag-based sampling rule matching.
+// Returns true if all tag patterns match, false otherwise.
+func (s *Span) matchTagsForSampling(tagPatterns map[string]func(string) bool) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for k, matchFunc := range tagPatterns {
+		if s.meta != nil {
+			if v, ok := s.meta[k]; ok && matchFunc(v) {
+				continue
+			}
+		}
+		if s.metrics != nil {
+			if v, ok := s.metrics[k]; ok {
+				// sampling on numbers with floating point is not supported,
+				// thus 'math.Floor(v) != v'
+				if math.Floor(v) == v {
+					strVal := strconv.FormatFloat(v, 'g', -1, 64)
+					if matchFunc(strVal) {
+						continue
+					}
+				}
+			}
+		}
+		// Tag pattern didn't match in either meta or metrics
+		return false
+	}
+	return true
+}
+
 // SetBaggageItem sets a key/value pair as baggage on the span. Baggage items
 // are propagated down to descendant spans and injected cross-process. Use with
 // care as it adds extra load onto your tracing layer.
@@ -193,12 +346,12 @@ func (s *Span) SetTag(key string, value interface{}) {
 	}
 	switch key {
 	case ext.Error:
-		s.setTagError(value, errorConfig{
+		s.setTagErrorLocked(value, errorConfig{
 			noDebugStack: s.noDebugStack,
 		})
 		return
 	case ext.ErrorNoStackTrace:
-		s.setTagError(value, errorConfig{
+		s.setTagErrorLocked(value, errorConfig{
 			noDebugStack: true,
 		})
 		return
@@ -209,7 +362,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 		}
 	}
 	if v, ok := value.(bool); ok {
-		s.setTagBool(key, v)
+		s.setTagBoolLocked(key, v)
 		return
 	}
 	if v, ok := value.(string); ok {
@@ -223,11 +376,11 @@ func (s *Span) SetTag(key string, value interface{}) {
 			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
 			pprof.SetGoroutineLabels(s.pprofCtxActive)
 		}
-		s.setMeta(key, v)
+		s.setMetaLocked(key, v)
 		return
 	}
 	if v, ok := sharedinternal.ToFloat64(value); ok {
-		s.setMetric(key, v)
+		s.setMetricLocked(key, v)
 		return
 	}
 	if v, ok := value.(fmt.Stringer); ok {
@@ -237,18 +390,18 @@ func (s *Span) SetTag(key string, value interface{}) {
 					// If .String() panics due to a nil receiver, we want to catch this
 					// and replace the string value with "<nil>", just as Sprintf does.
 					// Other panics should not be handled.
-					s.setMeta(key, "<nil>")
+					s.setMetaLocked(key, "<nil>")
 					return
 				}
 				panic(e)
 			}
 		}()
-		s.setMeta(key, v.String())
+		s.setMetaLocked(key, v.String())
 		return
 	}
 
 	if v, ok := value.([]byte); ok {
-		s.setMeta(key, string(v))
+		s.setMetaLocked(key, string(v))
 		return
 	}
 
@@ -263,9 +416,9 @@ func (s *Span) SetTag(key string, value interface{}) {
 				key := fmt.Sprintf("%s.%d", key, i)
 				v := slice.Index(i)
 				if num, ok := sharedinternal.ToFloat64(v.Interface()); ok {
-					s.setMetric(key, num)
+					s.setMetricLocked(key, num)
 				} else {
-					s.setMeta(key, fmt.Sprintf("%v", v))
+					s.setMetaLocked(key, fmt.Sprintf("%v", v))
 				}
 			}
 			return
@@ -274,13 +427,13 @@ func (s *Span) SetTag(key string, value interface{}) {
 		// Can be sent as messagepack in `meta_struct` instead of `meta`
 		// reserved for internal use only
 		if v, ok := value.(sharedinternal.MetaStructValue); ok {
-			s.setMetaStruct(key, v.Value)
+			s.setMetaStructLocked(key, v.Value)
 			return
 		}
 
 		// Support for v1 shim meta struct values (only _dd.stack uses this)
 		if key == "_dd.stack" {
-			s.setMetaStruct(key, value)
+			s.setMetaStructLocked(key, value)
 			return
 		}
 
@@ -292,7 +445,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 	}
 
 	// not numeric, not a string, not a fmt.Stringer, not a bool, and not an error
-	s.setMeta(key, fmt.Sprint(value))
+	s.setMetaLocked(key, fmt.Sprint(value))
 }
 
 // setSamplingPriority locks the span, then updates the sampling priority.
@@ -309,7 +462,7 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 func (s *Span) setProcessTags(pTags string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.setMeta(keyProcessTags, pTags)
+	s.setMetaLocked(keyProcessTags, pTags)
 }
 
 // root returns the root span of the span's trace. The return value shouldn't be
@@ -380,7 +533,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	for k, v := range usrData {
 		if v != "" {
 			// setMeta is used since the span is already locked
-			root.setMeta(k, v)
+			root.setMetaLocked(k, v)
 		}
 	}
 }
@@ -397,13 +550,14 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
 func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
+	assert.RWMutexLocked(&s.mu)
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
-	s.setMetric(keySamplingPriority, float64(priority))
+	s.setMetricLocked(keySamplingPriority, float64(priority))
 	s.context.setSamplingPriority(priority, sampler)
 }
 
@@ -412,19 +566,21 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 //
 // This function is should only be used when applying a manual keep or drop decision.
 func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
+	assert.RWMutexLocked(&s.mu)
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		return
 	}
-	s.setMetric(keySamplingPriority, float64(priority))
+	s.setMetricLocked(keySamplingPriority, float64(priority))
 	s.context.forceSetSamplingPriority(priority, sampler)
 }
 
-// setTagError sets the error tag. It accounts for various valid scenarios.
-// This method is not safe for concurrent use.
-func (s *Span) setTagError(value interface{}, cfg errorConfig) {
+// setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
+// This method assumes the span lock is already held.
+func (s *Span) setTagErrorLocked(value interface{}, cfg errorConfig) {
+	assert.RWMutexLocked(&s.mu)
 	setError := func(yes bool) {
 		if yes {
 			if s.error == 0 {
@@ -455,25 +611,25 @@ func (s *Span) setTagError(value interface{}, cfg errorConfig) {
 		// and provide all the benefits.
 		// TODO: once Error Tracking fix is resolved, update relevant tags here. See #4095
 		setError(true)
-		s.setMeta(ext.ErrorMsg, v.Error())
-		s.setMeta(ext.ErrorType, reflect.TypeOf(v).String())
+		s.setMetaLocked(ext.ErrorMsg, v.Error())
+		s.setMetaLocked(ext.ErrorType, reflect.TypeOf(v).String())
 		if cfg.noDebugStack {
 			return
 		}
 		switch err := v.(type) {
 		case xerrors.Formatter:
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.setMeta(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorDetails, fmt.Sprintf("%+v", v))
 		case *errortrace.TracerError:
 			// instrumentation/errortrace approach
-			s.setMeta(ext.ErrorStack, fmt.Sprintf("%+v", v))
-			s.setMeta(ext.ErrorHandlingStack, err.Format())
+			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorHandlingStack, err.Format())
 			return
 		}
 		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-		s.setMeta(ext.ErrorStack, stack)
+		s.setMetaLocked(ext.ErrorStack, stack)
 	case nil:
 		// no error
 		setError(false)
@@ -503,8 +659,22 @@ func takeStacktrace(depth uint, skip uint) string {
 	return stacktrace.Format(stack)
 }
 
-// setMeta sets a string tag. This method is not safe for concurrent use.
+// setMeta sets a string tag during span initialization (before the span is published).
+// This method should only be used during span construction in spanStart and StartSpan.
 func (s *Span) setMeta(key, v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMetaLocked(key, v)
+}
+
+// setMetaLocked sets a string tag. This method assumes the span lock is already held.
+func (s *Span) setMetaLocked(key, v string) {
+	assert.RWMutexLocked(&s.mu)
+	s.setMetaInit(key, v)
+}
+
+// setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
+func (s *Span) setMetaInit(key, v string) {
 	if s.meta == nil {
 		s.meta = make(map[string]string, 1)
 	}
@@ -523,21 +693,24 @@ func (s *Span) setMeta(key, v string) {
 	}
 }
 
-func (s *Span) setMetaStruct(key string, v any) {
+// setMetaStructLocked sets structured metadata. This method assumes the span lock is already held.
+func (s *Span) setMetaStructLocked(key string, v any) {
+	assert.RWMutexLocked(&s.mu)
 	if s.metaStruct == nil {
 		s.metaStruct = make(metaStructMap, 1)
 	}
 	s.metaStruct[key] = v
 }
 
-// setTagBool sets a boolean tag on the span.
-func (s *Span) setTagBool(key string, v bool) {
+// setTagBoolLocked sets a boolean tag on the span. This method assumes the span lock is already held.
+func (s *Span) setTagBoolLocked(key string, v bool) {
+	assert.RWMutexLocked(&s.mu)
 	switch key {
 	case ext.AnalyticsEvent:
 		if v {
-			s.setMetric(ext.EventSampleRate, 1.0)
+			s.setMetricLocked(ext.EventSampleRate, 1.0)
 		} else {
-			s.setMetric(ext.EventSampleRate, 0.0)
+			s.setMetricLocked(ext.EventSampleRate, 0.0)
 		}
 	case ext.ManualDrop:
 		if v {
@@ -549,16 +722,35 @@ func (s *Span) setTagBool(key string, v bool) {
 		}
 	default:
 		if v {
-			s.setMeta(key, "true")
+			s.setMetaLocked(key, "true")
 		} else {
-			s.setMeta(key, "false")
+			s.setMetaLocked(key, "false")
 		}
 	}
 }
 
-// setMetric sets a numeric tag, in our case called a metric. This method
-// is not safe for concurrent use.
+// setMetric sets a numeric tag during span initialization (before the span is published).
+// This method should only be used during span construction in spanStart and StartSpan.
+func (s *Span) setMetricInit(key string, v float64) {
+	if s.metrics == nil {
+		s.metrics = make(map[string]float64, 1)
+	}
+	delete(s.meta, key)
+	// Note: We don't handle ManualKeep or _sampling_priority_v1shim during init
+	// because those require modifying trace-level state which needs locking
+	s.metrics[key] = v
+}
+
 func (s *Span) setMetric(key string, v float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMetricLocked(key, v)
+}
+
+// setMetricLocked sets a numeric tag, in our case called a metric. This method
+// assumes the span lock is already held.
+func (s *Span) setMetricLocked(key string, v float64) {
+	assert.RWMutexLocked(&s.mu)
 	if s.metrics == nil {
 		s.metrics = make(map[string]float64, 1)
 	}
@@ -655,7 +847,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 		if cfg.Error != nil {
 			s.mu.Lock()
-			s.setTagError(cfg.Error, errorConfig{
+			s.setTagErrorLocked(cfg.Error, errorConfig{
 				noDebugStack: cfg.NoDebugStack,
 				stackFrames:  cfg.StackFrames,
 				stackSkip:    cfg.SkipStackFrames,

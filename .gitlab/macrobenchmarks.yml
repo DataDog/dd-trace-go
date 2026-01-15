@@ -5,6 +5,10 @@ variables:
   if: $CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/
   when: never
 
+.on-mq-never: &on-mq-never
+  if: $CI_COMMIT_BRANCH =~ /^mq-working-branch\/.*$/
+  when: never
+
 .on-main-or-release-always-and-not-interruptible: &on-main-or-release-always-and-not-interruptible
   if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH =~ /^release-v[0-9]+.*$/
   when: always
@@ -12,12 +16,14 @@ variables:
 
 .macrobenchmarks-rules: &macrobenchmarks-rules
   - <<: *on-graphite-never
+  - <<: *on-mq-never
   - <<: *on-main-or-release-always-and-not-interruptible
   - when: manual
     interruptible: true
 
 .pre-release-performance-quality-gates-rules: &pre-release-performance-quality-gates-rules
   - <<: *on-graphite-never
+  - <<: *on-mq-never
   - <<: *on-main-or-release-always-and-not-interruptible
   # Unlike in "main" or release branches, in development branches there's
   # no strict requirement to run the check unconditionally with "when: always".

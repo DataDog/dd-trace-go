@@ -197,27 +197,21 @@ func (sr *SamplingRule) match(s *Span) bool {
 	if sr.Resource != nil && !sr.Resource.MatchString(s.resource) {
 		return false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if sr.Tags != nil {
+		// Convert regex map to matcher function map for the helper
+		tagMatchers := make(map[string]func(string) bool, len(sr.Tags))
 		for k, regex := range sr.Tags {
 			if regex == nil {
 				continue
 			}
-			if s.meta != nil {
-				v, ok := s.meta[k]
-				if ok && regex.MatchString(v) {
-					continue
-				}
+			// Capture regex in closure
+			r := regex
+			tagMatchers[k] = func(v string) bool {
+				return r.MatchString(v)
 			}
-			if s.metrics != nil {
-				v, ok := s.metrics[k]
-				// sampling on numbers with floating point is not supported,
-				// thus 'math.Floor(v) != v'
-				if !ok || math.Floor(v) != v || !regex.MatchString(strconv.FormatFloat(v, 'g', -1, 64)) {
-					return false
-				}
-			}
+		}
+		if !s.matchTagsForSampling(tagMatchers) {
+			return false
 		}
 	}
 	return true
@@ -483,32 +477,24 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	span.mu.Lock()
-	defer span.mu.Unlock()
+	// Use the helper method to apply the rate and execute sampling logic with the lock held
+	span.applyRateWithLock(rate, func() {
+		// Set the Knuth sampling rate tag when trace sampling rules are applied
+		span.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 
-	// We don't lock spans when flushing, so we could have a data race when
-	// modifying a span as it's being flushed. This protects us against that
-	// race, since spans are marked `finished` before we flush them.
-	if span.finished {
-		return
-	}
+		if !sampledByRate(span.traceID, rate) {
+			span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+			return
+		}
 
-	span.setMetric(keyRulesSamplerAppliedRate, rate)
-	delete(span.metrics, keySamplingPriorityRate)
-	// Set the Knuth sampling rate tag when trace sampling rules are applied
-	span.setMeta(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
-	if !sampledByRate(span.traceID, rate) {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-		return
-	}
-
-	sampled, rate := rs.limiter.allowOne(now)
-	if sampled {
-		span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
-	} else {
-		span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-	}
-	span.setMetric(keyRulesSamplerLimiterRate, rate)
+		sampled, limiterRate := rs.limiter.allowOne(now)
+		if sampled {
+			span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		} else {
+			span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		}
+		span.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
+	})
 }
 
 // limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
@@ -575,12 +561,7 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 					return false
 				}
 			}
-			delete(span.metrics, keySamplingPriorityRate)
-			span.setMetric(keySpanSamplingMechanism, float64(samplernames.SingleSpan))
-			span.setMetric(keySingleSpanSamplingRuleRate, rate)
-			if rule.MaxPerSecond != 0 {
-				span.setMetric(keySingleSpanSamplingMPS, rule.MaxPerSecond)
-			}
+			span.applySingleSpanSamplingWithLock(rate, rule.MaxPerSecond)
 			return true
 		}
 	}

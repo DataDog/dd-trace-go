@@ -16,7 +16,7 @@ The locking package addresses the challenge of comprehensive lock analysis in Go
 The package uses build tags to switch between two implementations:
 
 - **Default build** (`!deadlock`): Type aliases to `sync.Mutex/RWMutex` for zero overhead
-- **Debug build** (`deadlock`): Wraps [`github.com/sasha-s/go-deadlock`](https://github.com/sasha-s/go-deadlock) for runtime detection
+- **Debug build** (`deadlock`): Wraps [`github.com/linkdata/deadlock`](https://github.com/linkdata/deadlock) for runtime detection
 
 ## Usage Examples
 
@@ -318,7 +318,7 @@ go test -race -tags=debug,deadlock ./internal/locking/assert
 
 ## Dependencies
 
-- [`github.com/sasha-s/go-deadlock`](https://github.com/sasha-s/go-deadlock): Provides runtime deadlock detection
+- [`github.com/linkdata/deadlock`](https://github.com/linkdata/deadlock): Provides runtime deadlock detection
 
 ## Troubleshooting
 
@@ -335,7 +335,7 @@ go test -race -tags=debug,deadlock ./internal/locking/assert
 go build -tags=deadlock -v ./internal/locking
 
 # Check for import conflicts
-go mod why github.com/sasha-s/go-deadlock
+go mod why github.com/linkdata/deadlock
 
 # Validate lock assertions
 go test -v -run TestLockAssertions ./internal/locking/assert
