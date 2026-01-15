@@ -18,6 +18,7 @@
     git clone --branch fayssal/incident-48034 https://github.com/DataDog/benchmarking-platform /platform && cd /platform
     ./steps/capture-hardware-software-info.sh
     TEST_NAME=$BENCHMARK_NAME bp-runner "${CI_PROJECT_DIR:-.}/.gitlab/bp-runner.yml" --debug -t
+    ./steps/convert-results.sh
     ./steps/analyze-results.sh
     ./steps/upload-results-to-s3.sh || :
     ./steps/upload-results-to-benchmarking-api.sh || :
