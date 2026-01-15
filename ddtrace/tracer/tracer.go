@@ -836,14 +836,14 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
 	if t.config.internalConfig.ProfilerHotspotsEnabled() && localRootSpan != nil {
-		spanID, _ := localRootSpan.getSpanIDAndResource()
+		spanID := localRootSpan.getSpanID()
 		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
 	}
 	if t.config.internalConfig.ProfilerHotspotsEnabled() {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
 	if t.config.internalConfig.ProfilerEndpoints() && localRootSpan != nil {
-		_, resource := localRootSpan.getSpanIDAndResource()
+		resource := localRootSpan.getResource()
 		if spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, resource)
 			if span == localRootSpan {

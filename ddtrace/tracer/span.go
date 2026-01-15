@@ -174,12 +174,18 @@ func (s *Span) getService() string {
 	return s.service
 }
 
-// getSpanIDAndResource safely reads spanID and resource fields together.
-// Used by tracer.go when applying profiler labels.
-func (s *Span) getSpanIDAndResource() (spanID uint64, resource string) {
+// getSpanID concurrency safe reads the spanID field.
+func (s *Span) getSpanID() uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.spanID, s.resource
+	return s.spanID
+}
+
+// getResource concurrency safe reads the resource field.
+func (s *Span) getResource() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resource
 }
 
 // getAndRemoveMeta retrieves and removes metadata by key.
@@ -657,22 +663,9 @@ func takeStacktrace(depth uint, skip uint) string {
 // setMeta sets a string tag during span initialization (before the span is published).
 // This method should only be used during span construction in spanStart and StartSpan.
 func (s *Span) setMeta(key, v string) {
-	if s.meta == nil {
-		s.meta = make(map[string]string, 1)
-	}
-	delete(s.metrics, key)
-	switch key {
-	case ext.SpanName:
-		s.name = v
-	case ext.ServiceName:
-		s.service = v
-	case ext.ResourceName:
-		s.resource = v
-	case ext.SpanType:
-		s.spanType = v
-	default:
-		s.meta[key] = v
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMetaLocked(key, v)
 }
 
 // setMetaLocked sets a string tag. This method assumes the span lock is already held.
