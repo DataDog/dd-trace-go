@@ -36,15 +36,13 @@ func registerTelemetry() {
 	// ===========================================
 
 	// OTEL_EXPORTER_OTLP_TIMEOUT
-	if timeout := env.Get(envOTLPTimeout); timeout != "" {
-		if ms, err := parseMilliseconds(timeout); err == nil {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-				Name:   envOTLPTimeout,
-				Value:  ms,
-				Origin: telemetry.OriginEnvVar,
-			})
-		}
-	}
+	// Always report this (with default) since it's used as fallback for logs timeout
+	genericTimeout := getMillisecondsConfig(envOTLPTimeout, defaultOTLPTimeoutMs)
+	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
+		Name:   envOTLPTimeout,
+		Value:  genericTimeout.value,
+		Origin: genericTimeout.origin,
+	})
 
 	// OTEL_EXPORTER_OTLP_HEADERS
 	if headers := env.Get(envOTLPHeaders); headers != "" {
