@@ -671,17 +671,29 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	} else {
 		startTime = opts.StartTime.UnixNano()
 	}
-	var context *SpanContext
-	// The default pprof context is taken from the start options and is
-	// not nil when using StartSpanFromContext()
-	pprofContext := opts.Context
+
+	var (
+		context       *SpanContext
+		parentService string
+		// The default pprof context is taken from the start options and is
+		// not nil when using StartSpanFromContext()
+		pprofContext = opts.Context
+	)
+
 	if opts.Parent != nil {
 		context = opts.Parent
-		if pprofContext == nil && context.span != nil {
+		if context.span != nil {
+			// Batch read service and pprofContext from parent span under single lock
+			// to minimize lock contention on the parent span during child creation.
+			inheritedData := context.span.inheritedData()
+			parentService = inheritedData.service
+
 			// Inherit the context.Context from parent span if it was propagated
 			// using ChildOf() rather than StartSpanFromContext(), see
 			// applyPPROFLabels() below.
-			pprofContext = context.span.getPprofCtxActive()
+			if pprofContext == nil {
+				pprofContext = inheritedData.pprofCtx
+			}
 		}
 	}
 	if pprofContext == nil {
@@ -701,7 +713,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	// span defaults
 	span := &Span{
 		name:        operationName,
-		service:     "",
+		service:     parentService, // inherit from parent if available
 		resource:    operationName,
 		spanID:      id,
 		traceID:     id,
@@ -716,21 +728,14 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
-			span.setMetric(keySamplingPriority, float64(p))
+			span.setMetricInit(keySamplingPriority, float64(p))
 		}
-		if context.span != nil {
-			// local parent, inherit service
-			span.service = context.span.getService()
-		} else {
-			// remote parent
-			if context.origin != "" {
-				// mark origin
-				span.setMeta(keyOrigin, context.origin)
-			}
+		if context.span == nil && context.origin != "" { // remote parent
+			// mark origin
+			span.setMetaInit(keyOrigin, context.origin)
 		}
-
 		if context.reparentID != "" {
-			span.setMeta(keyReparentID, context.reparentID)
+			span.setMetaInit(keyReparentID, context.reparentID)
 		}
 
 	}
@@ -738,7 +743,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}
-	span.setMeta("language", "go")
+	span.setMetaInit("language", "go")
 	// add tags from options
 	for k, v := range opts.Tags {
 		span.SetTag(k, v)
@@ -749,7 +754,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 	if isRootSpan || context.span.service != span.service {
 		// The span is the local root span.
-		span.setMetric(keyTopLevel, 1)
+		span.setMetricInit(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.metrics, keyMeasured)
 	}
@@ -771,7 +776,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	cfg := t.config.internalConfig
 	span.noDebugStack = !cfg.DebugStack()
 	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
-		span.setMeta(keyHostname, hostname)
+		span.setMetaInit(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
@@ -786,11 +791,11 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 
 	if ver := cfg.Version(); ver != "" {
 		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
-			span.setMeta(ext.Version, ver)
+			span.setMetaInit(ext.Version, ver)
 		}
 	}
 	if env := cfg.Env(); env != "" {
-		span.setMeta(ext.Environment, env)
+		span.setMetaInit(ext.Environment, env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -816,9 +821,9 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if span.metrics[keyTopLevel] == 1 {
 		// The span is the local root span.
-		span.setMetric(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
 	}
-	span.setMetric(ext.Pid, float64(t.pid))
+	span.setMetricInit(ext.Pid, float64(t.pid))
 	t.spansStarted.Inc(span.integration)
 
 	return span

@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
+//msgp:ignore inheritedData
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 
 package tracer
@@ -158,20 +159,18 @@ func (s *Span) Context() *SpanContext {
 	return s.context
 }
 
-// getPprofCtxActive safely reads the pprofCtxActive field.
-// Used by tracer.go when inheriting pprof context from parent span.
-func (s *Span) getPprofCtxActive() context.Context {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.pprofCtxActive
+type inheritedData struct {
+	service  string
+	pprofCtx context.Context
 }
 
-// getService safely reads the service field.
-// Used by tracer.go when inheriting service from parent span.
-func (s *Span) getService() string {
+func (s *Span) inheritedData() inheritedData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.service
+	return inheritedData{
+		service:  s.service,
+		pprofCtx: s.pprofCtxActive,
+	}
 }
 
 // getSpanID concurrency safe reads the spanID field.
@@ -671,6 +670,11 @@ func (s *Span) setMeta(key, v string) {
 // setMetaLocked sets a string tag. This method assumes the span lock is already held.
 func (s *Span) setMetaLocked(key, v string) {
 	assert.RWMutexLocked(&s.mu)
+	s.setMetaInit(key, v)
+}
+
+// setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
+func (s *Span) setMetaInit(key, v string) {
 	if s.meta == nil {
 		s.meta = make(map[string]string, 1)
 	}
@@ -727,7 +731,7 @@ func (s *Span) setTagBoolLocked(key string, v bool) {
 
 // setMetric sets a numeric tag during span initialization (before the span is published).
 // This method should only be used during span construction in spanStart and StartSpan.
-func (s *Span) setMetric(key string, v float64) {
+func (s *Span) setMetricInit(key string, v float64) {
 	if s.metrics == nil {
 		s.metrics = make(map[string]float64, 1)
 	}
@@ -735,6 +739,12 @@ func (s *Span) setMetric(key string, v float64) {
 	// Note: We don't handle ManualKeep or _sampling_priority_v1shim during init
 	// because those require modifying trace-level state which needs locking
 	s.metrics[key] = v
+}
+
+func (s *Span) setMetric(key string, v float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMetricLocked(key, v)
 }
 
 // setMetricLocked sets a numeric tag, in our case called a metric. This method
