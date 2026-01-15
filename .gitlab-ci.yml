@@ -98,7 +98,7 @@ analyze-benchmark-results:
       mkdir -p reports
       export ARTIFACTS_DIR="$(pwd)/reports"
       git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-      git clone --branch fayssal/incident-48034 https://github.com/DataDog/benchmarking-platform platform && cd platform
+      git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform platform && cd platform
       ./steps/download-child-pipeline-artifacts.sh
       echo "All benchmark artifacts collected:"
       ls -la "${ARTIFACTS_DIR}/"
