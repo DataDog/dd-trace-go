@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -410,7 +409,7 @@ const (
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu               sync.RWMutex      // guards below fields
+	mu               locking.RWMutex   // guards below fields
 	spans            []*Span           // all the spans that are part of this trace
 	tags             map[string]string // trace level tags
 	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries

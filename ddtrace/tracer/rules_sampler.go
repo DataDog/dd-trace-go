@@ -13,13 +13,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -342,7 +342,7 @@ func SpanSamplingRules(rules ...Rule) []SamplingRule {
 // Its value is the number of spans to sample per second.
 // Spans that matched the rules but exceeded the rate limit are not sampled.
 type traceRulesSampler struct {
-	m          sync.RWMutex
+	m          locking.RWMutex
 	rules      []SamplingRule // the rules to match spans with
 	globalRate float64        // a rate to apply when no rules match a span
 	limiter    *rateLimiter   // used to limit the volume of spans sampled
@@ -573,12 +573,12 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 type rateLimiter struct {
 	limiter *rate.Limiter
 
-	mu          sync.Mutex // guards below fields
-	prevTime    time.Time  // time at which prevAllowed and prevSeen were set
-	allowed     float64    // number of spans allowed in the current period
-	seen        float64    // number of spans seen in the current period
-	prevAllowed float64    // number of spans allowed in the previous period
-	prevSeen    float64    // number of spans seen in the previous period
+	mu          locking.Mutex // guards below fields
+	prevTime    time.Time     // time at which prevAllowed and prevSeen were set
+	allowed     float64       // number of spans allowed in the current period
+	seen        float64       // number of spans seen in the current period
+	prevAllowed float64       // number of spans allowed in the previous period
+	prevSeen    float64       // number of spans seen in the previous period
 }
 
 // allowOne returns the rate limiter's decision to allow the span to be sampled, and the
