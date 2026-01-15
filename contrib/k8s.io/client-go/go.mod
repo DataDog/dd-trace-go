@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.6.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/stretchr/testify v1.11.1
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.31.4
@@ -73,6 +73,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.9.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.8-0.20250809033336-ffcdc2b7662f // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tinylib/msgp v1.3.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
