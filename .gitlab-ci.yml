@@ -103,12 +103,13 @@ analyze-benchmark-results:
       echo "All benchmark artifacts collected:"
       ls -la "${ARTIFACTS_DIR}/"
       ./steps/analyze-results.sh
+      ./steps/post-pr-comment.sh
       
   artifacts:
-    name: "all-benchmark-reports"
+    name: "reports"
     when: always
     paths:
-      - all-benchmark-reports/
+      - reports/
     expire_in: 3 months
 
 
