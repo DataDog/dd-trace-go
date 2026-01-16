@@ -69,9 +69,7 @@ func (h *exposureHook) After(
 
 	// Build flat context from evaluation context
 	flatContext := make(map[string]any)
-	if targetingKey != "" {
-		flatContext[of.TargetingKey] = targetingKey
-	}
+	flatContext[of.TargetingKey] = targetingKey
 	for k, v := range evalContext.Attributes() {
 		flatContext[k] = v
 	}
