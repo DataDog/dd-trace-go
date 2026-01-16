@@ -7,6 +7,7 @@ package mcpgo
 
 import (
 	"context"
+	"maps"
 	"slices"
 
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
@@ -35,6 +36,9 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 		return
 	}
 
+	// The server reuses tools across requests. Slices and nested objects are cloned to avoid concurrent writes.
+	result.Tools = slices.Clone(result.Tools)
+
 	for i := range result.Tools {
 		t := &result.Tools[i]
 
@@ -48,6 +52,8 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 		}
 		if t.InputSchema.Properties == nil {
 			t.InputSchema.Properties = map[string]any{}
+		} else {
+			t.InputSchema.Properties = maps.Clone(t.InputSchema.Properties)
 		}
 
 		// Insert/overwrite the telemetry property
@@ -55,7 +61,7 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 
 		// Mark telemetry as required (idempotent)
 		if !slices.Contains(t.InputSchema.Required, instrmcp.TelemetryKey) {
-			t.InputSchema.Required = append(t.InputSchema.Required, instrmcp.TelemetryKey)
+			t.InputSchema.Required = append(slices.Clone(t.InputSchema.Required), instrmcp.TelemetryKey)
 		}
 	}
 }
