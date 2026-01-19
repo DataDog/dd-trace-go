@@ -79,10 +79,10 @@ type payloadV1 struct {
 	writeOff int
 
 	// count specifies the number of items (traceChunks) in the stream.
-	count uint32
+	count uint32 // +checkatomic
 
 	// fields specifies the number of fields in the payload.
-	fields uint32
+	fields uint32 // +checkatomic
 
 	// buf holds the sequence of msgpack-encoded items.
 	buf []byte
@@ -210,7 +210,7 @@ func (p *payloadV1) clear() {
 	p.header = nil
 	p.readOff = 0
 	atomic.StoreUint32(&p.fields, 0)
-	p.count = 0
+	atomic.StoreUint32(&p.count, 0)
 }
 
 // recordItem records that a new chunk was added to the payload.
