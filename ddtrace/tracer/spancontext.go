@@ -599,12 +599,14 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 // if the trace is complete, in which case it calls the onFinish function. It uses
 // the given priority, if non-nil, to mark the root span. This also will trigger a partial flush
 // if enabled and the total number of finished spans is greater than or equal to the partial flush limit.
-// The provided span must be locked.
+//
+// Lock ordering: span.mu -> trace.mu. The caller holds s.mu. This function acquires t.mu.
+// Invariant: The caller MUST hold s.mu.
+// TODO: Add checklocks annotation.
 func (t *trace) finishedOneLocked(s *Span) {
 	assert.RWMutexLocked(&s.mu)
+
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	s.finished = true
 	if t.full {
 		// capacity has been reached, the buffer is no longer tracking
 		// all the spans in the trace, so the below conditions will not
@@ -612,11 +614,19 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// to a race condition where spans can be modified while flushing.
 		//
 		// TODO(partialFlush): should we do a partial flush in this scenario?
+		t.mu.Unlock()
 		return
 	}
+	if s.finished {
+		t.mu.Unlock()
+		return
+	}
+	s.finished = true
 	t.finished++
+
 	tr := getGlobalTracer()
 	if tr == nil {
+		t.mu.Unlock()
 		return
 	}
 	tc := tr.TracerConf()
@@ -631,7 +641,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		t.root.setMetricLocked(keySamplingPriority, *t.priority)
+		s.setMetricLocked(keySamplingPriority, *t.priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -649,23 +659,30 @@ func (t *trace) finishedOneLocked(s *Span) {
 		mtr.FinishSpan(s)
 	}
 
-	if len(t.spans) == t.finished { // perform a full flush of all spans
-		if tr, ok := tr.(*tracer); ok {
-			t.finishChunk(tr, &chunk{
-				spans:    t.spans,
-				willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-			})
-		}
+	// Full flush: all spans finished
+	if len(t.spans) == t.finished {
+		spans := t.spans
+		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 		t.spans = nil
+		t.finished = 0 // important, because a buffer can be used for several flushes
+		t.mu.Unlock()
+		if tr, ok := tr.(*tracer); ok {
+			tr.submitChunk(&chunk{spans: spans, willSend: willSend})
+		}
 		return
 	}
 
 	doPartialFlush := tc.PartialFlush && t.finished >= tc.PartialFlushMinSpans
 	if !doPartialFlush {
-		return // The trace hasn't completed and partial flushing will not occur
+		t.mu.Unlock()
+		// The trace hasn't completed and partial flushing will not occur
+		return
 	}
+
+	// --- Partial flush path ---
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
 	telemetry.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", []string{"reason:large_trace"}).Submit(1)
+
 	finishedSpans := make([]*Span, 0, t.finished)
 	leftoverSpans := make([]*Span, 0, len(t.spans)-t.finished)
 	for _, s2 := range t.spans {
@@ -675,31 +692,42 @@ func (t *trace) finishedOneLocked(s *Span) {
 			leftoverSpans = append(leftoverSpans, s2)
 		}
 	}
+
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
+
 	// #incident-46344 -- if we set metrics and tags on a different span than what was passed into this function,
-	// we need to lock this new span.
+	// we need to lock this new span. However, to preserve lock ordering (span.mu -> trace.mu), we must
+	// release trace.mu before acquiring fSpan.mu.
 	fSpan := finishedSpans[0]
 	currentSpanIsFirstInChunk := s == fSpan
-	fSpan.withLockIf(!currentSpanIsFirstInChunk, func() {
-		fSpan.setMetricLocked(keySamplingPriority, *t.priority)
-		if s != t.spans[0] {
-			// Make sure the first span in the chunk has the trace-level tags
-			t.setTraceTagsLocked(fSpan)
-		}
-	})
-	if tr, ok := tr.(*tracer); ok {
-		t.finishChunk(tr, &chunk{
-			spans:    finishedSpans,
-			willSend: decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision))),
-		})
-	}
-	t.spans = leftoverSpans
-}
+	needsFirstSpanTags := s != t.spans[0]
+	priority := t.priority
+	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 
-func (t *trace) finishChunk(tr *tracer, ch *chunk) {
-	tr.submitChunk(ch)
+	// Update trace state and release lock BEFORE acquiring fSpan lock
+	t.spans = leftoverSpans
 	t.finished = 0 // important, because a buffer can be used for several flushes
+	t.mu.Unlock()
+
+	// Set sampling priority and trace-level tags on first span in chunk
+	// If fSpan == s, lock is already held by caller; otherwise acquire it
+	if !currentSpanIsFirstInChunk {
+		fSpan.mu.Lock()
+		defer fSpan.mu.Unlock()
+	}
+	if priority != nil {
+		fSpan.setMetricLocked(keySamplingPriority, *priority)
+	}
+	if needsFirstSpanTags {
+		t.mu.RLock()
+		t.setTraceTagsLocked(fSpan)
+		t.mu.RUnlock()
+	}
+
+	if tr, ok := tr.(*tracer); ok {
+		tr.submitChunk(&chunk{spans: finishedSpans, willSend: willSend})
+	}
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
