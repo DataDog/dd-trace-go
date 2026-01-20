@@ -30,12 +30,16 @@ linters:
       - builtin$
       - examples$
     rules:
-      - path: "internal/(env|log)/"
+      - path: "internal/(env|log|locking)/"
         linters:
           - forbidigo
       - path: "_test\\.go$"
         linters:
           - forbidigo
+      - path-except: "^ddtrace/tracer/"
+        linters:
+          - forbidigo
+        text: "use github.com/DataDog/dd-trace-go/v2/internal/locking\\.(RW)?Mutex instead of sync\\.(RW)?Mutex"
   settings:
     forbidigo:
       forbid:
@@ -43,6 +47,10 @@ linters:
           msg: "use internal/env.Get instead of os.Getenv"
         - pattern: "^os\\.LookupEnv$"
           msg: "use internal/env.Lookup instead of os.LookupEnv"
+        - pattern: "sync\\.Mutex"
+          msg: "use github.com/DataDog/dd-trace-go/v2/internal/locking.Mutex instead of sync.Mutex"
+        - pattern: "sync\\.RWMutex"
+          msg: "use github.com/DataDog/dd-trace-go/v2/internal/locking.RWMutex instead of sync.RWMutex"
       exclude_godoc_examples: true
       analyze_types: true
     govet:

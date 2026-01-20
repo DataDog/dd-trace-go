@@ -181,25 +181,6 @@ go test -v -timeout=300s -tags=debug,deadlock ./internal/...
 
 ## Implementation Checklist
 
-### Migration Strategy
-
-- [ ] **Phase 1**: Introduce locking package (current phase)
-  - [x] Implement build-tag based mutex types
-  - [x] Add lock assertion utilities
-  - [x] Create comprehensive documentation
-  - [ ] Add golangci-lint rules to prevent new `sync.Mutex` usage
-
-- [ ] **Phase 2**: Gradual Migration
-  - [ ] Replace `sync.Mutex` with `locking.Mutex` in core packages
-  - [ ] Replace `sync.RWMutex` with `locking.RWMutex` in core packages
-  - [ ] Update tests to use lock assertions where appropriate
-  - [ ] Add deadlock detection to CI pipeline
-
-- [ ] **Phase 3**: Enforcement
-  - [ ] Configure golangci-lint to forbid direct `sync.Mutex` imports
-  - [ ] Add linting rules to ensure consistent usage
-  - [ ] Document exceptions for specific use cases
-
 ### Integration with Static Analysis
 
 The package is designed to work seamlessly with static lock checkers like [`checklocks`](https://github.com/google/gvisor/blob/master/tools/checklocks/README.md). The type aliases ensure full compatibility with static analysis tools:

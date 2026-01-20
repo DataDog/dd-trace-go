@@ -14,8 +14,9 @@ Usage: $(basename "${BASH_SOURCE[0]}") [options] [target_directory]
 Run checklocks to analyze lock usage and detect potential deadlocks.
 
 Options:
-  -i, --ignore-errors    Ignore errors and exit successfully
-  -h, --help             Show this help message
+  -i, --ignore-known-issues    Ignore known issues and exit successfully
+  -t, --include-tests          Include test files in the analysis
+  -h, --help                   Show this help message
 
 Arguments:
   target_directory       Directory to analyze (default: ./ddtrace/tracer)
@@ -30,8 +31,12 @@ EOF
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --ignore-errors | -i)
+    -i | --ignore-known-issues)
       IGNORE_ERRORS=true
+      shift
+      ;;
+    -t | --include-tests)
+      INCLUDE_TESTS=true
       shift
       ;;
     -h | --help)
@@ -77,21 +82,43 @@ fi
 
 echo "Running checklocks on $TARGET_DIR..."
 
-output=$(go vet -vettool="$CHECKLOCKS_PATH" "$TARGET_DIR" 2>&1 || true)
+# Conditionally include or exclude test files based on INCLUDE_TESTS flag
+if [ "$INCLUDE_TESTS" = true ]; then
+  # Include test files - run checklocks directly with default -test=true
+  output=$("$CHECKLOCKS_PATH" "$TARGET_DIR" 2>&1 || true)
+else
+  # Exclude test files - run checklocks directly with -test=false
+  output=$("$CHECKLOCKS_PATH" -test=false "$TARGET_DIR" 2>&1 || true)
+fi
 if [ -n "$output" ]; then
   echo "Raw output:"
   echo "$output"
+  echo ""
 
-  # Check if all lines start with "-:" or "#"
-  ignorable_lines=$(echo "$output" | grep -Evc "^(-:|#)")
+  # Count total lines in output (excluding empty lines)
+  total_lines=$(echo "$output" | grep -c "^" || true)
 
-  if [ "$ignorable_lines" -eq 0 ]; then
+  # Count ignored errors (lines starting with "-:" or "#")
+  ignored_errors=$(echo "$output" | grep -Ec "^(-:|#)" || true)
+
+  # Count actual errors (lines that don't start with "-:" or "#")
+  actual_errors=$(echo "$output" | grep -Evc "^(-:|#)" || true)
+
+  # Print summary
+  echo "=========================================="
+  echo "Summary:"
+  echo "  Total lines:    $total_lines"
+  echo "  Actual errors:  $actual_errors"
+  echo "  Ignored errors: $ignored_errors"
+  echo "=========================================="
+
+  if [ "$actual_errors" -eq 0 ]; then
     # All errors start with "-:" or "#", consider it a success
-    echo "All errors start with '-:' or '#', considering as success!"
+    echo "✓ All errors are ignorable (start with '-:' or '#')"
     exit 0
   else
     # Some errors don't start with "-:" or "#", consider it a failure
-    echo "Found errors that don't start with '-:' or '#', considering as failure!"
+    echo "✗ Found $actual_errors actual error(s)"
     if [ "$IGNORE_ERRORS" = true ]; then
       echo "Ignoring errors as requested"
       exit 0
@@ -99,6 +126,9 @@ if [ -n "$output" ]; then
     exit 1
   fi
 else
-  echo "No errors found"
+  echo "=========================================="
+  echo "Summary:"
+  echo "  ✓ No errors found"
+  echo "=========================================="
   exit 0
 fi

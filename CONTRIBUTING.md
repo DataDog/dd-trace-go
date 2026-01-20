@@ -172,19 +172,19 @@ Formats Go and shell files in the repository.
 ./scripts/format.sh --tools
 ```
 
-#### `./scripts/check_locks.sh`
+#### `./scripts/checklocks.sh`
 
 Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ```shell
 # Run checklocks on the default target (./ddtrace/tracer)
-./scripts/check_locks.sh
+./scripts/checklocks.sh
 
 # Run checklocks on a specific directory
-./scripts/check_locks.sh ./path/to/target
+./scripts/checklocks.sh ./path/to/target
 
 # Run checklocks and ignore errors
-./scripts/check_locks.sh --ignore-errors
+./scripts/checklocks.sh --ignore-errors
 ```
 
 ### Module Management Scripts

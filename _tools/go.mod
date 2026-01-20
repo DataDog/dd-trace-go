@@ -5,7 +5,6 @@ go 1.24.0
 require (
 	github.com/campoy/embedmd v1.0.0
 	github.com/golangci/golangci-lint/v2 v2.3.0
-	github.com/kakkoyun/checklocks v0.0.0-20250704150719-2f79b8295329
 	github.com/rhysd/actionlint v1.7.9
 	golang.org/x/perf v0.0.0-20250710210952-7b7c2de18447
 	golang.org/x/tools v0.35.0
