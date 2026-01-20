@@ -27,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -169,7 +170,7 @@ type tracer struct {
 
 	// State related to the Dynamic Instrumentation product.
 	dynInstMu struct {
-		sync.Mutex
+		locking.Mutex
 		ldSubscriptionToken    remoteconfig.SubscriptionToken
 		symDBSubscriptionToken remoteconfig.SubscriptionToken
 	}
@@ -202,7 +203,7 @@ var statsInterval = 10 * time.Second
 // goroutines from the internal telemetry client.
 //
 // TODO: The entire Start/Stop code should be refactored, it's pretty gnarly.
-var startStopMu sync.Mutex
+var startStopMu locking.Mutex
 
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart

@@ -10,9 +10,9 @@ import (
 	"io"
 	"math"
 	"strconv"
-	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
@@ -55,7 +55,7 @@ func (s *customSampler) Sample(span *Span) bool {
 
 // rateSampler samples from a sample rate.
 type rateSampler struct {
-	sync.RWMutex
+	locking.RWMutex
 	rate float64
 }
 
@@ -125,7 +125,7 @@ func formatKnuthSamplingRate(rate float64) string {
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
-	mu          sync.RWMutex
+	mu          locking.RWMutex
 	rates       map[string]float64
 	defaultRate float64
 }

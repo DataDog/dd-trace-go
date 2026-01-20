@@ -239,16 +239,6 @@ func (s *Span) applySingleSpanSamplingWithLock(rate, maxPerSecond float64) {
 	}
 }
 
-// withLockIf executes the given function with the lock held if condition is true.
-// Used by spancontext.go for conditional locking patterns during trace finishing.
-func (s *Span) withLockIf(condition bool, f func()) {
-	if condition {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-	}
-	f()
-}
-
 // debugInfo returns span information for debugging and logging.
 // Used by test code for formatting span information.
 func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration string) {
@@ -953,6 +943,9 @@ func (s *Span) finish(finishTime int64) {
 		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			s, s.name, s.resource, s.meta, s.metrics)
 	}
+	// Call context.finish() which handles trace-level bookkeeping and may modify
+	// this span (to set trace-level tags).
+	// Lock ordering is span.mu -> trace.mu.
 	s.context.finish()
 
 	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied

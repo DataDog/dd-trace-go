@@ -22,7 +22,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/mod/semver"
@@ -38,6 +37,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -1401,7 +1401,7 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	sync.RWMutex
+	locking.RWMutex
 	traces     spanLists
 	stats      []*pb.ClientStatsPayload
 	obfVersion int

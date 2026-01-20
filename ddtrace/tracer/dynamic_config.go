@@ -6,8 +6,7 @@
 package tracer
 
 import (
-	"sync"
-
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -15,7 +14,7 @@ import (
 // It's designed to satisfy the dynamic configuration semantics (i.e reset, update, apply configuration changes).
 // This structure will be extended to track the origin of configuration values as well (e.g remote_config, env_var).
 type dynamicConfig[T any] struct {
-	sync.RWMutex
+	locking.RWMutex
 	current   T                 // holds the current configuration value
 	startup   T                 // holds the startup configuration value
 	cfgName   string            // holds the name of the configuration, has to be compatible with telemetry.Configuration.Name
