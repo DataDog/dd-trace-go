@@ -352,6 +352,15 @@ func (c *Client) updateState() {
 		return
 	}
 
+	// APPSEC-56064: Skip update if there's no new TUF metadata to prevent targets_version from being reset to 0.
+	// When the Remote Config server sends a response with no new TUF targets, calling repository.Update() with
+	// empty targets causes the targets version to incorrectly reset. This preserves the version as required by
+	// the Remote Config RFC.
+	if len(update.Targets) == 0 {
+		log.Debug("remoteconfig: skipping update with no TUF metadata (empty targets)")
+		return
+	}
+
 	c.lastError = c.applyUpdate(&update)
 }
 
@@ -736,18 +745,15 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		errMsg = c.lastError.Error()
 	}
 
-	var pbConfigState []*configState
-	if !hasError {
-		pbConfigState = make([]*configState, 0, len(state.Configs))
-		for _, f := range state.Configs {
-			pbConfigState = append(pbConfigState, &configState{
-				ID:         f.ID,
-				Version:    f.Version,
-				Product:    f.Product,
-				ApplyState: f.ApplyStatus.State,
-				ApplyError: f.ApplyStatus.Error,
-			})
-		}
+	pbConfigState := make([]*configState, 0, len(state.Configs))
+	for _, f := range state.Configs {
+		pbConfigState = append(pbConfigState, &configState{
+			ID:         f.ID,
+			Version:    f.Version,
+			Product:    f.Product,
+			ApplyState: f.ApplyStatus.State,
+			ApplyError: f.ApplyStatus.Error,
+		})
 	}
 
 	capa := c.allCapabilities()
