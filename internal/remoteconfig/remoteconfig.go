@@ -353,10 +353,9 @@ func (c *Client) updateState() {
 		return
 	}
 
-	// APPSEC-56064: Skip update if there's no new TUF metadata to prevent targets_version from being reset to 0.
+	// Skip update if there's no new TUF metadata to prevent targets_version from being reset to 0.
 	// When the Remote Config server sends a response with no new TUF targets, calling repository.Update() with
-	// empty targets causes the targets version to incorrectly reset. This preserves the version as required by
-	// the Remote Config RFC.
+	// empty targets must not cause the targets version to reset.
 	if len(update.Targets) == 0 {
 		log.Debug("remoteconfig: skipping update with no TUF metadata (empty targets)")
 		return
