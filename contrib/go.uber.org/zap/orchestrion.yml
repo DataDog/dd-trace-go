@@ -1,0 +1,35 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/v2/contrib/go.uber.org/zap
+  description: |-
+    Blazing fast, structured, leveled logging in Go. This integration wraps zap
+    constructors for potential future enhancements. Note: Automatic trace context
+    injection is not currently supported because zap's Write method does not receive
+    a context. Use WithTraceFields(ctx, logger) for manual trace injection.
+
+aspects:
+  # Wrap zap.New to inject trace-aware core
+  - id: New
+    join-point:
+      all-of:
+        - import-path: go.uber.org/zap
+        - function-body:
+            function:
+              - name: New
+    advice:
+      - inject-declarations:
+          imports:
+            zapcore: go.uber.org/zap/zapcore
+          links:
+            - github.com/DataDog/dd-trace-go/v2/contrib/go.uber.org/zap
+          template: |-
+            //go:linkname __dd_zaptrace_WrapCore github.com/DataDog/dd-trace-go/v2/contrib/go.uber.org/zap.WrapCore
+            func __dd_zaptrace_WrapCore(zapcore.Core) zapcore.Core
+      - prepend-statements:
+          template: |-
+            {{ .Function.Argument 0 }} = __dd_zaptrace_WrapCore({{ .Function.Argument 0 }})
