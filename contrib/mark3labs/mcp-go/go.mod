@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/mark3labs/mcp-go/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.5.0
+	github.com/DataDog/dd-trace-go/v2 v2.5.1-rc.1
 	github.com/mark3labs/mcp-go v0.42.0
 	github.com/stretchr/testify v1.11.1
 )
