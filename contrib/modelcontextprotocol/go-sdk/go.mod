@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/modelcontextprotocol/go-sdk/v2
 go 1.24.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.5.0
+	github.com/DataDog/dd-trace-go/v2 v2.5.1-rc.1
 	github.com/google/jsonschema-go v0.3.0
 	github.com/modelcontextprotocol/go-sdk v1.1.0
 	github.com/stretchr/testify v1.11.1
