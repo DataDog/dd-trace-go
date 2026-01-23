@@ -109,13 +109,18 @@ type SpanContext struct {
 	traceID traceID
 	spanID  uint64
 
-	mu         locking.RWMutex // guards below fields
-	baggage    map[string]string
-	hasBaggage uint32 // atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	origin     string // e.g. "synthetics"
+	// guards below fields
+	mu      locking.RWMutex
+	baggage map[string]string
+	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	hasBaggage uint32 // +checkatomic
+	// e.g. "synthetics"
+	origin string
 
-	spanLinks   []SpanLink // links to related spans in separate|external|disconnected traces
-	baggageOnly bool       // when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// links to related spans in separate|external|disconnected traces
+	spanLinks []SpanLink
+	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	baggageOnly bool
 }
 
 // Private interface for span contexts that can propagate sampling decisions.
@@ -140,7 +145,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	sc.spanID = c.SpanID()
 	sc.baggage = make(map[string]string)
 	c.ForeachBaggageItem(func(k, v string) bool {
-		sc.hasBaggage = 1
+		sc.hasBaggage = 1 // +checklocksignore - Initialization time, not shared yet.
 		sc.baggage[k] = v
 		return true
 	})
@@ -156,7 +161,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	// respected and avoid re-sampling.
 	if sDecision := samplingDecision(ctxSpl.SamplingDecision()); sDecision != decisionNone {
 		sc.trace = newTrace()
-		sc.trace.samplingDecision = sDecision
+		sc.trace.samplingDecision = sDecision // +checklocksignore - Initialization time, not shared yet.
 
 		if p := ctxSpl.Priority(); p != nil {
 			sc.setSamplingPriority(int(*p), samplernames.Unknown)
@@ -409,15 +414,24 @@ const (
 // priority, the root reference and a buffer of the spans which are part of the
 // trace, if these exist.
 type trace struct {
-	mu               locking.RWMutex   // guards below fields
-	spans            []*Span           // all the spans that are part of this trace
-	tags             map[string]string // trace level tags
-	propagatingTags  map[string]string // trace level tags that will be propagated across service boundaries
-	finished         int               // the number of finished spans
-	full             bool              // signifies that the span buffer is full
-	priority         *float64          // sampling priority
-	locked           bool              // specifies if the sampling priority can be altered
-	samplingDecision samplingDecision  // samplingDecision indicates whether to send the trace to the agent.
+	// guards below fields
+	mu locking.RWMutex
+	// all the spans that are part of this trace
+	spans []*Span
+	// trace level tags
+	tags map[string]string
+	// trace level tags that will be propagated across service boundaries
+	propagatingTags map[string]string
+	// the number of finished spans
+	finished int
+	// signifies that the span buffer is full
+	full bool
+	// sampling priority
+	priority *float64
+	// specifies if the sampling priority can be altered
+	locked bool
+	// samplingDecision indicates whether to send the trace to the agent.
+	samplingDecision samplingDecision // +checkatomic
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in

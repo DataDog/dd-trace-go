@@ -125,11 +125,12 @@ type abandonedSpansDebugger struct {
 	stop chan struct{}
 
 	// stopped reports whether the debugger is stopped (when non-zero).
-	stopped uint32
+	stopped uint32 // +checkatomic
 
 	// addedSpans and removedSpans are internal counters, mainly for testing
 	// purposes
-	addedSpans, removedSpans uint32
+	addedSpans   uint32 // +checkatomic
+	removedSpans uint32 // +checkatomic
 }
 
 // newAbandonedSpansDebugger creates a new abandonedSpansDebugger debugger

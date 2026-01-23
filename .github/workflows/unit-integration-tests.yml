@@ -61,7 +61,7 @@ jobs:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
     services:
       datadog-agent:
-        image: datadog/agent:latest
+        image: registry.datadoghq.com/agent:latest
         env:
           DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true
@@ -277,7 +277,7 @@ jobs:
        INTEGRATION: true
     services:
       datadog-agent:
-        image: datadog/agent:latest
+        image: registry.datadoghq.com/agent:latest
         env:
           DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true
@@ -347,7 +347,7 @@ jobs:
       group: "APM Larger Runners"
     services:
       datadog-agent:
-        image: datadog/agent:latest
+        image: registry.datadoghq.com/agent:latest
         env:
           DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true

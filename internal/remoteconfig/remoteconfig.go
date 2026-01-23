@@ -171,7 +171,8 @@ type Client struct {
 	capabilities   map[Capability]struct{}
 	capabilitiesMu sync.RWMutex
 
-	lastError error
+	lastError        error
+	lastConfigStates []*configState
 }
 
 // subscription represents a callback that was registered to run on updates to a
@@ -349,6 +350,14 @@ func (c *Client) updateState() {
 	var update clientGetConfigsResponse
 	if err := json.Unmarshal(respBody, &update); err != nil {
 		log.Error("remoteconfig: http request error: could not parse the json response body: %s", err.Error())
+		return
+	}
+
+	// Skip update if there's no new TUF metadata to prevent targets_version from being reset to 0.
+	// When the Remote Config server sends a response with no new TUF targets, calling repository.Update() with
+	// empty targets must not cause the targets version to reset.
+	if len(update.Targets) == 0 {
+		log.Debug("remoteconfig: skipping update with no TUF metadata (empty targets)")
 		return
 	}
 
@@ -651,6 +660,19 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 		return fmt.Errorf("repository current state error after update: %s", err)
 	}
 
+	// Save the config states after successful update for use in error reporting
+	configStates := make([]*configState, 0, len(stateAfter.Configs))
+	for _, f := range stateAfter.Configs {
+		configStates = append(configStates, &configState{
+			ID:         f.ID,
+			Version:    f.Version,
+			Product:    f.Product,
+			ApplyState: f.ApplyStatus.State,
+			ApplyError: f.ApplyStatus.Error,
+		})
+	}
+	c.lastConfigStates = configStates
+
 	// Create a config files diff between before/after the update to see which config files are missing
 	mBefore := mapify(&stateBefore)
 	for k := range mapify(&stateAfter) {
@@ -736,8 +758,14 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		errMsg = c.lastError.Error()
 	}
 
+	// When there's an error, use the last known good config states
+	// Otherwise, use the current state and also update lastConfigStates
 	var pbConfigState []*configState
-	if !hasError {
+	if hasError && c.lastConfigStates != nil {
+		// Use the last successfully retrieved config states during error state
+		pbConfigState = c.lastConfigStates
+	} else {
+		// No error, build config states from current repository state
 		pbConfigState = make([]*configState, 0, len(state.Configs))
 		for _, f := range state.Configs {
 			pbConfigState = append(pbConfigState, &configState{
@@ -748,6 +776,8 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				ApplyError: f.ApplyStatus.Error,
 			})
 		}
+		// Also update lastConfigStates for future use
+		c.lastConfigStates = pbConfigState
 	}
 
 	capa := c.allCapabilities()
@@ -804,7 +834,7 @@ func generateID() string {
 		panic(err)
 	}
 	id := make([]rune, idSize)
-	for i := 0; i < idSize; i++ {
+	for i := range idSize {
 		id[i] = idAlphabet[bytes[i]&63]
 	}
 	return string(id[:idSize])
