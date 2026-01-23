@@ -53,6 +53,7 @@ const (
 	PackageTidwallBuntDB             Package = "tidwall/buntdb"
 	PackageSyndtrGoLevelDB           Package = "syndtr/goleveldb"
 	PackageSirupsenLogrus            Package = "sirupsen/logrus"
+	PackageRsZerolog                 Package = "rs/zerolog"
 	PackageShopifySarama             Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
 	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
@@ -605,6 +606,10 @@ var packages = map[Package]PackageInfo{
 	PackageSirupsenLogrus: {
 		TracedPackage: "github.com/sirupsen/logrus",
 		EnvVarPrefix:  "LOGRUS",
+	},
+	PackageRsZerolog: {
+		TracedPackage: "github.com/rs/zerolog",
+		EnvVarPrefix:  "ZEROLOG",
 	},
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",
