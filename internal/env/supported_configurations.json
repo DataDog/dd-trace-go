@@ -1526,6 +1526,9 @@
         "default": "512"
       }
     ],
+    "DD_TRACE_ZEROLOG_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE__ANALYTICS_ENABLED": [
       {
         "implementation": "A",
