@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,6 +165,65 @@ func TestAsyncSpanRacePartialFlush(t *testing.T) {
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "1")
 	testAsyncSpanRace(t)
+}
+
+// TestPartialFlushRaceCondition tests the race condition where partial flush
+// modifies finishedSpans[0] (a different span than the one being finished)
+// without holding its mutex. Run with -race to detect the issue.
+func TestPartialFlushRaceCondition(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+
+	_, _, _, stop, err := startTestTracer(t)
+	assert.Nil(t, err)
+	defer stop()
+
+	for i := 0; i < 100; i++ {
+		t.Run("", func(t *testing.T) {
+			// Create 3 spans: root stays unfinished so partial flush triggers
+			root := StartSpan("root")
+			child1 := StartSpan("child1", ChildOf(root.Context()))
+			child2 := StartSpan("child2", ChildOf(root.Context()))
+
+			// Finish child1 first - it becomes finishedSpans[0]
+			child1.Finish()
+
+			var wg sync.WaitGroup
+			stopReader := make(chan struct{})
+
+			wg.Add(1)
+			// Goroutine that continuously reads child1's meta/metrics maps
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stopReader:
+						return
+					default:
+						// Simulate reading meta map (as done during msgpack encoding)
+						for range child1.meta {
+						}
+						// Simulate reading metrics map
+						for range child1.metrics {
+						}
+					}
+				}
+			}()
+
+			// Give reader time to start
+			runtime.Gosched()
+
+			// Finish child2 - this triggers partial flush (2 finished, 1 remaining)
+			// which modifies child1's meta and metrics without holding child1's mutex
+			child2.Finish()
+
+			close(stopReader)
+			wg.Wait()
+
+			// Clean up
+			root.Finish()
+		})
+	}
 }
 
 func testAsyncSpanRace(t *testing.T) {
