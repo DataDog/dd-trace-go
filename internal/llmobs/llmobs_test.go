@@ -7,6 +7,7 @@ package llmobs_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -650,6 +651,37 @@ func TestSpanAnnotate(t *testing.T) {
 			wantMeta: map[string]any{
 				"span.kind": "tool",
 				"intent":    "test intent",
+			},
+		},
+		{
+			name: "llm-span-with-tool-definitions",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				ToolDefinitions: []llmobs.ToolDefinition{
+					{
+						Name:        "add_numbers",
+						Description: "Add two numbers",
+						Schema:      json.RawMessage(`{"type": "object"}`),
+					},
+					{
+						Name:        "calculate",
+						Description: "Perform calculations",
+					},
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"tool_definitions": []any{
+					map[string]any{
+						"name":        "add_numbers",
+						"description": "Add two numbers",
+						"schema":      map[string]any{"type": "object"},
+					},
+					map[string]any{
+						"name":        "calculate",
+						"description": "Perform calculations",
+					},
+				},
 			},
 		},
 	}
