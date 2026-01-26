@@ -2,7 +2,7 @@
 # This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
 # a change is made on the one-pipeline template.
 variables:
-  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/ef1b27c2b0cdbbfb25d185344cdb7aa6bb4feb905cb2a77fa1a5a5340b570004/scripts/
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/1c0dd2e9e6e173100cf3ce89b1d2dd11c5d3ae74ff46ce9f262faf371fd0e736/scripts/config-inversion/
 
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
@@ -23,13 +23,13 @@ variables:
   before_script:
     - *download-scripts-from-template
   script:
-    - scripts/config-inversion-local-validation.py "$LOCAL_JSON_PATH" "$BACKFILLED"
+    - scripts/config-inversion-local-validation.py
 
 .update_central_configurations_version_range_v2:
   allow_failure: false
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/'
-      when: on_success
+      when: always
   variables:
     LOCAL_JSON_PATH: ""
     LANGUAGE_NAME: ""
@@ -38,4 +38,4 @@ variables:
     - *download-scripts-from-template
     - export FP_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.$CI_PROJECT_NAME.FP_API_KEY --with-decryption --query "Parameter.Value" --out text)
   script:
-    - scripts/config-inversion-update-supported-range.py "$LOCAL_JSON_PATH" "$LANGUAGE_NAME" "$MULTIPLE_RELEASE_LINES"
+    - scripts/config-inversion-update-supported-range.py
