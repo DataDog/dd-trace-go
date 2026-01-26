@@ -71,7 +71,7 @@ func (feature *DownwardRequestFeature) OnStart(op *httpsec.RoundTripOperation, a
 	builder := addresses.NewAddressesBuilder().
 		WithDownwardURL(args.URL).
 		WithDownwardMethod(args.Method).
-		WithDownwardRequestHeaders(args.Headers)
+		WithDownwardRequestHeaders(headersToLower(args.Headers))
 
 	// Increment the span metric for downward requests
 	op.HandlerOp.ContextOperation.GetMetricsInstance().SumDownstreamRequestsCalls.Add(1)

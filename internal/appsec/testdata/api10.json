@@ -413,7 +413,7 @@
               {
                 "address": "server.io.net.request.headers",
                 "key_path": [
-                  "Witness"
+                  "witness"
                 ]
               }
             ],
