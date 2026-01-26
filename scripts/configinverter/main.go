@@ -56,8 +56,15 @@ func main() {
 }
 
 type supportedConfiguration struct {
-	SupportedConfigurations map[string][]string `json:"supportedConfigurations"`
-	Aliases                 map[string][]string `json:"aliases"`
+	Version                 string                                   `json:"version"`
+	SupportedConfigurations map[string][]configurationImplementation `json:"supportedConfigurations"`
+}
+
+type configurationImplementation struct {
+	Implementation string   `json:"implementation"`
+	Type           string   `json:"type"`
+	Default        string   `json:"default"`
+	Aliases        []string `json:"aliases,omitempty"`
 }
 
 // generate generates the supported configurations map from the supported configurations
@@ -90,17 +97,33 @@ func generate(input, output string) error {
 
 	// Get aliases keys and sort them
 	// so we can generate the map in a deterministic way
-	aliases := []string{}
-	for k := range cfg.Aliases {
-		aliases = append(aliases, k)
+	aliases := make(map[string][]string)
+	keysWithAliases := make([]string, 0)
+	for k := range cfg.SupportedConfigurations {
+		cfgAliases := []string{}
+		// Iterate over the configuration implementations and collect the aliases
+		for _, impl := range cfg.SupportedConfigurations[k] {
+			if impl.Aliases != nil && len(impl.Aliases) > 0 {
+				cfgAliases = append(cfgAliases, impl.Aliases...)
+			}
+		}
+
+		if len(cfgAliases) > 0 {
+			keysWithAliases = append(keysWithAliases, k)
+			aliases[k] = cfgAliases
+		}
 	}
-	sort.Strings(aliases)
+
+	if len(keysWithAliases) > 0 {
+		slog.Info("keys with aliases", "count", len(keysWithAliases), "keys", keysWithAliases)
+		sort.Strings(keysWithAliases)
+	}
 
 	f.Comment("keyAliases maps aliases to supported configuration keys.")
 	f.Var().Id("keyAliases").Op("=").Map(jen.String()).Index().String().ValuesFunc(func(g *jen.Group) {
-		for _, v := range aliases {
+		for _, v := range keysWithAliases {
 			g.Add(jen.Line(), jen.Lit(v), jen.Op(":"), jen.ValuesFunc(func(g *jen.Group) {
-				for _, v := range cfg.Aliases[v] {
+				for _, v := range aliases[v] {
 					g.Add(jen.Lit(v))
 				}
 			}))
@@ -137,7 +160,7 @@ func check(input string) error {
 	if len(missingKeys) > 0 {
 		slog.Error("supported configuration keys missing in generated map", "count", len(missingKeys), "keys", missingKeys)
 		slog.Info("run `go run ./scripts/configinverter/main.go generate` to re-generate the supported configurations map with the missing keys")
-		return fmt.Errorf("supported configuration keys missing in generated map")
+		return fmt.Errorf("supported configuration keys missing in generated map, please re-run the generate command")
 	}
 
 	slog.Info("supported configurations JSON file and generated map are in sync")
@@ -231,7 +254,13 @@ func getSupportedConfigurations(input string) (*supportedConfiguration, error) {
 // file.
 func addSupportedConfigurationsKeys(input string, cfg *supportedConfiguration, newKeys []string) error {
 	for _, k := range newKeys {
-		cfg.SupportedConfigurations[k] = []string{"A"}
+		cfg.SupportedConfigurations[k] = []configurationImplementation{
+			{
+				Implementation: "A",
+				Type:           "FIX_ME",
+				Default:        "FIX_ME",
+			},
+		}
 	}
 
 	json, err := json.MarshalIndent(cfg, "", "  ")

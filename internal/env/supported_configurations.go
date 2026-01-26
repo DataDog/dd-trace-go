@@ -16,10 +16,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+type configurationImplementation struct {
+	Implementation string   `json:"implementation"`
+	Type           string   `json:"type"`
+	Default        string   `json:"default"`
+	Aliases        []string `json:"aliases,omitempty"`
+}
+
 // SupportedConfiguration represents the content of the supported_configurations.json file.
-type SupportedConfiguration struct {
-	SupportedConfigurations map[string][]string `json:"supportedConfigurations"`
-	Aliases                 map[string][]string `json:"aliases"`
+type supportedConfiguration struct {
+	Version                 string                                   `json:"version"`
+	SupportedConfigurations map[string][]configurationImplementation `json:"supportedConfigurations"`
 }
 
 var (
@@ -65,7 +72,13 @@ func addSupportedConfigurationToFile(name string) {
 	}
 
 	if _, ok := cfg.SupportedConfigurations[name]; !ok {
-		cfg.SupportedConfigurations[name] = []string{"A"}
+		cfg.SupportedConfigurations[name] = []configurationImplementation{
+			{
+				Implementation: "A",
+				Type:           "FIX_ME",
+				Default:        "FIX_ME",
+			},
+		}
 	}
 
 	if err := writeSupportedConfigurations(filePath, cfg); err != nil {
@@ -73,21 +86,21 @@ func addSupportedConfigurationToFile(name string) {
 	}
 }
 
-func readSupportedConfigurations(filePath string) (*SupportedConfiguration, error) {
+func readSupportedConfigurations(filePath string) (*supportedConfiguration, error) {
 	// read the json file
 	jsonFile, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open supported_configurations.json: %w", err)
 	}
 
-	var cfg SupportedConfiguration
+	var cfg supportedConfiguration
 	if err := json.Unmarshal(jsonFile, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal SupportedConfiguration: %w", err)
 	}
 	return &cfg, nil
 }
 
-func writeSupportedConfigurations(filePath string, cfg *SupportedConfiguration) error {
+func writeSupportedConfigurations(filePath string, cfg *supportedConfiguration) error {
 	// write the json file - Go's json.MarshalIndent automatically sorts map keys
 	jsonFile, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
