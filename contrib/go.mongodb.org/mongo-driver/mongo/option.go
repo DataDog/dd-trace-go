@@ -70,7 +70,10 @@ func WithAnalyticsRate(rate float64) OptionFn {
 // WithMaxQuerySize sets the maximum query size (in bytes) before queries
 // are truncated when attached as a span tag.
 //
-// If max is < 0, the query is never truncated.
+// If negative (the default), query truncation is disabled and the query
+// will always be attached in full.
+//
+// If zero, traces will not include a query tag.
 //
 // Defaults to -1.
 func WithMaxQuerySize(max int) OptionFn {
