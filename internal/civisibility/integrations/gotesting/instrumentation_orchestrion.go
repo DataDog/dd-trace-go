@@ -201,6 +201,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			module := session.GetOrCreateModule(moduleName)
 			suite := module.GetOrCreateSuite(suiteName)
 			test := suite.CreateTest(currentT.Name())
+			startTime := time.Now()
 
 			if testifyData != nil {
 				// Testify-based suites expose the original method so we should record that.
@@ -231,11 +232,22 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			}
 
 			defer func() {
+				duration := time.Since(startTime)
 				collectAndWriteLogs(currentT, test)
 
 				if r := recover(); r != nil {
-					// Set failure metadata before rethrowing the panic.
-					if execMeta.isARetry && execMeta.isLastRetry {
+					// Compute whether this is the final execution.
+					finalExec := isFinalExecution(true, false, execMeta, duration)
+
+					// Compute and set test.final_status before closing the span.
+					if finalExec {
+						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
+						anyFailed := true                        // current execution failed
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled)
+						test.SetTag(constants.TestFinalStatus, finalStatus)
+					}
+					// Set retry-related tags only when this is an actual retry's final execution.
+					if execMeta.isARetry && finalExec {
 						if execMeta.allRetriesFailed {
 							test.SetTag(constants.TestHasFailedAllRetries, "true")
 						}
@@ -252,9 +264,24 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					panic(r)
 				}
 
-				if currentT.Failed() {
-					// Failure path: bubble up retry metadata so spans reflect attempts.
-					if execMeta.isARetry && execMeta.isLastRetry {
+				// Normal finalization: determine the test result based on its state.
+				failed := currentT.Failed()
+				skipped := currentT.Skipped()
+				passed := !failed && !skipped
+
+				// Compute whether this is the final execution.
+				finalExec := isFinalExecution(failed, skipped, execMeta, duration)
+
+				if failed {
+					// Compute and set test.final_status before closing the span.
+					if finalExec {
+						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
+						anyFailed := true                        // current execution failed
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled)
+						test.SetTag(constants.TestFinalStatus, finalStatus)
+					}
+					// Set retry-related tags only when this is an actual retry's final execution.
+					if execMeta.isARetry && finalExec {
 						if execMeta.allRetriesFailed {
 							test.SetTag(constants.TestHasFailedAllRetries, "true")
 						}
@@ -266,15 +293,34 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
-				} else if currentT.Skipped() {
-					// Skip path still needs to communicate attempt-to-fix failure on the final run.
-					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+				} else if skipped {
+					// Compute and set test.final_status before closing the span.
+					if finalExec {
+						anyPassed := execMeta.anyExecutionPassed // current is skip, so no change
+						anyFailed := execMeta.anyExecutionFailed // current is skip, so no change
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, true, execMeta.isQuarantined, execMeta.isDisabled)
+						test.SetTag(constants.TestFinalStatus, finalStatus)
+					}
+					// Set retry-related tags only when this is an actual retry's final execution.
+					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
 						test.SetTag(constants.TestAttemptToFixPassed, "false")
 					}
-					test.Close(integrations.ResultStatusSkip)
-				} else {
-					// Success path: tag attempt-to-fix success only if all retries eventually passed.
-					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+					// Use the stored skip reason if available (captured from instrumentCloseAndSkip).
+					if execMeta.skipReason != "" {
+						test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(execMeta.skipReason))
+					} else {
+						test.Close(integrations.ResultStatusSkip)
+					}
+				} else if passed {
+					// Compute and set test.final_status before closing the span.
+					if finalExec {
+						anyPassed := true // current execution passed
+						anyFailed := execMeta.anyExecutionFailed
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled)
+						test.SetTag(constants.TestFinalStatus, finalStatus)
+					}
+					// Set retry-related tags only when this is an actual retry's final execution.
+					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
 						if execMeta.allAttemptsPassed {
 							test.SetTag(constants.TestAttemptToFixPassed, "true")
 						} else {
@@ -333,6 +379,15 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		log.Debug("instrumentCloseAndSkip: skipping test [name: %q, reason: %q]", ciTestItem.test.Name(), skipReason)
+		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
+		// so that test.final_status can be set properly. Store the skip reason for the defer block.
+		if ciTestItem.hasAdditionalFeatureWrapper {
+			ciTestItem.skipReason = skipReason
+			return
+		}
+		// For single-execution tests (no wrapper), this is the final execution.
+		// Set test.final_status before closing.
+		ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 		ciTestItem.test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(skipReason))
 	}
 }
@@ -350,6 +405,14 @@ func instrumentSkipNow(tb testing.TB) {
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil && ciTestItem.skipped.CompareAndSwap(0, 1) {
 		log.Debug("instrumentSkipNow: skipping test [name: %q]", ciTestItem.test.Name())
+		// If there's an additional feature wrapper (retry/EFD), let the defer block handle closing
+		// so that test.final_status can be set properly.
+		if ciTestItem.hasAdditionalFeatureWrapper {
+			return
+		}
+		// For single-execution tests (no wrapper), this is the final execution.
+		// Set test.final_status before closing.
+		ciTestItem.test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 		ciTestItem.test.Close(integrations.ResultStatusSkip)
 	}
 }

@@ -35,6 +35,7 @@ type (
 		skipped                      atomic.Int32      // flag to check if the test event has skipped data already
 		panicData                    any               // panic data recovered from an internal test execution when using an additional feature wrapper
 		panicStacktrace              string            // stacktrace from the panic recovered from an internal test
+		skipReason                   string            // skip reason captured from instrumentCloseAndSkip when hasAdditionalFeatureWrapper is true
 		isARetry                     bool              // flag to tag if a current test execution is a retry
 		isANewTest                   bool              // flag to tag if a current test a new test
 		isAModifiedTest              bool              // flag to tag if a current test a modified test
@@ -51,6 +52,13 @@ type (
 		hasExplicitQuarantined       bool              // flag to mark if quarantine state comes from explicit configuration
 		hasExplicitDisabled          bool              // flag to mark if disabled state comes from explicit configuration
 		hasExplicitAttemptToFix      bool              // flag to mark if attempt-to-fix state comes from explicit configuration
+
+		// Fields for test.final_status computation
+		anyExecutionPassed            bool  // tracks if any prior execution passed (for final status calculation)
+		anyExecutionFailed            bool  // tracks if any prior execution failed (for final status calculation)
+		remainingRetries              int64 // remaining retries at the start of this execution
+		shouldOrchestrateAttemptToFix bool  // whether this wrapper controls ATF retries
+		isEfdInParallel               bool  // true only when parallel EFD path is active
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -305,6 +313,9 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 		// For Test Management and auto retries.
 		var allAttemptsPassed int32 = 1
 		var allRetriesFailed int32 = 1
+		// For test.final_status computation: track pass/fail across all executions.
+		var anyExecutionPassed int32
+		var anyExecutionFailed int32
 
 		runTestWithRetry(&runTestWithRetryOptions{
 			targetFunc:      f,
@@ -344,6 +355,11 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
 				execMeta.isANewTest = execMeta.isANewTest || ptrMeta.isNew
 				execMeta.isAModifiedTest = execMeta.isAModifiedTest || ptrMeta.isModified
+
+				// Copy test.final_status tracking state from wrapper-level atomics.
+				execMeta.anyExecutionPassed = atomic.LoadInt32(&anyExecutionPassed) == 1
+				execMeta.anyExecutionFailed = atomic.LoadInt32(&anyExecutionFailed) == 1
+				execMeta.shouldOrchestrateAttemptToFix = ptrMeta.shouldOrchestrateAttemptToFix
 
 				// Propagate flags from the original test metadata.
 				propagateTestExecutionMetadataFlags(execMeta, originalExecMeta)
@@ -422,6 +438,14 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				}
 				if !failed {
 					atomic.StoreInt32(&allRetriesFailed, 0)
+				}
+
+				// Track pass/fail for test.final_status computation.
+				if !failed && !skipped {
+					atomic.StoreInt32(&anyExecutionPassed, 1)
+				}
+				if failed {
+					atomic.StoreInt32(&anyExecutionFailed, 1)
 				}
 
 				if execMeta.isAttemptToFix {
@@ -700,6 +724,10 @@ func executeTestIteration(execOpts *executionOptions) bool {
 		execMeta.isLastRetry = execOpts.options.preIsLastRetry(execMeta, currentIndex, execOpts.retryCount)
 	}
 
+	// Set remaining retries and parallel EFD flag for test.final_status computation.
+	execMeta.remainingRetries = execOpts.retryCount
+	execMeta.isEfdInParallel = execOpts.options.isEfdInParallel && isAnEfdExecution(execMeta)
+
 	// unlock the mutex
 	execOpts.mutex.Unlock()
 
@@ -810,6 +838,8 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 	execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || originalExecMeta.isFlakyTestRetriesEnabled
 	execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
 	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
+	execMeta.isEfdInParallel = execMeta.isEfdInParallel || originalExecMeta.isEfdInParallel
+	execMeta.hasAdditionalFeatureWrapper = execMeta.hasAdditionalFeatureWrapper || originalExecMeta.hasAdditionalFeatureWrapper
 	if !execMeta.hasExplicitAttemptToFix && originalExecMeta.isAttemptToFix {
 		// Preserve attempt-to-fix inheritance only when the child didn't explicitly override it.
 		execMeta.isAttemptToFix = true

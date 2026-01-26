@@ -34,6 +34,10 @@ const (
 	// This constant is used to tag traces with the execution status of the test.
 	TestStatus = "test.status"
 
+	// TestFinalStatus indicates the final adjusted status for a test after considering retries.
+	// This constant is used to tag the final execution span with the overall test result.
+	TestFinalStatus = "test.final_status"
+
 	// TestSkipReason indicates the skip reason of the test.
 	// This constant is used to tag traces with the reason why the test was skipped.
 	TestSkipReason = "test.skip_reason"

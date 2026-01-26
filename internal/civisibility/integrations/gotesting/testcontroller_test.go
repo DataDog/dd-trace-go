@@ -205,6 +205,35 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// check the test is new tag
 	checkSpansByTagName(finishedSpans, constants.TestIsNew, 26)
 
+	// check test.final_status - should only be on final execution spans
+	// Coverage notes:
+	// - Pass case: tests that eventually pass after retries (TestRetryWithPanic, TestRetryWithFail)
+	// - Skip case: single-execution skips (TestSkip) and disabled/quarantined tests (see TestManagementTests)
+	// - Fail case: would require a test that always fails without being disabled/quarantined.
+	//   The fail logic is covered by calculateFinalStatus() unit tests (anyFailed=true, anyPassed=false => fail).
+	// - Slow EFD (>=5m) + flaky fallthrough: impractical to test due to 5-minute test duration requirement.
+	//   The logic is covered by computeAdjustedRetryCount() which returns 0 for tests >= 5 minutes.
+	//
+	// TestRetryWithPanic has 4 executions (1 original + 3 retries), passes on 4th -> final_status=pass on last execution only
+	testRetryWithPanicSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
+	checkSpansByTagValue(testRetryWithPanicSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
+	// TestRetryWithFail has 4 executions, passes on 4th -> final_status=pass on last execution only
+	testRetryWithFailSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
+	checkSpansByTagValue(testRetryWithFailSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
+	// TestMyTest01 is a single execution pass -> final_status=pass
+	testMyTest01Spans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
+	checkSpansByTagValue(testMyTest01Spans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
+	// TestSkip is a single execution skip -> final_status=skip
+	testSkipSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+	checkSpansByTagValue(testSkipSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+
+	// TestNormalPassingAfterRetryAlwaysFail is a single execution pass -> final_status=pass
+	testNormalPassingSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
+	checkSpansByTagValue(testNormalPassingSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
 	// check if suite has both test code owners and source file tags
 	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
 	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
@@ -313,6 +342,27 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
 
+	// check test.final_status - EFD runs 11 executions (1 original + 10 retries), final_status only on the last
+	// TestMyTest01 passes all 11 times -> final_status=pass (only on last execution)
+	efdTestMyTest01Spans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 11)
+	checkSpansByTagValue(efdTestMyTest01Spans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
+	// TestSkip skips all 11 times -> final_status=skip (only on last execution)
+	efdTestSkipSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
+	checkSpansByTagValue(efdTestSkipSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+
+	// TestRetryWithPanic fails first 3 times, passes 4-11 -> anyPassed=true -> final_status=pass (only on last execution)
+	efdTestRetryWithPanicSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
+	checkSpansByTagValue(efdTestRetryWithPanicSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
+	// TestRetryWithFail fails first 3 times, passes 4-11 -> anyPassed=true -> final_status=pass (only on last execution)
+	efdTestRetryWithFailSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
+	checkSpansByTagValue(efdTestRetryWithFailSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
+	// TestNormalPassingAfterRetryAlwaysFail passes all 11 times -> final_status=pass (only on last execution)
+	efdTestNormalPassingSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
+	checkSpansByTagValue(efdTestNormalPassingSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+
 	// check if suite has both test code owners and source file tags
 	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
 	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
@@ -412,6 +462,12 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
+
+	// check test.final_status - parallel EFD uses Option A: no final_status is set for EFD tests
+	// because all parallel executions capture the same remainingRetries value.
+	// Only the 5 known tests from reflections_test.go (single execution, no EFD) have final_status=pass
+	checkSpansByTagName(finishedSpans, constants.TestFinalStatus, 5)
+	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusPass, 5)
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
@@ -699,6 +755,9 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	checkSpansByTagValue(finishedSpans, constants.TestStatus, constants.TestStatusSkip, 6)
 	checkSpansByTagValue(finishedSpans, constants.TestSkipReason, constants.SkippedByITRReason, 5)
 
+	// check test.final_status for ITR-skipped tests (5 ITR-skipped + 1 normal skip = 6 total with final_status=skip)
+	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusSkip, 6)
+
 	// check unskippable tests
 	// 5 tests from unskippable suite in reflections_test.go and 2 unskippable tests from testing_test.go
 	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
@@ -847,6 +906,22 @@ func runTestManagementTests(m *testing.M) {
 	checkSpansByTagValue(testRetryWithPanic, constants.TestAttemptToFixPassed, "true", 0)        // Attempt to fix passed false (reported in the latest retry)
 	checkSpansByTagValue(testRetryWithPanic, constants.TestAttemptToFixPassed, "false", 1)       // Attempt to fix passed false (reported in the latest retry)
 	checkSpansByTagValue(testRetryWithPanic, constants.TestStatus, constants.TestStatusFail, 10) // All tests passed
+
+	// check test.final_status - only on final execution span for tests with retries
+	// Disabled with ATF (testGetInternalTestArray): isDisabled=true -> final_status=skip on last execution
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+
+	// Quarantined with ATF (testGetFieldPointerFrom): isQuarantined=true -> final_status=skip on last execution
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+
+	// Disabled without ATF (testMyTest01): isDisabled=true -> final_status=skip (set before close)
+	checkSpansByTagValue(testMyTest01, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+
+	// Quarantined without ATF (testRetryWithFail): isQuarantined=true -> final_status=skip on final execution
+	checkSpansByTagValue(testRetryWithFail, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+
+	// Disabled with ATF all fail (testRetryWithPanic): isDisabled=true -> final_status=skip on last execution
+	checkSpansByTagValue(testRetryWithPanic, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
