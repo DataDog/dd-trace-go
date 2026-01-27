@@ -14,10 +14,15 @@ import (
 )
 
 // calculateFinalStatus computes the test.final_status value based on the overall test outcome.
-// Priority order: quarantined/disabled -> pass (any pass wins) -> fail (any fail) -> skip -> fail.
-func calculateFinalStatus(anyPassed, anyFailed, currentIsSkip, isQuarantined, isDisabled bool) string {
+// Priority order: quarantined/disabled -> ATF fail (any fail) -> pass (any pass wins) -> fail -> skip -> fail.
+func calculateFinalStatus(anyPassed, anyFailed, currentIsSkip, isQuarantined, isDisabled, isAttemptToFix bool) string {
 	if isQuarantined || isDisabled {
 		return constants.TestStatusSkip
+	}
+	// For ATF tests, if any execution failed, the test should be marked as failed
+	// (flaky test that's still flaky in attempt-to-fix should fail the build)
+	if isAttemptToFix && anyFailed {
+		return constants.TestStatusFail
 	}
 	if anyPassed {
 		return constants.TestStatusPass

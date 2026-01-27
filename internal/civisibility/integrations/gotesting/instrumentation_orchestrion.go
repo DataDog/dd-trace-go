@@ -243,7 +243,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					if finalExec {
 						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
 						anyFailed := true                        // current execution failed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled)
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
 						test.SetTag(constants.TestFinalStatus, finalStatus)
 					}
 					// Set retry-related tags only when this is an actual retry's final execution.
@@ -277,7 +277,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					if finalExec {
 						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
 						anyFailed := true                        // current execution failed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled)
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
 						test.SetTag(constants.TestFinalStatus, finalStatus)
 					}
 					// Set retry-related tags only when this is an actual retry's final execution.
@@ -298,7 +298,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					if finalExec {
 						anyPassed := execMeta.anyExecutionPassed // current is skip, so no change
 						anyFailed := execMeta.anyExecutionFailed // current is skip, so no change
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, true, execMeta.isQuarantined, execMeta.isDisabled)
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, true, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
 						test.SetTag(constants.TestFinalStatus, finalStatus)
 					}
 					// Set retry-related tags only when this is an actual retry's final execution.
@@ -316,7 +316,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					if finalExec {
 						anyPassed := true // current execution passed
 						anyFailed := execMeta.anyExecutionFailed
-						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled)
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
 						test.SetTag(constants.TestFinalStatus, finalStatus)
 					}
 					// Set retry-related tags only when this is an actual retry's final execution.
