@@ -20,7 +20,7 @@ import (
 type configurationImplementation struct {
 	Implementation string   `json:"implementation"`
 	Type           string   `json:"type"`
-	Default        string   `json:"default"`
+	Default        *string  `json:"default"`
 	Aliases        []string `json:"aliases,omitempty"`
 }
 
@@ -72,11 +72,12 @@ func addSupportedConfigurationToFile(name string) {
 	}
 
 	if _, ok := cfg.SupportedConfigurations[name]; !ok {
+		defaultValue := "FIX_ME"
 		cfg.SupportedConfigurations[name] = []configurationImplementation{
 			{
 				Implementation: "A",
-				Type:           "FIX_ME",
-				Default:        "FIX_ME",
+				Type:           defaultValue,
+				Default:        &defaultValue,
 			},
 		}
 	}

@@ -5,7 +5,7 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_AGENT_HOST": [
@@ -17,7 +17,7 @@
     ],
     "DD_API_KEY": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": "",
         "aliases": [
@@ -27,8 +27,8 @@
     ],
     "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE": [
       {
-        "implementation": "A",
-        "type": "float",
+        "implementation": "B",
+        "type": "decimal",
         "default": "0.5"
       }
     ],
@@ -70,14 +70,14 @@
     "DD_API_SECURITY_REQUEST_SAMPLE_RATE": [
       {
         "implementation": "A",
-        "type": "float",
+        "type": "decimal",
         "default": "0.1"
       }
     ],
     "DD_API_SECURITY_SAMPLE_DELAY": [
       {
         "implementation": "A",
-        "type": "float",
+        "type": "decimal",
         "default": "30"
       }
     ],
@@ -132,7 +132,7 @@
     ],
     "DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP": [
       {
-        "implementation": "A",
+        "implementation": "E",
         "type": "string",
         "default": "(?i)(?:p(?:ass)?w(?:or)?d|pass(?:[_-]?phrase)?|secret(?:[_-]?key)?|(?:(?:api|private|public|access)[_-]?)key(?:[_-]?id)?|(?:(?:auth|access|id|refresh)[_-]?)?token|consumer[_-]?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?|jsessionid|phpsessid|asp\\.net(?:[_-]|-)sessionid|sid|jwt)(?:\\s*=([^;&]+)|\"\\s*:\\s*(\"[^\"]+\"|\\d+))|bearer\\s+([a-z0-9\\._\\-]+)|token\\s*:\\s*([a-z0-9]{13})|gh[opsu]_([0-9a-zA-Z]{36})|ey[I-L][\\w=-]+\\.(ey[I-L][\\w=-]+(?:\\.[\\w.+\\/-=]+)?)|[\\-]{5}BEGIN[a-z\\s]+PRIVATE\\sKEY[\\-]{5}([^\\-]+)[\\-]{5}END[a-z\\s]+PRIVATE\\sKEY|ssh-rsa\\s*([a-z0-9\\/\\.+]{100,})"
       }
@@ -153,16 +153,19 @@
     ],
     "DD_APPSEC_SCA_ENABLED": [
       {
-        "implementation": "A",
+        "implementation": "C",
         "type": "boolean",
         "default": "false"
       }
     ],
-    "DD_APPSEC_STACK_TRACE_ENABLE": [
+    "DD_APPSEC_STACK_TRACE_ENABLED": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "aliases": [
+          "DD_APPSEC_STACK_TRACE_ENABLE"
+        ]
       }
     ],
     "DD_APPSEC_TRACE_RATE_LIMIT": [
@@ -174,7 +177,7 @@
     ],
     "DD_APPSEC_WAF_TIMEOUT": [
       {
-        "implementation": "A",
+        "implementation": "C",
         "type": "string",
         "default": "2ms"
       }
@@ -183,7 +186,7 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
@@ -197,14 +200,14 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_ENABLED": [
@@ -274,7 +277,7 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_DATA_STREAMS_ENABLED": [
@@ -288,7 +291,7 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": "disabled"
       }
     ],
     "DD_DOGSTATSD_HOST": [
@@ -301,7 +304,7 @@
     "DD_DOGSTATSD_PORT": [
       {
         "implementation": "A",
-        "type": "string",
+        "type": "int",
         "default": "8125"
       }
     ],
@@ -337,98 +340,98 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_BRANCH": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_AUTHOR_DATE": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_AUTHOR_EMAIL": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_AUTHOR_NAME": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_COMMITTER_DATE": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_COMMITTER_EMAIL": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_COMMITTER_NAME": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_MESSAGE": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_COMMIT_SHA": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_PULL_REQUEST_BASE_BRANCH": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_REPOSITORY_URL": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_GIT_TAG": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_HAPROXY_SPOA_HEALTHCHECK_PORT": [
@@ -672,7 +675,7 @@
     "DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS": [
       {
         "implementation": "A",
-        "type": "float",
+        "type": "decimal",
         "default": "5"
       }
     ],
@@ -812,7 +815,7 @@
     "DD_TELEMETRY_HEARTBEAT_INTERVAL": [
       {
         "implementation": "A",
-        "type": "float",
+        "type": "decimal",
         "default": "60"
       }
     ],
@@ -1337,7 +1340,7 @@
     "DD_TRACE_RATE_LIMIT": [
       {
         "implementation": "A",
-        "type": "float",
+        "type": "decimal",
         "default": "100"
       }
     ],
@@ -1407,7 +1410,7 @@
     "DD_TRACE_SAMPLE_RATE": [
       {
         "implementation": "A",
-        "type": "float",
+        "type": "decimal",
         "default": "1"
       }
     ],
@@ -1666,7 +1669,7 @@
     "OTEL_TRACES_SAMPLER_ARG": [
       {
         "implementation": "A",
-        "type": "float",
+        "type": "decimal",
         "default": "1.0"
       }
     ]

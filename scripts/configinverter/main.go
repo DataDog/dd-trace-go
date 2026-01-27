@@ -64,7 +64,7 @@ type supportedConfiguration struct {
 type configurationImplementation struct {
 	Implementation string   `json:"implementation"`
 	Type           string   `json:"type"`
-	Default        string   `json:"default"`
+	Default        *string  `json:"default"`
 	Aliases        []string `json:"aliases,omitempty"`
 }
 
@@ -254,12 +254,13 @@ func getSupportedConfigurations(input string) (*supportedConfiguration, error) {
 // addSupportedConfigurationsKeys adds new keys to the supported configurations JSON
 // file.
 func addSupportedConfigurationsKeys(input string, cfg *supportedConfiguration, newKeys []string) error {
+	defaultValue := "FIX_ME"
 	for _, k := range newKeys {
 		cfg.SupportedConfigurations[k] = []configurationImplementation{
 			{
 				Implementation: "A",
-				Type:           "FIX_ME",
-				Default:        "FIX_ME",
+				Type:           defaultValue,
+				Default:        &defaultValue,
 			},
 		}
 	}

@@ -68,10 +68,11 @@ func TestVerifySupportedConfiguration(t *testing.T) {
 		cfg, err := readSupportedConfigurations(getConfigFilePath())
 		require.NoError(t, err)
 		require.Contains(t, cfg.SupportedConfigurations, "DD_UNKNOWN_CONFIGURATION_KEY")
-		require.Equal(t, []configurationImplementation{{
+		defaultValue := "FIX_ME"
+		require.EqualValues(t, []configurationImplementation{{
 			Implementation: "A",
-			Type:           "FIX_ME",
-			Default:        "FIX_ME",
+			Type:           defaultValue,
+			Default:        &defaultValue,
 		}}, cfg.SupportedConfigurations["DD_UNKNOWN_CONFIGURATION_KEY"])
 
 		// Remove the env var from the supported configurations file
