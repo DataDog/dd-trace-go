@@ -11,21 +11,21 @@
 Datadog Lambda Library for Go enables enhanced Lambda metrics, distributed tracing, and custom metric submission from AWS Lambda functions.
 
 ## Upgrading from Go tracer v1 to Go tracer v2
-Although Go tracer v1 remains available, Datadog recommends using v2, which is the
-primary supported version. See the
-[migration instructions](https://docs.datadoghq.com/tracing/trace_collection/custom_instrumentation/go/migration/#migration-instructions)
-for guidance on upgrading from v1 to v2.
-
 If you are upgrading a Go AWS Lambda function that previously used the legacy
-`datadog-lambda-go` repository, note that the Lambda wrapper has been migrated into
-the Go tracer under `dd-trace-go`.
-
-When using Go tracer v2, you must import the Lambda wrapper using the `/v2`
-module path:
+datadog-lambda-go repository, simply replace
 
 ```go
-import "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"
+go get github.com/DataDog/datadog-lambda-go
 ```
+ with
+ ```go
+ go get github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
+ ```
+for installation and also replace any import references from github.com/DataDog/datadog-lambda-go to github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.
+
+Follow the [installation instructions](https://docs.datadoghq.com/serverless/aws_lambda/instrumentation/go/?tab=datadogui) for more details.
+
+For general migration from dd-trace-go v1 to v2, follow these [migration instructions](https://docs.datadoghq.com/tracing/trace_collection/custom_instrumentation/go/migration/).
 
 ## Installation
 
