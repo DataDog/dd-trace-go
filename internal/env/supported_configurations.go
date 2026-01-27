@@ -6,6 +6,7 @@
 package env
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,7 +34,6 @@ var (
 	configFilePath string
 	once           sync.Once
 	mu             sync.Mutex
-	skipLock       bool
 )
 
 // getConfigFilePath returns the path to the supported_configurations.json file
@@ -101,11 +101,17 @@ func readSupportedConfigurations(filePath string) (*supportedConfiguration, erro
 }
 
 func writeSupportedConfigurations(filePath string, cfg *supportedConfiguration) error {
-	// write the json file - Go's json.MarshalIndent automatically sorts map keys
-	jsonFile, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+	// Write the JSON file. We explicitly disable HTML escaping so strings like "&"
+	// remain readable (and stable across test runs) instead of being rendered as
+	// "\u0026". Map keys are still deterministically sorted by encoding/json.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cfg); err != nil {
 		return fmt.Errorf("failed to marshal SupportedConfiguration: %w", err)
 	}
+	jsonFile := bytes.TrimRight(buf.Bytes(), "\n")
 
 	if err := os.WriteFile(filePath, jsonFile, 0644); err != nil {
 		return fmt.Errorf("failed to write supported_configurations.json: %w", err)

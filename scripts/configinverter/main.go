@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -263,10 +264,17 @@ func addSupportedConfigurationsKeys(input string, cfg *supportedConfiguration, n
 		}
 	}
 
-	json, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+	// Write the JSON file. We explicitly disable HTML escaping so strings like "&"
+	// remain readable (and stable across test runs) instead of being rendered as
+	// "\u0026". Map keys are still deterministically sorted by encoding/json.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cfg); err != nil {
 		return fmt.Errorf("error marshalling supported configuration: %w", err)
 	}
+	jsonFile := bytes.TrimRight(buf.Bytes(), "\n")
 
-	return os.WriteFile(input, json, 0644)
+	return os.WriteFile(input, jsonFile, 0644)
 }
