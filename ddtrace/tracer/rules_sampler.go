@@ -342,7 +342,7 @@ func SpanSamplingRules(rules ...Rule) []SamplingRule {
 // Its value is the number of spans to sample per second.
 // Spans that matched the rules but exceeded the rate limit are not sampled.
 type traceRulesSampler struct {
-	m          locking.RWMutex
+	mu         locking.RWMutex
 	rules      []SamplingRule // the rules to match spans with
 	globalRate float64        // a rate to apply when no rules match a span
 	limiter    *rateLimiter   // used to limit the volume of spans sampled
@@ -359,8 +359,8 @@ func newTraceRulesSampler(rules []SamplingRule, traceSampleRate, rateLimitPerSec
 }
 
 func (rs *traceRulesSampler) enabled() bool {
-	rs.m.RLock()
-	defer rs.m.RUnlock()
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
 	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
 }
 
@@ -389,8 +389,8 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 		log.Warn("Ignoring trace sample rate %f: value out of range [0,1]", rate)
 		return false
 	}
-	rs.m.Lock()
-	defer rs.m.Unlock()
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
 	if math.IsNaN(rs.globalRate) && math.IsNaN(rate) {
 		// NaN is not considered equal to any number, including itself.
 		// It should be compared with math.IsNaN
@@ -421,9 +421,9 @@ func (rs *traceRulesSampler) sampleGlobalRate(span *Span) bool {
 		return false
 	}
 
-	rs.m.RLock()
+	rs.mu.RLock()
 	rate := rs.globalRate
-	rs.m.RUnlock()
+	rs.mu.RUnlock()
 
 	if math.IsNaN(rate) {
 		return false
@@ -449,9 +449,9 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 	}
 
 	var matched bool
-	rs.m.RLock()
+	rs.mu.RLock()
 	rate := rs.globalRate
-	rs.m.RUnlock()
+	rs.mu.RUnlock()
 	sampler := samplernames.RuleRate
 	for _, rule := range rs.rules {
 		if rule.match(span) {
@@ -573,12 +573,18 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 type rateLimiter struct {
 	limiter *rate.Limiter
 
-	mu          locking.Mutex // guards below fields
-	prevTime    time.Time     // time at which prevAllowed and prevSeen were set
-	allowed     float64       // number of spans allowed in the current period
-	seen        float64       // number of spans seen in the current period
-	prevAllowed float64       // number of spans allowed in the previous period
-	prevSeen    float64       // number of spans seen in the previous period
+	// guards below fields
+	mu locking.Mutex
+	// time at which prevAllowed and prevSeen were set
+	prevTime time.Time // +checklocks:mu
+	// number of spans allowed in the current period
+	allowed float64 // +checklocks:mu
+	// number of spans seen in the current period
+	seen float64 // +checklocks:mu
+	// number of spans allowed in the previous period
+	prevAllowed float64 // +checklocks:mu
+	// number of spans seen in the previous period
+	prevSeen float64 // +checklocks:mu
 }
 
 // allowOne returns the rate limiter's decision to allow the span to be sampled, and the
