@@ -100,7 +100,7 @@ func isFinalExecution(failed, skipped bool, execMeta *testExecutionMetadata, dur
 	// even when parallel EFD is enabled, because ATF orchestrates its own retry loop.
 	isAtfExecution := execMeta.isAttemptToFix && execMeta.shouldOrchestrateAttemptToFix
 
-	// Parallel EFD: skip final status tagging (Option A from the plan).
+	// Parallel EFD: skip final status tagging.
 	// All parallel executions capture the same remainingRetries, making it impossible
 	// to determine which one is truly final. However, ATF tests are excluded from this
 	// because they have their own retry orchestration.
