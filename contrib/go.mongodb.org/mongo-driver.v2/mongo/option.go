@@ -10,8 +10,9 @@ import (
 )
 
 type config struct {
-	serviceName string
-	spanName    string
+	serviceName  string
+	spanName     string
+	maxQuerySize int
 }
 
 // Option describes options for the Mongo integration.
@@ -29,11 +30,27 @@ func (fn OptionFn) apply(cfg *config) {
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.maxQuerySize = -1
 }
 
 // WithService sets the given service name for this integration spans.
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithMaxQuerySize sets the maximum query size (in bytes) before queries
+// are truncated when attached as a span tag.
+//
+// If negative (the default), query truncation is disabled and the query
+// will always be attached in full.
+//
+// If zero, traces will not include a query tag.
+//
+// Defaults to -1.
+func WithMaxQuerySize(max int) OptionFn {
+	return func(cfg *config) {
+		cfg.maxQuerySize = max
 	}
 }
