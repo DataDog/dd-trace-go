@@ -101,6 +101,8 @@ type Config struct {
 	featureFlags map[string]struct{}
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
+	// logsOtelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
+	logsOtelEnabled bool
 }
 
 // HOT PATH NOTE:
@@ -145,6 +147,7 @@ func loadConfig() *Config {
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
+	cfg.logsOtelEnabled = provider.getBool("DD_LOGS_OTEL_ENABLED", false)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -614,4 +617,17 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.ciVisibilityEnabled = enabled
 	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) LogsOtelEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logsOtelEnabled
+}
+
+func (c *Config) SetLogsOtelEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logsOtelEnabled = enabled
+	reportTelemetry("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }
