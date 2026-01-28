@@ -85,6 +85,33 @@ check-big-regressions:
       - reports/
     expire_in: "30 days"
 
+analyze-benchmark-results:
+  stage: benchmarks
+  needs:
+    - job: trigger_child_pipeline
+  when: always
+  tags:
+    - "arch:amd64"
+  image: $BASE_CI_IMAGE
+  script:
+    - |
+      mkdir -p reports
+      export ARTIFACTS_DIR="$(pwd)/reports"
+      git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+      git clone --branch dd-trace-go https://github.com/DataDog/benchmarking-platform platform && cd platform
+      ./steps/download-child-pipeline-artifacts.sh
+      echo "All benchmark artifacts collected:"
+      ls -la "${ARTIFACTS_DIR}/"
+      ./steps/analyze-results.sh
+      ./steps/post-pr-comment.sh
+      
+  artifacts:
+    name: "reports"
+    when: always
+    paths:
+      - reports/
+    expire_in: 3 months
+
 
 # Config Registry CI Jobs
 validate_supported_configurations_v2_local_file:

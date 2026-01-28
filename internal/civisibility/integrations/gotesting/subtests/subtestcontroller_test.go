@@ -187,6 +187,7 @@ func baselineScenario() *matrixScenario {
 			requireSpanCount(parentSpans, 1, "parent baseline")
 
 			assertTagEquals(parentSpans[0], constants.TestStatus, constants.TestStatusPass, "parent baseline status")
+			assertTagEquals(parentSpans[0], constants.TestFinalStatus, constants.TestStatusPass, "parent baseline final_status")
 			assertTagNotTrue(parentSpans[0], constants.TestIsDisabled, "parent baseline disabled")
 			assertTagNotTrue(parentSpans[0], constants.TestIsQuarantined, "parent baseline quarantined")
 			assertTagNotTrue(parentSpans[0], constants.TestIsAttempToFix, "parent baseline attempt_to_fix")
@@ -196,6 +197,7 @@ func baselineScenario() *matrixScenario {
 				subSpans := spansByResource(testSpans, resource)
 				requireSpanCount(subSpans, 1, fmt.Sprintf("subtest %s baseline count", sub))
 				assertTagEquals(subSpans[0], constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("subtest %s baseline status", sub))
+				assertTagEquals(subSpans[0], constants.TestFinalStatus, constants.TestStatusPass, fmt.Sprintf("subtest %s baseline final_status", sub))
 				assertTagNotTrue(subSpans[0], constants.TestIsDisabled, fmt.Sprintf("subtest %s baseline disabled", sub))
 				assertTagNotTrue(subSpans[0], constants.TestIsQuarantined, fmt.Sprintf("subtest %s baseline quarantined", sub))
 				assertTagNotTrue(subSpans[0], constants.TestIsAttempToFix, fmt.Sprintf("subtest %s baseline attempt_to_fix", sub))
@@ -358,12 +360,14 @@ func subDisabledScenario() *matrixScenario {
 			parentSpans := spansByResource(testSpans, parentResource)
 			requireSpanCount(parentSpans, 1, "sub disabled parent count")
 			assertTagNotTrue(parentSpans[0], constants.TestIsDisabled, "parent disabled tag")
+			assertTagEquals(parentSpans[0], constants.TestFinalStatus, constants.TestStatusPass, "parent final_status when sub disabled")
 
 			subResource := fmt.Sprintf("%s/%s", parentResource, "SubDisabled")
 			subSpans := spansByResource(testSpans, subResource)
 			requireSpanCount(subSpans, 1, "sub disabled span count")
 			assertTagEquals(subSpans[0], constants.TestIsDisabled, "true", "sub disabled tag")
 			assertTagEquals(subSpans[0], constants.TestStatus, constants.TestStatusSkip, "sub disabled status")
+			assertTagEquals(subSpans[0], constants.TestFinalStatus, constants.TestStatusSkip, "sub disabled final_status")
 		},
 	}
 }
@@ -384,12 +388,14 @@ func subQuarantinedScenario() *matrixScenario {
 			parentSpans := spansByResource(testSpans, parentResource)
 			requireSpanCount(parentSpans, 1, "sub quarantined parent count")
 			assertTagNotTrue(parentSpans[0], constants.TestIsQuarantined, "parent quarantined tag")
+			assertTagEquals(parentSpans[0], constants.TestFinalStatus, constants.TestStatusPass, "parent final_status when sub quarantined")
 
 			subResource := fmt.Sprintf("%s/%s", parentResource, "SubQuarantined")
 			subSpans := spansByResource(testSpans, subResource)
 			requireSpanCount(subSpans, 1, "sub quarantined span count")
 			assertTagEquals(subSpans[0], constants.TestIsQuarantined, "true", "sub quarantined tag")
 			assertTagEquals(subSpans[0], constants.TestStatus, constants.TestStatusPass, "sub quarantined status")
+			assertTagEquals(subSpans[0], constants.TestFinalStatus, constants.TestStatusSkip, "sub quarantined final_status")
 		},
 	}
 }
@@ -410,12 +416,14 @@ func parentQuarantinedScenario() *matrixScenario {
 			requireSpanCount(parentSpans, 1, "parent quarantined span count")
 			assertTagEquals(parentSpans[0], constants.TestIsQuarantined, "true", "parent quarantined tag")
 			assertTagEquals(parentSpans[0], constants.TestStatus, constants.TestStatusPass, "parent quarantined status")
+			assertTagEquals(parentSpans[0], constants.TestFinalStatus, constants.TestStatusSkip, "parent quarantined final_status")
 
 			subResource := fmt.Sprintf("%s/%s", parentResource, "SubQuarantined")
 			subSpans := spansByResource(testSpans, subResource)
 			requireSpanCount(subSpans, 1, "parent quarantined child span count")
 			assertTagEquals(subSpans[0], constants.TestIsQuarantined, "true", "parent quarantined child tag")
 			assertTagEquals(subSpans[0], constants.TestStatus, constants.TestStatusPass, "parent quarantined child status")
+			assertTagEquals(subSpans[0], constants.TestFinalStatus, constants.TestStatusSkip, "parent quarantined child final_status")
 		},
 	}
 }

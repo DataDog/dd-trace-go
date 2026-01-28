@@ -33,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -2039,7 +2040,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
@@ -2056,7 +2057,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("https://github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
@@ -2077,7 +2078,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
@@ -2094,7 +2095,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("https://github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
@@ -2111,7 +2112,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
@@ -2131,7 +2132,7 @@ func TestGitMetadata(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		sp.context.finish()
+		sp.Finish()
 
 		assert.Equal("", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("", sp.meta[internal.TraceTagRepositoryURL])
@@ -2404,7 +2405,7 @@ func cpspan(s *Span) *Span {
 }
 
 type testTraceWriter struct {
-	mu      sync.RWMutex
+	mu      locking.RWMutex
 	buf     []*Span
 	flushed []*Span
 }

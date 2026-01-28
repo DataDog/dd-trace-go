@@ -22,7 +22,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/mod/semver"
@@ -38,6 +37,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -748,12 +748,19 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 	c.integrations = integrations
 }
 
+// canComputeStats determines whether Client-Side Stats can be computed, which requires:
+// - 'client_drop_p0' is enabled
+// - Trace Agent exposes 'stats' endpoint
+// - Stats Computation is enabled on the tracer (or has 'discovery' FF)
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
+	return c.agent.Stats && c.agent.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 
+// canDropP0s determines whether P0 spans can be dropped.
+// Currently equivalent to canComputeStats() as both capabilities are part
+// of the Client-Side Stats feature and cannot be enabled independently.
 func (c *config) canDropP0s() bool {
-	return c.canComputeStats() && c.agent.DropP0s
+	return c.canComputeStats()
 }
 
 func statsTags(c *config) []string {
@@ -1394,7 +1401,7 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	sync.RWMutex
+	locking.RWMutex
 	traces     spanLists
 	stats      []*pb.ClientStatsPayload
 	obfVersion int

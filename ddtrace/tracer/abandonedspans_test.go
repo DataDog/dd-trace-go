@@ -60,26 +60,18 @@ func assertProcessedSpans(assert *assert.Assertions, t *tracer, startedSpans, fi
 }
 
 func formatSpanString(s *Span) string {
-	s.mu.Lock()
-	var integration string
-	if v, ok := s.meta[ext.Component]; ok {
-		integration = v
-	} else {
-		integration = "manual"
-	}
-	msg := fmt.Sprintf("[name: %s, integration: %s, span_id: %d, trace_id: %d, age: %s],", s.name, integration, s.spanID, s.traceID, spanAge(s))
-	s.mu.Unlock()
+	name, spanID, traceID, integration := s.debugInfo()
+	msg := fmt.Sprintf("[name: %s, integration: %s, span_id: %d, trace_id: %d, age: %s],", name, integration, spanID, traceID, spanAge(s))
 	return msg
 }
 
 func TestAbandonedSpansMetric(t *testing.T) {
-	var tg statsdtest.TestStatsdClient
 	tp := new(log.RecordLogger)
 	tickerInterval = 100 * time.Millisecond
 	t.Run("finished", func(t *testing.T) {
+		var tg statsdtest.TestStatsdClient
 		assert := assert.New(t)
 		tp.Reset()
-		tg.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
 		assert.NoError(err)
@@ -90,15 +82,20 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		assert.Empty(tg.GetCallsByName("datadog.tracer.abandoned_spans"))
 	})
 	t.Run("open", func(t *testing.T) {
+		var tg statsdtest.TestStatsdClient
 		assert := assert.New(t)
 		tp.Reset()
-		tg.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
 		assert.NoError(err)
 		defer stop()
 		tracer.StartSpan("operation", StartTime(spanStartTime), Tag(ext.Component, "some_integration_name"))
 		assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
+		// Wait for the ticker to fire and send metrics
+		assert.Eventually(func() bool {
+			calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
+			return len(calls) == 1
+		}, 2*time.Second, tickerInterval/10)
 		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
 		assert.Len(calls, 1)
 		call := calls[0]
@@ -106,9 +103,9 @@ func TestAbandonedSpansMetric(t *testing.T) {
 	})
 
 	t.Run("both", func(t *testing.T) {
+		var tg statsdtest.TestStatsdClient
 		assert := assert.New(t)
 		tp.Reset()
-		tg.Reset()
 		defer setTestTime()()
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg))
 		assert.NoError(err)
@@ -117,6 +114,11 @@ func TestAbandonedSpansMetric(t *testing.T) {
 		sf.Finish()
 		s := tracer.StartSpan("op2", StartTime(spanStartTime))
 		assertProcessedSpans(assert, tracer, 2, 1, tickerInterval/10)
+		// Wait for the ticker to fire and send metrics
+		assert.Eventually(func() bool {
+			calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
+			return len(calls) == 1
+		}, 2*time.Second, tickerInterval/10)
 		calls := tg.GetCallsByName("datadog.tracer.abandoned_spans")
 		assert.Len(calls, 1)
 		s.Finish()

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -37,7 +38,7 @@ type agentTraceWriter struct {
 	config *config
 
 	// mu synchronizes access to payload operations
-	mu sync.Mutex
+	mu locking.Mutex
 
 	// payload encodes and buffers traces in msgpack format
 	payload payload
@@ -55,7 +56,7 @@ type agentTraceWriter struct {
 	// statsd is used to send metrics
 	statsd globalinternal.StatsdClient
 
-	tracesQueued uint32
+	tracesQueued uint32 // +checkatomic
 }
 
 func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinternal.StatsdClient) *agentTraceWriter {

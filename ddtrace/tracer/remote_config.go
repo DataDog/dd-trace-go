@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -336,7 +337,7 @@ type dynamicInstrumentationRCProbeConfig struct {
 }
 
 type dynamicInstrumentationRCState struct {
-	sync.Mutex
+	locking.Mutex
 	state map[string]dynamicInstrumentationRCProbeConfig
 
 	// symdbExport is a flag that indicates that this tracer is resposible

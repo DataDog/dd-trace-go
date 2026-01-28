@@ -169,24 +169,24 @@ func loadConfig() *Config {
 		}
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Warn("unable to look up hostname: %s", err.Error())
-		cfg.hostnameLookupError = err
+	// Hostname lookup, if DD_TRACE_REPORT_HOSTNAME is true
+	// If the hostname lookup fails, an error is set and the hostname is not reported
+	// The tracer will fail to start if the hostname lookup fails when it is explicitly configured
+	// to report the hostname.
+	if provider.getBool("DD_TRACE_REPORT_HOSTNAME", false) {
+		hostname, err := os.Hostname()
+		if err != nil {
+			log.Warn("unable to look up hostname: %s", err.Error())
+			cfg.hostnameLookupError = err
+		}
+		cfg.hostname = hostname
+		cfg.reportHostname = true
 	}
-
-	// Always read DD_TRACE_REPORT_HOSTNAME for telemetry tracking
-	reportHostnameFromEnv := provider.getBool("DD_TRACE_REPORT_HOSTNAME", false)
-
-	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set
+	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set, it takes precedence over the hostname lookup
 	if sourceHostname, ok := env.Lookup("DD_TRACE_SOURCE_HOSTNAME"); ok {
 		// Explicitly configured hostname - always report it
 		cfg.hostname = sourceHostname
 		cfg.reportHostname = true
-	} else if err == nil {
-		// Auto-detected hostname - only report if DD_TRACE_REPORT_HOSTNAME=true
-		cfg.hostname = hostname
-		cfg.reportHostname = reportHostnameFromEnv
 	}
 
 	return cfg

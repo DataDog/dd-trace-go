@@ -77,6 +77,7 @@ Targets:
   lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
   lint/action          Lint GitHub Actions workflows
   format               Format code
+  format/go            Format Go code
   format/shell         install shfmt
   test                 Run all tests (core, integration, contrib)
   test/unit            Run unit tests

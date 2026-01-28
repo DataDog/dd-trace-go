@@ -533,13 +533,13 @@ func TestSpanSetTagError(t *testing.T) {
 
 	t.Run("off", func(t *testing.T) {
 		span := newBasicSpan("web.request")
-		span.setTagError(errors.New("error value with no trace"), errorConfig{noDebugStack: true})
+		span.SetTag(ext.ErrorNoStackTrace, errors.New("error value with no trace"))
 		assert.Empty(t, span.meta[ext.ErrorStack])
 	})
 
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
-		span.setTagError(errors.New("error value with trace"), errorConfig{noDebugStack: false})
+		span.SetTag(ext.Error, errors.New("error value with trace"))
 		assert.NotEmpty(t, span.meta[ext.ErrorStack])
 	})
 }
@@ -907,13 +907,12 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(0), span.error)
 
 	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`
-	span.mu.RLock()
-	defer span.mu.RUnlock()
-	t.Logf("%q\n", span.meta)
-	assert.Equal(nMeta+3, len(span.meta))
-	assert.Equal("", span.meta[ext.ErrorMsg])
-	assert.Equal("", span.meta[ext.ErrorType])
-	assert.Equal("", span.meta[ext.ErrorStack])
+	meta := span.getMetadata()
+	t.Logf("%q\n", meta)
+	assert.Equal(nMeta+3, len(meta))
+	assert.Equal("", meta[ext.ErrorMsg])
+	assert.Equal("", meta[ext.ErrorType])
+	assert.Equal("", meta[ext.ErrorStack])
 }
 
 func TestSpanError_Typed(t *testing.T) {
