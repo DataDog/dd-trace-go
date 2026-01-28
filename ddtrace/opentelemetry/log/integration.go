@@ -13,12 +13,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// StartIfEnabled initializes the OTel LoggerProvider if DD_LOGS_OTEL_ENABLED=true.
+const (
+	// shutdownTimeout is the maximum time to wait for the LoggerProvider to shut down.
+	shutdownTimeout = 5 * time.Second
+)
+
+// Start initializes the OTel LoggerProvider if DD_LOGS_OTEL_ENABLED=true.
 // This function should be called during tracer initialization.
 //
 // If the feature is not enabled, this function is a no-op.
 // Returns an error if initialization fails when the feature is enabled.
-func StartIfEnabled(ctx context.Context) error {
+func Start(ctx context.Context) error {
 	cfg := config.Get()
 	if !cfg.LogsOtelEnabled() {
 		log.Debug("DD_LOGS_OTEL_ENABLED=false, skipping OTel LoggerProvider initialization")
@@ -29,25 +34,14 @@ func StartIfEnabled(ctx context.Context) error {
 	return InitGlobalLoggerProvider(ctx)
 }
 
-// StopIfEnabled shuts down the OTel LoggerProvider if it was initialized.
+// Stop shuts down the OTel LoggerProvider if it was initialized.
 // This function should be called during tracer shutdown.
 //
 // It flushes any pending log records and cleans up resources.
+// If the provider was not initialized, this is a no-op.
 // The shutdown operation will timeout after 5 seconds to avoid blocking indefinitely.
-func StopIfEnabled() {
-	provider := GetGlobalLoggerProvider()
-	if provider == nil {
-		// Not initialized, nothing to do
-		return
-	}
-
-	log.Debug("Shutting down OTel LoggerProvider")
-
-	// Use a timeout context to avoid blocking indefinitely
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func Stop() error {
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
-	if err := ShutdownGlobalLoggerProvider(ctx); err != nil {
-		log.Warn("Error shutting down OTel LoggerProvider: %v", err)
-	}
+	return ShutdownGlobalLoggerProvider(ctx)
 }

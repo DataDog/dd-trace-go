@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStartIfEnabled(t *testing.T) {
+func TestStart(t *testing.T) {
 	t.Run("does nothing when DD_LOGS_OTEL_ENABLED=false", func(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
@@ -23,7 +23,7 @@ func TestStartIfEnabled(t *testing.T) {
 		config.SetUseFreshConfig(true)
 		defer config.SetUseFreshConfig(false)
 
-		err := StartIfEnabled(context.Background())
+		err := Start(context.Background())
 		assert.NoError(t, err)
 
 		// Provider should not be initialized
@@ -39,7 +39,7 @@ func TestStartIfEnabled(t *testing.T) {
 		config.SetUseFreshConfig(true)
 		defer config.SetUseFreshConfig(false)
 
-		err := StartIfEnabled(context.Background())
+		err := Start(context.Background())
 		require.NoError(t, err)
 
 		// Provider should be initialized
@@ -47,7 +47,8 @@ func TestStartIfEnabled(t *testing.T) {
 		assert.NotNil(t, provider)
 
 		// Clean up
-		StopIfEnabled()
+		err = Stop()
+		assert.NoError(t, err)
 	})
 
 	t.Run("is idempotent", func(t *testing.T) {
@@ -58,14 +59,14 @@ func TestStartIfEnabled(t *testing.T) {
 		config.SetUseFreshConfig(true)
 		defer config.SetUseFreshConfig(false)
 
-		err1 := StartIfEnabled(context.Background())
+		err1 := Start(context.Background())
 		require.NoError(t, err1)
 
 		provider1 := GetGlobalLoggerProvider()
 		require.NotNil(t, provider1)
 
 		// Call again
-		err2 := StartIfEnabled(context.Background())
+		err2 := Start(context.Background())
 		require.NoError(t, err2)
 
 		provider2 := GetGlobalLoggerProvider()
@@ -75,17 +76,19 @@ func TestStartIfEnabled(t *testing.T) {
 		assert.Same(t, provider1, provider2)
 
 		// Clean up
-		StopIfEnabled()
+		err := Stop()
+		assert.NoError(t, err)
 	})
 }
 
-func TestStopIfEnabled(t *testing.T) {
+func TestStop(t *testing.T) {
 	t.Run("does nothing when provider not initialized", func(t *testing.T) {
 		// Ensure no provider exists
 		_ = ShutdownGlobalLoggerProvider(context.Background())
 
-		// Should not panic
-		StopIfEnabled()
+		// Should not panic and should return no error
+		err := Stop()
+		assert.NoError(t, err)
 
 		// Provider should still be nil
 		provider := GetGlobalLoggerProvider()
@@ -101,7 +104,8 @@ func TestStopIfEnabled(t *testing.T) {
 		require.NotNil(t, provider)
 
 		// Stop
-		StopIfEnabled()
+		err = Stop()
+		assert.NoError(t, err)
 
 		// Provider should be nil after stop
 		provider = GetGlobalLoggerProvider()
@@ -114,9 +118,12 @@ func TestStopIfEnabled(t *testing.T) {
 		require.NoError(t, err)
 
 		// Stop multiple times
-		StopIfEnabled()
-		StopIfEnabled()
-		StopIfEnabled()
+		err = Stop()
+		assert.NoError(t, err)
+		err = Stop()
+		assert.NoError(t, err)
+		err = Stop()
+		assert.NoError(t, err)
 
 		// Provider should be nil
 		provider := GetGlobalLoggerProvider()
@@ -137,14 +144,15 @@ func TestIntegration(t *testing.T) {
 		defer config.SetUseFreshConfig(false)
 
 		// Start
-		err := StartIfEnabled(context.Background())
+		err := Start(context.Background())
 		require.NoError(t, err)
 
 		provider := GetGlobalLoggerProvider()
 		require.NotNil(t, provider)
 
 		// Stop
-		StopIfEnabled()
+		err = Stop()
+		assert.NoError(t, err)
 
 		provider = GetGlobalLoggerProvider()
 		assert.Nil(t, provider)
@@ -158,14 +166,15 @@ func TestIntegration(t *testing.T) {
 		defer config.SetUseFreshConfig(false)
 
 		// Start (should be no-op)
-		err := StartIfEnabled(context.Background())
+		err := Start(context.Background())
 		require.NoError(t, err)
 
 		provider := GetGlobalLoggerProvider()
 		assert.Nil(t, provider)
 
 		// Stop (should be no-op)
-		StopIfEnabled()
+		err = Stop()
+		assert.NoError(t, err)
 
 		provider = GetGlobalLoggerProvider()
 		assert.Nil(t, provider)

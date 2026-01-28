@@ -163,49 +163,51 @@ func parseMilliseconds(value string) (int, error) {
 	return 0, strconv.ErrSyntax
 }
 
-// msConfig holds a milliseconds configuration value with its origin.
-type msConfig struct {
+// configValue holds a configuration value (typically in milliseconds) with its origin.
+// Used for telemetry reporting to track whether a value came from environment
+// variables or defaults.
+type configValue struct {
 	value  int
 	origin telemetry.Origin
 }
 
 // parseMsFromEnv attempts to parse a milliseconds value from an environment variable.
-// Returns a zero msConfig if the env var is empty or parsing fails.
-func parseMsFromEnv(envVar string) msConfig {
+// Returns a zero configValue if the env var is empty or parsing fails.
+func parseMsFromEnv(envVar string) configValue {
 	if v := env.Get(envVar); v != "" {
 		if ms, err := parseMilliseconds(v); err == nil {
-			return msConfig{value: ms, origin: telemetry.OriginEnvVar}
+			return configValue{value: ms, origin: telemetry.OriginEnvVar}
 		}
 	}
-	return msConfig{}
+	return configValue{}
 }
 
 // parseIntFromEnv attempts to parse an integer value from an environment variable.
-// Returns a zero msConfig if the env var is empty or parsing fails.
-func parseIntFromEnv(envVar string) msConfig {
+// Returns a zero configValue if the env var is empty or parsing fails.
+func parseIntFromEnv(envVar string) configValue {
 	if v := env.Get(envVar); v != "" {
 		if val, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return msConfig{value: val, origin: telemetry.OriginEnvVar}
+			return configValue{value: val, origin: telemetry.OriginEnvVar}
 		}
 	}
-	return msConfig{}
+	return configValue{}
 }
 
 // getMillisecondsConfig reads a milliseconds value from an environment variable,
 // falling back to the provided default. Uses cmp.Or to select the first valid config.
-func getMillisecondsConfig(envVar string, defaultMs int) msConfig {
+func getMillisecondsConfig(envVar string, defaultMs int) configValue {
 	return cmp.Or(
 		parseMsFromEnv(envVar),
-		msConfig{value: defaultMs, origin: telemetry.OriginDefault},
+		configValue{value: defaultMs, origin: telemetry.OriginDefault},
 	)
 }
 
 // getIntConfig reads an integer value from an environment variable,
 // falling back to the provided default. Uses cmp.Or to select the first valid config.
-func getIntConfig(envVar string, defaultVal int) msConfig {
+func getIntConfig(envVar string, defaultVal int) configValue {
 	return cmp.Or(
 		parseIntFromEnv(envVar),
-		msConfig{value: defaultVal, origin: telemetry.OriginDefault},
+		configValue{value: defaultVal, origin: telemetry.OriginDefault},
 	)
 }
 

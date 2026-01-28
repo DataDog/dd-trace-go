@@ -42,9 +42,8 @@ const (
 	envOTLPTimeout  = "OTEL_EXPORTER_OTLP_TIMEOUT"
 
 	// DD environment variables for agent configuration
-	envDDTraceAgentURL  = "DD_TRACE_AGENT_URL"
-	envDDAgentHost      = "DD_AGENT_HOST"
-	envDDTraceAgentPort = "DD_TRACE_AGENT_PORT"
+	envDDTraceAgentURL = "DD_TRACE_AGENT_URL"
+	envDDAgentHost     = "DD_AGENT_HOST"
 
 	// BatchLogRecordProcessor environment variables
 	envBLRPMaxQueueSize       = "OTEL_BLRP_MAX_QUEUE_SIZE"
@@ -63,6 +62,22 @@ const (
 	defaultBLRPExportTimeoutMs = 30000
 	defaultOTLPTimeoutMs       = 10000 // 10 seconds
 
+	// HTTP retry configuration
+	// InitialInterval: Start with 1s backoff to quickly recover from transient failures
+	// MaxInterval: Cap at 30s to avoid excessive delays while still being patient
+	// MaxElapsedTime: Give up after 5 minutes to prevent indefinite hangs
+	httpRetryInitialInterval = 1 * time.Second
+	httpRetryMaxInterval     = 30 * time.Second
+	httpRetryMaxElapsedTime  = 5 * time.Minute
+
+	// gRPC retry configuration
+	// InitialInterval: Start with 5s backoff (longer than HTTP due to connection overhead)
+	// MaxInterval: Cap at 30s to avoid excessive delays while still being patient
+	// MaxElapsedTime: Give up after 5 minutes to prevent indefinite hangs
+	grpcRetryInitialInterval = 5 * time.Second
+	grpcRetryMaxInterval     = 30 * time.Second
+	grpcRetryMaxElapsedTime  = 5 * time.Minute
+
 	// Protocol and encoding constants for telemetry tagging
 	protocolHTTP     = "http"
 	protocolGRPC     = "grpc"
@@ -75,6 +90,9 @@ type telemetryExporter struct {
 	sdklog.Exporter
 	telemetry *LogsExportTelemetry
 }
+
+// Compile-time check that telemetryExporter implements sdklog.Exporter.
+var _ sdklog.Exporter = (*telemetryExporter)(nil)
 
 // Export implements sdklog.Exporter.
 func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record) error {
@@ -417,9 +435,9 @@ func parseTimeout(str string) (time.Duration, error) {
 func httpRetryConfig() otlploghttp.RetryConfig {
 	return otlploghttp.RetryConfig{
 		Enabled:         true,
-		InitialInterval: 1 * time.Second,
-		MaxInterval:     30 * time.Second,
-		MaxElapsedTime:  5 * time.Minute,
+		InitialInterval: httpRetryInitialInterval,
+		MaxInterval:     httpRetryMaxInterval,
+		MaxElapsedTime:  httpRetryMaxElapsedTime,
 	}
 }
 
@@ -427,9 +445,9 @@ func httpRetryConfig() otlploghttp.RetryConfig {
 func grpcRetryConfig() otlploggrpc.RetryConfig {
 	return otlploggrpc.RetryConfig{
 		Enabled:         true,
-		InitialInterval: 5 * time.Second,
-		MaxInterval:     30 * time.Second,
-		MaxElapsedTime:  5 * time.Minute,
+		InitialInterval: grpcRetryInitialInterval,
+		MaxInterval:     grpcRetryMaxInterval,
+		MaxElapsedTime:  grpcRetryMaxElapsedTime,
 	}
 }
 

@@ -29,7 +29,9 @@ func (w *ddSpanWrapper) SpanContext() oteltrace.SpanContext {
 
 // IsRecording returns true if the span is recording.
 func (w *ddSpanWrapper) IsRecording() bool {
-	// DD spans are always recording if not finished
+	// This always returns true because DD spans don't expose a "finished" state
+	// through the public API. In practice, this is acceptable because logs are
+	// typically emitted while spans are active (before Finish is called).
 	return true
 }
 
