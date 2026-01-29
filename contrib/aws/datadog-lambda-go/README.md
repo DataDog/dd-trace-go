@@ -40,7 +40,7 @@ import (
 ```
 
 **After (v2):**
-```go
+```bash
 import (
     ddlambda "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"
     "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
