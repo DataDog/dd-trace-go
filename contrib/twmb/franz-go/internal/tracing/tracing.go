@@ -87,6 +87,10 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 	// Kafka supports headers, so we try to extract a span context from them
 	carrier := NewKafkaHeadersCarrier(r)
 	if spanctx, err := tracer.Extract(carrier); err == nil {
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		if spanctx != nil && spanctx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithSpanLinks(spanctx.SpanLinks()))
+		}
 		opts = append(opts, tracer.ChildOf(spanctx))
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, tr.consumerSpanName, opts...)
@@ -115,6 +119,9 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, r Record, spanOpts ...tr
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
+
+	// TODO: Do we need to add span links here?
+
 	opts = append(opts, spanOpts...)
 	carrier := NewKafkaHeadersCarrier(r)
 	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
