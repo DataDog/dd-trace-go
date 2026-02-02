@@ -214,8 +214,24 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 		otlploghttp.WithRetry(httpRetryConfig()),
 	}
 
-	// Only set endpoint if not already set by OTEL environment variables
-	if !hasOTLPEndpointInEnv() {
+	// Check if OTEL environment variables are set
+	if hasOTLPEndpointInEnv() {
+		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
+		rawEndpoint := env.Get(envOTLPLogsEndpoint)
+		if rawEndpoint == "" {
+			rawEndpoint = env.Get(envOTLPEndpoint)
+		}
+
+		if rawEndpoint != "" {
+			// Parse and sanitize the URL to handle trailing slashes correctly
+			sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
+			if sanitizedURL != "" {
+				opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
+				log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
+			}
+		}
+	} else {
+		// Use DD agent configuration as fallback
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		opts = append(opts, otlploghttp.WithEndpoint(endpoint))
 		opts = append(opts, otlploghttp.WithURLPath(path))
@@ -244,8 +260,33 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 		otlploggrpc.WithRetry(grpcRetryConfig()),
 	}
 
-	// Only set endpoint if not already set by OTEL environment variables
-	if !hasOTLPEndpointInEnv() {
+	// Check if OTEL environment variables are set
+	if hasOTLPEndpointInEnv() {
+		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
+		rawEndpoint := env.Get(envOTLPLogsEndpoint)
+		if rawEndpoint == "" {
+			rawEndpoint = env.Get(envOTLPEndpoint)
+		}
+
+		if rawEndpoint != "" {
+			// For gRPC, we extract host:port and insecure flag from the URL
+			u, err := url.Parse(rawEndpoint)
+			if err != nil {
+				log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error())
+			} else {
+				endpoint := u.Host
+				if endpoint == "" {
+					endpoint = u.Path // Handle URLs without scheme
+				}
+				opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
+				if u.Scheme == "http" || u.Scheme == "grpc" {
+					opts = append(opts, otlploggrpc.WithInsecure())
+				}
+				log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %v)", endpoint, u.Scheme == "http" || u.Scheme == "grpc")
+			}
+		}
+	} else {
+		// Use DD agent configuration as fallback
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
 		if insecure {
@@ -264,7 +305,8 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	return opts
 }
 
-// hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables
+// hasOTLPEndpointInEnv checks if OTLP endpoint is configured via OTEL environment variables.
+// When true, we'll read and sanitize the endpoint ourselves to ensure proper URL formatting.
 func hasOTLPEndpointInEnv() bool {
 	if v := env.Get(envOTLPLogsEndpoint); v != "" {
 		return true
@@ -273,6 +315,35 @@ func hasOTLPEndpointInEnv() bool {
 		return true
 	}
 	return false
+}
+
+// sanitizeOTLPEndpoint sanitizes an OTLP endpoint URL by:
+// 1. Parsing the URL
+// 2. Trimming any trailing slashes from the path
+// 3. Appending the signal-specific path (e.g., "/v1/logs")
+// 4. Returning the complete URL
+//
+// This works around issues where the OTel SDK may not handle trailing slashes correctly,
+// which can result in double slashes like http://host:4320//v1/logs
+func sanitizeOTLPEndpoint(rawURL, signalPath string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error())
+		return ""
+	}
+
+	// Trim trailing slashes from the path
+	u.Path = strings.TrimRight(u.Path, "/")
+
+	// If the URL already has a path, keep it; otherwise use the signal-specific path
+	if u.Path == "" {
+		u.Path = signalPath
+	} else if !strings.HasSuffix(u.Path, signalPath) {
+		// If path doesn't already end with signal path, append it
+		u.Path = u.Path + signalPath
+	}
+
+	return u.String()
 }
 
 // resolveOTLPEndpointHTTP determines the OTLP HTTP endpoint from DD agent configuration.
@@ -285,11 +356,15 @@ func hasOTLPEndpointInEnv() bool {
 // 1. DD_TRACE_AGENT_URL with port changed to 4318
 // 2. DD_AGENT_HOST:4318
 // 3. localhost:4318 (default)
+//
+// Note: This function is only called when OTEL_EXPORTER_OTLP_ENDPOINT and
+// OTEL_EXPORTER_OTLP_LOGS_ENDPOINT are NOT set, as the OTel SDK automatically
+// reads those environment variables.
 func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 	path = defaultOTLPLogsPath
 	insecure = true // default to http
 
-	// Check DD_TRACE_AGENT_URL first
+	// Check DD_TRACE_AGENT_URL
 	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
@@ -334,7 +409,7 @@ func resolveOTLPEndpointHTTP() (endpoint, path string, insecure bool) {
 func resolveOTLPEndpointGRPC() (endpoint string, insecure bool) {
 	insecure = true // default to grpc (not grpcs)
 
-	// Check DD_TRACE_AGENT_URL first
+	// Check DD_TRACE_AGENT_URL
 	if agentURL := env.Get(envDDTraceAgentURL); agentURL != "" {
 		u, err := url.Parse(agentURL)
 		if err != nil {
