@@ -1,0 +1,2437 @@
+{
+  "lang": "golang",
+  "missingCount": 190,
+  "documentedCount": 48,
+  "documentedConfigurations": [
+    {
+      "key": "DD_AGENT_HOST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6, or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Defines the probability of a downstream request body being sampled, or said differently, defines the overall number of requests for which the request and response body should be sampled / analysed.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The maximum number of downstream requests per request for which the request and response body should be analysed.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_PROXY_SAMPLE_RATE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "API Security schema extraction for proxies. The value represents the number of schemas extracted per minute (samples per minute).",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APM_TRACING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Allows standalone products to run individually, rather than all being coupled together.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_MAX_STACK_TRACE_DEPTH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the maximum depth of a stack trace to be reported.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP",
+      "implementation": "E",
+      "results": [
+        {
+          "description": "A regex string to redact sensitive data by its value in attack reports.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_TRACE_RATE_LIMIT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls the maximum amount of traces sampled by AppSec attacks, per second.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_WAF_TIMEOUT",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Limits the WAF synchronous execution time (in microseconds).",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_FLAKY_RETRY_COUNT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies how many times to retry flaky tests.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "A kill switch for the auto test retries feature.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DBM_PROPAGATION_MODE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service' option enables the connection between DBM and APM services. The 'full' option enables connection between database spans with database query events. Available for Postgres.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_HOST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the hostname or IP address of the DogStatsD server to which runtime metrics are sent.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the port number for the DogStatsD server to which runtime metrics are sent.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_ENV",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Adds an environment tag to all spans generated by the tracer instance.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_HAPROXY_SPOA_HEALTHCHECK_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configure the port used for healthcheck server for the HAProxy SPOA integration",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_HAPROXY_SPOA_HOST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configure the host used for the HAProxy SPOA integration",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_HAPROXY_SPOA_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configure the port used for the HAProxy SPOA integration",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_PROJECT_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "This config allows to configure the default LLM Observability project to use. It is required when using the Experiments and Datasets feature.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Remote configuration polling interval in seconds.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_RUNTIME_METRICS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats, memory usage, and thread counts) for the application.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS_CERT_FILE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Change the default gRPC TLS layer cert.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS_KEY_FILE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Change the default gRPC TLS layer key.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SPAN_SAMPLING_RULES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Span sampling rules to keep individual spans when the rest of the trace would otherwise be dropped. A JSON array of objects. Rules are applied in configured order to determine the span's sample rate. The sample_rate value must be between 0.0 and 1.0 (inclusive). For more information, see [Ingestion Mechanisms][3]. Example: - Set the span sample rate to 50% for the service my-service and operation name http.request, up to 50 traces per second: '[{\"service\": \"my-service\", \"name\": \"http.request\", \"sample_rate\":0.5, \"max_per_second\": 50}]'",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SPAN_SAMPLING_RULES_FILE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Points to a JSON file that contains the span sampling rules. DD_SPAN_SAMPLING_RULES takes precedence over this variable. See DD_SPAN_SAMPLING_RULES for the rule format.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TAGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Tags to apply to produced data. Must be a list of <key>:<value> separated by commas and/or spaces.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_HEARTBEAT_INTERVAL",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Sets the interval for the telemetry status heartbeat (in seconds)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated to 16 characters. Set to false for compatibility with systems that expect the shorter format.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT or DD_TRACE_AGENT_URL must match it.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_URL",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if set.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_IP_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables or disables the automatic collection of client IP addresses from HTTP request headers. When enabled, the IP address is stored in the http.client_ip span tag.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_IP_HEADER",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configures a custom header name from which to source the http.client_ip tag value. If this variable is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with \"http.client_ip\": \"5.6.7.9\"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip - cf-connecting-ip - cf-connecting-ipv6",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Enable debug logging in the tracer. Use OTEL_LOG_LEVEL as an alias",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HEADER_TAGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified, the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name> for response headers.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation occurs. The resulting value is reported in the http.url tag.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection by the Agent. Use only when you have long-lived traces or traces with many spans.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "A comma-separated list of header formats from which to attempt to inject and extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue. The more specific DD_TRACE_PROPAGATION_STYLE_INJECT and DD_TRACE_PROPAGATION_STYLE_EXTRACT configurations take priority when present.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RATE_LIMIT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES or DD_TRACE_SAMPLE_RATE is set.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REPORT_HOSTNAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Whether to report the system's hostname for each trace. When disabled, the hostname of the Agent is used instead.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Always set the http.endpoint tag with the results of the simplification algorithm of Resource Renaming",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RETRY_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "sets the interval for retrying submitting payloads to the agent",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLE_RATE",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Controls the ingestion sample rate (between 0.0 and 1.0) between the Agent and the backend.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_VERSION",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Adds a version tag to all spans, except for [Inferred services][3]",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Default value for SDKs that do not support grpc (ex: ruby)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_LOG_LEVEL",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "OTEL_LOG_LEVEL maps to DD_TRACE_DEBUG and enables the debug mode of the tracer. It only accepts \"debug\" as a valid value.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRICS_EXPORTER",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "OTEL_METRICS_EXPORTER is not used to choose an exporter. It is effectively only honored for none, which forces metrics off. When unset it does not enable metrics on its own it needs DD_METRICS_OTEL_ENABLED set to true to effectively produce metrics",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_EXPORTER",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "OTEL_TRACES_EXPORTER is not used to select an exporter. It’s only recognized for none, which is treated as an instruction to disable tracing (it maps to DD_TRACE_ENABLED=false). Any other value is considered unsupported and effectively ignored.\n\n- If DD_TRACE_ENABLED is set, it takes precedence over OTEL_TRACES_EXPORTER.\n- To enable tracing, ensure DD_TRACE_ENABLED is not set to false and do not set OTEL_TRACES_EXPORTER=none (unset it if present, or explicitly set DD_TRACE_ENABLED=true).",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    }
+  ],
+  "missingConfigurations": [
+    {
+      "key": "DD_ACTION_EXECUTION_ID",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_KEY",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_REQUEST_SAMPLE_RATE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_SAMPLE_DELAY",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_BODY_PARSING_SIZE_LIMIT",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_RASP_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_RULES",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_SCA_ENABLED",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_STACK_TRACE_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APP_KEY",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_URL",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_LOGS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_USE_NOOP_TRACER",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CUSTOM_TRACE_ID",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DATA_STREAMS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXTERNAL_ENV",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_BRANCH",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_DATE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_EMAIL",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_NAME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_DATE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_EMAIL",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_NAME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_MESSAGE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_SHA",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_REPOSITORY_URL",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_TAG",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_HOSTNAME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_ID",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TIME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TYPE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_KEY",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_AGENTLESS_ENABLED",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_ML_APP",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGGING_RATE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_METRICS_OTEL_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PIPELINE_EXECUTION_ID",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_AGENTLESS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_DELTA",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENABLED",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENDPOINT_COUNT_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_PERIOD",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_FLUSH_ON_EXIT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_OUTPUT_DIR",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_UPLOAD_TIMEOUT",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_URL",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_WAIT_PROFILE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_RC_TUF_ROOT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REMOTE_CONFIGURATION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_HEALTHCHECK_ADDR",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_LISTEN_ADDR",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_RUNTIME_METRICS_V2_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE",
+      "implementation": "E",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HEALTHCHECK_PORT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HOST",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_OBSERVABILITY_MODE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_PORT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_MAPPING",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SITE",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_DEBUG",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_LOG_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_METRICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_AGENT_HOST",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_AGENT_PORT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_OPTIMIZATION_ENV_DATA_FILE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_SESSION_NAME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ABANDONED_SPAN_TIMEOUT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AWS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BAGGAGE_TAG_KEYS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BUNTDB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CHI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_HOSTNAME_COMPAT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CONSUL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_ABANDONED_SPANS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_SEELOG_WORKAROUND",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_STACK",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ECHO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ELASTIC_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_FASTHTTP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_FEATURES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_FIBER_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GIN_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GIT_METADATA_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOCQL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOCQL_COMPAT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOJI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOPG_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GQLGEN_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRAPHQL_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRAPHQL_ERROR_EXTENSIONS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRPC_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_SERVER_ERROR_STATUSES",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_KAFKA_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LEVELDB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOGRUS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOG_DIRECTORY",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MCP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MEMCACHE_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MONGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MUX_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_NEGRONI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_MAPPING",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_EXTRACT_FIRST",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_EXTRACT",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_INJECT",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REDIGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REDIS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REDIS_RAW_COMMAND",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RESOURCE_RENAMING_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RESTFUL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES_FILE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SARAMA_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SOURCE_HOSTNAME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SQL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SQL_COMMENT_INJECTION_MODE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_STARTUP_LOGS",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_STATS_COMPUTATION_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_TWIRP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_VALKEY_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_VALKEY_RAW_COMMAND",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_VAULT_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE__ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_HEADERS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_TIMEOUT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_LOGS_EXPORTER",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_INTERVAL",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_TIMEOUT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_PROPAGATORS",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_RESOURCE_ATTRIBUTES",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_SERVICE_NAME",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER_ARG",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    }
+  ]
+}

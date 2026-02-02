@@ -525,3 +525,48 @@ Generate a script that reads step 3 output plus the overrides file and produces 
   - Add a `results` entry with `source: "llm_generated"` and both `description` and `shortDescription` filled.
 - `shortDescription` may remain `""` for extracted results from earlier steps (unless the pipeline decides to run a dedicated summarization step later). For `llm_generated` results, it must be non-empty.
 
+## Run
+
+The pipeline is intended to be run step-by-step: each step reads the previous step's JSON output and produces `configurations_descriptions_step_<n>.json`.
+
+At the moment, only **Step 1 (registry_doc)** is implemented in this repository.
+
+### Prerequisites
+
+- Python 3.9+ (standard library only; no pip dependencies)
+- Network access to `https://dd-feature-parity.azurewebsites.net/configurations/`
+
+### Step 1 — Registry documentation (`registry_doc`)
+
+Run from the **description_research** directory (important: default paths are relative to the current working directory):
+
+```shell
+cd description_research
+python3 step_1_registry_doc.py --lang golang
+```
+
+This writes:
+
+- `./result/configurations_descriptions_step_1.json` (so: `description_research/result/configurations_descriptions_step_1.json`)
+
+You can customize input/output locations explicitly:
+
+```shell
+cd description_research
+python3 step_1_registry_doc.py \
+  --lang golang \
+  --supported-configurations ../internal/env/supported_configurations.json \
+  --output ./result
+```
+
+Notes:
+
+- The script logs progress to stderr; the output file contains only JSON.
+- Output ordering is stable (sorted by `key`, then `implementation`) for a given registry payload and supported configurations input.
+- Because Step 1 fetches a live registry endpoint, output may change over time as the registry data evolves.
+
+Optional sanity-check:
+
+```shell
+python3 -m json.tool ./result/configurations_descriptions_step_1.json > /dev/null
+```
