@@ -123,6 +123,9 @@ func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 // we intercept broker connections to identify and collect them.
 // Seed brokers are distinguished by having negative NodeIDs (e.g., -1, -2)
 // and nil Rack values: https://pkg.go.dev/github.com/twmb/franz-go/pkg/kgo#BrokerMetadata
+//
+// NOTE: Unlike IBM/sarama, we use this hook to collect bootstrap servers.
+// Sarama doesn't set this tag on spans.
 func (c *Client) OnBrokerConnect(meta kgo.BrokerMetadata, initDur time.Duration, conn net.Conn, err error) {
 	if meta.NodeID < 0 && meta.Rack == nil {
 		addr := fmt.Sprintf("%s:%d", meta.Host, meta.Port)
