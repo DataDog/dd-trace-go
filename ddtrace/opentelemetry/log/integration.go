@@ -16,6 +16,8 @@ import (
 const (
 	// shutdownTimeout is the maximum time to wait for the LoggerProvider to shut down.
 	shutdownTimeout = 5 * time.Second
+	// flushTimeout is the maximum time to wait for logs to be flushed.
+	flushTimeout = 5 * time.Second
 )
 
 // Start initializes the OTel LoggerProvider if DD_LOGS_OTEL_ENABLED=true.
@@ -44,4 +46,30 @@ func Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	return ShutdownGlobalLoggerProvider(ctx)
+}
+
+// ForceFlush forces all pending log records to be exported immediately.
+// This function is primarily useful for testing and ensuring logs are sent before
+// critical operations. The logger provider continues accepting new logs after flushing.
+//
+// If the provider was not initialized, this is a no-op.
+// The flush operation will timeout after 5 seconds to avoid blocking indefinitely.
+//
+// Example usage:
+//
+//	if err := log.ForceFlush(context.Background()); err != nil {
+//	    log.Error("Failed to flush logs: %v", err)
+//	}
+func ForceFlush(ctx context.Context) error {
+	globalLoggerProviderMu.Lock()
+	provider := globalLoggerProvider
+	globalLoggerProviderMu.Unlock()
+
+	if provider == nil {
+		log.Debug("No LoggerProvider initialized, ForceFlush is a no-op")
+		return nil
+	}
+
+	log.Debug("Flushing OTel LoggerProvider")
+	return provider.ForceFlush(ctx)
 }
