@@ -345,24 +345,177 @@ Label: `llm_generated`
 This is the fallback step for configurations that still have no usable extracted description.
 The LLM generates text by understanding **how the configuration is used**.
 
+Because LLM calls are inherently non-deterministic, step 4 is split into:
+
+- a deterministic **context extraction** script (build inputs for the LLM)
+- a reviewable **overrides** file produced by the LLM (data, not code)
+- a deterministic **materializer** script that merges overrides into the final step JSON
+
 #### Inputs
 
 - The previous step output `configurations_descriptions_step_3.json`
-- For each remaining `key`, enough technical context to explain it accurately (the pipeline should provide this to the AI), for example:
-  - where the key is read
-  - how it is parsed (type, allowed values, default behavior)
-  - what behavior it controls
-  - any constraints, deprecations, or compatibility notes
+- A checkout of this repository (for code context)
+- A file containing LLM-generated overrides (see below)
 
 #### What the AI should do
 
-For every entry still present in `missingConfigurations`:
+##### 4a - Generate the context extraction script (deterministic)
 
-- Generate a **long description** (`description`) that is:
-  - accurate given the provided context
-  - user-facing (explains effect and typical usage)
-  - concise (prefer 1–3 sentences unless the setting is complex)
-- Generate a **short description** (`shortDescription`) as a one-liner summary (roughly 6–14 words).
+Generate a script that reads step 3 output and produces a JSON “context packet” for the remaining missing keys.
+This context packet is what the LLM will use to write accurate descriptions.
+
+**Script contract (expected by the pipeline):**
+
+- Inputs (CLI args or constants):
+  - `--lang` (example: `golang`)
+  - `--input` (path to `configurations_descriptions_step_3.json`)
+  - `--repo-root` (path to this repo checkout)
+  - `--output` (path to `description_research/configurations_descriptions_step_4_context.json`)
+- Output:
+  - `description_research/configurations_descriptions_step_4_context.json` (deterministic JSON)
+
+**Context packet requirements (per missing key+implementation):**
+
+For each `(key, implementation)` still missing after step 3, include enough context for an LLM to describe it accurately:
+
+- where the key is read (package/file/function if available)
+- how it is parsed (type, allowed values, default behavior)
+- what behavior it controls
+- any constraints, deprecations, or compatibility notes
+
+The script must not call an LLM. It only gathers and formats context deterministically.
+
+##### 4b - Produce overrides with an LLM (reviewable data)
+
+Run the LLM **in Cursor** (model: `gpt-5.2-high`) to produce a single overrides file:
+`description_research/configurations_descriptions_step_4_overrides.json`.
+
+This overrides file is the only non-deterministic artifact. It should be reviewed like any other change.
+
+**How to run the LLM in Cursor (directive procedure):**
+
+- Ensure `description_research/configurations_descriptions_step_4_context.json` exists (produced by step 4a).
+- Decide a deterministic batching strategy (required because the context packet can be large):
+  - Sort entries by `key`, then `implementation`.
+  - Process in fixed-size batches (e.g. 50 entries per batch).
+  - Keep a record of the batch boundaries (e.g. first/last key) in your PR/notes.
+- For each batch, start a Cursor agent run (model: `gpt-5.2-high`) with access to this repo.
+  - Do NOT copy/paste the full context JSON into the prompt.
+  - Instead, instruct the agent to read the context from:
+    - `description_research/configurations_descriptions_step_4_context.json`
+  - Provide the batch boundaries in the prompt (either:
+    - a `[startKey, endKey]` range in sorted order, or
+    - an explicit list of `(key, implementation)` pairs to process for this batch).
+  - Allow the agent to read/search this repository to confirm details when the context packet is incomplete.
+  - Require the agent to update the overrides file (append/merge entries) and keep it valid JSON at all times.
+- After all batches:
+  - De-duplicate overrides by `(key, implementation)` (later entries must not override earlier ones silently).
+  - Sort overrides by `key`, then `implementation`.
+  - Validate the file against the checklist below.
+
+**Prompt template (copy/paste):**
+
+System prompt (paste as-is):
+
+```text
+You are a software documentation assistant.
+You write accurate, user-facing configuration descriptions.
+You must follow the output format exactly.
+```
+
+User prompt (paste as-is, then replace the context JSON):
+
+```text
+Task:
+Generate overrides for missing configuration descriptions for dd-trace-go.
+You are running inside Cursor with access to the repository source code.
+
+Input:
+The context entries are stored in this repo at:
+description_research/configurations_descriptions_step_4_context.json
+
+Each entry describes one (key, implementation) and includes technical context extracted from code and prior pipeline steps.
+
+Batching:
+For this run, ONLY process the entries in the following batch:
+<BATCH_RANGE_OR_LIST_GOES_HERE>
+
+Rules:
+- Use the context packet as the primary input.
+- You MAY read/search this repository to validate or complete missing details, but you must not guess. Prefer code as the source of truth.
+- If you cannot confidently determine behavior, defaults, constraints, or allowed values, output NO entry for that (key, implementation).
+- Do not reference “the context” or “this file” in the descriptions.
+- Keep the language product-agnostic and tracer-agnostic unless the code explicitly requires specificity.
+- Do not include markdown, code fences, or commentary in your output.
+
+Output:
+Update (create or modify) this file in the repo:
+description_research/configurations_descriptions_step_4_overrides.json
+
+That file must contain ONLY a JSON array. Each element must be:
+{
+  "key": "<string>",
+  "implementation": "<string>",
+  "description": "<string>",
+  "shortDescription": "<string>"
+}
+
+Constraints:
+- description: 1–3 sentences, user-facing, explains what the setting controls and how it affects behavior.
+- shortDescription: 6–14 words, one line, summary of the description.
+- Do not include trailing periods in shortDescription.
+- No duplicate (key, implementation) pairs.
+
+Selection:
+- Only produce entries for (key, implementation) pairs present in the context file.
+- Only produce entries for the (key, implementation) pairs included in the batch for this run.
+- If an entry already exists in the overrides file for the same (key, implementation), do not change it unless you are strictly increasing correctness (and explain via a code comment in the PR, not in the JSON).
+
+Context source:
+Read `description_research/configurations_descriptions_step_4_context.json` and use it as the source of truth.
+```
+
+**Validation checklist (runner should enforce):**
+
+- Output parses as JSON and is an array.
+- Every entry has `key`, `implementation`, `description`, `shortDescription` (all non-empty strings).
+- `shortDescription` length is reasonable (roughly 6–14 words).
+- `description` is not trivially short and passes the “quality bar”.
+- No duplicate `(key, implementation)` pairs.
+
+**Overrides file format (recommended):**
+
+An array of entries (one per key+implementation) with:
+
+- `key`
+- `implementation`
+- `description` (1–3 sentences, user-facing)
+- `shortDescription` (one-liner, roughly 6–14 words)
+
+##### 4c - Generate the materializer script (deterministic)
+
+Generate a script that reads step 3 output plus the overrides file and produces the final `configurations_descriptions_step_4.json`.
+
+**Script contract (expected by the pipeline):**
+
+- Inputs (CLI args or constants):
+  - `--lang` (example: `golang`)
+  - `--input` (path to `configurations_descriptions_step_3.json`)
+  - `--overrides` (path to `description_research/configurations_descriptions_step_4_overrides.json`)
+  - `--output` (path to `configurations_descriptions_step_4.json`)
+- Output:
+  - JSON file matching the schema defined above.
+
+**Merge rules:**
+
+- For each missing `(key, implementation)`, if an overrides entry exists and passes the quality bar:
+  - move it to `documentedConfigurations`
+  - add a `results` entry with `source: "llm_generated"` and both `description` and `shortDescription` filled
+  - preserve previous missing info by converting prior `missingReasons` into `missingSources`
+- If no overrides entry exists:
+  - keep it missing and add `{ "source": "llm_generated", "reason": "not_found" }`
+- If an overrides entry exists but is unusable:
+  - keep it missing and add `{ "source": "llm_generated", "reason": "quality" }`
 
 #### Output rules
 
