@@ -291,7 +291,7 @@ func TestDBMPropagationFullOnPqCopy(t *testing.T) {
 
 	spans := tr.FinishedSpans()
 	require.Len(t, spans, 4) // 1 for the connection, 1 for the transaction, 1 for the copy's prepare, 1 for the copy's exec
-	assert.Equal(t, `COPY "public"."testsql" ("name") FROM STDIN`, spans[4].Tags()[ext.ResourceName])
+	assert.Equal(t, `COPY "public"."testsql" ("name") FROM STDIN`, spans[3].Tags()[ext.ResourceName])
 }
 
 func TestDBMTraceContextTagging(t *testing.T) {
