@@ -14,45 +14,37 @@ Datadog Lambda Library for Go enables enhanced Lambda metrics, distributed traci
 
 If you are upgrading from the legacy [`github.com/DataDog/datadog-lambda-go`](https://github.com/DataDog/datadog-lambda-go) repository, this guide will walk you through the migration process with code examples.
 
-### Step 1: Update Dependencies
+1. **Update Dependencies.** Update your `go.mod` file by replacing the old package with the new one:
 
-Update your `go.mod` file by replacing the old package with the new one:
+    ```bash
+    # Remove the old package
+    go get github.com/DataDog/datadog-lambda-go@none
 
-```bash
-# Remove the old package
-go get github.com/DataDog/datadog-lambda-go@none
+    # Install the new v2 package
+    go get github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
+    ```
 
-# Install the new v2 package
-go get github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
-```
+1. **Update Import Statements.** Update your `datadog-lambda-go` import path:
 
-### Step 2: Update Import Statements
+    **Before (v1):**
+    ```go
+    import (
+        ddlambda "github.com/DataDog/datadog-lambda-go"
+    )
+    ```
 
-The import paths have changed. Update your imports as follows:
+    **After (v2):**
+    ```go
+    import (
+        ddlambda "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"
+    )
+    ```
 
-**Before (v1):**
-```go
-import (
-    ddlambda "github.com/DataDog/datadog-lambda-go"
-    "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-    httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-)
-```
+    The API is compatible between v1 and v2, so your handler code remains unchanged.
 
-**After (v2):**
-```go
-import (
-    ddlambda "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"
-    "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-    httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
-)
-```
+1. **(Optional) Update dd-trace-go from v1 to v2.** If you're also using `dd-trace-go` for tracing, you can optionally upgrade from v1 to v2. For details on tracer changes, see the [general dd-trace-go v1 to v2 migration guide](https://docs.datadoghq.com/tracing/trace_collection/custom_instrumentation/go/migration/).
 
-The API is compatible between v1 and v2, so your handler code remains unchanged. For details on other changes in dd-trace-go v2, see the [general dd-trace-go v1 to v2 migration guide](https://docs.datadoghq.com/tracing/trace_collection/custom_instrumentation/go/migration/).
-
-### Step 3: Deploy and Configure
-
-After updating your code, follow the [Datadog AWS Lambda Instrumentation for Go](https://docs.datadoghq.com/serverless/aws_lambda/instrumentation/go/?tab=datadogui) guide to configure the Datadog Lambda Extension and environment variables for your Lambda function.
+1. **Deploy and Configure.** After updating your code, follow the [Datadog AWS Lambda Instrumentation for Go](https://docs.datadoghq.com/serverless/aws_lambda/instrumentation/go/?tab=datadogui) guide to configure the Datadog Lambda Extension and environment variables for your Lambda function.
 
 ## Installation
 
