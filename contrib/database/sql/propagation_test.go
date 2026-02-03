@@ -277,12 +277,6 @@ func TestDBMPropagationFullOnPqCopy(t *testing.T) {
 		assert.NoError(t, db.Close())
 	})
 
-	db.Exec("DROP TABLE IF EXISTS testsql")
-	db.Exec("CREATE TABLE testsql (dn text, name text, sam_account_name text, mail text, primary_group_id text)")
-	t.Cleanup(func() {
-		db.Exec("DROP TABLE IF EXISTS testsql")
-	})
-
 	tx, err := db.Begin()
 	require.NoError(t, err)
 	defer tx.Rollback()
