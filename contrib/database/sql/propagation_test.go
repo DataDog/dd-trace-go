@@ -290,7 +290,7 @@ func TestDBMPropagationFullOnPqCopy(t *testing.T) {
 	require.NoError(t, err)
 
 	spans := tr.FinishedSpans()
-	require.Len(t, spans, 3) // 1 for the transaction, 1 for the prepare, 1 for the copy
+	require.Len(t, spans, 4) // 1 for the connection, 1 for the transaction, 1 for the copy's prepare, 1 for the copy's exec
 	assert.Equal(t, `COPY "public"."testsql" ("name") FROM STDIN`, spans[4].Tags()[ext.ResourceName])
 }
 
