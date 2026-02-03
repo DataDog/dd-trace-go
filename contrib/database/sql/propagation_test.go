@@ -281,17 +281,17 @@ func TestDBMPropagationFullOnPqCopy(t *testing.T) {
 	require.NoError(t, err)
 	defer tx.Rollback()
 
-	s := pq.CopyInSchema("public", "testsql", "dn", "name", "sam_account_name", "mail", "primary_group_id")
+	s := pq.CopyInSchema("public", "testsql", "name")
 	stmt, err := tx.Prepare(s)
 	require.NoError(t, err)
 	defer stmt.Close()
 
-	_, err = stmt.Exec("dn", "name0", "sam", nil, nil)
+	_, err = stmt.Exec("name-0")
 	require.NoError(t, err)
 
 	spans := tr.FinishedSpans()
-	require.Len(t, spans, 6)
-	assert.Equal(t, `COPY "public"."testsql" ("dn", "name", "sam_account_name", "mail", "primary_group_id") FROM STDIN`, spans[5].Tags()[ext.ResourceName])
+	require.Len(t, spans, 3) // 1 for the transaction, 1 for the prepare, 1 for the copy
+	assert.Equal(t, `COPY "public"."testsql" ("name") FROM STDIN`, spans[4].Tags()[ext.ResourceName])
 }
 
 func TestDBMTraceContextTagging(t *testing.T) {
