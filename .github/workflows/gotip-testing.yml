@@ -37,7 +37,7 @@ jobs:
       - name: Pin datadog-agent to latest commit
         run: |-
           sha=$(git ls-remote https://github.com/DataDog/datadog-agent.git refs/heads/main | cut -f1)
-          modules=( "pkg/obfuscate", "pkg/proto", "pkg/remoteconfig/state", "pkg/trace" )
+          modules=( pkg/obfuscate pkg/proto pkg/remoteconfig/state pkg/trace )
           for module in "${modules[@]}"; do
             gotip get -u "github.com/DataDog/datadog-agent/${module}@${sha}"
           done
