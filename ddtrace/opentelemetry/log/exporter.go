@@ -6,6 +6,7 @@
 package log
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net"
@@ -217,21 +218,25 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 	// Check if OTEL environment variables are set
 	if hasOTLPEndpointInEnv() {
 		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
-		rawEndpoint := env.Get(envOTLPLogsEndpoint)
-		if rawEndpoint == "" {
-			rawEndpoint = env.Get(envOTLPEndpoint)
-		}
+		rawEndpoint := cmp.Or(env.Get(envOTLPLogsEndpoint), env.Get(envOTLPEndpoint))
 
-		if rawEndpoint != "" {
-			// Parse and sanitize the URL to handle trailing slashes correctly
-			sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
-			if sanitizedURL != "" {
-				opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
-				log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
+		// Parse and sanitize the URL to handle trailing slashes correctly
+		sanitizedURL := sanitizeOTLPEndpoint(rawEndpoint, "/v1/logs")
+		if sanitizedURL != "" {
+			opts = append(opts, otlploghttp.WithEndpointURL(sanitizedURL))
+			log.Debug("Using sanitized OTLP logs endpoint: %s", sanitizedURL)
+		} else {
+			// Fallback to DD agent config if URL cannot be parsed
+			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration", rawEndpoint)
+			endpoint, path, insecure := resolveOTLPEndpointHTTP()
+			opts = append(opts, otlploghttp.WithEndpoint(endpoint))
+			opts = append(opts, otlploghttp.WithURLPath(path))
+			if insecure {
+				opts = append(opts, otlploghttp.WithInsecure())
 			}
 		}
 	} else {
-		// Use DD agent configuration as fallback
+		// Use DD agent configuration as default
 		endpoint, path, insecure := resolveOTLPEndpointHTTP()
 		opts = append(opts, otlploghttp.WithEndpoint(endpoint))
 		opts = append(opts, otlploghttp.WithURLPath(path))
@@ -263,30 +268,31 @@ func buildGRPCExporterOptions(userOpts ...otlploggrpc.Option) []otlploggrpc.Opti
 	// Check if OTEL environment variables are set
 	if hasOTLPEndpointInEnv() {
 		// Priority: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT > OTEL_EXPORTER_OTLP_ENDPOINT
-		rawEndpoint := env.Get(envOTLPLogsEndpoint)
-		if rawEndpoint == "" {
-			rawEndpoint = env.Get(envOTLPEndpoint)
-		}
+		rawEndpoint := cmp.Or(env.Get(envOTLPLogsEndpoint), env.Get(envOTLPEndpoint))
 
-		if rawEndpoint != "" {
-			// For gRPC, we extract host:port and insecure flag from the URL
-			u, err := url.Parse(rawEndpoint)
-			if err != nil {
-				log.Warn("Failed to parse OTLP endpoint URL: %s", err.Error())
-			} else {
-				endpoint := u.Host
-				if endpoint == "" {
-					endpoint = u.Path // Handle URLs without scheme
-				}
-				opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
-				if u.Scheme == "http" || u.Scheme == "grpc" {
-					opts = append(opts, otlploggrpc.WithInsecure())
-				}
-				log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %v)", endpoint, u.Scheme == "http" || u.Scheme == "grpc")
+		// For gRPC, we extract host:port and insecure flag from the URL
+		u, err := url.Parse(rawEndpoint)
+		if err != nil {
+			// Fallback to DD agent config if URL cannot be parsed
+			log.Warn("Invalid OTLP endpoint URL '%s', falling back to DD agent configuration: %s", rawEndpoint, err.Error())
+			endpoint, insecure := resolveOTLPEndpointGRPC()
+			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
+			if insecure {
+				opts = append(opts, otlploggrpc.WithInsecure())
 			}
+		} else {
+			endpoint := u.Host
+			if endpoint == "" {
+				endpoint = u.Path // Handle URLs without scheme
+			}
+			opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
+			if u.Scheme == "http" || u.Scheme == "grpc" {
+				opts = append(opts, otlploggrpc.WithInsecure())
+			}
+			log.Debug("Using OTLP logs gRPC endpoint: %s (insecure: %v)", endpoint, u.Scheme == "http" || u.Scheme == "grpc")
 		}
 	} else {
-		// Use DD agent configuration as fallback
+		// Use DD agent configuration as default
 		endpoint, insecure := resolveOTLPEndpointGRPC()
 		opts = append(opts, otlploggrpc.WithEndpoint(endpoint))
 		if insecure {
