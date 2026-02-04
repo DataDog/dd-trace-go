@@ -27,7 +27,7 @@ const (
 // Returns an error if initialization fails when the feature is enabled.
 func Start(ctx context.Context) error {
 	cfg := config.Get()
-	if !cfg.LogsOtelEnabled() {
+	if !cfg.LogsOTelEnabled() {
 		log.Debug("DD_LOGS_OTEL_ENABLED=false, skipping OTel LoggerProvider initialization")
 		return nil
 	}

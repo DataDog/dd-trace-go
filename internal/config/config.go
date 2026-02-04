@@ -619,13 +619,13 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
 }
 
-func (c *Config) LogsOtelEnabled() bool {
+func (c *Config) LogsOTelEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.logsOTelEnabled
 }
 
-func (c *Config) SetLogsOtelEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.logsOTelEnabled = enabled
