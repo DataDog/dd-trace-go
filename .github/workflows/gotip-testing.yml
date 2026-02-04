@@ -39,7 +39,7 @@ jobs:
           GOPRIVATE: github.com/DataDog/*
         run: |-
           sha=$(git ls-remote https://github.com/DataDog/datadog-agent.git refs/heads/main | cut -f1)
-          modules=( pkg/obfuscate pkg/proto pkg/remoteconfig/state pkg/trace )
+          modules=( pkg/trace/log pkg/obfuscate pkg/proto pkg/remoteconfig/state pkg/trace )
           for module in "${modules[@]}"; do
             gotip get "github.com/DataDog/datadog-agent/${module}@${sha}"
           done
