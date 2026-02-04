@@ -7,8 +7,9 @@ package gosdk_test
 
 import (
 	gosdktrace "github.com/DataDog/dd-trace-go/contrib/modelcontextprotocol/go-sdk/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func Example() {

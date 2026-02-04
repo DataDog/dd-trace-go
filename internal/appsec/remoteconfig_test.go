@@ -19,13 +19,14 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/go-libddwaf/v4"
 	"github.com/DataDog/go-libddwaf/v4/timer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
 //go:embed "testdata/custom-data-classification/*.json"

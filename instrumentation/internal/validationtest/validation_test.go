@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/validationtest/v2/testcases"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 

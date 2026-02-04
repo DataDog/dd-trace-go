@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	httptrace "github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )

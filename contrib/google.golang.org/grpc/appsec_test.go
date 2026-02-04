@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
