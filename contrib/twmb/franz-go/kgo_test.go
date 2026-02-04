@@ -7,7 +7,6 @@ package kgo
 
 import (
 	"context"
-	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -78,103 +76,34 @@ func createTopicWithCleanup(t *testing.T, topic string) {
 	})
 }
 
-// TODO: Remove, helper function to better understand offsets
-func logOffsets(phase, group string, offsets kadm.OffsetResponses) {
-	log.Printf("offsets for group %s %s:", group, phase)
-	offsets.Each(func(o kadm.OffsetResponse) {
-		log.Printf("  topic=%s partition=%d offset=%d", o.Topic, o.Partition, o.Offset.At)
-	})
-}
-
 func ensureTopicReady(topic string) error {
-	const (
-		maxRetries = 10
-		retryDelay = 100 * time.Millisecond
-	)
-
 	cl, err := kgo.NewClient(kgo.SeedBrokers(seedBrokers...))
 	if err != nil {
 		return err
 	}
 	defer cl.Close()
 
+	admCl := kadm.NewClient(cl)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Check initial offset state
-	admCl := kadm.NewClient(cl)
-	initialOffsets, _ := admCl.FetchOffsetsForTopics(ctx, testGroupID, topic)
-	logOffsets("INITIAL (before produce)", testGroupID, initialOffsets)
-
-	var retryCount int
-	for retryCount < maxRetries {
-		record := &kgo.Record{
-			Topic: topic,
-			Key:   []byte("setup-key"),
-			Value: []byte("setup-value"),
+	for {
+		metadata, err := admCl.Metadata(ctx, topic)
+		if err != nil {
+			return err
 		}
 
-		results := cl.ProduceSync(ctx, record)
-		err = results.FirstErr()
-		if err == nil {
-			break
+		topicMeta, ok := metadata.Topics[topic]
+		if ok && len(topicMeta.Partitions) > 0 && topicMeta.Err == nil {
+			return nil
 		}
 
-		if errors.Is(err, kerr.UnknownTopicOrPartition) {
-			retryCount++
-			log.Printf("topic %s not ready yet, retrying in %s (retryCount: %d)\n", topic, retryDelay, retryCount)
-			time.Sleep(retryDelay)
-			continue
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
 		}
-		return err
 	}
-	if err != nil {
-		return err
-	}
-
-	// Consume the setup message using the same consumer group as tests
-	consumerCl, err := kgo.NewClient(
-		kgo.SeedBrokers(seedBrokers...),
-		kgo.ConsumeTopics(topic),
-		kgo.ConsumerGroup(testGroupID),
-	)
-	if err != nil {
-		return err
-	}
-	defer consumerCl.Close()
-
-	offsetCl, err := kgo.NewClient(kgo.SeedBrokers(seedBrokers...))
-	if err != nil {
-		return err
-	}
-	defer offsetCl.Close()
-
-	offsetAdmCl := kadm.NewClient(offsetCl)
-	defer offsetAdmCl.Close()
-
-	offsets, err := offsetAdmCl.FetchOffsetsForTopics(ctx, testGroupID, topic)
-	if err != nil {
-		return err
-	}
-	logOffsets("before cleanup consumption", testGroupID, offsets)
-
-	fetches := consumerCl.PollFetches(ctx)
-	if fetches.IsClientClosed() {
-		return errors.New("client closed while polling")
-	}
-
-	// // Commit offsets so the test consumer doesn't see the setup message
-	if err := consumerCl.CommitUncommittedOffsets(ctx); err != nil {
-		return err
-	}
-
-	offsets, err = offsetAdmCl.FetchOffsetsForTopics(ctx, testGroupID, topic)
-	if err != nil {
-		return err
-	}
-	logOffsets("after cleanup consumption", testGroupID, offsets)
-
-	return fetches.Err()
 }
 
 type producedRecords struct {
