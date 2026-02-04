@@ -214,7 +214,7 @@ Generate a **step 2 script** which reads step 1 output and produces `configurati
 - Output:
   - JSON file matching the schema defined above.
 
-**Documentation corpus selection (deterministic):**
+**Documentation selection (deterministic):**
 
 - Scan documentation source files (e.g. `**/*.md`, `**/*.mdx`, `**/*.yaml`, `**/*.yml`) under the docs repo.
 - Prefer scanning files that are likely to describe tracer configuration:
@@ -226,7 +226,7 @@ Generate a **step 2 script** which reads step 1 output and produces `configurati
 
 For every entry in `missingConfigurations` from step 1:
 
-- Search the documentation corpus for the exact configuration `key` (case-sensitive).
+- Search the documentation for the exact configuration `key` (case-sensitive).
 - If multiple matches exist, select the best match using a deterministic scoring rule:
   - Prefer file paths containing tracer docs keywords: `tracing`, `apm`, `agent`, `serverless`, `profiling`.
   - Prefer file paths containing the tracer language hint for `lang` (e.g. `go`, `golang` for `golang`).
@@ -361,7 +361,26 @@ Because LLM calls are inherently non-deterministic, step 4 is split into:
 
 ##### 4a - Generate the context extraction script (deterministic)
 
-Generate a script that reads step 3 output and produces a JSON “context packet” for the remaining missing keys.
+Before running the LLM, we must identify which keys still need **LLM-generated** descriptions.
+
+LLM needing keys are:
+
+- `documentedConfigurations` keys with **no** `results` entry (missing or empty array)
+- `documentedConfigurations` keys with **no** result whose `source` is `"registry_doc"`
+- `missingConfigurations` keys
+
+To extract those keys deterministically, use:
+
+```shell
+cd description_research
+python3 step_4a_extract_llm_needed_keys.py \
+  --input ./result/configurations_descriptions_step_3.json \
+  --output ./result/configurations_llm_needed_keys.json
+```
+
+If you haven't run step 3 yet, you can point `--input` at `./result/configurations_descriptions_step_2.json` instead.
+
+Generate a script that reads step 3 output and produces a JSON “context packet” for the keys still needing LLM-generated descriptions.
 This context packet is what the LLM will use to write accurate descriptions.
 
 **Script contract (expected by the pipeline):**
@@ -374,9 +393,9 @@ This context packet is what the LLM will use to write accurate descriptions.
 - Output:
   - `description_research/configurations_descriptions_step_4_context.json` (deterministic JSON)
 
-**Context packet requirements (per missing key+implementation):**
+**Context packet requirements (per key+implementation):**
 
-For each `(key, implementation)` still missing after step 3, include enough context for an LLM to describe it accurately:
+For each `(key, implementation)` still needing LLM-generated descriptions after steps 1–3, include enough context for an LLM to describe it accurately:
 
 - where the key is read (package/file/function if available)
 - how it is parsed (type, allowed values, default behavior)
@@ -421,24 +440,20 @@ System prompt (paste as-is):
 You are a software documentation assistant.
 You write accurate, user-facing configuration descriptions.
 You must follow the output format exactly.
-```
 
-User prompt (paste as-is, then replace the context JSON):
-
-```text
 Task:
 Generate overrides for missing configuration descriptions for dd-trace-go.
 You are running inside Cursor with access to the repository source code.
 
 Input:
-The context entries are stored in this repo at:
-description_research/configurations_descriptions_step_4_context.json
+The keys you need to complete are are stored in this repo at:
+@description_research/result/configurations_llm_needed_keys.json
 
 Each entry describes one (key, implementation) and includes technical context extracted from code and prior pipeline steps.
 
 Batching:
 For this run, ONLY process the entries in the following batch:
-<BATCH_RANGE_OR_LIST_GOES_HERE>
+10 first keys
 
 Rules:
 - Use the context packet as the primary input.
@@ -449,30 +464,17 @@ Rules:
 - Do not include markdown, code fences, or commentary in your output.
 
 Output:
-Update (create or modify) this file in the repo:
-description_research/configurations_descriptions_step_4_overrides.json
-
-That file must contain ONLY a JSON array. Each element must be:
-{
-  "key": "<string>",
-  "implementation": "<string>",
-  "description": "<string>",
-  "shortDescription": "<string>"
-}
+Update the source file @description_research/result/configurations_llm_needed_keys_empty.json
+complete the "description"
 
 Constraints:
 - description: 1–3 sentences, user-facing, explains what the setting controls and how it affects behavior.
-- shortDescription: 6–14 words, one line, summary of the description.
-- Do not include trailing periods in shortDescription.
 - No duplicate (key, implementation) pairs.
 
 Selection:
 - Only produce entries for (key, implementation) pairs present in the context file.
 - Only produce entries for the (key, implementation) pairs included in the batch for this run.
 - If an entry already exists in the overrides file for the same (key, implementation), do not change it unless you are strictly increasing correctness (and explain via a code comment in the PR, not in the JSON).
-
-Context source:
-Read `description_research/configurations_descriptions_step_4_context.json` and use it as the source of truth.
 ```
 
 **Validation checklist (runner should enforce):**
@@ -529,12 +531,11 @@ Generate a script that reads step 3 output plus the overrides file and produces 
 
 The pipeline is intended to be run step-by-step: each step reads the previous step's JSON output and produces `configurations_descriptions_step_<n>.json`.
 
-At the moment, only **Step 1 (registry_doc)** is implemented in this repository.
-
 ### Prerequisites
 
 - Python 3.9+ (standard library only; no pip dependencies)
 - Network access to `https://dd-feature-parity.azurewebsites.net/configurations/`
+- A local checkout of `DataDog/documentation` at `description_research/documentation/` (required for step 2+)
 
 ### Step 1 — Registry documentation (`registry_doc`)
 
@@ -565,8 +566,20 @@ Notes:
 - Output ordering is stable (sorted by `key`, then `implementation`) for a given registry payload and supported configurations input.
 - Because Step 1 fetches a live registry endpoint, output may change over time as the registry data evolves.
 
-Optional sanity-check:
+### Step 2 — Documentation (same tracer language) (`documentation_same_language`)
+
+Step 2 reads step 1 output and tries to extract descriptions from the Datadog documentation repo for the same tracer language (for example: Go tracer docs when `--lang golang`).
 
 ```shell
-python3 -m json.tool ./result/configurations_descriptions_step_1.json > /dev/null
+cd description_research
+python3 step_2_documentation_same_language.py --lang golang
 ```
+
+This reads:
+
+- `./result/configurations_descriptions_step_1.json`
+- `./documentation/` (local `DataDog/documentation` checkout)
+
+And writes:
+
+- `./result/configurations_descriptions_step_2.json`
