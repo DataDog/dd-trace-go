@@ -84,12 +84,14 @@ func getGithubActionsDiagDirs() []string {
 	case "windows":
 		var candidates []string
 		// Only add paths with ProgramFiles if the env var is set (avoid relative paths)
+		//nolint:forbidigo
 		if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
 			candidates = append(candidates,
 				filepath.Join(programFiles, "actions-runner", "cached", "_diag"),
 				filepath.Join(programFiles, "actions-runner", "_diag"),
 			)
 		}
+		//nolint:forbidigo
 		if programFilesX86 := os.Getenv("ProgramFiles(x86)"); programFilesX86 != "" {
 			candidates = append(candidates,
 				filepath.Join(programFilesX86, "actions-runner", "cached", "_diag"),
