@@ -294,6 +294,8 @@ func TestProduceConsumeFunctional(t *testing.T) {
 	assert.Equal(t, []byte("key1"), records[0].Key)
 	assert.Equal(t, []byte("value1"), records[0].Value)
 
+	consumerCl.Close()
+
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 2)
 
