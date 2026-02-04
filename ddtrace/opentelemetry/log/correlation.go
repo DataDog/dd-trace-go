@@ -45,15 +45,44 @@ func ddSpanContextToOtel(ddCtx *tracer.SpanContext) oteltrace.SpanContext {
 	var spanID oteltrace.SpanID
 	binary.BigEndian.PutUint64(spanID[:], ddCtx.SpanID())
 
+	// Extract sampling decision from DD span context by injecting as W3C traceparent
+	// This respects the actual sampling decision (not just default behavior)
+	traceFlags := extractTraceFlagsFromDDContext(ddCtx)
+
 	// Create OTel span context
 	config := oteltrace.SpanContextConfig{
 		TraceID:    traceID,
 		SpanID:     spanID,
-		TraceFlags: oteltrace.FlagsSampled, // DD spans are sampled by default
+		TraceFlags: traceFlags,
 		Remote:     false,
 	}
 
 	return oteltrace.NewSpanContext(config)
+}
+
+// extractTraceFlagsFromDDContext extracts the W3C trace flags from a DD span context.
+// This respects the actual sampling decision made by the DD tracer (considering sampling
+// rates, rules, etc.) rather than assuming all DD spans are sampled.
+//
+// The sampling decision is determined by checking the DD SamplingPriority:
+// - SamplingPriority >= 0: span is sampled (FlagsSampled)
+// - SamplingPriority < 0: span is dropped (no flags)
+// - No SamplingPriority set: defaults to sampled (FlagsSampled)
+func extractTraceFlagsFromDDContext(ddCtx *tracer.SpanContext) oteltrace.TraceFlags {
+	// Check the DD sampling priority to determine if span is sampled
+	if priority, ok := ddCtx.SamplingPriority(); ok {
+		// Sampling priority is set - use it to determine flags
+		if priority < 0 {
+			// Negative priority means drop/not sampled
+			return 0
+		}
+		// Non-negative priority means sampled
+		return oteltrace.FlagsSampled
+	}
+
+	// No sampling priority set - default to sampled
+	// This matches DD's default behavior where spans are sampled unless explicitly dropped
+	return oteltrace.FlagsSampled
 }
 
 // contextWithDDSpan wraps a Datadog span in an OpenTelemetry span context and adds it to the context.
