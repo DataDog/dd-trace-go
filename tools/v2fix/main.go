@@ -20,6 +20,7 @@ func main() {
 		&v2fix.WithDogstatsdAddr{},
 		&v2fix.DeprecatedSamplingRules{},
 		&v2fix.AppSecLoginEvents{},
+		&v2fix.DeprecatedWithPrioritySampling{},
 	)
 	c.Run(singlechecker.Main)
 }

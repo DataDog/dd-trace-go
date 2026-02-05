@@ -105,6 +105,11 @@ func TestAppSecLoginEvents(t *testing.T) {
 	c.Run(testRunner(t, "appseclogin"))
 }
 
+func TestDeprecatedWithPrioritySampling(t *testing.T) {
+	c := NewChecker(&DeprecatedWithPrioritySampling{})
+	c.Run(testRunner(t, "withprioritysampling"))
+}
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()

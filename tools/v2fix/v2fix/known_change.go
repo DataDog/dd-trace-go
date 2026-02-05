@@ -615,3 +615,31 @@ func (c AppSecLoginEvents) Fixes() []analysis.SuggestedFix {
 func (c AppSecLoginEvents) String() string {
 	return "appsec login event functions have been renamed (remove 'Event' suffix)"
 }
+
+// DeprecatedWithPrioritySampling warns about usage of WithPrioritySampling which has been removed.
+// Priority sampling is now enabled by default.
+type DeprecatedWithPrioritySampling struct {
+	defaultKnownChange
+}
+
+func (DeprecatedWithPrioritySampling) Clone() KnownChange {
+	return &DeprecatedWithPrioritySampling{}
+}
+
+func (c DeprecatedWithPrioritySampling) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		HasV1PackagePath,
+		WithFunctionName("WithPrioritySampling"),
+	}
+}
+
+func (c DeprecatedWithPrioritySampling) Fixes() []analysis.SuggestedFix {
+	// Warning only - no auto-fix since it should just be removed
+	return nil
+}
+
+func (c DeprecatedWithPrioritySampling) String() string {
+	return "WithPrioritySampling has been removed; priority sampling is now enabled by default"
+}
+
