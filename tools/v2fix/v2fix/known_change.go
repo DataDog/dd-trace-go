@@ -133,7 +133,19 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 	if path == "" {
 		return nil
 	}
-	path = strings.Replace(path, "gopkg.in/DataDog/dd-trace-go.v1", "github.com/DataDog/dd-trace-go/v2", 1)
+
+	const v1Prefix = "gopkg.in/DataDog/dd-trace-go.v1"
+	const contribPrefix = v1Prefix + "/contrib/"
+
+	if strings.HasPrefix(path, contribPrefix) {
+		// Contrib imports: gopkg.in/DataDog/dd-trace-go.v1/contrib/X → github.com/DataDog/dd-trace-go/contrib/X/v2
+		contribPath := strings.TrimPrefix(path, contribPrefix)
+		path = "github.com/DataDog/dd-trace-go/contrib/" + contribPath + "/v2"
+	} else {
+		// Core imports: gopkg.in/DataDog/dd-trace-go.v1/X → github.com/DataDog/dd-trace-go/v2/X
+		path = strings.Replace(path, v1Prefix, "github.com/DataDog/dd-trace-go/v2", 1)
+	}
+
 	return []analysis.SuggestedFix{
 		{
 			Message: "update import URL to v2",
@@ -151,7 +163,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 func (V1ImportURL) Probes() []Probe {
 	return []Probe{
 		IsImport,
-		HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/"),
+		IsV1Import,
 	}
 }
 
