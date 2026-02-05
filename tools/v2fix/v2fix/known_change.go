@@ -422,10 +422,12 @@ func (DeprecatedSamplingRules) Clone() KnownChange {
 func (c DeprecatedSamplingRules) Probes() []Probe {
 	return []Probe{
 		IsFuncCall,
+		HasV1PackagePath,
 		Or(
 			WithFunctionName("ServiceRule"), // Sets funcNameKey
 			WithFunctionName("NameRule"),
 			WithFunctionName("NameServiceRule"),
+			WithFunctionName("RateRule"),
 			WithFunctionName("TagsResourceRule"),
 			WithFunctionName("SpanNameServiceRule"),
 			WithFunctionName("SpanNameServiceMPSRule"),
@@ -445,25 +447,36 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
-	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
-	if !ok {
-		return nil
-	}
-
+	pkg := c.pkgPrefix()
 	var parts []string
 
 	switch fn.Name() {
 	case "ServiceRule":
+		if len(args) < 2 {
+			return nil
+		}
 		service := args[0]
 		rate := args[1]
 		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
 		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
 	case "NameRule":
+		if len(args) < 2 {
+			return nil
+		}
 		name := args[0]
 		rate := args[1]
 		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
 		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+	case "RateRule":
+		if len(args) < 1 {
+			return nil
+		}
+		rate := args[0]
+		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
 	case "NameServiceRule", "SpanNameServiceRule":
+		if len(args) < 3 {
+			return nil
+		}
 		name := args[0]
 		service := args[1]
 		rate := args[2]
@@ -471,6 +484,9 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
 		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
 	case "SpanNameServiceMPSRule":
+		if len(args) < 4 {
+			return nil
+		}
 		name := args[0]
 		service := args[1]
 		rate := args[2]
@@ -480,6 +496,9 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
 		parts = append(parts, fmt.Sprintf("MaxPerSecond: %s", exprString(limit)))
 	case "TagsResourceRule", "SpanTagsResourceRule":
+		if len(args) < 5 {
+			return nil
+		}
 		tags := args[0]
 		resource := args[1]
 		name := args[2]
@@ -500,7 +519,8 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 		ruleType = "Trace"
 	}
 
-	newText := fmt.Sprintf("%s.%sSamplingRules(Rule{%s})", pkg, ruleType, strings.Join(parts, ", "))
+	// Qualify Rule with the package prefix to avoid compilation errors
+	newText := fmt.Sprintf("%s.%sSamplingRules(%s.Rule{%s})", pkg, ruleType, pkg, strings.Join(parts, ", "))
 
 	return []analysis.SuggestedFix{
 		{
