@@ -110,6 +110,12 @@ func TestDeprecatedWithPrioritySampling(t *testing.T) {
 	c.Run(testRunner(t, "withprioritysampling"))
 }
 
+func TestDeprecatedWithHTTPRoundTripper(t *testing.T) {
+	c := NewChecker(&DeprecatedWithHTTPRoundTripper{})
+	c.Run(testRunner(t, "withhttproundtripper"))
+}
+
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()

@@ -643,3 +643,28 @@ func (c DeprecatedWithPrioritySampling) String() string {
 	return "WithPrioritySampling has been removed; priority sampling is now enabled by default"
 }
 
+// DeprecatedWithHTTPRoundTripper warns about usage of WithHTTPRoundTripper which has been removed.
+type DeprecatedWithHTTPRoundTripper struct {
+	defaultKnownChange
+}
+
+func (DeprecatedWithHTTPRoundTripper) Clone() KnownChange {
+	return &DeprecatedWithHTTPRoundTripper{}
+}
+
+func (c DeprecatedWithHTTPRoundTripper) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		HasV1PackagePath,
+		WithFunctionName("WithHTTPRoundTripper"),
+	}
+}
+
+func (c DeprecatedWithHTTPRoundTripper) Fixes() []analysis.SuggestedFix {
+	// Warning only - cannot auto-fix since the API signature changed (RoundTripper vs Client)
+	return nil
+}
+
+func (c DeprecatedWithHTTPRoundTripper) String() string {
+	return "WithHTTPRoundTripper has been removed; use WithHTTPClient instead"
+}

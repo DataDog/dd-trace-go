@@ -21,6 +21,7 @@ func main() {
 		&v2fix.DeprecatedSamplingRules{},
 		&v2fix.AppSecLoginEvents{},
 		&v2fix.DeprecatedWithPrioritySampling{},
+		&v2fix.DeprecatedWithHTTPRoundTripper{},
 	)
 	c.Run(singlechecker.Main)
 }
