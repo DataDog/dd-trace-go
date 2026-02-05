@@ -43,6 +43,9 @@ type KnownChange interface {
 
 	// SetNode updates the node with the given value.
 	SetNode(ast.Node)
+
+	// Clone creates a fresh copy of this KnownChange for thread-safe concurrent use.
+	Clone() KnownChange
 }
 
 type contextHandler struct {
@@ -96,6 +99,9 @@ func (d defaultKnownChange) Pos() token.Pos {
 }
 
 func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
+	// Reset context for each node evaluation to prevent data races
+	// when multiple goroutines analyze different packages concurrently.
+	k.SetContext(context.Background())
 	for _, p := range k.Probes() {
 		ctx, ok := p(k.Context(), n, pass)
 		if !ok {
@@ -109,6 +115,10 @@ func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 
 type V1ImportURL struct {
 	defaultKnownChange
+}
+
+func (V1ImportURL) Clone() KnownChange {
+	return &V1ImportURL{}
 }
 
 func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
@@ -144,6 +154,10 @@ func (V1ImportURL) String() string {
 
 type DDTraceTypes struct {
 	defaultKnownChange
+}
+
+func (DDTraceTypes) Clone() KnownChange {
+	return &DDTraceTypes{}
 }
 
 func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
@@ -193,6 +207,10 @@ type TracerStructs struct {
 	defaultKnownChange
 }
 
+func (TracerStructs) Clone() KnownChange {
+	return &TracerStructs{}
+}
+
 func (c TracerStructs) Fixes() []analysis.SuggestedFix {
 	typ, ok := c.ctx.Value(declaredTypeKey).(*types.Named)
 	if !ok {
@@ -232,6 +250,10 @@ func (TracerStructs) String() string {
 
 type WithServiceName struct {
 	defaultKnownChange
+}
+
+func (WithServiceName) Clone() KnownChange {
+	return &WithServiceName{}
 }
 
 func (c WithServiceName) Fixes() []analysis.SuggestedFix {
@@ -274,6 +296,10 @@ type TraceIDString struct {
 	defaultKnownChange
 }
 
+func (TraceIDString) Clone() KnownChange {
+	return &TraceIDString{}
+}
+
 func (c TraceIDString) Fixes() []analysis.SuggestedFix {
 	fn, ok := c.ctx.Value(fnKey).(*types.Func)
 	if !ok || fn == nil {
@@ -312,6 +338,10 @@ func (c TraceIDString) String() string {
 
 type WithDogstatsdAddr struct {
 	defaultKnownChange
+}
+
+func (WithDogstatsdAddr) Clone() KnownChange {
+	return &WithDogstatsdAddr{}
 }
 
 func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
@@ -354,6 +384,10 @@ func (c WithDogstatsdAddr) String() string {
 // constructor functions to v2 tracer.Rule struct literals.
 type DeprecatedSamplingRules struct {
 	defaultKnownChange
+}
+
+func (DeprecatedSamplingRules) Clone() KnownChange {
+	return &DeprecatedSamplingRules{}
 }
 
 func (c DeprecatedSamplingRules) Probes() []Probe {
@@ -459,7 +493,10 @@ func (c DeprecatedSamplingRules) String() string {
 
 func exprListString(exprs []ast.Expr) string {
 	var buf bytes.Buffer
-	for _, expr := range exprs {
+	for i, expr := range exprs {
+		if i > 0 {
+			buf.WriteString(", ")
+		}
 		buf.WriteString(exprString(expr))
 	}
 	return buf.String()
