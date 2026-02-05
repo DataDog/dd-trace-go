@@ -115,6 +115,23 @@ func TestDeprecatedWithHTTPRoundTripper(t *testing.T) {
 	c.Run(testRunner(t, "withhttproundtripper"))
 }
 
+// TestFalsePositives verifies that functions with the same names as dd-trace-go v1 functions
+// but from different packages are NOT flagged for migration.
+func TestFalsePositives(t *testing.T) {
+	// Test all function-call based changes against the false positive test file
+	changes := []KnownChange{
+		&WithServiceName{},
+		&TraceIDString{},
+		&WithDogstatsdAddr{},
+		&DeprecatedSamplingRules{},
+	}
+	for _, change := range changes {
+		t.Run(fmt.Sprintf("%T", change), func(t *testing.T) {
+			c := NewChecker(change)
+			c.Run(testRunner(t, "falsepositive"))
+		})
+	}
+}
 
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
