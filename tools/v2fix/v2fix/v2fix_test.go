@@ -25,6 +25,10 @@ type V1Usage struct {
 	ctx context.Context
 }
 
+func (V1Usage) Clone() KnownChange {
+	return &V1Usage{}
+}
+
 func (c V1Usage) Context() context.Context {
 	return c.ctx
 }
