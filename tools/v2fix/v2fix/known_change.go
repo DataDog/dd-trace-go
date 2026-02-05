@@ -553,6 +553,68 @@ func exprString(expr ast.Expr) string {
 	return ""
 }
 
+// ChildOfStartChild handles the transformation of tracer.StartSpan("op", tracer.ChildOf(parent.Context()))
+// to parent.StartChild("op"). This is a complex structural change.
+type ChildOfStartChild struct {
+	defaultKnownChange
+}
+
+func (ChildOfStartChild) Clone() KnownChange {
+	return &ChildOfStartChild{}
+}
+
+func (c ChildOfStartChild) Probes() []Probe {
+	return []Probe{
+		IsFuncCall,
+		HasV1PackagePath,
+		WithFunctionName("StartSpan"),
+		HasChildOfOption,
+	}
+}
+
+func (c ChildOfStartChild) Fixes() []analysis.SuggestedFix {
+	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
+	if !ok || len(args) < 2 {
+		return nil
+	}
+
+	// First arg is the operation name
+	opName := args[0]
+
+	// Get the parent expression from context (set by HasChildOfOption)
+	parentExpr, ok := c.ctx.Value(childOfParentKey).(string)
+	if !ok || parentExpr == "" {
+		return nil
+	}
+
+	// Get the other options (excluding ChildOf) from context
+	otherOpts, _ := c.ctx.Value(childOfOtherOptsKey).([]string)
+
+	var newText string
+	if len(otherOpts) > 0 {
+		newText = fmt.Sprintf("%s.StartChild(%s, %s)", parentExpr, exprString(opName), strings.Join(otherOpts, ", "))
+	} else {
+		newText = fmt.Sprintf("%s.StartChild(%s)", parentExpr, exprString(opName))
+	}
+
+	return []analysis.SuggestedFix{
+		{
+			Message: "use StartChild instead of StartSpan with ChildOf",
+			TextEdits: []analysis.TextEdit{
+				{
+					Pos:     c.Pos(),
+					End:     c.End(),
+					NewText: []byte(newText),
+				},
+			},
+		},
+	}
+}
+
+func (c ChildOfStartChild) String() string {
+	return "use StartChild instead of StartSpan with ChildOf"
+}
+
 // AppSecLoginEvents handles the renaming of appsec login event functions.
 // TrackUserLoginSuccessEvent → TrackUserLoginSuccess
 // TrackUserLoginFailureEvent → TrackUserLoginFailure

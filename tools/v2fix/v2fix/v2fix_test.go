@@ -100,6 +100,11 @@ func TestDeprecatedSamplingRules(t *testing.T) {
 	c.Run(testRunner(t, "samplingrules"))
 }
 
+func TestChildOfStartChild(t *testing.T) {
+	c := NewChecker(&ChildOfStartChild{})
+	c.Run(testRunner(t, "childof"))
+}
+
 func TestAppSecLoginEvents(t *testing.T) {
 	c := NewChecker(&AppSecLoginEvents{})
 	c.Run(testRunner(t, "appseclogin"))
