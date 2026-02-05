@@ -190,9 +190,10 @@ For every key+implementation from `supported_configurations.json`:
 
 ### 2 - Documentation - same language
 
-Label: `documentation_same_language`
+Label: `documentation_same_language` or `documentation_other_language`
 
 This step attempts to find descriptions in **existing tracer documentation for the same language as `lang`**.
+
 Note: `lang` here refers to the tracer language (e.g. Go/Java/Ruby), not to documentation translation languages.
 
 #### Inputs
@@ -568,17 +569,73 @@ Notes:
 
 ### Step 2 — Documentation (same tracer language) (`documentation_same_language`)
 
-Step 2 reads step 1 output and tries to extract descriptions from the Datadog documentation repo for the same tracer language (for example: Go tracer docs when `--lang golang`).
+The documentation repository we have locally is not reliably parseable with deterministic scripts (shortcodes, partials, mixed formats, etc.).
+So step 2 is implemented as an **LLM-assisted extraction step**:
+
+- a deterministic script produces an **LLM-fillable overrides JSON** listing the missing keys
+- an LLM fills that file by searching the docs repo and copying the best available description text
+- a deterministic script merges the filled overrides back into the step 1 output to produce the step 2 JSON
 
 ```shell
 cd description_research
-python3 step_2_documentation_same_language.py --lang golang
+python3 step_2a_extract_documentation_llm_needed_keys.py --lang golang
 ```
 
 This reads:
 
 - `./result/configurations_descriptions_step_1.json`
-- `./documentation/` (local `DataDog/documentation` checkout)
+
+And writes:
+
+- `./result/configurations_descriptions_step_2_overrides.json` (LLM-fillable data file)
+
+#### Step 2b — Fill overrides with an LLM (reviewable data)
+
+Run the LLM **in Cursor** to fill the overrides file in-place:
+
+- Input keys: `@description_research/result/configurations_descriptions_step_2_overrides.json`
+- Docs repo: `@description_research/documentation/`
+- Output (edit in place): `@description_research/result/configurations_descriptions_step_2_overrides.json`
+
+**Prompt template (copy/paste):**
+
+```text
+You are a software documentation assistant.
+You extract accurate, user-facing configuration descriptions from existing documentation.
+You must follow the output format exactly.
+
+Task:
+Fill missing configuration descriptions for dd-trace-go from the Datadog documentation repo.
+
+Inputs:
+- Keys to fill: @description_research/result/configurations_descriptions_step_2_overrides.json
+- Docs repo: @description_research/documentation/
+
+Rules:
+- ONLY use information you can find in the docs repo.
+- Do NOT invent or speculate. If you cannot find a good description, leave "description" as "".
+- Prefer copying the exact paragraph/sentence(s) from the docs; minimal cleanup is allowed (remove bullet markers, extra whitespace), but do not paraphrase.
+- Quality bar: description must be self-contained, specific, and not trivially short (>= 20 characters).
+- If you can, fill "sourceFile" as "path:line" pointing to where you found the description.
+- Do not change keys, implementations, or metadata fields.
+
+Batching:
+- For this run, ONLY fill the first 25 entries in overrides order.
+```
+
+#### Step 2c — Materialize step 2 output (deterministic)
+
+After the overrides file has been filled (fully or partially), merge it into step 1 output:
+
+```shell
+cd description_research
+python3 step_2c_merge_documentation_llm_overrides.py --lang golang
+```
+
+This reads:
+
+- `./result/configurations_descriptions_step_1.json`
+- `./result/configurations_descriptions_step_2_overrides.json`
 
 And writes:
 
