@@ -82,7 +82,7 @@ require (
 	github.com/hashicorp/vault/api v1.15.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.11.1
-	github.com/lib/pq v1.10.2
+	github.com/lib/pq v1.11.1
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/stretchr/testify v1.11.1

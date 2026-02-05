@@ -63,7 +63,7 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				cfg := UpdatedConfig{Product: product}
 				if err := json.Unmarshal(data, &cfg.Content); err != nil {
 					log.Error("appsec: unmarshaling remote config update for %s (%q): %s", product, path, err.Error())
-					statuses[product] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
+					statuses[path] = state.ApplyStatus{State: state.ApplyStateError, Error: err.Error()}
 					continue
 				}
 				addOrUpdates[path] = cfg
