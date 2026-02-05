@@ -241,11 +241,17 @@ func (TracerStructs) Clone() KnownChange {
 }
 
 func (c TracerStructs) Fixes() []analysis.SuggestedFix {
-	typ, ok := c.ctx.Value(declaredTypeKey).(*types.Named)
-	if !ok {
-		return nil
+	// Use the stored type expression string to preserve original qualifier/alias (e.g., "tracer.Span" vs "tr.Span")
+	typeExprStr, ok := c.ctx.Value(typeExprStrKey).(string)
+	if !ok || typeExprStr == "" {
+		// Fallback to building from declared type (handles both *types.Named and *types.Alias)
+		typ := c.ctx.Value(declaredTypeKey)
+		typeObj := getTypeNameFromType(typ.(types.Type))
+		if typeObj == nil {
+			return nil
+		}
+		typeExprStr = fmt.Sprintf("%s.%s", typeObj.Pkg().Name(), typeObj.Name())
 	}
-	typeDecl := fmt.Sprintf("%s.%s", typ.Obj().Pkg().Name(), typ.Obj().Name())
 	return []analysis.SuggestedFix{
 		{
 			Message: "the declared type is now a struct, you need to use a pointer",
@@ -253,7 +259,7 @@ func (c TracerStructs) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("*%s", typeDecl)),
+					NewText: []byte(fmt.Sprintf("*%s", typeExprStr)),
 				},
 			},
 		},
@@ -287,12 +293,7 @@ func (WithServiceName) Clone() KnownChange {
 
 func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
-	if !ok || args == nil {
-		return nil
-	}
-
-	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
-	if !ok {
+	if !ok || len(args) < 1 {
 		return nil
 	}
 
@@ -303,7 +304,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", pkg, exprString(args[0]))),
+					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", c.pkgPrefix(), exprString(args[0]))),
 				},
 			},
 		},
@@ -313,6 +314,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 func (c WithServiceName) Probes() []Probe {
 	return []Probe{
 		IsFuncCall,
+		HasV1PackagePath,
 		WithFunctionName("WithServiceName"),
 	}
 }
@@ -340,6 +342,12 @@ func (c TraceIDString) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
+	// Guard against non-selector callExpr.Fun (e.g., direct function calls)
+	sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return nil
+	}
+
 	return []analysis.SuggestedFix{
 		{
 			Message: "trace IDs are now represented as strings, please use TraceIDLower to keep using 64-bits IDs, although it's recommended to switch to 128-bits with TraceID",
@@ -347,7 +355,7 @@ func (c TraceIDString) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.TraceIDLower()", exprString(callExpr.Fun.(*ast.SelectorExpr).X))),
+					NewText: []byte(fmt.Sprintf("%s.TraceIDLower()", exprString(sel.X))),
 				},
 			},
 		},
@@ -357,6 +365,7 @@ func (c TraceIDString) Fixes() []analysis.SuggestedFix {
 func (c TraceIDString) Probes() []Probe {
 	return []Probe{
 		IsFuncCall,
+		HasV1PackagePath,
 		WithFunctionName("TraceID"),
 	}
 }
@@ -375,12 +384,7 @@ func (WithDogstatsdAddr) Clone() KnownChange {
 
 func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
-	if !ok || args == nil {
-		return nil
-	}
-
-	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
-	if !ok {
+	if !ok || len(args) < 1 {
 		return nil
 	}
 
@@ -391,7 +395,7 @@ func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", pkg, exprString(args[0]))),
+					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", c.pkgPrefix(), exprString(args[0]))),
 				},
 			},
 		},
@@ -401,6 +405,7 @@ func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 func (c WithDogstatsdAddr) Probes() []Probe {
 	return []Probe{
 		IsFuncCall,
+		HasV1PackagePath,
 		WithFunctionName("WithDogstatsdAddress"),
 	}
 }
