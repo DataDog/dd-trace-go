@@ -84,6 +84,16 @@ func TestSkipRaw(t *testing.T) {
 		assert.Equal(t, "expire pipeline_counter 3600: false", raw)
 	})
 
+	t.Run("env-disabled", func(t *testing.T) {
+		t.Setenv("DD_TRACE_REDIS_RAW_COMMAND", "false")
+		spans := runCmds(t)
+		for _, span := range spans {
+			raw, ok := span.Tags()["redis.raw_command"]
+			assert.False(t, ok)
+			assert.Empty(t, raw)
+		}
+	})
+
 	t.Run("false", func(t *testing.T) {
 		spans := runCmds(t, WithSkipRawCommand(false))
 		raw, ok := spans[0].Tags()["redis.raw_command"]
