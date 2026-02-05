@@ -1444,7 +1444,7 @@
     ],
     "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": "v0"
       }
