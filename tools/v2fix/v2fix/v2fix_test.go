@@ -7,6 +7,7 @@ package v2fix
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/types"
@@ -17,6 +18,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
+
+var update = flag.Bool("update", false, "update golden files")
 
 type V1Usage struct {
 	ctx context.Context
@@ -101,6 +104,10 @@ func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 		return nil
 	}
 	return func(a *analysis.Analyzer) {
+		if *update {
+			runWithSuggestedFixesUpdate(t, path.Join(cwd, "..", "_stage"), a, fmt.Sprintf("./%s", name))
+			return
+		}
 		analysistest.RunWithSuggestedFixes(t, path.Join(cwd, "..", "_stage"), a, fmt.Sprintf("./%s", name))
 	}
 }
