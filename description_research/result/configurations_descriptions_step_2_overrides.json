@@ -1,0 +1,1151 @@
+{
+  "lang": "golang",
+  "source": "documentation_same_language",
+  "input": "result/configurations_descriptions_step_1.json",
+  "docsRepoHint": "./documentation",
+  "counts": {
+    "missingConfigurations": 190
+  },
+  "overrides": [
+    {
+      "key": "DD_ACTION_EXECUTION_ID",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_API_KEY",
+      "implementation": "B",
+      "description": "Your Datadog API key. This key is created by your Datadog organization and should be stored as a secret.",
+      "sourceFile": "content/en/security/code_security/static_analysis/generic_ci_providers.md:34"
+    },
+    {
+      "key": "DD_API_SECURITY_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_API_SECURITY_REQUEST_SAMPLE_RATE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_API_SECURITY_SAMPLE_DELAY",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_APPSEC_BODY_PARSING_SIZE_LIMIT",
+      "implementation": "B",
+      "description": "Maximum size of bodies to process in bytes. If `0`, bodies are not processed. Recommended: `10000000` (10MB).",
+      "sourceFile": "content/en/security/application_security/setup/haproxy.md:119"
+    },
+    {
+      "key": "DD_APPSEC_ENABLED",
+      "implementation": "A",
+      "description": "Redeploy your Go service and enable App and API Protection by setting the `DD_APPSEC_ENABLED` environment variable to `true`.",
+      "sourceFile": "content/en/security/application_security/setup/go/setup.md:58"
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML",
+      "implementation": "C",
+      "description": "The HTML and JSON content can both be changed using the `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML` and `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON` environment variables within your application deployment file.",
+      "sourceFile": "layouts/shortcodes/asm-protection-page-configuration.en.md:5"
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON",
+      "implementation": "C",
+      "description": "The HTML and JSON content can both be changed using the `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML` and `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON` environment variables within your application deployment file.",
+      "sourceFile": "layouts/shortcodes/asm-protection-page-configuration.en.md:5"
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP",
+      "implementation": "B",
+      "description": "Pattern for scanning for keys whose values commonly contain sensitive data. If found, the values and any child nodes associated with the key are redacted.",
+      "sourceFile": "content/en/security/application_security/policies/library_configuration.md:61"
+    },
+    {
+      "key": "DD_APPSEC_RASP_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_APPSEC_RULES",
+      "implementation": "C",
+      "description": "Following the instructions in Enabling AAP for adding application variables in your environment, add the `DD_APPSEC_RULES` environment variable to your service with the full path to the file.",
+      "sourceFile": "content/en/security/application_security/policies/inapp_waf_rules.md:132"
+    },
+    {
+      "key": "DD_APPSEC_SCA_ENABLED",
+      "implementation": "C",
+      "description": "SCA is configured by setting the `-Ddd.appsec.sca.enabled` flag or the `DD_APPSEC_SCA_ENABLED` environment variable to `true` in supported languages.",
+      "sourceFile": "content/en/security/code_security/software_composition_analysis/setup_runtime/_index.md:35"
+    },
+    {
+      "key": "DD_APPSEC_STACK_TRACE_ENABLED",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_APP_KEY",
+      "implementation": "A",
+      "description": "Your Datadog application key. This key, created by your Datadog organization, should include the `code_analysis_read` scope and be stored as a secret.",
+      "sourceFile": "content/en/security/code_security/static_analysis/generic_ci_providers.md:35"
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_ENABLED",
+      "implementation": "A",
+      "description": "Enables agentless mode to send data directly to Datadog without a Datadog agent. Requires `DD_API_KEY` to be set.",
+      "sourceFile": "content/en/tests/setup/ruby.md:125"
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_URL",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_CIVISIBILITY_ENABLED",
+      "implementation": "A",
+      "description": "Enables the Test Optimization product.",
+      "sourceFile": "content/en/tests/setup/go.md:104"
+    },
+    {
+      "key": "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_CIVISIBILITY_LOGS_ENABLED",
+      "implementation": "A",
+      "description": "Enables/disables CI Visibility log submission",
+      "sourceFile": "content/en/tests/correlate_logs_and_tests/_index.md:62"
+    },
+    {
+      "key": "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT",
+      "implementation": "A",
+      "description": "`DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` - a non-negative number to set the maximum total number of failed tests to retry (default: 1000)",
+      "sourceFile": "content/en/tests/flaky_tests/auto_test_retries.md:90"
+    },
+    {
+      "key": "DD_CIVISIBILITY_USE_NOOP_TRACER",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_CUSTOM_TRACE_ID",
+      "implementation": "A",
+      "description": "Custom variable set by the Jenkins Datadog Plugin for trace IDs.",
+      "sourceFile": "content/en/tests/containers.md:269"
+    },
+    {
+      "key": "DD_DATA_STREAMS_ENABLED",
+      "implementation": "A",
+      "description": "Node.js uses auto-instrumentation to inject and extract additional metadata required by Data Streams Monitoring for measuring end-to-end latencies and the relationship between queues and services. To enable Data Streams Monitoring, set the `DD_DATA_STREAMS_ENABLED` environment variable to `true` on services sending messages to (or consuming messages from) your streaming technology.",
+      "sourceFile": "content/en/data_streams/setup/language/nodejs.md:41"
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_ENABLED",
+      "implementation": "A",
+      "description": "Run your service with Dynamic Instrumentation enabled by setting the `DD_DYNAMIC_INSTRUMENTATION_ENABLED` environment variable to `true`. Specify `DD_SERVICE`, `DD_ENV`, and `DD_VERSION` Unified Service Tags so you can filter and group your instrumentations and target active clients across these dimensions.",
+      "sourceFile": "content/en/tracing/trace_collection/dynamic_instrumentation/enabling/python.md:36"
+    },
+    {
+      "key": "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED",
+      "implementation": "A",
+      "description": "Feature flagging requires both `DD_REMOTE_CONFIG_ENABLED=true` and `DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED=true`. Without the experimental flag, the feature flagging system does not start and the `Provider` returns the programmatic default.",
+      "sourceFile": "content/en/feature_flags/server/java.md:191"
+    },
+    {
+      "key": "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_EXTERNAL_ENV",
+      "implementation": "A",
+      "description": "If your pod has this label, the Admissions Controller injects an environment variable, `DD_EXTERNAL_ENV`. The value of this variable is sent in a field with the metric, which can be used by the Datadog Agent to determine the metric's origin.",
+      "sourceFile": "content/en/developers/dogstatsd/_index.md:262"
+    },
+    {
+      "key": "DD_GIT_BRANCH",
+      "implementation": "A",
+      "description": "Git branch being tested. Leave empty if providing tag information instead.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:10"
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_DATE",
+      "implementation": "A",
+      "description": "Commit author date in ISO 8601 format.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:34"
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_EMAIL",
+      "implementation": "A",
+      "description": "Commit author email.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:30"
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_NAME",
+      "implementation": "A",
+      "description": "Commit author name.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:26"
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_DATE",
+      "implementation": "A",
+      "description": "Commit committer date in ISO 8601 format.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:46"
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_EMAIL",
+      "implementation": "A",
+      "description": "Commit committer email.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:42"
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_NAME",
+      "implementation": "A",
+      "description": "Commit committer name.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:38"
+    },
+    {
+      "key": "DD_GIT_COMMIT_MESSAGE",
+      "implementation": "A",
+      "description": "Commit message.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:22"
+    },
+    {
+      "key": "DD_GIT_COMMIT_SHA",
+      "implementation": "A",
+      "description": "Full commit hash.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:18"
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_GIT_REPOSITORY_URL",
+      "implementation": "A",
+      "description": "URL of the repository where the code is stored. Both HTTP and SSH URLs are supported.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:6"
+    },
+    {
+      "key": "DD_GIT_TAG",
+      "implementation": "A",
+      "description": "Git tag being tested (if applicable). Leave empty if providing branch information instead.",
+      "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:14"
+    },
+    {
+      "key": "DD_HOSTNAME",
+      "implementation": "A",
+      "description": "Manually set the hostname to use for metrics if autodetection fails, or when running the Datadog Cluster Agent.",
+      "sourceFile": "content/en/containers/kubernetes/apm.md:304"
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_ID",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TIME",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TYPE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_ENABLED",
+      "implementation": "A",
+      "description": "Datadog may collect environmental and diagnostic information about your system to improve the product. When false, this telemetry data will not be collected.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:147"
+    },
+    {
+      "key": "DD_KEY",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_LLMOBS_AGENTLESS_ENABLED",
+      "implementation": "C",
+      "description": "Only required if you are not using the Datadog Agent, in which case this should be set to `1` or `true`.",
+      "sourceFile": "content/en/llm_observability/instrumentation/sdk.md:88"
+    },
+    {
+      "key": "DD_LLMOBS_ENABLED",
+      "implementation": "A",
+      "description": "Toggle to enable submitting data to LLM Observability. Should be set to `1` or `true`.",
+      "sourceFile": "content/en/llm_observability/instrumentation/sdk.md:79"
+    },
+    {
+      "key": "DD_LLMOBS_ML_APP",
+      "implementation": "B",
+      "description": "The name of your LLM application, service, or project, under which all traces and spans are grouped. This helps distinguish between different applications or experiments. See Application naming guidelines for allowed characters and other constraints. To override this value for a given root span, see Tracing multiple applications. If not provided, this defaults to the value of `DD_SERVICE`, or the value of a propagated `DD_LLMOBS_ML_APP` from an upstream service.",
+      "sourceFile": "content/en/llm_observability/instrumentation/sdk.md:83"
+    },
+    {
+      "key": "DD_LOGGING_RATE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_METRICS_OTEL_ENABLED",
+      "implementation": "A",
+      "description": "Enables the automatic instrumentation components of the Datadog SDK to collect and emit metrics generated by the OTel Metrics API.",
+      "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:59"
+    },
+    {
+      "key": "DD_PIPELINE_EXECUTION_ID",
+      "implementation": "A",
+      "description": "The pipeline execution ID is an identifier Datadog needs to uniquely identify a pipeline execution.",
+      "sourceFile": "content/en/continuous_integration/pipelines/awscodepipeline.md:135"
+    },
+    {
+      "key": "DD_PROFILING_AGENTLESS",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_DELTA",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_ENABLED",
+      "implementation": "C",
+      "description": "To enable the profiler, set the environment variable `DD_PROFILING_ENABLED=true` at runtime.",
+      "sourceFile": "content/en/tracing/trace_collection/dd_libraries/go.md:236"
+    },
+    {
+      "key": "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_ENDPOINT_COUNT_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_ENABLED",
+      "implementation": "A",
+      "description": "Setting these variables will record up to 1 minute (or 5 MiB) of execution tracing data every 15 minutes.",
+      "sourceFile": "content/en/profiler/connect_traces_and_profiles.md:80"
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_PERIOD",
+      "implementation": "A",
+      "description": "Setting these variables will record up to 1 minute (or 5 MiB) of execution tracing data every 15 minutes.",
+      "sourceFile": "content/en/profiler/connect_traces_and_profiles.md:80"
+    },
+    {
+      "key": "DD_PROFILING_FLUSH_ON_EXIT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_OUTPUT_DIR",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_UPLOAD_TIMEOUT",
+      "implementation": "C",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_URL",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_WAIT_PROFILE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_RC_TUF_ROOT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_REMOTE_CONFIGURATION_ENABLED",
+      "implementation": "A",
+      "description": "Enable Remote Configuration in your Datadog Agent by setting `DD_REMOTE_CONFIGURATION_ENABLED=true` or adding `remote_configuration.enabled: true` to your `datadog.yaml`.",
+      "sourceFile": "content/en/feature_flags/server/_index.md:35"
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_HEALTHCHECK_ADDR",
+      "implementation": "A",
+      "description": "Address and port where the health check endpoint is served",
+      "sourceFile": "content/en/security/application_security/setup/kubernetes/gateway-api.md:86"
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_LISTEN_ADDR",
+      "implementation": "A",
+      "description": "Address and port where the request mirror service listens for incoming mirrored requests",
+      "sourceFile": "content/en/security/application_security/setup/kubernetes/gateway-api.md:85"
+    },
+    {
+      "key": "DD_RUNTIME_METRICS_V2_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_SERVICE",
+      "implementation": "E",
+      "description": "The service name to be used for this application.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:73"
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HEALTHCHECK_PORT",
+      "implementation": "A",
+      "description": "HTTP server port for health checks.",
+      "sourceFile": "content/en/security/application_security/setup/envoy.md:43"
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HOST",
+      "implementation": "A",
+      "description": "gRPC server listening address.",
+      "sourceFile": "content/en/security/application_security/setup/envoy.md:41"
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_OBSERVABILITY_MODE",
+      "implementation": "A",
+      "description": "Enable asynchronous analysis. This also disables blocking capabilities. (To fully enable observability mode, this option should also be set in the External Processing filter configuration)",
+      "sourceFile": "content/en/security/application_security/setup/envoy.md:45"
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_PORT",
+      "implementation": "A",
+      "description": "gRPC server port.",
+      "sourceFile": "content/en/security/application_security/setup/envoy.md:42"
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS",
+      "implementation": "A",
+      "description": "Enable the gRPC TLS layer.",
+      "sourceFile": "content/en/security/application_security/setup/kubernetes/envoy-gateway.md:211"
+    },
+    {
+      "key": "DD_SERVICE_MAPPING",
+      "implementation": "B",
+      "description": "Dynamically rename services through configuration. Services can be separated by commas or spaces, for example: `mysql:mysql-service-name,postgres:postgres-service-name`, `mysql:mysql-service-name postgres:postgres-service-name`.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:106"
+    },
+    {
+      "key": "DD_SITE",
+      "implementation": "C",
+      "description": "The Datadog site to send information to.",
+      "sourceFile": "content/en/security/code_security/static_analysis/generic_ci_providers.md:36"
+    },
+    {
+      "key": "DD_TELEMETRY_DEBUG",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TELEMETRY_LOG_COLLECTION_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TELEMETRY_METRICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TEST_AGENT_HOST",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TEST_AGENT_PORT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TEST_OPTIMIZATION_ENV_DATA_FILE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TEST_SESSION_NAME",
+      "implementation": "A",
+      "description": "Use `DD_TEST_SESSION_NAME` to define the name of the test session and the related group of tests.",
+      "sourceFile": "content/en/tests/setup/ruby.md:282"
+    },
+    {
+      "key": "DD_TRACE_ABANDONED_SPAN_TIMEOUT",
+      "implementation": "A",
+      "description": "To change the duration after which spans are considered abandoned (default=`10m`), set the environment variable `DD_TRACE_ABANDONED_SPAN_TIMEOUT` to the desired time duration.",
+      "sourceFile": "content/en/tracing/troubleshooting/tracer_debug_logs.md:172"
+    },
+    {
+      "key": "DD_TRACE_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "description": "App Analytics is available starting in version 1.11.0 of the Go tracing client, and can be enabled globally for all web integrations using: starting in version 1.26.0 using environment variable: `DD_TRACE_ANALYTICS_ENABLED=true`",
+      "sourceFile": "content/en/tracing/legacy_app_analytics/_index.md:69"
+    },
+    {
+      "key": "DD_TRACE_AWS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_BAGGAGE_TAG_KEYS",
+      "implementation": "A",
+      "description": "A comma-separated list of baggage keys that are automatically applied as span tags to the local root span. For example, a baggage key `user.id` is tagged as `baggage.user.id` This feature only applies to baggage extracted from incoming HTTP headers. Baggage set with the baggage API is not included.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/_index.md:240"
+    },
+    {
+      "key": "DD_TRACE_BUNTDB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_CHI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_CLIENT_HOSTNAME_COMPAT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_CONSUL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_DEBUG_ABANDONED_SPANS",
+      "implementation": "A",
+      "description": "To enable this debug mode in Go, set the environment variable `DD_TRACE_DEBUG_ABANDONED_SPANS=true`.",
+      "sourceFile": "content/en/tracing/troubleshooting/tracer_debug_logs.md:172"
+    },
+    {
+      "key": "DD_TRACE_DEBUG_SEELOG_WORKAROUND",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_DEBUG_STACK",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_ECHO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_ELASTIC_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_ENABLED",
+      "implementation": "A",
+      "description": "Enable web framework and library instrumentation. When false, the application code doesn't generate any traces.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:82"
+    },
+    {
+      "key": "DD_TRACE_FASTHTTP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_FEATURES",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_FIBER_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GIN_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GIT_METADATA_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GOCQL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GOCQL_COMPAT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GOJI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GOPG_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GQLGEN_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GRAPHQL_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GRAPHQL_ERROR_EXTENSIONS",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_GRPC_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTP_SERVER_ERROR_STATUSES",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_KAFKA_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_LEVELDB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_LOGRUS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_LOG_DIRECTORY",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_MCP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_MEMCACHE_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_MGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_MONGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_MUX_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_NEGRONI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS",
+      "implementation": "B",
+      "description": "Number of spans within a trace that can be partially flushed to the Datadog Agent. `DD_TRACE_PARTIAL_FLUSH_ENABLED` must be `true` for partial flushing to occur.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:115"
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_MAPPING",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_EXTRACT_FIRST",
+      "implementation": "A",
+      "description": "When multiple extractors are specified, the `DD_TRACE_PROPAGATION_EXTRACT_FIRST=true` configuration specifies whether context extraction should exit immediately upon detecting the first valid `tracecontext`. The default value is `false`.",
+      "sourceFile": "content/en/tracing/trace_collection/trace_context_propagation/_index.md:522"
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_EXTRACT",
+      "implementation": "B",
+      "description": "Specifies trace context propagation formats for extraction only in a comma-separated list. Highest precedence for configuring extraction propagators.",
+      "sourceFile": "content/en/tracing/trace_collection/trace_context_propagation/_index.md:67"
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_INJECT",
+      "implementation": "B",
+      "description": "Specifies trace context propagation formats for injection only in comma-separated list. Highest precedence for configuring injection propagators.",
+      "sourceFile": "content/en/tracing/trace_collection/trace_context_propagation/_index.md:70"
+    },
+    {
+      "key": "DD_TRACE_REDIGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_REDIS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_REDIS_RAW_COMMAND",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED",
+      "implementation": "A",
+      "description": "Enable `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED` to ensure no Datadog integration sets service names that are different from the default global service name. This also improves how service-to-service connections and inferred services are represented in Datadog visualizations, across all supported tracing library languages and integrations.",
+      "sourceFile": "content/en/tracing/services/inferred_services.md:165"
+    },
+    {
+      "key": "DD_TRACE_RESOURCE_RENAMING_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_RESTFUL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES",
+      "implementation": "C",
+      "description": "Enables fine-grained control over trace ingestion, allowing you to target specific services, operations, resources, or tagged traces. Defined by a JSON array of objects, where each object must include a `sample_rate` between 0.0 and 1.0 (inclusive), and can optionally include fields such as `service`, `name`, `resource`, `tags`, and `max_per_second`. Objects are evaluated in the order listed; the first matching object determines the trace's sample rate.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/_index.md:118"
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES_FILE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_SARAMA_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_SOURCE_HOSTNAME",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_SQL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_SQL_COMMENT_INJECTION_MODE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_STARTUP_LOGS",
+      "implementation": "C",
+      "description": "Enable startup configuration and the diagnostic log.",
+      "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:98"
+    },
+    {
+      "key": "DD_TRACE_STATS_COMPUTATION_ENABLED",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_TWIRP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_VALKEY_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_VALKEY_RAW_COMMAND",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_VAULT_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "DD_TRACE__ANALYTICS_ENABLED",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_HEADERS",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_TIMEOUT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_LOGS_EXPORTER",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_INTERVAL",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_TIMEOUT",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_PROPAGATORS",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_RESOURCE_ATTRIBUTES",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_SERVICE_NAME",
+      "implementation": "B",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER",
+      "implementation": "C",
+      "description": "",
+      "sourceFile": ""
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER_ARG",
+      "implementation": "A",
+      "description": "",
+      "sourceFile": ""
+    }
+  ]
+}

@@ -1,0 +1,4327 @@
+{
+  "lang": "golang",
+  "missingCount": 119,
+  "documentedCount": 119,
+  "documentedConfigurations": [
+    {
+      "key": "DD_AGENT_HOST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6, or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_KEY",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Your Datadog API key.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/azure_functions/_index.md:190"
+        },
+        {
+          "description": "Your Datadog API key.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/google_cloud_run/functions_1st_gen.md:172"
+        },
+        {
+          "description": "Datadog API Key - **Required**",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/azure_app_service_linux_containers_serverless_init.md:115"
+        },
+        {
+          "description": "The environment variable with your Datadog API key, in plaintext. **One** key environment variable is required. See serverless CLI environment variables.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/agent_configuration.md:13"
+        },
+        {
+          "description": "The environment variable with your Datadog API key, using an AWS Secrets Manager secret. **One** key environment variable is required. See serverless CLI environment variables.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/agent_configuration.md:15"
+        },
+        {
+          "description": "`DD_API_KEY`\n: Your Datadog API key.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/cluster_agent/commands.md:71"
+        },
+        {
+          "description": "`DD_API_KEY`\n: required - _string_\n\nYour Datadog API key.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/docker/apm.md:54"
+        },
+        {
+          "description": "`DD_API_KEY` (Required)\n: The Datadog API key used to upload the test results.\n\n**Default**: `(empty)`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-agentless.en.md:7"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Defines the probability of a downstream request body being sampled, or said differently, defines the overall number of requests for which the request and response body should be sampled / analysed.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The maximum number of downstream requests per request for which the request and response body should be analysed.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_PROXY_SAMPLE_RATE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "API Security schema extraction for proxies. The value represents the number of schemas extracted per minute (samples per minute).",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APM_TRACING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Allows standalone products to run individually, rather than all being coupled together.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_BODY_PARSING_SIZE_LIMIT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Maximum size of bodies to process in bytes. If `0`, bodies are not processed. Recommended: `10000000` (10MB).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/haproxy.md:119"
+        },
+        {
+          "description": "Maximum size of the bodies to be processed in bytes. If set to `0`, the bodies are not processed. (Recommended value: `10000000` (10MB))",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/gcp/service-extensions.md:491"
+        },
+        {
+          "description": "Maximum size of the bodies to be processed in bytes. If set to `0`, the bodies are not processed. The recommended value is `10485760` (10MB). (To fully enable body processing, the `allowModeOverride` option should also be set in the External Processing filter configuration.)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/envoy-gateway.md:214"
+        },
+        {
+          "description": "Maximum size of the bodies to be processed in bytes. If set to `0`, the bodies are not processed. The recommended value is `10000000` (10MB). (To fully enable body processing, the `allow_mode_override` option should also be set in the External Processing filter configuration)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/envoy.md:44"
+        },
+        {
+          "description": "Maximum size of the bodies to be processed in bytes. If set to `0`, the bodies are not processed. The recommended value is `10000000` (10MB). (To fully enable body processing, the `allow_mode_override` option should also be set in the External Processing filter configuration)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/istio.md:209"
+        },
+        {
+          "description": "| Environment variable                | Default value | Description                                                                                                   |\n|-------------------------------------|---------------|---------------------------------------------------------------------------------------------------------------|\n| `DD_HAPROXY_SPOA_HOST`              | `0.0.0.0`     | Host on which the SPOA and HTTP health server listen.                                                         |\n| `DD_HAPROXY_SPOA_PORT`              | `3000`        | Port used by the SPOA that accepts communication with HAProxy.                                                |\n| `DD_HAPROXY_SPOA_HEALTHCHECK_PORT`  | `3080`        | Port used for the HTTP server for health checks.                                                              |\n| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT` | `0`           | Maximum size of bodies to process in bytes. If `0`, bodies are not processed. Recommended: `10000000` (10MB). |\n| `DD_SERVICE`                        | `spoa`        | Service name shown in the Datadog UI.                                                                         |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/haproxy.md:119"
+        },
+        {
+          "description": "| Environment variable                    | Default value       | Description                                                                                                                              |\n|-----------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| `DD_SERVICE_EXTENSION_HOST`             | `0.0.0.0`           | gRPC server listening address.                                                                                                           |\n| `DD_SERVICE_EXTENSION_PORT`             | `443`               | gRPC server port.                                                                                                                        |\n| `DD_SERVICE_EXTENSION_HEALTHCHECK_PORT` | `80`                | HTTP server port for health checks.                                                                                                      |\n| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT`     | `0`                 | Maximum size of the bodies to be processed in bytes. If set to `0`, the bodies are not processed. (Recommended value: `10000000` (10MB)) |\n| `DD_SERVICE`                            | `serviceextensions` | Service name shown in the Datadog UI.                                                                                                    |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/gcp/service-extensions.md:236"
+        },
+        {
+          "description": "| Environment variable                      | Default value       | Description                                                                                                                              |\n|-------------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| `DD_SERVICE_EXTENSION_HOST`               | `0.0.0.0`           | gRPC server listening address.                                                                                                           |\n| `DD_SERVICE_EXTENSION_PORT`               | `443`               | gRPC server port.                                                                                                                        |\n| `DD_SERVICE_EXTENSION_HEALTHCHECK_PORT`   | `80`                | HTTP server port for health checks.                                                                                                      |\n| `DD_APPSEC_BODY_PARSING_SIZE_LIMIT`       | `0`                 | Maximum size of the bodies to be processed in bytes. If set to `0`, the bodies are not processed. The recommended value is `10000000` (10MB). (To fully enable body processing, the `allow_mode_override` option should also be set in the External Processing filter configuration) |\n| `DD_SERVICE_EXTENSION_OBSERVABILITY_MODE` | `false`             | Enable asynchronous analysis of requests. This also disables blocking capabilities. (To fully enable observability mode, this option should also be set in the External Processing filter configuration) |\n| `DD_SERVICE`                              | `serviceextensions` | Service name shown in the Datadog UI.                                                                                                    |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/istio.md:209"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "AAP only outputs logs when it is enabled. Use the environment variable `DD_APPSEC_ENABLED=1` to enable AAP.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/troubleshooting.md:368"
+        },
+        {
+          "description": "Redeploy your Go service and enable App and API Protection by setting the `DD_APPSEC_ENABLED` environment variable to `true`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/go/setup.md:58"
+        },
+        {
+          "description": "To configure single-step for AAP threat protection, add the environment variable `DD_APPSEC_ENABLED=true` to your one-line installation command.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/single_step/_index.md:35"
+        },
+        {
+          "description": "1-Click Enablement\n\nIf your service is running with an Agent with Remote Configuration enabled and a tracing library version that supports it, hover over the Not Enabled indicator in the AAP Status column and click Enable AAP. There's no need to re-launch the service with the DD_APPSEC_ENABLED=true or --enable-appsec flags.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/appsec-getstarted.en.md:5"
+        },
+        {
+          "description": "1-Click Enablement\n\nIf your service is running with an Agent with Remote Configuration enabled and a tracing library version that supports it, hover over the Not Enabled indicator in the AAP Status column and click Enable AAP. There's no need to re-launch the service with the DD_APPSEC_ENABLED=true or --enable-appsec flags.\n",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/appsec-getstarted-with-rc.en.md:2"
+        },
+        {
+          "description": "This Dockerfile is split into two stages:\nThe build stage uses a Debian image to build the Go application, and uses the Orchestrion tool to instrument the application with App and API Protection features.\nThe runtime stage copies the built application into a minimal Ubuntu image and sets the environment variable `DD_APPSEC_ENABLED` to `true` to enable App and API Protection.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/go/dockerfile.md:44"
+        },
+        {
+          "description": "For App and API Protection, add the `DD_APM_TRACING_ENABLED=false DD_APPSEC_ENABLED=true` environment variable.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/guide/standalone_application_security.md:36"
+        },
+        {
+          "description": "Configure your deployment with the `DD_APM_TRACING_ENABLED=false` environment variable in addition to the `DD_APPSEC_ENABLED=true` environment variable.\nThis configuration will reduce the amount of APM data sent to Datadog to the minimum required by App and API Protection products.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/gateway-api.md:165"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "The HTML and JSON content can both be changed using the `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML` and `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON` environment variables within your application deployment file.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/asm-protection-page-configuration.en.md:5"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "The HTML and JSON content can both be changed using the `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML` and `DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON` environment variables within your application deployment file.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/asm-protection-page-configuration.en.md:5"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_MAX_STACK_TRACE_DEPTH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the maximum depth of a stack trace to be reported.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP` - Pattern for scanning for keys whose values commonly contain sensitive data. If found, the values and any child nodes associated with the key are redacted.\n`DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP` - Pattern for scanning for values that could indicate sensitive data. If found, the value and all its child nodes are redacted.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/policies/library_configuration.md:61"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP",
+      "implementation": "E",
+      "results": [
+        {
+          "description": "A regex string to redact sensitive data by its value in attack reports.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_SCA_ENABLED",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "SCA is configured by setting the `-Ddd.appsec.sca.enabled` flag or the `DD_APPSEC_SCA_ENABLED` environment variable to `true` in supported languages",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/software_composition_analysis/setup_runtime/_index.md:35"
+        },
+        {
+          "description": "SCA can be enabled on your running services using one of the following two methods:\nFrom the Datadog UI.\nManually, using the `DD_APPSEC_SCA_ENABLED` environment variable.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/troubleshooting/_index.md:240"
+        },
+        {
+          "description": "| Product                          | Configuration key             |\n|----------------------------------|-------------------------------|\n| APM Tracing                      | `DD_APM_TRACING_ENABLED`      |\n| Continuous Profiler              | `DD_PROFILING_ENABLED`        |\n| Data Streams Monitoring          | `DD_DATA_STREAMS_ENABLED`     |\n| App and API Protection (AAP)     | `DD_APPSEC_ENABLED`           |\n| Code Security (IAST)             | `DD_IAST_ENABLED`             |\n| Data Observability: Jobs Monitoring             | `DD_DATA_JOBS_ENABLED`        |\n| Software Composition Analysis    | `DD_APPSEC_SCA_ENABLED`       |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/configure_apm_features_linux.md:53"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_TRACE_RATE_LIMIT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls the maximum amount of traces sampled by AppSec attacks, per second.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_WAF_TIMEOUT",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Limits the WAF synchronous execution time (in microseconds).",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APP_KEY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`<YOUR_APPLICATION_KEY>`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/ai_guard/onboarding.md:331"
+        },
+        {
+          "description": "Open a terminal.\nVerify the directory: `pwd` on macOS, `dir` on Windows.\nCreate a new folder: `mkdir <NAME_OF_THE_FOLDER>`.\nEnter the folder: `cd <NAME_OF_THE_FOLDER>`.\nDownload the script api_query_data.py to the folder created in step 3 and edit it:\nReplace `<YOUR_DD_API_KEY>` and `<YOUR_DD_APP_KEY>` with your Datadog API and app keys.\nReplace `system.cpu.idle` with a metric you want to fetch. A list of your metrics is displayed in the Datadog Metric Summary.\nOptionally, replace `*` with a host to filter the data. A list of your hosts is displayed in the Datadog Infrastructure List.\nOptionally, change the time period to collect the data. The current setting is 3600 seconds (one hour). **Note**: If you run this too aggressively, you may reach the Datadog API limits.\nSave your file and confirm its location.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/developers/guide/query-data-to-a-text-file-step-by-step.md:17"
+        },
+        {
+          "description": "Configure your Datadog API and application keys by adding `DD_APP_KEY` and `DD_API_KEY` as secrets. Make sure the application key has the `code_analysis_read` scope.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/software_composition_analysis/setup_static/_index.md:63"
+        },
+        {
+          "description": "First, configure your Datadog API and application keys. Add `DD_APP_KEY` and `DD_API_KEY` as secrets. Please ensure your Datadog application key has the `code_analysis_read` scope.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/static_analysis/setup/_index.md:36"
+        },
+        {
+          "description": "Ensure that the following variables are correctly specified: `DD_APP_KEY`, `DD_API_KEY`, and `DD_SITE` when running the analyzer and `datadog-ci`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/troubleshooting/_index.md:39"
+        },
+        {
+          "description": "Ensure the `DD_API_KEY` and `DD_APP_KEY` variables are defined.\nOptionally, set a `DD_SITE` variable (this defaults to `datadoghq.com`).\nInstall the `datadog-ci` utility (version 2.0 or later)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/iac_security/setup.md:106"
+        },
+        {
+          "description": "**Required environment variables**:\n`DD_API_KEY`: Your API key, used to authenticate the requests.\n`DD_APP_KEY`: Your Application key, used to authenticate the requests.\n`DD_BETA_COMMANDS_ENABLED=1`: The `deployment gate` command is a beta command, so datadog-ci needs to be run with beta commands enabled.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/deployment_gates/setup.md:140"
+        },
+        {
+          "description": "Create a dedicated API key and an application key scoped to at least `continuous_profiler_pgo_read` as described in API and Application Keys.\nSet `DD_API_KEY`, `DD_APP_KEY`, and `DD_SITE` with the environment secret mechanism of your CI provider.\nRun `datadog-pgo` before your build step.\n   For example, for a service `foo` that runs in `prod` and has its main package in `./cmd/foo`, you should add this step",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/profiler/guide/save-cpu-in-production-with-go-pgo.md:36"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_CIVISIBILITY_AGENTLESS_ENABLED=true` (Required)\n: Enables or disables Agentless mode.\n\n**Default**: `false`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-agentless.en.md:3"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_CIVISIBILITY_ENABLED=true` (Required)\n: Enables the Test Optimization product.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/go.md:103"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_FLAKY_RETRY_COUNT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies how many times to retry flaky tests.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "A kill switch for the auto test retries feature.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_LOGS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables/disables CI Visibility log submission",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/correlate_logs_and_tests/_index.md:62"
+        },
+        {
+          "description": "| Name                                      | Description                                   | Default value |\n| ----------------------------------------- | --------------------------------------------- | ------------- |\n| `DD_CIVISIBILITY_LOGS_ENABLED` (required) | Enables/disables CI Visibility log submission | `false`       |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/correlate_logs_and_tests/_index.md:62"
+        },
+        {
+          "description": "`--logs`\n: Enable forwarding content from the XML reports as Logs. The content inside ``, ``, and `` is collected as logs. Logs from elements inside a `` are automatically connected to the test.\n\n**Environment variable**: `DD_CIVISIBILITY_LOGS_ENABLED`\n\n**Default**: `false`\n\n**Note**: Logs are billed separately from Test Optimization.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/junit_xml.md:247"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_CIVISIBILITY_FLAKY_RETRY_ENABLED` - set to 0 or false to explicitly disable retries even if the remote setting is enabled (default: true)\n`DD_CIVISIBILITY_FLAKY_RETRY_COUNT` - a non-negative number to change the maximum number of retries per test case (default: 5).\n`DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT` - a non-negative number to set the maximum total number of failed tests to retry (default: 1000)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/flaky_tests/auto_test_retries.md:90"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CUSTOM_TRACE_ID",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`$(DD_CUSTOM_TRACE_ID)`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/swift.md:350"
+        },
+        {
+          "description": "Custom variable set by the Jenkins Datadog Plugin for trace IDs.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/containers.md:269"
+        },
+        {
+          "description": "| Environment variable | Value                  |\n| -------------------- | ---------------------- |\n| `JENKINS_URL`        | `$(JENKINS_URL)`       |\n| `WORKSPACE`          | `$(WORKSPACE)`         |\n| `BUILD_TAG`          | `$(BUILD_TAG)`         |\n| `BUILD_NUMBER`       | `$(BUILD_NUMBER)`      |\n| `BUILD_URL`          | `$(BUILD_URL)`         |\n| `JOB_NAME`           | `$(JOB_NAME)`          |\n| `DD_CUSTOM_TRACE_ID` | `$(DD_CUSTOM_TRACE_ID)`|",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/swift.md:350"
+        },
+        {
+          "description": "| Environment Variable              | Description                                                                                              |\n|-----------------------|----------------------------------------------------------------------------------------------------------|\n| `JENKINS_URL`         | The URL of the Jenkins master that's running the build.                                                 |\n| `BUILD_TAG`           | A string of the form `jenkins-${JOB_NAME}-${BUILD_NUMBER}` for easier identification.                    |\n| `BUILD_NUMBER`        | The current build number, such as \"153\".                                                                 |\n| `BUILD_URL`           | The URL where the results of this build can be found (such as http://buildserver/jenkins/job/MyJobName/666/).|\n| `WORKSPACE`           | The absolute path of the workspace.                                                                       |\n| `JOB_NAME`            | The name of the project for this build.                                                                  |\n| `JOB_URL`             | The URL for the job details.                                                                            |\n| `GIT_URL`             | The Git URL used for the repository (such as git@github.com:user/repo.git or https://github.com/user/repo.git).|\n| `GIT_URL_1`           | The URL of the first Git repository if multiple repositories are configured.                            |\n| `GIT_COMMIT`          | The Git hash of the commit checked out for the build.                                                    |\n| `GIT_BRANCH`          | The Git branch that was checked out for the build.                                                       |\n| `NODE_NAME`           | The name of the node the build is running on. Equals 'master' for the master node.                       |\n| `NODE_LABELS`         | A comma-separated list of labels assigned to the node.                                                   |\n| `DD_CUSTOM_TRACE_ID`  | Custom variable set by the Jenkins Datadog Plugin for trace IDs.                                        |\n| `DD_CUSTOM_PARENT_ID` | Custom variable set by the Jenkins Datadog Plugin for parent IDs.                                        |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/containers.md:269"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DATA_STREAMS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Follow the Orchestrion Getting Started guide to compile or run your service using Orchestrion.\nSet the `DD_DATA_STREAMS_ENABLED=true` environment variable",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/data_streams/setup/language/go.md:49"
+        },
+        {
+          "description": "| Product                          | Configuration key             |\n|----------------------------------|-------------------------------|\n| APM Tracing                      | `DD_APM_TRACING_ENABLED`      |\n| Continuous Profiler              | `DD_PROFILING_ENABLED`        |\n| Data Streams Monitoring          | `DD_DATA_STREAMS_ENABLED`     |\n| App and API Protection (AAP)     | `DD_APPSEC_ENABLED`           |\n| Code Security (IAST)             | `DD_IAST_ENABLED`             |\n| Data Observability: Jobs Monitoring             | `DD_DATA_JOBS_ENABLED`        |\n| Software Composition Analysis    | `DD_APPSEC_SCA_ENABLED`       |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/configure_apm_features_linux.md:36"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DBM_PROPAGATION_MODE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service' option enables the connection between DBM and APM services. The 'full' option enables connection between database spans with database query events. Available for Postgres.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_HOST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the hostname or IP address of the DogStatsD server to which runtime metrics are sent.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the port number for the DogStatsD server to which runtime metrics are sent.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_ENV",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Adds an environment tag to all spans generated by the tracer instance.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXTERNAL_ENV",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Origin detection can be achieved in a number of ways. Origin detection through cgroups is enabled by default. Origin detection over UDP or `DD_EXTERNAL_ENV` requires configuration.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/developers/dogstatsd/_index.md:230"
+        },
+        {
+          "description": "Inject environment variables (`DD_AGENT_HOST`, `DD_TRACE_AGENT_URL`, `DD_ENTITY_ID` and `DD_EXTERNAL_ENV`) to configure DogStatsD and APM tracer libraries into the user's application containers.\nInject Datadog standard tags (`env`, `service`, `version`) from application labels into the container environment variables.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/cluster_agent/admission_controller.md:30"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_BRANCH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_BRANCH` (Optional)\n: The branch name.\n\n**Example**: `main`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:525"
+        },
+        {
+          "description": "`DD_GIT_BRANCH`\n: Git branch being tested. Leave empty if providing tag information instead.\n\n**Example**: `develop`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:9"
+        },
+        {
+          "description": "`DD_GIT_BRANCH`\n   : Git branch being tested. Leave empty if providing tag information instead.\n\n   **Example**: `develop`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:74"
+        },
+        {
+          "description": "If reports are missing in Datadog, please define the following environment variables before invoking datadog-ci:\n`DD_GIT_REPOSITORY_URL`: URL of the repository\n`DD_GIT_BRANCH`: branch being committed to\n`DD_GIT_COMMIT_SHA`: commit sha",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/troubleshooting/_index.md:68"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_DATE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_DATE`\n: Commit author date in ISO 8601 format.\n\n**Example**: `2021-03-12T16:00:28Z`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:33"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_DATE`\n   : Commit author date in ISO 8601 format.\n\n   **Example**: `2021-03-12T16:00:28Z`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:54"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_DATE` (Optional)\n: The date when the author submitted the commit expressed in ISO 8601 format.\n\n**Example**: `2021-08-16T15:41:45.000Z`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:549"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_EMAIL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_EMAIL`\n: Commit author email.\n\n**Example**: `john@example.com`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:29"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_EMAIL` **(required)**\n   : Commit author email.\n\n   **Example**: `john@example.com`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:46"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_EMAIL` (Optional)\n: The email of the author of the commit.\n\n**Example**: `john@example.com`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:545"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_NAME`\n: Commit author name.\n\n**Example**: `John Smith`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:25"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_NAME`\n   : Commit author name.\n\n   **Example**: `John Smith`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:50"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_AUTHOR_NAME` (Optional)\n: The name of the author of the commit.\n\n**Example**: `John Smith`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:541"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_DATE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_DATE`\n: Commit committer date in ISO 8601 format.\n\n**Example**: `2021-03-12T16:00:28Z`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:45"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_DATE`\n   : Commit committer date in ISO 8601 format.\n\n   **Example**: `2021-03-12T16:00:28Z`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:66"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_DATE` (Optional)\n: The date when the committer submitted the commit expressed in ISO 8601 format.\n\n**Example**: `2021-08-16T15:41:45.000Z`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:561"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_EMAIL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_EMAIL`\n: Commit committer email.\n\n**Example**: `jane@example.com`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:41"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_EMAIL`\n   : Commit committer email.\n\n   **Example**: `jane@example.com`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:58"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_EMAIL` (Optional)\n: The email of the committer of the commit.\n\n**Example**: `jane@example.com`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:557"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_NAME`\n: Commit committer name.\n\n**Example**: `Jane Smith`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:37"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_NAME`\n   : Commit committer name.\n\n   **Example**: `Jane Smith`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:62"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_COMMITTER_NAME` (Optional)\n: The name of the committer of the commit.\n\n**Example**: `Jane Smith`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:553"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_MESSAGE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_MESSAGE`\n: Commit message.\n\n**Example**: `Set release number`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:21"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_MESSAGE`\n   : Commit message.\n\n   **Example**: `Set release number`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:70"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_MESSAGE` (Optional)\n: The commit message.\n\n**Example**: `Initial commit message`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:537"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_SHA",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_COMMIT_SHA`\n: Full commit hash.\n\n**Example**: `a18ebf361cc831f5535e58ec4fae04ffd98d8152`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:17"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_SHA` **(required)**\n   : Full (40-character long SHA1) commit hash.\n\n   **Example**: `a18ebf361cc831f5535e58ec4fae04ffd98d8152`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:42"
+        },
+        {
+          "description": "`DD_GIT_COMMIT_SHA` (Optional)\n: The commit expressed in the hex 40 chars length form.\n\n**Example**: `faaca5c59512cdfba9402c6e67d81b4f5701d43c`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:533"
+        },
+        {
+          "description": "If reports are missing in Datadog, please define the following environment variables before invoking datadog-ci:\n`DD_GIT_REPOSITORY_URL`: URL of the repository\n`DD_GIT_BRANCH`: branch being committed to\n`DD_GIT_COMMIT_SHA`: commit sha",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/troubleshooting/_index.md:69"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_REPOSITORY_URL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The repository URL",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/swift.md:587"
+        },
+        {
+          "description": "`DD_GIT_REPOSITORY_URL` (Optional)\n: The repository URL of your service.\n\n**Example**: `https://github.com/my-org/my-repo.git`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:521"
+        },
+        {
+          "description": "`DD_GIT_REPOSITORY_URL`\n: URL of the repository where the code is stored. Both HTTP and SSH URLs are supported.\n\n**Example**: `git@github.com:MyCompany/MyApp.git`, `https://github.com/MyCompany/MyApp.git`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:5"
+        },
+        {
+          "description": "`DD_GIT_REPOSITORY_URL` **(required)**\n   : URL of the repository where the code is stored. Both HTTP and SSH URLs are supported.\n\n   **Example**: `git@github.com:MyCompany/MyApp.git`, `https://github.com/MyCompany/MyApp.git`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:38"
+        },
+        {
+          "description": "| Environment variable    | Value                   |\n| ----------------------- | ----------------------- |\n| `DD_GIT_REPOSITORY_URL` | The repository URL      |\n| `CI_WORKSPACE`          | `$(CI_WORKSPACE)`       |\n| `CI_COMMIT`             | `$(CI_COMMIT)`          |\n| `CI_BUILD_ID`           | `$(CI_BUILD_ID)`        |\n| `CI_BUILD_NUMBER`       | `$(CI_BUILD_NUMBER)`    |\n| `CI_WORKFLOW`           | `$(CI_WORKFLOW)`        |\n| `CI_TAG`                | `$(CI_TAG)`             |\n| `CI_BRANCH`             | `$(CI_BRANCH)`          |\n| `CI_GIT_REF`            | `$(CI_GIT_REF)`         |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/swift.md:587"
+        },
+        {
+          "description": "If reports are missing in Datadog, please define the following environment variables before invoking datadog-ci:\n`DD_GIT_REPOSITORY_URL`: URL of the repository\n`DD_GIT_BRANCH`: branch being committed to\n`DD_GIT_COMMIT_SHA`: commit sha",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/code_security/troubleshooting/_index.md:67"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_TAG",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_GIT_TAG` (Optional)\n: The tag of the commit (if any).\n\n**Example**: `0.1.0`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/jenkins.md:529"
+        },
+        {
+          "description": "`DD_GIT_TAG`\n: Git tag being tested (if applicable). Leave empty if providing branch information instead.\n\n**Example**: `1.0.1`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "layouts/shortcodes/ci-git-metadata.en.md:13"
+        },
+        {
+          "description": "`DD_GIT_TAG`\n   : Git tag being tested (if applicable). Leave empty if providing branch information instead.\n\n   **Example**: `1.0.1`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:78"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_HAPROXY_SPOA_HEALTHCHECK_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configure the port used for healthcheck server for the HAProxy SPOA integration",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_HAPROXY_SPOA_HOST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configure the host used for the HAProxy SPOA integration",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_HAPROXY_SPOA_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configure the port used for the HAProxy SPOA integration",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_HOSTNAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Hostname to use for metrics (if autodetection fails)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/guide/kubernetes_daemonset.md:269"
+        },
+        {
+          "description": "Hostname to use for metrics (if autodetection fails)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/configuration.md:639"
+        },
+        {
+          "description": "Manually set the hostname to use for metrics if autodetection fails, or when running the Datadog Cluster Agent.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/apm.md:304"
+        },
+        {
+          "description": "In this case you can use the downward API to set `DD_HOSTNAME`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/agent/troubleshooting/hostname_containers.md:118"
+        },
+        {
+          "description": "`DD_HOSTNAME`\n: Hostname to use for the Datadog Cluster Agent.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/cluster_agent/commands.md:107"
+        },
+        {
+          "description": "`DD_HOSTNAME`\n: Hostname to use for metrics (if autodetection fails).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/docker/_index.md:108"
+        },
+        {
+          "description": "Option names should be uppercase with the `DD_` prefix: `hostname` -> `DD_HOSTNAME`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/agent/guide/environment-variables.md:35"
+        },
+        {
+          "description": "Run the following command to deploy the Agent. Replace `<PODMAN_DB_PATH>` with the path to your Podman DB, `<API_KEY>` with your API key, and `<DD_HOSTNAME>` with your Datadog hostname",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/guide/podman-support-with-docker-integration.md:46"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_INSTRUMENTATION_TELEMETRY_ENABLED`\n: **Default**: `true`\n\n: Enable or disable telemetry data collection and sending.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:96"
+        },
+        {
+          "description": "`DD_INSTRUMENTATION_TELEMETRY_ENABLED`\n: **Default**: `true` \n\nDatadog may collect environmental and diagnostic information about your system to improve the product. When false, this telemetry data will not be collected.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:145"
+        },
+        {
+          "description": "`DD_INSTRUMENTATION_TELEMETRY_ENABLED`\n: **Since**: 0.1.12 \n\n**Default**: `true` \n\nDatadog may collect environmental and diagnostic information about your system to improve the product. When `false`, telemetry data are not collected.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/cpp.md:118"
+        },
+        {
+          "description": "\nInstrumentation telemetry is not available for the  site, but is enabled by default. To avoid errors,  users should disable this capability by setting DD_INSTRUMENTATION_TELEMETRY_ENABLED=false on their application and DD_APM_TELEMETRY_ENABLED=false on their Agent.\n",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/configure_data_security/_index.md:668"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_AGENTLESS_ENABLED",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "`DD_LLMOBS_AGENTLESS_ENABLED`\n: optional - _integer or string_ - **default**: `false`\n\nOnly required if you are not using the Datadog Agent, in which case this should be set to `1` or `true`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/llm_observability/instrumentation/sdk.md:86"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_LLMOBS_ENABLED`\n: required - _integer or string_\n\nToggle to enable submitting data to LLM Observability. Should be set to `1` or `true`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/llm_observability/instrumentation/sdk.md:67"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_ML_APP",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Your application name (the value of `DD_LLMOBS_ML_APP`) must be a lowercase Unicode string. It may contain the characters listed below",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/llm_observability/instrumentation/api.md:332"
+        },
+        {
+          "description": "`DD_LLMOBS_ML_APP`\n: optional - _string_\n\nThe name of your LLM application, service, or project, under which all traces and spans are grouped. This helps distinguish between different applications or experiments. See Application naming guidelines for allowed characters and other constraints. To override this value for a given root span, see Tracing multiple applications. If not provided, this defaults to the value of `DD_SERVICE`, or the value of a propagated `DD_LLMOBS_ML_APP` from an upstream service.\n\n**Note**: Before version `ddtrace==3.14.0`, this is a **required field**.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/llm_observability/instrumentation/sdk.md:68"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_PROJECT_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "This config allows to configure the default LLM Observability project to use. It is required when using the Experiments and Datasets feature.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_METRICS_OTEL_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "To enable this feature, you must set `DD_METRICS_OTEL_ENABLED=true`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/instrument/dd_sdks/api_support.mdoc.md:181"
+        },
+        {
+          "description": "**Note**: Even when `DD_METRICS_OTEL_ENABLED=true`, standard Runtime Metrics are still emitted through DogStatsD.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:48"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PIPELINE_EXECUTION_ID",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "In the AWS Console, go to your pipeline configuration and click **Edit**\nGo to the stage containing the AWS CodeBuild action, click **Edit Stage**, and then edit the relevant action.\nUnder **Environment variables**, add an environment variable.\nName the variable `DD_PIPELINE_EXECUTION_ID`, and the value `#{codepipeline.PipelineExecutionId}`. Leave the type as _Plaintext_.\nClick **Done** to save your changes.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/continuous_integration/pipelines/awscodepipeline.md:140"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENABLED",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Ensure you have installed the associated tracing library in your Lambda function.\nSet the `DD_PROFILING_ENABLED` environment variable to `true`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/aws_lambda/profiling.md:25"
+        },
+        {
+          "description": "To enable the Continuous Profiler, set the environment variable `DD_PROFILING_ENABLED=true`. For more information, see the Continuous Profiler documentation.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/azure_app_service/linux_code.md:470"
+        },
+        {
+          "description": "Your Orchestrion-built application includes continuous profiler instrumentation.\nTo enable the profiler, set the environment variable `DD_PROFILING_ENABLED=true` at runtime.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/dd_libraries/go.md:236"
+        },
+        {
+          "description": "If you automatically instrument your Go application with Orchestrion, it adds the continuous profiler code to your application. To enable the profiler at run time, set the environment variable `DD_PROFILING_ENABLED=true`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/profiler/enabling/go.md:88"
+        },
+        {
+          "description": "Go to the Agent Installation Page and select one of Linux platforms or Docker.\nToggle the \"Enable APM Instrumentation\" switch. (If there is no switch, the platform is not supported by SSI.) Toggling the switch adds the `DD_APM_INSTRUMENTATION_ENABLED=` environment variable to the installation command, configuring the installed agent to inject the tracer library into processes.\nCopy the installation command into a text editor.\nAdd `DD_PROFILING_ENABLED=auto` as an additional environment variable after `DD_APM_INSTRUMENTATION_ENABLED` in the copied command. This turns on automatic profiler enablement for any new process worth profiling.\nProceed with the rest of the installation instructions, using the modified installation command.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/profiler/enabling/ssi.md:41"
+        },
+        {
+          "description": "| Product                          | Configuration key             |\n|----------------------------------|-------------------------------|\n| APM Tracing                      | `DD_APM_TRACING_ENABLED`      |\n| Continuous Profiler              | `DD_PROFILING_ENABLED`        |\n| Data Streams Monitoring          | `DD_DATA_STREAMS_ENABLED`     |\n| App and API Protection (AAP)     | `DD_APPSEC_ENABLED`           |\n| Code Security (IAST)             | `DD_IAST_ENABLED`             |\n| Data Observability: Jobs Monitoring             | `DD_DATA_JOBS_ENABLED`        |\n| Software Composition Analysis    | `DD_APPSEC_SCA_ENABLED`       |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/configure_apm_features_linux.md:35"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REMOTE_CONFIGURATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_REMOTE_CONFIGURATION_ENABLED`\n: **Since**: 0.2.0 \n\n**Default**: `true` \n\nEnable the capability that allows to remotely configure and change the behavior of the tracer. \n\nWhen `false` this feature is disabled. \n\nFor more information, see Remote Configuration.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/cpp.md:89"
+        },
+        {
+          "description": "Server-side feature flags use Remote Configuration to deliver flag configurations to your application. Enable Remote Configuration in your Datadog Agent by setting `DD_REMOTE_CONFIGURATION_ENABLED=true` or adding `remote_configuration.enabled: true` to your `datadog.yaml`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/feature_flags/server/_index.md:35"
+        },
+        {
+          "description": "`DD_REMOTE_CONFIGURATION_ENABLED`\n: **Default**: `true`\n\n: Enable or disable remote configuration. Also accepts the alias `DD_REMOTE_CONFIG_ENABLED`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:62"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Remote configuration polling interval in seconds.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_HEALTHCHECK_ADDR",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Address and port where the health check endpoint is served",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/gateway-api.md:86"
+        },
+        {
+          "description": "| Environment Variable                 | Default Value | Description                                                                                                                |\n|--------------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------|\n| `DD_REQUEST_MIRROR_LISTEN_ADDR`      | `:8080`       | Address and port where the request mirror service listens for incoming mirrored requests                                   |\n| `DD_REQUEST_MIRROR_HEALTHCHECK_ADDR` | `:8081`       | Address and port where the health check endpoint is served                                                                 |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/gateway-api.md:86"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_LISTEN_ADDR",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Address and port where the request mirror service listens for incoming mirrored requests",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/gateway-api.md:85"
+        },
+        {
+          "description": "| Environment Variable                 | Default Value | Description                                                                                                                |\n|--------------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------|\n| `DD_REQUEST_MIRROR_LISTEN_ADDR`      | `:8080`       | Address and port where the request mirror service listens for incoming mirrored requests                                   |\n| `DD_REQUEST_MIRROR_HEALTHCHECK_ADDR` | `:8081`       | Address and port where the health check endpoint is served                                                                 |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/security/application_security/setup/kubernetes/gateway-api.md:85"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_RUNTIME_METRICS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats, memory usage, and thread counts) for the application.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE",
+      "implementation": "E",
+      "results": [
+        {
+          "description": "See Unified Service Tagging.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/azure_app_service_linux_containers_serverless_init.md:120"
+        },
+        {
+          "description": "Your application's service name",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/azure_app_service/windows_code.md:488"
+        },
+        {
+          "description": "Unified service tagging enabled",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/tag.md:49"
+        },
+        {
+          "description": "The service name, for example, `web-backend`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/profiler/enabling/go.md:106"
+        },
+        {
+          "description": "The name of your service matching the `DD_SERVICE` env var.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/google_cloud_run/functions_1st_gen.md:190"
+        },
+        {
+          "description": "How you want to tag your service for Unified Service Tagging.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/azure_functions/_index.md:199"
+        },
+        {
+          "description": "How you want to tag your service for Unified Service Tagging.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/google_cloud_run/functions_1st_gen.md:180"
+        },
+        {
+          "description": "Renames all `lambda_api_gateway` upstream services to `new-service-name`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/aws_lambda/configuration.md:348"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS_CERT_FILE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Change the default gRPC TLS layer cert.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS_KEY_FILE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Change the default gRPC TLS layer key.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SITE",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Datadog site - **Required**",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/azure_app_service_linux_containers_serverless_init.md:116"
+        },
+        {
+          "description": "Your Datadog site. For example, .",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/azure_functions/_index.md:191"
+        },
+        {
+          "description": "Your Datadog site. For example, .",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/google_cloud_run/functions_1st_gen.md:173"
+        },
+        {
+          "description": "Datadog site - Set this tag if you are in a different site. **Default** is US1 `datadoghq.com`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/google_cloud_run/functions_1st_gen.md:183"
+        },
+        {
+          "description": "Destination site for your metrics, traces, and logs. Your `DD_SITE` is . Defaults to `datadoghq.com`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/guide/kubernetes_daemonset.md:271"
+        },
+        {
+          "description": "Destination site for your metrics, traces, and logs. Set your Datadog site to: ``. Defaults to `datadoghq.com`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/agent_configuration.md:20"
+        },
+        {
+          "description": "This option defines the minimum TLS version for submitting data to the Datadog intake specified in `DD_SITE` or `DD_URL`. Possible values are: `tlsv1.0`, `tlsv1.1`, `tlsv1.2`, or `tlsv1.3`. Values are case-insensitive. Defaults to `tlsv1.2`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/agent_configuration.md:62"
+        },
+        {
+          "description": "For the following configuration, replace `<DD_SITE>` with",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/agent/faq/log-collection-with-docker-socket.md:35"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SPAN_SAMPLING_RULES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Span sampling rules to keep individual spans when the rest of the trace would otherwise be dropped. A JSON array of objects. Rules are applied in configured order to determine the span's sample rate. The sample_rate value must be between 0.0 and 1.0 (inclusive). For more information, see [Ingestion Mechanisms][3]. Example: - Set the span sample rate to 50% for the service my-service and operation name http.request, up to 50 traces per second: '[{\"service\": \"my-service\", \"name\": \"http.request\", \"sample_rate\":0.5, \"max_per_second\": 50}]'",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SPAN_SAMPLING_RULES_FILE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Points to a JSON file that contains the span sampling rules. DD_SPAN_SAMPLING_RULES takes precedence over this variable. See DD_SPAN_SAMPLING_RULES for the rule format.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TAGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Tags to apply to produced data. Must be a list of <key>:<value> separated by commas and/or spaces.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_HEARTBEAT_INTERVAL",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Sets the interval for the telemetry status heartbeat (in seconds)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_LOG_COLLECTION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_TELEMETRY_LOG_COLLECTION_ENABLED`\n: **Default**: `true`\n\n: Enable or disable log collection for telemetry.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:104"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_SESSION_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "This can be solved by using the `DD_TEST_SESSION_NAME` environment variable. Use `DD_TEST_SESSION_NAME` to identify a group of tests. Example values for this tag include",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/troubleshooting/_index.md:161"
+        },
+        {
+          "description": "\n\nSet the `NODE_OPTIONS` environment variable to `-r dd-trace/ci/init`. Run your tests as you normally would, optionally specifying a name for your test session with `DD_TEST_SESSION_NAME`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/javascript.md:78"
+        },
+        {
+          "description": "`DD_TEST_SESSION_NAME`\n: Identifies a group of tests, such as `integration-tests`, `unit-tests` or `smoke-tests`.\n\n**Environment variable**: `DD_TEST_SESSION_NAME`\n\n**Default**: (CI job name + test command)\n\n**Example**: `unit-tests`, `integration-tests`, `smoke-tests`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tests/setup/swift.md:147"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated to 16 characters. Set to false for compatibility with systems that expect the shorter format.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ABANDONED_SPAN_TIMEOUT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug mode in Go, set the environment variable `DD_TRACE_DEBUG_ABANDONED_SPANS=true`. To change the duration after which spans are considered abandoned (default=`10m`), set the environment variable `DD_TRACE_ABANDONED_SPAN_TIMEOUT` to the desired time duration. Abandoned span logs appear at the Info level.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/troubleshooting/tracer_debug_logs.md:172"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT or DD_TRACE_AGENT_URL must match it.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_URL",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if set.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "System Property: `-Ddd.trace.analytics.enabled=true`\nEnvironment Variable: `DD_TRACE_ANALYTICS_ENABLED=true`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/legacy_app_analytics/_index.md:34"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BAGGAGE_TAG_KEYS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_TRACE_BAGGAGE_TAG_KEYS`\n: **Default**: `user.id,session.id,account.id` \n\n**Supported Input**:  A comma-separated string representing a list of case-sensitive baggage keys \n\n**Caveats**: Not supported in C++ \n\n**Description**: A comma-separated list of baggage keys that are automatically applied as span tags to the local root span. For example, a baggage key `user.id` is tagged as `baggage.user.id` \n\nThis feature only applies to baggage extracted from incoming HTTP headers. Baggage set with the baggage API is not included.\nTo tag all baggage items, set the value to `*`. Use this with caution to avoid exposing sensitive data in tags.\nTo disable this feature, set the value to an empty string.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/_index.md:236"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_IP_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables or disables the automatic collection of client IP addresses from HTTP request headers. When enabled, the IP address is stored in the http.client_ip span tag.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_IP_HEADER",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configures a custom header name from which to source the http.client_ip tag value. If this variable is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with \"http.client_ip\": \"5.6.7.9\"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip - cf-connecting-ip - cf-connecting-ipv6",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Enable debug logging in the tracer. Use OTEL_LOG_LEVEL as an alias",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_ABANDONED_SPANS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug mode in Go, set the environment variable `DD_TRACE_DEBUG_ABANDONED_SPANS=true`. To change the duration after which spans are considered abandoned (default=`10m`), set the environment variable `DD_TRACE_ABANDONED_SPAN_TIMEOUT` to the desired time duration. Abandoned span logs appear at the Info level.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/troubleshooting/tracer_debug_logs.md:172"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables trace collection. Defaults to `true`. For more information about trace collection environment variables, see Library Configuration.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/agent_configuration.md:23"
+        },
+        {
+          "description": "`DD_TRACE_ENABLED`\n: **Default**: `true`\n\n: Set to `false` to disable tracing.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:42"
+        },
+        {
+          "description": "Set the environment variable `DD_TRACE_ENABLED` to `true` on your Lambda functions.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/aws_lambda/configuration.md:429"
+        },
+        {
+          "description": "You have installed the AWS X-Ray integration for tracing your Lambda functions, enabling both AWS X-Ray active tracing and installing the X-Ray client libraries.\nYou have installed the Datadog Lambda Library for your Lambda runtime, and the `DD_TRACE_ENABLED` environment variable is set to `true`.\nDatadog APM is configured on your hosts and container-based infrastructure.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/aws_lambda/distributed_tracing.md:206"
+        },
+        {
+          "description": "#### Verify that your Step Function is configured to send all logs\nEnsure that the `DD_TRACE_ENABLED` tag is set to `true` on the Step Function in your AWS console.\nIn your AWS console, open your Step Function's logging tab. Ensure that _Log level_ is set to `ALL`, and that _Include execution data_ is selected.\nEnsure that the CloudWatch log group (also found on the logging tab) has a subscription filter to the Datadog Lambda Forwarder in the same region.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/step_functions/troubleshooting.md:8"
+        },
+        {
+          "description": "## Correlating logs and traces\nTo correlate your logs and traces, ensure that you have set `DD_TRACE_ENABLED` and `DD_LOGS_INJECTION ` to `true`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/aws_lambda/managed_instances.md:47"
+        },
+        {
+          "description": "`OTEL_TRACES_EXPORTER`\n: **Datadog convention**: `DD_TRACE_ENABLED=false` \n\nTrace exporter to be used\n\n**Notes**: Only a value of `none` is accepted\n",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:104"
+        },
+        {
+          "description": "Set environment variable `DD_FLUSH_TO_LOG` and `DD_TRACE_ENABLED` to `true`.\nImport the required packages in the file declaring your Lambda function handler. ",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/guide/datadog_forwarder_go.md:35"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HEADER_TAGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified, the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name> for response headers.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOG_DIRECTORY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Log files are saved in the following directories by default. Use the `DD_TRACE_LOG_DIRECTORY` setting to change these paths.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/troubleshooting/tracer_startup_logs.md:41"
+        },
+        {
+          "description": "Logs files are saved in the following directories by default. Use the `DD_TRACE_LOG_DIRECTORY` setting to change these paths.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/troubleshooting/tracer_debug_logs.md:249"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation occurs. The resulting value is reported in the http.url tag.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection by the Agent. Use only when you have long-lived traces or traces with many spans.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`DD_TRACE_PARTIAL_FLUSH_MIN_SPANS`\n: **Default**: `300`\n\n: Minimum number of spans in a trace before partial flush is triggered.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:58"
+        },
+        {
+          "description": "`DD_TRACE_PARTIAL_FLUSH_MIN_SPANS`\n: **Default**: `1000`\n\nNumber of spans within a trace that can be partially flushed to the Datadog Agent. `DD_TRACE_PARTIAL_FLUSH_ENABLED` must be `true` for partial flushing to occur.\nAdded in version 1.54.0. Only compatible with the Datadog Agent 7.26.0+.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:113"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_EXTRACT_FIRST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_TRACE_PROPAGATION_EXTRACT_FIRST`\n: **Default**: `false`\n\n: When set to `true`, stops extracting after the first successful trace context extraction.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:138"
+        },
+        {
+          "description": "As of version 2.48.0, the default propagation style is `datadog, tracecontext`. This means Datadog headers are used first, followed by W3C Trace Context.\nPrior to version 2.48.0, the order was `tracecontext, Datadog` for both extraction and injection propagation.\nPrior to version 2.22.0, only the `Datadog` injection style was enabled.\nAs of version 2.42.0, when multiple extractors are specified, the `DD_TRACE_PROPAGATION_EXTRACT_FIRST=true` configuration specifies whether context extraction should exit immediately upon detecting the first valid `tracecontext`. The default value is `false`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/trace_context_propagation/_index.md:522"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "A comma-separated list of header formats from which to attempt to inject and extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue. The more specific DD_TRACE_PROPAGATION_STYLE_INJECT and DD_TRACE_PROPAGATION_STYLE_EXTRACT configurations take priority when present.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_EXTRACT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`DD_TRACE_PROPAGATION_STYLE_EXTRACT`\n: Specifies trace context propagation formats for extraction only in a comma-separated list. Highest precedence for configuring extraction propagators.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/trace_context_propagation/_index.md:66"
+        },
+        {
+          "description": "`DD_TRACE_PROPAGATION_STYLE_EXTRACT`\n: **Since**: v0.1.6 \n\n**Default**: `datadog,tracecontext,baggage` \n\n**Accepted values**: `datadog`, `tracecontext`, `b3`, `baggage`  \n\nComma separated list of propagation styles to use when extracting tracing context.\nWhen multiple values are given, the order of matching is based on the order of values.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/cpp.md:137"
+        },
+        {
+          "description": "`DD_TRACE_PROPAGATION_STYLE_EXTRACT`\n: **Default**: `(none)`\n\n: A comma-separated list of propagation styles to use for extraction. When set, this overrides `DD_TRACE_PROPAGATION_STYLE` for extraction.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:130"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_INJECT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`DD_TRACE_PROPAGATION_STYLE_INJECT`\n: Specifies trace context propagation formats for injection only in comma-separated list. Highest precedence for configuring injection propagators.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/trace_context_propagation/_index.md:69"
+        },
+        {
+          "description": "`DD_TRACE_PROPAGATION_STYLE_INJECT`\n: **Since**: v0.1.6 \n\n**Default**: `datadog,tracecontext,baggage` \n\n**Accepted values**: `datadog`, `tracecontext`, `b3`, `baggage` \n\nComma separated list of propagation styles to use when injecting tracing context.\nWhen multiple values are given, the order of matching is based on the order of values.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/cpp.md:130"
+        },
+        {
+          "description": "`DD_TRACE_PROPAGATION_STYLE_INJECT`\n: **Default**: `(none)`\n\n: A comma-separated list of propagation styles to use for injection. When set, this overrides `DD_TRACE_PROPAGATION_STYLE` for injection.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:134"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RATE_LIMIT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES or DD_TRACE_SAMPLE_RATE is set.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enable `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED` to ensure no Datadog integration sets service names that are different from the default global service name. This also improves how service-to-service connections and inferred services are represented in Datadog visualizations, across all supported tracing library languages and integrations.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/services/inferred_services.md:165"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REPORT_HOSTNAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Whether to report the system's hostname for each trace. When disabled, the hostname of the Agent is used instead.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Always set the http.endpoint tag with the results of the simplification algorithm of Resource Renaming",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RETRY_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "sets the interval for retrying submitting payloads to the agent",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLE_RATE",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Controls the ingestion sample rate (between 0.0 and 1.0) between the Agent and the backend.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "You can configure sampling rules by setting the environment variable `DD_TRACE_SAMPLING_RULES`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/guide/ingestion_sampling_use_cases.md:82"
+        },
+        {
+          "description": "`DD_TRACE_SAMPLING_RULES`\n: **Default**: `(none)`\n\n: A JSON array of objects to apply for trace sampling. Each rule must have a `sample_rate` between 0.0 and 1.0 (inclusive).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:116"
+        },
+        {
+          "description": "To control the volume of Envoy traces that are sent to Datadog, specify a sampling rate by setting the parameter `DD_TRACE_SAMPLING_RULES` to a value between `0.0` (0%) and `1.0` (100%). If no value is specified, 100% of traces starting from Envoy are sent.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/proxy_setup/envoy.md:189"
+        },
+        {
+          "description": "To manage the APM traced invocation sampling rate for serverless functions, set the `DD_TRACE_SAMPLING_RULES` environment variable on the function to a value between 0.000 (no tracing of Lambda function invocations) and 1.000 (trace all Lambda function invocations).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/serverless/aws_lambda/configuration.md:359"
+        },
+        {
+          "description": "To control the volume of Istio traces that are sent to Datadog, configure a\nsampling rule whose `\"sample_rate\"` is a value between `0.0` (0%) and `1.0`\n(100%). Configure sampling rules with the `DD_TRACE_SAMPLING_RULES`\nenvironment variable. If `DD_TRACE_SAMPLING_RULES` is not specified, then 100%\nof Istio traces are sent to Datadog.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/proxy_setup/istio.md:80"
+        },
+        {
+          "description": "`DD_TRACE_RATE_LIMIT`\n: **Default**: `100` \n\n**Supported Input**: A positive integer\n\n**Caveats**: `200` is the default value of `DD_TRACE_RATE_LIMIT` in C++\n\n**Description**: Sets the maximum number of traces to sample per second; applies only when either `DD_TRACE_SAMPLING_RULES` or `DD_TRACE_SAMPLE_RATE` is set.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/_index.md:101"
+        },
+        {
+          "description": "Remotely configured sampling rules, set through resource-based sampling\nAdaptive sampling rules\nLocally configured sampling rules (`DD_TRACE_SAMPLING_RULES`)\nRemotely configured global sampling rate\nLocally configured global sampling rate (`DD_TRACE_SAMPLE_RATE`)\nRates from the trace agent controlled indirectly with Agent settings remotely or locally (`DD_APM_MAX_TPS`)",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_pipeline/ingestion_controls.md:234"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_STARTUP_LOGS",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "`DD_TRACE_STARTUP_LOGS`\n: **Default**: `true` \n\nEnable startup configuration and the diagnostic log.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/go.md:96"
+        },
+        {
+          "description": "`DD_TRACE_STARTUP_LOGS`\n: **Since**: 0.1.0 \n\n**Default**: `true` \n\nLog the tracer configuration once the tracer is fully initialized. \n",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/cpp.md:78"
+        },
+        {
+          "description": "Startup logs are disabled by default starting in version 2.x of the tracer. They can be enabled using the environment variable `DD_TRACE_STARTUP_LOGS=true`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/troubleshooting/tracer_startup_logs.md:177"
+        },
+        {
+          "description": "During startup, Datadog tracing libraries emit logs that reflect the configurations applied in a JSON object, as well as any errors encountered, including if the Agent can be reached in languages where this is possible. Some languages require these startup logs to be enabled with the environment variable `DD_TRACE_STARTUP_LOGS=true`. For more information, see the Startup logs.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/troubleshooting/_index.md:315"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_STATS_COMPUTATION_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`DD_TRACE_STATS_COMPUTATION_ENABLED`\n: **Default**: `true`\n\n: Enable computation of trace statistics.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:46"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH`\n: **Default**: `512`\n\n: Maximum length of the `x-datadog-tags` header in bytes.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/library_config/rust.md:50"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_VERSION",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Adds a version tag to all spans, except for [Inferred services][3]",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "\n\nFor the application container, set `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable to point to the Datadog Agent container. For example",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/setup/otlp_ingest_in_the_agent.md:315"
+        },
+        {
+          "description": "Your application must send data to the DDOT Collector on the same host. Ensure that the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable is set on your application.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/setup/ddot_collector/install/linux.md:256"
+        },
+        {
+          "description": "`OTEL_EXPORTER_OTLP_ENDPOINT`\n: **Description**: Specifies the base URL for sending OTLP data for all signals unless overridden. \n\n**Default (gRPC)**: `http://localhost:4317`. \n\n**Default (HTTP)**: `http://localhost:4318`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:155"
+        },
+        {
+          "description": "Go to the Calendar application's Docker Compose file at `./deploys/docker/docker-compose-otelcol.yml`.\nThe `OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4317` configuration allows the metrics, traces, and logs to be sent with OTLP.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/getting_started/opentelemetry/_index.md:230"
+        },
+        {
+          "description": "When running the application container, ensure that the environment variable `OTEL_EXPORTER_OTLP_ENDPOINT` is configured to use the appropriate hostname for the OpenTelemetry Collector. In the example below, this is `opentelemetry-collector`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/setup/collector_exporter/deploy.md:80"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_HEADERS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`OTEL_EXPORTER_OTLP_HEADERS`\n: **Description**: Specifies a comma-separated list of key-value pairs to be used as headers on all outgoing OTLP requests (for example, `api-key=key,other-config=value`).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:160"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`\n: **Description**: Specifies the URL for sending OTLP metrics data. Takes precedence over the general `OTEL_EXPORTER_OTLP_ENDPOINT`. \n\n**Default (gRPC)**: `http://localhost:4317`. \n\n**Default (HTTP)**: `http://localhost:4318/v1/metrics`. \n\n**Notes**: For HTTP protocols, the SDK will automatically append `/v1/metrics` if the general `OTEL_EXPORTER_OTLP_ENDPOINT` is used as a fallback.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:176"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`OTEL_EXPORTER_OTLP_METRICS_HEADERS`\n: **Description**: Specifies a comma-separated list of key-value pairs to be used as headers on outgoing OTLP metrics requests (for example, `api-key=key,other-config=value`). Takes precedence over the general `OTEL_EXPORTER_OTLP_HEADERS`.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:182"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Default value for SDKs that do not support grpc (ex: ruby)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "For supported languages, set the `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` environment variable to `delta`.\nOtherwise, set the temporality preference in your code. For more information, read Configure delta temporality in OpenTelemetry.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/setup/otlp_ingest/metrics.md:68"
+        },
+        {
+          "description": "`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`\n: **Description**: Specifies the aggregation `temporality` to use for each instrument kind. \n\n**Accepted values**: `Cumulative`, `Delta`, `LowMemory`. For more details, see the OpenTelemetry specification. \n\n**Default**: `delta` \n\n**Notes**: This default value `delta` is Datadog's recommended configuration and differs from the OpenTelemetry specification's default.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:212"
+        },
+        {
+          "description": "If you produce OTLP metrics from an OpenTelemetry SDK, you can configure your OTLP exporter to produce these metric types with delta aggregation temporality. In some languages you can use the recommended configuration by setting the `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` environment variable to `Delta` (case-insensitive). For a list of languages with support for this environment variable, read the specification compliance matrix.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/guide/otlp_delta_temporality.md:28"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`OTEL_EXPORTER_OTLP_METRICS_TIMEOUT`\n: **Description**: Specifies the timeout (in milliseconds) for a single outgoing OTLP metrics request. Takes precedence over the general `OTEL_EXPORTER_OTLP_TIMEOUT`. \n\n**Default**: `10000` (10s).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:185"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Signal-specific variables (like `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL`) always take precedence over their general counterparts (like `OTEL_EXPORTER_OTLP_PROTOCOL`).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:146"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_TIMEOUT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`OTEL_EXPORTER_OTLP_TIMEOUT`\n: **Description**: Specifies the timeout (in milliseconds) for all outgoing OTLP requests unless overridden. \n\n**Default**: `10000` (10s).",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:163"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_LOGS_EXPORTER",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`OTEL_LOGS_EXPORTER`\n: **Description**: Specifies the logs exporter to be used. \n\n**Accepted values**: `otlp`, `none`. A value of `none` disables the emission of OTel logs. \n\n**Default**: `otlp`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:232"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_LOG_LEVEL",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "OTEL_LOG_LEVEL maps to DD_TRACE_DEBUG and enables the debug mode of the tracer. It only accepts \"debug\" as a valid value.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRICS_EXPORTER",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "OTEL_METRICS_EXPORTER is not used to choose an exporter. It is effectively only honored for none, which forces metrics off. When unset it does not enable metrics on its own it needs DD_METRICS_OTEL_ENABLED set to true to effectively produce metrics",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`OTEL_METRIC_EXPORT_INTERVAL`\n: **Description**: Specifies the time interval (in milliseconds) between metric export attempts. \n\n**Default**: `10000` (10s) \n\n**Notes**: This default value is Datadog's recommended configuration and differs from the OpenTelemetry specification's default of 60000ms.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:218"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_TIMEOUT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "`OTEL_METRIC_EXPORT_TIMEOUT`\n: **Description**: Specifies the maximum allowed time (in milliseconds) to collect and export metrics. \n\n**Default**: `7500` (7.5s) \n\n**Notes**: This default value is Datadog's recommended configuration and differs from the OpenTelemetry specification's default of 30000ms.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:223"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_PROPAGATORS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "`OTEL_PROPAGATORS`\n: Specifies trace context propagation formats for both extraction and injection (comma-separated list). Lowest precedence; ignored if any other Datadog trace context propagation environment variable is set.\n\n**Note**: Only use this configuration when migrating an application from the OpenTelemetry SDK to the Datadog SDK. For more information on this configuration and other OpenTelemetry environment variables, see Using OpenTelemetry Environment Variables with Datadog SDKs.",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/tracing/trace_collection/trace_context_propagation/_index.md:50"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_RESOURCE_ATTRIBUTES",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Unified service tagging enabled",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/tag.md:47"
+        },
+        {
+          "description": "Unified service tagging enabled",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/tag.md:48"
+        },
+        {
+          "description": "Unified service tagging enabled",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/tag.md:49"
+        },
+        {
+          "description": "Set the `OTEL_RESOURCE_ATTRIBUTES` environment variable with your service's information",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/correlate/_index.md:35"
+        },
+        {
+          "description": "Add the `dd_llmobs_enabled=false` attribute to your `OTEL_RESOURCE_ATTRIBUTES` environment variable",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/llm_observability/instrumentation/otel_instrumentation.md:477"
+        },
+        {
+          "description": "To set resource attributes using environment variables, set `OTEL_RESOURCE_ATTRIBUTES` with the appropriate values",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/getting_started/tagging/unified_service_tagging.md:126"
+        },
+        {
+          "description": "To configure your application with unified service tagging, set the `OTEL_RESOURCE_ATTRIBUTES` environment variable",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/migrate/ddot_collector.md:286"
+        },
+        {
+          "description": "`OTEL_SERVICE_NAME`\n: **Datadog convention**: `DD_SERVICE`\n\nSets the `service.name` resource attribute\n\n**Notes**: When determining the final `service.name` resource attribute, the SDK uses this variable as an input to determine the final `service.name`. See the `service.name` notes under `OTEL_RESOURCE_ATTRIBUTES` for the complete precedence order.\n",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:73"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_SERVICE_NAME",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Unified service tagging enabled",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/tag.md:49"
+        },
+        {
+          "description": "`OTEL_SERVICE_NAME`\n: **Datadog convention**: `DD_SERVICE`\n\nSets the `service.name` resource attribute\n\n**Notes**: When determining the final `service.name` resource attribute, the SDK uses this variable as an input to determine the final `service.name`. See the `service.name` notes under `OTEL_RESOURCE_ATTRIBUTES` for the complete precedence order.\n",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:70"
+        },
+        {
+          "description": "| Tag                           | Cardinality  | Source                                                                                                                        | Requirement                                         |\n  |-------------------------------|--------------|-------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|\n  | `container_id`                | High         | Pod status                                                                                                                    | N/A                                                 |\n  | `display_container_name`      | High         | Pod status                                                                                                                    | N/A                                                 |\n  | `pod_name`                    | Orchestrator | Pod metadata                                                                                                                  | N/A                                                 |\n  | `oshift_deployment`           | Orchestrator | Pod annotation `openshift.io/deployment.name`                                                                                 | OpenShift environment and pod annotation must exist |\n  | `kube_ownerref_name`          | Orchestrator | Pod ownerref                                                                                                                  | Pod must have an owner                              |\n  | `kube_job`                    | Orchestrator | Pod ownerref                                                                                                                  | Pod must be attached to a cronjob                   |\n  | `kube_job`                    | Low          | Pod ownerref                                                                                                                  | Pod must be attached to a job                       |\n  | `kube_replica_set`            | Low          | Pod ownerref                                                                                                                  | Pod must be attached to a replica set               |\n  | `kube_service`                | Low          | Kubernetes service discovery                                                                                                  | Pod is behind a Kubernetes service                  |\n  | `kube_daemon_set`             | Low          | Pod ownerref                                                                                                                  | Pod must be attached to a DaemonSet                 |\n  | `kube_container_name`         | Low          | Pod status                                                                                                                    | N/A                                                 |\n  | `kube_namespace`              | Low          | Pod metadata                                                                                                                  | N/A                                                 |\n  | `kube_app_name`               | Low          | Pod label `app.kubernetes.io/name`                                                                                            | Pod label must exist                                |\n  | `kube_app_instance`           | Low          | Pod label `app.kubernetes.io/instance`                                                                                        | Pod label must exist                                |\n  | `kube_app_version`            | Low          | Pod label `app.kubernetes.io/version`                                                                                         | Pod label must exist                                |\n  | `kube_app_component`          | Low          | Pod label `app.kubernetes.io/component`                                                                                       | Pod label must exist                                |\n  | `kube_app_part_of`            | Low          | Pod label `app.kubernetes.io/part-of`                                                                                         | Pod label must exist                                |\n  | `kube_app_managed_by`         | Low          | Pod label `app.kubernetes.io/managed-by`                                                                                      | Pod label must exist                                |\n  | `env`                         | Low          | Pod label `tags.datadoghq.com/env` or container envvar (`DD_ENV` or `OTEL_RESOURCE_ATTRIBUTES`)                               | Unified service tagging enabled                |\n  | `version`                     | Low          | Pod label `tags.datadoghq.com/version` or container envvar (`DD_VERSION` or `OTEL_RESOURCE_ATTRIBUTES`)                       | Unified service tagging enabled                |\n  | `service`                     | Low          | Pod label `tags.datadoghq.com/service` or container envvar (`DD_SERVICE`, `OTEL_RESOURCE_ATTRIBUTES`, or `OTEL_SERVICE_NAME`) | Unified service tagging enabled                |\n  | `pod_phase`                   | Low          | Pod status                                                                                                                    | N/A                                                 |\n  | `oshift_deployment_config`    | Low          | Pod annotation `openshift.io/deployment-config.name`                                                                          | OpenShift environment and pod annotation must exist |\n  | `kube_ownerref_kind`          | Low          | Pod ownerref                                                                                                                  | Pod must have an owner                              |\n  | `kube_deployment`             | Low          | Pod ownerref                                                                                                                  | Pod must be attached to a deployment                |\n  | `kube_argo_rollout`           | Low          | Pod ownerref                                                                                                                  | Pod must be attached to an argo rollout             |\n  | `kube_replication_controller` | Low          | Pod ownerref                                                                                                                  | Pod must be attached to a replication controller    |\n  | `kube_stateful_set`           | Low          | Pod ownerref                                                                                                                  | Pod must be attached to a statefulset               |\n  | `persistentvolumeclaim`       | Low          | Pod spec                                                                                                                      | A PVC must be attached to the pod                   |\n  | `kube_cronjob`                | Low          | Pod ownerref                                                                                                                  | Pod must be attached to a cronjob                   |\n  | `image_name`                  | Low          | Pod spec                                                                                                                      | N/A                                                 |\n  | `short_image`                 | Low          | Pod spec                                                                                                                      | N/A                                                 |\n  | `image_tag`                   | Low          | Pod spec                                                                                                                      | N/A                                                 |\n  | `eks_fargate_node`            | Low          | Pod spec                                                                                                                      | EKS Fargate environment                             |\n  | `kube_runtime_class`          | Low          | Pod spec                                                                                                                      | Pod must be attached to a runtime class             |\n  | `gpu_vendor`                  | Low          | Pod spec                                                                                                                      | Container must be attached to a GPU resource        |\n  | `image_id`                    | Low          | Container image ID                                                                                                            | N/A                                                 |\n  | `kube_autoscaler_kind`        | Low          | Kubernetes autoscaler type                                                                                                    | Kubernetes autoscaler must be used                  |\n  | `kube_priority_class`         | Low          | Pod priority class                                                                                                            | Pod must have priority class set                    |\n  | `kube_qos`                    | Low          | Pod Quality of Service class                                                                                                  | N/A                                                 |",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/containers/kubernetes/tag.md:49"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_EXPORTER",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "OTEL_TRACES_EXPORTER is not used to select an exporter. It’s only recognized for none, which is treated as an instruction to disable tracing (it maps to DD_TRACE_ENABLED=false). Any other value is considered unsupported and effectively ignored.\n\n- If DD_TRACE_ENABLED is set, it takes precedence over OTEL_TRACES_EXPORTER.\n- To enable tracing, ensure DD_TRACE_ENABLED is not set to false and do not set OTEL_TRACES_EXPORTER=none (unset it if present, or explicitly set DD_TRACE_ENABLED=true).",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "`${OTEL_TRACES_SAMPLER_ARG}`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:98"
+        },
+        {
+          "description": "`${OTEL_TRACES_SAMPLER_ARG}`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:101"
+        },
+        {
+          "description": "`OTEL_TRACES_SAMPLER & OTEL_TRACES_SAMPLER_ARG`\n: **Datadog convention**: `DD_TRACE_SAMPLE_RATE`\n\n`OTEL_TRACES_SAMPLER`: Sampler to be used for traces & `OTEL_TRACES_SAMPLER_ARG`: String value to be used as the sampler argument\n\n**Notes**: The specified value is only used if `OTEL_TRACES_SAMPLER` is set. Each Sampler type defines its own expected input, if any. Invalid or unrecognized input MUST be logged and MUST be otherwise ignored. In such cases, the implementation MUST behave as if `OTEL_TRACES_SAMPLER_ARG` is not set\n\nMapped values between `OTEL_TRACES_SAMPLER` & `DD_TRACE_SAMPLE_RATE`:\n\n`parentbased_always_on`|`1.0`\n`parentbased_always_off`|`0.0`\n`parentbased_traceidratio`|`${OTEL_TRACES_SAMPLER_ARG}`\n`always_on`|`1.0`\n`always_off`|`0.0`\n`traceidratio`|`${OTEL_TRACES_SAMPLER_ARG}`",
+          "shortDescription": "",
+          "source": "documentation_same_language",
+          "sourceFile": "content/en/opentelemetry/config/environment_variable_support.md:91"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    }
+  ],
+  "missingConfigurations": [
+    {
+      "key": "DD_ACTION_EXECUTION_ID",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_REQUEST_SAMPLE_RATE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_SAMPLE_DELAY",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_RASP_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_RULES",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_STACK_TRACE_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_URL",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_USE_NOOP_TRACER",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_ID",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TIME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TYPE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_KEY",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGGING_RATE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_AGENTLESS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_DELTA",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENDPOINT_COUNT_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_PERIOD",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_FLUSH_ON_EXIT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_OUTPUT_DIR",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_UPLOAD_TIMEOUT",
+      "implementation": "C",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_URL",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_WAIT_PROFILE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_RC_TUF_ROOT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_RUNTIME_METRICS_V2_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HEALTHCHECK_PORT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HOST",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_OBSERVABILITY_MODE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_PORT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_MAPPING",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_DEBUG",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_METRICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_AGENT_HOST",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_AGENT_PORT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_OPTIMIZATION_ENV_DATA_FILE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AWS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BUNTDB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CHI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_HOSTNAME_COMPAT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CONSUL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_SEELOG_WORKAROUND",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_STACK",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ECHO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ELASTIC_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_FASTHTTP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_FEATURES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_FIBER_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GIN_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GIT_METADATA_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOCQL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOCQL_COMPAT",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOJI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GOPG_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GQLGEN_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRAPHQL_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRAPHQL_ERROR_EXTENSIONS",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRPC_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_SERVER_ERROR_STATUSES",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_KAFKA_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LEVELDB_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOGRUS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MCP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MEMCACHE_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MONGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_MUX_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_NEGRONI_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_MAPPING",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REDIGO_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REDIS_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REDIS_RAW_COMMAND",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RESOURCE_RENAMING_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RESTFUL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES_FILE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SARAMA_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SOURCE_HOSTNAME",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SQL_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SQL_COMMENT_INJECTION_MODE",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_TWIRP_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_VALKEY_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_VALKEY_RAW_COMMAND",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_VAULT_ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE__ANALYTICS_ENABLED",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER_ARG",
+      "implementation": "A",
+      "missingReasons": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "documentation_same_language",
+          "reason": "not_found"
+        }
+      ]
+    }
+  ]
+}
