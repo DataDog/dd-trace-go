@@ -86,10 +86,10 @@ func TestGet(t *testing.T) {
 		require.NotNil(t, cfg2)
 		assert.Same(t, cfg1, cfg2, "Get() should return the same instance")
 
-		// GetNew should return a new instance
-		cfg3 := GetNew()
+		// CreateNew should return a new instance
+		cfg3 := CreateNew()
 		require.NotNil(t, cfg3)
-		assert.NotSame(t, cfg2, cfg3, "GetNew() should return a new instance")
+		assert.NotSame(t, cfg2, cfg3, "CreateNew() should return a new instance")
 
 		// Now it should cache the same instance
 		cfg4 := Get()
