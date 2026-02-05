@@ -8,14 +8,19 @@ package v2fix
 type contextKey string
 
 const (
-	argsKey         contextKey = "args"
-	declaredTypeKey contextKey = "declared_type"
-	endKey          contextKey = "end"
-	fnKey           contextKey = "fn"
-	pkgNameKey      contextKey = "pkg_name"
-	pkgPrefixKey    contextKey = "pkg_prefix"
-	pkgPathKey      contextKey = "pkg_path"
-	posKey          contextKey = "pos"
-	typeKey         contextKey = "type"
-	callExprKey     contextKey = "call_expr"
+	argsKey             contextKey = "args"
+	declaredTypeKey     contextKey = "declared_type"
+	endKey              contextKey = "end"
+	fnKey               contextKey = "fn"
+	pkgNameKey          contextKey = "pkg_name"
+	pkgPrefixKey        contextKey = "pkg_prefix"
+	pkgPathKey          contextKey = "pkg_path"
+	posKey              contextKey = "pos"
+	typeKey             contextKey = "type"
+	callExprKey         contextKey = "call_expr"
+	typeExprStrKey      contextKey = "type_expr_str"
+	typePrefixKey       contextKey = "type_prefix"       // Stores modifiers like "*", "[]", "[N]" for composite types
+	skipFixKey          contextKey = "skip_fix"          // Set to true when a fix cannot be safely applied
+	childOfParentKey    contextKey = "childof_parent"    // Stores the parent expression string for ChildOf transformation
+	childOfOtherOptsKey contextKey = "childof_other"     // Stores other options (excluding ChildOf) for StartSpan
 )

@@ -98,6 +98,13 @@ func (d defaultKnownChange) Pos() token.Pos {
 	return d.node.Pos()
 }
 
+func (d defaultKnownChange) pkgPrefix() string {
+	if pkg, ok := d.ctx.Value(pkgPrefixKey).(string); ok && pkg != "" {
+		return pkg
+	}
+	return "tracer"
+}
+
 func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 	// Reset context for each node evaluation to prevent data races
 	// when multiple goroutines analyze different packages concurrently.
