@@ -19,8 +19,8 @@ const (
 	typeKey             contextKey = "type"
 	callExprKey         contextKey = "call_expr"
 	typeExprStrKey      contextKey = "type_expr_str"
-	typePrefixKey       contextKey = "type_prefix"       // Stores modifiers like "*", "[]", "[N]" for composite types
-	skipFixKey          contextKey = "skip_fix"          // Set to true when a fix cannot be safely applied
-	childOfParentKey    contextKey = "childof_parent"    // Stores the parent expression string for ChildOf transformation
-	childOfOtherOptsKey contextKey = "childof_other"     // Stores other options (excluding ChildOf) for StartSpan
+	typePrefixKey       contextKey = "type_prefix"    // Stores modifiers like "*", "[]", "[N]" for composite types
+	skipFixKey          contextKey = "skip_fix"       // Set to true when a fix cannot be safely applied
+	childOfParentKey    contextKey = "childof_parent" // Stores the parent expression string for ChildOf transformation
+	childOfOtherOptsKey contextKey = "childof_other"  // Stores other options (excluding ChildOf) for StartSpan
 )
