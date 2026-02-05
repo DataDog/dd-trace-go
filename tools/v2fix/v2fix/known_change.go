@@ -180,17 +180,26 @@ func (DDTraceTypes) Clone() KnownChange {
 }
 
 func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
-	typ, ok := c.ctx.Value(declaredTypeKey).(*types.Named)
-	if !ok {
+	// Skip fix if array length couldn't be rendered (avoid corrupting types)
+	if skip, _ := c.ctx.Value(skipFixKey).(bool); skip {
 		return nil
 	}
 
-	pkg, ok := c.ctx.Value(pkgPrefixKey).(string)
-	if !ok {
+	// Get the type name from declaredTypeKey, handling both *types.Named and *types.Alias
+	// Guard against nil or wrong type to avoid panic on ill-typed code
+	typ, ok := c.ctx.Value(declaredTypeKey).(types.Type)
+	if !ok || typ == nil {
+		return nil
+	}
+	typeObj := getTypeNameFromType(typ)
+	if typeObj == nil {
 		return nil
 	}
 
-	newText := fmt.Sprintf("%s.%s", pkg, typ.Obj().Name())
+	// Get the type prefix (*, [], [N]) if the original type was a composite type
+	typePrefix, _ := c.ctx.Value(typePrefixKey).(string)
+
+	newText := fmt.Sprintf("%s%s.%s", typePrefix, c.pkgPrefix(), typeObj.Name())
 	return []analysis.SuggestedFix{
 		{
 			Message: "the declared type is in the ddtrace/tracer package now",
@@ -214,7 +223,8 @@ func (DDTraceTypes) Probes() []Probe {
 			Is[*ast.Field],
 		),
 		ImportedFrom("gopkg.in/DataDog/dd-trace-go.v1"),
-		Not(DeclaresType[ddtrace.SpanContext]()),
+		// Use HasBaseType to also exclude composite types like *SpanContext, []SpanContext
+		Not(HasBaseType[ddtrace.SpanContext]()),
 	}
 }
 
