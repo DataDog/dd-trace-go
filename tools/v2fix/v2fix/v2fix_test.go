@@ -100,6 +100,11 @@ func TestDeprecatedSamplingRules(t *testing.T) {
 	c.Run(testRunner(t, "samplingrules"))
 }
 
+func TestAppSecLoginEvents(t *testing.T) {
+	c := NewChecker(&AppSecLoginEvents{})
+	c.Run(testRunner(t, "appseclogin"))
+}
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()
