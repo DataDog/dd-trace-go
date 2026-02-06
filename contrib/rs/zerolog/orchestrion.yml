@@ -1,0 +1,86 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/rs/zerolog
+  description: Structured, pluggable logging for Go.
+
+aspects:
+  - id: DDContextLogHook
+    join-point:
+      struct-definition: github.com/rs/zerolog.Logger
+    advice:
+      - inject-declarations:
+          imports:
+            telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
+          template: |-
+            func init() {
+              telemetry.LoadIntegration("rs/zerolog")
+              tracer.MarkIntegrationImported("github.com/rs/zerolog")
+            }
+
+            // DDContextLogHook ensures that any span in the log context is correlated to log output.
+            type DDContextLogHook struct{}
+
+            // Run implements zerolog.Hook interface, attaches trace and span details found in entry context
+            func (d DDContextLogHook) Run(e *zerolog.Event, _ zerolog.Level, _ string) {
+                span, found := tracer.SpanFromContext(e.GetCtx())
+                if !found {
+                    return
+                }
+                if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
+                    e.Str(ext.LogKeyTraceID, span.Context().TraceID())
+                } else {
+                    e.Str(ext.LogKeyTraceID, strconv.FormatUint(span.Context().TraceIDLower(), 10))
+                }
+                e.Str(ext.LogKeySpanID, strconv.FormatUint(span.Context().SpanID(), 10))
+            }
+  - id: New
+    join-point:
+      all-of:
+        - import-path: github.com/rs/zerolog
+        - function-body:
+            function:
+              - name: New
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $logger := .Function.Result 0 -}}
+            defer func() {
+              {{ $logger }}.Hook(&DDContextLogHook{})
+            }()
+
+  - id: '*zerolog.Logger'
+    join-point:
+      struct-literal:
+        type: github.com/rs/zerolog.Logger
+        match: pointer-only
+    advice:
+      - wrap-expression:
+          imports:
+            zerolog: github.com/rs/zerolog
+          template: |-
+            func(logger *zerolog.Logger) *zerolog.Logger {
+              logger.Hook(&zerolog.DDContextLogHook{})
+              return logger
+            }({{ . }})
+
+  - id: zerolog.Logger
+    join-point:
+      struct-literal:
+        type: github.com/rs/zerolog.Logger
+        match: value-only
+    advice:
+      - wrap-expression:
+          imports:
+            zerolog: github.com/rs/zerolog
+          template: |-
+            func(logger zerolog.Logger) zerolog.Logger {
+              logger.Hook(&zerolog.DDContextLogHook{})
+              return logger
+            }({{ . }})
