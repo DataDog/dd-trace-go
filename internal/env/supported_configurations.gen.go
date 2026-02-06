@@ -12,7 +12,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_ACTION_EXECUTION_ID": {},
 	"DD_AGENT_HOST":          {},
 	"DD_API_KEY":             {},
-	"DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE":    {},
+	"DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE":            {},
 	"DD_API_SECURITY_ENABLED":                                         {},
 	"DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED":                     {},
 	"DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT":               {},
