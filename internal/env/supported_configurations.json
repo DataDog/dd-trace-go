@@ -533,7 +533,11 @@
       }
     ],
     "DD_LOGS_OTEL_ENABLED": [
-      "A"
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
     ],
     "DD_METRICS_OTEL_ENABLED": [
       {
