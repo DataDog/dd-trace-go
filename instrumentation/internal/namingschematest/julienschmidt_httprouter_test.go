@@ -16,6 +16,7 @@ import (
 
 	httproutertrace "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )

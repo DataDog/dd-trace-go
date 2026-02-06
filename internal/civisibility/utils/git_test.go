@@ -10,9 +10,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestGetSafeDirectoryConfig(t *testing.T) {

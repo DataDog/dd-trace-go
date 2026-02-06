@@ -9,6 +9,7 @@ import (
 	"context"
 
 	leveldbtrace "github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2/leveldb"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 

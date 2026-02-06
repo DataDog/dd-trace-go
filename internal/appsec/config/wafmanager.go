@@ -13,9 +13,10 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/DataDog/go-libddwaf/v4"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetryLog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
-	"github.com/DataDog/go-libddwaf/v4"
 )
 
 type (

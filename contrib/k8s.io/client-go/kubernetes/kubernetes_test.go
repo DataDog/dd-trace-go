@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"

@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestCIVisibilityImplementsTraceWriter(t *testing.T) {

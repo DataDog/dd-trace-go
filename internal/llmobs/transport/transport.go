@@ -19,8 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	"github.com/cenkalti/backoff/v5"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"

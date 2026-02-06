@@ -17,10 +17,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/negasus/haproxy-spoe-go/agent"
 
-	"github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
+
+	streamprocessingoffload "github.com/DataDog/dd-trace-go/contrib/haproxy/stream-processing-offload/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"

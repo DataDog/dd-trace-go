@@ -9,8 +9,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	of "github.com/open-feature/go-sdk/openfeature"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (

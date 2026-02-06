@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"

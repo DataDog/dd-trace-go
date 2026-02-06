@@ -6,9 +6,10 @@
 package elastic
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"math"
 	"net/http"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type clientConfig struct {
