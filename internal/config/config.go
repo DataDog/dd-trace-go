@@ -99,16 +99,13 @@ type Config struct {
 	reportHostname bool
 	// featureFlags specifies any enabled feature flags.
 	featureFlags map[string]struct{}
+	// sendRetries is the number of times a payload send is retried upon failure.
+	sendRetries int
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
+	// httpClientTimeout specifies the timeout for the HTTP client.
+	httpClientTimeout time.Duration
 }
-
-// HOT PATH NOTE:
-// Some Config accessors may be called on hot paths (e.g., span start/finish, partial flush logic).
-// If benchmarks regress, ensure getters are efficient and do not:
-// - copy whole maps/slices on every call (prefer single-key lookup helpers like ServiceMapping/HasFeature), or
-// - take multiple lock/unlock pairs to read related fields (prefer a combined getter under one RLock, like PartialFlushEnabled()).
-// Also consider avoiding `defer` in getters that are executed per-span in tight loops.
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
@@ -116,6 +113,7 @@ func loadConfig() *Config {
 	cfg := new(Config)
 
 	// TODO: Use defaults from config json instead of hardcoding them here
+	// TODO: Organize into product-specific sections
 	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
 	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", true)
@@ -144,8 +142,9 @@ func loadConfig() *Config {
 	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
+	cfg.sendRetries = provider.getIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
-
+	cfg.httpClientTimeout = provider.getDuration("DD_TRACE_AGENT_TIMEOUT", 10*time.Second)
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
 	if featuresStr := provider.getString("DD_TRACE_FEATURES", ""); featuresStr != "" {
@@ -611,6 +610,19 @@ func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origi
 	reportTelemetry("DD_TRACE_RETRY_INTERVAL", interval, origin)
 }
 
+func (c *Config) SendRetries() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sendRetries
+}
+
+func (c *Config) SetSendRetries(retries int, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sendRetries = retries
+	reportTelemetry("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
 func (c *Config) ServiceName() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -635,4 +647,17 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.ciVisibilityEnabled = enabled
 	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) HTTPClientTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.httpClientTimeout
+}
+
+func (c *Config) SetHTTPClientTimeout(timeout time.Duration, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.httpClientTimeout = timeout
+	reportTelemetry("DD_TRACE_AGENT_TIMEOUT", timeout, origin)
 }

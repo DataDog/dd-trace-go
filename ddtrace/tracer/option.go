@@ -151,10 +151,6 @@ type config struct {
 	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
 
-	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
-	// failure.
-	sendRetries int
-
 	// serviceName specifies the name of this application.
 	serviceName string
 
@@ -177,9 +173,6 @@ type config struct {
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
-
-	// httpClientTimeout specifies the timeout for the HTTP client.
-	httpClientTimeout time.Duration
 
 	// propagator propagates span context cross-process
 	propagator Propagator
@@ -298,7 +291,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	c.sampler = NewAllSampler()
-	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
 	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -393,10 +385,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if c.agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
-			c.httpClient = internal.UDSClient(c.agentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
+			c.httpClient = internal.UDSClient(c.agentURL.Path, cmp.Or(c.internalConfig.HTTPClientTimeout(), defaultHTTPTimeout))
 			c.agentURL = internal.UnixDataSocketURL(c.agentURL.Path)
 		} else {
-			c.httpClient = internal.DefaultHTTPClient(c.httpClientTimeout, false)
+			c.httpClient = internal.DefaultHTTPClient(c.internalConfig.HTTPClientTimeout(), false)
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
@@ -453,10 +445,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	// Check if CI Visibility mode is enabled
 	if c.internalConfig.CIVisibilityEnabled() {
-		c.httpClientTimeout = time.Second * 45                                 // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
-		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
-		c.transport = ciTransport                                              // Replace the default transport with the CI Visibility transport
+		c.internalConfig.SetHTTPClientTimeout(time.Second*45, internalconfig.OriginCalculated) // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
+		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated)                 // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
+		ciTransport := newCiVisibilityTransport(c)                                             // Create a default CI Visibility Transport
+		c.transport = ciTransport                                                              // Replace the default transport with the CI Visibility transport
 		c.ciVisibilityAgentless = ciTransport.agentless
 		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
@@ -863,7 +855,7 @@ func WithLambdaMode(enabled bool) StartOption {
 // most `retries` times.
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
-		c.sendRetries = retries
+		c.internalConfig.SetSendRetries(retries, telemetry.OriginCode)
 	}
 }
 
@@ -944,7 +936,7 @@ func WithAgentURL(agentURL string) StartOption {
 // WithAgentTimeout sets the timeout for the agent connection. Timeout is in seconds.
 func WithAgentTimeout(timeout int) StartOption {
 	return func(c *config) {
-		c.httpClientTimeout = time.Duration(timeout) * time.Second
+		c.internalConfig.SetHTTPClientTimeout(time.Duration(timeout)*time.Second, internalconfig.OriginCode)
 	}
 }
 
