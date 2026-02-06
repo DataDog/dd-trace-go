@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/jackc/pgx/v5 v5.6.0
-	github.com/lib/pq v1.10.2
+	github.com/lib/pq v1.11.1
 	github.com/microsoft/go-mssqldb v0.21.0
 	github.com/stretchr/testify v1.11.1
 	gorm.io/driver/mysql v1.0.1

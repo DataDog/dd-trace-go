@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
-	github.com/lib/pq v1.10.2
+	github.com/lib/pq v1.11.1
 	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.28.0

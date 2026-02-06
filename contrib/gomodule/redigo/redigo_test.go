@@ -30,6 +30,35 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestSkipRaw(t *testing.T) {
+	runCmd := func(t *testing.T, opts ...interface{}) *mocktracer.Span {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		c, err := Dial("tcp", "127.0.0.1:6379", opts...)
+		assert.NoError(t, err)
+		_, err = c.Do("SET", 1, "truck")
+		assert.NoError(t, err)
+		spans := mt.FinishedSpans()
+		assert.Len(t, spans, 1)
+		return spans[0]
+	}
+
+	t.Run("true", func(t *testing.T) {
+		span := runCmd(t, WithSkipRawCommand(true))
+		raw, ok := span.Tags()["redis.raw_command"]
+		assert.False(t, ok)
+		assert.Empty(t, raw)
+	})
+
+	t.Run("env-disabled", func(t *testing.T) {
+		t.Setenv("DD_TRACE_REDIS_RAW_COMMAND", "false")
+		span := runCmd(t)
+		raw, ok := span.Tags()["redis.raw_command"]
+		assert.False(t, ok)
+		assert.Empty(t, raw)
+	})
+}
+
 func TestClient(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()

@@ -22,6 +22,7 @@ contrib=""
 sleeptime=10
 unset INTEGRATION
 unset DD_APPSEC_ENABLED
+unset __DD_TRACE_SQL_TEST
 
 # Build tags support (e.g., BUILD_TAGS=deadlock or BUILD_TAGS=debug,deadlock)
 # Use an array to avoid shellcheck warnings about word splitting with empty strings
@@ -44,6 +45,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -i | --integration)
       export INTEGRATION=true
+      export __DD_TRACE_SQL_TEST=true
       shift
       ;;
     -c | --contrib)
@@ -55,6 +57,7 @@ while [[ $# -gt 0 ]]; do
       export DD_APPSEC_ENABLED=true
       export DD_TEST_APPS_ENABLED=true
       export INTEGRATION=true
+      export __DD_TRACE_SQL_TEST=true
       shift
       ;;
     -s | --sleep)
