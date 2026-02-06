@@ -56,7 +56,7 @@ const (
 	defaultCallerSkip = 4
 
 	envStackTraceDepth   = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
-	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLE"
+	envStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLED"
 
 	frameTypeDatadog    frameType = "datadog"
 	frameTypeRuntime    frameType = "runtime"

@@ -22,6 +22,7 @@ export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported
 
 export DD_APPSEC_ENABLED=1
 export DD_APPSEC_WAF_TIMEOUT=1m
+export __DD_TRACE_SQL_TEST=true
 
 report_error=0
 

@@ -207,7 +207,9 @@ func withSpan(ctx context.Context, do func(commandName string, args ...interface
 			b.WriteString(arg.String())
 		}
 	}
-	span.SetTag("redis.raw_command", b.String())
+	if !p.config.skipRaw {
+		span.SetTag("redis.raw_command", b.String())
+	}
 	return do(commandName, args...)
 }
 
