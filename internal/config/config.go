@@ -203,6 +203,27 @@ func Get() *Config {
 	return instance
 }
 
+// CreateNew returns a new global configuration instance.
+// This function should be used when we need to create a new configuration instance.
+// It build a new configuration instance and override the existing one
+// loosing any programmatic configuration that would have been applied to the existing instance.
+//
+// It shouldn't be used to get the global configuration instance to manipulate it but
+// should be used when there is a need to reset the global configuration instance.
+//
+// This is useful when we need to create a new configuration instance when a new product is initialized.
+// Each product should have its own configuration instance and apply its own programmatic configuration to it.
+//
+// If a customer starts multiple tracer with different programmatic configuration only the latest one will be used
+// and available globally.
+func CreateNew() *Config {
+	mu.Lock()
+	defer mu.Unlock()
+	instance = loadConfig()
+
+	return instance
+}
+
 func SetUseFreshConfig(use bool) {
 	mu.Lock()
 	defer mu.Unlock()
