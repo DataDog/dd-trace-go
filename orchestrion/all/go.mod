@@ -300,7 +300,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/gorm v1.25.5 // indirect
 	k8s.io/apimachinery v0.35.0-alpha.0 // indirect
-	k8s.io/client-go v0.31.4 // indirect
+	k8s.io/client-go v0.35.0-alpha.0 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 )

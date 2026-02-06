@@ -5,9 +5,9 @@ go 1.24.0
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/stretchr/testify v1.11.1
-	k8s.io/api v0.31.4
+	k8s.io/api v0.35.0-alpha.0
 	k8s.io/apimachinery v0.35.0-alpha.0
-	k8s.io/client-go v0.31.4
+	k8s.io/client-go v0.35.0-alpha.0
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 	sigs.k8s.io/gateway-api v1.2.1
 	sigs.k8s.io/yaml v1.6.0
@@ -42,10 +42,8 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
-	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.3 // indirect
@@ -54,6 +52,7 @@ require (
 	github.com/minio/simdjson-go v0.4.5 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
 	github.com/petermattis/goid v0.0.0-20250813065127-a731cc31b4fe // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
@@ -101,7 +100,6 @@ require (
 	k8s.io/klog/v2 v2.130.1 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.7.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
