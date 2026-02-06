@@ -24,6 +24,7 @@ const (
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageCloudEventsV2        Package = "cloudevents/sdk-go.v2"
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
@@ -168,6 +169,22 @@ var packages = map[Package]PackageInfo{
 					return awsService + ".request"
 				},
 				buildOpNameV1: awsBuildOpNameV1,
+			},
+		},
+	},
+	PackageCloudEventsV2: {
+		TracedPackage: "github.com/cloudevents/sdk-go/v2",
+		EnvVarPrefix:  "CLOUDEVENTS",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				buildServiceNameV0: staticName("cloudevents"),
+				buildOpNameV0:      staticName("cloudevents.consume"),
+				buildOpNameV1:      staticName("cloudevents.process"),
+			},
+			ComponentProducer: {
+				buildServiceNameV0: staticName("cloudevents"),
+				buildOpNameV0:      staticName("cloudevents.publish"),
+				buildOpNameV1:      staticName("cloudevents.send"),
 			},
 		},
 	},

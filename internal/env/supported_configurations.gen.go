@@ -146,6 +146,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_CLIENT_HOSTNAME_COMPAT":                                 {},
 	"DD_TRACE_CLIENT_IP_ENABLED":                                      {},
 	"DD_TRACE_CLIENT_IP_HEADER":                                       {},
+	"DD_TRACE_CLOUDEVENTS_ANALYTICS_ENABLED":                          {},
 	"DD_TRACE_CONSUL_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_DEBUG":                                                  {},
 	"DD_TRACE_DEBUG_ABANDONED_SPANS":                                  {},
