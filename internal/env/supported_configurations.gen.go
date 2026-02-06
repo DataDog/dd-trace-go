@@ -31,7 +31,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_APPSEC_RASP_ENABLED":                                          {},
 	"DD_APPSEC_RULES":                                                 {},
 	"DD_APPSEC_SCA_ENABLED":                                           {},
-	"DD_APPSEC_STACK_TRACE_ENABLE":                                    {},
+	"DD_APPSEC_STACK_TRACE_ENABLED":                                   {},
 	"DD_APPSEC_TRACE_RATE_LIMIT":                                      {},
 	"DD_APPSEC_WAF_TIMEOUT":                                           {},
 	"DD_APP_KEY":                                                      {},
@@ -251,5 +251,6 @@ var SupportedConfigurations = map[string]struct{}{
 
 // keyAliases maps aliases to supported configuration keys.
 var keyAliases = map[string][]string{
-	"DD_API_KEY": {"DD-API-KEY"},
+	"DD_API_KEY":                    {"DD-API-KEY"},
+	"DD_APPSEC_STACK_TRACE_ENABLED": {"DD_APPSEC_STACK_TRACE_ENABLE"},
 }
