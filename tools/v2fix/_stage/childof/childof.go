@@ -1,0 +1,39 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
+package main
+
+import (
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+)
+
+func main() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	parent := tracer.StartSpan("parent")
+	defer parent.Finish()
+
+	extraOpt := tracer.ResourceName("resource")
+
+	// Simple ChildOf usage
+	child := tracer.StartSpan("child", tracer.ChildOf(parent.Context())) // want `use StartChild instead of StartSpan with ChildOf`
+	defer child.Finish()
+
+	// ChildOf with additional options
+	child2 := tracer.StartSpan("child2", tracer.ChildOf(parent.Context()), tracer.ResourceName("resource")) // want `use StartChild instead of StartSpan with ChildOf`
+	defer child2.Finish()
+
+	// ChildOf with non-call option (variable)
+	child3 := tracer.StartSpan("child3", tracer.ChildOf(parent.Context()), extraOpt) // want `use StartChild instead of StartSpan with ChildOf`
+	defer child3.Finish()
+
+	// ChildOf passed via variadic (ellipsis applies to ChildOf itself) - should not be rewritten
+	parentOpts := []tracer.StartSpanOption{
+		tracer.ChildOf(parent.Context()),
+	}
+	child4 := tracer.StartSpan("child4", parentOpts...)
+	defer child4.Finish()
+}
