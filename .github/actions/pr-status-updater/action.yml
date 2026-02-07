@@ -1,0 +1,78 @@
+name: PR Status Updater
+description: Updates commit statuses on open PRs for code freeze enforcement
+
+inputs:
+  github_token:
+    description: "GitHub token for API access"
+    required: true
+  state:
+    description: "The state to set (success or failure)"
+    required: true
+  workflow_name:
+    description: "Name of the workflow for click-through link"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Update PR statuses
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        STATE: ${{ inputs.state }}
+        WORKFLOW_NAME: ${{ inputs.workflow_name }}
+      run: |
+        set -e
+
+        REPO="${{ github.repository }}"
+        CONTEXT="code-freeze"
+
+        if [ "$STATE" = "failure" ]; then
+          DESCRIPTION="Code freeze is active - PRs not in Code Freeze/Incident milestones cannot be merged"
+        else
+          DESCRIPTION="Code freeze has ended - merging allowed"
+        fi
+
+        echo "Fetching open PRs..."
+
+        # Get all open PRs
+        PRS=$(gh pr list --repo "$REPO" --state open --json number,headRefOid,milestone --limit 1000)
+
+        echo "Found $(echo "$PRS" | jq length) open PRs"
+
+        # Process each PR
+        echo "$PRS" | jq -c '.[]' | while read -r pr; do
+          PR_NUMBER=$(echo "$pr" | jq -r '.number')
+          SHA=$(echo "$pr" | jq -r '.headRefOid')
+          MILESTONE_TITLE=$(echo "$pr" | jq -r '.milestone.title // ""')
+
+          # Determine the state for this PR
+          PR_STATE="$STATE"
+          PR_DESC="$DESCRIPTION"
+
+          # If we're freezing (state=failure), check if PR is in an allowed milestone
+          if [ "$STATE" = "failure" ]; then
+            if [[ "$MILESTONE_TITLE" == Code\ Freeze* ]] || [[ "$MILESTONE_TITLE" == Incident* ]]; then
+              PR_STATE="success"
+              PR_DESC="PR is in '$MILESTONE_TITLE' milestone - exempt from code freeze"
+              echo "PR #$PR_NUMBER is in milestone '$MILESTONE_TITLE' - marking as exempt"
+            else
+              echo "PR #$PR_NUMBER is NOT in a code freeze/incident milestone - blocking"
+            fi
+          fi
+
+          # Set the commit status
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$REPO/statuses/$SHA" \
+            -f state="$PR_STATE" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/workflows/$WORKFLOW_NAME" \
+            -f description="$PR_DESC" \
+            -f context="$CONTEXT"
+
+          echo "Set status '$PR_STATE' on PR #$PR_NUMBER (SHA: ${SHA:0:7})"
+        done
+
+        echo "Done updating PR statuses"

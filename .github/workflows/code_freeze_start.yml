@@ -1,0 +1,52 @@
+name: Start code freeze
+
+on:
+  workflow_dispatch:
+    inputs:
+      milestone_title:
+        description: 'Milestone title (must start with "Code Freeze" or "Incident")'
+        required: true
+        type: string
+  milestone:
+    types: [opened, created, edited]
+
+jobs:
+  start_code_freeze:
+    # Trigger on:
+    # - Manual dispatch with a valid milestone title
+    # - Milestone events where title starts with "Code Freeze" or "Incident" and state is open
+    if: |
+      (github.event_name == 'workflow_dispatch' &&
+        (startsWith(github.event.inputs.milestone_title, 'Code Freeze') ||
+         startsWith(github.event.inputs.milestone_title, 'Incident'))) ||
+      (github.event_name == 'milestone' &&
+        github.event.milestone.state == 'open' &&
+        (startsWith(github.event.milestone.title, 'Code Freeze') ||
+         startsWith(github.event.milestone.title, 'Incident')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # Fetches PRs
+      statuses: write # add a commit status check
+      issues: read # Required to query milestone information
+    env:
+      GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+    steps:
+      - name: Log code freeze trigger
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "🥶 Code freeze triggered manually for milestone: ${{ github.event.inputs.milestone_title }}"
+          else
+            echo "🥶 Code freeze triggered by milestone: ${{ github.event.milestone.title }}"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Freeze PRs
+        uses: ./.github/actions/pr-status-updater
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          state: failure
+          workflow_name: code_freeze_start.yml
