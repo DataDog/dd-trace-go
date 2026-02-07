@@ -60,6 +60,7 @@ use (
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
+	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
