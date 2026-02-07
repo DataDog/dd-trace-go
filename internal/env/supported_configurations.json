@@ -1519,6 +1519,9 @@
         "default": "512"
       }
     ],
+    "DD_TRACE_ZAP_ANALYTICS_ENABLED": [
+      "A"
+    ],
     "DD_TRACE__ANALYTICS_ENABLED": [
       {
         "implementation": "A",

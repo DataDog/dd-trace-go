@@ -114,6 +114,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/uptrace/bun":                        {"Bun", false},
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
+	"go.uber.org/zap":                               {"go.uber.org/zap", false},
 	"github.com/valkey-io/valkey-go":                {"Valkey", false},
 }
 
