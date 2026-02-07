@@ -41,7 +41,7 @@ type agentTraceWriter struct {
 	mu locking.Mutex
 
 	// payload encodes and buffers traces in msgpack format
-	payload payload
+	payload payload // +checklocks:mu
 
 	// climit limits the number of concurrent outgoing connections
 	climit chan struct{}

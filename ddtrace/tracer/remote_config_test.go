@@ -927,18 +927,18 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 func TestDynamicInstrumentationRC(t *testing.T) {
 	getDiRCState := func() map[string]dynamicInstrumentationRCProbeConfig {
-		diRCState.Lock()
-		defer diRCState.Unlock()
+		diRCState.mu.Lock()
+		defer diRCState.mu.Unlock()
 		return maps.Clone(diRCState.state)
 	}
 	getDiSymDBEnabled := func() bool {
-		diRCState.Lock()
-		defer diRCState.Unlock()
+		diRCState.mu.Lock()
+		defer diRCState.mu.Unlock()
 		return diRCState.symdbExport
 	}
 	resetDiRCState := func() {
-		diRCState.Lock()
-		defer diRCState.Unlock()
+		diRCState.mu.Lock()
+		defer diRCState.mu.Unlock()
 		diRCState.state = map[string]dynamicInstrumentationRCProbeConfig{}
 		diRCState.symdbExport = false
 	}

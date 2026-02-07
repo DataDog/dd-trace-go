@@ -146,7 +146,8 @@ type Span struct {
 	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
-	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+	// ends execution tracer (runtime/trace) task, if started
+	taskEnd func() // +checklocks:mu
 }
 
 // Context yields the SpanContext for this Span. Note that the return
