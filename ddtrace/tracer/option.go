@@ -704,9 +704,8 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
 			// Set the trace protocol to use.
-			if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
-				features.v1ProtocolAvailable = true
-			}
+			// For testing purposes, we always enable v1 trace protocol.
+			features.v1ProtocolAvailable = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
