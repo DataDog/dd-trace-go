@@ -1598,7 +1598,7 @@
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": "http/json"
       }
