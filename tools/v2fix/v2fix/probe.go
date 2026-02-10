@@ -57,7 +57,7 @@ func DeclaresType[T any]() Probe {
 				varType = obj.Type()
 			} else if typDecl != nil {
 				// For blank identifiers, get type from the type expression.
-				varType = getTypeFromTypeExpr(typDecl, pass)
+				varType = typeFromTypeExpr(typDecl, pass)
 			}
 		case "*ast.Field":
 			field := n.(*ast.Field)
@@ -69,7 +69,7 @@ func DeclaresType[T any]() Probe {
 			if obj != nil {
 				varType = obj.Type()
 			} else if typDecl != nil {
-				varType = getTypeFromTypeExpr(typDecl, pass)
+				varType = typeFromTypeExpr(typDecl, pass)
 			}
 		default:
 			return ctx, false
@@ -220,7 +220,7 @@ func ImportedFrom(pkgPath string) Probe {
 			if obj != nil {
 				varType = obj.Type()
 			} else if typDecl != nil {
-				varType = getTypeFromTypeExpr(typDecl, pass)
+				varType = typeFromTypeExpr(typDecl, pass)
 			}
 		case "*ast.Field":
 			field := n.(*ast.Field)
@@ -232,7 +232,7 @@ func ImportedFrom(pkgPath string) Probe {
 			if obj != nil {
 				varType = obj.Type()
 			} else if typDecl != nil {
-				varType = getTypeFromTypeExpr(typDecl, pass)
+				varType = typeFromTypeExpr(typDecl, pass)
 			}
 		default:
 			return ctx, false
@@ -259,7 +259,7 @@ func ImportedFrom(pkgPath string) Probe {
 				}
 				ctx = context.WithValue(ctx, typePrefixKey, typePrefix)
 				// Also get the base type from the unwrapped expression
-				varType = getTypeFromTypeExpr(baseTypDecl, pass)
+				varType = typeFromTypeExpr(baseTypDecl, pass)
 			}
 		}
 
@@ -325,9 +325,9 @@ func unwrapTypeExpr(typDecl ast.Expr) (ast.Expr, string, bool) {
 	}
 }
 
-// getTypeFromTypeExpr extracts the type from a type expression.
+// typeFromTypeExpr extracts the type from a type expression.
 // This handles various cases including blank identifiers and type aliases.
-func getTypeFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass) types.Type {
+func typeFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass) types.Type {
 	// Try TypeOf first (works for value expressions)
 	if t := pass.TypesInfo.TypeOf(typDecl); t != nil {
 		return t
