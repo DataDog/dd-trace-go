@@ -273,7 +273,7 @@ func ImportedFrom(pkgPath string) Probe {
 		// Check the AST type expression's import path first (more reliable for aliases).
 		// Use the unwrapped base type expression for the lookup.
 		if baseTypDecl != nil {
-			if importPath := getImportPathFromTypeExpr(baseTypDecl, pass, n); importPath != "" {
+			if importPath := importPathFromTypeExpr(baseTypDecl, pass, n); importPath != "" {
 				if strings.HasPrefix(importPath, pkgPath) {
 					return ctx, true
 				}
@@ -354,9 +354,9 @@ func getTypeFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass) types.Type {
 	return nil
 }
 
-// getImportPathFromTypeExpr extracts the import path from a type expression like "pkg.Type".
+// importPathFromTypeExpr extracts the import path from a type expression like "pkg.Type".
 // It looks up the package identifier in pass.TypesInfo.Uses to find the imported package.
-func getImportPathFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass, n ast.Node) string {
+func importPathFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass, n ast.Node) string {
 	sel, ok := typDecl.(*ast.SelectorExpr)
 	if !ok {
 		return ""
