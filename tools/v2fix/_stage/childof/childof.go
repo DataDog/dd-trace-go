@@ -30,6 +30,11 @@ func main() {
 	child3 := tracer.StartSpan("child3", tracer.ChildOf(parent.Context()), extraOpt) // want `use StartChild instead of StartSpan with ChildOf`
 	defer child3.Finish()
 
+	// ChildOf with binary expression in option argument (now supported)
+	child5 := tracer.StartSpan("child5", tracer.ChildOf(parent.Context()),
+		tracer.ResourceName("a"+"b")) // want `use StartChild instead of StartSpan with ChildOf`
+	defer child5.Finish()
+
 	// ChildOf passed via variadic (ellipsis applies to ChildOf itself) - should not be rewritten
 	parentOpts := []tracer.StartSpanOption{
 		tracer.ChildOf(parent.Context()),

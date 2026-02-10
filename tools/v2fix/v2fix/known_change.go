@@ -102,7 +102,7 @@ func (d defaultKnownChange) pkgPrefix() string {
 	if pkg, ok := d.ctx.Value(pkgPrefixKey).(string); ok && pkg != "" {
 		return pkg
 	}
-	return "tracer"
+	return ""
 }
 
 func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
@@ -199,7 +199,11 @@ func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
 	// Get the type prefix (*, [], [N]) if the original type was a composite type
 	typePrefix, _ := c.ctx.Value(typePrefixKey).(string)
 
-	newText := fmt.Sprintf("%s%s.%s", typePrefix, c.pkgPrefix(), typeObj.Name())
+	pkg := c.pkgPrefix()
+	if pkg == "" {
+		return nil
+	}
+	newText := fmt.Sprintf("%s%s.%s", typePrefix, pkg, typeObj.Name())
 	return []analysis.SuggestedFix{
 		{
 			Message: "the declared type is in the ddtrace/tracer package now",
@@ -297,6 +301,10 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
+	pkg := c.pkgPrefix()
+	if pkg == "" {
+		return nil
+	}
 	return []analysis.SuggestedFix{
 		{
 			Message: "the function WithServiceName is no longer supported. Use WithService instead",
@@ -304,7 +312,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", c.pkgPrefix(), exprString(args[0]))),
+					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", pkg, exprString(args[0]))),
 				},
 			},
 		},
@@ -388,6 +396,10 @@ func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
+	pkg := c.pkgPrefix()
+	if pkg == "" {
+		return nil
+	}
 	return []analysis.SuggestedFix{
 		{
 			Message: "the function WithDogstatsdAddress is no longer supported. Use WithDogstatsdAddr instead",
@@ -395,7 +407,7 @@ func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", c.pkgPrefix(), exprString(args[0]))),
+					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", pkg, exprString(args[0]))),
 				},
 			},
 		},
@@ -453,6 +465,9 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 	}
 
 	pkg := c.pkgPrefix()
+	if pkg == "" {
+		return nil
+	}
 	var parts []string
 
 	switch fn.Name() {
@@ -608,6 +623,10 @@ func (c ChildOfStartChild) Probes() []Probe {
 }
 
 func (c ChildOfStartChild) Fixes() []analysis.SuggestedFix {
+	if skip, _ := c.ctx.Value(skipFixKey).(bool); skip {
+		return nil
+	}
+
 	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
 	if !ok || len(args) < 2 {
 		return nil
@@ -684,6 +703,9 @@ func (c AppSecLoginEvents) Fixes() []analysis.SuggestedFix {
 	}
 
 	pkg := c.pkgPrefix()
+	if pkg == "" {
+		return nil
+	}
 	var newFuncName string
 	switch fn.Name() {
 	case "TrackUserLoginSuccessEvent":

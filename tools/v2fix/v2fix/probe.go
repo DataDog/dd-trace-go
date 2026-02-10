@@ -513,6 +513,7 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 	var parentExpr string
 	var otherOpts []string
 	foundChildOf := false
+	skipFix := false
 
 	isChildOfCall := func(arg ast.Expr) bool {
 		call, ok := arg.(*ast.CallExpr)
@@ -532,6 +533,8 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 		if !ok {
 			if opt := exprToString(arg); opt != "" {
 				otherOpts = append(otherOpts, opt)
+			} else {
+				skipFix = true
 			}
 			continue
 		}
@@ -541,6 +544,8 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 		if !ok {
 			if opt := exprToString(arg); opt != "" {
 				otherOpts = append(otherOpts, opt)
+			} else {
+				skipFix = true
 			}
 			continue
 		}
@@ -566,6 +571,8 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 			// This is not ChildOf, collect it as another option
 			if opt := exprToString(arg); opt != "" {
 				otherOpts = append(otherOpts, opt)
+			} else {
+				skipFix = true
 			}
 		}
 	}
@@ -586,6 +593,9 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 		otherOpts[len(otherOpts)-1] = otherOpts[len(otherOpts)-1] + "..."
 	}
 
+	if skipFix {
+		ctx = context.WithValue(ctx, skipFixKey, true)
+	}
 	ctx = context.WithValue(ctx, childOfParentKey, parentExpr)
 	ctx = context.WithValue(ctx, childOfOtherOptsKey, otherOpts)
 	return ctx, true
@@ -598,9 +608,21 @@ func exprToString(expr ast.Expr) string {
 	case *ast.Ident:
 		return e.Name
 	case *ast.SelectorExpr:
-		return exprToString(e.X) + "." + e.Sel.Name
+		x := exprToString(e.X)
+		if x == "" {
+			return ""
+		}
+		return x + "." + e.Sel.Name
 	case *ast.CallExpr:
-		return exprToString(e.Fun) + "(" + exprListToString(e.Args) + ")"
+		fun := exprToString(e.Fun)
+		if fun == "" {
+			return ""
+		}
+		args := exprListToString(e.Args)
+		if args == "" && len(e.Args) > 0 {
+			return ""
+		}
+		return fun + "(" + args + ")"
 	case *ast.BasicLit:
 		return e.Value
 	case *ast.IndexExpr:
@@ -611,6 +633,42 @@ func exprToString(expr ast.Expr) string {
 		return e.Op.String() + exprToString(e.X)
 	case *ast.ParenExpr:
 		return "(" + exprToString(e.X) + ")"
+	case *ast.BinaryExpr:
+		left := exprToString(e.X)
+		right := exprToString(e.Y)
+		if left == "" || right == "" {
+			return ""
+		}
+		return left + " " + e.Op.String() + " " + right
+	case *ast.SliceExpr:
+		x := exprToString(e.X)
+		if x == "" {
+			return ""
+		}
+		low, high := "", ""
+		if e.Low != nil {
+			low = exprToString(e.Low)
+		}
+		if e.High != nil {
+			high = exprToString(e.High)
+		}
+		if e.Slice3 && e.Max != nil {
+			return x + "[" + low + ":" + high + ":" + exprToString(e.Max) + "]"
+		}
+		return x + "[" + low + ":" + high + "]"
+	case *ast.CompositeLit:
+		typ := ""
+		if e.Type != nil {
+			typ = exprToString(e.Type)
+			if typ == "" {
+				return ""
+			}
+		}
+		elts := exprListToString(e.Elts)
+		if elts == "" && len(e.Elts) > 0 {
+			return ""
+		}
+		return typ + "{" + elts + "}"
 	}
 	return ""
 }
@@ -618,7 +676,11 @@ func exprToString(expr ast.Expr) string {
 func exprListToString(exprs []ast.Expr) string {
 	var parts []string
 	for _, e := range exprs {
-		parts = append(parts, exprToString(e))
+		s := exprToString(e)
+		if s == "" {
+			return ""
+		}
+		parts = append(parts, s)
 	}
 	return strings.Join(parts, ", ")
 }
