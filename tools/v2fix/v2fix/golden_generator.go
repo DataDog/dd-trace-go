@@ -11,6 +11,7 @@ import (
 	"go/format"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"testing"
 
@@ -34,18 +35,16 @@ func applyEdits(src []byte, edits []diffEdit) ([]byte, error) {
 	}
 
 	// Sort edits by start position
-	sorted := make([]diffEdit, len(edits))
-	copy(sorted, edits)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		if sorted[i].Start != sorted[j].Start {
-			return sorted[i].Start < sorted[j].Start
+	slices.SortStableFunc(edits, func(a, b diffEdit) int {
+		if a.Start != b.Start {
+			return int(a.Start - b.Start)
 		}
-		return sorted[i].End < sorted[j].End
+		return int(a.End - b.End)
 	})
 
 	var out bytes.Buffer
 	pos := 0
-	for _, edit := range sorted {
+	for _, edit := range edits {
 		if edit.Start < pos {
 			return nil, fmt.Errorf("overlapping edit at position %d (current pos: %d)", edit.Start, pos)
 		}
