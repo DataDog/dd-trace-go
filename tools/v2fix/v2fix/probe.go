@@ -21,8 +21,8 @@ import (
 
 type Probe func(context.Context, ast.Node, *analysis.Pass) (context.Context, bool)
 
-// getTypeNameFromType extracts the TypeName object from Named or Alias types.
-func getTypeNameFromType(t types.Type) *types.TypeName {
+// typeNameFromType extracts the TypeName object from Named or Alias types.
+func typeNameFromType(t types.Type) *types.TypeName {
 	switch t := t.(type) {
 	case *types.Named:
 		return t.Obj()
@@ -82,7 +82,7 @@ func DeclaresType[T any]() Probe {
 		}
 
 		// Extract type object info, handling both *types.Named and *types.Alias
-		typeObj := getTypeNameFromType(varType)
+		typeObj := typeNameFromType(varType)
 		if typeObj == nil {
 			return ctx, false
 		}
@@ -265,7 +265,7 @@ func ImportedFrom(pkgPath string) Probe {
 
 		// Store the resolved type in context for use by later probes
 		// Support both *types.Named and *types.Alias (Go 1.22+)
-		if varType != nil && getTypeNameFromType(varType) != nil {
+		if varType != nil && typeNameFromType(varType) != nil {
 			ctx = context.WithValue(ctx, declaredTypeKey, varType)
 		}
 
@@ -424,7 +424,7 @@ func HasBaseType[T any]() Probe {
 		if !ok {
 			return ctx, false
 		}
-		typeObj := getTypeNameFromType(varType)
+		typeObj := typeNameFromType(varType)
 		if typeObj == nil {
 			return ctx, false
 		}

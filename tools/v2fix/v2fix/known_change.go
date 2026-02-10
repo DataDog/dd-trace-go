@@ -191,7 +191,7 @@ func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
 	if !ok || typ == nil {
 		return nil
 	}
-	typeObj := getTypeNameFromType(typ)
+	typeObj := typeNameFromType(typ)
 	if typeObj == nil {
 		return nil
 	}
@@ -250,7 +250,7 @@ func (c TracerStructs) Fixes() []analysis.SuggestedFix {
 	if !ok || typeExprStr == "" {
 		// Fallback to building from declared type (handles both *types.Named and *types.Alias)
 		typ := c.ctx.Value(declaredTypeKey)
-		typeObj := getTypeNameFromType(typ.(types.Type))
+		typeObj := typeNameFromType(typ.(types.Type))
 		if typeObj == nil {
 			return nil
 		}
