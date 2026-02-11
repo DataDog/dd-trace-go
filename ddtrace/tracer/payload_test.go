@@ -239,7 +239,48 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(uint32(4), got.chunks[0].samplingMechanism)
 			assert.Equal(int32(1), got.chunks[0].priority)
 		})
+
+		t.Run("with meta_struct", func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+			for i := 0; i < n; i++ {
+				sl := newSpanList(i%5 + 1)
+				createMetaStructMap(sl)
+				_, _ = p.push(sl)
+			}
+
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			meta := got.chunks[0].spans[0].metaStruct
+			assert.Equal(int64(1), meta["key1"])
+			assert.Equal("value2", meta["key2"])
+			assert.Equal([]any{int64(1), int64(2), int64(3)}, meta["key3"])
+			assert.Equal(true, meta["key4"])
+			assert.Equal([]byte("test"), meta["key5"])
+			assert.Equal(map[string]any{"nested-key": "nested-value"}, meta["key6"])
+		})
 	}
+}
+
+func createMetaStructMap(sl spanList) {
+	s := sl[0]
+	s.setMetaStruct("key1", 1)
+	s.setMetaStruct("key2", "value2")
+	s.setMetaStruct("key3", []int64{1, 2, 3})
+	s.setMetaStruct("key4", true)
+	s.setMetaStruct("key5", []byte("test"))
+	s.setMetaStruct("key6", map[string]any{"nested-key": "nested-value"})
 }
 
 func TestPayloadV1SpanLinkTraceID(t *testing.T) {

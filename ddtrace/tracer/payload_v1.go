@@ -459,9 +459,14 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			}
 		}
 		for k, v := range span.metaStruct {
-			av := buildAnyValue(v)
-			if av != nil {
-				attr[k] = *av
+			msg, err := msgp.AppendIntf(nil, v)
+			if err != nil {
+				log.Error("failed to serialize meta_struct value for key %s: %v", k, err)
+				continue
+			}
+			attr[k] = anyValue{
+				valueType: BytesValueType,
+				value:     msg,
 			}
 		}
 		p.encodeAttributes(fullSetBitmap, 9, attr, st)
@@ -763,26 +768,6 @@ const (
 	ArrayValueType              // []AnyValue -- 6
 	keyValueListType            // []keyValue -- 7
 )
-
-// buildAnyValue builds an anyValue from a given any type.
-func buildAnyValue(v any) *anyValue {
-	switch v := v.(type) {
-	case string:
-		return &anyValue{valueType: StringValueType, value: v}
-	case bool:
-		return &anyValue{valueType: BoolValueType, value: v}
-	case float64:
-		return &anyValue{valueType: FloatValueType, value: v}
-	case int32, int64:
-		return &anyValue{valueType: IntValueType, value: handleIntValue(v)}
-	case []byte:
-		return &anyValue{valueType: BytesValueType, value: v}
-	case arrayValue:
-		return &anyValue{valueType: ArrayValueType, value: v}
-	default:
-		return nil
-	}
-}
 
 func (a anyValue) encode(buf []byte, st *stringTable) []byte {
 	buf = msgp.AppendInt32(buf, int32(a.valueType))
@@ -1134,7 +1119,17 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			var attr map[string]anyValue
 			attr, o, err = decodeAttributes(o, st)
 			for k, v := range attr {
-				span.SetTag(k, v.value)
+				// Decode meta struct values from bytes
+				if v.valueType == BytesValueType {
+					var decoded any
+					decoded, _, err = msgp.ReadIntfBytes(v.value.([]byte))
+					if err != nil {
+						break
+					}
+					span.setMetaStruct(k, decoded)
+				} else {
+					span.SetTag(k, v.value)
+				}
 			}
 		case 10:
 			span.spanType, o, ok = st.read(o)
