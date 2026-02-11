@@ -725,16 +725,16 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil && !context.baggageOnly {
+	if context != nil && !context.baggageOnly { // +checklocksignore - Read-only after init.
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
 			span.setMetricInit(keySamplingPriority, float64(p))
 		}
-		if context.span == nil && context.origin != "" { // remote parent
+		if context.span == nil && context.origin != "" { // +checklocksignore - Read-only after init.
 			// mark origin
-			span.setMetaInit(keyOrigin, context.origin)
+			span.setMetaInit(keyOrigin, context.origin) // +checklocksignore - Read-only after init.
 		}
 		if context.reparentID != "" {
 			span.setMetaInit(keyReparentID, context.reparentID)
