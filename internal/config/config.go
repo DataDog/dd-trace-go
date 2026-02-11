@@ -101,6 +101,8 @@ type Config struct {
 	featureFlags map[string]struct{}
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
+	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
+	logsOTelEnabled bool
 }
 
 // HOT PATH NOTE:
@@ -137,7 +139,6 @@ func loadConfig() *Config {
 	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
 	cfg.ciVisibilityEnabled = provider.getBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
@@ -145,6 +146,7 @@ func loadConfig() *Config {
 	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
+	cfg.logsOTelEnabled = provider.getBool("DD_LOGS_OTEL_ENABLED", false)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -166,24 +168,24 @@ func loadConfig() *Config {
 		}
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Warn("unable to look up hostname: %s", err.Error())
-		cfg.hostnameLookupError = err
+	// Hostname lookup, if DD_TRACE_REPORT_HOSTNAME is true
+	// If the hostname lookup fails, an error is set and the hostname is not reported
+	// The tracer will fail to start if the hostname lookup fails when it is explicitly configured
+	// to report the hostname.
+	if provider.getBool("DD_TRACE_REPORT_HOSTNAME", false) {
+		hostname, err := os.Hostname()
+		if err != nil {
+			log.Warn("unable to look up hostname: %s", err.Error())
+			cfg.hostnameLookupError = err
+		}
+		cfg.hostname = hostname
+		cfg.reportHostname = true
 	}
-
-	// Always read DD_TRACE_REPORT_HOSTNAME for telemetry tracking
-	reportHostnameFromEnv := provider.getBool("DD_TRACE_REPORT_HOSTNAME", false)
-
-	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set
+	// Check if DD_TRACE_SOURCE_HOSTNAME was explicitly set, it takes precedence over the hostname lookup
 	if sourceHostname, ok := env.Lookup("DD_TRACE_SOURCE_HOSTNAME"); ok {
 		// Explicitly configured hostname - always report it
 		cfg.hostname = sourceHostname
 		cfg.reportHostname = true
-	} else if err == nil {
-		// Auto-detected hostname - only report if DD_TRACE_REPORT_HOSTNAME=true
-		cfg.hostname = hostname
-		cfg.reportHostname = reportHostnameFromEnv
 	}
 
 	return cfg
@@ -199,6 +201,27 @@ func Get() *Config {
 	if useFreshConfig || instance == nil {
 		instance = loadConfig()
 	}
+
+	return instance
+}
+
+// CreateNew returns a new global configuration instance.
+// This function should be used when we need to create a new configuration instance.
+// It build a new configuration instance and override the existing one
+// loosing any programmatic configuration that would have been applied to the existing instance.
+//
+// It shouldn't be used to get the global configuration instance to manipulate it but
+// should be used when there is a need to reset the global configuration instance.
+//
+// This is useful when we need to create a new configuration instance when a new product is initialized.
+// Each product should have its own configuration instance and apply its own programmatic configuration to it.
+//
+// If a customer starts multiple tracer with different programmatic configuration only the latest one will be used
+// and available globally.
+func CreateNew() *Config {
+	mu.Lock()
+	defer mu.Unlock()
+	instance = loadConfig()
 
 	return instance
 }
@@ -614,4 +637,17 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.ciVisibilityEnabled = enabled
 	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) LogsOTelEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logsOTelEnabled
+}
+
+func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logsOTelEnabled = enabled
+	reportTelemetry("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }

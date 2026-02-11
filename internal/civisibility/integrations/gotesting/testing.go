@@ -279,6 +279,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			// check if the test was marked as unskippable
 			if test.Context().Value(constants.TestUnskippable) != true {
 				test.SetTag(constants.TestSkippedByITR, "true")
+				// ITR skip is always a final execution, set the final status
+				test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 				test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.SkippedByITRReason))
 				telemetry.ITRSkipped(telemetry.TestEventType)
 				session.SetTag(constants.ITRTestsSkipped, "true")
@@ -343,7 +345,19 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				// Handle panic and set error information.
 				execMeta.panicData = r
 				execMeta.panicStacktrace = utils.GetStacktrace(1)
-				if execMeta.isARetry && execMeta.isLastRetry {
+
+				// Compute whether this is the final execution.
+				finalExec := isFinalExecution(true, false, execMeta, duration)
+
+				// Compute and set test.final_status before closing the span.
+				if finalExec {
+					anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
+					anyFailed := true                        // current execution failed
+					finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
+					test.SetTag(constants.TestFinalStatus, finalStatus)
+				}
+				// Set retry-related tags only when this is an actual retry's final execution.
+				if execMeta.isARetry && finalExec {
 					if execMeta.allRetriesFailed {
 						test.SetTag(constants.TestHasFailedAllRetries, "true")
 					}
@@ -364,8 +378,23 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 				}
 			} else {
 				// Normal finalization: determine the test result based on its state.
-				if t.Failed() {
-					if execMeta.isARetry && execMeta.isLastRetry {
+				failed := t.Failed()
+				skipped := t.Skipped()
+				passed := !failed && !skipped
+
+				// Compute whether this is the final execution.
+				finalExec := isFinalExecution(failed, skipped, execMeta, duration)
+
+				if failed {
+					// Compute and set test.final_status before closing the span.
+					if finalExec {
+						anyPassed := execMeta.anyExecutionPassed // current is fail, so no change
+						anyFailed := true                        // current execution failed
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
+						test.SetTag(constants.TestFinalStatus, finalStatus)
+					}
+					// Set retry-related tags only when this is an actual retry's final execution.
+					if execMeta.isARetry && finalExec {
 						if execMeta.allRetriesFailed {
 							test.SetTag(constants.TestHasFailedAllRetries, "true")
 						}
@@ -377,13 +406,34 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
-				} else if t.Skipped() {
-					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+				} else if skipped {
+					// Compute and set test.final_status before closing the span.
+					if finalExec {
+						anyPassed := execMeta.anyExecutionPassed // current is skip, so no change
+						anyFailed := execMeta.anyExecutionFailed // current is skip, so no change
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, true, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
+						test.SetTag(constants.TestFinalStatus, finalStatus)
+					}
+					// Set retry-related tags only when this is an actual retry's final execution.
+					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
 						test.SetTag(constants.TestAttemptToFixPassed, "false")
 					}
-					test.Close(integrations.ResultStatusSkip)
-				} else {
-					if execMeta.isAttemptToFix && execMeta.isARetry && execMeta.isLastRetry {
+					// Use the stored skip reason if available (captured from instrumentCloseAndSkip).
+					if execMeta.skipReason != "" {
+						test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(execMeta.skipReason))
+					} else {
+						test.Close(integrations.ResultStatusSkip)
+					}
+				} else if passed {
+					// Compute and set test.final_status before closing the span.
+					if finalExec {
+						anyPassed := true // current execution passed
+						anyFailed := execMeta.anyExecutionFailed
+						finalStatus := calculateFinalStatus(anyPassed, anyFailed, false, execMeta.isQuarantined, execMeta.isDisabled, execMeta.isAttemptToFix)
+						test.SetTag(constants.TestFinalStatus, finalStatus)
+					}
+					// Set retry-related tags only when this is an actual retry's final execution.
+					if execMeta.isAttemptToFix && execMeta.isARetry && finalExec {
 						if execMeta.allAttemptsPassed {
 							test.SetTag(constants.TestAttemptToFixPassed, "true")
 						} else {
@@ -761,6 +811,8 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 	if execMeta.isDisabled {
 		test.SetTag(constants.TestIsDisabled, "true")
 		if !execMeta.isAttemptToFix {
+			// Disabled test without ATF is always a final execution, set the final status
+			test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
 			test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.TestDisabledSkipReason))
 			return true
 		}

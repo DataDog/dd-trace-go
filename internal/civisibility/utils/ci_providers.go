@@ -9,14 +9,255 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+// GitHub Actions job ID resolution constants and helpers
+const (
+	// githubJobCheckRunIDEnv is the environment variable name for the numeric job ID
+	githubJobCheckRunIDEnv = "JOB_CHECK_RUN_ID"
+	// githubMaxDiagFileSize is the maximum file size to read from diagnostics files (10MB)
+	githubMaxDiagFileSize = 10 * 1024 * 1024
+)
+
+// githubActionsDiagnosticsEnabled controls whether diagnostics file scanning is enabled.
+// This can be set to false in tests to prevent scanning real _diag directories.
+var githubActionsDiagnosticsEnabled = true
+
+// githubActionsDiagDirsLinux contains the possible diagnostics directories on Linux
+var githubActionsDiagDirsLinux = []string{
+	"/home/runner/actions-runner/cached/_diag",
+	"/home/runner/actions-runner/_diag",
+}
+
+// githubActionsDiagDirsDarwin contains the possible diagnostics directories on macOS
+var githubActionsDiagDirsDarwin = []string{
+	"/Users/runner/actions-runner/cached/_diag",
+	"/Users/runner/actions-runner/_diag",
+}
+
+// githubCheckRunIDRegex is used to extract the check_run_id from Worker log files
+var githubCheckRunIDRegex = regexp.MustCompile(`"k"\s*:\s*"check_run_id"\s*,\s*"v"\s*:\s*([0-9]+)(?:\.0)?`)
+
+// diagJobData represents the JSON structure of GitHub Actions diagnostics files
+type diagJobData struct {
+	Job struct {
+		D []struct {
+			K string      `json:"k"`
+			V interface{} `json:"v"`
+		} `json:"d"`
+	} `json:"job"`
+}
+
+// getGithubActionsJobID returns the numeric job ID for GitHub Actions.
+// It first checks the JOB_CHECK_RUN_ID environment variable, then falls back
+// to reading the job ID from GitHub Actions diagnostics files.
+// Only returns valid numeric job IDs; non-numeric values are treated as not found.
+func getGithubActionsJobID() string {
+	// Priority 1: Environment variable (only if numeric)
+	if jobID := strings.TrimSpace(env.Get(githubJobCheckRunIDEnv)); jobID != "" && isNumericJobID(jobID) {
+		return jobID
+	}
+
+	// Priority 2: Diagnostics files (can be disabled in tests)
+	if githubActionsDiagnosticsEnabled {
+		if jobID, ok := tryExtractJobIDFromDiag(getGithubActionsDiagDirs()); ok {
+			return jobID
+		}
+	}
+
+	return ""
+}
+
+// getGithubActionsDiagDirs returns the OS-specific diagnostics directory paths.
+func getGithubActionsDiagDirs() []string {
+	switch runtime.GOOS {
+	case "windows":
+		var candidates []string
+		// Only add paths with ProgramFiles if the env var is set (avoid relative paths)
+		if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
+			candidates = append(candidates,
+				filepath.Join(programFiles, "actions-runner", "cached", "_diag"),
+				filepath.Join(programFiles, "actions-runner", "_diag"),
+			)
+		}
+		if programFilesX86 := os.Getenv("ProgramFiles(x86)"); programFilesX86 != "" {
+			candidates = append(candidates,
+				filepath.Join(programFilesX86, "actions-runner", "cached", "_diag"),
+				filepath.Join(programFilesX86, "actions-runner", "_diag"),
+			)
+		}
+		// Always include hardcoded fallback paths
+		candidates = append(candidates,
+			`C:\actions-runner\cached\_diag`,
+			`C:\actions-runner\_diag`,
+		)
+		return deduplicatePaths(candidates)
+	case "darwin":
+		return githubActionsDiagDirsDarwin
+	default:
+		return githubActionsDiagDirsLinux
+	}
+}
+
+// deduplicatePaths removes empty and duplicate paths from the slice.
+func deduplicatePaths(paths []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
+}
+
+// tryExtractJobIDFromDiag attempts to extract the job ID from GitHub Actions diagnostics files.
+// It scans Worker_*.log files in the diagnostics directories, sorted by modification time (newest first).
+func tryExtractJobIDFromDiag(diagDirs []string) (string, bool) {
+	for _, diagDir := range diagDirs {
+		// Check if directory exists
+		if info, err := os.Stat(diagDir); err != nil || !info.IsDir() {
+			continue
+		}
+
+		// Find Worker_*.log files
+		files, err := filepath.Glob(filepath.Join(diagDir, "Worker_*.log"))
+		if err != nil {
+			log.Debug("civisibility: error globbing worker logs in %s: %v", diagDir, err)
+			continue
+		}
+
+		if len(files) == 0 {
+			continue
+		}
+
+		// Sort by modification time (newest first)
+		sort.Slice(files, func(i, j int) bool {
+			iInfo, _ := os.Stat(files[i])
+			jInfo, _ := os.Stat(files[j])
+			if iInfo == nil || jInfo == nil {
+				return false
+			}
+			return iInfo.ModTime().After(jInfo.ModTime())
+		})
+
+		// Try to extract job ID from each file
+		for _, file := range files {
+			if jobID, ok := tryExtractJobIDFromFile(file); ok {
+				return jobID, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+// tryExtractJobIDFromFile attempts to extract the job ID from a single Worker log file.
+// It first tries JSON parsing, then falls back to regex extraction.
+func tryExtractJobIDFromFile(path string) (string, bool) {
+	// Check file size before reading
+	info, err := os.Stat(path)
+	if err != nil {
+		log.Debug("civisibility: error stating file %s: %v", path, err)
+		return "", false
+	}
+	if info.Size() > githubMaxDiagFileSize {
+		log.Debug("civisibility: skipping oversized diagnostics file %s (%d bytes)", path, info.Size())
+		return "", false
+	}
+
+	// Read file content
+	content, err := os.ReadFile(path)
+	if err != nil {
+		log.Debug("civisibility: error reading file %s: %v", path, err)
+		return "", false
+	}
+
+	// Try JSON parsing first
+	if jobID, ok := tryExtractJobIDFromJSON(content); ok {
+		log.Debug("civisibility: extracted github actions job id via JSON: %s from %s", jobID, path)
+		return jobID, true
+	}
+
+	// Fall back to regex extraction
+	if jobID, ok := tryExtractJobIDFromRegex(content); ok {
+		log.Debug("civisibility: extracted github actions job id via regex: %s from %s", jobID, path)
+		return jobID, true
+	}
+
+	return "", false
+}
+
+// tryExtractJobIDFromJSON attempts to parse the content as JSON and extract the check_run_id.
+func tryExtractJobIDFromJSON(content []byte) (string, bool) {
+	var data diagJobData
+	if err := json.Unmarshal(content, &data); err != nil {
+		return "", false
+	}
+
+	for _, item := range data.Job.D {
+		if item.K == "check_run_id" {
+			var jobID string
+			switch v := item.V.(type) {
+			case float64:
+				// Reject non-integer floats (e.g., 12345.5)
+				if v != float64(int64(v)) {
+					continue
+				}
+				jobID = strconv.FormatFloat(v, 'f', 0, 64)
+			case string:
+				jobID = v
+			case json.Number:
+				jobID = v.String()
+			default:
+				continue
+			}
+			jobID = strings.TrimSpace(jobID)
+			if jobID != "" && isNumericJobID(jobID) {
+				return jobID, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+// tryExtractJobIDFromRegex attempts to extract the check_run_id using regex.
+func tryExtractJobIDFromRegex(content []byte) (string, bool) {
+	matches := githubCheckRunIDRegex.FindSubmatch(content)
+	if len(matches) >= 2 {
+		jobID := strings.TrimSpace(string(matches[1]))
+		if jobID != "" && isNumericJobID(jobID) {
+			return jobID, true
+		}
+	}
+	return "", false
+}
+
+// isNumericJobID validates that the job ID contains only digits.
+func isNumericJobID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, c := range id {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 // providerType defines a function type that returns a map of string key-value pairs.
 type providerType = func() map[string]string
@@ -424,18 +665,34 @@ func extractGithubActions() map[string]string {
 	tags[constants.GitBranch] = branch
 	tags[constants.GitTag] = tag
 	tags[constants.CIWorkspacePath] = env.Get("GITHUB_WORKSPACE")
-	tags[constants.CIPipelineID] = pipelineID
 	tags[constants.CIPipelineNumber] = env.Get("GITHUB_RUN_NUMBER")
 	tags[constants.CIPipelineName] = env.Get("GITHUB_WORKFLOW")
-	tags[constants.CIJobURL] = fmt.Sprintf("%s/commit/%s/checks", rawRepository, commitSha)
-	tags[constants.CIJobID] = env.Get("GITHUB_JOB")
-	tags[constants.CIJobName] = env.Get("GITHUB_JOB")
 
-	attempts := env.Get("GITHUB_RUN_ATTEMPT")
-	if attempts == "" {
-		tags[constants.CIPipelineURL] = fmt.Sprintf("%s/actions/runs/%s", rawRepository, pipelineID)
+	// Only set pipeline ID and URL if GITHUB_RUN_ID is present
+	if pipelineID != "" {
+		tags[constants.CIPipelineID] = pipelineID
+		attempts := env.Get("GITHUB_RUN_ATTEMPT")
+		if attempts == "" {
+			tags[constants.CIPipelineURL] = fmt.Sprintf("%s/actions/runs/%s", rawRepository, pipelineID)
+		} else {
+			tags[constants.CIPipelineURL] = fmt.Sprintf("%s/actions/runs/%s/attempts/%s", rawRepository, pipelineID, attempts)
+		}
+	}
+
+	// Resolve job ID and URL
+	jobName := env.Get("GITHUB_JOB")
+	numericJobID := getGithubActionsJobID()
+
+	tags[constants.CIJobName] = jobName
+
+	if numericJobID != "" && pipelineID != "" {
+		tags[constants.CIJobID] = numericJobID
+		tags[constants.CIJobURL] = fmt.Sprintf("%s/actions/runs/%s/job/%s", rawRepository, pipelineID, numericJobID)
+		log.Debug("civisibility: github actions job url with numeric job id: %s", tags[constants.CIJobURL])
 	} else {
-		tags[constants.CIPipelineURL] = fmt.Sprintf("%s/actions/runs/%s/attempts/%s", rawRepository, pipelineID, attempts)
+		tags[constants.CIJobID] = jobName
+		tags[constants.CIJobURL] = fmt.Sprintf("%s/commit/%s/checks", rawRepository, commitSha)
+		log.Debug("civisibility: github actions job url fallback: %s", tags[constants.CIJobURL])
 	}
 
 	jsonString, err := getEnvVarsJSON("GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
