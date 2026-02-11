@@ -44,7 +44,7 @@ func newDetailedSpanList(n int) spanList {
 	list := make([]*Span, n)
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
-		list[i].context.trace.setPropagatingTagLocked(keyDecisionMaker, "1")
+		list[i].context.trace.setPropagatingTag(keyDecisionMaker, "1")
 		list[i].start = fixedTime
 		list[i].service = "golden"
 		list[i].resource = "resource." + itoa[i%5+1]
@@ -186,7 +186,7 @@ func TestPayloadV1Decode(t *testing.T) {
 			)
 
 			s := newBasicSpan("span.list")
-			s.context.trace.propagatingTags = map[string]string{"keyDecisionMaker": ""}
+			s.context.trace.replacePropagatingTags(map[string]string{"keyDecisionMaker": ""})
 			p.push([]*Span{s})
 			encoded, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -220,7 +220,7 @@ func TestPayloadV1Decode(t *testing.T) {
 
 			for i := 0; i < n; i++ {
 				sl := newSpanList(i%5 + 1)
-				sl[0].context.trace.setSamplingPriorityLocked(1, samplernames.Manual)
+				sl[0].context.trace.setSamplingPriority(1, samplernames.Manual)
 				_, _ = p.push(sl)
 			}
 
