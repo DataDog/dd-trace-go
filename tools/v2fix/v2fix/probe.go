@@ -52,6 +52,46 @@ func isV1SpanType(t types.Type) bool {
 		pkgPath == "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 }
 
+// extractTypeInfo extracts the type declaration expression and resolved type from
+// a ValueSpec or Field node. It returns the type expression, the resolved type,
+// and whether extraction succeeded. This is shared by DeclaresType and ImportedFrom.
+func extractTypeInfo(ctx context.Context, n ast.Node, pass *analysis.Pass) (ast.Expr, types.Type, bool) {
+	var names []*ast.Ident
+	var typDecl ast.Expr
+	switch ctx.Value(typeKey) {
+	case "*ast.ValueSpec":
+		spec := n.(*ast.ValueSpec)
+		names = spec.Names
+		typDecl = spec.Type
+	case "*ast.Field":
+		field := n.(*ast.Field)
+		names = field.Names
+		typDecl = field.Type
+	default:
+		return nil, nil, false
+	}
+	if len(names) == 0 {
+		return nil, nil, false
+	}
+	if obj := pass.TypesInfo.ObjectOf(names[0]); obj != nil {
+		return typDecl, obj.Type(), true
+	}
+	if typDecl != nil {
+		return typDecl, typeFromTypeExpr(typDecl, pass), true
+	}
+	return nil, nil, false
+}
+
+// matchesGenericType returns true if typeObj matches the generic type T
+// by comparing package path and type name via reflection.
+func matchesGenericType[T any](typeObj *types.TypeName) bool {
+	if typeObj == nil || typeObj.Pkg() == nil {
+		return false
+	}
+	e := reflect.TypeFor[T]()
+	return typeObj.Pkg().Path() == e.PkgPath() && typeObj.Name() == e.Name()
+}
+
 // DeclaresType returns true if the node declares a type of the given generic type.
 // The type use in the generic signature is stored in the context as "type".
 // The reflected type is stored in the context as "declared_type".
@@ -59,51 +99,13 @@ func isV1SpanType(t types.Type) bool {
 // Handles both *types.Named and *types.Alias (Go 1.22+ type aliases).
 func DeclaresType[T any]() Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
-		var (
-			typ     = ctx.Value(typeKey)
-			typDecl ast.Expr
-			varType types.Type
-		)
-		switch typ {
-		case "*ast.ValueSpec":
-			spec := n.(*ast.ValueSpec)
-			if len(spec.Names) == 0 {
-				return ctx, false
-			}
-			typDecl = spec.Type
-			// Try to get type from object first (works for named vars)
-			obj := pass.TypesInfo.ObjectOf(spec.Names[0])
-			if obj != nil {
-				varType = obj.Type()
-			} else if typDecl != nil {
-				// For blank identifiers, get type from the type expression.
-				varType = typeFromTypeExpr(typDecl, pass)
-			}
-		case "*ast.Field":
-			field := n.(*ast.Field)
-			if len(field.Names) == 0 {
-				return ctx, false
-			}
-			typDecl = field.Type
-			obj := pass.TypesInfo.ObjectOf(field.Names[0])
-			if obj != nil {
-				varType = obj.Type()
-			} else if typDecl != nil {
-				varType = typeFromTypeExpr(typDecl, pass)
-			}
-		default:
-			return ctx, false
-		}
-		if typDecl == nil {
-			return ctx, false
-		}
-		if varType == nil {
+		typDecl, varType, ok := extractTypeInfo(ctx, n, pass)
+		if !ok || typDecl == nil || varType == nil {
 			return ctx, false
 		}
 
-		// Extract type object info, handling both *types.Named and *types.Alias
 		typeObj := typeNameFromType(varType)
-		if typeObj == nil {
+		if !matchesGenericType[T](typeObj) {
 			return ctx, false
 		}
 		ctx = context.WithValue(ctx, declaredTypeKey, varType)
@@ -117,18 +119,7 @@ func DeclaresType[T any]() Probe {
 			ctx = context.WithValue(ctx, typeExprStrKey, buf.String())
 		}
 
-		v := new(T)
-		e := reflect.TypeOf(v).Elem()
-		if typeObj.Pkg() == nil {
-			return ctx, false
-		}
 		ctx = context.WithValue(ctx, pkgNameKey, typeObj.Pkg().Name())
-		if typeObj.Pkg().Path() != e.PkgPath() {
-			return ctx, false
-		}
-		if typeObj.Name() != e.Name() {
-			return ctx, false
-		}
 		return ctx, true
 	}
 }
@@ -224,37 +215,8 @@ func HasPackagePrefix(prefix string) Probe {
 // and storing the type prefix (e.g., "*", "[]") in typePrefixKey.
 func ImportedFrom(pkgPath string) Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
-		var (
-			typ     = ctx.Value(typeKey)
-			varType types.Type
-			typDecl ast.Expr
-		)
-		switch typ {
-		case "*ast.ValueSpec":
-			spec := n.(*ast.ValueSpec)
-			if len(spec.Names) == 0 {
-				return ctx, false
-			}
-			typDecl = spec.Type
-			obj := pass.TypesInfo.ObjectOf(spec.Names[0])
-			if obj != nil {
-				varType = obj.Type()
-			} else if typDecl != nil {
-				varType = typeFromTypeExpr(typDecl, pass)
-			}
-		case "*ast.Field":
-			field := n.(*ast.Field)
-			if len(field.Names) == 0 {
-				return ctx, false
-			}
-			typDecl = field.Type
-			obj := pass.TypesInfo.ObjectOf(field.Names[0])
-			if obj != nil {
-				varType = obj.Type()
-			} else if typDecl != nil {
-				varType = typeFromTypeExpr(typDecl, pass)
-			}
-		default:
+		typDecl, varType, ok := extractTypeInfo(ctx, n, pass)
+		if !ok {
 			return ctx, false
 		}
 
@@ -404,23 +366,19 @@ func importPathFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass, n ast.Node) s
 	for _, file := range pass.Files {
 		if file.Pos() <= nodePos && nodePos < file.End() {
 			for _, imp := range file.Imports {
+				path, err := strconv.Unquote(imp.Path.Value)
+				if err != nil {
+					continue
+				}
 				name := ""
 				if imp.Name != nil {
 					name = imp.Name.Name
 				} else {
 					// Use the last part of the path as the default name
-					path, err := strconv.Unquote(imp.Path.Value)
-					if err != nil {
-						continue
-					}
 					parts := strings.Split(path, "/")
 					name = parts[len(parts)-1]
 				}
 				if name == ident.Name {
-					path, err := strconv.Unquote(imp.Path.Value)
-					if err != nil {
-						continue
-					}
 					return path
 				}
 			}
@@ -436,31 +394,11 @@ func importPathFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass, n ast.Node) s
 // It expects declaredTypeKey to be set by ImportedFrom (which stores the unwrapped type).
 func HasBaseType[T any]() Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
-		declaredType := ctx.Value(declaredTypeKey)
-		if declaredType == nil {
-			return ctx, false
-		}
-		varType, ok := declaredType.(types.Type)
+		varType, ok := ctx.Value(declaredTypeKey).(types.Type)
 		if !ok {
 			return ctx, false
 		}
-		typeObj := typeNameFromType(varType)
-		if typeObj == nil {
-			return ctx, false
-		}
-		if typeObj.Pkg() == nil {
-			return ctx, false
-		}
-
-		v := new(T)
-		e := reflect.TypeOf(v).Elem()
-		if typeObj.Pkg().Path() != e.PkgPath() {
-			return ctx, false
-		}
-		if typeObj.Name() != e.Name() {
-			return ctx, false
-		}
-		return ctx, true
+		return ctx, matchesGenericType[T](typeNameFromType(varType))
 	}
 }
 
