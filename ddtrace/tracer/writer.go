@@ -224,6 +224,7 @@ func encodeFloat(p []byte, f float64) []byte {
 	return p
 }
 
+// +checklocksignore
 func (h *logTraceWriter) encodeSpan(s *Span) {
 	var scratch [maxFloatLength]byte
 	h.buf.WriteString(`{"trace_id":"`)

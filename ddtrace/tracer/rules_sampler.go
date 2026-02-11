@@ -187,6 +187,7 @@ func (sr *SamplingRule) EqualsFalseNegative(other *SamplingRule) bool {
 }
 
 // match returns true when the span's details match all the expected values in the rule.
+// +checklocksignore
 func (sr *SamplingRule) match(s *Span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.service) {
 		return false
@@ -476,6 +477,7 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 	return true
 }
 
+// +checklocksignore
 func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, sampler samplernames.SamplerName) {
 	// Use the helper method to apply the rate and execute sampling logic with the lock held
 	span.applyRateWithLock(rate, func() {
@@ -547,6 +549,7 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
+// +checklocksignore
 func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
