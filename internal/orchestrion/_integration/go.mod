@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
 
-go 1.24.0
+go 1.25.0
 
 require (
 	cloud.google.com/go/pubsub v1.49.0
