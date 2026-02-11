@@ -27,7 +27,7 @@
     ],
     "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE": [
       {
-        "implementation": "B",
+        "implementation": "A",
         "type": "decimal",
         "default": "0.5"
       }
