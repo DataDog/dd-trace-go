@@ -27,7 +27,6 @@ on:
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read
@@ -136,7 +135,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run tests
@@ -155,7 +154,7 @@ jobs:
         with:
           dd-api-key: ${{ secrets.DD_CI_API_KEY }}
           path: ${{ env.TEST_RESULTS }}
-          tags: go:1.24,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:1.25,arch:${{ runner.arch }},os:${{ runner.os }}
       - name: Upload Coverage
         if: always()
         shell: bash
@@ -179,7 +178,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff

@@ -30,7 +30,6 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
-  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   GOLANGCI_LINT_VERSION: v2.3.0 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
 
 permissions:
@@ -49,7 +48,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }}
+          go-version: ${{ inputs.go-version || 'stable' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Copyright
@@ -70,7 +69,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }}
+          go-version: ${{ inputs.go-version || 'stable' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Lint GitHub Actions workflows
@@ -88,7 +87,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }}
+          go-version: ${{ inputs.go-version || 'stable' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run fixmodules
@@ -108,7 +107,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }}
+          go-version: ${{ inputs.go-version || 'stable' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Update documentation
@@ -128,7 +127,7 @@ jobs:
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: ${{ inputs.go-version }}
+          go-version: ${{ inputs.go-version || 'stable' }}
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Format

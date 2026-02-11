@@ -9,7 +9,6 @@
       interruptible: true
   tags: ["runner:apm-k8s-m8g-metal"]
   variables:
-    GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version
     KUBERNETES_CPU_REQUEST: "48"
     KUBERNETES_CPU_LIMIT: "48"
   script: |

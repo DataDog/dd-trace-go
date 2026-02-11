@@ -27,7 +27,6 @@ on:
       - 'scripts/**'
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m
-  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   PACKAGES: >-
     ./appsec/...
     ./instrumentation/appsec/...
@@ -85,6 +84,7 @@ jobs:
 
       - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
         with:
+          go-version: stable
           cache: false
 
       - name: Cache Go modules
@@ -109,7 +109,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
-        go-version: [ "1.25", "1.24" ]
+        go-version: [ "1.26", "1.25" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -277,7 +277,7 @@ jobs:
     needs: go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.25", "1.24" ]
+        go-version: [ "1.26", "1.25" ]
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 
