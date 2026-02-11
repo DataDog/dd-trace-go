@@ -101,7 +101,7 @@ jobs:
     services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
     env:
       # Path to where test results will be saved
-      REPORT: orchestrion-gotestsum-report.xml
+      REPORT: gotestsum-report-orchestrion.xml
       # Disable go workspace as they complicate everything when orchestrion
       # updates its `go` directive in `go.mod` before `dd-trace-go` does;
       # ESPECIALLY on Windows.
