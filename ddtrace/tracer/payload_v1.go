@@ -445,7 +445,8 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		p.buf = encodeField(p.buf, fullSetBitmap, 8, span.error != 0, st)
 
 		// span attributes combine the meta (tags), metrics and meta_struct
-		attr := map[string]anyValue{}
+		size := len(span.meta) + len(span.metrics) + len(span.metaStruct)
+		attr := make(map[string]anyValue, size)
 		for k, v := range span.meta {
 			attr[k] = anyValue{
 				valueType: StringValueType,
@@ -543,7 +544,7 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, traceID[:], st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, link.SpanID, st)
 
-		attr := map[string]anyValue{}
+		attr := make(map[string]anyValue, len(link.Attributes))
 		for k, v := range link.Attributes {
 			attr[k] = anyValue{
 				valueType: StringValueType,
@@ -572,7 +573,7 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, event.TimeUnixNano, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, event.Name, st)
 
-		attr := map[string]anyValue{}
+		attr := make(map[string]anyValue, len(event.Attributes))
 		for k, v := range event.Attributes {
 			switch v.Type {
 			case spanEventAttributeTypeString:
