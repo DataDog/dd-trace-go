@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 const defaultServiceName = "redis.client"
@@ -37,6 +38,7 @@ func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.skipRaw = !options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", true)
 	cfg.errCheck = func(error) bool { return true }
 }
 
