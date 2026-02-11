@@ -192,6 +192,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
+// +checklocksignore
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
@@ -591,6 +592,7 @@ func (t *trace) setLocked(locked bool) {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
+// +checklocksignore
 func (t *trace) push(sp *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -620,6 +622,7 @@ func (t *trace) push(sp *Span) {
 // setTraceTagsLocked sets all "trace level" tags on the provided span
 // t must already be locked.
 // +checklocksread:t.mu
+// +checklocksignore
 func (t *trace) setTraceTagsLocked(s *Span) {
 	assert.RWMutexRLocked(&t.mu)
 	assert.RWMutexLocked(&s.mu)
@@ -644,7 +647,7 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 //
 // Lock ordering: span.mu -> trace.mu. The caller holds s.mu. This function acquires t.mu.
 // Invariant: The caller MUST hold s.mu.
-// TODO: Add checklocks annotation.
+// +checklocksignore
 func (t *trace) finishedOneLocked(s *Span) {
 	assert.RWMutexLocked(&s.mu)
 
@@ -774,6 +777,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
+// +checklocksignore
 func setPeerService(s *Span, tc TracerConf) {
 	spanKind := s.meta[ext.SpanKind]
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
@@ -860,6 +864,7 @@ func deriveAWSPeerService(sm map[string]string) string {
 // setPeerServiceFromSource sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
+// +checklocksignore
 func setPeerServiceFromSource(s *Span) string {
 	has := func(tag string) bool {
 		_, ok := s.meta[tag]

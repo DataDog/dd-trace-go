@@ -92,6 +92,7 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
+// +checklocksignore
 func (r *rateSampler) Sample(s *Span) bool {
 	if r.rate == 1 {
 		// fast path
@@ -185,6 +186,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
+// +checklocksignore
 func (ps *prioritySampler) getRate(spn *Span) float64 {
 	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	ps.mu.RLock()
@@ -197,6 +199,7 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
+// +checklocksignore
 func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.traceID, rate) {
