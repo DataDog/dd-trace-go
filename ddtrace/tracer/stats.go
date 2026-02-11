@@ -159,6 +159,7 @@ func (c *concentrator) runIngester() {
 	}
 }
 
+// +checklocksignore
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
 	resource := s.resource
 	if c.shouldObfuscate() {
