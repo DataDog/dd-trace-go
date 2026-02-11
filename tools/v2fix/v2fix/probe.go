@@ -32,6 +32,26 @@ func typeNameFromType(t types.Type) *types.TypeName {
 	return nil
 }
 
+// isV1SpanType returns true if the given type is a v1 Span type that maps to
+// tracer.Span in v2 (which exposes StartChild). Only ddtrace.Span and
+// ddtrace/tracer.Span qualify; other v1 Span types (e.g. mocktracer.Span)
+// do not have StartChild in v2.
+func isV1SpanType(t types.Type) bool {
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	tn := typeNameFromType(t)
+	if tn == nil || tn.Pkg() == nil {
+		return false
+	}
+	if tn.Name() != "Span" {
+		return false
+	}
+	pkgPath := tn.Pkg().Path()
+	return pkgPath == "gopkg.in/DataDog/dd-trace-go.v1/ddtrace" ||
+		pkgPath == "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+}
+
 // DeclaresType returns true if the node declares a type of the given generic type.
 // The type use in the generic signature is stored in the context as "type".
 // The reflected type is stored in the context as "declared_type".
@@ -515,6 +535,14 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 	foundChildOf := false
 	skipFix := false
 
+	collectOpt := func(arg ast.Expr) {
+		if opt := exprToString(arg); opt != "" {
+			otherOpts = append(otherOpts, opt)
+		} else {
+			skipFix = true
+		}
+	}
+
 	isChildOfCall := func(arg ast.Expr) bool {
 		call, ok := arg.(*ast.CallExpr)
 		if !ok {
@@ -531,56 +559,57 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 	for _, arg := range args[1:] {
 		call, ok := arg.(*ast.CallExpr)
 		if !ok {
-			if opt := exprToString(arg); opt != "" {
-				otherOpts = append(otherOpts, opt)
-			} else {
-				skipFix = true
-			}
+			collectOpt(arg)
 			continue
 		}
 
-		// Check if this is a ChildOf call
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			if opt := exprToString(arg); opt != "" {
-				otherOpts = append(otherOpts, opt)
-			} else {
-				skipFix = true
-			}
+		if !ok || sel.Sel.Name != "ChildOf" {
+			collectOpt(arg)
 			continue
 		}
 
-		if sel.Sel.Name == "ChildOf" {
-			foundChildOf = true
-			// Extract the parent expression from ChildOf(parent.Context()) or ChildOf(parentCtx)
-			if len(call.Args) > 0 {
-				parentArg := call.Args[0]
-				// Check if it's a parent.Context() call - we want to use just "parent"
-				if callExpr, ok := parentArg.(*ast.CallExpr); ok {
-					if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
-						if selExpr.Sel.Name == "Context" {
-							parentExpr = exprToString(selExpr.X)
-							continue
+		// Verify this is dd-trace-go v1 tracer.ChildOf, not a different package's ChildOf
+		if callee := typeutil.Callee(pass.TypesInfo, call); callee != nil {
+			if fn, ok := callee.(*types.Func); ok {
+				if pkg := fn.Pkg(); pkg == nil || !strings.HasPrefix(pkg.Path(), "gopkg.in/DataDog/dd-trace-go.v1") {
+					// Not a v1 tracer ChildOf; suppress autofix because a
+					// non-v1 ChildOf helper may wrap parent selection and
+					// StartChild would override it with its own parent.
+					skipFix = true
+					collectOpt(arg)
+					continue
+				}
+			}
+		}
+		foundChildOf = true
+		// Extract the parent expression from ChildOf(parent.Context()) or ChildOf(parentCtx)
+		if len(call.Args) > 0 {
+			parentArg := call.Args[0]
+			// Check if it's a parent.Context() call - we want to use just "parent"
+			if callExpr, ok := parentArg.(*ast.CallExpr); ok {
+				if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+					if selExpr.Sel.Name == "Context" {
+						if receiverType := pass.TypesInfo.TypeOf(selExpr.X); receiverType == nil || !isV1SpanType(receiverType) {
+							skipFix = true
 						}
+						parentExpr = exprToString(selExpr.X)
+						continue
 					}
 				}
-				// Otherwise use the full expression
-				parentExpr = exprToString(parentArg)
 			}
-		} else {
-			// This is not ChildOf, collect it as another option
-			if opt := exprToString(arg); opt != "" {
-				otherOpts = append(otherOpts, opt)
-			} else {
-				skipFix = true
-			}
+			// Otherwise use the full expression (ChildOf with SpanContext, not a Span)
+			skipFix = true
+			parentExpr = exprToString(parentArg)
 		}
 	}
 
 	if !foundChildOf || parentExpr == "" {
 		return ctx, false
 	}
-	// Preserve ellipsis on the last argument if present.
+	// When variadic opts are present, the slice contents are unknown at
+	// static analysis time and may contain ChildOf(...) that would change
+	// parent selection. Suppress the autofix but keep the diagnostic.
 	if hasEllipsis {
 		lastArg := args[len(args)-1]
 		if isChildOfCall(lastArg) {
@@ -591,6 +620,7 @@ func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (con
 			return ctx, false
 		}
 		otherOpts[len(otherOpts)-1] = otherOpts[len(otherOpts)-1] + "..."
+		skipFix = true
 	}
 
 	if skipFix {
@@ -622,11 +652,19 @@ func exprToString(expr ast.Expr) string {
 		if args == "" && len(e.Args) > 0 {
 			return ""
 		}
+		if e.Ellipsis.IsValid() {
+			return fun + "(" + args + "...)"
+		}
 		return fun + "(" + args + ")"
 	case *ast.BasicLit:
 		return e.Value
 	case *ast.IndexExpr:
-		return exprToString(e.X) + "[" + exprToString(e.Index) + "]"
+		x := exprToString(e.X)
+		idx := exprToString(e.Index)
+		if x == "" || idx == "" {
+			return ""
+		}
+		return x + "[" + idx + "]"
 	case *ast.StarExpr:
 		return "*" + exprToString(e.X)
 	case *ast.UnaryExpr:
@@ -669,6 +707,20 @@ func exprToString(expr ast.Expr) string {
 			return ""
 		}
 		return typ + "{" + elts + "}"
+	case *ast.KeyValueExpr:
+		key := exprToString(e.Key)
+		val := exprToString(e.Value)
+		if key == "" || val == "" {
+			return ""
+		}
+		return key + ": " + val
+	case *ast.MapType:
+		key := exprToString(e.Key)
+		val := exprToString(e.Value)
+		if key == "" || val == "" {
+			return ""
+		}
+		return "map[" + key + "]" + val
 	}
 	return ""
 }

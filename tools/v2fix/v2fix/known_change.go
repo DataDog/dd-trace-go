@@ -616,7 +616,7 @@ func (ChildOfStartChild) Clone() KnownChange {
 func (c ChildOfStartChild) Probes() []Probe {
 	return []Probe{
 		IsFuncCall,
-		HasV1PackagePath,
+		HasPackagePrefix("gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"),
 		WithFunctionName("StartSpan"),
 		HasChildOfOption,
 	}
@@ -632,8 +632,17 @@ func (c ChildOfStartChild) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
-	// First arg is the operation name
+	// First arg is the operation name — only auto-fix when it is a simple
+	// literal; non-literal expressions (e.g. "a"+suffix) are left as
+	// diagnostic-only because the rewrite may not be safe.
 	opName := args[0]
+	if _, isLit := opName.(*ast.BasicLit); !isLit {
+		return nil
+	}
+	opNameStr := exprToString(opName)
+	if opNameStr == "" {
+		return nil
+	}
 
 	// Get the parent expression from context (set by HasChildOfOption)
 	parentExpr, ok := c.ctx.Value(childOfParentKey).(string)
@@ -646,9 +655,9 @@ func (c ChildOfStartChild) Fixes() []analysis.SuggestedFix {
 
 	var newText string
 	if len(otherOpts) > 0 {
-		newText = fmt.Sprintf("%s.StartChild(%s, %s)", parentExpr, exprString(opName), strings.Join(otherOpts, ", "))
+		newText = fmt.Sprintf("%s.StartChild(%s, %s)", parentExpr, opNameStr, strings.Join(otherOpts, ", "))
 	} else {
-		newText = fmt.Sprintf("%s.StartChild(%s)", parentExpr, exprString(opName))
+		newText = fmt.Sprintf("%s.StartChild(%s)", parentExpr, opNameStr)
 	}
 
 	return []analysis.SuggestedFix{
